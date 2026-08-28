@@ -1,3 +1,4 @@
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { BacklogItem, BacklogState, isLive } from './projectBacklog';
@@ -617,16 +618,75 @@ export function trackedCodes(records: TrackRecord[]): string[] {
  * What every coded item said the last time we looked, so the NEXT pass can tell
  * an un-ticked box from an un-ticked box that was also rewritten.
  *
- * ‼️ It is a snapshot of the file, not of the ledger, and it is deliberately
- * kept in memory only: it exists to narrow a race inside one window's lifetime,
- * and a persisted copy would start being read as a record of what an item once
- * said — which is the ledger's job and would then be two answers to one
- * question.
+ * ‼️ It is a snapshot of the FILE, not of the ledger. It is written next to the
+ * other stores (X-36 V2) because the race is widest at start-up, but it stays a
+ * BASELINE FOR THE NEXT COMPARISON and nothing else: no surface reads it, no
+ * history is built from it, and losing the file costs one round's wording. What
+ * an item once SAID is the ledger's answer, and two answers to one question is
+ * how they start disagreeing.
  */
 export function snapshotBacklog(items: BacklogItem[]): Map<string, string> {
     const out = new Map<string, string>();
     for (const i of items) { if (i.code && i.text) { out.set(i.code, i.text); } }
     return out;
+}
+
+/**
+ * ‼️ X-130 — THE WATCHER'S OWN ECHO.
+ *
+ * Every mutation Agent Farm makes writes `Backlog.md` and then runs the
+ * reconcile pass inline, because it is the one that knows what it changed. The
+ * directory watcher wakes 1.5 s later, hears that same write, and runs the
+ * whole pass AGAIN over a document nobody has touched since. On the real vault
+ * that echo costs a 41 ms parse, a ledger read, a log render and a 454 KB
+ * cache write — per mutation, for nothing.
+ *
+ * The honest test is the bytes. Identical text means there is no outside edit
+ * to reconcile — not "probably none", none — so the pass is skipped. Anything
+ * weaker (a timestamp, a size, a "we wrote recently" flag) would be a guess,
+ * and a guess here silently loses a round the user actually typed.
+ *
+ * ‼️ IT IS NOT PERSISTED, AND THAT IS THE POINT. A window that opens must
+ * compare the file against what it said when the last window CLOSED — that is
+ * the whole reason the snapshot cache exists (see X-36 V3). An echo suppressor
+ * that survived the window would answer "unchanged since my last pass" to the
+ * one edit the cache is built to catch.
+ *
+ * The digest is held rather than the text: a project's backlog only grows, and
+ * keeping half a megabyte per folder alive for the lifetime of the window to
+ * answer a yes/no question is the wrong trade.
+ */
+export class BacklogEcho {
+    private readonly seen = new Map<string, string>();
+
+    /** Remember what this folder's backlog said on the pass that just ran. */
+    mark(folder: string, text: string): void {
+        this.seen.set(folder, digestOf(text));
+    }
+
+    /**
+     * True when the file is byte-identical to the last pass this folder had.
+     * A folder that has never been marked is never an echo — the first thing a
+     * window hears about a file it has not read is real news.
+     */
+    isEcho(folder: string, text: string): boolean {
+        const was = this.seen.get(folder);
+        return was !== undefined && was === digestOf(text);
+    }
+
+    /** Drop a folder, so the next thing heard from it is treated as real. */
+    forget(folder: string): void {
+        this.seen.delete(folder);
+    }
+}
+
+/**
+ * Cheap, exact-enough identity for a document. Not a security boundary and not
+ * a record — two texts that collide here would have to be adversarial, and the
+ * only thing at stake is whether one reconcile pass runs.
+ */
+function digestOf(text: string): string {
+    return `${text.length}:${crypto.createHash('sha1').update(text, 'utf8').digest('hex')}`;
 }
 
 export function reconcileOutside(

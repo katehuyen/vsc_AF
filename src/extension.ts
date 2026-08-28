@@ -192,7 +192,7 @@ import {
     tracksFolder, writeBrief, writeProjectDoc
 } from './core/projectDocs';
 import {
-    appendTrack, backfillFromHits, closingAttribution, closingNoteRefusal, closingStamp,
+    appendTrack, backfillFromHits, BacklogEcho, closingAttribution, closingNoteRefusal, closingStamp,
     parseBacklogLog, reconcileOutside,
     readTrackFile, renderBacklogLog, repairTurns, snapshotBacklog, summarizeCode, shortSession,
     trackedCodes, trackFileIn,
@@ -19765,6 +19765,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const BACKLOG_SEEN_FILE = path.join(context.globalStorageUri.fsPath, 'backlog-seen.json');
     const outsideSeen = new Map<string, Map<string, string>>();
+    // ‼️ X-130 — what each folder's backlog said on the pass that just ran, so
+    // the watcher can tell Agent Farm's own write from an edit made outside.
+    // See BacklogEcho: within-window only, and deliberately not persisted.
+    const backlogEcho = new BacklogEcho();
+    // The snapshot as it was last WRITTEN. It is 454 KB on the real vault and
+    // was rewritten on every pass; a pass in which no coded item's wording
+    // changed has nothing to say to the disk.
+    let outsideSeenBlob: string | undefined;
 
     const loadOutsideSeen = (): void => {
         try {
@@ -19782,8 +19790,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         try {
             const out: Record<string, Record<string, string>> = {};
             for (const [folder, items] of outsideSeen) { out[folder] = Object.fromEntries(items); }
+            const blob = JSON.stringify(out);
+            if (blob === outsideSeenBlob) { return; }
             fs.mkdirSync(path.dirname(BACKLOG_SEEN_FILE), { recursive: true });
-            fs.writeFileSync(BACKLOG_SEEN_FILE, JSON.stringify(out), 'utf8');
+            fs.writeFileSync(BACKLOG_SEEN_FILE, blob, 'utf8');
+            outsideSeenBlob = blob;
         } catch { /* a cache we could not write costs one round's wording */ }
     };
 
@@ -19815,6 +19826,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // pass has this pass's truth. See snapshotBacklog / TrackRecord.prevGuess.
         const missed = reconcileOutside(items, records, Date.now(), outsideSeen.get(folder));
         outsideSeen.set(folder, snapshotBacklog(items));
+        // ‼️ X-130 — this is the text the pass was run against. When the watcher
+        // hears our own write a second and a half from now, that is what it
+        // will be holding it up against.
+        backlogEcho.mark(folder, backlog.text ?? '');
         saveOutsideSeen();
         // A project added since the last pass gets its watcher here — cheap,
         // because arming is a no-op for every folder already covered.
@@ -19865,14 +19880,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             let file: string | undefined;
             try { file = scanRoles(folder).backlog; } catch { continue; }
             if (!file) { continue; }
-            const base = path.basename(file);
+            const target = file;
+            const base = path.basename(target);
             try {
-                const watcher = fs.watch(path.dirname(file), (_event, name) => {
+                const watcher = fs.watch(path.dirname(target), (_event, name) => {
                     if (name && path.basename(name.toString()) !== base) { return; }
                     const running = backlogWatchTimers.get(folder);
                     if (running) { clearTimeout(running); }
                     backlogWatchTimers.set(folder, setTimeout(() => {
                         backlogWatchTimers.delete(folder);
+                        // ‼️ X-130 — READ THE FILE BEFORE PAYING FOR IT. Most of what
+                        // this watcher hears is Agent Farm's own mutation, which ran
+                        // the pass inline before it wrote; re-running it costs a full
+                        // parse of a document that only grows. Byte-identical text
+                        // means there is nothing outside to reconcile, so we stop at
+                        // the read. An unreadable file falls through on purpose — the
+                        // full pass is the one that knows how to report that.
+                        try {
+                            if (backlogEcho.isEcho(folder, fs.readFileSync(target, 'utf8'))) { return; }
+                        } catch { /* fall through to the pass, which reports it properly */ }
                         try { refreshBacklogLog(project.id); } catch { /* the next edit retries */ }
                     }, 1500));
                 });
@@ -19901,6 +19927,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const doc = readProjectDoc(folder, relDoc(folder, file));
                 if (!doc.ok) { continue; }
                 outsideSeen.set(folder, snapshotBacklog(parseBacklog(doc.text ?? '').items));
+                backlogEcho.mark(folder, doc.text ?? '');
                 fresh.push(folder);
                 added = true;
             } catch { /* unreadable folder — nothing to baseline */ }

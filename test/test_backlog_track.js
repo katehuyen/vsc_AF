@@ -719,5 +719,88 @@ const RECORDS = [
         /if \(BL_TIME_SORTS\[blSort\]\) \{/.test(page));
 }
 
+// ---- ‼️ X-130 (second half): the watcher's own echo -------------------------
+//
+// Every mutation Agent Farm makes writes Backlog.md and runs the reconcile pass
+// inline. The directory watcher then hears that same write 1.5 s later and runs
+// the whole pass again — measured on the real vault at a 41 ms parse plus a
+// ledger read, a log render and a 454 KB cache write, per mutation, for a file
+// nobody has touched since.
+//
+// What is defended here is the pair of things that could go wrong with the fix.
+// A suppressor that is too EAGER silently eats an edit the user made in
+// Obsidian, which is the one thing this whole mechanism exists to catch; a
+// suppressor that PERSISTS answers "unchanged since my last pass" to the
+// closed-window edit, which is what X-36 (V3) was built for. So: unknown folder
+// is never an echo, one changed byte is never an echo, and the state lives in a
+// plain in-memory class with no path to disk anywhere in it.
+{
+    const echo = new T.BacklogEcho();
+    const text = '- [ ] K-9 something nobody has touched\n';
+
+    ok('‼️ X-130: a folder never seen is not an echo — the first thing a window'
+        + ' hears about a file it has not read is real news',
+        echo.isEcho('/vault/demo', text) === false);
+
+    echo.mark('/vault/demo', text);
+    ok('…the text the pass just ran against IS an echo — that is our own write',
+        echo.isEcho('/vault/demo', text) === true);
+
+    ok('‼️ …ONE BYTE of difference is not an echo — an edit made outside must'
+        + ' always reach the reconciler',
+        echo.isEcho('/vault/demo', text.replace('K-9', 'K-8')) === false);
+    ok('…nor is a box ticked in Obsidian, which is the same length',
+        echo.isEcho('/vault/demo', text.replace('[ ]', '[x]')) === false);
+    ok('…nor is trailing whitespace, because the test is the bytes and not a parse',
+        echo.isEcho('/vault/demo', text + '\n') === false);
+
+    ok('‼️ …and it is PER FOLDER: one project going quiet says nothing about another',
+        echo.isEcho('/vault/other', text) === false);
+
+    echo.forget('/vault/demo');
+    ok('…a folder that is forgotten is heard again',
+        echo.isEcho('/vault/demo', text) === false);
+
+    const source = require('fs').readFileSync(
+        path.join(__dirname, '..', 'src', 'core', 'backlogTrack.ts'), 'utf8');
+    const cls = source.slice(source.indexOf('export class BacklogEcho'),
+        source.indexOf('function digestOf'));
+    ok('‼️ …and it NEVER touches disk: an echo suppressor that survived the window'
+        + ' would silence the closed-window edit the snapshot cache exists for',
+        !/fs\.|readFile|writeFile|globalStorage/.test(cls));
+}
+
+// The wiring lives inside activate() and has no seam a unit test can reach, so
+// the facts asserted are exact: the watcher reads before it pays, the pass
+// records what it ran against, and the 454 KB snapshot is not rewritten when it
+// has not changed.
+{
+    const fs = require('fs');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+
+    const arm = src.slice(src.indexOf('const armBacklogWatch'),
+        src.indexOf('const baselineBacklogSeen'));
+    ok('‼️ X-130: the watcher reads the file and stops there when it is our own echo',
+        /backlogEcho\.isEcho\(folder, fs\.readFileSync\(target, 'utf8'\)\)/.test(arm)
+        && /\{ return; \}/.test(arm));
+    ok('…and an unreadable file still falls through to the pass, which reports it properly',
+        arm.indexOf('catch { /* fall through to the pass') < arm.indexOf('refreshBacklogLog(project.id)'));
+
+    const refresh = src.slice(src.indexOf('const refreshBacklogLog = ('),
+        src.indexOf('SOMEBODY IS WATCHING THE BACKLOG FILE'));
+    ok('‼️ …because the pass marks the exact text it was run against',
+        /backlogEcho\.mark\(folder, backlog\.text \?\? ''\)/.test(refresh));
+    ok('…and the baseline marks too, or the first edit after a fresh install pays twice',
+        /backlogEcho\.mark\(folder, doc\.text \?\? ''\)/.test(src));
+
+    const save = src.slice(src.indexOf('const saveOutsideSeen'),
+        src.indexOf('const refreshBacklogLog = ('));
+    ok('‼️ …and the 454 KB snapshot is not rewritten by a pass that changed no wording',
+        /if \(blob === outsideSeenBlob\) \{ return; \}/.test(save)
+        && save.indexOf('if (blob === outsideSeenBlob)') < save.indexOf('writeFileSync'));
+    ok('…with the blob remembered only after the write actually succeeded',
+        save.indexOf('fs.writeFileSync') < save.indexOf('outsideSeenBlob = blob'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

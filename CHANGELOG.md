@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.291.0 - X-130: the backlog is read once per change, not three times (2026-08-28)
+
+**A backlog mutation cost two full parses of a document that never shrinks.**
+Every op that changed a line read the whole file to find its target, wrote the
+change, and then read the whole file AGAIN to hand back the one line it had just
+written. Measured on this project's real backlog (495 KB, 396 items): **67 ms
+per mutation, of which 34 ms was the second read.** The second read was not
+dropped — "what does that line say NOW" is the honest answer to give a caller —
+it was made cheap. `parseBacklog`'s loop body became `parseItemLine`, because
+everything an item says about itself is on its own line and the only thing
+needing the whole file is which HEADING it sits under; the changed line is now
+sliced out by offset and read alone, with its heading context carried from the
+item that stood there a moment ago. `setBacklogHold`, `setBacklogFields` and
+`addBacklogItem`: **67 ms → 34 ms.**
+
+The thing a single line cannot decide is what a `parent` field names, and that
+is checked against the list the caller is already holding, with the same
+function the full pass uses — a link that quietly stopped being verified would
+have been the worst possible thing to trade a millisecond for.
+
+**And the file watcher was re-doing the work the mutation had just done.** Every
+write to `Backlog.md` wakes the directory watcher a second and a half later, and
+it ran the entire reconcile pass again — over a document nobody had touched
+since, because the writer was Agent Farm and it had already run that pass
+inline. Measured cost of that echo: a 44 ms parse, a ledger read, a log render
+and a 454 KB cache rewrite, on **every single mutation.** The watcher now reads
+the file and compares the bytes first: identical text means there is no outside
+edit to reconcile, so it stops there — **54 ms → 6 ms.** A real edit still pays
+the full pass (plus 6 ms for the read that proved it was real), because
+anything weaker than the bytes would be a guess, and a guess here loses a round
+the user actually typed. The suppressor is deliberately not persisted: a window
+that opens must compare against what the file said when the last one closed.
+
+The 454 KB snapshot cache is also no longer rewritten by a pass in which no
+item's wording changed.
+
 ## 3.290.0 - X-134 / X-135: new items stop landing in the archive, and stop being born undated (2026-08-27)
 
 **A new item was being written into the history section, and nobody could see
