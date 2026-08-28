@@ -19,7 +19,7 @@ import {
     TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
-import { normalizeRounds } from '../core/taskRounds';
+import { describeRounds, normalizeRounds } from '../core/taskRounds';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { TaskRecord } from '../core/taskstats';
 import { TriggerManager } from '../core/triggers';
@@ -315,6 +315,12 @@ function scheduleSetup(s: FarmSchedule): { label: string; value: string }[] {
     // the user's default and says nothing, for the same reason an unset model
     // says nothing.
     if (s.retry) { out.push({ label: 'If it fails', value: describeRetry(s.retry) }); }
+    // ‼️ M-27 — and how many turns it goes. A schedule that answers once and
+    // one that goes three rounds deep are the same row without this line.
+    {
+        const r = describeRounds(s.rounds);
+        if (r) { out.push({ label: 'Rounds', value: r }); }
+    }
     if (s.lastRunKey) { out.push({ label: 'Last occurrence settled', value: s.lastRunKey }); }
     if (s.pendingRunKey) {
         out.push({ label: 'Held over', value: `${s.pendingRunKey} — waiting for quiet hours to end` });
@@ -348,6 +354,8 @@ function triggerSetup(t: FarmTrigger, armed: boolean): { label: string; value: s
         if (a.workDir) { out.push({ label: 'Working folder', value: a.workDir }); }
         if (a.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
         if (a.retry) { out.push({ label: 'If it fails', value: describeRetry(a.retry) }); }
+        const r = describeRounds(a.rounds);
+        if (r) { out.push({ label: 'Rounds', value: r }); }
     }
     return out;
 }
@@ -366,6 +374,10 @@ function templateSetup(t: FarmTemplate): { label: string; value: string }[] {
     if (t.priority) { out.push({ label: 'Priority', value: String(t.priority) }); }
     if (t.ignoreBudget) { out.push({ label: 'Budget', value: 'runs even when the daily budget is spent' }); }
     if (t.retry) { out.push({ label: 'If it fails', value: describeRetry(t.retry) }); }
+    {
+        const r = describeRounds(t.rounds);
+        if (r) { out.push({ label: 'Rounds', value: r }); }
+    }
     return out;
 }
 
@@ -1125,6 +1137,9 @@ function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
         interactiveClose: s.interactiveClose ?? 'stay-open',
         cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
         ignoreBudget: !!s.ignoreBudget,
+        // ‼️ M-27 — what it was saved with, so reopening the form shows the
+        // chain instead of an empty editor over a schedule that has one.
+        rounds: normalizeRounds(s.rounds),
         ...retrySeed(s.retry),
         every: s.kind, dow: s.dow ?? 1, missed: s.missed ?? 'skip', enabled: s.enabled,
         time: `${String(s.hour).padStart(2, '0')}:${String(s.minute).padStart(2, '0')}`,
@@ -1151,6 +1166,8 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         interactiveClose: dims.interactiveClose ?? 'stay-open',
         cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
         ignoreBudget: !!dims.ignoreBudget,
+        // ‼️ M-27 — the chain it was saved with (see RunDimensions.rounds).
+        rounds: normalizeRounds(dims.rounds),
         ...retrySeed(dims.retry),
         debounceSec: t.debounceSec, cooldownSec: t.cooldownSec, maxPerHour: t.maxPerHour,
         enabled: t.enabled,
@@ -1388,7 +1405,10 @@ export class TasksPanel {
                 // would silently reset the engine it is holding.
                 engine: tpl.engine ?? '', model: tpl.model ?? '', effort: tpl.effort ?? '',
                 permissionMode: tpl.permissionMode ?? '', project: tpl.projectId ?? '',
-                cli: tpl.cli ?? '', workDir: tpl.workDir ?? '', priority: tpl.priority ?? 0
+                cli: tpl.cli ?? '', workDir: tpl.workDir ?? '', priority: tpl.priority ?? 0,
+                // ‼️ M-27 — a template is "that again", and a chain is part of
+                // what "that" was.
+                rounds: normalizeRounds(tpl.rounds)
             }
             : { mode2: 'new' });
     }
@@ -1464,7 +1484,14 @@ export class TasksPanel {
             // "try it again in half an hour" exists for. Absent (the form's
             // "use my default") stays absent — storing the resolved default
             // would freeze it against a setting the user changes later.
-            retry: (normalizeRetry(item.retry) as RetryPolicy | undefined) || undefined
+            retry: (normalizeRetry(item.retry) as RetryPolicy | undefined) || undefined,
+            // ‼️ M-27 — AND THE ROUNDS, which the page has been sending all
+            // along. They were read on the `task-new` branch only, so a schedule
+            // drew the editor, took what was typed and fired a one-prompt run:
+            // the unattended multi-round session the item was written for was
+            // the one shape that still could not be asked for. Same cleaner as
+            // the task door and the bridge, so the three cannot disagree.
+            rounds: normalizeRounds(item.rounds).length ? normalizeRounds(item.rounds) : undefined
         });
         const done = (text: string): void => {
             void this.panel.webview.postMessage({ type: 'plan-saved', text });

@@ -1203,6 +1203,20 @@ Görev durumları: ○ queued → ⟳ running → ✓ done / ⛔ failed / ⊘ ca
 
 **Dedup koruması (2.18.0):** aynı ajana birebir aynı prompt zaten kuyruktaysa Add Task seni uyarır — kazara ikinci kez eklemeyi önler.
 
+### Çok Turlu Görevler ve Otomatik Tur Zinciri (3.292.0 — M-27 & M-30)
+
+Gözetimsiz arka plan işlerinde bir konuşma içinde birden fazla aşamayı ("önce analiz et, sonra refactor et, ardından testleri çalıştır") yürütmek için **M-27 Tur Zinciri (Round Chain)** mimarisi kurulmuştur:
+
+- **1. Tur = Ana Prompt:** Formdaki ilk büyük prompt kutusu zincirin başlangıcıdır.
+- **Dinamik Turlar (`+ another prompt` / `+ Yeni Tur Ekle`):** Butona her basıldığında `R2`, `R3`, `R4`... satırları eklenir. Her turun kendi prompt metni, `wait: [N] min` bekleme dakikası ve silme butonu vardır.
+- **Aynı Konuşmaya Bağlanma (`resumeSessionId`):** 1. tur tamamlandığı anda sistem oturumun transkript kimliğini (`runSessionId`) yakalar ve 2. turu **AYNI konuşmayı kaldığı yerden resume ederek** gönderir. Ajan 1. adımda ne yaptığını bilerek çalışır.
+- **Kuyrukta Gerçek Görev Satırı (`notBefore`):** Bekleme süreleri bellekteki uçucu bir sayaç değil; kuyrukta `notBefore` zaman damgasıyla bekleyen bağımsız bir görev satırıdır (`Görev Adı · R2`). VS Code kapansa bile kaybolmaz, zamanı gelince otomatik tetiklenir ve iptal edilebilir.
+- **Retry Tur Değildir:** Bir turda kota veya hata nedeniyle yapılan yeniden denemeler tur sayacını artırmaz; aynı turun retry'ı olarak kalır. Başarılı olan deneme bir sonraki turu açar.
+- **Zamanlayıcı (Schedule) ve Şablon Entegrasyonu:** Çok turlu zincirler hem tek seferlik görevlerde hem de Daily/Weekly/OnceAt Zamanlanmış Görevlerde ve Şablonlarda (Templates) tam desteklenir.
+- **Runs Tablosunda `R2/4` Rozeti:** Zincirleme görevler Runs tablosunda kaçıncı turda olduğunu gösteren rozet taşır (`R2/4`); üzerine gelindiğinde kalan süreler ve durumlar okunur.
+- **⚡ Superpowers Mühendislik Disiplini Seçimi (M-30):** Task ve Schedule formlarında, ajanın varsayılan ayarından bağımsız olarak göreve özel Superpowers disiplini (TDD, sistematik hata ayıklama, kök neden analizi) açık veya kapalı seçilebilir.
+
+
 ### Yeniden Çalıştırma ve Öncelik
 
 Biten veya bekleyen görevlerde tek tıkla (2.18.0):
@@ -3135,6 +3149,37 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 3.294.0 — U-89: Şema Alan Açıklamaları ve İlk Eşleşen Kural Koruması (2026-08-28)
+
+- **Fiyatlandırma ve Medya Şemaları:** `pricing` ve `mediaPricing` alanlarının her biri net açıklama metinleri ve zorunluluk etiketleriyle donatıldı.
+- **Sıra Duyarlılığı Koruması:** `match` kuralında ilk eşleşen kuralın kazandığı (sıranın kritik olduğu) şema paneline ve AFTip açıklamasına eklendi.
+
+### 3.293.0 — U-89: Ayarlar Sayfası Şemadan Türeyen JSON Yapı Kartları ve Example Butonu (2026-08-28)
+
+- **Şemadan Türeyen JSON Kartları:** Ham textarea kutuları yerine değerin yapısını söyleyen çip (`a list of entries · 3 field(s)`, `one object · 16 field(s)`) ve arkasında alan/tip/enum/açıklama tablosu taşıyan AFTip panelleri eklendi (`src/core/settingShape.ts`).
+- **Example Butonu:** Şemadan doğrulanan tam bir örnek girdiyi kutuya yazar; hiçbir şeyi otomatik kaydetmez.
+
+### 3.292.0 — M-27: Çok Turlu Görevler ve Otomatik Tur Zinciri (2026-08-28)
+
+- **Dinamik Tur Zinciri (`src/core/taskRounds.ts`):** 1. tur ana prompt kutusu, `+ another prompt` ile sınırsız tur ekleme, tur başına bekleme dakikası (`wait min`).
+- **Aynı Konuşmaya Bağlanma:** 1. tur bittiğinde `resumeSessionId` ile aynı oturuma bağlanarak sonraki turlar sırayla yürütülür.
+- **Kuyrukta Bağımsız Satır:** Turlar bellekteki sayaçta değil, kuyrukta `notBefore` taşıyan gerçek görev satırı olarak tutulur (`Görev Adı · R2`).
+- **Runs Tablosunda `R2/4` Rozeti:** Kaçıncı turda olduğunu gösteren rozet ve detaylı hover.
+
+### 3.291.0 — X-130: BacklogEcho — Eklenti Yazım Yankısını Atlama (2026-08-28)
+
+- **Yankı Filtresi (`BacklogEcho`):** Dizin izleyicisi eklentinin kendi yazımını duyduğunda baytları karşılaştırıp gereksiz uzlaştırma geçişini atlar (~54 ms → 6.2 ms hızlanma).
+
+### 3.290.0 — X-134 / X-135: Backlog Arşiv Koruması ve Otomatik OpenedAt Sıralaması (2026-08-27)
+
+- **Arşiv Koltuk Koruması (X-134):** Yeni eklenen kalemlerin yanlışlıkla `## 🗄 Archive` altına düşmesi engellendi; açık kalanlar otomatik kurtarılır.
+- **`openedAt` Zaman Sıralaması (X-135):** Yeni açılan kalemler track defterine damgalanarak zaman sıralamalarında en başa yerleşir.
+
+### 3.289.0 — X-136: Ayarlar'da Superpowers Bölümü ve Dinamik Ajan Kökü (2026-08-27)
+
+- **Ayarlar Superpowers Kartı:** Klasör sağlığı (kök kanca kontrolü), yeteneklerin AFTip fihristi ve her ajan için bağımsız varsayılan onay kutuları.
+- **Dinamik Taşınabilir Kök:** Boş bırakılan ayar, ajan kökleri yanındaki `_SKILLS/superpowers` klasörüne dinamik olarak çözülür.
 
 ### 3.288.0 — U-106 / U-107: Backlog Arşiv Ayrımı ve 3 Durumlu Filtre Çipi (2026-08-26)
 

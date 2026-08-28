@@ -29,7 +29,8 @@ import {
 } from './retry';
 import { opencodeSpawnEnv } from './opencodesync';
 import {
-    normalizeRounds, planNextRound, refuseNextRound, TaskRound, totalRounds
+    normalizeRounds, planNextRound, refuseNextRound, ROUND_BINDING_CODE, roundBindingReason,
+    TaskRound, totalRounds
 } from './taskRounds';
 export type { TaskRound } from './taskRounds';
 import { archiveMonths, readArchive } from './taskstats';
@@ -153,6 +154,20 @@ export interface FarmTask {
     roundsTotal?: number;
     /** ‼️ M-27 — the task that opened the chain, so its rounds can be found together. */
     roundOf?: string;
+    /**
+     * ‼️ M-27 — THE RUN WHOSE CONVERSATION THIS ROUND IS STILL WAITING FOR.
+     *
+     * A round is a reply, so it needs the session the round before it was
+     * answered in — and for every engine but opencode that session is bound
+     * AFTERWARDS, by matching a transcript the index found on disk. At the
+     * moment the answer lands there is normally nothing to resume yet.
+     *
+     * So the row is made anyway (it can be seen, waited on and cancelled) and
+     * it names the run it is waiting for. `launchBlock` holds it while this is
+     * set and `resumeSessionId` is not; `releaseRounds` fills the id in and
+     * clears this the moment the binding arrives.
+     */
+    roundAwaits?: string;
     /** Explicit model for THIS task (e.g. a mission's per-member override).
      *  Beats the model-policy engine; empty = policy/agent default. */
     model?: string;
@@ -561,6 +576,26 @@ export interface RunDimensions {
     interactiveClose?: InteractiveClose;
     workDir?: string;
     priority?: number;
+    /**
+     * ‼️ M-27 — THE PROMPTS AFTER THE FIRST ONE, ON THE AUTOMATION ITSELF.
+     *
+     * This is the case the whole feature was asked for and the one it did
+     * not reach: "run this every morning, and when it answers ask it the
+     * next thing". The rounds were read on the manual new-task form only,
+     * so a schedule drew the editor, accepted what was typed into it and
+     * then fired a one-prompt run — exactly the thing that could not be
+     * asked for before, still not askable, and now silently.
+     *
+     * It sits with the model and the retry policy because it is decided the
+     * same way and for the same reason: an automation fires with nobody at
+     * a window, so everything about the run it makes has to be stated when
+     * the automation is written or it is not stated at all.
+     *
+     * A WORKFLOW STEP ignores it by design — "what happens next" is the
+     * workflow's own question (see planNextRound), and the step composer
+     * does not offer the field.
+     */
+    rounds?: TaskRound[];
     /** ‼️ The budget waiver travels with the automation, not only with the task
      *  it produces — see FarmTask.ignoreBudget. This is the case it exists for:
      *  a nightly run nobody is watching is exactly the one that must not be
@@ -610,6 +645,13 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     // from a JSON file or sent over the bridge cannot reach a task un-clamped.
     const retry = normalizeRetry(d.retry);
     if (retry) { r.retry = retry; }
+    // ‼️ M-27 — and the chain, cleaned on the way through for the same reason
+    // the policy is: a list typed into a form, seeded from JSON or sent over
+    // the bridge must not reach a run un-clamped. Empty stays absent, so an
+    // ordinary one-prompt automation writes nothing about a chain it has not
+    // got. `addTask` stamps the denominator from here.
+    const rounds = normalizeRounds(d.rounds);
+    if (rounds.length) { r.rounds = rounds; }
     return r;
 }
 
@@ -1619,6 +1661,11 @@ export class TaskManager implements vscode.Disposable {
             }
         }
         if (changed) { this.save(); }
+        // ‼️ M-27 — AND THIS IS THE ANSWER A HELD ROUND WAS WAITING FOR.
+        // Asked whenever an id is offered rather than only when it changed: on
+        // a restart the run already carries the id and nothing here moves, while
+        // the round beside it is still parked from before the window closed.
+        if (p.sessionId && this.releaseRounds()) { this.pump(); }
         return changed;
     }
 
@@ -2142,7 +2189,7 @@ export class TaskManager implements vscode.Disposable {
             | 'interactiveTarget' | 'interactiveClose'
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
-            | 'rounds' | 'round' | 'roundsTotal' | 'roundOf'>>
+            | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -2254,6 +2301,29 @@ export class TaskManager implements vscode.Disposable {
                     // ‼️ M-10 — and where that moment came from, when it was not
                     // simply "n minutes from the failure".
                     + (task.notBeforeWhy ? ` (${task.notBeforeWhy})` : '')
+            };
+        }
+        /**
+         * ‼️ M-27 — A ROUND WAITS FOR THE CONVERSATION IT IS A REPLY TO.
+         *
+         * Only `opencode run --format json` publishes its session id while the
+         * run is still going; every other engine is bound to one afterwards,
+         * from a transcript the index matches on disk. So a round opened the
+         * instant its predecessor answered has, normally, nothing to resume
+         * YET — and launching it there would open a BRAND NEW conversation and
+         * answer a prompt written for a context it does not have, which is the
+         * one outcome the whole feature exists to prevent.
+         *
+         * It is a hold and not a refusal, and it is deliberately QUIET: the
+         * park is written on the row when the round is made (with the same
+         * code this returns, so the pump renews it without new news), and on
+         * the ordinary path it lasts the seconds it takes the index to catch
+         * up. `releaseRounds` ends it.
+         */
+        if (task.roundAwaits && !task.resumeSessionId) {
+            return {
+                code: ROUND_BINDING_CODE,
+                reason: roundBindingReason(task)
             };
         }
         // ‼️ S-19 — A LIVE OWNER OUTRANKS EVERY OTHER CEILING, and is checked
@@ -2452,6 +2522,12 @@ export class TaskManager implements vscode.Disposable {
     /** Launch deferred tasks as capacity frees up (called on every finish + every 30s). */
     private pump(): void {
         if (!this.runner()) { return; } // B11: only the runner window launches
+        // ‼️ M-27 — a round held for its conversation is released HERE as well as
+        // where the binding lands, because the binding can arrive in a window
+        // that is not the runner, or before this one was even opened: the row is
+        // in the store and the id is on the run it follows, so the answer is
+        // always re-derivable and never depends on having seen the event.
+        this.releaseRounds();
         const now = Date.now();
         const ready = this.tasks
             .filter(t => t.status === 'queued' && t.autoStart)
@@ -3186,15 +3262,23 @@ export class TaskManager implements vscode.Disposable {
      * two-hour wait survives a restart, shows up on the board as a row that
      * says when, and can be cancelled by the person who is tired of it.
      *
+     * ‼️ AND IT IS A ROW EVEN WHEN THE CONVERSATION IS NOT KNOWN YET, which is
+     * the ordinary case and used to be fatal. Only opencode publishes its
+     * session id while the run is going; every other engine is bound to one
+     * AFTERWARDS, from a transcript the index matches on disk — so at this
+     * exact moment `runSessionId` is normally empty, and this refused there and
+     * dropped the whole chain with a note. Now the round is made and HELD
+     * (`ROUND_BINDING_CODE`), and `releaseRounds` fills the id in when it lands.
+     *
      * The whole decision is `planNextRound`, which is pure and tested; this is
      * the part that needs the store.
      */
     private openNextRound(task: FarmTask): void {
         const refusal = refuseNextRound(task);
         if (refusal) {
-            // The one silence worth breaking: rounds were waiting and cannot be
-            // sent. Everything else planNextRound declines is already on the
-            // board as what it is.
+            // The one silence worth breaking: rounds were waiting and can never
+            // be sent. Everything else planNextRound declines is already on the
+            // board as what it is — or, for the binding, is about to be a row.
             noteTaskEvent(task, 'finished', `no next round — ${refusal}`);
             this.save();
             return;
@@ -3216,19 +3300,26 @@ export class TaskManager implements vscode.Disposable {
             const wrote = this.inOneWrite(() => {
                 noteTaskEvent(task, 'finished',
                     `round ${next.round} of ${task.roundsTotal ?? '?'} queued`
-                    + (next.delayMin > 0 ? `, starting in ${next.delayMin} min` : ''));
-                this.addTask(agent, `${baseTitle} · R${next.round}`, next.prompt, task.mode, {
+                    + (next.delayMin > 0 ? `, starting in ${next.delayMin} min` : '')
+                    + (next.awaitBinding ? ', held until this run is matched to its transcript' : ''));
+                const row = this.addTask(agent, `${baseTitle} · R${next.round}`, next.prompt, task.mode, {
                     projectId: task.projectId,
                     round: next.round,
                     rounds: next.rest,
                     roundsTotal: task.roundsTotal,
                     roundOf: task.roundOf ?? task.id,
+                    ...(task.engine ? { engine: task.engine } : {}),
                     // ‼️ THE ROUND IS A REPLY, so it goes into the conversation
-                    // that was answered — not a new one. `planNextRound` has
-                    // already refused the case where there is none to go into.
-                    resumeSessionId: next.resumeSessionId,
-                    resumedFrom: task.title,
-                    ...(task.engine ? { engine: task.engine, resumedEngine: task.engine } : {}),
+                    // that was answered — not a new one. When that conversation
+                    // is not bound yet the row names the run it is waiting for
+                    // instead, and is parked below until it is.
+                    ...(next.awaitBinding
+                        ? { roundAwaits: task.id }
+                        : {
+                            resumeSessionId: next.resumeSessionId,
+                            resumedFrom: task.title,
+                            ...(task.engine ? { resumedEngine: task.engine } : {})
+                        }),
                     ...(next.notBefore > Date.now() ? {
                         notBefore: next.notBefore,
                         notBeforeWhy: `round ${next.round} waits ${next.delayMin} min after the previous answer`
@@ -3249,7 +3340,20 @@ export class TaskManager implements vscode.Disposable {
                     ...(task.interactiveClose ? { interactiveClose: task.interactiveClose } : {}),
                     ...(task.missionId ? { missionId: task.missionId } : {}),
                     ...(task.outputContract ? { outputContract: task.outputContract } : {})
-                }).autoStart = true;
+                });
+                row.autoStart = true;
+                if (next.awaitBinding) {
+                    // ‼️ PARKED HERE AND NOT LEFT TO THE PUMP, for M-3's reason at
+                    // `progress:unknown`: the row must never be seen unparked for
+                    // even one pass, and the park written now is the SAME code
+                    // `launchBlock` returns — so the pump renews it in silence
+                    // rather than announcing "did not start" every 30 seconds
+                    // about a wait that is usually over in one.
+                    row.deferredCode = ROUND_BINDING_CODE;
+                    row.deferredReason = roundBindingReason(row);
+                    row.parkEpisode = (row.parkEpisode ?? 0) + 1;
+                    noteTaskEvent(row, 'parked', row.deferredReason);
+                }
             }, true);
             if (!wrote) {
                 // The row is in memory and the pump will still run it in this
@@ -3260,6 +3364,59 @@ export class TaskManager implements vscode.Disposable {
                     `round ${next.round} could not be saved — it runs only while this window stays open`);
             }
         } catch { /* the round is not on the board; the event above is the trace */ }
+    }
+
+    /**
+     * ‼️ M-27 — THE ROUND WHOSE CONVERSATION HAS NOW BEEN FOUND.
+     *
+     * A round is a reply, and for every engine but opencode the session a run
+     * spoke in is discovered AFTER it exited, by matching a transcript on disk
+     * (S-31). So a round is made held, naming the run it follows, and this is
+     * the release — the mirror of M-3's `releaseHeld`, and for the same reason:
+     * the alternative is a prompt going out into a conversation that is not the
+     * one it was written for.
+     *
+     * ‼️ IT IS RE-DERIVED, NEVER EVENT-DRIVEN. Both the row and the id are in
+     * the store, so this answers correctly on the first pump after a restart,
+     * in a window that never saw the binding land, and on a second call that
+     * finds nothing left to do. That is why the pump calls it too, and not only
+     * `setRunProgress`.
+     */
+    private releaseRounds(): boolean {
+        let wrote = false;
+        for (const t of this.tasks) {
+            if (t.status !== 'queued' || !t.roundAwaits || t.resumeSessionId) { continue; }
+            const prev = this.tasks.find(p => p.id === t.roundAwaits);
+            if (!prev) {
+                // The run this replies to is not on the board any more — the
+                // history was cleared, or it was deleted. Nothing can arrive
+                // now, so the row says so and ends rather than waiting for a
+                // binding that has nowhere to come from.
+                t.roundAwaits = undefined;
+                t.status = 'failed';
+                t.endedAt = Date.now();
+                this.clearPark(t);
+                t.deferredReason = 'the run this round replies to is gone, so there is no '
+                    + 'conversation left to resume';
+                noteTaskEvent(t, 'finished',
+                    `round ${t.round ?? '?'} was dropped — ${t.deferredReason}`);
+                wrote = true;
+                continue;
+            }
+            const sid = String(prev.runSessionId ?? '').trim();
+            if (!sid) { continue; }
+            t.resumeSessionId = sid;
+            if (prev.engine) { t.resumedEngine = prev.engine; }
+            t.resumedFrom = prev.title;
+            t.roundAwaits = undefined;
+            this.clearPark(t);
+            noteTaskEvent(t, 'parked',
+                `released — the conversation round ${Math.max(1, (t.round ?? 2) - 1)} was answered in `
+                + `is bound now (${sid})`);
+            wrote = true;
+        }
+        if (wrote) { this.save(); }
+        return wrote;
     }
 
     /**

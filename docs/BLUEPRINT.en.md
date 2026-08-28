@@ -1131,6 +1131,20 @@ Task states: ○ queued → ⟳ running → ✓ done / ⛔ failed / ⊘ cancelle
 
 **Dedup protection (2.18.0):** if the exact same prompt for the same agent is already in the queue, Add Task warns you — preventing an accidental second add.
 
+### Multi-Round Tasks and Automated Prompt Chains (3.292.0 — M-27 & M-30)
+
+For unattended background workloads needing multi-stage execution within a single ongoing conversation ("first analyze, then refactor, then run test suite"), the **M-27 Round Chain** architecture is implemented:
+
+- **Round 1 = Main Prompt:** The primary prompt textarea acts as the chain origin.
+- **Dynamic Rounds (`+ another prompt`):** Each click appends `R2`, `R3`, `R4`... with its own prompt textarea, configurable delay (`wait: [N] min`), and removal button.
+- **Same Conversation Binding (`resumeSessionId`):** Upon completing Round 1, the engine captures `runSessionId` and spawns Round 2 by resuming the exact same conversation (`--resume`). The model retains full context of what it did in earlier rounds.
+- **Queued as Real Rows (`notBefore`):** Delays between rounds are not transient in-memory timers; they are persisted queue rows (`Task Name · R2`) carrying `notBefore` timestamps. They survive VS Code restarts and can be inspected or cancelled anytime.
+- **Retries are Not Rounds:** A retry due to limit resets or errors stays isolated within its own round and does not burn subsequent rounds.
+- **Schedules and Templates:** Multi-round prompt chains work uniformly across ad-hoc tasks, Daily/Weekly/OnceAt schedules, and Task Templates.
+- **Runs Table `R2/4` Badge:** Active chained tasks display a round badge (e.g. `R2/4`) with rich hover details explaining pending durations.
+- **⚡ Superpowers Selection (M-30):** Per-task and per-schedule manual override to enable or disable the Superpowers engineering discipline hook.
+
+
 ### Rerun and Priority {#rerun-and-priority}
 
 On finished or waiting tasks, in one click (2.18.0):
@@ -3057,6 +3071,53 @@ Completed phases (all 2026-07-08):
 **What comes next lives in a separate, detailed document:** from the command palette, **Agent Farm: Open Development Plan** — the far-sighted development plan: event triggers, verify steps, the MCP panel, the n8n/webhook bridge, the multimedia production pipeline (a content factory with Kling/Seedance/Nano Banana-class models), smart oversight, multiple machines and the visionary horizon. Coding follows the priority order in that plan.
 
 ## Release Notes
+
+### 3.294.0 — U-89: Schema Field Descriptions & First-Match Order Guard (2026-08-28)
+
+- **Pricing & Media Pricing Schemas:** Every field in `pricing` and `mediaPricing` receives comprehensive description strings and required property badges.
+- **Match Rule Precedence Guard:** Explicitly documents and warns in schema popovers that the first matching pattern wins (order is significant).
+
+### 3.293.0 — U-89: Schema-Derived JSON Shape Cards & Example Insertion (2026-08-28)
+
+- **Shape Cards for JSON Textareas:** Raw JSON inputs now display a descriptive shape badge (`a list of entries · 3 field(s)`, `one object · 16 field(s)`) backed by an AFTip inspection panel showing property types, enums, requirements, and documentation (`src/core/settingShape.ts`).
+- **Example Button:** Injects a schema-validated canonical example directly into the textarea without saving.
+
+### 3.292.0 — M-27: Multi-Round Tasks and Automated Prompt Chains (2026-08-28)
+
+- **Dynamic Round Chains (`src/core/taskRounds.ts`):** 1st round primary prompt, `+ another prompt` dynamically adding chained rounds with per-round delays (`wait min`).
+- **Session Continuity:** Subsequent rounds automatically resume the exact same conversation (`resumeSessionId`), preserving model context across turns.
+- **Queue Persistence:** Round delays are persisted as independent queue rows (`Task Name · R2`) with `notBefore` timestamps surviving restarts.
+- **Runs Table `R2/4` Badge:** Displays real-time round progress and pending durations on hover.
+
+### 3.291.0 — X-130: BacklogEcho — Suppressing Extension Self-Write Echoes (2026-08-28)
+
+- **Echo Suppressor (`BacklogEcho`):** The directory watcher detects internal extension writes by byte comparison, eliminating redundant parse cycles (~54 ms → 6.2 ms speedup).
+
+### 3.290.0 — X-134 / X-135: Backlog Archive Guard & Automated OpenedAt Ordering (2026-08-27)
+
+- **Archive Seating Guard (X-134):** Newly created backlog items are guarded against dropping below `## 🗄 Archive`; misplaced open items are automatically recovered.
+- **`openedAt` Timestamp Ordering (X-135):** Captures timestamp events for new items, ensuring accurate top-of-list chronological sorting.
+
+### 3.289.0 — X-136: Superpowers Settings Section & Dynamic Portable Root (2026-08-27)
+
+- **Dedicated Settings Panel:** Health indicator (hook discovery), AFTip capabilities catalog, and per-agent default checkboxes.
+- **Dynamic Skill Root:** Empty configurations dynamically resolve to `_SKILLS/superpowers` adjacent to agent roots across machines.
+
+### 3.288.0 — U-106 / U-107: Backlog Archive Separation & 3-State Filter Chip (2026-08-26)
+
+- **Archived vs Done Separation (U-106):** Clear distinction for items moved to `## 🗄 Archive` with a dedicated 🗄 badge.
+- **3-State `🗄 archive N` Filter Chip (U-107):** One-click toggle across show in list · hide · show archive only.
+
+### 3.287.0 — X-133: Superpowers Composer Toggle & System Prompt Injection (2026-08-26)
+
+- **Unified System Prompt Injection (`systemPromptFileFor`):** Combines project brief with the Superpowers hook in a single `--append-system-prompt-file` pass.
+- **Composer `[⚡ Superpowers]` Chip:** Displays exact injected hook text on hover.
+- **Per-Agent Defaults (`agentFarm.superpowersDefaults`):** `developer` starts enabled; exposed via `superpowers.set` bridge op.
+
+### 3.286.0 — X-132: Dormant Disk Skills & Hook Registry (2026-08-26)
+
+- **14 Software Engineering Skills (`_SKILLS/superpowers`):** TDD, systematic debugging, root-cause analysis, and verification stored at zero base token cost.
+- **Hook Registry (`src/core/superpowers.ts`):** Dynamic skill directory resolution and hook construction; exposed via `superpowers.status` and `superpowers.hook`.
 
 ### 3.209.0 — X-54: A Shipped Example Is Not A Private Note, And A Cap You Cannot Suspend (2026-08-21)
 

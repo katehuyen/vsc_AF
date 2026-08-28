@@ -25,6 +25,7 @@ import * as path from 'path';
 import { ENGINES, engineOf, engineTakesEffort } from './consoleEngine';
 import { INTERACTIVE_CLOSES, INTERACTIVE_TARGETS, ONE_EXECUTOR, twoExecutors, validateLaunch } from './launch';
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
+import { normalizeRounds, TaskRound } from './taskRounds';
 
 export interface BridgeOpSpec {
     op: string;                       // e.g. "schedules.add"
@@ -366,6 +367,28 @@ export function bridgeRunDimensions(
     // ops that lay these dimensions over a run that already exists have to ask
     // again about the MERGED result (`needOneExecutor`); what this catches is
     // the caller who names both in one breath.
+    // ‼️ M-27 — AND THE PROMPTS AFTER THE FIRST ONE, for exactly the reason
+    // the retry policy is here: the page offers a chain on a task, a schedule,
+    // a trigger and a template, so an agent asked to "run the report every
+    // morning and then ask it to file the answer" must be able to say it in
+    // the same words. Cleaned by the same function the form and the task door
+    // use — three doors, one shape.
+    {
+        const rounds = normalizeRounds(args.rounds);
+        if (rounds.length) {
+            // ‼️ AND REFUSED ON AN INTERACTIVE RUN RATHER THAN DROPPED, like the
+            // surface pair above. A round RESUMES the conversation the round
+            // before it was answered in, and resuming is a headless argument;
+            // stored on an interactive run the chain would be accepted here,
+            // saved, and then quietly never happen.
+            const mode = opts.mode !== undefined ? opts.mode : (optStr(args, 'mode') ?? '');
+            need(mode !== 'interactive',
+                'rounds are sent into the SAME conversation, which means resuming it — a headless '
+                + 'argument. This run is interactive: it opens a session in a terminal, where the '
+                + 'next thing to say is typed into it.');
+            out.rounds = rounds;
+        }
+    }
     needOneExecutor(out.engine, out.cli);
     return out;
 }
@@ -426,6 +449,18 @@ export const INTERACTIVE_NOTE =
     + 'Both are refused, not ignored, on a headless run — including one that is headless '
     + 'because no mode was stated at all.';
 
+export const ROUNDS_NOTE =
+    ' ‼️ AND HOW MANY TURNS IT GOES — rounds? ([{prompt, delayMin?}, …] or plain '
+    + 'strings). A ROUND is one more prompt sent into the SAME conversation, once the round '
+    + 'before it has been ANSWERED — so round 2 wakes up knowing everything round 1 did. The '
+    + 'prompt above is round 1; these are 2..N, each becoming its own queued row when its turn '
+    + 'comes. delayMin waits that many minutes AFTER the previous answer lands (0 = at once, '
+    + 'ceiling seven days). ‼️ A RETRY IS NOT A ROUND: a run that fails and is retried '
+    + 're-attempts the same round with the same words and consumes none of these. Headless only '
+    + '— refused, not ignored, on an interactive run. Stating it on a SCHEDULE or a TRIGGER is '
+    + 'the case it exists for: a run that fires with nobody here has no one to type the next '
+    + 'thing.';
+
 export const DIMS_OUT_NOTE =
     ' ‼️ Each row also says what its ENGINE can do (engineLabel, turnShape, '
     + 'reportsCost, costSource, takesEffort) — read those before the figures beside '
@@ -438,7 +473,7 @@ export function bridgeDimsOut(
         engine?: string; model?: string; effort?: string; permissionMode?: string;
         cli?: string; workDir?: string; priority?: number; projectId?: string;
         interactiveTarget?: string; interactiveClose?: string;
-        ignoreBudget?: boolean; retry?: RetryPolicy;
+        ignoreBudget?: boolean; retry?: RetryPolicy; rounds?: TaskRound[];
     },
     projectName?: (id: string) => string | undefined
 ): Record<string, unknown> {
@@ -492,7 +527,13 @@ export function bridgeDimsOut(
         retry: o.retry ?? null,
         retryPolicy: o.retry
             ? describeRetry(o.retry)
-            : 'the user\'s default (agentFarm.taskRetry)'
+            : 'the user\'s default (agentFarm.taskRetry)',
+        // ‼️ M-27 — the prompts AFTER the first one, and how many turns that
+        // makes in all. Read back so a caller can see a chain it did not set
+        // itself: a schedule that goes three rounds deep every morning looks
+        // exactly like a one-prompt one until this says otherwise.
+        rounds: o.rounds ?? [],
+        roundsTotal: 1 + (o.rounds?.length ?? 0)
     };
 }
 

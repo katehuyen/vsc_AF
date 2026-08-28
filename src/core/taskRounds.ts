@@ -23,6 +23,13 @@
  * the user's rounds. So `round` is carried through a retry untouched, and only
  * `planNextRound` ever moves it.
  *
+ * ‼️ AND A ROUND WAITS FOR ITS CONVERSATION RATHER THAN BEING DROPPED BY IT.
+ * Only opencode knows its session id while the run is still going; every other
+ * engine is bound to one AFTERWARDS, by matching a transcript on disk. So at
+ * the moment a round is answered there is normally nothing to resume YET, and
+ * refusing there — which is what this did — killed the chain on its ordinary
+ * path. `awaitBinding` says so, and the manager makes a held row out of it.
+ *
  * Pure: no vscode, no fs, no clock beyond what is handed in. The manager owns
  * the timer and the store; this owns every rule about whether there is a next
  * round and what it is.
@@ -30,6 +37,24 @@
 
 /** How long a wait may be asked for, in minutes. Seven days. */
 export const ROUND_DELAY_MAX_MIN = 7 * 24 * 60;
+
+/**
+ * ‼️ The blocker code a round waiting for its conversation is parked under.
+ *
+ * ONE constant because it is written in two places — on the row when the round
+ * is made, and by `launchBlock` on every pump pass after that — and M-11's rule
+ * is that a park is news when its CODE changes. Two spellings of the same
+ * hold would announce "did not start" every thirty seconds about a wait that
+ * is normally over in one.
+ */
+export const ROUND_BINDING_CODE = 'round:binding';
+
+/** What that hold says on the row, in the sentence a reader can act on. */
+export function roundBindingReason(task: Pick<RoundedTask, 'round'>): string {
+    return `waiting for the conversation round ${Math.max(1, roundOf(task) - 1)} was answered in`
+        + ' — the run it follows has not been matched to a transcript yet (see sessions.bindings),'
+        + ' and a round sent into a NEW conversation would answer nothing';
+}
 
 /** One prompt in the chain, with the wait that precedes it. */
 export interface TaskRound {
@@ -55,6 +80,13 @@ export interface RoundedTask {
     engine?: string;
     /** A step of a workflow is not a chain of its own; see `planNextRound`. */
     workflowId?: string;
+    /**
+     * ‼️ Resuming a conversation is a HEADLESS argument. An interactive run
+     * opens a session in a terminal, and continuing it there is the Console's
+     * own Resume — so a round of one is refused here rather than made into a
+     * row that fails at the spawn. Absent means headless.
+     */
+    mode?: string;
 }
 
 /** What the manager should create, or why it should not. */
@@ -65,8 +97,27 @@ export interface NextRound {
     round: number;
     /** What is left after this one, so the chain carries itself forward. */
     rest: TaskRound[];
-    /** The conversation to resume. Never empty: see `refuseNextRound`. */
+    /**
+     * The conversation to resume — EMPTY while `awaitBinding` is true, which is
+     * the ordinary case at the moment a run ends.
+     */
     resumeSessionId: string;
+    /**
+     * ‼️ THE CONVERSATION IS NOT KNOWN YET, AND THAT IS NORMAL — NOT A REFUSAL.
+     *
+     * Only `opencode run --format json` prints its session id while the run is
+     * still going. Every OTHER engine's run is bound to a session AFTERWARDS, by
+     * matching a transcript the index found on disk — which lands after the
+     * process has already exited, sometimes minutes later or after a restart.
+     * So at the exact moment a round is answered there is usually nothing to
+     * resume yet, and reading that as "there is no conversation" would kill the
+     * chain on its ordinary path — which is what it did.
+     *
+     * The round is still a ROW from this moment: created, visible, cancellable,
+     * and HELD until the binding lands (`launchBlock` → `round:binding`, released
+     * by `releaseRounds`).
+     */
+    awaitBinding: boolean;
     /** The moment it may start. Equal to `now` when the wait is zero. */
     notBefore: number;
     /** The minutes asked for, so the row can say what it is waiting out. */
@@ -107,19 +158,26 @@ export function roundOf(task: Pick<RoundedTask, 'round'>): number {
 /**
  * ‼️ WHY THERE IS NO NEXT ROUND, IN WORDS, when there could have been one.
  *
- * Returned only for the case that would otherwise be silent: rounds are
- * waiting and the run cannot be continued. Everything else (no rounds asked
- * for, the run failed, the chain is a workflow step) is either not a chain or
+ * Returned for the one case that is a real REFUSAL rather than a wait: the
+ * task is INTERACTIVE. A round resumes the conversation the round before it
+ * was answered in; resuming is a headless argument, and an interactive run
+ * opens a session in a terminal where continuing it is the Console's own
+ * Resume. Left unsaid, the rounds the user typed would become a row that
+ * fails at the spawn with a message nobody would connect to them.
+ *
+ * ‼️ A run whose conversation is not bound YET is NOT here. That is a wait,
+ * and it waits as a row (see `awaitBinding`). Everything else — no rounds asked
+ * for, the run failed, the chain is a workflow step — is either not a chain or
  * already visible on the board as what it is, and narrating it would fill the
  * event log with news that nothing happened.
  */
 export function refuseNextRound(task: RoundedTask): string | undefined {
     const rest = normalizeRounds(task.rounds);
     if (!rest.length || task.status !== 'done' || task.workflowId !== undefined) { return undefined; }
-    if (!String(task.runSessionId ?? '').trim()) {
-        return `round ${roundOf(task) + 1} of this task cannot be sent: no conversation is bound to `
-            + 'this run (see sessions.bindings), and a round is a reply — opening a NEW conversation '
-            + 'with a prompt written for the last one would answer nothing. '
+    if ((task.mode ?? 'headless') !== 'headless') {
+        return `round ${roundOf(task) + 1} of this task cannot be sent: a round is a reply into the `
+            + 'SAME conversation, and resuming one is a headless argument — this task opens a session '
+            + 'in a terminal, where the Console\'s own Resume continues it properly. '
             + `${rest.length} round(s) dropped.`;
     }
     return undefined;
@@ -136,17 +194,24 @@ export function refuseNextRound(task: RoundedTask): string | undefined {
  *     opens the next round. A cancelled run is a person saying stop, and
  *     continuing to send them prompts would be the opposite of that.
  *   · There is SOMETHING LEFT TO SAY. The last round ends the chain.
- *   · There is a CONVERSATION TO RESUME. See `refuseNextRound`.
+ *   · It is a HEADLESS run. See `refuseNextRound`.
  *   · It is NOT A WORKFLOW STEP. A step's "what happens next" belongs to the
  *     workflow, which already owns branching, verification and handoff; two
  *     mechanisms answering that question would race for the same task.
+ *
+ * ‼️ A BOUND CONVERSATION IS NOT ON THAT LIST, and that is the correction this
+ * function most needed. It used to be the fifth condition, and it is false for
+ * every engine but opencode at the exact moment it was asked — the binding is
+ * made afterwards, from a transcript on disk. So the chain died on its ordinary
+ * path. The round is planned anyway, with `awaitBinding` set, and the manager
+ * makes it a held row instead of a launch.
  */
 export function planNextRound(task: RoundedTask, now: number): NextRound | undefined {
     if (task.status !== 'done' || task.workflowId !== undefined) { return undefined; }
+    if ((task.mode ?? 'headless') !== 'headless') { return undefined; }
     const queue = normalizeRounds(task.rounds);
     if (!queue.length) { return undefined; }
     const resumeSessionId = String(task.runSessionId ?? '').trim();
-    if (!resumeSessionId) { return undefined; }
     const [head, ...rest] = queue;
     const delayMin = head.delayMin ?? 0;
     return {
@@ -154,9 +219,29 @@ export function planNextRound(task: RoundedTask, now: number): NextRound | undef
         round: roundOf(task) + 1,
         rest,
         resumeSessionId,
+        awaitBinding: !resumeSessionId,
         notBefore: now + delayMin * 60_000,
         delayMin
     };
+}
+
+/**
+ * ‼️ WHAT A CHAIN IS, IN ONE LINE, for the anatomy of a schedule, a trigger
+ * or a template — the list of what the run it makes was SET UP with.
+ *
+ * It belongs there beside the model and the retry policy for exactly the
+ * reason they are: an unattended run that goes three turns deep and one that
+ * answers once look identical on the row, and the difference is the whole
+ * point of the thing. Absent for a one-prompt run, like every other
+ * dimension nobody stated.
+ */
+export function describeRounds(rounds: TaskRound[] | undefined): string | undefined {
+    const list = normalizeRounds(rounds);
+    if (!list.length) { return undefined; }
+    const waits = list.filter(r => (r.delayMin ?? 0) > 0).length;
+    return `${list.length + 1} rounds — the prompt, then ${list.length} more sent into the `
+        + 'SAME conversation, each once the one before it has been ANSWERED'
+        + (waits ? ` (${waits} after a stated wait)` : '');
 }
 
 /**

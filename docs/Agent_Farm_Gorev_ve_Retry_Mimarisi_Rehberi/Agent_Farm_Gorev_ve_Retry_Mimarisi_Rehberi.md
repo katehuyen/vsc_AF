@@ -165,3 +165,40 @@ Form varsayılan olarak yalnızca **Tries**, **1st Wait** ve **Limit Reset** ona
 | **1. Gece uzun kodlama / refactor görevi** (Kota biterse sabah devam etsin) | • `Conversation: a new session`<br>• `Limit reset:` ☑️ İşaretli<br>• `What a retry is: smart`<br>• *Prompt kutuları: BOŞ* |
 | **2. Gündüz Console'da konuşulan işi arka planda bitirme** | • `Conversation: continue an existing conversation...` (Listeden seç)<br>• `Prompt:` "Tartıştığımız adımları tamamla."<br>• `Limit reset:` ☑️ İşaretli |
 | **3. Hata olursa sıfırdan farklı bir talimatla deneme** | • `What a retry is: simple`<br>• `Retry prompt:` "İlk denemede hata aldın, şimdi şu yöntemle baştan yap..." |
+| **4. Çok Adımlı Otomatik Süreç** (Analiz ➔ Kodlama ➔ Test ➔ Rapor) | • `Prompt:` "1. Adım: Kod tabanını analiz et."<br>• `+ another prompt (R2):` "2. Adım: Analiz raporuna göre refactor et." (wait: 0 dk)<br>• `+ another prompt (R3):` "3. Adım: Testleri çalıştır." (wait: 2 dk)<br>• `Mode: headless` |
+
+---
+
+## 8. Çok Turlu Görevler ve Otomatik Tur Zinciri (Multi-Round Tasks — M-27 & M-30)
+
+Gözetimsiz arka plan işlerinin en kritik ihtiyacı, **tek bir konuşma içinde sırayla birden fazla aşamayı yürütmektir**. Klasik sistemde "Önce tara, sonra kodu yaz, sonra testleri koş" işi için 3 ayrı görev açmak gerekiyordu; bu da 2. ve 3. görevlerin 1. görevin yaptıklarından tamamen habersiz, sıfır hafızayla uyanmasına yol açıyordu.
+
+**M-27 ile gelen Çok Turlu Görev Zinciri (Round Chain)** mimarisi bu sorunu kökten çözer:
+
+```
+[1. Tur Promptu] ──(Cevap Bitti)──► [2. Tur Promptu (R2)] ──(wait: N dk)──► [3. Tur Promptu (R3)]
+       │                                     │                                      │
+  (Yeni Oturum)                     (AYNI Konuşmaya Devam)                 (AYNI Konuşmaya Devam)
+```
+
+### Temel Çalışma Prensipleri
+
+1. **Ana Prompt = 1. Tur:** Formun en üstündeki standart `Prompt` kutusu zincirin başlangıcıdır.
+2. **Dinamik Tur Ekleme (`+ another prompt` / `+ Yeni Tur Ekle`):**
+   * Butona her basıldığında `R2`, `R3`, `R4`... şeklinde yeni tur satırları açılır.
+   * Her satırda o tura özel prompt metin kutusu, `wait: [N] min` gecikme süresi ve `✕` silme butonu yer alır.
+3. **Bağlamın Kesintisiz Korunması (`resumeSessionId`):**
+   * 1. tur tamamlandığı an sistem oturumun transkript kimliğini (`runSessionId`) yakalar.
+   * 2. tur, **aynı oturumu kaldığı yerden resume ederek** ajana iletilir. Ajan 1. turda okuduğu dosyaları, planladığı adımları ve hafızayı aynen bilerek çalışır.
+4. **Zamanlayıcı Değil Gerçek Görev Satırı (`notBefore`):**
+   * Turlar arasındaki bekleme süreleri (örneğin 10 dakika gecikme), bellekte uçucu bir `setTimeout` ile değil; kuyrukta `notBefore` zaman damgası taşıyan gerçek bir görev satırı (`Görev Adı · R2`) olarak yaşar.
+   * Bu sayede VS Code kapansa veya bilgisayar yeniden başlasa bile turlar kaybolmaz; vakti geldiğinde kaldığı dakikadan otomatik tetiklenir ve istenirse kullanıcı tarafından iptal edilebilir.
+5. **Retry ile Tur Ayrımı (Mühendislik Kuralı):**
+   * **Bir retry ASLA tur sayılmaz.** 2. tur çalışırken kota biter veya hata oluşursa, yapılan yeniden denemeler yine 2. turun sınırları içinde kalır ve turları tüketmez. Yalnızca başarıyla tamamlanan tur bir sonraki turun kapısını açar.
+6. **Zamanlanmış Görevler (Schedules) ve Şablon Entegrasyonu:**
+   * Çok turlu prompt zincirleri yalnızca anlık görevlerde değil; Daily (Günlük), Weekly (Haftalık) ve OnceAt (Belirli Tarih/Saat) Zamanlayıcılarında ve Görev Şablonlarında (Templates) da birebir desteklenir.
+7. **Runs Tablosunda Durum Göstergesi:**
+   * Zincirleme görevler Runs tablosunda `R1/4`, `R2/4`, `R3/4` şeklinde rozet taşır; üzerine gelindiğinde kalan turların süreleri ve durumları detaylı olarak okunur.
+8. **⚡ Superpowers Mühendislik Disiplini Seçimi (M-30):**
+   * Task ve Schedule oluştururken ajanın genel varsayılanına (`agentFarm.superpowersDefaults`) bağımlı kalmadan, göreve özel olarak **Superpowers** (TDD, sistematik hata ayıklama, kök neden analizi disiplin kancası) açılıp kapatılabilir.
+

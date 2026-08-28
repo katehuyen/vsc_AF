@@ -352,6 +352,44 @@ const variants = () => ([
             }, 'nt-start');
         }
     },
+    // ‼️ M-27 (V2) — THE SAME BLOCK ON A SCHEDULE, which is the case the
+    // item was actually written about and the one it did not reach: the editor
+    // was drawn here, what was typed into it was sent, and the save path threw
+    // it away — so a schedule set up with three prompts fired a one-prompt run
+    // every morning and looked exactly like one that had never been given any.
+    // The picture is of the state a person would have been looking at while
+    // that happened, and of the line that now names the kind ("Every firing
+    // sends this one prompt and stops").
+    {
+        id: 'tasks-rounds-schedule',
+        label: 'Tasks → a SCHEDULE set up to go three rounds of one conversation',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            // The kind picker is the door: the composer opens on a task and this is
+            // the control that moves it, which is exactly the gesture a person makes.
+            drive(r, { 'nt-kind': 'schedule' }, 'nt-kind');
+            drive(r, { 'nt-prompt': 'Sabah raporunu topla ve özetini yaz.' }, 'nt-prompt');
+            r.query('#nt-roundadd')[0].click();
+            r.query('#nt-roundadd')[0].click();
+            // Fired on `nt-title`, not on a round box: a textarea shows its CHILD
+            // TEXT and not its `.value`, so the form has to be re-read and
+            // repainted before the camera sees the typed words (see tasks-rounds).
+            // ‼️ Fired on `nt-mode`, which is one of the two controls a schedule
+            // form has that re-read the whole draft and repaint it. A textarea
+            // shows its CHILD TEXT and not its `.value`, so without a repaint the
+            // picture is of three placeholders (see tasks-rounds). `nt-start` does
+            // this on a task and does not exist here.
+            drive(r, {
+                'nt-title': 'sabah raporu',
+                'nt-mode': 'headless',
+                'nt-round-0': 'Geçen haftayla karşılaştır ve farkı söyle.',
+                'nt-roundw-0': '0',
+                'nt-round-1': 'Özeti not defterine yaz ve linkini döndür.',
+                'nt-roundw-1': '30'
+            }, 'nt-mode');
+        }
+    },
     {
         id: 'tasks-retry', label: 'Tasks → the New-task form, with a retry policy set',
         data: data(),

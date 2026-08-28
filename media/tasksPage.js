@@ -1780,13 +1780,39 @@
      * at all: three prompts meant three tasks, and the second of them woke up
      * knowing nothing about the first.
      *
-     * Drawn only for a run (a schedule and a trigger reach this through the
-     * task they make), and drawn EMPTY as a single line of prose with one
-     * button. A form that opens with a stack of empty round boxes would charge
-     * every ordinary one-prompt task for a feature it is not using — and a
-     * control with no referent is a bug (docs/CONVENTIONS.md).
+     * ‼️ DRAWN FOR EVERY KIND THAT RUNS, AND THAT IS THE POINT. A schedule is
+     * not a task that reaches this through a form somebody filled in — it
+     * carries its own prompt and makes the run itself, at 09:00, with nobody
+     * here. So "every morning, and when it answers ask it the next thing" is
+     * said HERE or it is not said at all. (It was drawn here and thrown away on
+     * the way to the store, which is worse than never offering it.)
+     *
+     * Drawn EMPTY as a single line of prose with one button. A form that opens
+     * with a stack of empty round boxes would charge every ordinary one-prompt
+     * run for a feature it is not using — and a control with no referent is a
+     * bug (docs/CONVENTIONS.md).
      */
     function roundsHtml(c) {
+        /**
+         * ‼️ INTERACTIVE CANNOT HAVE ROUNDS, and it says so where the boxes
+         * would be — the same treatment the Conversation and the retry pickers
+         * already get, for the same reason. A round RESUMES the conversation the
+         * round before it was answered in, resuming is a headless argument, and
+         * an interactive run opens a terminal instead. Left as a live editor,
+         * what the user typed was accepted, stored, and turned into a row that
+         * failed at the spawn with a message nobody would connect to it.
+         */
+        if (c.mode === 'interactive') {
+            return `<div class="ntf wide ntrounds"><span title="${C.esc(
+                'A round is one more prompt sent into the SAME conversation once the round before it has '
+                + 'been answered, which means RESUMING that conversation — and resuming is a headless '
+                + 'argument. An interactive run opens a real session in a terminal instead, where the next '
+                + 'thing to say is said by typing it, and the session\'s own Resume (Sessions page, or the '
+                + 'Console) picks it up later. Set Mode to headless and this becomes editable.'
+            )}">More rounds <em>headless only</em></span>
+                <div class="muted small">Not for an interactive run — it opens a session you type into.
+                    Rounds are for a run with nobody in front of it.</div></div>`;
+        }
         const rounds = Array.isArray(c.rounds) ? c.rounds : [];
         const rows = rounds.map((r, i) => {
             const n = i + 2;   // round 1 is the prompt box above
@@ -1810,16 +1836,30 @@
                 <button class="mini secondary" data-rnd="del" data-i="${i}" title="remove round ${n}">✕</button>
             </div>`;
         }).join('');
+        // ‼️ THE EMPTY LINE NAMES THE KIND IT IS SITTING IN. On a schedule the
+        // sentence that matters is "every firing is one prompt and then it
+        // stops" — which is the complaint the item was written about, and a
+        // reader who is told it in the abstract ("one prompt, one turn") does
+        // not connect it to the 09:00 job in front of them.
+        const each = c.kind === 'schedule' ? 'Every firing sends this one prompt and stops.'
+            : c.kind === 'trigger' ? 'Every time this fires it sends this one prompt and stops.'
+                : c.kind === 'template' ? 'Running this template sends one prompt and stops.'
+                    : 'One prompt, one turn.';
         return `<div class="ntf wide ntrounds"><span title="${C.esc(
             'A round is one prompt sent into the SAME conversation, once the round before it has '
             + 'been answered — so round 2 wakes up knowing everything round 1 did. Add as many as '
-            + 'the work needs; each becomes its own queued row when its turn comes.'
+            + 'the work needs; each becomes its own queued row when its turn comes, and each can '
+            + 'wait a stated number of minutes after the previous answer lands.'
+            + '\n\nThis is stated on the SCHEDULE (or trigger, or template) and not only on a '
+            + 'one-off task, because that is the case it exists for: a run that fires with nobody '
+            + 'here has no one to type the next thing.'
             + '\n\nA RETRY IS NOT A ROUND. A run that fails and is retried re-attempts the same '
             + 'round with the same words and consumes none of these; the retry that finally '
-            + 'succeeds is what opens the next one.')}">More rounds <em>optional</em></span>
+            + 'succeeds is what opens the next one.')}">More rounds <em>${rounds.length
+                ? C.esc(String(rounds.length + 1) + ' rounds in all') : 'optional'}</em></span>
             ${rounds.length ? `<div class="ntroundlist">${rows}</div>`
-                : `<div class="muted small">One prompt, one turn. Add a round to keep the same
-                    conversation going — the next prompt is sent once this one has been answered.</div>`}
+                : `<div class="muted small">${C.esc(each)} Add a round to keep the same conversation
+                    going — the next prompt is sent once this one has been answered.</div>`}
             <div class="ctl-row"><button class="secondary mini" id="nt-roundadd"
                 title="Add one more prompt to this conversation.">+ another prompt</button></div></div>`;
     }

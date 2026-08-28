@@ -237,6 +237,32 @@ function runPage(scriptFile, DATA, extraWindow) {
                 const are = /\b(value|type|class|id)="([^"]*)"/g;
                 while ((a = are.exec(raw))) { attrs[a[1]] = a[2]; }
                 if (/\bchecked\b/.test(raw)) { attrs.checked = true; }
+                /**
+                 * ‼️ A TEXTAREA HOLDS ITS VALUE IN ITS CHILD TEXT, NOT IN AN
+                 * ATTRIBUTE — so without this it came back EMPTY after every repaint.
+                 *
+                 * The trap it set was silent and it cost two form pictures: a
+                 * fixture types a prompt, the page repaints, the page reads its
+                 * own form back (`readComposer`) and gets "" for every textarea,
+                 * writes that into the draft, and repaints again — now the words
+                 * really are gone. Every `<input>` on the same form survived,
+                 * because an input DOES carry `value="…"`, so the picture looked
+                 * like a page that loses only its big boxes. It is not: it was
+                 * the shim, and every form fixture in this suite was exposed.
+                 */
+                if (tag === 'textarea') { if(raw.includes('nt-prompt')) console.error('DBG textarea branch hit');
+                    const doc = html();
+                    const at = doc.indexOf(raw);
+                    if (at >= 0) {
+                        const shut = doc.indexOf('</textarea>', at + raw.length);
+                        if (shut > 0) {
+                            attrs.value = doc.slice(at + raw.length, shut)
+                                .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+                                .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+                                .replace(/&amp;/g, '&');
+                        }
+                    }
+                }
                 el = mkEl(tag, dataset, attrs, raw);
                 if (attrs.id) { els[attrs.id] = el; }
                 elCache.set(raw, el);

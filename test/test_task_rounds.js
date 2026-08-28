@@ -102,16 +102,32 @@ const done = (over) => Object.assign({ status: 'done', runSessionId: 'sess-1' },
 }
 
 // ---------------------------------------------------------------------------
-// ‼️ there has to be a CONVERSATION, and the refusal is said out loud
+// ‼️ THE CONVERSATION IS NOT KNOWN YET, AND THAT IS A WAIT — NOT A REFUSAL
+//
+// This is the correction the feature most needed and the one that made it not
+// work at all. Only opencode publishes its session id while the run is going;
+// every other engine is bound to one AFTERWARDS, by matching a transcript the
+// index found on disk. So at the exact moment a round is answered there is
+// normally nothing to resume, and refusing there dropped the chain of every
+// Claude task ever given one — silently, with a note nobody would read.
 // ---------------------------------------------------------------------------
 {
-    const orphan = { status: 'done', round: 1, rounds: [{ prompt: 'a' }, { prompt: 'b' }] };
-    ok('‼️ no bound session, no round: round 2 sent into a NEW conversation would be a'
-        + ' prompt written for a context it does not have',
-        R.planNextRound(orphan, NOW) === undefined);
-    const why = R.refuseNextRound(orphan);
-    ok('…and that silence is the one case narrated, with the count that was dropped',
-        typeof why === 'string' && /round 2/.test(why) && /2 round\(s\) dropped/.test(why));
+    const unbound = { status: 'done', round: 1, rounds: [{ prompt: 'a' }, { prompt: 'b' }] };
+    const next = R.planNextRound(unbound, NOW);
+    ok('‼️ a round is still PLANNED when the run is not bound to a session yet —'
+        + ' that is the ordinary case for every engine but opencode',
+        !!next && next.round === 2 && next.prompt === 'a');
+    ok('…and it says so, rather than carrying an empty id that reads as "a new conversation"',
+        !!next && next.awaitBinding === true && next.resumeSessionId === '');
+    ok('…and the rest of the chain rides with it, so nothing is lost while it waits',
+        !!next && next.rest.length === 1 && next.rest[0].prompt === 'b');
+    ok('‼️ …and it is NOT narrated as a refusal: it is a row on the board that says'
+        + ' what it is waiting for',
+        R.refuseNextRound(unbound) === undefined);
+
+    const bound = R.planNextRound(done({ round: 1, rounds: [{ prompt: 'a' }] }), NOW);
+    ok('a run that IS bound resumes it at once, with nothing to wait for',
+        !!bound && bound.awaitBinding === false && bound.resumeSessionId === 'sess-1');
 
     ok('a chain that simply ran out is NOT narrated — nothing happened is not news',
         R.refuseNextRound(done({ round: 3, rounds: [] })) === undefined);
@@ -119,6 +135,41 @@ const done = (over) => Object.assign({ status: 'done', runSessionId: 'sess-1' },
         R.refuseNextRound({ status: 'failed', rounds: [{ prompt: 'a' }] }) === undefined);
     ok('…nor a chain that is about to run perfectly well',
         R.refuseNextRound(done({ rounds: [{ prompt: 'a' }] })) === undefined);
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ AN INTERACTIVE RUN IS THE ONE REAL REFUSAL
+//
+// A round RESUMES the conversation the round before it was answered in, and
+// resuming is a headless argument (`launch()` refuses it by name). Left
+// unsaid, the rounds someone typed became a row that failed at the spawn.
+// ---------------------------------------------------------------------------
+{
+    const chat = { status: 'done', mode: 'interactive', runSessionId: 'sess-1', round: 1,
+        rounds: [{ prompt: 'a' }, { prompt: 'b' }] };
+    ok('‼️ an interactive task opens no round, however well bound it is',
+        R.planNextRound(chat, NOW) === undefined);
+    const why = R.refuseNextRound(chat);
+    ok('…and THAT silence is broken, with the count that was dropped and the door'
+        + ' the user should have used',
+        typeof why === 'string' && /round 2/.test(why) && /2 round\(s\) dropped/.test(why)
+        && /headless/.test(why));
+    ok('…while an absent mode is headless, which is what every task the manager makes is',
+        !!R.planNextRound(done({ rounds: [{ prompt: 'a' }] }), NOW)
+        && !!R.planNextRound(done({ mode: 'headless', rounds: [{ prompt: 'a' }] }), NOW));
+}
+
+// ---------------------------------------------------------------------------
+// what a chain IS, on the row of the thing that was set up with one
+// ---------------------------------------------------------------------------
+{
+    ok('a one-prompt run says nothing about rounds, like every unstated dimension',
+        R.describeRounds(undefined) === undefined && R.describeRounds([]) === undefined);
+    const d = R.describeRounds([{ prompt: 'a' }, { prompt: 'b', delayMin: 30 }]);
+    ok('…and a chain says how many turns it goes in all, counting the prompt itself',
+        typeof d === 'string' && /^3 rounds/.test(d));
+    ok('…and how many of them wait, which is the part a count cannot show',
+        typeof d === 'string' && /1 after a stated wait/.test(d));
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +302,82 @@ const done = (over) => Object.assign({ status: 'done', runSessionId: 'sess-1' },
         /normalizeRounds\(args\.rounds\)/.test(ext));
     ok('…and the op says what it takes and reads it back',
         /rounds\? \(‼️ M-27/.test(ext) && /roundsLeft: \(task\.rounds \?\? \[\]\)/.test(ext));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ THE SEAM: a round WAITS for its conversation instead of being killed by it
+// ---------------------------------------------------------------------------
+{
+    const fs2 = require('fs');
+    const src = fs2.readFileSync(path.join(__dirname, '..', 'src', 'core', 'tasks.ts'), 'utf8');
+
+    const open = src.slice(src.indexOf('private openNextRound'),
+        src.indexOf('private releaseRounds'));
+    ok('‼️ an unbound run still makes a ROW, naming the run it is waiting for',
+        /roundAwaits: task\.id/.test(open));
+    ok('‼️ …and the row is PARKED in the same write, never seen unparked for one pass',
+        /row\.deferredCode = ROUND_BINDING_CODE/.test(open)
+        && /noteTaskEvent\(row, 'parked'/.test(open));
+    ok('…while a bound one resumes at once, exactly as before',
+        /resumeSessionId: next\.resumeSessionId/.test(open));
+
+    const rel = src.slice(src.indexOf('private releaseRounds'),
+        src.indexOf('private maybeScheduleRetry'));
+    ok('‼️ the release is RE-DERIVED from the store, so it is right after a restart'
+        + ' and in a window that never saw the binding land',
+        /t\.roundAwaits/.test(rel) && /prev\.runSessionId/.test(rel)
+        && /t\.resumeSessionId = sid/.test(rel));
+    ok('…and a round whose run is gone ENDS rather than waiting for ever',
+        /the run this round replies to is gone/.test(rel));
+    ok('…and it is asked from the pump as well as from the binding',
+        /this\.releaseRounds\(\);/.test(src.slice(src.indexOf('private pump(): void'),
+            src.indexOf('private launch(task: FarmTask)')))
+        && /if \(p\.sessionId && this\.releaseRounds\(\)\)/.test(src));
+
+    const block2 = src.slice(src.indexOf('private launchBlock'), src.indexOf('private recordBlock'));
+    ok('‼️ …and until it lands the pump HOLDS it, under the same code the row was'
+        + ' parked with — two spellings would announce a park every 30 seconds',
+        /task\.roundAwaits && !task\.resumeSessionId/.test(block2)
+        && /code: ROUND_BINDING_CODE/.test(block2));
+
+    // ---- the automations, which is where the item's actual case lives -----
+    ok('‼️ AN AUTOMATION CARRIES THE CHAIN. A schedule makes its run itself, at'
+        + ' 09:00, with nobody here — so a chain is stated on IT or not at all,'
+        + ' and it was drawn on the form and thrown away on the way to the store',
+        /rounds\?: TaskRound\[\];/.test(src.slice(src.indexOf('export interface RunDimensions'),
+            src.indexOf('export function runExtras'))));
+    const extras = src.slice(src.indexOf('export function runExtras'), src.indexOf('export type ScheduleKind'));
+    ok('…cleaned on the way through, by the same function the form and the bridge use',
+        /const rounds = normalizeRounds\(d\.rounds\)/.test(extras)
+        && /r\.rounds = rounds/.test(extras));
+
+    const panel = fs2.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'tasksPanel.ts'), 'utf8');
+    ok('‼️ …and the plan form SAVES it, which is the line whose absence made the'
+        + ' whole feature unreachable from a schedule',
+        /rounds: normalizeRounds\(item\.rounds\)\.length \? normalizeRounds\(item\.rounds\) : undefined/
+            .test(panel));
+    ok('…and gives it back when the schedule is opened again',
+        /rounds: normalizeRounds\(s\.rounds\)/.test(panel)
+        && /rounds: normalizeRounds\(dims\.rounds\)/.test(panel));
+    ok('…and the row says how deep the run goes, beside the model and the retry policy',
+        /label: 'Rounds', value: r/.test(panel));
+
+    const bridge = fs2.readFileSync(path.join(__dirname, '..', 'src', 'core', 'bridge.js'
+        .replace('.js', '.ts')), 'utf8');
+    ok('‼️ …and so does the bridge, in one place, so every op that takes run'
+        + ' dimensions takes a chain too',
+        /out\.rounds = rounds;/.test(bridge) && /ROUNDS_NOTE/.test(bridge));
+    ok('…refused on an interactive run rather than stored and quietly never used',
+        /rounds are sent into the SAME conversation/.test(bridge));
+
+    const page = fs2.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
+    ok('‼️ …and the form says so where the boxes would be on an interactive run,'
+        + ' the same treatment the Conversation picker already gets',
+        /INTERACTIVE CANNOT HAVE ROUNDS/.test(page)
+        && /More rounds <em>headless only<\/em>/.test(page));
+    ok('…and the empty line names the kind it is sitting in, so a schedule reader'
+        + ' connects it to the 09:00 job in front of them',
+        /Every firing sends this one prompt and stops\./.test(page));
 }
 
 console.log(`${pass} passed, ${fail} failed`);
