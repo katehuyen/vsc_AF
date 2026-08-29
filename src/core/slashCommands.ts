@@ -231,6 +231,49 @@ export function narrowSlash(list: SlashCommand[], q?: string): SlashCommand[] {
     return list.filter(hit);
 }
 
+/** What the composer is asking, if it is asking. */
+export interface SlashQueryAt {
+    /** Where the `/` is, so an accepted command can replace from there. */
+    start: number;
+    /** What has been typed after it — '' the instant `/` is pressed. */
+    q: string;
+}
+
+/**
+ * ‼️ K-30 GROUNDWORK — IS THERE A SLASH QUERY UNDER THE CARET, AND WHAT IS IT?
+ *
+ * The picker opens on a `/` typed in the composer, and "typed a slash" is not
+ * the same question as "the text contains a slash". The rules this encodes, all
+ * of them cases a naive `startsWith('/')` gets wrong:
+ *
+ * - **A command starts a WORD.** `/model` at the start of the box, or after a
+ *   space or a newline. `http://x` and `and/or` are not commands, and a picker
+ *   that opened on a pasted URL would be a picker people learn to dismiss.
+ * - **Only under the caret.** A `/model` on line one is not a live query while
+ *   the person is typing a paragraph on line four; the query is the token the
+ *   caret is INSIDE.
+ * - **A space ends it.** `/model opus` is a command with an argument, not a
+ *   search for "model opus" — once the name is complete the picker's job is
+ *   done and the argument is the user's own text.
+ *
+ * Pure and caret-based so it can be tested without a DOM: the page owns the
+ * box, this owns the rule, and the two cannot disagree about when the overlay
+ * should be open.
+ */
+export function slashQueryAt(text: string, caret: number): SlashQueryAt | undefined {
+    const at = Math.max(0, Math.min(caret, text.length));
+    const before = text.slice(0, at);
+    const slash = before.lastIndexOf('/');
+    if (slash < 0) { return undefined; }
+    // …at the start of a word, or it is a path, a fraction or a URL.
+    if (slash > 0 && !/[\s]/.test(before[slash - 1])) { return undefined; }
+    const q = before.slice(slash + 1);
+    // A space closes the name: what follows is the command's argument, and the
+    // picker has nothing left to narrow.
+    if (/\s/.test(q)) { return undefined; }
+    return { start: slash, q };
+}
+
 /**
  * ‼️ K-29 — MERGING WHAT A SESSION REPORTS INTO WHAT IT ALREADY REPORTED.
  *

@@ -160,6 +160,39 @@ const find = (list, n) => list.find(c => c.name === n);
         S.mergeReported([], ['z', 'a', 'm']).join() === 'z,a,m');
 }
 
+// ---------- K-30 groundwork: when is the box actually ASKING? ----------
+//
+// "Typed a slash" is not "the text contains a slash", and every case below is
+// one a naive startsWith('/') gets wrong — a picker that opens on a pasted URL
+// is a picker people learn to dismiss rather than to use.
+{
+    const at = (t, c) => S.slashQueryAt(t, c === undefined ? t.length : c);
+    eq('a bare slash is a query with nothing typed yet', at('/'), { start: 0, q: '' });
+    eq('…and what follows it is the query', at('/mod'), { start: 0, q: 'mod' });
+    eq('a slash after a space starts one too', at('please /com'), { start: 7, q: 'com' });
+    eq('…and after a newline', at('line one\n/com'), { start: 9, q: 'com' });
+    ok('nothing typed at all is not a query', !at(''));
+    ok('plain text is not a query', !at('hello there'));
+    // ‼️ NOT A COMMAND: a URL, a path and a fraction all contain a slash and
+    // none of them is somebody reaching for the picker.
+    ok('‼️ a URL is not a command', !at('see http://x.dev/page'));
+    ok('‼️ a path is not a command', !at('open src/core/launch.ts'));
+    ok('‼️ and neither is a fraction', !at('and/or'));
+    // ‼️ A SPACE ENDS THE NAME. What follows is the command's argument and the
+    // picker has nothing left to narrow.
+    ok('‼️ once the name is complete the query is over', !at('/model opus'));
+    // ‼️ ONLY UNDER THE CARET. A command on line one is not a live query while
+    // a paragraph is being typed on line four.
+    ok('a slash the caret has moved away from is not a live query',
+        !at('/model\nnow some prose', 'model\nnow some prose'.length + 1));
+    eq('…while the caret still inside it is', at('/model', 4), { start: 0, q: 'mod' });
+    eq('a caret past the end is clamped rather than throwing', at('/mod', 999), { start: 0, q: 'mod' });
+    eq('…and a negative one too', at('/mod', -5), undefined);
+    // The start is what an accepted command replaces from — the answer is
+    // useless without it.
+    eq('the query says where to replace from', at('type /gi').start, 5);
+}
+
 // ---------- the disk half is the TOOLBOX's reader, not a second one ----------
 {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-slash-'));
