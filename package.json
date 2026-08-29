@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.307.0",
+  "version": "3.308.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8509,7 +8509,7 @@
           "default": {
             "minutes": 3,
             "repeat": 2,
-            "voice": "tick-dry"
+            "voice": "af_subtle_alert"
           },
           "properties": {
             "minutes": {
@@ -8522,39 +8522,39 @@
             },
             "voice": {
               "type": "string",
-              "description": "Which tone the reminder uses — deliberately its own, and lighter than the alert you already missed, because a second identical chime reads as a second question. Default: tick-dry. A tone this machine cannot play falls back to the event's own voice rather than going silent."
+              "description": "Which tone the reminder uses — deliberately its own, and lighter than the alert you already missed, because a second identical chime reads as a second question. Default: af_subtle_alert, the thinnest voice in the set. A tone this machine cannot play falls back to the event's own voice rather than going silent."
             }
           }
         },
         "agentFarm.alerts.voices": {
           "type": "object",
-          "description": "Which sound each event plays. Leave one empty and it uses its built-in default — 'turn-ready' and 'question' deliberately differ, so the two can be told apart from another room without configuring anything. Built-in ids: chime-soft · chime-bright · ask-double · ask-rise · low-pulse · tick-dry · bell-far · close-fall · error-buzz · alarm-urgent, plus any of your own (`u-…`). A voice whose file is missing does not silence the alert: it falls through to the next answer and reports the step it passed over.",
+          "description": "Which sound each event plays. Leave one empty and it uses its built-in default — 'turn-ready' and 'question' deliberately differ, so the two can be told apart from another room without configuring anything. Twenty built-ins in two families: the modern ten, each built from a different physical object and the ones the defaults come from — af_crystal_turn · af_intercom_knock · af_zen_chime · af_deep_sonar · af_lullaby_sleep · af_marimba_success · af_pop_advance · af_subtle_alert · af_bell_urgent · af_pulse_start; and the earlier ten, kept so that nobody who chose one loses it — chime-soft · chime-bright · ask-double · ask-rise · low-pulse · tick-dry · bell-far · close-fall · error-buzz · alarm-urgent. Plus any of your own (`u-…`). A voice whose file is missing does not silence the alert: it falls through to the next answer and reports the step it passed over.",
           "default": {},
           "properties": {
             "turn-ready": {
               "type": "string",
-              "default": "chime-soft",
-              "description": "Voice for a finished turn. Default: chime-soft."
+              "default": "af_crystal_turn",
+              "description": "Voice for a finished turn. Default: af_crystal_turn — struck glass, a settled gesture that does not rise."
             },
             "question": {
               "type": "string",
-              "default": "ask-double",
-              "description": "Voice for an agent asking you something. Default: ask-double."
+              "default": "af_intercom_knock",
+              "description": "Voice for an agent asking you something. Default: af_intercom_knock — a knuckle on a panel, twice. Almost no pitch, so it is told apart from every chime by texture, which is what carries across a room."
             },
             "stalled": {
               "type": "string",
-              "default": "low-pulse",
-              "description": "Voice for a stalled session. Default: low-pulse."
+              "default": "af_deep_sonar",
+              "description": "Voice for a stalled session. Default: af_deep_sonar — a ping that falls while it rings, over a low body that outlasts it."
             },
             "ended": {
               "type": "string",
-              "default": "close-fall",
-              "description": "Voice for a closed session. Default: close-fall."
+              "default": "af_marimba_success",
+              "description": "Voice for a closed session. Default: af_marimba_success — wood, two notes up a fifth."
             },
             "error": {
               "type": "string",
-              "default": "error-buzz",
-              "description": "Voice for a critical error. Default: error-buzz."
+              "default": "af_bell_urgent",
+              "description": "Voice for a critical error. Default: af_bell_urgent — three strikes that accelerate and rise. The tempo carries the urgency, so it does not have to be a buzzer people learn to hate and then switch off."
             }
           }
         },

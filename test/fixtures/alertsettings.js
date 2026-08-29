@@ -66,29 +66,35 @@ const GATE_OPEN = {
 const SOUNDS = 'c:\\Users\\rotam\\.vscode\\extensions\\muvusoft.agent-farm\\media\\sounds';
 const MINE = 'D:\\zone\\media\\sounds';
 
-const BUILTIN = [
-    ['chime-soft', 'Chime, soft', 'turn-ready.wav'],
-    ['chime-bright', 'Chime, bright', 'chime-bright.wav'],
-    ['ask-double', 'Ask — two knocks', 'ask-double.wav'],
-    ['ask-rise', 'Ask — rising', 'ask-rise.wav'],
-    ['low-pulse', 'Low pulse', 'low-pulse.wav'],
-    ['tick-dry', 'Tick, dry', 'tick-dry.wav'],
-    ['bell-far', 'Bell, distant', 'bell-far.wav'],
-    ['close-fall', 'Close — falling', 'close-fall.wav'],
-    ['error-buzz', 'Error buzz', 'error-buzz.wav'],
-    ['alarm-urgent', 'Alarm, urgent', 'alarm-urgent.wav']
-].map(([id, label, asset]) => ({
-    id, label, file: SOUNDS + '\\' + asset, builtin: true,
+/**
+ * ‼️ A-20 — THE VOICES AND THE DEFAULTS ARE READ FROM THE CORE, NOT RESTATED.
+ *
+ * This list used to be typed out here, and A-20 is exactly the change that
+ * proves why that is wrong: the ten modern voices arrived, all five defaults
+ * moved, and the fixture went on drawing the old ones. A picture that is the
+ * only check on how the page LOOKS cannot be allowed to show a page that no
+ * longer exists — every string test passed while the screenshot lied.
+ */
+const V = require('../../out/core/alertVoices.js');
+const T = require('../../out/core/turnAlerts.js');
+
+const BUILTIN = V.builtinVoices(SOUNDS.replace(/\\/g, '/')).map(v => ({
+    ...v, file: v.file.replace(/\//g, '\\'),
     exists: true, playable: true, backend: 'powershell'
 }));
 
-const FALLBACK = {
-    'turn-ready': 'chime-soft', question: 'ask-double', stalled: 'low-pulse',
-    ended: 'close-fall', error: 'error-buzz'
-};
+const FALLBACK = V.DEFAULT_VOICE;
 
-/** The library the user built. One of them is an `.aiff` — a real file, and
- *  nothing on Windows opens it, which the row has to say rather than offer. */
+/** What this platform's players declare, from the one table they are built
+ *  from — so the card's "any file this machine can play" line is the truth. */
+const FORMATS = [...new Set(
+    T.soundCandidates('win32', '').flatMap(c => [...c.formats])
+)].sort();
+
+/** The library the user built. One of them is a `.mid` — a real file, and
+ *  nothing on Windows opens it, which the row has to say rather than offer.
+ *  (It used to be an `.aiff`; A-20 gave Windows an ffmpeg route that opens
+ *  those, so the example had to move to something still genuinely refused.) */
 const CUSTOM = [
     {
         id: 'u-kapi-zili', label: 'Kapı zili', file: MINE + '\\kapi-zili.mp3',
@@ -99,7 +105,7 @@ const CUSTOM = [
         builtin: false, exists: true, playable: true, backend: 'powershell'
     },
     {
-        id: 'u-studio-take', label: 'Studio take', file: MINE + '\\studio-take.aiff',
+        id: 'u-studio-take', label: 'Studio take', file: MINE + '\\studio-take.mid',
         builtin: false, exists: true, playable: false, backend: null
     }
 ];
@@ -125,7 +131,7 @@ const page = (on, chosen, voices, skips, gate) => ({
     gate: gate || GATE_OPEN,
     folder: 'c:\\Users\\rotam\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm\\sounds',
     limit: 10,
-    formats: ['m4a', 'mp3', 'ogg', 'wav', 'wma'],
+    formats: FORMATS,
     sessionEvents: ['turn-ready', 'question'],
     voices,
     events: ['turn-ready', 'question', 'stalled', 'ended', 'error']
@@ -158,14 +164,14 @@ const inUse = () => base(
  *     so THE ALERT STILL RINGS — a wrong sound is fixable, silence is not.
  *   - `turn-ready` points at a format nothing on Windows opens. Same
  *     fall-through, different sentence.
- *   - `error` is armed and its built-in `error-buzz` IS ITSELF GONE — a partial
+ *   - `error` is armed and the built-in it falls back to IS ITSELF GONE — a partial
  *     update, the one case where the chain runs out of steps and the event
  *     really would be silent. This is the state the badge has to shout about.
  */
 const broken = () => base(
     { 'turn-ready': true, question: true, stalled: true, error: true },
     { question: 'u-kapi-zili', 'turn-ready': 'u-studio-take' },
-    BUILTIN.map(v => v.id === 'error-buzz'
+    BUILTIN.map(v => v.id === V.DEFAULT_VOICE.error
         ? { ...v, exists: false, playable: false, backend: null } : v).concat([
         { ...CUSTOM[0], exists: false, playable: false, backend: null },
         CUSTOM[1], CUSTOM[2]

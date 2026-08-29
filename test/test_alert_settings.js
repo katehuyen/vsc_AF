@@ -28,6 +28,11 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));
+// ‼️ THE DEFAULTS ARE READ, NOT TYPED OUT. A-20 moved all five of them and
+// these assertions went on naming the old ones — a test that hardcodes what it
+// is checking stops checking anything the day the answer changes.
+const VOICES = require(path.join(ROOT, 'out', 'core', 'alertVoices.js'));
+const LABEL = id => (VOICES.builtinVoices('x').find(v => v.id === id) || {}).label;
 const fx = require(path.join(__dirname, 'fixtures', 'alertsettings.js'));
 
 const open = (data) => runPage(fx.script, data);
@@ -68,16 +73,26 @@ const byAttr = (p, attr, key) =>
     const p = open(fx.fresh());
     const html = p.html();
     ok('‼️ nothing chosen still names a sound per row — `{}` said nothing at all',
-        /Chime, soft/.test(html) && /Ask — two knocks/.test(html)
-        && /Low pulse/.test(html) && /Close — falling/.test(html) && /Error buzz/.test(html));
+        VOICES.ALERT_EVENTS.every(e => html.indexOf(LABEL(VOICES.DEFAULT_VOICE[e])) >= 0));
     ok('…and says the answer came from the built-in default',
         (html.match(/the built-in default/g) || []).length >= 5);
     ok('‼️ the two the item was opened for are DIFFERENT sounds out of the box —'
         + ' hearing them apart from another room without configuring anything'
         + ' was the user\'s own condition',
-        byAttr(p, 'alertplay', 'chime-soft') && byAttr(p, 'alertplay', 'ask-double'));
+        byAttr(p, 'alertplay', VOICES.DEFAULT_VOICE['turn-ready'])
+        && byAttr(p, 'alertplay', VOICES.DEFAULT_VOICE.question)
+        && VOICES.DEFAULT_VOICE['turn-ready'] !== VOICES.DEFAULT_VOICE.question);
     ok('the picker offers the default as a NAMED option, not as a blank',
-        /Default — Chime, soft/.test(html));
+        html.indexOf('Default — ' + LABEL(VOICES.DEFAULT_VOICE['turn-ready'])) >= 0);
+    // ‼️ AND BOTH FAMILIES ARE ON OFFER, UNDER THEIR OWN HEADINGS. Twenty
+    // built-ins in a flat list make the reader read every label to discover
+    // there were two sets — the ten the defaults come from, and the ten kept
+    // only so that nobody who chose one loses it in an upgrade.
+    ok('the picker groups the two built-in families rather than listing twenty',
+        /optgroup label="Built in"/.test(html)
+        && /optgroup label="Built in — earlier set"/.test(html));
+    ok('…and every built-in voice really is offered somewhere in it',
+        VOICES.builtinVoices('x').every(v => html.indexOf('>' + v.label) >= 0));
     ok('nothing armed says so rather than showing a count of zero',
         /nothing armed — every event is off/.test(html));
 
@@ -110,7 +125,7 @@ const byAttr = (p, attr, key) =>
     ok('‼️ …and when even the BUILT-IN behind it is gone — a partial update —'
         + ' the chain runs out of steps and the row says the event would be'
         + ' SILENT, which is the one state nothing else can reveal',
-        /data-alertplay="error-buzz" disabled/.test(html));
+        html.indexOf('data-alertplay="' + VOICES.DEFAULT_VOICE.error + '" disabled') >= 0);
     ok('a format nothing here opens says THAT instead',
         /nothing here plays it/.test(html));
 }
@@ -138,10 +153,11 @@ const byAttr = (p, attr, key) =>
         + ' different answers and only one survives a version that changes it',
         last(p).voice === '');
 
-    byAttr(p, 'alertplay', 'low-pulse').dispatchEvent(new p.sandbox.Event('click'));
+    const stalled = VOICES.DEFAULT_VOICE.stalled;
+    byAttr(p, 'alertplay', stalled).dispatchEvent(new p.sandbox.Event('click'));
     ok('▶ posts alertPlay with the voice id — the RESOLVED one, so the button'
         + ' plays what the event would actually make, not what was typed',
-        last(p).type === 'alertPlay' && last(p).voice === 'low-pulse');
+        last(p).type === 'alertPlay' && last(p).voice === stalled);
 
     p.sandbox.document.getElementById('alertadd')
         .dispatchEvent(new p.sandbox.Event('click'));

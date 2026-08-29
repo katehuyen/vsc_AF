@@ -1589,7 +1589,12 @@
      *  is NOT the same as silence and must never read as it. */
     function alertVoiceSelect(al, row) {
         const opt = v => `<option value="${C.esc(v.id)}"${v.id === row.chosen ? ' selected' : ''}${v.playable ? '' : ' disabled'}>${C.esc(v.label)}${v.playable ? '' : (v.exists ? ' — not playable here' : ' — file missing')}</option>`;
-        const builtin = (al.voices || []).filter(v => v.builtin);
+        // ‼️ A-20 — TWENTY BUILT-INS ARE TWO FAMILIES, AND THE LIST SAYS SO.
+        // Flat, the reader has to read every label to discover there were two
+        // sets: the ten the defaults come from, built from different physical
+        // objects, and the ten kept only so that nobody who CHOSE one loses it.
+        const modern = (al.voices || []).filter(v => v.builtin && v.family !== 'classic');
+        const classic = (al.voices || []).filter(v => v.builtin && v.family === 'classic');
         const mine = (al.voices || []).filter(v => !v.builtin);
         // MIRROR — the box is narrow enough to cut its own text, so its
         // tooltip opens with what it is set to right now.
@@ -1598,7 +1603,8 @@
             + `\n\nWhich sound this event plays for every session. Clearing it does not mute the event: it falls back to the built-in default.`);
         return `<select data-alertvoice="${C.esc(row.event)}" title="${C.esc(tip)}">
             <option value=""${row.chosen ? '' : ' selected'}>Default — ${C.esc(alertVoiceName(al, row.fallback))}</option>
-            <optgroup label="Built in">${builtin.map(opt).join('')}</optgroup>
+            ${modern.length ? `<optgroup label="Built in">${modern.map(opt).join('')}</optgroup>` : ''}
+            ${classic.length ? `<optgroup label="Built in — earlier set">${classic.map(opt).join('')}</optgroup>` : ''}
             ${mine.length ? `<optgroup label="Your own">${mine.map(opt).join('')}</optgroup>` : ''}
         </select>`;
     }

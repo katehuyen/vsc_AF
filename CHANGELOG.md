@@ -2,6 +2,62 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.308.0 - A-20: ten sounds that are ten different objects (2026-08-29)
+
+The second part of A-20 — the palette. The nine tones A-18 generated are one
+mechanism heard nine ways: a sine, an octave above it, and a decay. From the
+next room they are recognisably relatives, and telling "your turn" from "it is
+asking you" while doing something else was the condition this whole feature was
+opened for.
+
+**So the ten new ones are ten different OBJECTS.** The partials of a real thing
+are not a harmonic series, and that — not the envelope — is what makes wood
+sound like wood: a marimba bar rings at 1 : 3.9 : 9.2, a tubular bell at
+1 : 2.76 : 5.40. Three new instruments in the generator (a struck body with
+arbitrary partial ratios, a pitch glide whose phase is integrated so it does not
+click, and a seeded noise transient) make: **Crystal** · **Intercom knock** ·
+**Zen bowl** · **Deep sonar** · **Lullaby** · **Marimba** · **Pop** ·
+**Thin ticks** · **Bell, urgent** · **Pulse**.
+
+**And they are measured, because nobody can listen to them in a review.**
+`node tools/make_alert_sounds.js --stats` prints each voice's length,
+brightness and body, and checks the pairs that carry the feature. The two
+defaults — Crystal for a finished turn, Intercom knock for a question — sit a
+factor of **4.7 apart in brightness** and differ as much again in body: one is
+struck glass, the other a knuckle on a panel with almost no pitch at all. That
+is a difference you hear through a closed door, which a difference of melody is
+not.
+
+**All five defaults changed, and that is said out loud rather than shipped
+quietly.** A default nobody hears is not a delivery. What is safe about it:
+alerts ship OFF, so anybody hearing anything has been to the settings page
+already; and a voice you CHOSE lives a step above the default in the chain and
+is untouched. Only "sound on, never picked a voice" moves.
+
+**The earlier ten stay, under their own heading in the picker.** A set that
+disappears in an upgrade takes a setting with it. `chime-soft` still points at
+`turn-ready.wav` — the exact bytes every install already makes.
+
+**A label names the SOUND, never an event.** The first cut of these read
+"Crystal — your turn", which is a lie the moment somebody picks it for `error`,
+and which the picker cut off anyway.
+
+**`verify_vsix` now looks inside `media/sounds/`.** It never did: it read
+`media/` and stopped. A voice the archive does not carry is not a blank panel
+somebody notices in a second — it is an alert that never plays, on a feature
+whose whole purpose is to be heard from another room, while the settings page
+still offers it by name. The list is derived from the compiled core, so a voice
+added there and forgotten in `.vscodeignore` is caught here rather than by a
+user. The test suite also checks every committed `.wav` is byte-identical to
+what the generator produces: the character of each voice is supposed to be a
+line of code somebody can read and argue with, and that is only worth anything
+while the two agree.
+
+**The settings fixture reads the core instead of restating it.** This release
+is the proof of why: ten voices arrived, five defaults moved, and the fixture
+went on drawing the old ones — every string test passed while the screenshot
+lied about a page that no longer existed.
+
 ## 3.307.0 - A-20: the Windows alert was arriving eight seconds late (2026-08-29)
 
 The first of three parts of A-20 — the player itself, before the sounds it

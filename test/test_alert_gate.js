@@ -314,7 +314,7 @@ const arbiterTests = async () => {
 const nudgeTests = () => {
     const cfg = G.nudgeConfig({ minutes: 3, repeat: 2 });
     ok('the nudge config is read whole', cfg.minutes === 3 && cfg.repeat === 2
-        && cfg.voice === 'tick-dry');
+        && cfg.voice === 'af_subtle_alert');
     ok('‼️ …and CLAMPED UP off the floor — an unclamped 0.05 in somebody\'s'
         + ' settings is a chime every three seconds, and "off" has to be said'
         + ' rather than typo\'d into',
@@ -323,7 +323,8 @@ const nudgeTests = () => {
         && G.nudgeConfig({ minutes: 9999, repeat: 9999 }).repeat === 20);
     ok('0 minutes is off, and says so as a number rather than a special case',
         G.nudgeConfig({ minutes: 0 }).minutes === 0);
-    ok('rubbish falls back to the default tone', G.nudgeConfig({ voice: '  ' }).voice === 'tick-dry');
+    ok('rubbish falls back to the default tone',
+        G.nudgeConfig({ voice: '  ' }).voice === 'af_subtle_alert');
 
     const EVERY = 3 * 60_000;
     const st = new G.NudgeStore();

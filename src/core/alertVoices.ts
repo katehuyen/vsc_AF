@@ -50,27 +50,71 @@ export interface AlertVoice {
     /** Absolute path, once resolved against wherever the sounds live. */
     file: string;
     builtin: boolean;
+    /**
+     * ‼️ A-20 — WHICH FAMILY A BUILT-IN VOICE BELONGS TO.
+     *
+     * There are two, and a flat list of twenty would hide that: the `modern`
+     * ten are built from the physics of different objects (glass, wood, a
+     * knuckle on a panel, a sweep) and are the defaults; the `classic` ten are
+     * one mechanism heard ten ways and are kept because somebody may have
+     * chosen one. A picker that does not group them makes the reader read all
+     * twenty labels to find out there were two sets.
+     */
+    family?: 'modern' | 'classic';
 }
 
 /**
- * ‼️ THE TEN, AND `chime-soft` IS THE ONE THAT ALREADY SHIPPED.
+ * ‼️ NINETEEN VOICES IN TWO FAMILIES, AND THE ORDER IS THE ANSWER TO "WHICH
+ * ONE SHOULD I PICK?"
  *
- * Its file is `turn-ready.wav`, not `chime-soft.wav`, because that is the sound
- * every current install already makes: renaming the asset would have changed
- * the alert of every user who never asked for it, and a "nicer" replacement
- * would have done it silently. The id is new; the bytes are the committed ones.
+ * **The modern ten (A-20) come first and are the defaults.** They are not ten
+ * more chimes: each is built from the physics of a different object — struck
+ * glass, a marimba bar, a knuckle on a panel, a falling sweep — because the
+ * condition the user set for this whole feature was telling "your turn" from
+ * "it is asking you" from another room WITHOUT configuring anything, and ten
+ * envelopes on one sine wave cannot do that. Measured with
+ * `tools/make_alert_sounds.js --stats`, the two defaults sit a factor of 4.7
+ * apart in brightness.
+ *
+ * Four of them name events the fleet does not emit yet (`sleep`, `advance`,
+ * `start`, and a distinct `success`). They are selectable anyway — a palette
+ * is chosen from, not consumed — and the events they are waiting for are their
+ * own backlog item rather than something invented here.
+ *
+ * **The classic ten (A-18) stay, and none of them is regenerated.** They are
+ * one mechanism heard ten ways, and they are here because somebody may have
+ * CHOSEN one: a set that disappears in an upgrade takes a setting with it.
+ * `chime-soft` in particular keeps pointing at `turn-ready.wav` rather than a
+ * file of its own name — those are the bytes every install already makes, and
+ * replacing them, even with something nicer, would change the alert of a user
+ * who never asked.
  */
-const BUILTIN: { id: string; label: string; asset: string }[] = [
-    { id: 'chime-soft', label: 'Chime, soft', asset: 'turn-ready.wav' },
-    { id: 'chime-bright', label: 'Chime, bright', asset: 'chime-bright.wav' },
-    { id: 'ask-double', label: 'Ask — two knocks', asset: 'ask-double.wav' },
-    { id: 'ask-rise', label: 'Ask — rising', asset: 'ask-rise.wav' },
-    { id: 'low-pulse', label: 'Low pulse', asset: 'low-pulse.wav' },
-    { id: 'tick-dry', label: 'Tick, dry', asset: 'tick-dry.wav' },
-    { id: 'bell-far', label: 'Bell, distant', asset: 'bell-far.wav' },
-    { id: 'close-fall', label: 'Close — falling', asset: 'close-fall.wav' },
-    { id: 'error-buzz', label: 'Error buzz', asset: 'error-buzz.wav' },
-    { id: 'alarm-urgent', label: 'Alarm, urgent', asset: 'alarm-urgent.wav' }
+const BUILTIN: { id: string; label: string; asset: string; family: 'modern' | 'classic' }[] = [
+    // ‼️ A LABEL NAMES THE SOUND, NEVER AN EVENT. The ids carry the event they
+    // were designed for (`_turn`, `_sleep`), and the first labels repeated it —
+    // "Crystal — your turn", which then reads as a lie the moment somebody
+    // picks it for `error`, and which the picker cut off anyway. A voice
+    // belongs to no event: any of these can be chosen for any of them.
+    { id: 'af_crystal_turn', label: 'Crystal', asset: 'af_crystal_turn.wav', family: 'modern' },
+    { id: 'af_intercom_knock', label: 'Intercom knock', asset: 'af_intercom_knock.wav', family: 'modern' },
+    { id: 'af_zen_chime', label: 'Zen bowl', asset: 'af_zen_chime.wav', family: 'modern' },
+    { id: 'af_deep_sonar', label: 'Deep sonar', asset: 'af_deep_sonar.wav', family: 'modern' },
+    { id: 'af_lullaby_sleep', label: 'Lullaby', asset: 'af_lullaby_sleep.wav', family: 'modern' },
+    { id: 'af_marimba_success', label: 'Marimba', asset: 'af_marimba_success.wav', family: 'modern' },
+    { id: 'af_pop_advance', label: 'Pop', asset: 'af_pop_advance.wav', family: 'modern' },
+    { id: 'af_subtle_alert', label: 'Thin ticks', asset: 'af_subtle_alert.wav', family: 'modern' },
+    { id: 'af_bell_urgent', label: 'Bell, urgent', asset: 'af_bell_urgent.wav', family: 'modern' },
+    { id: 'af_pulse_start', label: 'Pulse', asset: 'af_pulse_start.wav', family: 'modern' },
+    { id: 'chime-soft', label: 'Chime, soft', asset: 'turn-ready.wav', family: 'classic' },
+    { id: 'chime-bright', label: 'Chime, bright', asset: 'chime-bright.wav', family: 'classic' },
+    { id: 'ask-double', label: 'Ask — two knocks', asset: 'ask-double.wav', family: 'classic' },
+    { id: 'ask-rise', label: 'Ask — rising', asset: 'ask-rise.wav', family: 'classic' },
+    { id: 'low-pulse', label: 'Low pulse', asset: 'low-pulse.wav', family: 'classic' },
+    { id: 'tick-dry', label: 'Tick, dry', asset: 'tick-dry.wav', family: 'classic' },
+    { id: 'bell-far', label: 'Bell, distant', asset: 'bell-far.wav', family: 'classic' },
+    { id: 'close-fall', label: 'Close — falling', asset: 'close-fall.wav', family: 'classic' },
+    { id: 'error-buzz', label: 'Error buzz', asset: 'error-buzz.wav', family: 'classic' },
+    { id: 'alarm-urgent', label: 'Alarm, urgent', asset: 'alarm-urgent.wav', family: 'classic' }
 ];
 
 /** Every built-in id, for the rules that must refuse to overwrite one. */
@@ -80,14 +124,23 @@ export const BUILTIN_IDS: readonly string[] = BUILTIN.map(v => v.id);
  * ‼️ THE DEFAULTS FOR "TURN OVER" AND "ASKING YOU" ARE DIFFERENT SOUNDS, and
  * that is a requirement rather than a taste: the user's own condition for this
  * item was hearing the difference from another room without configuring
- * anything. One rises and knocks twice, the other is a single settled chime.
+ * anything. One is a knuckle on a panel, the other is struck glass — and
+ * measured with `--stats`, they sit a factor of 4.7 apart in brightness.
+ *
+ * ‼️ A-20 CHANGED ALL FIVE, and that is a thing to say out loud rather than
+ * ship quietly. The user asked for modern sounds INSTEAD OF the primitive
+ * ones, and a default nobody hears is not a delivery. What is safe about it:
+ * alerts ship OFF, so anybody hearing anything has already been to the
+ * settings page; and a voice a user CHOSE lives in `settings`, which sits
+ * above this in the chain and is not touched. Only "sound on, never picked a
+ * voice" changes — which is exactly the case the request was about.
  */
 export const DEFAULT_VOICE: Record<AlertEvent, string> = {
-    'turn-ready': 'chime-soft',
-    question: 'ask-double',
-    stalled: 'low-pulse',
-    ended: 'close-fall',
-    error: 'error-buzz'
+    'turn-ready': 'af_crystal_turn',
+    question: 'af_intercom_knock',
+    stalled: 'af_deep_sonar',
+    ended: 'af_marimba_success',
+    error: 'af_bell_urgent'
 };
 
 /** `join` without `path`, so this module stays free of node built-ins. */
@@ -96,10 +149,11 @@ function under(dir: string, name: string): string {
     return d ? `${d}/${name}` : name;
 }
 
-/** The ten, resolved against wherever `media/sounds` is on this install. */
+/** The twenty, resolved against wherever `media/sounds` is on this install. */
 export function builtinVoices(soundsDir: string): AlertVoice[] {
     return BUILTIN.map(v => ({
-        id: v.id, label: v.label, file: under(soundsDir, v.asset), builtin: true
+        id: v.id, label: v.label, file: under(soundsDir, v.asset),
+        builtin: true, family: v.family
     }));
 }
 

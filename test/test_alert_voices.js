@@ -39,11 +39,33 @@ const base = (over) => Object.assign({
 // ---------------------------------------------------------------------------
 {
     const list = V.builtinVoices(SOUNDS);
-    ok('there are ten built-in voices, which is the number the item asked for',
-        list.length === 10);
+    // ‼️ TEN AND TEN. A-18 asked for ten and A-20 asked for ten more, by name,
+    // built from different physical objects. The earlier set is not retired:
+    // it is what somebody may already have CHOSEN, and a set that vanishes in
+    // an upgrade takes a setting with it.
+    ok('there are ten modern voices, which is the number A-20 asked for',
+        list.filter(v => v.family === 'modern').length === 10);
+    ok('…and the earlier ten are still selectable, so nobody who chose one'
+        + ' loses it in an upgrade',
+        list.filter(v => v.family === 'classic').length === 10);
     ok('…each with an id, a label a person can read, and a file',
         list.every(v => v.id && v.label && v.file && v.builtin === true));
-    ok('…and no two share an id', new Set(list.map(v => v.id)).size === 10);
+    ok('…and no two share an id', new Set(list.map(v => v.id)).size === 20);
+    // ‼️ AND THE MODERN SET IS FIRST IN THE LIST, because a picker renders it
+    // in this order and the family somebody should pick from goes at the top.
+    ok('the modern set comes first, which is the order a picker shows',
+        list.findIndex(v => v.family === 'classic')
+        > list.map(v => v.family).lastIndexOf('modern') - 1
+        && list.slice(0, 10).every(v => v.family === 'modern'));
+    // ‼️ EVERY DEFAULT IS A MODERN VOICE. The user asked for modern sounds
+    // INSTEAD OF the primitive ones, and a default nobody hears is not a
+    // delivery: the defaults are what an unconfigured install plays.
+    ok('‼️ every event defaults to one of the modern ten',
+        Object.values(V.DEFAULT_VOICE).every(id =>
+            list.find(v => v.id === id && v.family === 'modern')));
+    ok('…and no two events default to the SAME sound, which is the whole point',
+        new Set(Object.values(V.DEFAULT_VOICE)).size
+        === Object.keys(V.DEFAULT_VOICE).length);
 
     // ‼️ `chime-soft` IS `turn-ready.wav`. Renaming the asset would have changed
     // the alert of every current install; a "nicer" replacement would have done
@@ -61,6 +83,21 @@ const base = (over) => Object.assign({
     ok('‼️ every built-in voice has a file on disk — a picker offering a sound'
         + ' that is not there is a control that does nothing',
         V.builtinVoices(dir).every(v => fs.existsSync(v.file)));
+
+    // ‼️ AND THE COMMITTED BYTES ARE WHAT THE GENERATOR PRODUCES.
+    // The assets are generated rather than sourced, which is only worth
+    // anything while the two agree: the character of each voice is supposed to
+    // be a line of code somebody can read and argue with, and the moment a
+    // committed `.wav` drifts from the arithmetic that describes it, that line
+    // of code is documentation of a sound nobody is hearing.
+    const gen = require('child_process').spawnSync(
+        process.execPath,
+        [path.join(__dirname, '..', 'tools', 'make_alert_sounds.js'), '--check'],
+        { encoding: 'utf8' }
+    );
+    ok('‼️ every committed sound is byte-identical to what the generator writes'
+        + ' (regenerate with: node tools/make_alert_sounds.js)',
+        gen.status === 0);
 }
 
 // ---------------------------------------------------------------------------

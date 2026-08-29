@@ -114,6 +114,29 @@ ok('it is the version package.json claims',
     ok('‼️ every file the HTML shell asks the webview for is in the archive'
         + (notShipped.length ? ' (' + notShipped.join(', ') + ')' : ''),
         notShipped.length === 0);
+
+    // ‼️ A-20 — AND THE SOUNDS, WHOSE ABSENCE HAS NO SYMPTOM AT ALL.
+    // The check above reads `media/` itself and stops there; `media/sounds/`
+    // was never looked at. A voice the archive does not carry is not a blank
+    // panel somebody notices in a second — it is an alert that never plays,
+    // on a feature whose entire purpose is to be heard from another room, and
+    // the settings page will still offer it by name. The list is DERIVED from
+    // the compiled core rather than restated, so a voice added there and
+    // forgotten in `.vscodeignore` is caught by this, not by a user.
+    let voices = [];
+    try {
+        const V = require(path.join(ROOT, 'out', 'core', 'alertVoices.js'));
+        voices = V.builtinVoices('media/sounds').map(v => v.file);
+    } catch (e) { voices = []; }
+    ok('the built-in voice list could be read from the compiled core',
+        voices.length > 0);
+    const noSound = voices.filter(v => !has(v));
+    ok('‼️ every built-in alert sound is in the archive'
+        + (noSound.length ? ' (' + noSound.join(', ') + ')' : ''),
+        noSound.length === 0);
+    const hollow = voices.filter(v => has(v) && sizeOf(v) < 1000);
+    ok('…and none of them is a stub' + (hollow.length ? ' (' + hollow.join(', ') + ')' : ''),
+        hollow.length === 0);
 }
 
 // --------------------------------------------------------------- what reads

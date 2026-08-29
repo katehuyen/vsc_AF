@@ -415,7 +415,7 @@ export interface NudgeConfig {
     voice: string;
 }
 
-export const NUDGE_DEFAULT: NudgeConfig = { minutes: 3, repeat: 2, voice: 'tick-dry' };
+export const NUDGE_DEFAULT: NudgeConfig = { minutes: 3, repeat: 2, voice: 'af_subtle_alert' };
 
 /** Clamped rather than trusted: a `minutes: 0.05` in somebody's settings would
  *  be a chime every three seconds, and the setting cannot be typed at safely. */
