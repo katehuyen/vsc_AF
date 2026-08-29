@@ -203,10 +203,200 @@ const storeTests = async () => {
         store.setMuted('', true).ok === false);
 };
 
+// --------------------------------------------------------------- arbiter
+//
+// Eight lanes is the normal case, and eight players started in the same 40 ms
+// do not make eight sounds — they make one noise, out of which nothing can be
+// told apart, which is the exact ability ten named tones exist to give.
+const arbiterTests = async () => {
+    // A fake clock the sleeps drive, so a 500 ms gap costs no wall time and a
+    // test can assert the ORDER rather than race it.
+    const mk = (opts) => {
+        let t = 1000;
+        const log = [];
+        const a = new G.AudioArbiter({
+            now: () => t,
+            sleep: ms => { t += ms; return Promise.resolve(); },
+            ...(opts || {})
+        });
+        const play = (name, dur) => () => { t += (dur === undefined ? 100 : dur); log.push(name); return Promise.resolve(name); };
+        return { a, log, play, at: () => t, adv: ms => { t += ms; } };
+    };
+
+    {
+        const { a, log, play } = mk();
+        const all = Promise.all([
+            a.submit('s1:turn-ready', 'turn-ready', play('turn')),
+            a.submit('s2:question', 'question', play('question')),
+            a.submit('s3:ended', 'ended', play('ended')),
+            a.submit('s4:error', 'error', play('error'))
+        ]);
+        const tickets = await all;
+        // The first one is already playing when the rest arrive, so it goes
+        // first; the queue orders what is WAITING.
+        ok('‼️ the waiting sounds play by how much the news matters, not by arrival',
+            JSON.stringify(log) === '["turn","question","error","ended"]');
+        ok('…and each says how long it waited', tickets[1].waitedMs > 0);
+        ok('…and how many went in front of it while it did',
+            tickets[2].ahead === 3 && tickets[1].ahead === 1);
+        ok('every one of them actually played', tickets.every(t => t.played === true));
+        ok('…and carries its player\'s own answer', tickets[0].result === 'turn');
+    }
+
+    {
+        // ‼️ The gap is measured from the END of the last sound: the tones are
+        // up to 1.2 s long and a gap counted from the start would let them
+        // overlap, which is the whole thing this queue exists to stop.
+        const { a, play, at } = mk({ gapMs: 500 });
+        const t0 = at();
+        await Promise.all([
+            a.submit('a', 'turn-ready', play('a', 1200)),
+            a.submit('b', 'turn-ready', play('b', 1200))
+        ]);
+        ok('‼️ the 500 ms gap is measured from the END, so two 1.2 s tones cannot overlap',
+            at() - t0 === 1200 + 500 + 1200);
+    }
+
+    {
+        const { a, log, play } = mk();
+        const first = a.submit('same', 'question', play('first'));
+        const dup = await a.submit('same', 'question', play('dup'));
+        await first;
+        ok('‼️ the same alert twice is ONE alert', dup.played === false
+            && dup.dropped === 'duplicate');
+        ok('…and it says so rather than hanging on a promise nothing resolves',
+            /already (playing|waiting)/.test(dup.detail || ''));
+        ok('…and the duplicate never reached a player',
+            JSON.stringify(log) === '["first"]');
+    }
+
+    {
+        // Over the ceiling the LEAST urgent waiting item goes — a backlog of
+        // twenty chimes describes a fleet that has since moved on.
+        const { a, log, play } = mk({ max: 3 });
+        const busy = a.submit('busy', 'question', play('busy'));
+        const q = [
+            a.submit('q1', 'question', play('q1')),
+            a.submit('t1', 'turn-ready', play('t1')),
+            a.submit('t2', 'turn-ready', play('t2')),
+            a.submit('e1', 'error', play('e1'))
+        ];
+        const tickets = await Promise.all([busy, ...q]);
+        const dropped = tickets.filter(t => t.dropped === 'overflow');
+        ok('‼️ over the ceiling something IS dropped rather than queued for a minute',
+            dropped.length === 1);
+        ok('…and it is the least urgent one, not the newest',
+            JSON.stringify(log) === '["busy","q1","e1","t1"]');
+        ok('…and the drop is reported with the reason', /least urgent/.test(dropped[0].detail || ''));
+    }
+
+    {
+        // A player that throws must not wedge the queue behind it.
+        const { a, log, play } = mk();
+        const bad = a.submit('bad', 'question', () => Promise.reject(new Error('no device')));
+        const good = a.submit('good', 'turn-ready', play('good'));
+        const [b, g] = await Promise.all([bad, good]);
+        ok('a player that throws is reported, not swallowed', /no device/.test(b.error || ''));
+        ok('‼️ …and the queue behind it still runs', g.played === true
+            && JSON.stringify(log) === '["good"]');
+    }
+
+    {
+        const { a, play } = mk();
+        const p = a.submit('x', 'question', play('x'));
+        ok('the depth is readable while something waits', a.depth >= 0);
+        await p;
+        ok('…and drains to nothing', a.depth === 0 && a.peek().length === 0);
+    }
+};
+
+// ----------------------------------------------------------------- nudge
+const nudgeTests = () => {
+    const cfg = G.nudgeConfig({ minutes: 3, repeat: 2 });
+    ok('the nudge config is read whole', cfg.minutes === 3 && cfg.repeat === 2
+        && cfg.voice === 'tick-dry');
+    ok('‼️ …and CLAMPED UP off the floor — an unclamped 0.05 in somebody\'s'
+        + ' settings is a chime every three seconds, and "off" has to be said'
+        + ' rather than typo\'d into',
+        G.nudgeConfig({ minutes: 0.05 }).minutes === 1);
+    ok('…at the top end too', G.nudgeConfig({ minutes: 9999, repeat: 9999 }).minutes === 240
+        && G.nudgeConfig({ minutes: 9999, repeat: 9999 }).repeat === 20);
+    ok('0 minutes is off, and says so as a number rather than a special case',
+        G.nudgeConfig({ minutes: 0 }).minutes === 0);
+    ok('rubbish falls back to the default tone', G.nudgeConfig({ voice: '  ' }).voice === 'tick-dry');
+
+    const EVERY = 3 * 60_000;
+    const st = new G.NudgeStore();
+    const waiting = { waiting: true, key: 'k1' };
+    const look = () => waiting;
+
+    ok('arming needs an interval', st.arm('s1', 'question', 'k1', 0, 0) === undefined);
+    const a = st.arm('s1', 'question', 'k1', 0, EVERY);
+    ok('an armed session is due one interval later', a.dueAt === EVERY && a.sent === 0);
+    ok('nothing is due before then',
+        st.due(EVERY - 1, look, { everyMs: EVERY, repeat: 2 }).length === 0);
+
+    const first = st.due(EVERY, look, { everyMs: EVERY, repeat: 2 });
+    ok('…and one reminder is due at it', first.length === 1 && first[0].sent === 1);
+    ok('the reminder names the session and the event it is about',
+        first[0].sessionId === 's1' && first[0].event === 'question');
+    ok('the same instant does not fire twice',
+        st.due(EVERY, look, { everyMs: EVERY, repeat: 2 }).length === 0);
+
+    const second = st.due(2 * EVERY, look, { everyMs: EVERY, repeat: 2 });
+    ok('a second reminder follows one interval later', second.length === 1 && second[0].sent === 2);
+    ok('‼️ …and then it STOPS — a chime that never ends is one the user mutes for good',
+        st.due(3 * EVERY, look, { everyMs: EVERY, repeat: 2 }).length === 0
+        && st.has('s1') === false);
+
+    // ‼️ The whole point: an answered question is not nudged about.
+    const st2 = new G.NudgeStore();
+    st2.arm('s2', 'question', 'p3:t7', 0, EVERY);
+    ok('‼️ a session that MOVED ON is disarmed by the sweep, not by an edge'
+        + ' somebody has to remember to wire',
+        st2.due(EVERY, () => ({ waiting: true, key: 'p4:t9' }), { everyMs: EVERY, repeat: 2 }).length === 0
+        && st2.has('s2') === false);
+
+    const st3 = new G.NudgeStore();
+    st3.arm('s3', 'question', 'k', 0, EVERY);
+    ok('…and so is one that stopped waiting',
+        st3.due(EVERY, () => ({ waiting: false, key: 'k' }), { everyMs: EVERY, repeat: 2 }).length === 0);
+
+    const st4 = new G.NudgeStore();
+    st4.arm('s4', 'question', 'k', 0, EVERY);
+    ok('…and one the live monitor has lost altogether',
+        st4.due(EVERY, () => undefined, { everyMs: EVERY, repeat: 2 }).length === 0);
+
+    const st5 = new G.NudgeStore();
+    st5.arm('s5', 'question', 'k', 0, EVERY);
+    ok('turning the nudge off empties the store rather than leaving it ticking',
+        st5.due(EVERY, look, { everyMs: 0, repeat: 2 }).length === 0 && st5.has('s5') === false);
+
+    const st6 = new G.NudgeStore();
+    st6.arm('s6', 'question', 'k1', 0, EVERY);
+    st6.arm('s6', 'question', 'k1', 60_000, EVERY);
+    ok('re-arming the SAME wait does not restart its clock',
+        st6.list()[0].dueAt === EVERY);
+    st6.arm('s6', 'question', 'k2', 60_000, EVERY);
+    ok('‼️ …but a NEW question in the same conversation is a new wait',
+        st6.list()[0].dueAt === 60_000 + EVERY && st6.list()[0].sent === 0);
+
+    const st7 = new G.NudgeStore();
+    for (let i = 0; i < G.NUDGE_MAX + 20; i++) { st7.arm('s' + i, 'question', 'k', i, EVERY); }
+    ok('the store has a ceiling — a map that only grows is a leak',
+        st7.list().length === G.NUDGE_MAX);
+    ok('…and it is the OLDEST waits that go', st7.has('s0') === false
+        && st7.has('s' + (G.NUDGE_MAX + 19)) === true);
+    ok('disarming is reported', st7.disarm('s' + (G.NUDGE_MAX + 19)) === true
+        && st7.disarm('nobody') === false);
+};
+
 // ------------------------------------- a gated sound is skipped, not failed
 {
     const run = async () => {
         await storeTests();
+        await arbiterTests();
+        nudgeTests();
         const branches = await T.runTurnAlerts(['sound', 'toast'], {
             sound: () => Promise.resolve({
                 backend: 'none', ok: false, startedAt: 0, durationMs: 0, exitCode: null,

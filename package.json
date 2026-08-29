@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.305.0",
+  "version": "3.306.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8500,6 +8500,29 @@
             "to": {
               "type": "string",
               "description": "When it ends, HH:MM, local time. Exclusive — at this minute sounds are back."
+            }
+          }
+        },
+        "agentFarm.alerts.nudge": {
+          "type": "object",
+          "description": "The second tap on the shoulder. When an agent stops to ASK you something and the question is still unanswered N minutes later, a light reminder tone plays. Only that event: reminding you about a finished turn would be pestering you about news that needs nothing from you. It follows the mute and the quiet hours above, and it stops by itself after `repeat` reminders — a chime that never ends is one you mute for good. Set `minutes` to 0 to switch it off.",
+          "default": {
+            "minutes": 3,
+            "repeat": 2,
+            "voice": "tick-dry"
+          },
+          "properties": {
+            "minutes": {
+              "type": "number",
+              "description": "Minutes of no answer before the first reminder. 0 = off. Clamped to 1–240."
+            },
+            "repeat": {
+              "type": "number",
+              "description": "How many reminders at most, after the alert itself. 0 = off. Clamped to 20."
+            },
+            "voice": {
+              "type": "string",
+              "description": "Which tone the reminder uses — deliberately its own, and lighter than the alert you already missed, because a second identical chime reads as a second question. Default: tick-dry. A tone this machine cannot play falls back to the event's own voice rather than going silent."
             }
           }
         },

@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.306.0 - A-22: eight agents finishing together make eight sounds, not one noise (2026-08-29)
+
+The other half of A-22. 3.305.0 answered "should anything sound"; this answers
+"in what order, and what if nobody comes".
+
+**One queue for the whole window.** Eight lanes is the normal case, and eight
+players started in the same 40 ms do not make eight sounds — they make ONE
+noise, out of which nothing can be told apart, which is the exact ability ten
+named tones exist to give. The sounds now go one at a time, ordered by how much
+the news matters: `question` first (the only event where the agent is STOPPED
+and waiting on you), then `error`, `stalled`, `ended`, and `turn-ready` last —
+the one that happens most and costs least to miss, because the Timeline shows it
+anyway.
+
+**The 500 ms gap is measured from the END of the last sound**, not its start.
+The tones are up to 1.2 s long, so a gap counted from the start would let them
+overlap, which is the whole thing the queue exists to stop.
+
+**The queue has a small ceiling, and something IS dropped.** A backlog of twenty
+chimes is twenty seconds of noise describing a fleet that has since moved on —
+not merely useless but actively misleading. Over six waiting, the LEAST urgent
+goes and says so. The same alert twice is one alert.
+
+**A dropped sound is `skipped`, never `failed`,** and a sound that waited says
+how long and behind how many: "the chime came four seconds late" is otherwise
+indistinguishable from a slow player, and the two have opposite fixes.
+
+**The second tap on the shoulder.** The sound exists so you can leave the room,
+and a sound heard in another room with both hands busy is one that gets
+acknowledged in a minute and then forgotten, while the agent sits at its
+question for forty. If a question is still unanswered after 3 minutes, a light
+reminder tone plays — up to twice, then it stops, because a chime that never
+ends is one you mute for good. Its tone is deliberately its own and lighter than
+the one you already missed; a second identical chime reads as a second question.
+
+**Only `question` is nudged.** Reminding somebody about a finished turn is
+pestering them about news that needs nothing from them. And **the sweep is also
+the disarm**: a session that answered, ended or moved on is dropped by the beat
+rather than by an edge somebody has to remember to wire — every edge that could
+be missed is one reminder at 3 am about a question answered hours ago.
+
+The reminder goes through the same mute, the same quiet hours and the same queue
+as the alert it reminds you about. New op: `alerts.nudge`; `alerts.gate` now
+also reports the queue depth and what is waiting in it.
+
+**Deliberately not done:** `agentFarm.alerts.nudge` has no control on the Alert
+sounds card yet — it renders as its own settings box, which works but is not
+where the rest of the gate lives. The op and the setting are complete.
+
 ## 3.305.0 - A-22: the farm can be told to be quiet (2026-08-29)
 
 Alert sounds could be configured and armed, and there was no way to make them

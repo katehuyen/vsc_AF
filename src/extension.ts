@@ -364,6 +364,7 @@ import {
     renameCustomVoice, ResolveDeps, ResolvedVoice, resolveVoice
 } from './core/alertVoices';
 import {
+    AudioArbiter, NudgeConfig, nudgeConfig, NudgeStore,
     QuietHours, quietHours, QuietVerdict, quietLine, QUIET_HOURS_DEFAULT,
     Silence, silence
 } from './core/alertGate';
@@ -1284,17 +1285,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         sessionMuted: sessionId ? turnAlerts.mutedFor(sessionId) : false,
         quiet: alertQuiet()
     });
-    const alertSound = (event: AlertEvent, s?: LiveSession): Promise<SoundResult> => {
+    /**
+     * ‼️ A-22 — ONE QUEUE FOR THE WHOLE WINDOW. Eight lanes is the normal case,
+     * and eight players started in the same 40 ms make ONE noise out of which
+     * nothing can be told apart — which is the exact ability the ten named tones
+     * exist to give. Everything that makes a sound goes through here, including
+     * the nudge, or the reminder would land on top of the alert it reminds you
+     * about.
+     */
+    const alertArbiter = new AudioArbiter();
+    /**
+     * ‼️ A-22 — THE SECOND TAP ON THE SHOULDER.
+     *
+     * The sound exists so the user can leave the room, and a sound heard in
+     * another room with both hands busy is a sound that gets acknowledged in a
+     * minute — and then forgotten, while the agent sits at its question for
+     * forty. One light reminder, and a cap, because a chime that never stops is
+     * one the user mutes for good.
+     */
+    const alertNudges = new NudgeStore();
+    const nudgeCfg = (): NudgeConfig =>
+        nudgeConfig(cfg().get<Partial<NudgeConfig>>('alerts.nudge', {}));
+    /** ‼️ "STILL WAITING ON THE SAME THING", as one string. Any of the three
+     *  moving means the conversation moved on, and a reminder about a question
+     *  that has been answered is worse than no reminder at all. */
+    const waitKey = (s: LiveSession): string => `${s.prompts}:${s.toolCalls}:${s.status}`;
+    const nudgeLook = (sessionId: string): { waiting: boolean; key: string } | undefined => {
+        const s = live.sessions().find(x => x.sessionId === sessionId);
+        if (!s) { return undefined; }
+        return {
+            waiting: s.status === 'waiting-input' || s.status === 'waiting-permission',
+            key: waitKey(s)
+        };
+    };
+    const alertSound = async (
+        event: AlertEvent, s?: LiveSession, queueKey?: string
+    ): Promise<SoundResult> => {
         // ‼️ SILENCE WITH A REASON, NEVER SILENCE. The branch comes back as
         // `skipped` carrying the sentence — a muted farm reported as a failed
         // player raises the broken-backend warning and teaches the user to
         // ignore the one message that matters.
         const gate = alertSilence(s?.sessionId);
         if (gate.silent) {
-            return Promise.resolve({
+            return {
                 backend: 'none', ok: false, startedAt: Date.now(), durationMs: 0,
                 exitCode: null, stderr: '', skipped: `no sound — ${gate.detail}`
-            });
+            };
         }
         const picked = resolveAlertVoice(event, s);
         // ‼️ NEVER SILENCE ON A BROKEN PICK. `resolveVoice` already fell through
@@ -1302,7 +1338,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // the install, the committed asset is still on disk and is better than
         // nothing — a sound nobody chose is heard and reported, and silence is
         // indistinguishable from an alert that never fired.
-        return playTurnSound(picked.file || turnSoundAsset);
+        const file = picked.file || turnSoundAsset;
+        const key = queueKey || `${s?.sessionId ?? '-'}:${event}`;
+        const ticket = await alertArbiter.submit(key, event, () => playTurnSound(file));
+        if (!ticket.played) {
+            // Dropped by the queue is `skipped`, not `failed` — nothing is
+            // broken, the news simply lost its place to more urgent news.
+            return {
+                backend: 'none', ok: false, startedAt: Date.now(), durationMs: 0,
+                exitCode: null, stderr: '', asset: file,
+                skipped: `no sound — ${ticket.detail ?? ticket.dropped}`
+            };
+        }
+        const r = ticket.result as SoundResult;
+        return ticket.waitedMs > 0
+            ? { ...r, queuedMs: ticket.waitedMs, ahead: ticket.ahead }
+            : r;
     };
     /** What the modal and the toast SAY. The four alert branches used to state
      *  one fact ("your turn") because there was one edge; a permission ask
@@ -1387,6 +1438,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await cfg().update('alerts.quietHours', next, vscode.ConfigurationTarget.Global);
         FarmSettingsPanel.refreshIfOpen();
         return alertQuiet();
+    };
+    /**
+     * ‼️ A-22 — THE REMINDER, PLAYED. It goes through the SAME gate and the
+     * SAME queue as the alert it reminds you about: a nudge that ignored the
+     * mute would be the one sound a muted farm still made, and one that skipped
+     * the queue would land on top of the alert itself.
+     *
+     * Its tone is deliberately its own and lighter than the one already missed
+     * — a second identical chime reads as a second question. If that tone is
+     * unplayable the reminder falls back to the event's own resolved voice
+     * rather than going silent, exactly as the chain does one layer down.
+     */
+    const nudgeSweep = async (at = Date.now()): Promise<number> => {
+        const n = nudgeCfg();
+        const due = alertNudges.due(at, nudgeLook,
+            { everyMs: n.minutes * 60_000, repeat: n.repeat });
+        let played = 0;
+        for (const e of due) {
+            if (alertSilence(e.sessionId).silent) { continue; }
+            const s = live.sessions().find(x => x.sessionId === e.sessionId);
+            const rows = alertVoiceRows();
+            const pick = rows.find(v => v.id === n.voice && v.playable)
+                ?? rows.find(v => v.id === resolveAlertVoice('question', s).voice);
+            const file = pick?.file || turnSoundAsset;
+            played++;
+            // `sent` is part of the key so the second reminder is not collapsed
+            // into the first as a duplicate.
+            void alertArbiter.submit(
+                `nudge:${e.sessionId}:${e.sent}`, 'question', () => playTurnSound(file));
+        }
+        return played;
     };
     /** Silence ONE conversation. The only authority that can subtract from the
      *  union `alertPlan` builds — see `SessionAlertPrefs.muted`. */
@@ -1588,12 +1670,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ A-18 — WHAT HAPPENED travels with the dispatch. Defaulted to the
         // one edge that existed before it, so every caller that has not learned
         // about events yet keeps behaving exactly as it did.
-        event: AlertEvent = 'turn-ready'
+        event: AlertEvent = 'turn-ready',
+        // ‼️ A-22 — WHAT MAKES TWO SOUNDS THE SAME SOUND. The queue collapses a
+        // repeat of news already waiting, so the key has to be the news itself
+        // (session + event + the turn's own counters) and never just the lane —
+        // a genuinely new question one minute later must not be swallowed as a
+        // duplicate of the one before it.
+        queueKey?: string
     ): Promise<TurnAlertBranch[]> => {
         const s = live.sessions().find(x => x.sessionId === sessionId);
         const line = ATTENTION_LINE[event](label);
         const branches = await runTurnAlerts(actions, {
-            sound: () => alertSound(event, s),
+            sound: () => alertSound(event, s, queueKey),
             focus: () => {
                 // Focus means what it always meant: bring the Timeline forward
                 // inside this window. VS Code offers no way to raise the WINDOW
@@ -1664,7 +1752,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const wait = Math.max(0, Math.min(30_000, Number(delayMs) || 0));
         if (wait) { await new Promise(r => setTimeout(r, wait)); }
         const branches = await dispatchAlerts(
-            sessionId, actions, live.labelOf(s), s.transcriptPath, event);
+            sessionId, actions, live.labelOf(s), s.transcriptPath, event,
+            // ‼️ A REHEARSAL IS NEVER A DUPLICATE. Pressing ⏱ twice is two
+            // deliberate requests to hear it, and collapsing the second into
+            // the first would look exactly like the test being broken.
+            `test:${sessionId}:${event}:${Date.now()}`);
         return {
             ok: true, sessionId, label: live.labelOf(s), actions, at: Date.now(), branches,
             // ‼️ The test says WHICH SOUND it just played and where that choice
@@ -1698,8 +1790,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // turn would be silent, which is precisely the case the user is away
         // from the screen for. Neither counter moves between the two events
         // that announce one turn ending, so that collapse still holds.
-        if (!turnDedupe.shouldFire(s.sessionId, `${event}:${s.prompts}:${s.toolCalls}`)) { return; }
-        void dispatchAlerts(s.sessionId, actions, live.labelOf(s), s.transcriptPath, event);
+        const turnKey = `${event}:${s.prompts}:${s.toolCalls}`;
+        if (!turnDedupe.shouldFire(s.sessionId, turnKey)) { return; }
+        // ‼️ A-22 — THE SECOND TAP ON THE SHOULDER STARTS HERE, and only for the
+        // event where the agent is STOPPED and waiting on the person. Reminding
+        // somebody about a finished turn would be pestering them about news that
+        // needs nothing from them.
+        if (event === 'question' && actions.includes('sound')) {
+            const n = nudgeCfg();
+            alertNudges.arm(s.sessionId, event, waitKey(s), Date.now(), n.minutes * 60_000);
+        } else {
+            // Anything else this session did means it is no longer sitting at
+            // the question the reminder was armed for.
+            alertNudges.disarm(s.sessionId);
+        }
+        void dispatchAlerts(s.sessionId, actions, live.labelOf(s), s.transcriptPath, event,
+            `${s.sessionId}:${turnKey}`);
     }
 
     // J2: tail relay feed files from other machines into the live monitor.
@@ -9176,6 +9282,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'alerts.nudge',
+            describe: 'AKILLI DÜRTME — the second tap on the shoulder (`agentFarm.alerts.nudge`). When an agent STOPS to ask you something and the question is still unanswered N minutes later, a light reminder tone plays; it stops by itself after `repeat` reminders, because a chime that never ends is one you mute for good. ‼️ ONLY the `question` event is nudged — reminding somebody about a finished turn is pestering them about news that needs nothing from them. It goes through the same mute, the same quiet hours and the same queue as the alert it reminds you about. Read it with no args; `minutes: 0` switches it off. The answer also lists what is armed RIGHT NOW and when each one is next due. args: minutes? (0 = off, clamped 1–240), repeat? (clamped 20), voice? (a tone id)',
+            handler: async (args) => {
+                const raw = args as { minutes?: unknown; repeat?: unknown; voice?: unknown };
+                const touched = raw.minutes !== undefined || raw.repeat !== undefined
+                    || raw.voice !== undefined;
+                if (touched) {
+                    const cur = nudgeCfg();
+                    const next = nudgeConfig({
+                        minutes: raw.minutes === undefined ? cur.minutes : Number(raw.minutes),
+                        repeat: raw.repeat === undefined ? cur.repeat : Number(raw.repeat),
+                        voice: raw.voice === undefined ? cur.voice : String(raw.voice)
+                    });
+                    // ‼️ A TONE NOTHING HERE PLAYS IS REFUSED BY NAME. Accepted,
+                    // it would fall back to the event's own voice and the setting
+                    // would look like it had taken when it had not.
+                    if (!alertVoiceRows().some(v => v.id === next.voice && v.playable)) {
+                        throw new Error(`nothing on this machine plays "${next.voice}" — try alerts.voices`);
+                    }
+                    await cfg().update('alerts.nudge', next, vscode.ConfigurationTarget.Global);
+                    FarmSettingsPanel.refreshIfOpen();
+                }
+                const n = nudgeCfg();
+                const at = Date.now();
+                return {
+                    ...n, changed: touched,
+                    on: n.minutes > 0 && n.repeat > 0,
+                    armed: alertNudges.list().map(e => ({
+                        sessionId: e.sessionId, event: e.event, sent: e.sent,
+                        dueInMs: Math.max(0, e.dueAt - at),
+                        label: live.sessions().find(s => s.sessionId === e.sessionId)
+                            ? live.labelOf(live.sessions().find(s => s.sessionId === e.sessionId)!)
+                            : null
+                    }))
+                };
+            }
+        },
+        {
             op: 'alerts.gate',
             describe: '‼️ WHY DID I HEAR NOTHING — the machine answer, and the sibling of `alerts.resolve` (which says WHICH tone would play, never whether it would be heard). Names every authority holding the gate shut right now, in order: the fleet mute, this session\'s own mute, and quiet hours. ALL of them, not the first — unmuting at 03:00 and still hearing nothing is a half-truth nobody can debug. Reads only; nothing is played and nothing is changed. args: sessionId? (full id or 8-char prefix — adds that lane\'s own mute to the answer)',
             handler: (args) => {
@@ -9197,7 +9341,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // it is not a gate — so it is reported beside the gate rather
                     // than as one of its reasons.
                     armed: ALERT_EVENTS.filter(e => on[e] === true),
-                    sessionArmed: s ? turnAlerts.actionsFor(s.sessionId) : null
+                    sessionArmed: s ? turnAlerts.actionsFor(s.sessionId) : null,
+                    // ‼️ A-22 — AND THE OTHER WAY A SOUND ARRIVES LATE OR NOT AT
+                    // ALL: the queue. A depth of five means the next chime is
+                    // several seconds behind the thing it is about, which reads
+                    // exactly like a slow player and has the opposite fix.
+                    queue: { depth: alertArbiter.depth, waiting: alertArbiter.peek() },
+                    nudge: { ...nudgeCfg(), armed: alertNudges.list().length }
                 };
             }
         },
@@ -14252,6 +14402,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (e.affectsConfiguration('agentFarm.alerts')) { muteBar.update(); }
     }));
     context.subscriptions.push(live.onDidUpdate(() => muteBar.update()));
+    // ‼️ A-22 — THE NUDGE HAS NO EDGE TO HANG ON, so it has a beat. Half a
+    // minute is fine for a reminder measured in minutes, and the sweep is also
+    // the disarm: a session that answered, ended or moved on is dropped here
+    // rather than by an edge somebody has to remember to wire — every edge that
+    // could be missed is one reminder at 3 am about a question answered hours
+    // ago.
+    const nudgeTimer = setInterval(() => { void nudgeSweep(); }, 30_000);
+    context.subscriptions.push({ dispose: () => clearInterval(nudgeTimer) });
 
     // Plan usage — the subscription limits Anthropic itself reports (what
     // /usage prints), cached behind one service so the dashboard card, its ⟳

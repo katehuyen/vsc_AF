@@ -578,6 +578,12 @@ export interface SoundResult {
      * nothing?").
      */
     skipped?: string;
+    /** ‼️ A-22 — HOW LONG THE QUEUE HELD IT, and how many sounds went first. A
+     *  measurement, not decoration: "the chime came four seconds late" is
+     *  otherwise indistinguishable from a slow player, and the two have
+     *  opposite fixes. */
+    queuedMs?: number;
+    ahead?: number;
 }
 
 export interface SoundCandidate {
@@ -801,10 +807,13 @@ export async function runTurnAlerts(
                 return {
                     action, sound, ms: now() - t0,
                     status: sound.ok ? 'ok' : 'failed',
-                    detail: sound.ok
+                    detail: (sound.ok
                         // ‼️ Exactly as much as an exit code proves, and no more.
                         ? `${sound.backend} accepted the file (exit 0) — audible playback still needs a human ear`
-                        : (sound.error || `${sound.backend} exited ${sound.exitCode}`)
+                        : (sound.error || `${sound.backend} exited ${sound.exitCode}`))
+                        + (sound.queuedMs
+                            ? ` · waited ${sound.queuedMs} ms behind ${sound.ahead ?? 0} other sound(s)`
+                            : '')
                 };
             }
             await runners[action]();
