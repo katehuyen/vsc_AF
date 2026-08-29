@@ -209,8 +209,14 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
         /if \(!c && !hook\) \{ return undefined; \}/.test(ext));
     ok('a task that is not a delegation runs to its own agent\'s default',
         /!task\.missionId && superpowersOnFor\(task\.agentName\)/.test(ext));
+    // ‼️ K-34 — THE LINE GREW A SWITCH, AND THE INVARIANT IS UNCHANGED. A
+    // terminal session still gets the discipline; what it gained is the ability
+    // to be TOLD otherwise, which is the whole of K-34. `??` and not `||`, so a
+    // deliberate `false` is not read as "said nothing".
     ok('‼️ a TERMINAL session gets it too, or an agent works one way in the panel and another in a terminal',
-        /systemPromptFileFor\(projectId \|\| undefined, 'session', superpowersOnFor\(agent\.name\)\)/.test(ext));
+        /systemPromptFileFor\(projectId \|\| undefined, 'session',\s*\n\s*merged\.superpowers \?\? superpowersOnFor\(agent\.name\)\)/.test(ext));
+    ok('‼️ …and a launcher, a tree row or a saved profile can now say otherwise',
+        /superpowers\?: boolean;/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'launch.ts'), 'utf8')));
     ok('‼️ …and a terminal RESUME is re-told, because the flag does not survive --resume',
         /projectContextFile: systemPromptFileFor\(own \|\| undefined, 'session',\s*\n\s*superpowersOnFor\(s\.agentName\)\)/.test(ext));
 

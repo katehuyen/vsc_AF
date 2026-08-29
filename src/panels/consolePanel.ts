@@ -277,6 +277,25 @@ export class ConsolePanel {
     private composerSuperpowers: boolean | undefined = undefined;
 
     /**
+     * ‼️ K-34 — A SETUP THE COMPOSER OPENS ON, rather than a session spawned
+     * behind the user's back.
+     *
+     * The launcher's "Where: the Console panel" used to call `startConsoleSession`
+     * the instant Start was pressed: the session spawned with the setup baked in,
+     * and every dimension became unchangeable at the moment the person finally
+     * had a window to change them in. Now the launcher hands the setup HERE and
+     * the composer opens on it — the same answers, still editable, nothing
+     * spawned until Send.
+     *
+     * One-shot, like `presetAgent`: it seeds a composer once (a bumped
+     * `composerSeed` is what makes the page read it) and is let go on the next
+     * start, or the setup would silently reapply itself to a later session.
+     */
+    private composerLaunch?: {
+        model?: string; effort?: string; permissionMode?: string; prompt?: string;
+    };
+
+    /**
      * The engine the NEXT session will be started on, and the answer cache.
      *
      * The choice is per-composer for the same reason the project is: it is about
@@ -332,6 +351,12 @@ export class ConsolePanel {
         /** the engine a start picker already settled — the composer opens on it
          *  instead of asking the same question a second time */
         engine?: string;
+        /** ‼️ K-34 — the whole setup a launcher already settled, so the composer
+         *  opens on it instead of a session being spawned with it. */
+        launch?: {
+            model?: string; effort?: string; permissionMode?: string;
+            prompt?: string; superpowers?: boolean;
+        };
     }): void {
         const apply = (c: ConsolePanel): void => {
             if (opts?.sessionId) { c.selected = opts.sessionId; }
@@ -346,6 +371,19 @@ export class ConsolePanel {
                 c.presetAgent = opts.agentId;
                 c.selected = '';
                 c.pinnedAgent = opts.pinAgent ? opts.agentId : undefined;
+            }
+            // ‼️ K-34 — the setup lands on the composer, and the seed is bumped
+            // so the page actually reads it: `applyComposerSeed` is edge-driven,
+            // and a setup delivered without a new seed would be ignored by an
+            // already-open Console, which is the case this exists for.
+            if (opts?.launch) {
+                const l = opts.launch;
+                c.composerLaunch = {
+                    model: l.model, effort: l.effort,
+                    permissionMode: l.permissionMode, prompt: l.prompt
+                };
+                c.composerSuperpowers = l.superpowers;
+                c.composerSeed++;
             }
             // undefined = "I have no opinion"; '' = "explicitly no project"
             if (opts?.projectId !== undefined) { c.composerProject = opts.projectId; }
@@ -695,6 +733,10 @@ export class ConsolePanel {
                 : undefined,
             superpowersChoice: this.composerSuperpowers === undefined
                 ? '' : (this.composerSuperpowers ? 'on' : 'off'),
+            // ‼️ K-34 — null, not an empty object: "no setup was handed over" is
+            // a different answer from "a setup that says nothing", and only the
+            // first may fall through to the user's launch defaults.
+            composerLaunch: this.composerLaunch ?? null,
             // the exact text, for the hover — never a description of it
             superpowersText: this.deps.superpowersText(),
             superpowersHealth: this.deps.superpowersHealth(),
@@ -961,6 +1003,9 @@ export class ConsolePanel {
                 // …and its own agent's answer for the discipline, rather than
                 // the last session's — see composerSuperpowers.
                 this.composerSuperpowers = undefined;
+                // ‼️ K-34 — one-shot. A setup left standing would reapply itself
+                // to the NEXT session, which nobody launched from it.
+                this.composerLaunch = undefined;
                 // ‼️ …but NOT the engine. A project is about one piece of work
                 // and the next session is usually different work; an engine is
                 // about which machine you are working on today, and re-picking

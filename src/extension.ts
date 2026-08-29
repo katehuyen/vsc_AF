@@ -135,7 +135,7 @@ import { SessionStore } from './core/sessionStore';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
     LaunchOptions, LaunchProfile, MODEL_ID_REFUSAL, modelChoices, modelIdOk, ONE_EXECUTOR,
-    PERMISSION_CHOICES, RunSurface,
+    PERMISSION_CHOICES, RunSurface, SUPERPOWERS_CHOICES, normSuperpowers, superpowersWord,
     twoExecutors, validateLaunch, withDefaults
 } from './core/launch';
 import {
@@ -16601,11 +16601,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const projectId = project !== undefined ? project : activeProjectId();
         // A terminal session gets the same project context a Console one does —
         // including on a resume, where the flag is not inherited (measured).
-        // ‼️ X-133 — and the same engineering discipline, at the agent's own
-        // default: a terminal has no switch to tick, so the alternative is an
-        // agent that works one way in the panel and another way in a terminal.
+        // ‼️ X-133 — and the same engineering discipline.
+        //
+        // ‼️ K-34 — …AND NOW THE TERMINAL HAS A SWITCH TO TICK. It used to take
+        // the agent's default and nothing else, so the same agent worked one way
+        // in the panel and another way in a terminal, decided by a setting the
+        // person starting it could not see. `??` and not `||`: `false` is a
+        // person saying "not this session", and saying nothing still lands on
+        // exactly the old line.
         const contextFile = merged.projectContextFile
-            ?? systemPromptFileFor(projectId || undefined, 'session', superpowersOnFor(agent.name));
+            ?? systemPromptFileFor(projectId || undefined, 'session',
+                merged.superpowers ?? superpowersOnFor(agent.name));
         // ‼️ The folder is passed as a DIMENSION, not just as the terminal's cwd:
         // Antigravity works in its own scratch workspace unless it is handed one
         // (`--add-dir`), so the same directory the terminal opens in has to be on
@@ -16926,6 +16932,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     label: '$(shield) Permissions', description: show(draft.permissionMode),
                     detail: 'what the session may do without asking', act: 'perm'
                 },
+                // ‼️ K-34 — the setup stores HOW it works too. Without this row
+                // the dimension existed on the launcher and nowhere else, so
+                // saving a setup silently dropped the one thing about it that
+                // was not a flag on a command line.
+                {
+                    label: '$(zap) Superpowers',
+                    description: draft.superpowers === undefined
+                        ? 'says nothing' : (draft.superpowers ? 'on' : 'off'),
+                    detail: 'the engineering discipline — says nothing means the agent\'s own default decides',
+                    act: 'sp'
+                },
                 {
                     label: '$(comment-discussion) First prompt', description: show(draft.prompt, '—'),
                     detail: 'sent as the opening message of every session started from this profile',
@@ -17011,6 +17028,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const v = await pickChoice('What may a session from this profile do without asking?',
                     PERMISSION_CHOICES, draft.permissionMode ?? '', false);
                 if (v !== undefined) { draft.permissionMode = v; }
+                continue;
+            }
+            // ‼️ K-34 — a setup that could not store this would quietly drop it
+            // every time somebody loaded the profile they saved it into.
+            if (pick.act === 'sp') {
+                const v = await pickChoice('How should a session from this profile work?',
+                    SUPERPOWERS_CHOICES, superpowersWord(draft.superpowers), false);
+                if (v !== undefined) {
+                    const want = normSuperpowers(v);
+                    if (want === undefined) { delete draft.superpowers; } else { draft.superpowers = want; }
+                }
                 continue;
             }
             if (pick.act === 'prompt') {
@@ -17230,6 +17258,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     description: show(merged.permissionMode) + inherited(o.permissionMode, d.permissionMode),
                     detail: 'what it may do without asking — --permission-mode', act: 'perm'
                 },
+                // ‼️ K-34 — HOW IT WORKS is a dimension of the launch like what
+                // it may do is. It sits under Permissions because the two are
+                // read together: one is what the session is allowed to do, the
+                // other is the discipline it does it with.
+                {
+                    label: '$(zap) Superpowers',
+                    description: merged.superpowers === undefined
+                        ? `agent default (${superpowersOnFor(agent.name) ? 'on' : 'off'} for ${agent.name})`
+                        : (merged.superpowers ? 'on' : 'off'),
+                    detail: 'brainstorm before building, a plan before code, systematic debugging '
+                        + 'before a fix — agentFarm.superpowersDefaults decides unless you say here',
+                    act: 'sp'
+                },
                 {
                     label: '$(tag) Session name', description: show(o.name, '—'),
                     detail: 'shown in the prompt box, the /resume picker and the terminal title — -n', act: 'name'
@@ -17273,7 +17314,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         void vscode.window.showWarningMessage(`Agent Farm: ${errors.join(' · ')}`);
                         continue; // invalid value — the picker stays up
                     }
-                    startConsoleSession(agent, o, project);
+                    // ‼️ K-34 — THE COMPOSER OPENS ON THE SETUP; NOTHING IS
+                    // SPAWNED YET.
+                    //
+                    // This used to call `startConsoleSession`, which spawns on
+                    // the spot — so every dimension became unchangeable at the
+                    // exact moment the person finally had a window to change one
+                    // in, and a wrong model picked in a quickpick could only be
+                    // fixed by ending the session and starting again. The
+                    // setup travels into the composer instead: the same answers,
+                    // still editable, and the session starts when they press
+                    // Send. The terminal branch below is untouched — a terminal
+                    // HAS no composer, so there is nothing to preserve there.
+                    ConsolePanel.show(consoleDeps, {
+                        agentId: agent.id, pinAgent: true,
+                        engine: engineOf(merged.engine).id,
+                        ...(project !== undefined ? { projectId: project } : {}),
+                        launch: {
+                            model: merged.model, effort: merged.effort,
+                            permissionMode: merged.permissionMode,
+                            prompt: o.prompt,
+                            superpowers: merged.superpowers
+                        }
+                    });
                 } else {
                     const ran = startClaudeSession(agent, o, undefined, undefined, project);
                     if (!ran) { continue; } // invalid value — the picker stays up
@@ -17285,6 +17348,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // same kind of session it is one Enter, engine included
                         engine: o.engine, model: o.model, effort: o.effort,
                         permissionMode: o.permissionMode,
+                        // ‼️ K-34 — remembered like the four beside it. Left out,
+                        // the launcher would reopen on the agent's default after
+                        // a session deliberately started without the discipline,
+                        // which is the S-34 defect on a newer row.
+                        superpowers: o.superpowers,
                         // ‼️ S-34 — and WHERE it ran. Without this the launcher
                         // reopened on a terminal after a Console session, which
                         // is the one part of the setup a person notices before
@@ -17342,6 +17410,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const v = await pickChoice('What may this session do without asking?',
                     PERMISSION_CHOICES, merged.permissionMode ?? '', false);
                 if (v !== undefined) { o.permissionMode = v; }
+                continue;
+            }
+            // ‼️ K-34 — three answers, and the empty one is NOT "off": it hands
+            // the decision back to the agent's own setting, which is what every
+            // session started before this row existed did.
+            if (pick.act === 'sp') {
+                const v = await pickChoice('How should this session work?',
+                    SUPERPOWERS_CHOICES, superpowersWord(o.superpowers), false);
+                if (v !== undefined) {
+                    const want = normSuperpowers(v);
+                    if (want === undefined) { delete o.superpowers; } else { o.superpowers = want; }
+                }
                 continue;
             }
             if (pick.act === 'name') {
@@ -19164,6 +19244,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // undefined = inherit the window's active project (ConsoleHost does
             // the read); '' = explicitly none. See launchClaudeTerminal.
             ...(project !== undefined ? { projectId: project } : {}),
+            // ‼️ K-34 — the launcher, the tree and a saved profile all reach the
+            // Console through here, and none of them could say this before: the
+            // ⚡ chip was the composer's alone, so a session started from a
+            // profile ignored the setup it was started from. Absent keeps the
+            // host's own rule (the agent's default for a fresh session).
+            superpowers: merged.superpowers ?? superpowersOnFor(agent.name),
             firstPrompt: o.prompt?.trim() || undefined
         });
         const wanted = o.name?.trim();

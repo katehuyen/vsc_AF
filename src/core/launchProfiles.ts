@@ -69,6 +69,12 @@ export function profileFrom(
     // meant, and what it must go on meaning — writing a default in here would
     // silently start moving old profiles to the terminal.
     if (surface === 'console' || surface === 'terminal') { out.surface = surface; }
+    // ‼️ K-34 — SAME RULE, SAME REASON, and it cannot live in `PROFILE_KEYS`:
+    // that loop is written for STRINGS (`typeof v === 'string' && v.trim()`),
+    // and this is a tri-state boolean whose `false` is an answer a truthiness
+    // test would eat. Absent means "this profile says nothing about the
+    // discipline", which is what every profile saved before this meant.
+    if (typeof o.superpowers === 'boolean') { out.superpowers = o.superpowers; }
     return out;
 }
 
@@ -106,6 +112,12 @@ export function applyProfile(o: LaunchOptions, p: LaunchProfile): LaunchOptions 
             put(out, k, kept);
         }
     }
+    // ‼️ K-34 — cleared when the profile is silent, exactly as the string
+    // dimensions above are. "Load this setup" means the setup is now THIS, and
+    // a discipline left over from the last thing the launcher was showing is a
+    // decision the user did not make and cannot see they are carrying.
+    if (typeof p.superpowers === 'boolean') { out.superpowers = p.superpowers; }
+    else { delete out.superpowers; }
     return out;
 }
 
@@ -129,6 +141,12 @@ export function matchProfile(
     const mine = profileFrom(o, 'current', surface);
     return list.find(p =>
         PROFILE_KEYS.every(k => (p[k] ?? '') === (mine[k] ?? ''))
+        // ‼️ K-34 — a profile that says nothing about the discipline matches a
+        // launcher that says nothing either, and a profile that DOES say must
+        // agree — otherwise the row would go on claiming a profile after the
+        // ⚡ row had been changed under it, which is the exact defect this
+        // function exists to prevent.
+        && (p.superpowers ?? undefined) === (mine.superpowers ?? undefined)
         // A profile that says nothing about where it runs matches whatever the
         // launcher is on — the promise `profileSurface` makes. Demanding an
         // answer it never stored would mean no profile saved before the surface

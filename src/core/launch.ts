@@ -40,6 +40,24 @@ export interface LaunchOptions {
     /** --permission-mode; '' = default (ask) */
     permissionMode?: string;
     /**
+     * ‼️ K-34 — DOES THIS SESSION WORK TO THE SUPERPOWERS DISCIPLINE.
+     *
+     * X-133 gave the Console composer a ⚡ chip and M-30 gave the task forms a
+     * box; a TERMINAL launch had neither, so the same agent worked one way in
+     * the panel and another way in a terminal — decided by a setting the person
+     * starting it could not see, let alone change. It is a dimension like the
+     * model: one set of choices, carried by every surface that starts a
+     * session, or a surface offers a session it then starts differently.
+     *
+     * ‼️ THREE STATES, AND ABSENT IS ONE OF THEM — `undefined` means "the
+     * agent's own default decides" (`agentFarm.superpowersDefaults`), which is
+     * what every launch made before this said and must keep meaning. It is NOT
+     * in `LaunchDefaults` beside the four above, deliberately: this dimension
+     * ALREADY has a user-level default, per agent, and a second one would give
+     * two settings the same job and no rule for which wins.
+     */
+    superpowers?: boolean;
+    /**
      * ‼️ K-22 — WHAT THAT PERMISSION MODE ACTUALLY MEANS, resolved against
      * Claude's own settings layers before the command line is built.
      *
@@ -318,6 +336,12 @@ export function describeLaunch(o: LaunchOptions): string {
     if (o.model?.trim()) { bits.push(o.model.trim()); }
     if (o.effort?.trim()) { bits.push('effort ' + o.effort.trim()); }
     if (o.permissionMode?.trim()) { bits.push(o.permissionMode.trim()); }
+    // ‼️ K-34 — NAMED ONLY WHEN IT IS AN ANSWER. Absent means "the agent's own
+    // default decides", and printing that on every line would spend a column on
+    // the answer nobody chose — the same rule the engine follows above.
+    if (o.superpowers !== undefined) {
+        bits.push(o.superpowers ? 'superpowers on' : 'superpowers off');
+    }
     if (o.name?.trim()) { bits.push(`“${o.name.trim()}”`); }
     if (o.prompt?.trim()) { bits.push('with a first prompt'); }
     return bits.length ? bits.join(' · ') : 'CLI defaults';
@@ -393,6 +417,39 @@ export const CLOSE_CHOICES: LaunchChoice[] = [
 export function normInteractiveTarget(v: unknown): InteractiveTarget {
     return INTERACTIVE_TARGETS.includes(v as InteractiveTarget) ? v as InteractiveTarget : 'vscode';
 }
+/**
+ * ‼️ K-34 — THE THREE ANSWERS, in the order a picker shows them, and the first
+ * one is NOT "off". Shared by the launcher and the profile editor so the two
+ * cannot drift into offering different words for the same dimension.
+ */
+export const SUPERPOWERS_CHOICES: LaunchChoice[] = [
+    {
+        id: '', label: 'Agent default',
+        detail: 'whatever agentFarm.superpowersDefaults says for this agent — what every session started before this row existed did'
+    },
+    {
+        id: 'on', label: 'On',
+        detail: 'this session works to the discipline: brainstorm before building, a plan before code, systematic debugging before a fix'
+    },
+    {
+        id: 'off', label: 'Off',
+        detail: 'not this session, whatever the agent\'s default says'
+    }
+];
+
+/** ‼️ The one place the picker's three words become the launch's three states.
+ *  Anything unreadable is the DEFAULT, never "off": a value nobody can parse
+ *  must fall back to the behaviour every launch had before this existed. */
+export function normSuperpowers(v: unknown): boolean | undefined {
+    const w = String(v ?? '').trim().toLowerCase();
+    return w === 'on' ? true : w === 'off' ? false : undefined;
+}
+
+/** The inverse, for a picker that has to show what is currently set. */
+export function superpowersWord(v: boolean | undefined): string {
+    return v === true ? 'on' : v === false ? 'off' : '';
+}
+
 export function normInteractiveClose(v: unknown): InteractiveClose {
     return INTERACTIVE_CLOSES.includes(v as InteractiveClose) ? v as InteractiveClose : 'stay-open';
 }

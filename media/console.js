@@ -2627,10 +2627,27 @@
         const seed = Number(DATA.composerSeed || 0);
         if (!seed || seed === appliedComposerSeed) { return; }
         appliedComposerSeed = seed;
-        const d = DATA.defaults || {};
+        // ‼️ K-34 — A SETUP HANDED OVER BY A LAUNCHER WINS OVER THE DEFAULTS.
+        //
+        // The launcher used to spawn the session itself the moment Start was
+        // pressed, so every dimension was fixed before the person had a window
+        // to change one in. It hands the setup here instead: the composer opens
+        // ON it, still editable, and nothing runs until Send. `null` means no
+        // setup was handed over at all — a DIFFERENT answer from a setup that
+        // says nothing, and only the first falls through to the user's defaults.
+        const seeded = DATA.composerLaunch || null;
+        const d = seeded || DATA.defaults || {};
         st.model = d.model || '';
         st.effort = d.effort || '';
         st.permissionMode = d.permissionMode || '';
+        // The first prompt travels with the setup, into the box the user is
+        // about to type in — never sent on their behalf. A draft they have
+        // already started is not overwritten by it.
+        if (seeded && seeded.prompt && !st.draft) {
+            st.draft = seeded.prompt;
+            const box = document.getElementById('c-text');
+            if (box) { box.value = seeded.prompt; }
+        }
         reconcileComposer(engineNow(), false);
         save();
     }

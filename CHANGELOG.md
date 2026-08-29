@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.316.0 - K-34: every door that starts a session carries the same setup (2026-08-29)
+
+X-133 gave the Console composer a ⚡ chip. That is **one of ten** ways a session
+gets started here, and the other nine went on deciding the engineering
+discipline from a per-agent setting the person starting the session could not
+see — so the same agent worked one way in the panel and another way in a
+terminal, and a saved profile reproduced everything about a launch **except**
+that.
+
+**`⚡ Superpowers` is a launch dimension now**, like the model and the
+permissions: on `LaunchOptions`, so the multi-dimension launcher, the sidebar
+tree rows, the surface picker, a **saved profile** and the terminal itself all
+carry it. The launcher shows what will actually happen —
+*`agent default (on for developer)`* — rather than leaving the reader to guess
+which setting answered.
+
+**‼️ Three answers, and the empty one is not "off".** *Agent default* hands the
+decision back to `agentFarm.superpowersDefaults`, which is what every session
+started before this row existed did. A profile that says nothing about the
+discipline **clears** it on load rather than leaving the last launcher's answer
+standing — the same rule the model already followed.
+
+**And the launcher no longer spawns behind you.** Picking *Where: the Console
+panel* used to start the session the instant you pressed Start: the setup was
+baked in, and every dimension became unchangeable at the exact moment you
+finally had a window to change one in — a wrong model picked in a quickpick
+could only be fixed by ending the session and starting again. **The composer now
+opens *on* the setup**: the same answers, still editable, a first prompt sitting
+in the box rather than sent, and nothing running until you press Send. The
+terminal branch is untouched, because a terminal has no composer to preserve.
+
+`test/test_launch_parity.js` measures it — a dimension that exists on
+`LaunchOptions` and is missing from a door is the structural failure this suite
+is here to catch.
+
 ## 3.315.0 - M-30: the discipline is a property of the JOB, not only of the agent (2026-08-29)
 
 X-133 put the Superpowers engineering discipline — brainstorm before building,
