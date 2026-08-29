@@ -280,6 +280,97 @@ const rawDir = path.join(wikiRoot, '_RAW_');
         && W.candidateView(store.get(raw.id)).compilable === true);
 }
 
+/**
+ * ---------- X-140: THE COMPILE CONTRACT FOR A DROPPED FILE
+ *
+ * The brief and the prompt are written in the grammar of a CLI transcript — a
+ * turn scope, turn numbers, what each turn opened with — and a markdown export
+ * has none of it. Four things have to be true or the run goes looking for turns
+ * that are not there, or leaves the user's folder in a state that lies:
+ *
+ *   · it is DECLARED an external file, in the first line of its own block;
+ *   · its note travels as an ORDER, not as "why it was kept" — it is the only
+ *     way to narrow a scope that has no turn numbers to narrow it by;
+ *   · the archive path and the provenance link are COMPUTED, never left to the
+ *     run: a model asked to work out an archive path works out a plausible one,
+ *     and a link pointing at where the file used to be breaks the moment the
+ *     move next to it succeeds;
+ *   · and the move is named in the same breath as the report, because a file
+ *     left in the drop box is offered again on the next scan.
+ */
+{
+    // The one with a directive on it, filed and ready to compile.
+    fs.writeFileSync(path.join(rawDir, 'gemini-vault.md'), '# Vault mimarisi\n\nmetin\n', 'utf8');
+    const s3 = new W.WikiStore(path.join(tmp, 'store3', 'wiki_candidates.json'));
+    const added = W.syncRawCandidates(wikiRoot, s3).added;
+    const target = s3.candidates.find(c => c.sessionId === 'raw:gemini-vault.md');
+    W.editCandidate(s3, {
+        id: target.id, topics: ['Obsidian'],
+        note: 'sadece klasor isimlendirme bolumunu al, gerisi bizde zaten var'
+    });
+    ok('the fixture has the three drops it needs', added.length >= 1 && !!target);
+
+    const deps3 = Object.assign({}, deps, { store: () => s3 });
+    const brief = W.buildBrief(deps3, [s3.get(target.id)]);
+    const row = brief.candidates.find(c => c.id === target.id);
+
+    ok('‼️ the brief names the archive folder, computed rather than described',
+        !!brief.archive && brief.archive.done === path.join(wikiRoot, '_RAW_', '_DONE_'));
+    ok('…and where THIS file has to end up',
+        row.rawArchive === path.join(wikiRoot, '_RAW_', '_DONE_', 'gemini-vault.md'));
+    ok('‼️ …and the provenance link points at the ARCHIVE, not at where it is now',
+        row.rawLink === '_RAW_/_DONE_/gemini-vault.md');
+    ok('the note travels as a directive, which is what a note on a file IS',
+        /klasor isimlendirme/.test(row.directive));
+    ok('…and the extra steps are appended to the ones every compile has',
+        brief.next.length > 5 && brief.next.some(s => /MOVE THE FILE/.test(s)));
+
+    // ‼️ Self-healing: the destination is made at brief time too. The prompt
+    // still tells the run to create it, because the folder can go away between
+    // the two — but a run should not be the FIRST thing that ever makes it.
+    fs.rmSync(path.join(wikiRoot, '_RAW_', '_DONE_'), { recursive: true, force: true });
+    W.buildBrief(deps3, [s3.get(target.id)]);
+    ok('‼️ a deleted _DONE_ is rebuilt by the brief itself',
+        fs.existsSync(path.join(wikiRoot, '_RAW_', '_DONE_')));
+
+    const p = W.compilePrompt(brief);
+    ok('‼️ the prompt DECLARES it an external file before anything else about it',
+        /EXTERNAL FILE — NOT A CLI SESSION/.test(p));
+    ok('…and says to read the whole of it rather than a turn range',
+        /has no turns: read the whole file/.test(p) && !/read exactly these turns/.test(p));
+    ok('‼️ …and shouts the user directive as an order',
+        /KULLANICI DİREKTİFİ/.test(p) && /outranks your own judgement/.test(p));
+    ok('…hands the provenance line in the vault\'s own words',
+        /Harici Kaynak: \[\[_RAW_\/_DONE_\/gemini-vault\.md\]\]/.test(p));
+    // ‼️ `lastIndexOf`: the file's path is named earlier too, in its own block —
+    // what is asserted here is that it is named AGAIN, next to the report.
+    ok('‼️ …and names the move in the same breath as the report back',
+        p.indexOf('one more thing in the same breath') > p.indexOf('## Report back')
+        && p.lastIndexOf('gemini-vault.md') > p.indexOf('## Report back'));
+    ok('…with the folder to create first, so a cleaned-up disk does not break it',
+        /create it if it does not/.test(p));
+
+    // ‼️ AND A DROP WHOSE FILE HAS GONE IS SKIPPED BY NAME, like any other mark
+    // whose material is not there. It is the likeliest of all of them: this file
+    // lives in a folder the user opens and tidies.
+    fs.writeFileSync(path.join(rawDir, 'silinecek.md'), '# gecici\n', 'utf8');
+    W.syncRawCandidates(wikiRoot, s3);
+    const doomed = s3.candidates.find(c => c.sessionId === 'raw:silinecek.md');
+    W.editCandidate(s3, { id: doomed.id, topics: ['Kota'] });
+    fs.rmSync(path.join(rawDir, 'silinecek.md'), { force: true });
+    const partial = W.buildBrief(deps3, [s3.get(target.id), s3.get(doomed.id)]);
+    ok('‼️ a drop whose file has been tidied away is skipped BY NAME, not silently',
+        (partial.skipped || []).some(s => s.id === doomed.id && /silinecek\.md/.test(s.transcript))
+        && partial.candidates.length === 1);
+
+    // ‼️ AND A COMPILE OF ORDINARY TURNS IS TOLD NONE OF THIS. A run handed a
+    // move instruction about a folder none of its marks came from is a run that
+    // may act on it.
+    const plain = W.compilePrompt(W.buildBrief(deps, [store.candidates.find(c => !W.isRawCandidate(c))]));
+    ok('‼️ a compile with no dropped file is never told about the archive at all',
+        !/EXTERNAL FILE/.test(plain) && !/_DONE_/.test(plain) && !/Harici Kaynak/.test(plain));
+}
+
 // …and the pool where the drops are ALL there is: the refusal has to be the
 // thing to go and do, not "nothing matched".
 {

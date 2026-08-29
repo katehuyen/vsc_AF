@@ -1054,6 +1054,10 @@ export interface WikiBrief {
     /** X-58 — marks that were asked for and cannot be read. Absent when every
      *  chosen mark still has its transcript. */
     skipped?: { id: string; transcript: string; why: string }[];
+    /** X-140 — where a dropped file goes once it has been compiled. Absent when
+     *  no mark in this brief came out of the drop box, so a compile of ordinary
+     *  turns is never told about a folder it has nothing to do with. */
+    archive?: { raw: string; done: string };
     next: string[];
 }
 
@@ -1063,6 +1067,29 @@ const COMPILE_STEPS = [
     'Create or amend pages under <root>/<Category>/<Concept>.md; never delete contradicted text, annotate it with a dated line.',
     'Update index.md (one line per page) and append to log.md.',
     'Report back: wiki.candidates.edit { id, state:"compiled", pages:[…] } for each one.'
+];
+
+/**
+ * ‼️ X-140 — THE EXTRA STEP A DROPPED FILE COSTS, AND WHY IT IS A STEP AND NOT
+ * SOMETHING THE EXTENSION DOES.
+ *
+ * A CLI transcript stays where it is for ever: it is the CLI's file, the compile
+ * only reads it, and reading it twice is prevented by the mark's own state. A
+ * dropped file is the opposite — it is the USER'S file, sitting in a box they
+ * look into, and "which of these have I already put in the wiki" is a question
+ * the folder itself has to answer. So a compiled drop moves to `_RAW_/_DONE_`.
+ *
+ * The move is the AGENT's, not the extension's: the extension never learns that
+ * a page was written (only the agent's `wiki.candidates.edit` says so), and a
+ * file moved on the strength of a run that then wrote nothing would be filed as
+ * done while the pool still said pending. One actor, one moment: the agent
+ * moves the file in the same breath as it reports the pages.
+ */
+const RAW_COMPILE_STEPS = (link: string) => [
+    'For a mark marked EXTERNAL FILE below: read the whole file — it has no turns to choose between.',
+    `Add its provenance line to every page it feeds, in the vault's own words: \`- [YYYY-MM-DD] Harici Kaynak: [[${link}]]\` — pointing at the ARCHIVE path, which is where the file will be by the time anybody follows the link.`,
+    'THEN MOVE THE FILE into the archive folder named above — create that folder first if it is not there. A compiled file left in the drop box is offered to the next compile as though nothing had happened.',
+    'Move it only after its pages exist, and only for the marks you are actually reporting as compiled.'
 ];
 
 /**
@@ -1198,20 +1225,52 @@ export function buildBrief(deps: WikiDeps, chosen: WikiCandidate[]): WikiBrief {
         + skipped.map(s => `${s.id} → ${s.transcript}`).join(' · ')
         + '. Nothing can be compiled from a file that is not there — remove the marks, or restore the sessions.');
 
+    // X-140 — the drop box only enters the brief when a mark actually came out
+    // of it. A compile of ordinary turns is never told about a folder it has
+    // nothing to do with, and never handed a move instruction it must not follow.
+    const anyRaw = readable.some(c => isRawCandidate(c));
+    const doneDir = path.join(root, WIKI_DONE_REL);
+    // ‼️ X-140 — THE DESTINATION IS MADE HERE TOO, not only asked for in the
+    // prompt. The root is already known good (checked above), so this is the one
+    // moment the extension can heal the folder cheaply and without guessing; the
+    // run is still told to create it, because the folder can go away between
+    // this call and the move, and a run that only ever succeeds on a tidy disk
+    // is a run that fails the first time somebody cleans up.
+    if (anyRaw) { ensureRawDirs(root); }
+    const linkOf = (c: WikiCandidate): string =>
+        WIKI_DONE_REL.split(path.sep).join('/') + '/' + rawCandidateFile(c);
+
     return {
         rules,
         procedure: deps.procedure ?? '_REF/wiki.md',
         root,
         index: path.join(root, WIKI_INDEX_REL),
         log: path.join(root, WIKI_LOG_REL),
+        ...(anyRaw ? { archive: { raw: path.join(root, WIKI_RAW_REL), done: doneDir } } : {}),
         // What already exists decides create-vs-amend, which is the first
         // judgement of every compile (_REF/wiki.md §3).
         existing: pages.map(p => ({ category: p.category, concept: p.concept, file: p.file })),
         candidates: readable.map(c => {
             const turns = (sessions.find(s => s.sessionId === c.sessionId)?.turns ?? []) as TurnAnchor[];
             const covered = coveredTurns(c, turns.length);
+            // ‼️ X-140 — WHERE THIS FILE MUST END UP, AND WHAT TO CALL IT ON THE
+            // PAGE. Both are computed here rather than left to the run: a model
+            // asked to "work out the archive path" will work out a plausible one,
+            // and a provenance link that points at where the file USED to be is
+            // broken the moment the move it is next to succeeds.
+            const rawBits = isRawCandidate(c)
+                ? {
+                    rawArchive: path.join(doneDir, rawCandidateFile(c)),
+                    rawLink: linkOf(c),
+                    // The note is not "why it was kept" for a drop — it is the
+                    // only way to say which part of a file matters, because
+                    // there are no turns to exclude. It travels as a directive.
+                    directive: c.note || null
+                }
+                : {};
             return {
                 ...candidateView(c),
+                ...rawBits,
                 // The transcript and the range, so the agent reads the turns
                 // itself rather than trusting a summary of them.
                 transcript: c.sessionFile,
@@ -1231,7 +1290,9 @@ export function buildBrief(deps: WikiDeps, chosen: WikiCandidate[]): WikiBrief {
         // X-58 — reported, never silently dropped: a compile that quietly did
         // eleven of twelve is a compile whose twelfth is lost for good.
         ...(skipped.length ? { skipped } : {}),
-        next: COMPILE_STEPS
+        next: anyRaw
+            ? [...COMPILE_STEPS, ...RAW_COMPILE_STEPS(WIKI_DONE_REL.split(path.sep).join('/') + '/<file>')]
+            : COMPILE_STEPS
     };
 }
 
@@ -1266,6 +1327,11 @@ export function compilePrompt(brief: WikiBrief): string {
         ? `- it already holds ${brief.existing.length} page(s): `
             + brief.existing.map(p => `${p.category}/${p.concept}`).join(' · ')
         : '- it holds no pages yet — every concept here is a new page.');
+    // X-140 — only when a mark in this brief actually came out of the drop box.
+    if (brief.archive) {
+        L.push(`- drop box: \`${brief.archive.raw}\` — where the user saves conversations from elsewhere`);
+        L.push(`- archive: \`${brief.archive.done}\` — where you MOVE a dropped file once its pages exist`);
+    }
     L.push('');
     /**
      * ‼️ X-58 — ONE BLOCK PER MARK, AND THE SCOPE IS SPELLED OUT RATHER THAN
@@ -1283,8 +1349,37 @@ export function compilePrompt(brief: WikiBrief): string {
         const excl = Array.isArray(c.excludeTurns) ? c.excludeTurns as number[] : [];
         const titles = Array.isArray(c.turnTitles)
             ? c.turnTitles as { n: number; label: string }[] : [];
+        /**
+         * ‼️ X-140 — AN EXTERNAL FILE IS DECLARED AS ONE, IN THE FIRST LINE OF
+         * ITS OWN BLOCK. Everything else in this section is written in the
+         * grammar of a CLI transcript — a turn scope, turn numbers, what each
+         * turn opened with — and a markdown export dropped into `_RAW_` has none
+         * of it. A run handed `turn scope: whole file` under a heading that
+         * looks like every other heading will go looking for turns.
+         */
+        const isRaw = c.raw === true;
         L.push(`### ${c.id} — filed under: ${topics}`);
         L.push('');
+        if (isRaw) {
+            L.push('- ‼️ **EXTERNAL FILE — NOT A CLI SESSION.** Somebody saved this conversation out of a'
+                + ' browser and dropped it into the wiki\'s `_RAW_` folder. It has no turns: read the whole file.');
+            L.push(`- **file:** \`${c.transcript}\``);
+            if (c.directive) {
+                // The one instruction only a person could give about a file, and
+                // the only thing that narrows a scope that cannot be narrowed by
+                // turn numbers. It is shouted because a note on a transcript is
+                // context and a note on a file is an ORDER.
+                L.push(`- ⚠️ **KULLANICI DİREKTİFİ / USER DIRECTIVE:** ${String(c.directive)}`);
+                L.push('  Follow it exactly — it is the only way the person could say which part of this'
+                    + ' file matters, and it outranks your own judgement about what is worth keeping in it.');
+            }
+            L.push(`- **provenance line for every page this feeds:** \`- [YYYY-MM-DD] Harici Kaynak: [[${String(c.rawLink)}]]\``);
+            L.push(`- **‼️ WHEN ITS PAGES EXIST, MOVE IT:** \`${c.transcript}\` → \`${String(c.rawArchive)}\``);
+            L.push('  Create the destination folder first if it is missing. Do not move it if you wrote no page for it.');
+            if (c.label) { L.push(`- **its first line:** ${String(c.label).slice(0, 160)}`); }
+            L.push('');
+            continue;
+        }
         L.push(`- **transcript:** \`${c.transcript}\``);
         L.push(`- **turn scope:** ${c.turns}`
             + (c.sessionTurns ? ` · the conversation is ${c.sessionTurns} turn(s) long` : ''));
@@ -1339,6 +1434,32 @@ export function compilePrompt(brief: WikiBrief): string {
     L.push('```');
     L.push('');
     L.push('A mark you did NOT write a page for stays pending — say which, and why, rather than closing it.');
+    /**
+     * ‼️ X-140 — THE MOVE IS PART OF REPORTING, NOT A TIDY-UP AFTERWARDS.
+     *
+     * Two things have to happen for a dropped file and neither implies the
+     * other: the pool has to be told the pages exist, and the folder the user
+     * looks into has to stop offering the file. A run that did one and not the
+     * other leaves either a compiled mark whose file is offered again on the
+     * next scan, or a file in `_DONE_` that the pool still calls pending. So
+     * they are named together, in the same block, in the same breath.
+     */
+    const raws = brief.candidates.filter(c => c.raw === true);
+    if (raws.length && brief.archive) {
+        L.push('');
+        L.push(`### ‼️ And for the ${raws.length} EXTERNAL FILE(S), one more thing in the same breath`);
+        L.push('');
+        L.push(`Make sure \`${brief.archive.done}\` exists (create it if it does not), then move each file`);
+        L.push('you reported as compiled out of the drop box and into it:');
+        L.push('');
+        L.push('```');
+        for (const c of raws) { L.push(`${c.transcript}  ->  ${String(c.rawArchive)}`); }
+        L.push('```');
+        L.push('');
+        L.push('The move and the report go together. A file left in the drop box is offered to the next');
+        L.push('compile as though nothing had happened; a file moved without the report leaves the pool');
+        L.push('saying it is still waiting for a file that is no longer where the mark points.');
+    }
     return L.join('\n');
 }
 
@@ -1821,7 +1942,7 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
         },
         {
             op: 'wiki.compile',
-            describe: 'Assemble what it takes to compile marked turns into the wiki, and hand it back as a brief: the rules, the root, what the wiki already holds, and each candidate resolved to a transcript and a turn range. args: ids? (a list) or topic? (every pending mark carrying it) or all? (true = every pending mark). ‼️ It writes NO wiki page — synthesis is the agent\'s, under the vault\'s own law — and it marks nothing compiled; report back with wiki.candidates.edit {state:"compiled", pages:[…]} when the pages exist.',
+            describe: 'Assemble what it takes to compile marked turns into the wiki, and hand it back as a brief: the rules, the root, what the wiki already holds, and each candidate resolved to a transcript and a turn range. args: ids? (a list) or topic? (every pending mark carrying it) or all? (true = every pending mark). ‼️ It writes NO wiki page — synthesis is the agent\'s, under the vault\'s own law — and it marks nothing compiled; report back with wiki.candidates.edit {state:"compiled", pages:[…]} when the pages exist. ‼️ X-140 — a mark that came out of the `_RAW_` drop box carries three extra things: it is an EXTERNAL FILE with no turns (read all of it), its note is a USER DIRECTIVE rather than context, and once its pages exist YOU move the file into `_RAW_/_DONE_` (creating that folder if it is gone) — a compiled file left in the drop box is offered again on the next scan. A mark with no topic at all is not compilable and is refused by name.',
             handler: (args) => buildBrief(deps, chooseCandidates(S(), args))
         },
         {

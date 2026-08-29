@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.326.0 - X-140: the compile is told what a dropped file is, and where to put it afterwards (2026-08-29)
+
+The brief and the compile prompt are written in the grammar of a CLI
+transcript — a turn scope, turn numbers, what each turn opened with. A markdown
+export somebody saved out of a browser has none of it, and it was being handed
+to the run under a heading identical to every other heading, with `turn scope:
+whole file` under it. A run reads that and goes looking for turns.
+
+So a dropped file is now **declared** in the first line of its own block:
+*EXTERNAL FILE — NOT A CLI SESSION*, read the whole of it, it has no turns. Its
+note travels as **⚠️ KULLANICI DİREKTİFİ** rather than "why it was kept" — on a
+file that is not context, it is the only way a person can say which part matters,
+because there are no turn numbers to narrow it by, and the prompt says outright
+that it outranks the run's own judgement.
+
+**‼️ And a compiled drop is moved into `_RAW_/_DONE_` — by the agent, in the same
+breath as the report.** The extension never learns that a page was written; only
+`wiki.candidates.edit {state:"compiled"}` says so, so a file moved on the
+strength of a run that then wrote nothing would be filed as done while the pool
+still said pending. One actor, one moment. The prompt names the pair together
+and says what each half costs alone: a file left in the drop box is offered to
+the next compile as though nothing had happened, and a file moved without the
+report leaves the pool waiting for a file that is no longer where the mark
+points.
+
+The paths are **computed, never described**. A model asked to work out an archive
+path works out a plausible one; a provenance link pointing at where the file
+currently is breaks the moment the move next to it succeeds. So the brief carries
+`rawArchive` (the exact destination) and `rawLink` (`_RAW_/_DONE_/<file>`, which
+is what goes on the page as `- [YYYY-MM-DD] Harici Kaynak: [[…]]`), and the
+prompt prints the move as `from -> to`.
+
+- **Self-healing, at both ends.** `buildBrief` rebuilds `_RAW_/_DONE_` if it has
+  been deleted — the root is already known good at that point, so it is the one
+  moment this can be healed without guessing. The run is *still* told to create
+  it, because the folder can go away between the brief and the move.
+- **A drop whose file has been tidied away is skipped by name**, like any mark
+  whose material is gone. It is the likeliest of them: this file lives in a
+  folder the user opens and cleans.
+- **‼️ And a compile with no dropped file in it is told none of this.** No
+  archive folder, no move instruction, no `_DONE_` anywhere in the prompt — a run
+  handed an instruction about a folder none of its marks came from is a run that
+  may act on it.
+
 ## 3.325.0 - U-117: a dropped file stops pretending to be a session (2026-08-29)
 
 X-139 put files in the cockpit that never happened in a CLI, and the table drew
