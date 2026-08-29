@@ -279,6 +279,9 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('all six notices ops catalogued',
         ['notices.post', 'notices.list', 'notices.read', 'notices.resolve', 'notices.dismiss',
             'notices.project'].every(op => cat.includes(op)));
+    // B-20 — the four the board could do and the bridge could not.
+    ok('…and the four management ops beside them',
+        ['notices.edit', 'notices.pin', 'notices.stars', 'notices.undo'].every(op => cat.includes(op)));
 
     const post = await reg.dispatch('notices.post', {
         title: 'AI digest', type: 'update', level: 2, tags: ['ai-daily'],
@@ -419,8 +422,100 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
 
     const read = await reg.dispatch('notices.read', { id: post.result.id });
     ok('read marks read', read.ok);
+
+    // ==================================================== B-20: manage a notice
+    //
+    // Everything below was a thing the BOARD could do and the bridge could not,
+    // which meant an agent could post a notice and then had no way to correct
+    // it, keep it visible, rate it, or take back a removal it got wrong.
+    {
+        const t = await reg.dispatch('notices.post', { title: 'draft title', type: 'update', level: 1 });
+        const id = t.result.id;
+        const find = () => store.notices.find(n => n.id === id);
+
+        // ---- edit
+        const ed = await reg.dispatch('notices.edit',
+            { id, title: 'the corrected title', level: 4, tags: 'a, b' });
+        ok('edit changes what it was told to', ed.ok
+            && find().title === 'the corrected title' && find().level === 4);
+        // ‼️ The first edit snapshots the original: a notice carries what it
+        // said before somebody rewrote it, so this is a correction on the
+        // record rather than a quiet substitution.
+        ok('…and the original is kept for the diff',
+            find().edited === true && find().original.title === 'draft title');
+        ok('…and what was NOT passed is untouched', find().type === 'update');
+        const noop = await reg.dispatch('notices.edit', { id });
+        ok('an edit that changes nothing is refused, not silently stamped',
+            !noop.ok && /at least one/i.test(noop.error));
+        const ghost = await reg.dispatch('notices.edit', { id: 'nope', title: 'x' });
+        ok('…and an unknown id says so', !ghost.ok && /not found/i.test(ghost.error));
+
+        // ---- pin
+        const pin = await reg.dispatch('notices.pin', { id });
+        ok('pin defaults to pinning', pin.ok && find().pinned === true);
+        const unpin = await reg.dispatch('notices.pin', { id, pinned: false });
+        ok('…and false lets it go', unpin.ok && find().pinned === false);
+
+        // ---- stars
+        const st = await reg.dispatch('notices.stars', { id, stars: 3 });
+        ok('stars rates it', st.ok && find().stars === 3);
+        // ‼️ MEASURED, NOT ASSUMED: the scale is 0-3 and `coerceStars` sends
+        // anything outside it to ZERO — it does not clamp. A "5" from a caller
+        // who assumed five stars therefore CLEARS the rating, and the op's
+        // description has to say so or an agent will keep un-rating things it
+        // meant to rate highest.
+        await reg.dispatch('notices.stars', { id, stars: 99 });
+        ok('…and out of range falls to zero rather than clamping', find().stars === 0);
+        await reg.dispatch('notices.stars', { id, stars: 2 });
+        await reg.dispatch('notices.stars', { id, stars: 0 });
+        ok('…and zero clears it', !find().stars);
+        const nostars = await reg.dispatch('notices.stars', { id });
+        ok('stars without a rating is a caller error', !nostars.ok && /required/i.test(nostars.error));
+    }
+
+    // ==================================================== B-20: undo a removal
+    //
+    // ‼️ A dismiss over the bridge used to be FINAL — a wrong id destroyed a
+    // notice nobody could recover, and the board's own Undo could not help
+    // because it remembered the removal on the PANEL. One memory now, on the
+    // store, so the button and the op take back the same thing.
+    {
+        const nothing = await reg.dispatch('notices.undo', {});
+        ok('nothing removed yet means nothing to undo',
+            !nothing.ok && /nothing to undo/i.test(nothing.error));
+
+        const a = await reg.dispatch('notices.post', { title: 'first' });
+        const b = await reg.dispatch('notices.post', { title: 'second' });
+        const has = (id) => store.notices.some(n => n.id === id);
+
+        await reg.dispatch('notices.dismiss', { id: a.result.id });
+        ok('a dismissed notice is gone', !has(a.result.id));
+        const back = await reg.dispatch('notices.undo', {});
+        ok('…and undo brings it back', back.ok && back.result.restored === 1 && has(a.result.id));
+
+        // One deep, deliberately: undo answers "that was a mistake", not
+        // "walk back through the day". The memory is spent by the undo.
+        const twice = await reg.dispatch('notices.undo', {});
+        ok('undo does not repeat itself', !twice.ok);
+
+        // The bulk sweep is the removal that most needs taking back.
+        store.dismissMany([a.result.id, b.result.id]);
+        ok('a bulk dismiss removes both', !has(a.result.id) && !has(b.result.id));
+        const bulk = await reg.dispatch('notices.undo', {});
+        ok('…and undo restores the whole batch',
+            bulk.ok && bulk.result.restored === 2 && has(a.result.id) && has(b.result.id));
+
+        // …and the newest removal is the one that is remembered.
+        store.dismissMany([a.result.id]);
+        store.dismissMany([b.result.id]);
+        await reg.dispatch('notices.undo', {});
+        ok('the LAST removal is what comes back, not the one before it',
+            has(b.result.id) && !has(a.result.id));
+    }
+
     const dis = await reg.dispatch('notices.dismiss', { id: post.result.id });
     ok('dismiss by id', dis.ok && dis.result.ok === true);
+    ok('…and says the removal can be taken back', dis.result.undoable === 1);
 
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(reportDir, { recursive: true, force: true }); } catch {}

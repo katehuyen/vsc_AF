@@ -448,9 +448,11 @@ export class NoticesStore {
     titleOf(id: string): string | undefined { return this.find(id)?.title; }
 
     dismiss(id: string): boolean {
-        const before = this.notices.length;
+        const gone = this.notices.filter(n => n.id === id);
+        if (!gone.length) { return false; }
         this.notices = this.notices.filter(n => n.id !== id);
-        if (this.notices.length === before) { return false; }
+        // B-20 - one notice removed by hand is the removal people undo most.
+        this.remember(gone);
         this.save(); return true;
     }
 
@@ -484,6 +486,7 @@ export class NoticesStore {
         const set = new Set(ids);
         const removed = this.notices.filter(n => set.has(n.id));
         if (removed.length) { this.notices = this.notices.filter(n => !set.has(n.id)); this.save(); }
+        this.remember(removed);
         return removed;
     }
 
@@ -494,6 +497,41 @@ export class NoticesStore {
             if (n && typeof n.id === 'string' && !this.notices.some(x => x.id === n.id)) { this.notices.unshift(n); c++; }
         }
         if (c) { this.save(); } return c;
+    }
+
+    /**
+     * ‼️ B-20 — THE LAST REMOVAL, REMEMBERED BY THE STORE RATHER THAN BY A PANEL.
+     *
+     * The board's Undo held the removed notices on the PANEL, which made it a
+     * property of a window: an agent that dismissed the wrong batch over the
+     * bridge had nothing to undo, and the person's own Undo vanished the moment
+     * the board was closed. One removal, one memory, both doors.
+     *
+     * It is deliberately ONE deep, not a stack. Undo on this board means "that
+     * was a mistake, put it back" about the thing that just happened; a history
+     * of every removal ever would be a second copy of the notices, kept for a
+     * button nobody presses twice.
+     */
+    private lastRemoved: Notice[] = [];
+
+    /** What `undo()` would put back — the board asks, to know if it can offer it. */
+    undoable(): number { return this.lastRemoved.length; }
+
+    /** Called by every removal that a person could want back. */
+    private remember(removed: Notice[]): void {
+        if (removed.length) { this.lastRemoved = removed; }
+    }
+
+    /**
+     * Put the last removal back. Returns how many really returned — an id that
+     * has since been re-posted is skipped rather than duplicated, and the
+     * memory is spent either way, because a second Undo of the same batch is
+     * not a question anyone is asking.
+     */
+    undo(): number {
+        const back = this.lastRemoved;
+        this.lastRemoved = [];
+        return this.restore(back);
     }
 
     /** Remove read, non-pinned, non-starred notices — returns them (for undo).
@@ -509,6 +547,7 @@ export class NoticesStore {
             this.notices = this.notices.filter(n => !gone.has(n.id));
             this.save();
         }
+        this.remember(removed);
         return removed;
     }
 
@@ -798,11 +837,61 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
         },
         {
             op: 'notices.dismiss',
-            describe: 'Remove a notice. args: id — OR — clearRead:true (remove read, non-pinned, non-starred, non-open-question notices)',
+            describe: 'Remove a notice. args: id — OR — clearRead:true (remove read, non-pinned, non-starred, non-open-question notices). ‼️ B-20 — the last removal (this one, a bulk one, or a clearRead) can be taken back with notices.undo.',
             handler: (args) => {
-                if (args.clearRead === true) { const removed = deps.store.clearRead(); changed(); return { removed: removed.length }; }
+                if (args.clearRead === true) { const removed = deps.store.clearRead(); changed(); return { removed: removed.length, undoable: deps.store.undoable() }; }
                 need(deps.store.dismiss(argStr(args, 'id')), 'Notice not found — notices.list shows current ids.');
-                changed(); return { ok: true };
+                changed(); return { ok: true, undoable: deps.store.undoable() };
+            }
+        },
+        {
+            op: 'notices.edit',
+            describe: '‼️ B-20 — CHANGE WHAT A NOTICE SAYS. The same edit the board performs, on the same store: a title that turned out wrong, a level that was too loud, a body that needed the detail nobody had yet. args: id, title?, type? (info|question|report|alert), level? (1-5), body?, sections? (the structured blocks), tags? (list or comma-separated). Every field is optional and only what you pass changes. ‼️ THE FIRST EDIT SNAPSHOTS THE ORIGINAL — a notice carries what it said before a person or an agent rewrote it, and the board can show the difference, so this is a correction and never a quiet substitution. To ANSWER a question use notices.resolve; to file one under a project use notices.project.',
+            handler: (args) => {
+                const patch: NoticeEdit = {};
+                if (args.title !== undefined) { patch.title = String(args.title); }
+                if (args.type !== undefined) { patch.type = String(args.type); }
+                if (args.level !== undefined) { patch.level = Number(args.level); }
+                if (args.body !== undefined) { patch.body = String(args.body); }
+                if (args.sections !== undefined) { patch.sections = args.sections; }
+                if (args.tags !== undefined) { patch.tags = args.tags as string[] | string; }
+                // Nothing to change is a caller's mistake, not a no-op success:
+                // it would stamp the notice `edited` and snapshot an "original"
+                // identical to it, for nothing.
+                need(Object.keys(patch).length > 0,
+                    'Nothing to change — pass at least one of title, type, level, body, sections, tags.');
+                need(deps.store.edit(argStr(args, 'id'), patch),
+                    'Notice not found — notices.list shows current ids.');
+                changed(); return { ok: true, id: argStr(args, 'id') };
+            }
+        },
+        {
+            op: 'notices.pin',
+            describe: 'B-20 — Hold a notice at the top of the board, or let it go. A pinned notice is also protected from the sweeps: clearRead and dismissBySource both skip it, so pinning is how something stays until it is dealt with. args: id, pinned? (default true — pass false to unpin)',
+            handler: (args) => {
+                const pinned = args.pinned === undefined ? true : args.pinned === true;
+                need(deps.store.pin(argStr(args, 'id'), pinned),
+                    'Notice not found — notices.list shows current ids.');
+                changed(); return { ok: true, pinned };
+            }
+        },
+        {
+            op: 'notices.stars',
+            describe: 'B-20 — Rate a notice 0-3. Like a pin, any star above zero protects it from the sweeps (clearRead and dismissBySource both skip it); notices.list filters on minStars, so this is how a run marks the few results worth coming back to out of a board full of them. args: id, stars (0-3 — ‼️ anything outside that range, including a 5, becomes 0 rather than being clamped or refused, so pass a number you mean)',
+            handler: (args) => {
+                need(args.stars !== undefined, 'stars is required (0-5; 0 clears the rating).');
+                need(deps.store.setStars(argStr(args, 'id'), Number(args.stars)),
+                    'Notice not found — notices.list shows current ids.');
+                changed(); return { ok: true, id: argStr(args, 'id') };
+            }
+        },
+        {
+            op: 'notices.undo',
+            describe: '‼️ B-20 — PUT THE LAST REMOVAL BACK. A dismiss over the bridge used to be final, so a wrong id or a clearRead that swept more than expected destroyed notices nobody could recover — and the board\'s own Undo could not help, because it remembered the removal on the PANEL and knew nothing of yours. The memory lives on the store now, so the button and this op undo the same thing. No arguments. One deep, deliberately: it answers "that was a mistake", not "walk back through the day". An id that has been re-posted since is skipped rather than duplicated, and the memory is spent either way.',
+            handler: () => {
+                const n = deps.store.undo();
+                need(n > 0, 'Nothing to undo — no removal is remembered (one is kept, and only until the next one).');
+                changed(); return { restored: n };
             }
         }
     ]);

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 38,
+  "gapBudget": 34,
   "entries": [
     {
       "capability": "abTest",
@@ -2695,9 +2695,9 @@
       "ui": [
         "page:noticesPanel.ts#edit"
       ],
-      "gap": {
-        "why": "notices.* can post, read, dismiss and resolve but not EDIT the body of a notice already on the board."
-      }
+      "ops": [
+        "notices.edit"
+      ]
     },
     {
       "capability": "noticesPanel.ts#exportChoose",
@@ -2798,9 +2798,9 @@
       "ui": [
         "page:noticesPanel.ts#pin"
       ],
-      "gap": {
-        "why": "Pinning a notice to the top of the board has no op. An agent can post but cannot say keep this one visible."
-      }
+      "ops": [
+        "notices.pin"
+      ]
     },
     {
       "capability": "noticesPanel.ts#refresh",
@@ -2827,18 +2827,18 @@
       "ui": [
         "page:noticesPanel.ts#setStars"
       ],
-      "gap": {
-        "why": "The star rating a notice carries is settable only on the page; there is no op to score one."
-      }
+      "ops": [
+        "notices.stars"
+      ]
     },
     {
       "capability": "noticesPanel.ts#undo",
       "ui": [
         "page:noticesPanel.ts#undo"
       ],
-      "gap": {
-        "why": "The board's undo of a bulk dismiss has no op, so a mistaken notices.dismiss cannot be taken back over the bridge."
-      }
+      "ops": [
+        "notices.undo"
+      ]
     },
     {
       "capability": "openAgentDetail",
@@ -5145,6 +5145,15 @@
       ]
     },
     {
+      "capability": "settingsPanel.ts#alertNudge",
+      "ui": [
+        "page:settingsPanel.ts#alertNudge"
+      ],
+      "ops": [
+        "alerts.nudge"
+      ]
+    },
+    {
       "capability": "settingsPanel.ts#alertOn",
       "ui": [
         "page:settingsPanel.ts#alertOn"
@@ -5160,15 +5169,6 @@
       ],
       "ops": [
         "alerts.play"
-      ]
-    },
-    {
-      "capability": "settingsPanel.ts#alertNudge",
-      "ui": [
-        "page:settingsPanel.ts#alertNudge"
-      ],
-      "ops": [
-        "alerts.nudge"
       ]
     },
     {

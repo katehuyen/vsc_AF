@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.321.0 - B-20: the notices board's own actions, on the bridge (2026-08-29)
+
+An agent could **post** a notice and then do nothing else with it. Four things
+the board could do had no op at all, and the gap showed: a title that turned out
+wrong stayed wrong, nothing could be kept at the top of a busy board, a run had
+no way to mark which of forty results were the two worth reading — and a
+dismiss was **final**.
+
+- **`notices.edit`** — the board's own edit, on the same store. Pass only what
+  changes. ‼️ The first edit snapshots the original, so the board can show the
+  difference: a correction on the record, never a quiet substitution. An edit
+  that changes nothing is refused rather than stamping the notice `edited` for
+  no reason.
+- **`notices.pin`** — hold it at the top, or let it go. A pin also protects a
+  notice from the sweeps.
+- **`notices.stars`** — rate it. ‼️ The scale is **0-3**, and anything outside it
+  becomes **0** rather than clamping — so a "5" from a caller who assumed five
+  stars *clears* the rating. The op says so, because that is the kind of thing
+  an agent gets wrong forever otherwise.
+- **`notices.undo`** — put the last removal back.
+
+**‼️ And undo is why the store changed, not just the ops.** The board's Undo kept
+the removed notices on the **panel**, which made it a property of a window: an
+agent that dismissed the wrong batch over the bridge had nothing to take back,
+and the person's own Undo vanished the moment the board was closed. The memory
+lives on the store now, so the button and the op undo the same removal — one
+deep, deliberately, because Undo here means "that was a mistake" and not "walk
+back through the day".
+
+Four named gaps in the parity manifest are closed with this: the gap budget goes
+38 → **34**, and 326 capabilities now reach the bridge.
+
 ## 3.320.0 - X-138: the wiki's drop box, relative and self-healing (2026-08-29)
 
 Groundwork for the wiki's Phase 3: a folder you can simply **drop a file into**.

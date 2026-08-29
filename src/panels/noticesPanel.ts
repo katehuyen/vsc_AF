@@ -85,7 +85,9 @@ export class NoticesPanel {
     private static current: NoticesPanel | undefined;
     private disposables: vscode.Disposable[] = [];
     /** Last batch of notices removed from the UI (single-level undo). */
-    private lastRemoved?: Notice[];
+    // B-20 - the undo memory moved to the STORE, so the board's button and
+    // `notices.undo` take back the same removal. Keeping a second copy here
+    // is how the two would come to disagree.
     /** One-shot cross-link focus (a queue item's source notice). */
     private focusNotice?: string;
 
@@ -120,7 +122,7 @@ export class NoticesPanel {
     /** buildData + the panel-local undo count (kept out of the store). Focus is
      *  one-shot: consumed by the first render/refresh after it is set. */
     private data(): Record<string, unknown> {
-        const d = { ...buildData(this.deps, this.focusNotice), undoable: this.lastRemoved?.length ?? 0 };
+        const d = { ...buildData(this.deps, this.focusNotice), undoable: this.deps.store.undoable() };
         this.focusNotice = undefined;
         return d;
     }
@@ -211,8 +213,9 @@ export class NoticesPanel {
                 break;
             case 'dismiss':
                 if (typeof msg.id === 'string') {
-                    const gone = s.list({ limit: 0 }).find(n => n.id === msg.id);
-                    if (s.dismiss(msg.id)) { this.lastRemoved = gone ? [gone] : undefined; }
+                    // B-20 - the board no longer looks the notice up to keep a
+                    // copy for Undo: the store hands it back to itself.
+                    s.dismiss(msg.id);
                     this.mutated();
                 }
                 break;
@@ -224,23 +227,17 @@ export class NoticesPanel {
                 break;
             case 'dismissMany':
                 if (Array.isArray(msg.ids)) {
-                    const removed = s.dismissMany(msg.ids.filter((x): x is string => typeof x === 'string'));
-                    if (removed.length) { this.lastRemoved = removed; }
-                    this.mutated();
+                    s.dismissMany(msg.ids.filter((x): x is string => typeof x === 'string'));
+                    this.mutated();   // the store remembers the batch for undo
                 }
                 break;
             case 'clearRead': {
-                const removed = s.clearRead();
-                if (removed.length) { this.lastRemoved = removed; }
+                s.clearRead();   // …and this sweep too
                 this.mutated();
                 break;
             }
             case 'undo':
-                if (this.lastRemoved && this.lastRemoved.length) {
-                    s.restore(this.lastRemoved);
-                    this.lastRemoved = undefined;
-                    this.mutated();
-                }
+                if (s.undo() > 0) { this.mutated(); }
                 break;
             case 'edit':
                 if (typeof msg.id === 'string' && msg.patch && typeof msg.patch === 'object') {
