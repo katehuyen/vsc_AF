@@ -257,6 +257,25 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
             name => deps.projectStyle?.(name)),
         sessionTableN: tableN,
+        /**
+         * ‼️ U-111 — EVERY SESSION'S SPAN, because `sessions` above CANNOT
+         * answer "how many in this period".
+         *
+         * That list is a POOL: the union of the true top-N per sortable
+         * criterion (50 by default), built for a table the reader sorts. Ask it
+         * how many sessions fall in a span and a busy agent answers with a
+         * floor — the count would silently stop growing at the cap, and the
+         * number that stops being wrong when you shrink the range is the worst
+         * kind of wrong.
+         *
+         * Two numbers per session instead, for ALL of them, every engine: the
+         * page counts the ones OVERLAPPING the chosen span, which is the
+         * dashboard's own definition and the only one that does not drop a
+         * conversation opened on Monday and still running on Friday. Cheaper
+         * than one table row, so it costs nothing next to what already ships.
+         */
+        sessionSpans: tableSessions.map(s => [s.firstTs || s.lastTs || s.mtime || 0,
+            s.lastTs || s.mtime || 0]),
         // ‼️ WHAT THE DUTY FORM NEEDS TO EXIST AT ALL (U-14, surface 1).
         // `addDuty` was five boxes in a row and `editDuty` five more, asking
         // one field at a time and starting over on Esc. The page already drew

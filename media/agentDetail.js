@@ -9,6 +9,20 @@
     let suspendRender = false;
 
     /**
+     * U-111 — THE PERIOD THIS PAGE IS ABOUT.
+     *
+     * The dashboard has been askable for a span since it grew the row; the
+     * agent page — the one place you go to ask about ONE agent — was frozen at
+     * "last 30 days" for its chart and "all time" for everything else, so
+     * "what did this agent cost me last week" could not be asked at all.
+     *
+     * 30 is the default because that is what the page already drew: the row
+     * arriving changes nothing about the first thing the reader sees.
+     */
+    let range = 30;
+    let rangeFrom = '', rangeTo = '';
+
+    /**
      * ‼️ WHICH ENGINES THIS AGENT IS ACTUALLY DRIVEN WITH (X-35).
      *
      * The Sessions card counted only the sessions the money above it was
@@ -268,10 +282,88 @@
         return out;
     }
 
+    /**
+     * The days this page is about — the last N, or a range you picked.
+     *
+     * Deliberately the same shape as the dashboard's: both end up as a list of
+     * day keys, so everything downstream sums the same daily buckets and stays
+     * exactly as accurate as they are.
+     */
+    function rangeDays() {
+        if (range !== 'custom') { return dayKeysBack(Number(range)); }
+        const from = new Date(rangeFrom + 'T00:00:00');
+        const to = new Date(rangeTo + 'T00:00:00');
+        if (isNaN(from) || isNaN(to) || to < from) { return dayKeysBack(30); }
+        const out = [];
+        for (const d = new Date(from); d <= to && out.length < 800; d.setDate(d.getDate() + 1)) {
+            out.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+        }
+        return out;
+    }
+
+    /** What the range is called on a card label. */
+    const rangeLabel = () => (range === 'custom' ? `${rangeFrom} → ${rangeTo}` : `${range}d`);
+
+    /**
+     * ‼️ THE SAME ROW THE DASHBOARD CARRIES, and the same reason for every part
+     * of it: the first week day by day (so "yesterday and today" is askable),
+     * the longer spans, then two dates. Every button says what its number
+     * MEANS — a lone "5" beside "14d" reads as anything but five days.
+     */
+    function rangeControls() {
+        const seg = (list) => `<span class="seg">${list.map(r =>
+            `<button data-range="${r}" class="${r === range ? 'sel' : ''}" title="${r === 1 ? 'Today' : 'The last ' + r + ' days, today included'}">${r}d</button>`).join('')}</span>`;
+        return seg([1, 2, 3, 4, 5, 6, 7]) + seg([14, 30, 90, 180, 365])
+            + `<span class="seg"><button data-range="custom" class="${range === 'custom' ? 'sel' : ''}" title="Between two dates">⇤⇥</button></span>`
+            + (range === 'custom' ? `<span class="seg" style="gap:4px">
+                <input type="date" id="ag-from" value="${C.esc(rangeFrom)}" title="From this day">
+                <input type="date" id="ag-to" value="${C.esc(rangeTo)}" title="To this day, included">
+            </span>` : '');
+    }
+
     function render() {
         const a = DATA.agent;
-        const days = dayKeysBack(30);
+        const days = rangeDays();
         const costSeries = [{ name: a.name, values: days.map(d => DATA.daily[d] ? DATA.daily[d].cost : 0) }];
+
+        // What the chosen span actually cost — summed from the same daily
+        // buckets the chart draws, so the card and the bars can never disagree.
+        const inRange = (field) => days.reduce((n, d) => n + (DATA.daily[d] ? DATA.daily[d][field] : 0), 0);
+        const rangeCost = inRange('cost');
+        const rangeTokens = inRange('tokens');
+        const rangeWTokens = inRange('wTokens');
+        const rangeMsgs = inRange('msgs');
+        /**
+         * ‼️ A SESSION IS IN THE SPAN IF IT OVERLAPS IT — the dashboard's own
+         * definition, and the only one that does not lie about a long session.
+         * A conversation opened on Monday and still being written on Friday
+         * belongs to every day in between; counting it by its last timestamp
+         * alone would drop it out of "that week in July" entirely.
+         */
+        const spanFrom = Date.parse(days[0] + 'T00:00:00');
+        const spanTo = Date.parse(days[days.length - 1] + 'T23:59:59');
+        //
+        // ‼️ FROM `sessionSpans`, NEVER FROM `sessions`. The latter is a POOL
+        // capped at the table's N — counting it would give a floor that stops
+        // growing on a busy agent and looks right on a quiet one.
+        const rangeSessions = (DATA.sessionSpans || [])
+            .filter(([first, last]) => last >= spanFrom && first <= spanTo).length;
+
+        // 180d/365d: weekly buckets keep the bars readable (daily would be ~1px).
+        let chartDays = days, chartSeries = costSeries, bucketNote = '';
+        if (days.length > 120) {
+            chartDays = [];
+            chartSeries = costSeries.map(x => ({ name: x.name, values: [] }));
+            for (let i = 0; i < days.length; i += 7) {
+                chartDays.push(days[i]);
+                costSeries.forEach((x, si) => {
+                    let v = 0;
+                    for (let j = i; j < Math.min(i + 7, days.length); j++) { v += x.values[j] || 0; }
+                    chartSeries[si].values.push(v);
+                });
+            }
+            bucketNote = ' <span class="muted" style="font-size:11px">(weekly buckets)</span>';
+        }
 
         const ctx = a.contextLoad;
         const budget = a.contextBudget;
@@ -455,17 +547,19 @@
                     })}
                     <button class="secondary" id="reveal">Reveal folder</button>`,
                 searchTitle: "Search all of this agent's sessions",
+                // U-111 — the period the figures above the fold are about.
+                controls: rangeControls(),
                 guide: 'ajan-detay-sayfasi'
             })}
             <div class="row" ${window.AFCtx.agent(a)}
                 title="${C.esc(window.AFCtx.AGENT_HINT)}">
-                <div class="card"><div class="label">Total cost</div><div class="kpi">${C.fmtUSD(t.cost)}</div><div class="sub">avg ${C.fmtUSD(t.avgCostPerSession)} / session</div></div>
-                <div class="card"><div class="label">Sessions</div><div class="kpi">${t.allSessions !== undefined ? t.allSessions : t.sessions}</div><div class="sub">${engineSplit(t)}</div></div>
-                <div class="card"><div class="label">Tool calls</div><div class="kpi">${t.toolCalls}</div><div class="sub">${t.errors} errors</div></div>
-                <div class="card"><div class="label">Memory</div><div class="kpi">${a.memoryFiles.length}</div><div class="sub">files</div></div>
+                <div class="card" title="Summed from this agent's daily buckets over ${C.esc(rangeLabel())}. All time: ${C.esc(C.fmtUSD(t.cost))}, avg ${C.esc(C.fmtUSD(t.avgCostPerSession))} per session."><div class="label">Cost · ${rangeLabel()}</div><div class="kpi">${C.fmtUSD(rangeCost)}</div><div class="sub">${C.fmtTokW(rangeTokens, rangeWTokens)} tokens · ${rangeMsgs} msgs · ${C.fmtUSD(t.cost)} all time</div></div>
+                <div class="card" title="Sessions OVERLAPPING ${C.esc(rangeLabel())} — one opened before it and still running inside it counts, because that is when the work happened. All time: ${t.allSessions !== undefined ? t.allSessions : t.sessions}."><div class="label">Sessions · ${rangeLabel()}</div><div class="kpi">${rangeSessions}</div><div class="sub">${t.allSessions !== undefined ? t.allSessions : t.sessions} all time · ${engineSplit(t)}</div></div>
+                <div class="card" title="Every tool call this agent has ever made, and how many of them came back an error. ‼️ NOT scoped by the row above: tool counts are kept per session, not per day, so there is no honest way to cut them by a span."><div class="label">Tool calls</div><div class="kpi">${t.toolCalls}</div><div class="sub">${t.errors} errors · all time</div></div>
+                <div class="card" title="Files in this agent's memory/ folder right now — a picture of the present, not of a period."><div class="label">Memory</div><div class="kpi">${a.memoryFiles.length}</div><div class="sub">files · now</div></div>
             </div>
             <div class="row">
-                <div class="card chartbox"><h3>Daily cost — last 30 days</h3>${C.stackedBars(days, costSeries, {})}</div>
+                <div class="card chartbox"><h3>Daily cost — ${rangeLabel()}${bucketNote}</h3>${C.stackedBars(chartDays, chartSeries, {})}</div>
                 ${ctxHtml}
             </div>
             <div class="row">
@@ -535,6 +629,32 @@
         window.AFHeader.wire(vscode, {
             navActions: { console: { onClick: () => vscode.postMessage({ type: 'consoleSession' }) } }
         });
+        // U-111 — the period row. Local state and a re-render: every figure it
+        // governs is summed from data the page already holds, so nothing is
+        // asked of the host and the answer is instant.
+        document.querySelectorAll('[data-range]').forEach(b =>
+            b.addEventListener('click', () => {
+                const r = b.dataset.range;
+                if (r === 'custom') {
+                    range = 'custom';
+                    // Open on the span you were already looking at, so the dates
+                    // start somewhere meaningful instead of empty.
+                    if (!rangeFrom || !rangeTo) {
+                        const d = rangeDays();
+                        rangeFrom = d[0];
+                        rangeTo = d[d.length - 1];
+                    }
+                } else {
+                    range = Number(r);
+                }
+                render();
+            }));
+        const dateBox = (id, set) => {
+            const el = document.getElementById(id);
+            if (el) { el.addEventListener('change', () => { set(el.value); render(); }); }
+        };
+        dateBox('ag-from', v => { rangeFrom = v; });
+        dateBox('ag-to', v => { rangeTo = v; });
         // The + opens the form on the page. It does not ask the host to ask us:
         // one route, one card, and the palette's own `addDuty` lands on the
         // same one from the other side.

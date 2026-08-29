@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.319.0 - U-111: the agent page can be asked about a period (2026-08-29)
+
+The dashboard has had a range row for a long time. The agent page — the one
+place you go to ask about **one** agent — was frozen at *last 30 days* for its
+chart and *all time* for every figure above it, so "what did this agent cost me
+last week" was not a question it could be asked.
+
+**The same row, on the agent page**: the first week day by day, then 14 / 30 / 90
+/ 180 / 365, then two dates. It opens on **30d**, which is exactly what the page
+already drew — the row arriving changes nothing about the first thing you see.
+
+It governs the **cost card** (summed from the same daily buckets the chart draws,
+so the number and the bars can never disagree), the **sessions card**, and the
+**daily cost chart** — which now buckets weekly past 120 days, or a year of bars
+would be a pixel each. Both cards keep their all-time figure in the sub-line
+rather than trading one question for another.
+
+**‼️ And the two cards it cannot govern say so.** Tool calls are kept per session,
+not per day, so there is no honest way to cut them by a span; the memory count is
+a picture of the present. A page where some cards are scoped and others silently
+are not is worse than one where none are.
+
+**‼️ Sessions are counted from their spans, not from the table.** The obvious
+implementation — filter the sessions array — is wrong: that array is a *pool*,
+the union of the true top-N per sortable criterion, built for a table you sort.
+On a busy agent the count would quietly stop growing at the cap, and it would
+look perfectly right on every quiet agent. The panel now ships two numbers per
+session for **all** of them, every engine, and the page counts the ones
+**overlapping** the span — a conversation opened on Monday and still being
+written on Friday belongs to every day in between.
+
 ## 3.318.0 - K-33: a command is given to a shell that is ready for it (2026-08-29)
 
 Right-click a live Console card, *Resume in Terminal*, and the terminal opened on

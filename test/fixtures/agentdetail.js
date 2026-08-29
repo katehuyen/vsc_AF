@@ -140,6 +140,42 @@ const data = () => ({
     insightScope: SCOPE,
     sessions: dash.sessionRows(),
     sessionTableN: 20,
+    /**
+     * ‼️ U-111 — ALL 61 SESSIONS' SPANS, not the table pool's three.
+     *
+     * The "Sessions - <range>" card counts these, deliberately: `sessions`
+     * above is a POOL capped at the table's N, so counting it would draw a
+     * floor. A fixture that left this out would render the card as ZERO on a
+     * page whose other card says 61 all time - and the picture would document
+     * a form nobody could have shipped.
+     *
+     * Shaped like real history rather than evenly: most of the work is in the
+     * last fortnight, a tail runs back three months, and two of them SPAN a
+     * day boundary, which is the case the overlap rule exists for.
+     */
+    sessionSpans: (() => {
+        const out = [];
+        // 34 in the last 14 days - the busy stretch the 30d default shows
+        for (let i = 0; i < 34; i++) {
+            const end = NOW - Math.floor(i * 0.4) * DAY - (i % 5) * 3600000;
+            out.push([end - (20 + (i % 7) * 15) * 60000, end]);
+        }
+        // 18 more across the previous two months
+        for (let i = 0; i < 18; i++) {
+            const end = NOW - (16 + i * 3) * DAY;
+            out.push([end - 90 * 60000, end]);
+        }
+        // 7 older still, out past 90 days
+        for (let i = 0; i < 7; i++) {
+            const end = NOW - (95 + i * 9) * DAY;
+            out.push([end - 45 * 60000, end]);
+        }
+        // the two that cross midnight: a session opened yesterday evening and
+        // finished this morning belongs to BOTH days
+        out.push([NOW - 30 * 3600000, NOW - 20 * 3600000]);
+        out.push([NOW - 8 * DAY - 4 * 3600000, NOW - 7 * DAY - 21 * 3600000]);
+        return out;   // 61, matching totals.allSessions
+    })(),
     dutyMeta: {
         cadences: ['every-turn', 'session-start', 'daily', 'weekly', 'monthly']
             .map(c => ({ id: c, label: c, title: '' })),
