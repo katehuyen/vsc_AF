@@ -408,7 +408,83 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'turnAlerts.js'));
                 !/\sy*$/.test(S.cutForSpeech(oneLong, 50).replace(' ' + S.DIALOGUE_MORE, '')));
         }
 
-        console.log(`${pass} passed, ${fail} failed`);
-        process.exit(fail ? 1 : 0);
+        // ------------------------------------------------------------------
+        // A-26 (2/4) — THE READING IS INTERRUPTIBLE, AND IT IS ITS OWN CHANNEL.
+        //
+        // ‼️ WHY IT IS NOT ON THE ARBITER. A-22's contract is that the gap
+        // between alerts is measured from the END of a sound; a ninety-second
+        // reading submitted to that queue would hold every chime in the farm
+        // behind it, and the alert that mattered would arrive after the reading
+        // of the turn BEFORE it.
+        {
+            /** A spawner that never makes a noise and can be killed. */
+            const fakeSpawn = () => {
+                const spawned = [];
+                const execFile = (file, args, opts, cb) => {
+                    const child = {
+                        killed: false,
+                        kill() {
+                            this.killed = true;
+                            cb(Object.assign(new Error('killed'), { killed: true }), '', '');
+                            return true;
+                        },
+                        finish() { cb(null, '', ''); }
+                    };
+                    spawned.push(child);
+                    return child;
+                };
+                return { execFile, spawned };
+            };
+            const cfg = S.speakConfig({ voice: '' });
+
+            {
+                const f = fakeSpawn();
+                const sp = new T.DialogueSpeaker();
+                const first = sp.speak('The first answer.', cfg,
+                    { platform: 'win32', execFile: f.execFile });
+                ok('a reading holds the PROCESS while it runs — a pid can be'
+                    + ' recycled between reading it and killing it', sp.speaking === true);
+                // ‼️ THE NEWEST TURN WINS. A reading is about what is on the
+                // screen NOW; queueing would put the farm minutes behind the
+                // conversation, and nobody wants that version.
+                const second = sp.speak('The second answer.', cfg,
+                    { platform: 'win32', execFile: f.execFile });
+                ok('a new turn KILLS the reading it replaced rather than queueing it',
+                    f.spawned[0].killed === true);
+                f.spawned[1].finish();
+                return Promise.all([first, second]).then(([a, b]) => {
+                    // ‼️ INTERRUPTED IS NOT FAILED. A killed player exits
+                    // non-zero; saying so keeps "I stopped it" out of the error
+                    // the user reads when they heard nothing.
+                    ok('…and the cut reading says it was replaced, not that it failed',
+                        a.ok === false && /newer turn/.test(a.skipped || ''));
+                    ok('the newest reading is the one that reports success', b.ok === true);
+                    ok('…and nothing is left holding a process afterwards', sp.speaking === false);
+                    return tail();
+                });
+            }
+        }
+
+        function tail() {
+            const T2 = T;
+            const sp = new T2.DialogueSpeaker();
+            ok('stopping when nothing is being read answers false rather than throwing',
+                sp.stop() === false);
+            return sp.speak('', S.speakConfig({}), { platform: 'win32', execFile: () => ({}) })
+                .then(r => {
+                    // A turn whose whole content was one code block sanitizes to
+                    // a sentence; a turn that sanitizes to NOTHING must not be
+                    // handed to a synthesiser as an empty string.
+                    ok('a turn with nothing speakable in it is skipped BY NAME,'
+                        + ' not spoken as silence',
+                        r.ok === false && /nothing to read/.test(r.skipped || ''));
+                    // A minute-long reading needs its own clock: 20 s is right
+                    // for a sentence and would truncate every long answer.
+                    ok('the reading has a ceiling of its own, well past the'
+                        + ' announcement\'s', T2.DIALOGUE_TIMEOUT_MS >= 60_000);
+                    console.log(`${pass} passed, ${fail} failed`);
+                    process.exit(fail ? 1 : 0);
+                });
+        }
     })();
 }

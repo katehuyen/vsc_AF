@@ -979,6 +979,12 @@ function runPlayers(
         now: () => number;
         startedAt: number;
         base: (backend: string) => SoundResult;
+        /** ‼️ A-26 — THE HANDLE, FOR THE ONE CALLER THAT HAS TO KILL IT. A tone
+         *  is over before anybody could want it stopped; a READING is a minute
+         *  long, so the process it is running in has to be reachable. Nothing
+         *  else about a player changes, which is why this is a hook here rather
+         *  than a second copy of the candidate loop (see the note above). */
+        onSpawn?: (child: unknown) => void;
     }
 ): Promise<SoundResult> {
     const { execFile, timeout, now, startedAt, base } = ctx;
@@ -994,7 +1000,7 @@ function runPlayers(
                     resolve(r);
                 };
                 try {
-                    execFile(
+                    const child = execFile(
                         c.file, c.args,
                         {
                             timeout, windowsHide: true,
@@ -1022,6 +1028,7 @@ function runPlayers(
                             done(r);
                         }
                     );
+                    ctx.onSpawn?.(child);
                 } catch (e) {
                     const r = base(c.backend);
                     r.durationMs = now() - startedAt;
@@ -1095,6 +1102,112 @@ export async function speakAnnouncement(
         return { ...base('none'), error: `no speech backend known for platform ${platform}` };
     }
     return runPlayers(usable, { execFile, timeout, now, startedAt, base });
+}
+
+/**
+ * ‼️ A-26 — A READING IS A MINUTE LONG, SO IT NEEDS ITS OWN CLOCK.
+ *
+ * `speakAnnouncement`'s 20 seconds is right for a sentence and wrong for a
+ * turn: the ceiling `sanitizeForSpeech` cuts at is about ninety seconds of
+ * speech at a normal rate, and a timeout that killed it at twenty would
+ * truncate every long answer in a way nothing on screen could explain.
+ */
+export const DIALOGUE_TIMEOUT_MS = 5 * 60_000;
+
+/**
+ * ‼️ A-26 — READING THE TURN ITSELF, IN ITS OWN CHANNEL, INTERRUPTIBLY.
+ *
+ * Three decisions, and each is the reason the class exists rather than a
+ * function:
+ *
+ * 1. **IT DOES NOT GO THROUGH THE ALERT ARBITER (A-22).** The arbiter's whole
+ *    contract is that the gap between alerts is measured from the END of a
+ *    sound; a ninety-second reading submitted to it would hold every chime in
+ *    the farm behind it, and the alert that mattered would arrive after the
+ *    reading of the turn before it. Reading is a SECOND CHANNEL: it can overlap
+ *    a chime, exactly as a person talking over a doorbell does.
+ * 2. **THE NEWEST TURN WINS.** A reading is about what is on the screen NOW.
+ *    When the next turn lands, the one being read is already history, so it is
+ *    killed rather than queued — a queue here would put the farm minutes behind
+ *    the conversation and there is no version of that anybody wants.
+ * 3. **THE PROCESS IS HELD, NOT THE PID.** A pid can be recycled between the
+ *    moment it is read and the moment it is killed; the handle cannot. That is
+ *    also why `stop()` answers whether there WAS anything to stop — a caller
+ *    that wants to say "nothing was being read" must not have to guess.
+ */
+export class DialogueSpeaker {
+    private child: { kill?: (signal?: string) => boolean } | null = null;
+    /** Which reading is the current one. A reply from a killed process must not
+     *  be able to clear the handle of the reading that replaced it. */
+    private epoch = 0;
+
+    /** Is something being read aloud right now? */
+    get speaking(): boolean { return this.child !== null; }
+
+    /**
+     * Read one turn aloud, cutting short whatever was being read.
+     *
+     * The text is expected to have been through `sanitizeForSpeech` already —
+     * it is not done here, because WHAT to read (a whole turn, a selection, one
+     * paragraph) is the caller's question and the ceiling belongs with it.
+     */
+    async speak(text: string, cfg: SpeakConfig, deps: PlaySoundDeps = {}): Promise<SoundResult> {
+        this.stop();
+        const mine = ++this.epoch;
+        const platform = deps.platform ?? process.platform;
+        const now = deps.now ?? (() => Date.now());
+        const startedAt = now();
+        const said = String(text ?? '').trim();
+        const base = (backend: string): SoundResult => ({
+            backend, ok: false, startedAt, durationMs: now() - startedAt,
+            exitCode: null, stderr: '', spoke: said
+        });
+        if (!said) {
+            return { ...base('none'), skipped: 'nothing to read — the turn had no speakable text' };
+        }
+        const usable = speakCandidates(platform, said, cfg);
+        if (!usable.length) {
+            return { ...base('none'), error: `no speech backend known for platform ${platform}` };
+        }
+        const execFile = (deps.execFile
+            ?? (require('child_process') as typeof import('child_process')).execFile
+        ) as NonNullable<PlaySoundDeps['execFile']>;
+        const r = await runPlayers(usable, {
+            execFile,
+            timeout: deps.timeoutMs ?? DIALOGUE_TIMEOUT_MS,
+            now, startedAt, base,
+            onSpawn: c => {
+                // A late spawn from a reading that has already been replaced is
+                // killed on the spot rather than left running unreachable.
+                if (mine !== this.epoch) { killChild(c); return; }
+                this.child = c as { kill?: (signal?: string) => boolean };
+            }
+        });
+        if (mine === this.epoch) { this.child = null; }
+        // ‼️ INTERRUPTED IS NOT FAILED. A killed player exits non-zero and the
+        // runner reports that honestly; saying so here is what keeps "I stopped
+        // it" out of the error log the user reads when nothing was heard.
+        return mine === this.epoch ? r : { ...r, ok: false, skipped: 'a newer turn replaced this reading' };
+    }
+
+    /** Stop whatever is being read. Answers whether there was anything. */
+    stop(): boolean {
+        const c = this.child;
+        this.child = null;
+        this.epoch++;
+        if (!c) { return false; }
+        killChild(c);
+        return true;
+    }
+}
+
+/** Kill one player, whatever shape the injected spawner handed back. A test's
+ *  stand-in is not a ChildProcess and must not be asked to be one. */
+function killChild(c: unknown): void {
+    const k = (c as { kill?: (signal?: string) => boolean } | null)?.kill;
+    if (typeof k === 'function') {
+        try { k.call(c); } catch { /* already gone is the outcome we wanted */ }
+    }
 }
 
 /**
