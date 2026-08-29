@@ -474,8 +474,13 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
         /🌱 needs a topic/.test(h));
     ok('…and the empty topics cell is the door to fixing it, not a dash',
         /pick a category…/.test(h));
-    ok('‼️ …and carries NO tick box — the host refuses a topicless compile by name',
-        !el(r, 'cb', 'wc-7') && !!el(r, 'cb', 'wc-8'));
+    // ‼️ U-121 — TICKING IT AND COMPILING IT ARE TWO DIFFERENT QUESTIONS. The
+    // row IS tickable (it can be dropped or removed with four others); what it
+    // is never in is a compile — the button's own count leaves it out, and the
+    // State and Topics cells both say why in words.
+    ok('‼️ …is tickable like any row, but no compile button counts it',
+        !!el(r, 'cb', 'wc-7') && !/Compile All Pending \(5\)/.test(h)
+        && /Compile All Pending \(4\)/.test(h));
 
     // ‼️ THE SAME ROW, ONE CATEGORY LATER. wc-8 is a dropped file too, and it is
     // an ordinary compilable mark — so the distinction the page draws is
@@ -513,6 +518,82 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
         /still need a topic/.test(f));
     ok('‼️ …and only the filed one is offered to the filtered compile',
         /Compile these 1/.test(f));
+}
+
+/**
+ * ============================== U-121 — THE TOOLBAR, THE MASTER BOX, AND THE
+ * WAY BACK.
+ *
+ * Three things that all came from the same mistake: the tick box was the
+ * COMPILE's box rather than a selection box.
+ *
+ *   * so it only existed on a waiting row, which left the `dropped` and
+ *     `compiled` tabs with no way to act on more than one row at a time and no
+ *     way at all to bring five dropped marks back;
+ *   * so the master box was drawn unchecked on every repaint and every click
+ *     read as "turn on" — ticking everything worked and untticking it was
+ *     impossible, which is the one gesture that box exists for;
+ *   * and the buttons that count the selection sat in the PAGE header, two
+ *     strips away from the ticks that change their numbers.
+ */
+{
+    const r = run();
+    const h = r.html();
+
+    ok('‼️ the table\'s buttons are under the filters, not in the page header',
+        h.indexOf('wk-tbar') > h.indexOf('wk-bar')
+        && h.indexOf('wk-tbar') < h.indexOf('wktable')
+        && h.indexOf('id="wk-csel"') > h.indexOf('wk-tbar'));
+    ok('…and the page header keeps what a header is for', /Wiki<\/h1>/.test(h) && /writer: developer/.test(h));
+
+    // ‼️ EVERY TAB CAN BE SELECTED FROM. The dropped row and the compiled rows
+    // are exactly the ones that had no box and therefore no bulk act. (A dropped
+    // mark is history, so the DEFAULT view leaves it out — the press below is
+    // what a reader does to go looking for one.)
+    r.query('[data-state]').filter(e => e.dataset.state === 'all')[0].fire('click');
+    ok('‼️ a dropped row has a tick box', !!el(r, 'cb', 'wc-5'));
+    ok('‼️ …and so does a compiled one', !!el(r, 'cb', 'wc-3'));
+    ok('…while the one with a live run out for it still has none', !el(r, 'cb', 'wc-2'));
+
+    // The master box, pressed twice. This is the whole item.
+    const all = () => r.query('#wk-all')[0];
+    ok('the master box starts empty and undetermined',
+        all().checked === false && all().indeterminate === false);
+    all().checked = true; all().fire('change');
+    const on = r.html();
+    ok('one press selects every selectable row shown', /✕ Remove 8/.test(on));
+    ok('‼️ …and the box now DRAWS as checked, which is what makes the next press work',
+        all().checked === true && all().indeterminate === false);
+    all().checked = false; all().fire('change');
+    ok('‼️ …so the second press clears the selection (deselect-all)',
+        !/✕ Remove/.test(r.html()));
+
+    // A partial selection is neither, and the box says so rather than lying
+    // in one direction.
+    const one = r.query('[data-cb]').filter(e => e.dataset.cb === 'wc-1')[0];
+    one.checked = true; one.fire('change');
+    ok('‼️ a partial selection draws as indeterminate',
+        all().indeterminate === true && all().checked === false);
+
+    // ‼️ AND THE COUNTS DO NOT AGREE, WHICH IS THE POINT. A selection of a
+    // dropped row and a waiting one compiles ONE of them, and every button says
+    // its own number rather than one of them quietly taking the other's rows.
+    const drop = r.query('[data-cb]').filter(e => e.dataset.cb === 'wc-5')[0];
+    drop.checked = true; drop.fire('change');
+    const mixed = r.html();
+    ok('‼️ each act counts only the rows IT can take',
+        /Compile Selected \(1\)/.test(mixed) && /🚫 Drop 1/.test(mixed)
+        && /↺ Reopen 1/.test(mixed) && /✕ Remove 2/.test(mixed));
+    ok('…and the compile button says out loud what it is leaving out',
+        /cannot be compiled/.test(mixed));
+
+    // The way back, in one press.
+    r.query('#wk-osel')[0].fire('click');
+    const sent = r.posted.filter(m => m.type === 'edit' && m.state === 'pending');
+    ok('‼️ Reopen sends ONE edit for the closed rows only',
+        sent.length === 1 && sent[0].ids.length === 1 && sent[0].ids[0] === 'wc-5');
+    ok('…and never drags the waiting row in with them',
+        sent[0].ids.indexOf('wc-1') < 0);
 }
 
 // ============================================= U-83 — reaching it at all

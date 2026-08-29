@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.327.0 - U-121: the tick box stops being the compile's box (2026-08-29)
+
+Three separate frustrations in the Wiki cockpit, all of them the same mistake:
+the tick box was the COMPILE's box rather than a selection box.
+
+**‼️ So the master box could only be pressed once.** It was drawn unchecked on
+every repaint, which means a browser click always read as *turn on*: ticking
+everything worked and untticking it was impossible — the one gesture that box
+exists for. It now takes its `checked` from the rows themselves and its
+`indeterminate` from a partial selection (a property, so it cannot be written in
+markup and has to be set after the paint), and its hover says which of the two
+presses you are about to make.
+
+**And the `dropped` and `compiled` tabs had no boxes at all**, so five dropped
+marks could only be brought back one row at a time — which is what made 🚫 Drop
+feel irreversible even though every row has had its own ↺ all along. Every row
+is tickable now except the one a run is out for, where anything you do fights
+the run, and the bulk group gained **↺ Reopen**.
+
+**‼️ And when the ticked set and the compilable set differ, every button says its
+own number.** A selection of six that compiles two says `Compile Selected (2)`,
+`Drop 1`, `Reopen 1`, `Remove 6` — each act taking exactly the slice it counted,
+and the compile button's hover saying out loud how many of your ticks it is
+leaving out and why. A button that says 3 and sends 6 is the silent narrowing
+these counts exist to prevent.
+
+- **The table's buttons moved to the table.** `Compile Selected`, `Compile All`,
+  the bulk group and `Lint` were in the page header, among the global
+  navigation — two strips away from the filters that decide what is in the table
+  and from the ticks that change their numbers. They sit under the filter bar
+  now, in the order the three things argue: what is shown, what is ticked, what
+  happens. The header keeps what a header is for.
+- A mark with no topic (U-117) is tickable like any other — it can be dropped or
+  removed with four others. What it is never in is a compile: no compile button
+  counts it, and the State and Topics cells both say why in words.
+
 ## 3.326.0 - X-140: the compile is told what a dropped file is, and where to put it afterwards (2026-08-29)
 
 The brief and the compile prompt are written in the grammar of a CLI

@@ -146,6 +146,22 @@
      *  to, and the host refuses it by name (U-117). */
     const compilable = list => list.filter(c => c.state === 'pending' && !c.compiling && (c.topics || []).length);
 
+    /**
+     * ‼️ U-121 — TICKING A ROW AND COMPILING IT ARE TWO DIFFERENT QUESTIONS.
+     *
+     * The tick box used to be the compile's box, so it only existed on a waiting
+     * mark — which left the `dropped` and `compiled` tabs with no way to act on
+     * more than one row at a time, and no way to bring five dropped marks back
+     * at all. It is a SELECTION box: every row can be ticked except one a run is
+     * out for, because that is the one row where anything you do fights the run.
+     *
+     * What the selection is then GOOD for is decided per button, and each says
+     * its own number — so a selection of six that can compile two says two on
+     * the compile button and six on Remove, rather than quietly taking four
+     * rows nobody offered.
+     */
+    const selectable = list => list.filter(c => !c.compiling);
+
     // ------------------------------------------------------------- the vault
     /**
      * ‼️ THE ONE STRIP THAT DECIDES WHETHER ANY BUTTON ON THIS PAGE WORKS.
@@ -438,17 +454,16 @@
     function rowHtml(c) {
         const st = STATE[stateOf(c)] || STATE.pending;
         const on = selected.has(c.id);
-        // ‼️ U-117 — THE TICK BOX IS THE HOST'S ANSWER, DRAWN. A mark with no
-        // topic is refused by `startCompileRun` by name, so offering it here
-        // would be a box whose only outcome is a warning toast. It is the third
-        // stage of a raw drop made visible: dropped → filed → compilable.
+        // U-117 — a mark with no topic is refused by `startCompileRun` by name.
+        // ‼️ U-121 — WHICH IS ABOUT COMPILING, NOT ABOUT SELECTING. The row is
+        // still tickable (it can be dropped or removed with four others); it is
+        // simply never counted by a compile button, and the State and Topics
+        // cells both say why in words. The one row with NO box is the one a run
+        // is already out for: there, everything you could do fights the run.
         const untriaged = c.state === 'pending' && !(c.topics || []).length;
-        const box = c.state === 'pending' && !c.compiling && !untriaged
-            ? `<input type="checkbox" data-cb="${esc(c.id)}"${on ? ' checked' : ''} aria-label="Select this mark for compiling">`
-            : untriaged
-                ? `<button class="wk-seed" data-act="topics" data-id="${esc(c.id)}"
-                    title="Nothing can be compiled from this until it has a topic — a compile files a page under one. Press to pick a category.">🌱</button>`
-                : `<span class="wk-nobox" title="${c.compiling ? 'A compile is already running for this mark' : 'Only a waiting mark can be compiled'}">·</span>`;
+        const box = !c.compiling
+            ? `<input type="checkbox" data-cb="${esc(c.id)}"${on ? ' checked' : ''} aria-label="Select this mark">`
+            : `<span class="wk-nobox" title="A compile is already running for this mark — leave it alone until the run reports back">·</span>`;
         return `<tr class="${on ? 'sel' : ''} ${st.cls}">
             <td class="wk-pick">${box}</td>
             ${T.cell('wk-state', untriaged ? `data-act="topics" data-id="${esc(c.id)}" role="button" tabindex="0"` : '',
@@ -579,8 +594,15 @@
         const list = shown();
         const p = pool();
         const v = vault();
-        const pickable = compilable(list);
-        const pickedIds = [...selected].filter(id => pickable.some(c => c.id === id));
+        // U-121 — three different questions about one selection, each answered
+        // on the button that acts on it. `picked` is what is ticked and still on
+        // screen; the other two are the slices each act can actually take.
+        const picked = [...selected].filter(id => selectable(list).some(c => c.id === id));
+        const pickedIds = [...selected].filter(id => compilable(list).some(c => c.id === id));
+        const pickedOpen = [...selected].filter(id =>
+            list.some(c => c.id === id && c.state === 'pending' && !c.compiling));
+        const pickedClosed = [...selected].filter(id =>
+            list.some(c => c.id === id && (c.state === 'dropped' || c.state === 'compiled')));
         const waiting = compilable(rows()).length;
         const blocked = !v.exists || !v.rulesFound;
         const why = blocked
@@ -594,19 +616,35 @@
          * is ticked: an always-visible `Drop (0)` is a button that does nothing
          * and a `Remove` sitting permanently beside a compile is a hand slip.
          */
-        const bulk = pickedIds.length ? `
+        const bulk = picked.length ? `
             <span class="wk-bulk">
-                <button class="secondary" id="wk-dsel"
-                    title="Take the ${pickedIds.length} selected mark(s) out of the queue without compiling them. Reversible from the row (↺), and it writes nothing to the vault."
-                    >🚫 Drop ${pickedIds.length}</button>
+                ${pickedOpen.length ? `<button class="secondary" id="wk-dsel"
+                    title="Take the ${pickedOpen.length} waiting mark(s) in your selection out of the queue without compiling them. Reversible (↺), and it writes nothing to the vault."
+                    >🚫 Drop ${pickedOpen.length}</button>` : ''}
+                ${/* ‼️ U-121 — THE WAY BACK, IN ONE PRESS. Dropping five marks was
+                      one gesture and un-dropping them was five, which is what made
+                      the 🚫 above feel irreversible even though every row has had
+                      its own ↺ all along. `compiled` is here too: reopening one
+                      writes nothing and unwrites nothing — the pages it already
+                      wrote stay written, and the mark simply queues again. */''}
+                ${pickedClosed.length ? `<button class="secondary" id="wk-osel"
+                    title="Put the ${pickedClosed.length} closed mark(s) in your selection back in the queue as waiting. It writes nothing and undoes nothing — a page a compile already wrote stays written."
+                    >↺ Reopen ${pickedClosed.length}</button>` : ''}
                 <button class="secondary wk-del" id="wk-rsel"
-                    title="Delete the ${pickedIds.length} selected mark(s) from the pool. It undoes nothing in the vault — a page already written stays written."
-                    >✕ Remove ${pickedIds.length}</button>
+                    title="Delete the ${picked.length} selected mark(s) from the pool. It undoes nothing in the vault — a page already written stays written."
+                    >✕ Remove ${picked.length}</button>
             </span>` : '';
 
+        // ‼️ U-121 — WHEN THE TICKED SET AND THE COMPILABLE SET DIFFER, SAY SO.
+        // A selection of six that compiles two is a perfectly ordinary thing to
+        // have (dropped rows, compiled rows, a drop with no topic yet) — and a
+        // button that quietly says "2" over a selection of six is the kind of
+        // silent narrowing this page is built not to do.
+        const short = picked.length - pickedIds.length;
         const actions = `
             <button id="wk-csel" ${pickedIds.length && !blocked ? '' : 'disabled'}
-                title="${blocked ? esc(why) : `Start ONE run over the ${pickedIds.length} selected mark(s). It writes nothing yet — the run reports back with the pages it wrote, and that is what closes a mark.`}"
+                title="${blocked ? esc(why) : `Start ONE run over the ${pickedIds.length} selected mark(s). It writes nothing yet — the run reports back with the pages it wrote, and that is what closes a mark.`
+            + (short > 0 ? ` ‼️ ${short} of the ${picked.length} you have ticked cannot be compiled — they are closed, or waiting for a topic — and are not in this run.` : '')}"
                 >📚 Compile Selected${pickedIds.length ? ` (${pickedIds.length})` : ''}</button>
             <button class="secondary" id="wk-call" ${waiting && !blocked ? '' : 'disabled'}
                 title="${blocked ? esc(why) : `Start one run over every waiting mark (${waiting}). Marks a run is already out for are left alone.`}"
@@ -638,6 +676,11 @@
                 .wk-file:hover { text-decoration:underline; }
                 .wk-vsep { opacity:.4; margin:0 2px; }
                 .wk-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 8px; }
+                /* U-121: the table's own toolbar, under the filters that decide
+                   what is in the table and over the ticks that decide what is in
+                   the selection — the three things that argue with each other,
+                   in the order they argue. */
+                .wk-tbar { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin:0 0 8px; }
                 .wk-seg button { font-size:11px; padding:3px 9px; }
                 .wk-q { flex:1 1 200px; min-width:160px; }
                 /* DENSE: the row is the unit of reading, so it is one line tall
@@ -786,7 +829,18 @@
             page: 'wiki',
             title: 'Wiki',
             sub,
-            actions,
+            /**
+             * ‼️ U-121 — THE TABLE'S BUTTONS ARE NOT THE PAGE'S BUTTONS.
+             *
+             * `Compile Selected`, `Compile All`, the bulk group and `Lint` all
+             * act on the rows below, and they were sitting in the page header
+             * among the global navigation — two strips away from the filters
+             * that decide what is in the table and from the ticks that decide
+             * what is in the selection. A count that changes when you tick a row
+             * belongs beside the row, not beside the link to Dashboard. The
+             * header keeps what a header is for: what this page is, what is in
+             * the pool, and where else to go.
+             */
             // Turns only: Toolbox is already in the global cluster, and a
             // destination drawn twice on one toolbar is a button nobody trusts.
             related: [{
@@ -797,6 +851,7 @@
         })}
             ${vaultStrip()}
             ${filterBar()}
+            <div class="wk-tbar">${actions}</div>
             ${askStrip()}
             ${tableHtml(list)}
             ${lintHtml()}
@@ -965,8 +1020,31 @@
         // Selection. "All" means every row that could actually be compiled in
         // the current view — a tick that selects rows the button then refuses
         // is a count that lies.
+        /**
+         * ‼️ U-121 — THE MASTER BOX HAS TO KNOW WHAT IT IS LOOKING AT, or it
+         * cannot be pressed twice.
+         *
+         * It was drawn unchecked on every repaint, so a browser click always
+         * read as "turn on": ticking everything worked, and untticking it was
+         * impossible — the one gesture the box exists for. `checked` is set from
+         * the rows themselves, and `indeterminate` (a PROPERTY, so it cannot be
+         * written in the markup and has to be set here) is what a partial
+         * selection actually is. From indeterminate a click selects all, which
+         * is what a reader means by it.
+         */
+        const master = document.getElementById('wk-all');
+        if (master) {
+            const pick = selectable(shown());
+            const n = pick.filter(c => selected.has(c.id)).length;
+            master.checked = pick.length > 0 && n === pick.length;
+            master.indeterminate = n > 0 && n < pick.length;
+            master.disabled = pick.length === 0;
+            master.title = !pick.length ? 'Nothing here can be selected'
+                : master.checked ? `Unselect all ${pick.length} row(s) shown`
+                    : `Select all ${pick.length} row(s) these filters leave`;
+        }
         bind('wk-all', 'change', e => {
-            const pick = compilable(shown());
+            const pick = selectable(shown());
             if (e.target.checked) { pick.forEach(c => selected.add(c.id)); }
             else { pick.forEach(c => selected.delete(c.id)); }
             render();
@@ -1013,15 +1091,28 @@
             });
         }
 
-        // ---- U-95: the ticked rows, acted on together.
+        // ---- U-95/U-121: the ticked rows, acted on together. Each act takes
+        // exactly the slice its own button counted — a button that says 3 and
+        // sends 6 is the silent narrowing the counts exist to prevent.
+        const inState = (...states) => [...selected].filter(id =>
+            shown().some(c => c.id === id && states.indexOf(c.state) >= 0 && !c.compiling));
         bind('wk-dsel', 'click', () => {
-            const ids = picked();
+            const ids = inState('pending');
             if (!ids.length) { return; }
             post({ type: 'edit', ids, state: 'dropped' });
             selected.clear(); render();
         });
+        // ‼️ U-121 — the way back for a whole selection. It writes nothing and
+        // unwrites nothing: a page a compile already wrote stays written, and
+        // the mark simply queues again.
+        bind('wk-osel', 'click', () => {
+            const ids = inState('dropped', 'compiled');
+            if (!ids.length) { return; }
+            post({ type: 'edit', ids, state: 'pending' });
+            selected.clear(); render();
+        });
         bind('wk-rsel', 'click', () => {
-            const ids = picked();
+            const ids = [...selected].filter(id => selectable(shown()).some(c => c.id === id));
             if (!ids.length) { return; }
             post({ type: 'remove', ids });
             selected.clear(); render();
