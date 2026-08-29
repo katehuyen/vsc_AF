@@ -1146,6 +1146,10 @@
             // open. A default that changed behaviour for the tasks people
             // already have would be a surprise, not a feature.
             interactiveTarget: 'vscode', interactiveClose: 'stay-open',
+            // ‼️ A-24 — and what it sounds like when it ends. Empty is the
+            // ordinary answer, not a missing one: the fleet's own chain decides,
+            // exactly as it did before this row existed.
+            finishSound: '',
             cli: '', workDir: '', priority: 0,
             // ‼️ A TASK OPENS ON THE WINDOW'S PROJECT; AN AUTOMATION DOES NOT.
             // A task made here is made by a person who is looking at a project.
@@ -1555,8 +1559,13 @@
         // dropdown to stare at; the control is simply not part of that engine's
         // form. (`docs/CONVENTIONS.md`: a control with no referent is a bug.)
         if (!(list || []).length) { return ''; }
+        // ‼️ A-24 — `off` DRAWS THE ROW AND REFUSES THE CLICK. A choice that
+        // cannot be made here but IS what the object currently says has to stay
+        // visible: dropping it would leave the box showing the first option and
+        // reporting a decision nobody made. `selected` still wins on a disabled
+        // option, which is exactly the pair of behaviours this needs.
         const opts = (list || []).map(c =>
-            `<option value="${C.esc(c.id)}"${c.id === value ? ' selected' : ''}>${C.esc(c.label)}${c.id ? '' : ''}</option>`).join('');
+            `<option value="${C.esc(c.id)}"${c.id === value ? ' selected' : ''}${c.off ? ' disabled' : ''}>${C.esc(c.label)}</option>`).join('');
         return `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
             <select id="nt-${id}">${opts}</select></label>`;
     }
@@ -2400,6 +2409,22 @@
                 'How much reasoning per turn — the levels the chosen model actually supports. Mechanical work does not need the expensive end, and a run nobody is watching is exactly where that choice is worth making.')}
                 ${choiceSel('permissionMode', 'Permissions', L.permissions, c.permissionMode,
                     permTipFor(c.engine))}
+                ${/**
+                    * ‼️ A-24 — AND WHAT YOU HEAR WHEN IT IS OVER.
+                    *
+                    * It is not a fifth step in the alert chain: the moment the
+                    * run's session id is known, the pick is written into THAT
+                    * session's own step, which is the one A-23 built and the one
+                    * the Live Timeline already draws — so the row says "this
+                    * session's own choice" and is telling the truth.
+                    */ ''}
+                ${choiceSel('finishSound', 'Sound on finish', L.finishSounds, c.finishSound,
+                'What this run sounds like when it ends. Left on Default, the alert settings decide as '
+            + 'they always have. A tone is written onto the run\'s OWN session the moment it has one, so it '
+            + 'beats the fleet setting for this run and nothing else — and picking one also arms that '
+            + 'session\'s ♪, otherwise the choice would do nothing while the fleet switch is off. '
+            + '‼️ Silent mutes the WHOLE run, not only its ending: silence is not a tone, it is the '
+            + 'session mute, and it is the only thing that can take a sound away.')}
                 <label class="ntf" title="${c.kind === 'task'
                         ? 'The project this task belongs to. Recorded when it is CREATED, not when it runs — a queued task can sit for hours, and by the time it starts the window may be showing something else entirely.'
                         : 'The project its runs belong to. An automation fires with nobody looking at a window, so it has no project unless you declare one here.'}"><span>Project</span>
@@ -2496,6 +2521,9 @@
         // on the page: switching to headless and back keeps both answers on the
         // draft instead of resetting them to the defaults.
         v('interactiveTarget', 'interactiveTarget'); v('interactiveClose', 'interactiveClose');
+        // A-24 - what it sounds like when it ends. Always on the page for a
+        // run, so no mode-dependent skip applies to it.
+        v('finishSound', 'finishSound');
         v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
         n('priority', 'priority');
         b('start', 'start'); b('enabled', 'enabled'); b('ignorebudget', 'ignoreBudget');
@@ -3563,7 +3591,7 @@
             // silently, because the draft had never been told. Exactly the defect
             // M-21 named on the continuation prompt, on a field two days old.
             ['agent', 'effort', 'permissionMode', 'project', 'cli',
-                'interactiveTarget', 'interactiveClose',
+                'interactiveTarget', 'interactiveClose', 'finishSound',
                 'dow', 'missed', 'hookEvent', 'hookAgent', 'workflowId'].forEach(id =>
                     byId('nt-' + id, 'change', () => readComposer()));
             // ‼️ These REDRAW, because they change which fields — or which

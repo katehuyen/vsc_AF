@@ -250,7 +250,7 @@ import {
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
     argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgePage, bridgeRunDimensions,
-    DIMS_OUT_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE,
+    DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE,
     needOneExecutor, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
 import {
@@ -364,7 +364,8 @@ import {
 } from './core/speech';
 import {
     addCustomVoice, AlertEvent, ALERT_EVENTS, AlertVoice, builtinVoices, CustomVoice,
-    CUSTOM_LIMIT, DEFAULT_VOICE, EVENT_LABEL, ORIGIN_LABEL, playableOn, removeCustomVoice,
+    CUSTOM_LIMIT, DEFAULT_VOICE, EVENT_LABEL, FINISH_SOUND_SILENT, normalizeFinishSound,
+    ORIGIN_LABEL, playableOn, removeCustomVoice,
     renameCustomVoice, ResolveDeps, ResolvedVoice, resolveVoice
 } from './core/alertVoices';
 import {
@@ -3142,6 +3143,63 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * second pass finds nothing to do and `setLaunchBindings` returns early on
      * an unchanged signature.
      */
+    /**
+     * ‼️ A-24 — A RUN'S OWN TONE, HANDED TO THE SESSION IT TURNED OUT TO BE.
+     *
+     * The whole feature is this one hop. The pick is made hours earlier, on a
+     * form, about a conversation that does not exist yet; the moment the run has
+     * an id, the pick is written into THAT session's own step — the step A-23
+     * built, that `resolveVoice` already reads and the Live Timeline already
+     * draws. Nothing new joins the chain, so the row that says "this session's
+     * own choice" is telling the truth rather than hiding a fifth authority.
+     *
+     * ‼️ THE ID IS NOT VALIDATED HERE, and that is A-23's rule rather than an
+     * omission: the store checks keys and never values, because whether
+     * `tick-dry` still has a playable file is a question for the moment of
+     * PLAYING and a second opinion kept here would go stale the day the user
+     * deletes it. A dead id is skipped by the chain, with the reason, and the
+     * step below is heard — never silence.
+     *
+     * ‼️ AND PICKING A TONE ARMS THE ♪. The two authorities over a sound ADD
+     * (`alertPlan`), so a tone alone would do nothing at all whenever the fleet
+     * switch is off — the choice would be accepted, stored, drawn, and silent.
+     * Quiet is the opposite question and the only thing that can SUBTRACT, so it
+     * is the session mute (A-22) and it mutes the run, not only its ending.
+     *
+     * Once per run per session, and only while the run is still going: a window
+     * reload must not re-stamp a preference over a finished task the user has
+     * since edited by hand. A run whose id is only deduced after it ended is the
+     * one case this cannot serve — the sound it wanted has already not happened
+     * — and it is left alone rather than written into a dead conversation.
+     */
+    const finishSoundDone = new Set<string>();
+    const applyFinishSounds = (): void => {
+        let wrote = false;
+        for (const t of taskManager.tasks) {
+            if (t.status !== 'running') { continue; }
+            const want = normalizeFinishSound(t.finishSound);
+            if (!want) { continue; }
+            // Declared first (the Console owns its id, a resume was TOLD one),
+            // deduced last — the same order `publishLaunchBindings` trusts them in.
+            const sid = t.consoleSessionId || t.resumeSessionId || t.runSessionId || '';
+            if (!sid) { continue; }
+            const key = `${t.id}:${sid}`;
+            if (finishSoundDone.has(key)) { continue; }
+            finishSoundDone.add(key);
+            const r = want === FINISH_SOUND_SILENT
+                ? turnAlerts.setMuted(sid, true)
+                : turnAlerts.setVoice(sid, 'ended', want);
+            if (!r.ok) { continue; }
+            if (want !== FINISH_SOUND_SILENT) { turnAlerts.set(sid, 'sound', true); }
+            wrote = true;
+        }
+        if (wrote) {
+            void turnAlerts.flush();
+            TimelinePanel.refreshIfOpen();
+        }
+    };
+    context.subscriptions.push(taskManager.onDidChange(() => applyFinishSounds()));
+
     const reconcileBindings = (): void => {
         let wrote = false;
         for (const r of index.resolvedBindings()) {
@@ -3160,6 +3218,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             })) { wrote = true; }
         }
         if (wrote) { publishLaunchBindings(); }
+        // ‼️ A-24 — and a run that has only just LEARNT its id gets its tone.
+        // `onDidChange` covers the declared ids (the Console, a resume); this
+        // covers the deduced one, which is the ordinary headless case.
+        applyFinishSounds();
     };
     context.subscriptions.push(index.onDidUpdate(() => reconcileBindings()));
 
@@ -6466,7 +6528,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // open", so it is the door the wording was written for — but it is
                 // not the only one, and five hand-typed copies would be five
                 // contracts.
-                + INTERACTIVE_NOTE + ' '
+                + INTERACTIVE_NOTE + FINISH_SOUND_NOTE + ' '
                 // ‼️ M-7 — the ONE ceiling the caller may lift, and the three it may not.
                 + 'ignoreBudget? (default false — launch even when the daily budget is spent. '
                 + 'It is the user\'s own ceiling about money, so a run they named may pass it; '
@@ -7026,7 +7088,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + ' — ‼️ refused HERE if unknown, rather than at 3 a.m. with nobody watching), model?, effort? (‼️ refused on an engine that has no such setting: '
                 + enginesWithoutEffort()
                 + '), permissionMode? (‼️ the words are shared and the mechanisms are not — a schedule fires UNATTENDED, so on an engine that cannot stop and ask this is a restraint chosen up front, and on one that can there is nobody to answer and the request comes back refused), cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE,
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const seeds = parseSeedSchedules(JSON.stringify([
@@ -8240,7 +8302,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // older shape accepted has been taken away.
             op: 'triggers.add',
             describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.triggers.some(t => t.title === title),
@@ -8364,7 +8426,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'templates.add',
             describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (' + ENGINE_ENUM + '), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.templates.some(t => t.title === title),
@@ -8535,7 +8597,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'templates.run',
             describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit = the template\'s own, "" = clear it, a name = that profile; a run may not carry an engine AND a profile, since the profile would replace the command line and drop the engine in silence), workDir?, priority?, project?'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE,
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
@@ -12427,7 +12489,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bridge.register([
         {
             op: 'schedules.edit',
-            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project? — every one of them "" to clear, and the same validation schedules.add applies — and fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails) — plus rounds? ([{prompt, delayMin?}, …], [] or null to clear: the prompts sent AFTER this one, each into the SAME conversation once the round before it has been answered)',
+            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project?/finishSound? — every one of them "" to clear, and the same validation schedules.add applies — and fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails) — plus rounds? ([{prompt, delayMin?}, …], [] or null to clear: the prompts sent AFTER this one, each into the SAME conversation once the round before it has been answered)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
@@ -12498,7 +12560,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // `_REF/agentfarm-dev.md` forbids. `""` clears a field, the same
                 // convention `model` already used.
                 {
-                    const keys = ['engine', 'effort', 'permissionMode', 'cli', 'workDir'] as const;
+                    const keys = ['engine', 'effort', 'permissionMode', 'cli', 'workDir',
+                        'finishSound'] as const;
                     const stated = keys.filter(k => args[k] !== undefined);
                     if (stated.length) {
                         // Validated by the SAME function `add` uses — with the
@@ -12661,7 +12724,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'triggers.edit',
-            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project? — each "" to clear, validated exactly as triggers.add validates them — and fireIf? (precondition object, or null to clear)',
+            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project?/finishSound? — each "" to clear, validated exactly as triggers.add validates them — and fireIf? (precondition object, or null to clear)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
@@ -12722,7 +12785,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // that read the trigger back, edited a field and wrote it away
                 // silently reset the engine. `""` clears a field.
                 {
-                    const keys = ['engine', 'model', 'effort', 'permissionMode', 'cli', 'workDir'] as const;
+                    const keys = ['engine', 'model', 'effort', 'permissionMode', 'cli', 'workDir',
+                        'finishSound'] as const;
                     const stated = keys.filter(k => args[k] !== undefined);
                     if (stated.length) {
                         need(tr.action.kind !== 'workflow',
@@ -15826,6 +15890,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // X-18 — the same matrix the Console, the ▶ picker and the bridge use.
         engines: () => engineOptions(engineMatrix()),
         cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
+        // ‼️ A-24 — the tones the "Sound on finish" row may offer, read from the
+        // same list every other alert surface reads, the user's own sounds
+        // included. `playable` travels with the row: the form draws an
+        // unplayable one and refuses the click rather than dropping it.
+        alertVoices: () => alertVoiceRows()
+            .map(v => ({ id: v.id, label: v.label, playable: v.playable })),
         projects: () => projectStore.all().map(p => ({ id: p.id, name: p.name, icon: p.icon })),
         activeProjectId: () => activeProject()?.id,
         /**

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from './agents';
+import { normalizeFinishSound } from './alertVoices';
 import {
     appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
     gateBlock, pauseExpired, Precondition
@@ -195,6 +196,22 @@ export interface FarmTask {
      */
     interactiveTarget?: InteractiveTarget;
     interactiveClose?: InteractiveClose;
+    /**
+     * ‼️ A-24 — WHAT THIS RUN SOUNDS LIKE WHEN IT ENDS.
+     *
+     * A tone id, or `silent` (FINISH_SOUND_SILENT). It is NOT a fifth step in
+     * the resolution chain: the moment the run's session id is known it is
+     * written into that session's OWN step (`turnAlerts.setVoice(id,'ended',…)`)
+     * — the step A-23 built and the Timeline already draws, so the row says
+     * "this session's own pick" and means it.
+     *
+     * `silent` is the one answer a tone cannot give, and it is a different
+     * mechanism for a reason A-20 settled: the two authorities over a sound ADD
+     * and may not subtract from each other, so quiet is the session MUTE
+     * (`turnAlerts.setMuted`, A-22) and it silences this run entirely — not just
+     * its ending. Absent = say nothing, and the fleet's chain answers as before.
+     */
+    finishSound?: string;
     /** ‼️ M-26 — the hosted conversation this task was handed to, when it runs
      *  in the Console. The one handle that lets the panel's own report be read
      *  back against this task (see `pumpConsoleTasks`). */
@@ -575,6 +592,15 @@ export interface RunDimensions {
      */
     interactiveTarget?: InteractiveTarget;
     interactiveClose?: InteractiveClose;
+    /**
+     * ‼️ A-24 — AND WHAT IT SOUNDS LIKE WHEN IT IS OVER (see FarmTask.finishSound).
+     *
+     * It rides with the model and the permission mode for the reason every
+     * dimension here does: an automation fires with nobody at a window, and
+     * "tell me when the nightly build is done, in THAT tone" can only be said
+     * when the automation is written or it is not said at all.
+     */
+    finishSound?: string;
     workDir?: string;
     priority?: number;
     /**
@@ -639,6 +665,11 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     if (d.interactiveClose && d.interactiveClose !== 'stay-open') {
         r.interactiveClose = normInteractiveClose(d.interactiveClose);
     }
+    // ‼️ A-24 — cleaned on the way through like every other field here, so a
+    // pick typed into a form, seeded from JSON or sent over the bridge cannot
+    // reach a run in a shape the applier would have to guess at.
+    const finish = normalizeFinishSound(d.finishSound);
+    if (finish) { r.finishSound = finish; }
     if (d.workDir) { r.workDir = d.workDir; }
     if (d.priority) { r.priority = Math.trunc(d.priority); }
     if (d.ignoreBudget) { r.ignoreBudget = true; }
@@ -2187,7 +2218,7 @@ export class TaskManager implements vscode.Disposable {
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
             | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
-            | 'interactiveTarget' | 'interactiveClose'
+            | 'interactiveTarget' | 'interactiveClose' | 'finishSound'
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
             | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits'>>
@@ -4037,7 +4068,7 @@ export class TaskManager implements vscode.Disposable {
         over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
             & Partial<Pick<FarmTask,
                 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
-                | 'interactiveTarget' | 'interactiveClose'
+                | 'interactiveTarget' | 'interactiveClose' | 'finishSound'
                 | 'priority' | 'projectId' | 'ignoreBudget'>>
     ): FarmTask | undefined {
         if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
@@ -4080,6 +4111,11 @@ export class TaskManager implements vscode.Disposable {
         // is the reason the fallback is the task's own.
         copy.interactiveTarget = over?.interactiveTarget ?? task.interactiveTarget;
         copy.interactiveClose = over?.interactiveClose ?? task.interactiveClose;
+        // ‼️ A-24 — and it sounds the way the original sounded. A rerun that
+        // silently went back to the fleet's tone would be the same defect the
+        // engine and the model had here: the run you asked to hear finishing is
+        // exactly the run you are not watching.
+        copy.finishSound = over?.finishSound ?? task.finishSound;
         copy.missionId = task.missionId;
         copy.ignoreBudget = over?.ignoreBudget ?? task.ignoreBudget;
         noteTaskEvent(copy, 'retried', `attempt ${attempt} of "${task.title}"`);

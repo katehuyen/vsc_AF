@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
+import { FINISH_SOUND_SILENT, normalizeFinishSound } from '../core/alertVoices';
 import { describePrecondition, Precondition, rollupAutomationLog } from '../core/automation';
 import { nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
@@ -80,6 +81,19 @@ export interface TasksDeps {
      *  absent means the form offers no engine box and every task is claude's. */
     engines?(): { id: string; label: string; ready: boolean; next: string; billing: string }[];
     cliProfiles(): { name: string; headless?: string }[];
+    /**
+     * ‼️ A-24 — THE TONES THIS MACHINE CAN ACTUALLY PLAY, for the form's
+     * "Sound on finish" row.
+     *
+     * A DEP for the same reason the model list is one: half the rows are the
+     * user's own sounds (`agentFarm.alerts.customVoices`), so a hard-coded list
+     * would go stale the first time they added one. `playable` travels with each
+     * row rather than being filtered out here — a task saved with a tone whose
+     * file has since gone must still SHOW that tone, or the form would quietly
+     * report the fleet default over a choice the user made and can see is wrong.
+     * Absent = no row is drawn, which is what a caller written before this did.
+     */
+    alertVoices?(): { id: string; label: string; playable: boolean }[];
     /** Projects a task can be filed under, and the window's current one. */
     projects(): { id: string; name: string; icon?: string }[];
     activeProjectId(): string | undefined;
@@ -773,6 +787,33 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             // refuse the same words.
             targets: TARGET_CHOICES,
             closes: CLOSE_CHOICES,
+            // ‼️ A-24 — WHAT THIS RUN SOUNDS LIKE WHEN IT ENDS, as three kinds
+            // of answer in one list: say nothing (the fleet's chain answers, and
+            // it always answers with something), a named tone, or quiet.
+            //
+            // ‼️ "Quiet" IS LAST AND IT IS NOT A TONE. It reaches a different
+            // mechanism — the session mute — because the chain has no silence in
+            // it by construction (A-20), and its label says what it really does:
+            // this whole run stays quiet, not only its ending. A word that
+            // promised less than it does would be the worse lie of the two.
+            //
+            // ‼️ AN UNPLAYABLE TONE IS SHOWN AND DISABLED, NOT DROPPED. A run
+            // saved with a sound whose file has since gone must go on naming it;
+            // a list that quietly omitted it would draw the first option instead
+            // and report a decision nobody made (A-25's rule, on a second row).
+            // ‼️ SHORTHAND — the box is one cell wide and it cuts its own text
+            // mid-word. "Default" is what its three neighbours (Model, Effort,
+            // Permissions) already say, and the sentence explaining it belongs
+            // in the row's tooltip, where there is room for it.
+            finishSounds: [
+                { id: '', label: 'Default' },
+                ...(deps.alertVoices ? deps.alertVoices() : []).map(v => ({
+                    id: v.id,
+                    label: v.playable ? v.label : `${v.label} — no player here`,
+                    off: !v.playable
+                })),
+                { id: FINISH_SOUND_SILENT, label: 'Silent — no sound at all' }
+            ],
             // ‼️ X-18 — the engine axis reaches unattended work too, and this is
             // where it matters MOST: nobody is sitting in front of a task, so an
             // engine that cannot run produces an output file full of a shell
@@ -1003,6 +1044,8 @@ function taskSeed(t: FarmTask): Record<string, unknown> {
         // M-26 - what the object was set to, so reopening the form shows it.
         interactiveTarget: t.interactiveTarget ?? 'vscode',
         interactiveClose: t.interactiveClose ?? 'stay-open',
+        // A-24 - and the tone it was set to finish on.
+        finishSound: t.finishSound ?? '',
         project: t.projectId ?? '', workDir: t.workDir ?? '',
         priority: t.priority ?? 0,
         ignoreBudget: !!t.ignoreBudget,
@@ -1135,6 +1178,8 @@ function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
         // M-26 - what the object was set to, so reopening the form shows it.
         interactiveTarget: s.interactiveTarget ?? 'vscode',
         interactiveClose: s.interactiveClose ?? 'stay-open',
+        // A-24 - and the tone it was set to finish on.
+        finishSound: s.finishSound ?? '',
         cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
         ignoreBudget: !!s.ignoreBudget,
         // ‼️ M-27 — what it was saved with, so reopening the form shows the
@@ -1164,6 +1209,8 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         // M-26 - what the object was set to, so reopening the form shows it.
         interactiveTarget: dims.interactiveTarget ?? 'vscode',
         interactiveClose: dims.interactiveClose ?? 'stay-open',
+        // A-24 - and the tone it was set to finish on.
+        finishSound: dims.finishSound ?? '',
         cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
         ignoreBudget: !!dims.ignoreBudget,
         // ‼️ M-27 — the chain it was saved with (see RunDimensions.rounds).
@@ -1472,6 +1519,11 @@ export class TasksPanel {
                 ? normInteractiveTarget(str('interactiveTarget')) : undefined,
             interactiveClose: str('mode') === 'interactive' && str('interactiveClose')
                 ? normInteractiveClose(str('interactiveClose')) : undefined,
+            // ‼️ A-24 — AND IT IS NOT GATED ON THE MODE, unlike the two above.
+            // A headless run has no window to open, but it does end, and it is
+            // the one nobody is watching — which is the whole case the field
+            // was asked for. Empty stays undefined = GONE, per the note above.
+            finishSound: normalizeFinishSound(str('finishSound')) || undefined,
             workDir: str('workDir') || undefined,
             priority: num('priority', 0) || undefined,
             projectId: str('project') || undefined,
@@ -1976,6 +2028,9 @@ export class TasksPanel {
                             ? normInteractiveTarget(str('interactiveTarget')) : undefined,
                         interactiveClose: mode === 'interactive' && str('interactiveClose')
                             ? normInteractiveClose(str('interactiveClose')) : undefined,
+                        // A-24 - and it finishes on the tone the form is showing,
+                        // which is the original's unless it was changed there.
+                        finishSound: normalizeFinishSound(str('finishSound')) || undefined,
                         workDir: str('workDir') || undefined,
                         priority: Number(t.priority) ? Math.trunc(Number(t.priority)) : undefined,
                         ignoreBudget: t.ignoreBudget === true ? true : undefined
@@ -2041,6 +2096,10 @@ export class TasksPanel {
                         ? { interactiveTarget: normInteractiveTarget(str('interactiveTarget')) } : {}),
                     ...(mode === 'interactive' && str('interactiveClose')
                         ? { interactiveClose: normInteractiveClose(str('interactiveClose')) } : {}),
+                    // ‼️ A-24 — what this run sounds like when it ends. Sent on
+                    // a headless run too: that is the one nobody is watching.
+                    ...(normalizeFinishSound(str('finishSound'))
+                        ? { finishSound: normalizeFinishSound(str('finishSound')) } : {}),
                     ...(str('workDir') ? { workDir: str('workDir') } : {}),
                     ...(Number(t.priority) ? { priority: Math.trunc(Number(t.priority)) } : {}),
                     // M-7 — "run it whatever the budget says" (see FarmTask.ignoreBudget)

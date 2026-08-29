@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.312.0 - A-24: a run can say what it sounds like when it ends (2026-08-29)
+
+The last piece of A-23, and it was held back for three releases by one honest
+objection: **"Silent" could not be built.** The two authorities over a sound ADD
+and neither may subtract from the other, so nothing a session said about itself
+could make it quiet — and a three-option field with one option that does nothing
+is worse than no field. A-22 answered it with the session mute, so the field is
+now three real answers.
+
+**Sound on finish**, on the New-task form and on the schedule and trigger
+editors beside it: *Default* · a tone · *Silent — no sound at all*. Drawn for
+every run, headless included — a headless run has no window to open, but it does
+END, and it is the one nobody is watching.
+
+**It adds no step to the alert chain.** The moment the run's session has an id,
+the pick is written onto **that session's own step** — the one A-23 built, that
+the resolution chain already reads and the Live Timeline already draws. So the
+row goes on saying "this session's own choice" and is telling the truth.
+Declared ids (a Console run, a resumed conversation) are stamped at the spawn;
+an ordinary headless run is stamped the moment its transcript names it.
+
+**Picking a tone also arms that session's ♪** — otherwise the choice would be
+accepted, stored, drawn, and silent whenever the fleet switch happened to be
+off, which is the defect the field exists to fix.
+
+**And "Silent" mutes the whole run, not only its ending**, because that is what
+it really does: silence is not a tone, it is the mute, and the label says so
+rather than promising less than it delivers. Everything underneath it is left
+alone, so unmuting restores the setup.
+
+`finishSound` is a run dimension like the model and the permission mode: it
+rides on `tasks.add`, `schedules.add|set`, `triggers.add|set`, `templates.add|run`
+and every workflow step, it is refused **by name** where it is written down
+rather than at 03:00, a **retry inherits it**, and reading an automation back
+tells you what it will sound like. The word `silent` can never be a tone: every
+built-in id is spelled out and every one of your own is `u-…`.
+
 ## 3.311.0 - A-25: the announcement has a face (2026-08-29)
 
 A-20 built the whole engine and left it behind a raw JSON box. Seven fields,

@@ -22,6 +22,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { FINISH_SOUND_SILENT, normalizeFinishSound } from './alertVoices';
 import { ENGINES, engineOf, engineTakesEffort } from './consoleEngine';
 import { INTERACTIVE_CLOSES, INTERACTIVE_TARGETS, ONE_EXECUTOR, twoExecutors, validateLaunch } from './launch';
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
@@ -300,6 +301,23 @@ export function bridgeRunDimensions(
     if (out.effort && !engineTakesEffort(String(out.engine ?? ''))) {
         need(false, `engine "${out.engine}" has no reasoning-effort setting — leave effort out.`);
     }
+    // ‼️ A-24 — AND WHAT IT SOUNDS LIKE WHEN IT IS OVER. An agent that can
+    // queue a nightly run has to be able to say "and tell me in that tone", or
+    // the field means one thing on the form and nothing in a request
+    // (`_REF/agentfarm-dev.md`). The SHAPE is refused here — a value nothing
+    // could ever be called never reaches a run — while WHICH tone is checked
+    // where the list lives, exactly as `cli` is checked against the user's own
+    // profiles rather than against a constant in this file.
+    {
+        const raw = optStr(args, 'finishSound');
+        if (raw) {
+            const finish = normalizeFinishSound(raw);
+            need(!!finish,
+                `unknown finishSound ${JSON.stringify(raw)} — a sound id from alerts.voices, `
+                + `or "${FINISH_SOUND_SILENT}" to keep this run quiet`);
+            out.finishSound = finish;
+        }
+    }
     // ‼️ M-26 — WHERE AN INTERACTIVE RUN OPENS AND WHETHER IT STAYS, refused
     // here for the same reason the effort is: a schedule is a run that has not
     // happened yet, and a mistyped surface stored happily tonight is a window
@@ -461,6 +479,17 @@ export const ROUNDS_NOTE =
     + 'the case it exists for: a run that fires with nobody here has no one to type the next '
     + 'thing.';
 
+export const FINISH_SOUND_NOTE =
+    ' ‼️ AND WHAT IT SOUNDS LIKE WHEN IT ENDS — finishSound? (a sound id from '
+    + 'alerts.voices, the user\'s own ones included, or "' + FINISH_SOUND_SILENT + '"). '
+    + 'A tone is written onto the run\'s OWN session the moment that session has an id, so it '
+    + 'is the top step of the same chain the ♪ menu writes — this run only, nothing else '
+    + 'touched — and picking one also arms that session\'s sound, or the choice would sit '
+    + 'there silent whenever the fleet switch is off. "' + FINISH_SOUND_SILENT + '" is not a '
+    + 'tone: silence is the session MUTE, so it quiets the whole run rather than only its '
+    + 'ending, which is the only way anything can take a sound away (the two authorities over '
+    + 'a sound ADD). Omit it and the alert settings decide, exactly as they always have.';
+
 export const DIMS_OUT_NOTE =
     ' ‼️ Each row also says what its ENGINE can do (engineLabel, turnShape, '
     + 'reportsCost, costSource, takesEffort) — read those before the figures beside '
@@ -473,6 +502,7 @@ export function bridgeDimsOut(
         engine?: string; model?: string; effort?: string; permissionMode?: string;
         cli?: string; workDir?: string; priority?: number; projectId?: string;
         interactiveTarget?: string; interactiveClose?: string;
+        finishSound?: string;
         ignoreBudget?: boolean; retry?: RetryPolicy; rounds?: TaskRound[];
     },
     projectName?: (id: string) => string | undefined
@@ -512,6 +542,11 @@ export function bridgeDimsOut(
         // open, for the ones written before there was anywhere else to put them.
         interactiveTarget: o.interactiveTarget ?? 'vscode',
         interactiveClose: o.interactiveClose ?? 'stay-open',
+        // A-24 - what this run sounds like when it ends. null is the real
+        // answer "it says nothing about it", which is different from "silent";
+        // reading it back as a tone either way would make a round trip invent a
+        // decision, exactly as it would for the retry policy below.
+        finishSound: o.finishSound ?? null,
         workDir: o.workDir ?? null,
         priority: o.priority ?? 0,
         project: o.projectId ? (projectName?.(o.projectId) ?? o.projectId) : null,

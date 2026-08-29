@@ -189,6 +189,20 @@ const data = () => ({
             { id: 'codex', label: 'Codex', ready: true, next: 'Ready, on a plan.' }
         ],
         clis: [],
+        // ‼️ A-24 — what the "Sound on finish" row offers, in the three shapes it
+        // really comes in: say nothing, the tones this machine can play (one of
+        // them the user's own), and quiet. The `.ogg` is here on purpose — a
+        // sound whose format Windows has no handler for is DRAWN and refused
+        // rather than dropped, and a fixture without one would photograph a
+        // list that cannot show that.
+        finishSounds: [
+            { id: '', label: 'Default' },
+            { id: 'chime-soft', label: 'Chime, soft' },
+            { id: 'bell-far', label: 'Bell, distant' },
+            { id: 'tick-dry', label: 'Tick, dry' },
+            { id: 'u-my-gong', label: 'My gong - no player here', off: true },
+            { id: 'silent', label: 'Silent - no sound at all' }
+        ],
         projects: [{ id: 'prj_1', name: 'AgentFarm', icon: '◧' }],
         activeProjectId: 'prj_1'
     }

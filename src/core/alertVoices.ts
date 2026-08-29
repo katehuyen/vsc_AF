@@ -208,6 +208,36 @@ export function customId(label: string, taken: readonly string[]): string {
     return id;
 }
 
+/**
+ * ‼️ A-24 — "THIS RUN MAKES NO SOUND", as a value a tone field can hold.
+ *
+ * It is a reserved WORD rather than a tone because there is no such tone and
+ * there must not be one: the chain never resolves to silence (`setVoice` with
+ * an empty id CLEARS the step, it does not mute it), so quiet is a different
+ * mechanism — the session mute (A-22) — and the word has to be tellable apart
+ * from a tone id at every door it passes through. Safe to reserve, and that is
+ * a property of this file: every built-in id is spelled out above and every one
+ * of the user's own is `u-…` by construction (`customId`), so nothing can ever
+ * be called this by accident.
+ */
+export const FINISH_SOUND_SILENT = 'silent';
+
+/**
+ * The canonical form of a finish-sound pick: a tone id, `silent`, or nothing.
+ *
+ * ‼️ THE ID IS NOT CHECKED AGAINST THE LIST HERE, and deliberately so — the
+ * list includes the user's own sounds, which live in their configuration, while
+ * this function is called from the pure modules a form and the bridge share.
+ * The SHAPE is checked, so a value that could never be an id is refused where
+ * it is typed; whether `tick-dry` still has a playable file is asked at the
+ * moment it is APPLIED, by the code that owns the list, and reported by name —
+ * the same division `resolveVoice` already makes.
+ */
+export function normalizeFinishSound(v: unknown): string {
+    const s = typeof v === 'string' ? v.trim() : '';
+    return /^[a-z0-9][a-z0-9_-]{0,63}$/i.test(s) ? s : '';
+}
+
 export interface AddVoiceDeps extends FormatDeps {
     exists(file: string): boolean;
 }
