@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { sendToTerminalWhenReady } from '../core/shellReady';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from '../core/pricing';
 import { conversationTitle, SessionOrigin, sessionOrigin, sessionHeadless } from '../core/sessions';
 import { StepKind, stepKindForTool } from '../core/stepkind';
@@ -1057,7 +1058,9 @@ export class SessionViewerPanel {
                 }
                 const terminal = vscode.window.createTerminal({ name, cwd });
                 terminal.show();
-                terminal.sendText(command, true);
+                // K-33 — the fallback path takes the same gate as the dep does:
+                // this is the one that literally sends `claude --resume <id>`.
+                sendToTerminalWhenReady(terminal, command);
                 break;
             }
             case 'refresh':

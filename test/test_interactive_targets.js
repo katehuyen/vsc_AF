@@ -189,8 +189,12 @@ function launched(cwd, command, title, opts) {
     ok('the OS window records the file its exit code will arrive in',
         /task\.exitFile = exitFile;/.test(tasksTs)
         && /keepOpen: close !== 'auto-close'/.test(tasksTs));
+    // K-33 — both lines now go through the shell-ready gate (core/shellReady.ts)
+    // instead of being written at a pty that may still be starting. `exit` is
+    // still a SEPARATE LINE and still second: racing ahead of the command it is
+    // meant to outlive would close the terminal on a task that never ran.
     ok('the integrated terminal closes itself with `exit` on its own line',
-        /if \(close === 'auto-close'\) \{ terminal\.sendText\('exit', true\); \}/.test(tasksTs));
+        /\.\.\.\(close === 'auto-close' \? \[command, 'exit'\] : \[command\]\)/.test(tasksTs));
 
     // ‼️ auto-close is NOT "the TUI, killed when it looks finished" — nothing in
     // a TUI says the answer is over. The engine is asked in the form that

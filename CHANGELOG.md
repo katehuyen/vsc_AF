@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.318.0 - K-33: a command is given to a shell that is ready for it (2026-08-29)
+
+Right-click a live Console card, *Resume in Terminal*, and the terminal opened on
+Claude's **login screen** instead of the conversation. Two races, both real.
+
+**The shell was still starting.** Every terminal here was driven the same way:
+`createTerminal` … `show()` … `sendText(command, true)` **on the very next
+statement** — before the shell inside the pty had finished running the user's own
+startup (a PowerShell profile, oh-my-posh, conda init). On a slow profile the
+written line is swallowed by or interleaved with that startup's output, and a
+`claude --resume <id>` that loses its tail runs as a bare `claude`: a fresh
+process, no conversation, the onboarding screen. The session looks like it
+evaporated. (The **external** terminal path was always immune — it writes the
+command to a `.cmd` file first — which is why switching to it "fixed" it.)
+
+**The line now waits for the shell to report in.** VS Code can only install its
+own integration once the shell has started, so `Terminal.shellIntegration`
+becoming defined is exactly the signal that was missing. ‼️ **The delivery is
+unchanged** — still `sendText`. `shellIntegration.executeCommand` looks made for
+this and is deliberately not used: it sends ^C first to interrupt whatever is
+running, and what these terminals run is a full-screen TUI.
+
+Three ways out, so a launch can never hang on it: integration switched off in
+settings sends **immediately** (no ceiling paid for a promise nobody made), the
+3-second ceiling sends anyway (today's behaviour, so the worst case of this
+change is the behaviour it replaces), and a terminal closed first sends nothing.
+And it happens **once** whichever of the three fires — a resume sent twice would
+put two processes on one transcript.
+
+**All three doors**: every terminal session the extension opens, the task
+terminal (whose `exit` line is still second, and still after the command it is
+meant to outlive) and the session viewer's own fallback.
+
+**The second race: the handoff.** Moving a session out of the Console waits for
+that process to release the transcript — and then **fell through and launched
+anyway** when the wait ran out, which is precisely the second-process bug the
+wait exists to prevent. The ceiling is an answer now: it says the process is
+still finishing and opens nothing. Safe to refuse there and nowhere else in that
+handler, because the Console card is already closed — the same right-click a
+moment later just works.
+
 ## 3.317.0 - S-45: a resumed session comes back as itself (2026-08-29)
 
 Picking a conversation back up handed it whatever the **settings page currently

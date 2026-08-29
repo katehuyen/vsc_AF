@@ -2,6 +2,7 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { sendToTerminalWhenReady } from './shellReady';
 import { AgentInfo } from './agents';
 import { normalizeFinishSound } from './alertVoices';
 import {
@@ -2844,8 +2845,12 @@ export class TaskManager implements vscode.Disposable {
         // line, and it runs when the CLI above has returned because that is what
         // a line in a shell means. `onDidCloseTerminal` then finishes the task
         // on the path it has always used.
-        terminal.sendText(command, true);
-        if (close === 'auto-close') { terminal.sendText('exit', true); }
+        // ‼️ K-33 — both lines go through the same gate, in this order, once the
+        // shell has finished starting. Sent blind they raced the shell's own
+        // init; and `exit` racing ahead of the command it is supposed to follow
+        // would have closed the terminal on a task that never ran.
+        sendToTerminalWhenReady(terminal,
+            ...(close === 'auto-close' ? [command, 'exit'] : [command]));
         this.terminals.set(task.id, terminal);
     }
 

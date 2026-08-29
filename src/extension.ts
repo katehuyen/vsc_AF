@@ -127,6 +127,7 @@ import {
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
 import { mergeConsoleIds, readConsoleIds, recordConsoleIds } from './core/consoleRegistry';
+import { sendToTerminalWhenReady } from './core/shellReady';
 import {
     lastRunDimensions, provenanceFields, SESSION_PARSER_VERSION, SessionIndex, SessionInfo,
     SessionLauncher, sessionMission, sessionOrigin, sessionHeadless
@@ -16455,7 +16456,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             cliTerminals.set(terminal, { sessionId: laneId, cwd });
         }
         terminal.show();
-        terminal.sendText(command, true);
+        // ‼️ K-33 — the line waits for the SHELL, not just for the pty. Written
+        // on the next statement it raced the shell's own startup, and a
+        // `--resume <id>` that lost its tail started a fresh `claude` on the
+        // login screen. See core/shellReady.ts for why the delivery is still
+        // sendText and what the three ways out are.
+        sendToTerminalWhenReady(terminal, command);
         return terminal;
     };
 
@@ -23582,9 +23588,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // The registry entry goes when the process really dies —
                     // launching before that would be the second-process bug we
                     // just spent a release fixing. Wait for it (3s ceiling).
+                    let released = false;
                     for (let i = 0; i < 30; i++) {
-                        if (!ownerOf(readCliSessions(claudeDir()), s.sessionId)) { break; }
+                        if (!ownerOf(readCliSessions(claudeDir()), s.sessionId)) { released = true; break; }
                         await new Promise(r => setTimeout(r, 100));
+                    }
+                    /**
+                     * ‼️ K-33 — AND THE CEILING IS AN ANSWER, NOT A PAUSE.
+                     *
+                     * The loop fell straight through when the entry was still
+                     * there, and the launch went ahead: exactly the second
+                     * process on one transcript this wait exists to prevent,
+                     * except now with three seconds of plausible deniability.
+                     * A ceiling nobody checks is a delay, not a guard.
+                     *
+                     * Refusing is safe HERE and nowhere else in this handler:
+                     * the Console card has already been closed, so the session
+                     * is free the moment that process finishes dying, and the
+                     * same right-click a moment later just works. Saying so is
+                     * better than opening a terminal that would corrupt the
+                     * conversation the user was trying to keep.
+                     */
+                    if (!released) {
+                        void vscode.window.showWarningMessage(
+                            `Agent Farm: the Console has let "${s.title}" go, but the process is still finishing — nothing was opened.\n\n`
+                            + 'Resuming while it holds the transcript would start a second process on it. Try "Resume in Terminal" again in a moment.');
+                        return;
                     }
                 }
                 const owner = hosted ? undefined : ownerOf(readCliSessions(claudeDir()), s.sessionId);

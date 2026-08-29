@@ -654,7 +654,13 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /End it in the Console and continue here/.test(ext)
         && /consoleHost\.close\(hosted\.id\)/.test(ext));
     ok('…and does not launch until the process is really gone',
-        /if \(!ownerOf\(readCliSessions\(claudeDir\(\)\), s\.sessionId\)\) \{ break; \}/.test(ext));
+        /if \(!ownerOf\(readCliSessions\(claudeDir\(\)\), s\.sessionId\)\) \{ released = true; break; \}/.test(ext));
+    // K-33 — and the ceiling on that wait is an ANSWER, not a pause: it used to
+    // fall through and launch anyway, which is the second process on one
+    // transcript the wait exists to prevent.
+    ok('…and says so rather than launching blind when the wait runs out',
+        /if \(!released\) \{/.test(ext)
+        && /the process is still finishing — nothing was opened/.test(ext));
     ok('…the other choice shows it where it is running',
         /'Show it in the Console'/.test(ext));
 }
