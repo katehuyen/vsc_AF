@@ -2,6 +2,46 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.323.0 - S-47: a resumed session comes back as itself on EVERY engine (2026-08-29)
+
+S-45 was built and tested against the Claude parser alone, so four of the five
+engines still came back from a resume wearing the fleet's current defaults. What
+each of them actually records was measured, one at a time, and only what is
+really written down is read:
+
+- **Codex** — the figure was already here and the field was missing. The parser
+  has tracked the last model since it was written (it is what prices the
+  session) and never put it on the row, so the resume ladder fell back to
+  `models[models.length - 1]` — a set in first-seen order, whose last element
+  names the model the session **stopped** using. Measured: two rollouts of 110
+  on this machine would have resumed on the wrong one. Its `turn_context` also
+  states the **effort** per turn (60 of 110 rollouts) and the **sandbox** it ran
+  under, which gives the permission mode back for 35 of them.
+- **‼️ …and only half of that mode is readable.** A rollout records the sandbox,
+  not the mode that was picked, and `default` and `plan` BOTH map to
+  `read-only`. Reading it would put a word in the box the user may never have
+  chosen, so `read-only` names nothing; `workspace-write` and
+  `danger-full-access` invert cleanly and are the two that let a run write.
+- **The Console's own mirror** — the record that never had to be inferred and
+  was read least. It is Agent Farm's snapshot of a session Agent Farm launched:
+  model, effort and permission mode have been written into it since it was
+  invented, and only the model was ever read back, into the display list.
+  Measured: 63 conversations, 55 with a model, 54 with an effort, 63 with a mode.
+- **Gemini** — the same one-line omission, with one subtlety: `models` is only
+  added to when a reply reported usage, which is right for a spend column and
+  wrong for "what is it on now". A reply that answered without being billed
+  still answered.
+- **OpenCode** — its export records `big-pickle` while its catalogue publishes
+  `opencode/big-pickle` (K-28), so the recorded name reached the resume gate and
+  was dropped. A bare id that is the tail of **exactly one** published id is now
+  resolved to it; a tail two providers both claim resolves to nothing. ‼️ The
+  rule is inert by construction where ids carry no provider prefix — there every
+  id is its own tail — so Claude, Codex and Antigravity cannot be affected.
+
+Absence stays absence throughout: an engine, or a file, that never said which
+model it was on says nothing rather than the fleet default wearing the session's
+name.
+
 ## 3.322.0 - S-46: Antigravity keeps its model, and its effort (2026-08-29)
 
 Choosing **Gemini 3.7 Flash** and pressing send got you a session that never

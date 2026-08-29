@@ -622,6 +622,30 @@ export function effortsFor(em: EngineModels | undefined, model: string): LaunchC
  * therefore nothing is narrowed: inventing a refusal from ignorance would be
  * worse than the refusal this prevents.
  */
+/**
+ * ‼️ S-47 / K-28 — THE ID AN ENGINE RECORDS IS NOT ALWAYS THE ID IT PUBLISHES.
+ *
+ * OpenCode names a model `provider/model` — `opencode/big-pickle` — and its own
+ * export records only the tail, so a resumed session asks for a name its
+ * catalogue has never published and the model is dropped: the session comes back
+ * on the fleet default, silently, which is the failure S-45 exists to end.
+ *
+ * ‼️ AND THE RULE IS INERT WHERE IT DOES NOT APPLY, WHICH IS WHY IT MAY LIVE
+ * HERE RATHER THAN IN AN ENGINE BRANCH. On a catalogue whose ids carry no `/`,
+ * every id IS its own tail — so the only thing this could match is a model the
+ * exact test above already kept. It can therefore never change the answer for
+ * Claude, Codex or Antigravity, by construction rather than by promise.
+ *
+ * A tail claimed by SEVERAL ids resolves to nothing: two providers offering the
+ * same model is a real shape, and picking one by luck would answer with a
+ * different provider's model, which is worse than asking.
+ */
+function tailOfExactlyOne(em: EngineModels, want: string): string {
+    if (!want) { return ''; }
+    const hit = em.models.filter(m => !!m.id && m.id.slice(m.id.lastIndexOf('/') + 1) === want);
+    return hit.length === 1 ? hit[0].id : '';
+}
+
 export function narrowLaunch(
     em: EngineModels | undefined,
     model: string | undefined,
@@ -630,7 +654,8 @@ export function narrowLaunch(
     const wantModel = String(model ?? '').trim();
     const wantEffort = String(effort ?? '').trim();
     if (!em) { return { model: wantModel, effort: wantEffort }; }
-    const keptModel = em.models.some(m => m.id === wantModel) ? wantModel : '';
+    const keptModel = em.models.some(m => m.id === wantModel)
+        ? wantModel : tailOfExactlyOne(em, wantModel);
     const rows = effortsFor(em, keptModel);
     if (rows.some(e => e.id === wantEffort)) { return { model: keptModel, effort: wantEffort }; }
     const fallback = em.defaultEffort[keptModel] ?? '';

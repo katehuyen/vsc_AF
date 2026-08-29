@@ -231,6 +231,14 @@ interface CodexLine {
         originator?: string;
         // turn_context
         model?: string;
+        /** ‼️ S-47 — the reasoning effort that turn ran at, stated PER TURN.
+         *  Measured on this machine's rollouts (codex 0.149.0): `turn_context`
+         *  carries a top-level `effort` beside the model, and repeats on every
+         *  turn — so the last one is the session's current setting, exactly as
+         *  the model beside it already was. */
+        effort?: string;
+        /** The sandbox that turn actually ran under. See `codexPermissionFrom`. */
+        sandbox_policy?: { type?: string };
         // event_msg
         type?: string; message?: string;
         item?: {
@@ -402,6 +410,8 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     let lastRequest: CodexTokenTotals | undefined;
     let ctxWindow = 0;
     let lastModel = '';
+    let lastEffort = '';
+    let lastMode = '';
     let firstTs = 0, lastTs = 0;
     const models = new Set<string>();
 
@@ -443,6 +453,9 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
             if (typeof p.originator === 'string') { marks.originator = p.originator; }
         } else if (line.type === 'turn_context') {
             if (typeof p.model === 'string' && p.model) { models.add(p.model); lastModel = p.model; }
+            if (typeof p.effort === 'string' && p.effort) { lastEffort = p.effort; }
+            const mode = codexPermissionFrom(p.sandbox_policy?.type);
+            if (mode) { lastMode = mode; }
         } else if (line.type === 'event_msg') {
             if (typeof p.turn_id === 'string' && EXTERNAL_IMPORT_TURN.test(p.turn_id)) { marks.marked = true; }
             const completed = codexCompletedMessage(p);
@@ -525,6 +538,19 @@ function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?
     }
     if (ctxWindow > 0) { info.ctxWindow = ctxWindow; }
     info.models = [...models];
+    /**
+     * ‼️ S-47 — AND THE SAME FIGURE ON THE FIELD A RESUME READS.
+     *
+     * This parser has tracked `lastModel` since it was written — for the COST
+     * line below — and never wrote it onto the row, so `lastRunDimensions` fell
+     * back to `models[models.length - 1]`: a set in first-seen order, whose last
+     * element names the model the session STOPPED using. A rollout that went
+     * `gpt-5.6-sol → gpt-5.6-luna → gpt-5.6-sol` resumed on luna. The figure was
+     * already here; only the field was missing.
+     */
+    if (lastModel) { info.lastModel = lastModel; }
+    if (lastEffort) { info.effort = lastEffort; }
+    if (lastMode) { info.permissionMode = lastMode; }
     // Multi-model rollouts are rare; attribute the session's usage to the last
     // active model. No matching pricing rule → $0 + unknown-models warning.
     if (lastModel) { info.cost = pricing().costFor(lastModel, info.usage, info.lastTs); }
@@ -675,6 +701,9 @@ function parseGeminiFile(
     const models = new Set<string>();
     let cost = 0;
     let currentModel = '';
+    /** S-47 - the model that produced the LAST reply, which is not the last
+     *  element of `models`: that set is ordered by first sight. */
+    let lastModel = '';
     let sawUsage = false;
     let tsMin = Infinity, tsMax = -Infinity;
     /** The last time a RECORD stated (never the document's own span) — what a
@@ -695,6 +724,13 @@ function parseGeminiFile(
     };
     const handleModelTurn = (msg: Record<string, unknown>, modelHint: string, at: number) => {
         const model = typeof msg['model'] === 'string' && msg['model'] ? msg['model'] as string : modelHint;
+        // ‼️ S-47 — SET HERE, NOT WHERE THE MODEL IS BILLED. `models` is only
+        // added to once a reply reported usage, which is right for a spend
+        // column and wrong for "what is it on now": a reply that answered
+        // without reporting tokens still answered, and it is the last one that a
+        // resume inherits. `handleStats` must never touch this — that block is a
+        // per-model BREAKDOWN of the session, not an order of events.
+        if (model) { lastModel = model; }
         const tokens = parseGeminiTokens(msg['tokens']);
         info.assistantMsgs++;
         // A reply is a step of the open turn whether or not it reported usage —
@@ -790,6 +826,7 @@ function parseGeminiFile(
     if (Number.isFinite(tsMin)) { info.firstTs = tsMin; }
     if (Number.isFinite(tsMax)) { info.lastTs = tsMax; }
     info.models = [...models];
+    if (lastModel) { info.lastModel = lastModel; }
     info.cost = cost;
     // The project folder in the path is sha256(projectRoot) — match it against
     // the agents' own directory hashes to assign the session.
@@ -1001,6 +1038,23 @@ function parseFarmConsoleFile(
     info.lastTs = snap.lastTs;
     info.mtime = snap.lastTs;
     info.models = snap.model ? [snap.model] : [];
+    /**
+     * ‼️ S-47 — THE ONE RECORD THAT NEVER HAD TO BE INFERRED, AND WAS READ LEAST.
+     *
+     * This file is Agent Farm's OWN snapshot of a session Agent Farm launched:
+     * `model`, `effort` and `permissionMode` have been written into it since it
+     * was invented (`farmConsoleTranscript`), stated rather than derived. Only
+     * `model` was ever read back, and only into the display list — so a hosted
+     * conversation the user had deliberately put on `gemini-3.7-flash / high`
+     * came back from a resume on the fleet default, with the answer sitting
+     * three lines above in the same object.
+     *
+     * Absent stays absent: a snapshot written before a field existed says
+     * nothing rather than defaulting, which is S-45's own rule.
+     */
+    if (String(snap.model ?? '').trim()) { info.lastModel = snap.model.trim(); }
+    if (String(snap.effort ?? '').trim()) { info.effort = snap.effort.trim(); }
+    if (String(snap.permissionMode ?? '').trim()) { info.permissionMode = snap.permissionMode.trim(); }
     // The Console state carries the exact aggregate but not an input/output
     // split. Keep the table total exact in the neutral input bucket; the custom
     // viewer below uses `tokens` directly and does not mislabel the split.
@@ -1301,6 +1355,29 @@ export function agyModelSetting(content: string): { model: string; effort: strin
     return model ? { model, effort: paren[2].toLowerCase() } : undefined;
 }
 
+/**
+ * ‼️ S-47 — THE HALF OF CODEX'S PERMISSION MODE THAT CAN BE READ BACK, AND ONLY
+ * THAT HALF.
+ *
+ * A rollout records the SANDBOX it ran under (`turn_context.sandbox_policy`),
+ * not the mode that was picked, and `CODEX_SANDBOX` is many-to-one: `default`
+ * and `plan` BOTH become `read-only`. So `read-only` names two different
+ * answers and reading it would put a word in the box that the user may never
+ * have chosen — a silent decision, which is the one thing this system forbids.
+ * The other two invert cleanly and are the ones that matter on a resume, since
+ * they are the modes that let a run write.
+ *
+ * A mode carried back this way is still re-resolved against the folder's own
+ * layers on the way out (K-22), so it can never grant more than starting a
+ * fresh session there would.
+ */
+export function codexPermissionFrom(sandbox: string | undefined): string {
+    const s = String(sandbox ?? '').trim();
+    if (s === 'workspace-write') { return 'acceptEdits'; }
+    if (s === 'danger-full-access') { return 'bypassPermissions'; }
+    return '';
+}
+
 /** One conversation folder → one row, or nothing when the log is unreadable. */
 function parseAgyTranscript(
     file: string, id: string,
@@ -1571,6 +1648,17 @@ function parseOpencodeFile(
     info.lastTs = doc.updated || doc.created;
     info.mtime = info.lastTs;
     info.models = doc.model ? [doc.model] : [];
+    /**
+     * ‼️ S-47 — AND IT IS THE BARE ID, WHICH IS THE WHOLE DIFFICULTY (K-28).
+     *
+     * OpenCode names a model `provider/model` everywhere except its own export,
+     * where `info.model` is `{ id: "big-pickle", providerID: "opencode" }` and
+     * only the id survives. Writing the bare name here is the honest record of
+     * what ran; completing it to the spelling the engine publishes is
+     * `narrowLaunch`'s job, because the published list is a catalogue this
+     * parser does not have and must not guess at.
+     */
+    if (doc.model) { info.lastModel = doc.model; }
     // ‼️ `reasoning` IS NOT INSIDE `output` ON THIS ENGINE — arithmetic, not
     // opinion: 6196 + 13 + 63 + 1920 = the engine's own total of 8192. Codex is
     // the opposite way round and cost this codebase a bug (X-35), so the sum is
