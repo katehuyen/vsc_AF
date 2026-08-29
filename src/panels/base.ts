@@ -473,9 +473,13 @@ export async function promptSnippetMessage(
 export interface WikiMarkBridge {
     /** The pool's topics, newest use first — the chips the tagger offers. */
     topics(): { topic: string; pending: number; total: number }[];
-    /** What is already marked in this conversation, so a taken turn says so. */
+    /** What is already marked in this conversation, so a taken turn says so.
+     *  ‼️ U-120 — `exclude` travels with it. A whole-session mark that leaves
+     *  two turns out is not the whole session, and a hover that counted its
+     *  turns without it would state a number the compile will never read. */
     marks(sessionId: string): {
-        id: string; from: number; to: number; topics: string[]; state: string
+        id: string; from: number; to: number; topics: string[]; state: string;
+        exclude: number[]
     }[];
     /** The transcript's turn rollup — how a row's moment becomes a number. */
     turns(sessionId: string): { n: number; label: string; ts: number }[];
@@ -507,7 +511,7 @@ export function setWikiMarkBridge(b: WikiMarkBridge): void { wikiBridge = b; }
  * the wire (see the `wikiMarked` reply, which carries the fresh list).
  */
 export function wikiMarksOf(sessionId: string): {
-    id: string; from: number; to: number; topics: string[]; state: string
+    id: string; from: number; to: number; topics: string[]; state: string; exclude: number[]
 }[] {
     try { return wikiBridge && sessionId ? wikiBridge.marks(sessionId) : []; } catch { return []; }
 }

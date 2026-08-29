@@ -57,6 +57,21 @@
         return from === to ? `turn ${from}` : `turns ${from}–${to}`;
     }
 
+    /** A list of turn numbers as the fewest words that name them: [1,2,3,7]
+     *  reads `1–3, 7`. Nobody scans thirty numbers; a run is one fact. */
+    function spanWords(list) {
+        const ns = (list || []).slice().sort((a, b) => a - b);
+        const out = [];
+        let i = 0;
+        while (i < ns.length) {
+            let j = i;
+            while (j + 1 < ns.length && ns[j + 1] === ns[j] + 1) { j++; }
+            out.push(i === j ? String(ns[i]) : `${ns[i]}–${ns[j]}`);
+            i = j + 1;
+        }
+        return out.join(', ');
+    }
+
     /** `4` or `3-7` or empty, exactly as the pool's own parser takes it. */
     function parseRange(s) {
         const t = String(s || '').trim();
@@ -322,6 +337,90 @@
         return out.sort((a, b) => a.name.localeCompare(b.name, 'tr'));
     }
 
+    /**
+     * ‼️ U-120 — WHICH TOPIC BELONGS TO THE WHOLE CONVERSATION, AND WHICH TO
+     * THREE TURNS OF IT.
+     *
+     * The panel opens with the pressed turn's topics already ticked — and a
+     * mark on the WHOLE session covers that turn too, so it is ticked there as
+     * well. Same chip, same colour, and the reader is left to remember which is
+     * which. That is the aggregation illusion: two different scopes read as one
+     * list, and the next mark is filed under whichever one the eye picked.
+     *
+     * What a chip reports is what pressing "Keep it" LEAVES BEHIND — everything
+     * the topic is already kept on, PLUS the scope now chosen. The pending half
+     * is what makes it worth repainting: a chip that only reported the past
+     * would turn amber after the save, which is one press too late to be a
+     * warning. `render()` redraws the whole panel on every scope press, so the
+     * colours and the hovers follow the segmented control for free.
+     */
+    function chipScope(name) {
+        const n = state.turnCount || 0;
+        const fold = s => String(s || '').toLocaleLowerCase('tr').trim();
+        const spread = (from, to, ex, into) => {
+            const skip = {};
+            (ex || []).forEach(x => { skip[Number(x)] = 1; });
+            const a = from ? from : 1;
+            const b = from ? to : n;
+            for (let i = a; i <= b; i++) { if (!skip[i]) { into[i] = 1; } }
+        };
+        const keys = o => Object.keys(o).map(Number).sort((a, b) => a - b);
+        // Where it stands now: the union of every mark of THIS conversation
+        // that carries the topic — which is how a topic ends up on `1–3, 7`
+        // without any single mark saying so.
+        const had = {};
+        let wasWhole = false;
+        (state.marks || []).filter(m => (m.topics || []).some(t => fold(t) === fold(name)))
+            .forEach(m => {
+                if (!Number(m.from)) { wasWhole = true; }
+                spread(Number(m.from) || 0, Number(m.to) || 0, m.exclude, had);
+            });
+        // Where this press would put it. A range that does not parse adds
+        // NOTHING — the panel already refuses to save it, and reading it as an
+        // empty range would draw every chip amber on a typo.
+        const r = parseRange(state.range);
+        const addsWhole = !!r && !r.from;
+        const adds = {};
+        if (r) { spread(r.from, r.to, state.scope === 'all' ? (state.exclude || []) : [], adds); }
+        const whole = wasWhole || addsWhole;
+        const all = {};
+        Object.keys(had).forEach(k => { all[k] = 1; });
+        Object.keys(adds).forEach(k => { all[k] = 1; });
+        const turns = keys(all);
+        const cnt = turns.length;
+        const gaps = [];
+        for (let i = 1; i <= n; i++) { if (!all[i]) { gaps.push(i); } }
+        const head = whole
+            ? (n
+                ? (gaps.length
+                    ? `Whole session (${cnt} of ${n} turns)`
+                    : `Whole session (${n} turn${n === 1 ? '' : 's'})`)
+                : 'Whole session')
+            : (n ? `${cnt} turn${cnt === 1 ? '' : 's'} (${cnt}/${n})`
+                : `${cnt} turn${cnt === 1 ? '' : 's'}`);
+        const detail = whole
+            ? (gaps.length ? `Whole session · except ${spanWords(gaps)}` : 'Whole session')
+            : (cnt ? `Turns: ${spanWords(turns)}` : 'No turn chosen');
+        // Present and future are said apart, because they are the two things a
+        // reader is actually deciding between.
+        const kept = keys(had);
+        const already = wasWhole ? 'Already kept on the whole session.'
+            : kept.length ? `Already kept on turn${kept.length === 1 ? '' : 's'} ${spanWords(kept)}.`
+                : 'Not kept yet.';
+        const news = keys(adds).some(x => !had[x]) || (addsWhole && !wasWhole);
+        const then = news
+            ? ` Keeping it now files it on ${addsWhole && n ? `the whole session (turns 1–${n})`
+                : addsWhole ? 'the whole conversation' : rangeWords(r.from, r.to)}.`
+            : ' This scope is already covered — keeping it again only adds the topic.';
+        return {
+            cls: whole ? 'whole' : '',
+            head,
+            body: `${detail}\n${already}${then}`,
+            tipCls: 'tip-free',
+            tipAttrs: 'data-aftip-anchor=".afw-box"'
+        };
+    }
+
     /** Everything picked plus anything still in the box — a word typed and not
      *  yet entered counts, which is the commonest way this is used. */
     function chosenTopics() {
@@ -490,6 +589,7 @@
                 ${state.loading ? '' : window.AFCombo.html({
         id: 'afw-cat', options: comboOptions(), picked: state.picked,
         query: state.query, open: state.open, active: state.active, create: true,
+        chipMeta: chipScope,
         placeholder: state.picked.length ? 'another…' : 'search the categories…'
     })}
                 ${state.made ? `<div class="afw-made">${esc(state.made)}</div>` : ''}
@@ -498,7 +598,9 @@
                     title="Your own words, kept with the mark so the pool is readable on its own.">
                 ${state.error ? `<div class="afw-err">${esc(state.error)}</div>` : ''}
                 <div class="afw-foot">
-                    <span class="afw-note">Nothing is written to the vault — it lands in the candidate pool.</span>
+                    <span class="afw-note">Nothing is written to the vault — it lands in the candidate pool.
+                        <span class="afw-role">This window only ADDS topics — dropping, editing and compiling
+                            candidates is the Wiki cockpit's job.</span></span>
                     <button class="afw-go" id="afw-go"${state.saving ? ' disabled' : ''}>${state.saving ? 'Keeping…' : 'Keep it'}</button>
                 </div>`}
             </div>

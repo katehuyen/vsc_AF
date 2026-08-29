@@ -196,7 +196,7 @@ function tagger() {
         // what it is and a shim that drops the text measures only the pixels.
         window: {
             innerWidth: 1200, innerHeight: 900,
-            AFTip: { wrap: (btn, head, body) => `${btn}<!--tip: ${head} | ${body}-->` }
+            AFTip: { wrap: (btn, head, body, cls) => `${btn}<!--tip: ${head} | ${body} | ${cls || ''}-->` }
         },
         document: {
             body,
@@ -629,6 +629,99 @@ function tagger() {
     ok('…and it is filed as the whole conversation', sent && sent.from === 0 && sent.to === 0);
 }
 
+// ============== U-120: the scope a chip carries, and the colour that says it
+//
+// ‼️ THE AGGREGATION ILLUSION. A mark on the WHOLE conversation covers turn 2,
+// so pressing turn 2's badge ticks it alongside a mark that covers turns 1–3
+// and nothing else. Two scopes, one colour, one list — and the reader files the
+// next thing under whichever chip the eye landed on. What is measured here is
+// that the two are told apart BEFORE the press, not after it.
+{
+    const marks = () => [
+        { id: 'm1', from: 0, to: 0, topics: ['Agent Farm'], state: 'pending', exclude: [] },
+        { id: 'm2', from: 1, to: 3, topics: ['Wiki'], state: 'pending', exclude: [] }
+    ];
+    const openAt = (o) => {
+        const t = tagger();
+        t.AFWiki.open({ session: 'S1', turn: 0, ts: 5, text: 'x', whole: !!o.whole });
+        t.AFWiki.receive({
+            type: 'wikiAsk', session: 'S1', ok: true, from: o.from, to: o.from, exact: true,
+            turnCount: 10, label: 'x', topics: [], marks: o.marks || marks()
+        });
+        return t;
+    };
+
+    const t = openAt({ from: 2 });
+    const h = t.html();
+    ok('both marks that cover the pressed turn are ticked',
+        /class="afc-chip whole">Agent Farm/.test(h) && /class="afc-chip">Wiki/.test(h));
+    ok('‼️ …and only the session-wide one is warm — that is the whole item',
+        !/class="afc-chip whole">Wiki/.test(h));
+    ok('the hover counts the turns the way the cockpit says them',
+        h.indexOf('tip: Whole session (10 turns) | Whole session') > 0);
+    ok('…and a partial topic states the span rather than the count alone',
+        h.indexOf('tip: 3 turns (3/10) | Turns: 1–3') > 0);
+    ok('…and says where the topic already stands, apart from where it is going',
+        /Already kept on turns 1–3\./.test(h));
+    ok('the rich panel is used, so a 340px popover cannot clip it',
+        / \| tip-free-->/.test(h));
+
+    // ‼️ Item 4 — the colour follows the segmented control, live. A chip that
+    // only reported the past would go amber AFTER the save, which is one press
+    // too late to be a warning.
+    ok('pressing Whole session repaints the chips', t.press('data-afw-scope', 'all'));
+    const all = t.html();
+    ok('‼️ …and a partial topic goes warm the moment the scope would make it session-wide',
+        /class="afc-chip whole">Wiki/.test(all));
+    ok('…and the hover says what the press would do, not only what is there',
+        /Keeping it now files it on the whole session \(turns 1–10\)\./.test(all));
+
+    // X-58's subtraction is part of the count, or the figure is a claim the
+    // compile will not honour.
+    ok('a turn is taken out of the whole-session scope', t.press('data-afw-ex', 4));
+    const cut = t.html();
+    ok('‼️ an excluded turn is subtracted from the chip that would gain it',
+        cut.indexOf('tip: Whole session (9 of 10 turns) | Whole session · except 4') > 0);
+    ok('…but a mark that ALREADY covers every turn is not reduced by it',
+        cut.indexOf('tip: Whole session (10 turns) | Whole session') > 0);
+
+    // A mark whose own exclusions came down the wire.
+    const ex = openAt({
+        from: 2,
+        marks: [{ id: 'm3', from: 0, to: 0, topics: ['Wiki'], state: 'pending', exclude: [9, 10] }]
+    });
+    ok('‼️ a whole-session mark that leaves two turns out does not claim ten',
+        ex.html().indexOf('tip: Whole session (8 of 10 turns) | Whole session · except 9–10') > 0);
+    ok('…and it is still a session-wide chip, because that is what it is',
+        /class="afc-chip whole">Wiki/.test(ex.html()));
+
+    // A topic nobody has filed yet: the chip reports the pending scope alone.
+    const fresh = openAt({ from: 2, marks: [] });
+    const box = fresh.bind('afw-cat-in');
+    box.value = 'Ajanlar';
+    box.fire('input');
+    box.fire('keydown', { key: 'Enter', preventDefault() { }, stopPropagation() { } });
+    // Enter on a word nobody has filed offers to START the category, and the
+    // name that comes back is the one that really exists on disk (U-91).
+    fresh.AFWiki.receive({ type: 'wikiCategory', session: 'S1', ok: true, name: 'Ajanlar' });
+    const nh = fresh.html();
+    ok('a topic that is not kept anywhere yet says so',
+        nh.indexOf('tip: 1 turn (1/10) | Turns: 2') > 0 && /Not kept yet\./.test(nh));
+    ok('…and is drawn in the ordinary colour', /class="afc-chip">Ajanlar/.test(nh));
+
+    // Item 3 — the same rule from the session badge, which has no turn at all.
+    const w = openAt({ from: 0, whole: true });
+    ok('‼️ the session-level popover tells the two apart by the same rule',
+        /class="afc-chip whole">Agent Farm/.test(w.html())
+        && /class="afc-chip whole">Wiki/.test(w.html()));
+    ok('…and Wiki is warm THERE because the scope is the session, and says so',
+        w.html().indexOf('Already kept on turns 1–3. Keeping it now files it on the whole session') > 0);
+
+    // Item 5 — what this window is not.
+    ok('the footer says the cockpit is where candidates are managed',
+        /afw-role[^>]*>This window only ADDS topics/.test(t.html()));
+}
+
 // ============================ U-90/U-91: the picker, driven the way a hand does
 {
     const ASK = {
@@ -769,6 +862,20 @@ function tagger() {
     ok('a query nothing matches filters to nothing', C.filter(opts, 'zzz').length === 0);
     ok('exact() folds the same way the list does',
         C.exact(opts, 'TARIM') === true && C.exact(opts, 'tar') === false);
+    // ‼️ U-120 — THE BOX IS SHARED, so what one owner needs must cost the other
+    // owner nothing. The cockpit's row editor draws these chips over a mark
+    // that already has exactly one scope and has nothing to add; it passes no
+    // `chipMeta`, and its chips must come out exactly as they always did.
+    const bare = C.html({ id: 'x', options: opts, picked: ['Kota'], query: '' });
+    ok('‼️ a caller that says nothing about scope still gets the plain chip',
+        /class="afc-chip">Kota/.test(bare) && !/af-tipw/.test(bare));
+    box2.window.AFTip = { wrap: (t, h, b, c) => `${t}<!--${h}|${b}|${c}-->` };
+    const rich = C.html({
+        id: 'x', options: opts, picked: ['Kota'], query: '',
+        chipMeta: n => ({ cls: 'whole', head: n, body: 'scope', tipCls: 'tip-free' })
+    });
+    ok('…and one that does gets the class and the hover on the same chip',
+        /class="afc-chip whole">Kota/.test(rich) && rich.indexOf('<!--Kota|scope|tip-free-->') > 0);
 }
 
 // ============================================ the surfaces actually draw it
@@ -804,6 +911,18 @@ function tagger() {
         /\.afwiki\.wide \{/.test(css) && /\.srow:hover \.afwiki/.test(css));
     ok('…and a kept one stays lit whatever the pointer does',
         /\.afwiki\.on \{[^}]*opacity: 1/.test(css));
+    // U-120: the warm chip is the editor's own warning pair, not a hex that
+    // only holds its contrast in the dark theme.
+    ok('‼️ a session-wide chip is warm, in whichever theme it is read',
+        /\.afc-chip\.whole \{[^}]*inputValidation-warningBackground/.test(css)
+        && /\.afc-chip\.whole \{[^}]*editorWarning-foreground/.test(css));
+    ok('and the role note stands on its own line rather than joining the one above',
+        /\.afw-role \{[^}]*display: block/.test(css));
+    // The scope has to reach the page to be drawn: a mark's exclusions travel
+    // with it on the wire, or the count is a claim the compile will not honour.
+    ok('‼️ the host sends each mark its exclusions',
+        /exclude: c\.excludeTurns \?\? \[\]/.test(fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8'))
+        && /state: string;\s*\n\s*exclude: number\[\]/.test(shell));
 }
 
 console.log(`test_wiki_tagger: ${pass} passed, ${fail} failed`);

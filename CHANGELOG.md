@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.328.0 - U-120: a chip says which scope it belongs to (2026-08-29)
+
+A mark on the WHOLE conversation covers turn 2, so pressing turn 2's badge
+ticked it alongside a mark that covered turns 1–3 and nothing else. Two scopes,
+one colour, one list — the aggregation illusion — and the next topic went under
+whichever chip the eye landed on.
+
+**A session-wide chip is now warm** (the editor's own warning pair, so it holds
+its contrast in both themes) and a partial one keeps the ordinary accent. The
+rule is the same from a turn's badge and from a session's, because both popovers
+are the same panel.
+
+**‼️ And what a chip reports is what pressing "Keep it" LEAVES BEHIND** — every
+turn the topic is already kept on, plus the scope now chosen. That second half
+is why it is worth repainting: choosing *Whole session* turns the partial chips
+warm **before** the press rather than after it. The hover states the count the
+way the cockpit says it (`Whole session (10 turns)` · `3 turns (3/10)`), then
+the span (`Turns: 1–3, 7`), then where the topic stands today and what this
+press would add.
+
+X-58's exclusions are part of that arithmetic: a whole-session mark that leaves
+two turns out reads `Whole session (8 of 10 turns) · except 9–10` rather than
+claiming ten. They now travel with the mark on the wire, because a count the
+compile will not honour is worse than no count.
+
+The footer says what the window is not: it only ADDS topics — dropping, editing
+and compiling candidates is the Wiki cockpit's job.
+
 ## 3.327.0 - U-121: the tick box stops being the compile's box (2026-08-29)
 
 Three separate frustrations in the Wiki cockpit, all of them the same mistake:

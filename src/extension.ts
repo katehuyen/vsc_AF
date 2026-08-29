@@ -13662,7 +13662,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     setWikiMarkBridge({
         topics: () => wikiStore.topics(),
         marks: (sessionId) => wikiStore.forSession(sessionId).map(c => ({
-            id: c.id, from: c.fromTurn, to: c.toTurn, topics: c.topics, state: c.state
+            id: c.id, from: c.fromTurn, to: c.toTurn, topics: c.topics, state: c.state,
+            exclude: c.excludeTurns ?? []
         })),
         turns: (sessionId) => {
             const s = index.allWithExternal().find(x => x.sessionId === sessionId);

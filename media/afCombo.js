@@ -70,14 +70,32 @@
      * The box. `o` is the owner's state plus what it wants offered:
      *   id · options[{name,pages?,marks?,pending?}] · picked[] · query · open ·
      *   active · placeholder · create (offer "+ start the category")
+     *
+     * ‼️ U-120 — A CHIP CAN CARRY WHAT THE OWNER KNOWS ABOUT IT, and only the
+     * owner knows it. `picked` is a list of NAMES, which is the whole reason a
+     * chip could not say which mark it came from: the scope lives in the
+     * owner's state, not in the string. So the owner may pass
+     * `chipMeta(name) -> { cls, head, body, tipCls, tipAttrs }` and the chip is
+     * drawn with that class and wrapped in the hover it describes. It stays
+     * OPTIONAL because this box is shared (the cockpit's row editor draws the
+     * same chips over a mark that already has one scope, and has nothing to
+     * add); turning `picked` into a list of objects instead would break both
+     * call sites to serve one.
      */
     function html(o) {
         const picked = o.picked || [];
         const list = filter(o.options, o.query);
         const canMake = !!o.create && !!fold(o.query) && !exact(o.options, o.query);
-        const chips = picked.map(p =>
-            `<span class="afc-chip">${esc(p)}<button class="afc-x" data-afc-off="${esc(p)}"
-                title="Take ${esc(p)} off this mark">✕</button></span>`).join('');
+        const meta = typeof o.chipMeta === 'function' ? o.chipMeta : null;
+        const chips = picked.map(p => {
+            const m = (meta && meta(p)) || null;
+            const chip = `<span class="afc-chip${m && m.cls ? ' ' + esc(m.cls) : ''}">${esc(p)}<button
+                class="afc-x" data-afc-off="${esc(p)}"
+                title="Take ${esc(p)} off this mark">✕</button></span>`;
+            return m && m.body && window.AFTip
+                ? window.AFTip.wrap(chip, m.head || '', m.body, m.tipCls || '', m.tipAttrs || '')
+                : chip;
+        }).join('');
         // The create row is FIRST when it exists: it is what the person is
         // doing when the list is empty, and hunting for it under a list that
         // did not match is the delay this whole box exists to remove.
