@@ -1580,7 +1580,11 @@
         // A-25 — a seven-field object whose `voice` has to name something this
         // machine actually has. Left out of this list it would sit beside the
         // strip that draws it as a raw JSON box: two controls, one setting.
-        'agentFarm.alerts.speak'
+        'agentFarm.alerts.speak',
+        // U-123 — and the nudge, for the same reason: the gate strip draws its
+        // three fields, so leaving the key here would put a raw JSON box beside
+        // them. Two controls for one setting is the shape A-21 removed.
+        'agentFarm.alerts.nudge'
     ];
     const ALERT_ORIGIN_TEXT = {
         session: 'this conversation\'s own ♪ choice',
@@ -1594,17 +1598,34 @@
         return v ? v.label : id;
     }
 
-    /** The picker for one event. Empty value = "whatever the default is", which
-     *  is NOT the same as silence and must never read as it. */
-    function alertVoiceSelect(al, row) {
-        const opt = v => `<option value="${C.esc(v.id)}"${v.id === row.chosen ? ' selected' : ''}${v.playable ? '' : ' disabled'}>${C.esc(v.label)}${v.playable ? '' : (v.exists ? ' — not playable here' : ' — file missing')}</option>`;
-        // ‼️ A-20 — TWENTY BUILT-INS ARE TWO FAMILIES, AND THE LIST SAYS SO.
-        // Flat, the reader has to read every label to discover there were two
-        // sets: the ten the defaults come from, built from different physical
-        // objects, and the ten kept only so that nobody who CHOSE one loses it.
+    /**
+     * ‼️ THE TONE LIST, IN ONE PLACE — every picker that offers a sound offers
+     * the SAME rows, grouped the same way, and refuses the same ones.
+     *
+     * ‼️ A-20 — TWENTY BUILT-INS ARE TWO FAMILIES, AND THE LIST SAYS SO. Flat,
+     * the reader has to read every label to discover there were two sets: the
+     * ten the defaults come from, built from different physical objects, and the
+     * ten kept only so that nobody who CHOSE one loses it.
+     *
+     * ‼️ AN UNPLAYABLE TONE IS DRAWN AND DISABLED, never dropped. A setting that
+     * names a sound whose file has gone must go on naming it — a list that
+     * omitted it would show the first option instead and report a choice nobody
+     * made. The host refuses it by name too; the page must not promise what the
+     * op will refuse (U-123).
+     */
+    function alertToneGroups(al, chosen) {
+        const opt = v => `<option value="${C.esc(v.id)}"${v.id === chosen ? ' selected' : ''}${v.playable ? '' : ' disabled'}>${C.esc(v.label)}${v.playable ? '' : (v.exists ? ' — not playable here' : ' — file missing')}</option>`;
         const modern = (al.voices || []).filter(v => v.builtin && v.family !== 'classic');
         const classic = (al.voices || []).filter(v => v.builtin && v.family === 'classic');
         const mine = (al.voices || []).filter(v => !v.builtin);
+        return `${modern.length ? `<optgroup label="Built in">${modern.map(opt).join('')}</optgroup>` : ''}
+            ${classic.length ? `<optgroup label="Built in — earlier set">${classic.map(opt).join('')}</optgroup>` : ''}
+            ${mine.length ? `<optgroup label="Your own">${mine.map(opt).join('')}</optgroup>` : ''}`;
+    }
+
+    /** The picker for one event. Empty value = "whatever the default is", which
+     *  is NOT the same as silence and must never read as it. */
+    function alertVoiceSelect(al, row) {
         // MIRROR — the box is narrow enough to cut its own text, so its
         // tooltip opens with what it is set to right now.
         const tip = window.AFQuery.tip(
@@ -1612,9 +1633,7 @@
             + `\n\nWhich sound this event plays for every session. Clearing it does not mute the event: it falls back to the built-in default.`);
         return `<select data-alertvoice="${C.esc(row.event)}" title="${C.esc(tip)}">
             <option value=""${row.chosen ? '' : ' selected'}>Default — ${C.esc(alertVoiceName(al, row.fallback))}</option>
-            ${modern.length ? `<optgroup label="Built in">${modern.map(opt).join('')}</optgroup>` : ''}
-            ${classic.length ? `<optgroup label="Built in — earlier set">${classic.map(opt).join('')}</optgroup>` : ''}
-            ${mine.length ? `<optgroup label="Your own">${mine.map(opt).join('')}</optgroup>` : ''}
+            ${alertToneGroups(al, row.chosen)}
         </select>`;
     }
 
@@ -1734,6 +1753,58 @@
             + 'next morning. The start is included and the end is not, so at 08:00 sounds are '
             + 'back.\n\nA time that is not HH:MM is refused rather than stored — a schedule that '
             + 'reads as configured and silences nothing is the worst of the three outcomes.');
+        /**
+         * ‼️ U-123 — THE SECOND TAP ON THE SHOULDER, on the line that already
+         * decides whether the FIRST one is heard.
+         *
+         * `agentFarm.alerts.nudge` was a raw JSON box beside this strip while
+         * every other part of the gate lived ON it. It belongs here and not
+         * beside the tone table because it answers the gate's question — will a
+         * sound happen at all — rather than the table's, which sound.
+         *
+         * ‼️ OFF IS `minutes: 0`, THE SETTING'S OWN WORD FOR IT. A fourth field
+         * could disagree with the other three; this cannot. Switching it back on
+         * with the numbers still at zero would arm nothing, so the page sends
+         * the defaults for whichever half is empty and the host clamps them.
+         */
+        const n = g.nudge || {};
+        const nOn = n.on === true;
+        const nMin = Number(n.minutes) > 0 ? Number(n.minutes) : ((n.defaults || {}).minutes || 3);
+        const nRep = Number(n.repeat) > 0 ? Number(n.repeat) : ((n.defaults || {}).repeat || 2);
+        const nudgeTip = window.AFQuery.tip(
+            (nOn
+                ? `On — a reminder ${nMin} min after an unanswered question, up to ${nRep} time${nRep === 1 ? '' : 's'}`
+                : 'Off — a question that goes unanswered is announced once and then left alone')
+            + '\n\n‼️ ONLY the question event is nudged. Reminding somebody about a turn that '
+            + 'FINISHED is pestering them about news that needs nothing from them; a question is '
+            + 'the one case where nobody noticing costs the whole run.\n\nIt stops by itself after '
+            + 'the repeat count, because a chime that never ends is one you mute for good — and it '
+            + 'goes through this same mute, these same quiet hours and the same queue as the alert '
+            + 'it reminds you about.');
+        const armed = Number(n.armed) || 0;
+        const nudge = `<label class="alertgatelbl" title="${C.esc(nudgeTip)}">
+                <input type="checkbox" id="alertnudgeon" ${nOn ? 'checked' : ''}>⏰ Nudge</label>
+            <span class="alertgatedash">after</span>
+            <input class="alertqtime" type="number" id="alertnudgemin" min="1" max="240"
+                value="${C.esc(String(nMin))}" data-alertn="${C.esc(String(nMin))}"
+                title="${C.esc('How long a question may sit unanswered before the reminder plays, in minutes. 1–240.')}">
+            <span class="alertgatedash">min,</span>
+            <input class="alertqtime" type="number" id="alertnudgerep" min="1" max="20"
+                value="${C.esc(String(nRep))}" data-alertn="${C.esc(String(nRep))}"
+                title="${C.esc('How many reminders at most, then it gives up on that question. Ceiling 20 — a chime that never ends is one you mute for good.')}">
+            <span class="alertgatedash">×</span>
+            <select id="alertnudgetone" title="${C.esc(window.AFQuery.tip(
+            `Reminder tone: ${alertVoiceName(al, n.voice)}\n\nDeliberately its own, and lighter than the `
+            + 'alert it follows: this is a second tap on the shoulder, not the news again.\n\n'
+            + 'A sound this machine cannot play is refused rather than stored — it would fall '
+            + 'through to the event\'s own voice and the setting would look as though it had taken.'))}">
+                ${alertToneGroups(al, String(n.voice || ''))}
+            </select>${armed ? window.AFTip.wrap(
+            `<span class="alertnudgearmed">${armed} waiting</span>`,
+            `${armed} question${armed === 1 ? '' : 's'} armed for a reminder right now`,
+            'Each one is a session that STOPPED to ask something and has not been answered yet. '
+            + 'A session that moves on — answered, or gone from the live list — disarms itself, so '
+            + 'this figure is what is really outstanding rather than a running total.') : ''}`;
         const err = q.error
             ? `<div class="seterr">⚠ ${C.esc(q.error)}</div>` : '';
         const ses = (g.mutedSessions || []).map(s =>
@@ -1751,6 +1822,8 @@
             <input class="alertqtime" type="text" id="alertquietto" size="5" maxlength="5"
                 value="${C.esc(q.to || '08:00')}" data-alertq="${C.esc(q.to || '08:00')}"
                 title="${C.esc('When it ends, HH:MM, local time. Excluded — at this minute sounds are back.')}">
+            <span class="alertgatebar"></span>
+            ${nudge}
             ${state}
             ${ses ? `<span class="alertgatebar"></span><span class="alertmuteseswrap">${window.AFTip.wrap(
                 '<span class="alertmuteseslbl">muted on their own</span>',
@@ -1907,11 +1980,21 @@
             : broken
             ? `<span class="rootbadge warn">${broken} armed event${broken === 1 ? '' : 's'} cannot be played</span>`
             : `<span class="rootbadge">${on ? `${on} of ${al.events.length} events armed` : 'nothing armed — every event is off'}</span>`;
+        // ‼️ U-123 — AND THE NUDGE SAYS SO IN THE HEAD, because it is the one
+        // thing on this card that makes a sound the reader did NOT arm: a
+        // second chime some minutes after a question, from a policy three
+        // controls deep in a strip. A badge for it is cheap and the surprise is
+        // not. It rides BESIDE the count rather than replacing it — the gate
+        // outranks the count, but a reminder is not a gate.
+        const nudge = (al.gate && al.gate.nudge) || {};
+        const nudgeBadge = nudge.on
+            ? `<span class="rootbadge">⏰ nudge ${C.esc(String(nudge.minutes))}m ×${C.esc(String(nudge.repeat))}${nudge.armed ? ` · ${C.esc(String(nudge.armed))} waiting` : ''}</span>`
+            : '';
         const err = errors['agentFarm.alerts.voices']
             ? `<div class="seterr">⚠ ${C.esc(errors['agentFarm.alerts.voices'])}</div>` : '';
         const full = mine.length >= al.limit;
         return `<div class="setitem eng ${cls}" data-item="agentFarm.alerts.voices">
-            <div class="sethead"><span class="setname">🔔 Alert sounds</span> ${badge}</div>
+            <div class="sethead"><span class="setname">🔔 Alert sounds</span> ${badge} ${nudgeBadge}</div>
             <div class="setdesc">A sound so you can leave the room. Every event is off out of the box;
                 ticking one plays its sound on <b>every</b> session. Two of them
                 (${al.sessionEvents.map(e => `<code>${C.esc(e)}</code>`).join(' · ')}) can also be armed for a
@@ -2180,6 +2263,12 @@
                     padding:0 2px 0 6px; border-radius:9px;
                     border:1px solid var(--vscode-widget-border, #4444); }
                 .alertmuteses button { padding:0 4px; min-width:0; }
+                /* U-123 — the nudge's own boxes are the gate's, at the gate's
+                   width; only the tone picker needs room for a sound's name. */
+                #alertnudgemin, #alertnudgerep { width:44px; }
+                #alertnudgetone { flex:0 1 150px; min-width:110px; }
+                .alertnudgearmed { white-space:nowrap; font-size:11px; opacity:.85;
+                    border-bottom:1px dotted var(--vscode-widget-border, #4444); }
                 /* A-25 — the announcement strip. Same shape as the gate above
                    it on purpose: the two are read as one instrument, in the
                    order they take effect (is anything heard → what does it say).
@@ -2343,6 +2432,44 @@
                 vscode.postMessage(msg);
             });
         });
+        /**
+         * ‼️ U-123 — THE NUDGE, through the SAME host function `alerts.nudge`
+         * goes through. The switch carries both numbers with it, because "on"
+         * is not a field of its own: off is `minutes: 0`, so switching back on
+         * has to say what the minutes are or it would arm nothing.
+         */
+        const nudgeOnEl = document.getElementById('alertnudgeon');
+        if (nudgeOnEl) {
+            nudgeOnEl.addEventListener('change', () => {
+                const m = document.getElementById('alertnudgemin');
+                const r = document.getElementById('alertnudgerep');
+                vscode.postMessage({
+                    type: 'alertNudge', on: nudgeOnEl.checked,
+                    minutes: m ? m.value : undefined, repeat: r ? r.value : undefined
+                });
+            });
+        }
+        [['min', 'minutes'], ['rep', 'repeat']].forEach(([id, key]) => {
+            const el = document.getElementById('alertnudge' + id);
+            if (!el) { return; }
+            el.addEventListener('keydown', e => { if (e.key === 'Enter') { el.blur(); } });
+            el.addEventListener('change', () => {
+                const next = el.value.trim();
+                // ‼️ EMPTIED IS NOT A NUMBER, and 0 here is not "off" — off is
+                // the switch beside it. Either would be stored as a policy
+                // nobody typed, so the box is put back instead.
+                if (!next || next === el.dataset.alertn) { el.value = el.dataset.alertn; return; }
+                const msg = { type: 'alertNudge' };
+                msg[key] = next;
+                vscode.postMessage(msg);
+            });
+        });
+        const nudgeToneEl = document.getElementById('alertnudgetone');
+        if (nudgeToneEl) {
+            nudgeToneEl.addEventListener('change', () => vscode.postMessage({
+                type: 'alertNudge', voice: nudgeToneEl.value
+            }));
+        }
         document.querySelectorAll('[data-alertunmute]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({
                 type: 'alertUnmuteSession', sessionId: el.dataset.alertunmute

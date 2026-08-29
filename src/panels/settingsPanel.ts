@@ -136,6 +136,9 @@ export interface FarmSettingsDeps {
      *  `alerts.mute` / `alerts.quiet` ops go through. */
     alertsSetMuted?(on: boolean): Promise<void>;
     alertsSetQuiet?(patch: { on?: boolean; from?: string; to?: string }): Promise<void>;
+    /** U-123 — the nudge's three fields, through the same host function
+     *  `alerts.nudge` uses. Only what changed is sent; the rest keeps its value. */
+    alertsSetNudge?(patch: { minutes?: number; repeat?: number; voice?: string }): Promise<void>;
     /** Unmute ONE session from the card that listed it as muted — the row says
      *  which conversation is quiet, so it has to be able to undo it. */
     alertsUnmuteSession?(sessionId: string): Promise<void>;
@@ -197,6 +200,14 @@ export interface AlertsGate {
     };
     silence: { silent: boolean; reason?: string; reasons: string[]; detail?: string };
     mutedSessions: { sessionId: string; label: string }[];
+    /** U-123 — the second tap on the shoulder. `on` is the resolved answer
+     *  (either number at zero switches it off), `armed` is how many questions
+     *  are waiting for one right now — the figure that makes a policy visible. */
+    nudge: {
+        minutes: number; repeat: number; voice: string;
+        on: boolean; armed: number;
+        defaults: { minutes: number; repeat: number; voice: string };
+    };
 }
 
 /**
@@ -886,6 +897,37 @@ export class FarmSettingsPanel {
                     ...(msg.to === undefined ? {} : { to: String(msg.to) })
                 }));
                 break;
+            /**
+             * ‼️ U-123 — THE NUDGE'S THREE FIELDS, one message, exactly like the
+             * quiet hours above it. The page sends only what it changed; the
+             * host keeps the rest and clamps what it is given, so a number a
+             * box should never have produced is never stored.
+             *
+             * `on: false` is `minutes: 0` — the setting's own way of saying off,
+             * rather than a fourth field that could disagree with the other
+             * three. Switching it back on with the numbers still at zero would
+             * arm nothing, so the defaults answer for whichever half is empty.
+             */
+            case 'alertNudge': {
+                const patch: { minutes?: number; repeat?: number; voice?: string } = {};
+                if (msg.on !== undefined) {
+                    if (msg.on === false) {
+                        patch.minutes = 0;
+                    } else {
+                        patch.minutes = Number(msg.minutes) || 0;
+                        patch.repeat = Number(msg.repeat) || 0;
+                    }
+                }
+                if (msg.minutes !== undefined && msg.on === undefined) {
+                    patch.minutes = Number(msg.minutes);
+                }
+                if (msg.repeat !== undefined && msg.on === undefined) {
+                    patch.repeat = Number(msg.repeat);
+                }
+                if (msg.voice !== undefined) { patch.voice = String(msg.voice); }
+                await this.alertAct(() => this.deps.alertsSetNudge?.(patch));
+                break;
+            }
             case 'alertUnmuteSession':
                 await this.alertAct(() =>
                     this.deps.alertsUnmuteSession?.(String(msg.sessionId ?? '')));

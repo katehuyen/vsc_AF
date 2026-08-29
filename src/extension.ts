@@ -369,7 +369,7 @@ import {
     renameCustomVoice, ResolveDeps, ResolvedVoice, resolveVoice
 } from './core/alertVoices';
 import {
-    AudioArbiter, NudgeConfig, nudgeConfig, NudgeStore,
+    AudioArbiter, NudgeConfig, nudgeConfig, NUDGE_DEFAULT, NudgeStore,
     QuietHours, quietHours, QuietVerdict, quietLine, QUIET_HOURS_DEFAULT,
     Silence, silence
 } from './core/alertGate';
@@ -1554,6 +1554,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return alertQuiet();
     };
     /**
+     * ‼️ U-123 — THE ONE DOOR THE NUDGE'S THREE FIELDS GO THROUGH: the Settings
+     * strip and the `alerts.nudge` op.
+     *
+     * It was written inside the op's handler, which is exactly where the rest of
+     * the gate is NOT (`alertsSetMuted`, `alertsSetQuiet` above) — and the card
+     * that was about to grow a control for it would have had to either reach
+     * into an op or write the setting a second way. Both of those drift on the
+     * first change; the third field is the reason to be sure, because a tone
+     * NOTHING HERE PLAYS is refused BY NAME rather than stored. Accepted, it
+     * falls through to the event's own voice at reminder time and the setting
+     * looks as though it took when it did not.
+     *
+     * A field the caller left out keeps its current value: the strip changes one
+     * box at a time and a patch that quietly reset the other two would undo an
+     * answer nobody touched.
+     */
+    const alertsSetNudge = async (
+        patch: { minutes?: unknown; repeat?: unknown; voice?: unknown }
+    ): Promise<NudgeConfig> => {
+        const cur = nudgeCfg();
+        const next = nudgeConfig({
+            minutes: patch.minutes === undefined ? cur.minutes : Number(patch.minutes),
+            repeat: patch.repeat === undefined ? cur.repeat : Number(patch.repeat),
+            voice: patch.voice === undefined ? cur.voice : String(patch.voice)
+        });
+        if (!alertVoiceRows().some(v => v.id === next.voice && v.playable)) {
+            throw new Error(`nothing on this machine plays "${next.voice}" — try alerts.voices`);
+        }
+        await cfg().update('alerts.nudge', next, vscode.ConfigurationTarget.Global);
+        FarmSettingsPanel.refreshIfOpen();
+        return next;
+    };
+    /**
      * ‼️ A-22 — THE REMINDER, PLAYED. It goes through the SAME gate and the
      * SAME queue as the alert it reminds you about: a nudge that ignored the
      * mute would be the one sound a muted farm still made, and one that skipped
@@ -1738,7 +1771,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // the reader cannot act on without knowing which two.
                 mutedSessions: live.sessions()
                     .filter(s => turnAlerts.mutedFor(s.sessionId))
-                    .map(s => ({ sessionId: s.sessionId, label: live.labelOf(s) }))
+                    .map(s => ({ sessionId: s.sessionId, label: live.labelOf(s) })),
+                /**
+                 * ‼️ U-123 — THE SECOND TAP ON THE SHOULDER, on the same line as
+                 * the two switches that decide whether the FIRST one is heard.
+                 *
+                 * It belongs on the gate rather than beside the tone table for
+                 * the reason the mute does: it is a question about whether a
+                 * sound happens at all, not about which sound. `armed` is the
+                 * count waiting RIGHT NOW — the one figure that turns a policy
+                 * into something the reader can see working.
+                 */
+                nudge: {
+                    ...nudgeCfg(),
+                    on: nudgeCfg().minutes > 0 && nudgeCfg().repeat > 0,
+                    defaults: NUDGE_DEFAULT,
+                    armed: alertNudges.list().length
+                }
             },
             folder: alertSoundsFolder(),
             limit: CUSTOM_LIMIT,
@@ -9622,21 +9671,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const raw = args as { minutes?: unknown; repeat?: unknown; voice?: unknown };
                 const touched = raw.minutes !== undefined || raw.repeat !== undefined
                     || raw.voice !== undefined;
+                // ‼️ U-123 — THE SAME FUNCTION THE SETTINGS STRIP CALLS. A tone
+                // nothing here plays is refused BY NAME inside it, and a field
+                // left out keeps its current value.
                 if (touched) {
-                    const cur = nudgeCfg();
-                    const next = nudgeConfig({
-                        minutes: raw.minutes === undefined ? cur.minutes : Number(raw.minutes),
-                        repeat: raw.repeat === undefined ? cur.repeat : Number(raw.repeat),
-                        voice: raw.voice === undefined ? cur.voice : String(raw.voice)
-                    });
-                    // ‼️ A TONE NOTHING HERE PLAYS IS REFUSED BY NAME. Accepted,
-                    // it would fall back to the event's own voice and the setting
-                    // would look like it had taken when it had not.
-                    if (!alertVoiceRows().some(v => v.id === next.voice && v.playable)) {
-                        throw new Error(`nothing on this machine plays "${next.voice}" — try alerts.voices`);
-                    }
-                    await cfg().update('alerts.nudge', next, vscode.ConfigurationTarget.Global);
-                    FarmSettingsPanel.refreshIfOpen();
+                    await alertsSetNudge(raw);
                 }
                 const n = nudgeCfg();
                 const at = Date.now();
@@ -26758,6 +26797,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // gesture; the act is the host's, once.
                     alertsSetMuted: async (on) => { await alertsSetMuted(on); muteBar.update(); },
                     alertsSetQuiet: async (patch) => { await alertsSetQuiet(patch); muteBar.update(); },
+                    // U-123 — the same function the `alerts.nudge` op goes
+                    // through, so the strip and the bridge cannot disagree
+                    // about what a tone nothing plays means.
+                    alertsSetNudge: async (patch) => { await alertsSetNudge(patch); },
                     alertsUnmuteSession: async (sessionId) => {
                         await alertsSetSessionMuted(sessionId, false);
                         muteBar.update();

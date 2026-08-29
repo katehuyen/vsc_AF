@@ -317,6 +317,113 @@ const byAttr = (p, attr, key) =>
 }
 
 // ---------------------------------------------------------------------------
+// U-123 — THE NUDGE, ON THE GATE STRIP.
+//
+// ‼️ `agentFarm.alerts.nudge` was the LAST raw JSON box on this card, and the
+// odd one out on a card where the rest of the gate (mute · quiet hours · the
+// sessions muted on their own) had lived on one line since A-22. It is the one
+// control here that makes a sound the reader did not arm — a second chime some
+// minutes after a question — so a policy three fields deep in a JSON box is the
+// worst place for it to be.
+{
+    const p = open(fx.inUse());
+    const html = p.html();
+    ok('‼️ U-123 — the box is ABSORBED: no raw agentFarm.alerts.nudge control is'
+        + ' left beside the strip that draws it',
+        !/data-set="agentFarm\.alerts\.nudge"/.test(html)
+        && !/id="c-agentFarm\.alerts\.nudge"/.test(html));
+    ok('…and its three fields are ON THE GATE, where the rest of "will anything'
+        + ' be heard" already lives',
+        !!byId(p, 'alertnudgeon') && !!byId(p, 'alertnudgemin')
+        && !!byId(p, 'alertnudgerep') && !!byId(p, 'alertnudgetone')
+        && html.indexOf('id="alertnudgeon"') > html.indexOf('id="alertquietto"')
+        && html.indexOf('id="alertnudgeon"') < html.indexOf('alertgate alertspeak'));
+    ok('MIRROR — the boxes show what it is set to right now',
+        byId(p, 'alertnudgeon').checked === true
+        && byId(p, 'alertnudgemin').value === '4' && byId(p, 'alertnudgerep').value === '3');
+    // ‼️ THE HEAD SAYS SO. This is the one control on the card that produces a
+    // sound nobody armed; a badge is cheap and the surprise is not.
+    ok('…and the card head says the nudge is on, beside the armed count rather'
+        + ' than instead of it', /nudge 4m ×3 · 2 waiting/.test(html)
+        && /2 of 5 events armed/.test(html));
+    ok('what is waiting RIGHT NOW is on the strip — the figure that turns a'
+        + ' policy into something visibly working', /2 waiting/.test(html));
+
+    // Every gesture goes to the host, through the same function `alerts.nudge` is.
+    const tone = byId(p, 'alertnudgetone');
+    tone.value = 'tick-dry';
+    tone.dispatchEvent(new p.sandbox.Event('change'));
+    ok('the tone goes to the HOST on its own', last(p).type === 'alertNudge'
+        && last(p).voice === 'tick-dry' && last(p).minutes === undefined);
+
+    const min = byId(p, 'alertnudgemin');
+    min.value = '10';
+    min.dispatchEvent(new p.sandbox.Event('change'));
+    ok('…and so does an edited wait, without disturbing the repeat',
+        last(p).type === 'alertNudge' && last(p).minutes === '10'
+        && last(p).repeat === undefined);
+
+    // ‼️ EMPTIED IS NOT A NUMBER — sent through, it would come back as an error
+    // the reader has to read in order to learn they deleted something.
+    const before = sent(p).length;
+    const rep = byId(p, 'alertnudgerep');
+    rep.value = '  ';
+    rep.dispatchEvent(new p.sandbox.Event('change'));
+    ok('‼️ an emptied box is PUT BACK rather than sent as a refusal',
+        sent(p).length === before && rep.value === '3');
+
+    // ‼️ OFF IS `minutes: 0`, and switching back ON has to carry the numbers or
+    // it would arm nothing — the setting has no fourth field saying "on".
+    const sw = byId(p, 'alertnudgeon');
+    sw.checked = false;
+    sw.dispatchEvent(new p.sandbox.Event('change'));
+    ok('the switch goes to the host as the setting\'s own way of saying off',
+        last(p).type === 'alertNudge' && last(p).on === false);
+    sw.checked = true;
+    sw.dispatchEvent(new p.sandbox.Event('change'));
+    ok('…and switching it back on carries the numbers with it',
+        last(p).type === 'alertNudge' && last(p).on === true
+        && last(p).minutes === '10' && last(p).repeat === '3');
+}
+{
+    // Off is the shipped default, and the boxes still have to say what turning
+    // it on would DO — an empty pair of numbers is not an answer.
+    const p = open(fx.fresh());
+    ok('a farm that has never used it draws the switch off, on the defaults',
+        byId(p, 'alertnudgeon').checked === false
+        && byId(p, 'alertnudgemin').value === '3' && byId(p, 'alertnudgerep').value === '2');
+    ok('…and the head says nothing about a nudge that is off',
+        !/nudge \d+m/.test(p.html()));
+}
+{
+    // ‼️ THE PICKER OFFERS EXACTLY WHAT THE OP WILL ACCEPT. The host refuses a
+    // tone nothing here plays BY NAME; a page that offered one would be asking
+    // the reader to make a choice it knows will be rejected.
+    const p = open(fx.broken());
+    const html = p.html();
+    const picker = html.slice(html.indexOf('id="alertnudgetone"'));
+    const box = picker.slice(0, picker.indexOf('</select>'));
+    ok('U-123 — an unplayable tone is drawn in the nudge picker and DISABLED,'
+        + ' never dropped: a setting naming a missing sound must go on naming it',
+        /disabled/.test(box) && /Kapı zili/.test(box));
+    ok('…and it is the same list the event rows offer — one grouping, one set of'
+        + ' refusals, because two would drift on the first change',
+        /optgroup label="Built in"/.test(box) && /optgroup label="Your own"/.test(box));
+}
+{
+    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
+    ok('settingsPanel handles alertNudge', panel.includes("case 'alertNudge':"));
+    ok('‼️ …through the SAME host function `alerts.nudge` goes through, not a'
+        + ' second way of writing the setting', /alertsSetNudge\?\.\(patch\)/.test(panel));
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('…and the op calls it rather than owning the rule',
+        /if \(touched\) \{\s*\n\s*await alertsSetNudge\(raw\);/.test(ext));
+    ok('…where a tone nothing here plays is refused BY NAME — accepted, it would'
+        + ' fall through to the event\'s own voice and look as though it took',
+        /const alertsSetNudge[\s\S]{0,900}nothing on this machine plays/.test(ext));
+}
+
+// ---------------------------------------------------------------------------
 // A-25 — THE ANNOUNCEMENT STRIP.
 //
 // ‼️ `agentFarm.alerts.speak` was the FOURTH raw JSON box on this card, and the

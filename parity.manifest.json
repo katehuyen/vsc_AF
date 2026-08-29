@@ -5162,6 +5162,15 @@
       ]
     },
     {
+      "capability": "settingsPanel.ts#alertNudge",
+      "ui": [
+        "page:settingsPanel.ts#alertNudge"
+      ],
+      "ops": [
+        "alerts.nudge"
+      ]
+    },
+    {
       "capability": "settingsPanel.ts#alertQuiet",
       "ui": [
         "page:settingsPanel.ts#alertQuiet"

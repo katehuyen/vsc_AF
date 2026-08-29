@@ -53,6 +53,10 @@ const ITEMS = (on, voices) => ([
 
 /** A-22 — nothing is holding the gate shut: the state every install starts in
  *  and the one the three variants above are drawn in. */
+const NUDGE_DEFAULTS = { minutes: 3, repeat: 2, voice: 'af_subtle_alert' };
+const NUDGE_OFF = { minutes: 0, repeat: 0, voice: 'af_subtle_alert', on: false, armed: 0, defaults: NUDGE_DEFAULTS };
+const NUDGE_ON = { minutes: 4, repeat: 3, voice: 'af_subtle_alert', on: true, armed: 2, defaults: NUDGE_DEFAULTS };
+
 const GATE_OPEN = {
     muted: false,
     quiet: {
@@ -60,8 +64,16 @@ const GATE_OPEN = {
         nextChangeAt: 0, inMinutes: 0, line: 'Quiet hours off (23:00–08:00)'
     },
     silence: { silent: false, reasons: [] },
-    mutedSessions: []
+    mutedSessions: [],
+    nudge: NUDGE_OFF
 };
+
+/**
+ * U-123 - the second tap on the shoulder, in the two states worth a picture:
+ * off (the shipped default, and what a fresh install looks like) and armed with
+ * questions actually waiting, which is the only state the "n waiting" chip and
+ * the head badge exist in.
+ */
 
 const SOUNDS = 'c:\\Users\\rotam\\.vscode\\extensions\\muvusoft.agent-farm\\media\\sounds';
 const MINE = 'D:\\zone\\media\\sounds';
@@ -217,7 +229,9 @@ const fresh = () => base({}, {}, BUILTIN, null, null, speakOf({}, null));
 const inUse = () => base(
     { 'turn-ready': true, question: true },
     { question: 'u-kapi-zili', ended: 'u-uzak-gong' },
-    BUILTIN.concat(CUSTOM), null, null,
+    BUILTIN.concat(CUSTOM), null,
+    // U-123 - a farm that is set up has the nudge on, and the head says so.
+    { ...GATE_OPEN, nudge: NUDGE_ON },
     speakOf(
         { on: true, voice: 'Tolga', events: ['question', 'stalled'], rate: 1 },
         undefined,
@@ -292,7 +306,8 @@ const gated = () => base(
         mutedSessions: [
             { sessionId: 'a1b2c3d4-1111-2222-3333-444455556666', label: 'developer · TalkScribe' },
             { sessionId: 'b2c3d4e5-1111-2222-3333-444455556666', label: 'yazar · release notes' }
-        ]
+        ],
+        nudge: NUDGE_ON
     },
     // The announcement goes through the SAME gate: armed, configured, correct —
     // and held shut with everything else. The strip says what it would say; the

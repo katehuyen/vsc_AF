@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.313.0 - U-123: the nudge has a control instead of a JSON box (2026-08-29)
+
+The last raw box on the Alert sounds card, and the odd one out: the rest of the
+gate — mute · quiet hours · the sessions muted on their own — has lived on one
+line since A-22, while the **one control that makes a sound you did not arm** sat
+three fields deep in `agentFarm.alerts.nudge` as JSON.
+
+**`⏰ Nudge after [3] min, [2] × [tone]`**, on the gate strip, beside the two
+switches that decide whether the FIRST alert is heard at all. That is where it
+belongs: it answers the gate's question — *will a sound happen* — not the table's,
+*which sound*.
+
+**And what is waiting right now is on the strip.** `2 waiting` is the number of
+questions actually armed for a reminder at this moment; a session that is
+answered or leaves the list disarms itself, so it is what is outstanding rather
+than a running total. **The card head says the nudge is on** too, beside the
+armed count — a policy that produces an unrequested chime some minutes later is
+worth a badge.
+
+**The tone picker offers exactly what the op accepts.** One grouped list, shared
+with the event rows, and a sound this machine cannot play is **drawn and
+disabled** rather than dropped — a setting naming a missing file must go on
+naming it. Off is `minutes: 0`, the setting's own word for it, so there is no
+fourth field that could disagree with the other three.
+
+Everything on the strip goes through the same host function `alerts.nudge` uses,
+which is now one door rather than logic living inside an op handler.
+
 ## 3.312.0 - A-24: a run can say what it sounds like when it ends (2026-08-29)
 
 The last piece of A-23, and it was held back for three releases by one honest
