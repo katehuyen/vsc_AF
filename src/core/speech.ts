@@ -450,3 +450,180 @@ export function matchVoice(voices: InstalledVoice[], want: string): InstalledVoi
         (a.engine === 'onecore' ? 0 : 1) - (b.engine === 'onecore' ? 0 : 1));
     return byEngine.find(v => v.name.toLowerCase().includes(lower)) ?? null;
 }
+
+/**
+ * A-26 — THE CEILING ON ONE READING.
+ *
+ * A turn is not a sentence: an agent's answer can be two thousand words, and a
+ * voice reading all of them is a machine nobody can interrupt by any means
+ * except muting it for good. The cut is at a SENTENCE end wherever there is
+ * one, because a reading that stops mid-clause sounds like a crash.
+ */
+export const DIALOGUE_MAX = 1200;
+
+/** What a reading says when the ceiling cut it short. A silent truncation is
+ *  the one outcome the listener cannot tell from "that was the whole answer". */
+export const DIALOGUE_MORE = 'There is more.';
+
+/**
+ * ‼️ A-26 — WHAT AN AGENT'S ANSWER SOUNDS LIKE WHEN IT IS READ ALOUD.
+ *
+ * The announcement (A-20) says WHICH AGENT and WHAT HAPPENED; this reads the
+ * answer ITSELF, and the two are different problems. An announcement is a
+ * sentence somebody wrote for a voice. A turn is markdown written for a SCREEN:
+ * fenced code, tables, paths, links, arrows, bullets. Handed to a synthesiser
+ * unchanged it is not merely ugly — a three-line shell snippet is read
+ * character by character, for half a minute, and the sentence after it is lost
+ * behind the noise. So the reading is not "the text minus some markup", it is a
+ * SPOKEN PARAPHRASE of what is on the screen.
+ *
+ * The rules, and each one is a thing that was going to be read out otherwise:
+ *
+ * - **A fenced block becomes a count**, not its contents: "a 3-line code
+ *   block". That is the whole of what a listener can use — they will look at
+ *   the screen for the code, and what they need from the ear is to know it is
+ *   there and how big.
+ * - **A table becomes its size** for exactly the same reason; a table read cell
+ *   by cell with no columns is noise in the shape of data.
+ * - **A path keeps only its last segment** (a slashed path becomes the file
+ *   name). Read whole it is nine words of separators; read as the file name it
+ *   is the one word somebody would have said out loud.
+ * - **A link becomes its label** and a bare URL becomes the word "a link" —
+ *   nobody has ever needed a URL spelled at them.
+ * - **A run of symbols becomes a pause.** Arrows, box glyphs, emoji, rules and
+ *   emphasis markers carry meaning to an eye and nothing at all to an ear, and
+ *   a synthesiser reads many of them out by name.
+ * - **Every block ends in a full stop**, because a heading with no punctuation
+ *   runs into the paragraph under it and the listener hears one long sentence.
+ *
+ * Pure, so all of that is measurable without a voice, a machine or a shell —
+ * which is the point: this is the half of the feature that can be wrong in a
+ * way nobody would ever debug by ear.
+ *
+ * ‼️ THE INSERTED WORDS ARE ENGLISH, like `SPEAK_DEFAULT.template` and the
+ * "an agent" `announcement` falls back to. One language for the spoken side; a
+ * reading that mixed two would be worse than either on its own.
+ */
+export function sanitizeForSpeech(text: unknown, limit: number = DIALOGUE_MAX): string {
+    let s = String(text ?? '').replace(/\r\n?/g, '\n');
+    if (!s.trim()) { return ''; }
+
+    // 1. Fenced code FIRST, before anything else can look inside one, and in
+    //    TWO passes rather than one alternation.
+    //
+    //    ‼️ THE ONE-PASS VERSION IS SUBTLY WRONG AND WAS MEASURED WRONG. With
+    //    `m`, `$` matches at every LINE end, so a lazy body plus `(?:closing|$)`
+    //    closes the block at the end of its FIRST line — every fence became "a
+    //    one-line code block" and the rest of the code was read out as prose.
+    //    Closed blocks and the unclosed tail are two different questions and
+    //    they are asked separately.
+    s = s.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n([\s\S]*?)^[ \t]*\1[^\n]*$/gm,
+        (_m: string, _fence: string, body: string) => codeBlockSaid(body));
+    //    …and a fence that is never closed runs to the end of the text, which
+    //    is exactly what a half-streamed turn looks like.
+    //    `m` so the fence is found wherever the line begins, and NO `g` because
+    //    there is only ever one unclosed tail: it swallows everything after it.
+    s = s.replace(/^[ \t]*(`{3,}|~{3,})[^\n]*\n([\s\S]*)$/m,
+        (_m: string, _fence: string, body: string) => codeBlockSaid(body));
+
+    // 2. Tables — a run of pipe rows, however long, is one fact: its size.
+    s = s.replace(/(?:^[ \t]*\|.*\|[ \t]*$\n?){2,}/gm, (block: string) => {
+        const rows = block.trim().split('\n')
+            .filter(l => !/^[ \t]*\|[\s|:-]*\|[ \t]*$/.test(l)).length;
+        return `\na table of ${rows} row${rows === 1 ? '' : 's'}.\n`;
+    });
+
+    // 3. Images before links: an image is a link whose label is its alt text.
+    s = s.replace(/!\[([^\]]*)\]\([^)]*\)/g, (_m: string, alt: string) => alt.trim() || 'an image');
+    s = s.replace(/\[([^\]]*)\]\([^)]*\)/g, (_m: string, label: string) => label.trim() || 'a link');
+    s = s.replace(/<https?:\/\/[^>\s]+>/gi, 'a link');
+    s = s.replace(/https?:\/\/\S+/gi, 'a link');
+    s = s.replace(/<[^>\n]{1,120}>/g, ' ');
+
+    // 4. Inline code. ‼️ THE CONTENT IS KEPT, NOT THE TICKS: a camel-cased
+    //    symbol is a phrase a voice says perfectly well, and dropping it would
+    //    remove the subject of the sentence around it. Only the part that is
+    //    unsayable — the directories in front of a file name — goes.
+    s = s.replace(/`+([^`\n]+)`+/g, (_m: string, code: string) => sayableToken(code));
+
+    // 5. Line-level markup, each one leaving a sentence rather than a fragment.
+    s = s.split('\n').map(line => {
+        if (/^[ \t]*(?:[-*_][ \t]*){3,}$/.test(line)) { return ''; }   // rule
+        const l = line.replace(/^[ \t]*>+[ \t]?/, '');                  // quote
+        const head = /^[ \t]*#{1,6}[ \t]+(.*)$/.exec(l);
+        if (head) { return sentence(head[1]); }
+        // ‼️ A BULLET IS A SENTENCE OF ITS OWN. The marker is what separated
+        // two items on a screen; take it away without putting a stop in its
+        // place and "one thing" and "another thing" are heard as one clause.
+        const item = /^[ \t]*(?:[-*+][ \t]+|\d+[.)][ \t]+)(.*)$/.exec(l);
+        if (item) { return sentence(item[1]); }
+        return l;
+    }).join('\n');
+
+    // 6. Emphasis, then the bare paths prose carries outside backticks.
+    s = s.replace(/(\*\*|__|~~|\*|_)(?=\S)([\s\S]*?\S)\1/g, '$2');
+    s = s.replace(/[\w.-]*[/\\][\w./\\-]+/g, (m: string) => sayableToken(m));
+    // ‼️ A RULE THAT WAS NOT ALONE ON ITS LINE. Hyphens survive step 7 because
+    // words are hyphenated; a RUN of them is a divider and is read out dash by
+    // dash. Same for the leftovers of an emphasis marker nothing closed.
+    s = s.replace(/[-*_=~]{2,}/g, ' ');
+
+    // 7. ‼️ WHAT IS LEFT THAT AN EAR CANNOT USE. Anything outside letters,
+    //    digits and the punctuation a voice actually pauses on becomes a space
+    //    — arrows, box glyphs, emoji, leftover markers. A run of them is ONE
+    //    pause, not one pause each.
+    s = s.replace(/[^\p{L}\p{N}\s.,;:!?'"()’-]+/gu, ' ');
+    s = s.replace(/([.,;:!?])\1+/g, '$1');
+
+    // 8. One paragraph per block, each ending in a stop so the voice breathes.
+    const blocks = s.split(/\n{2,}/)
+        .map(b => sentence(b.replace(/\s*\n\s*/g, ' ').replace(/[ \t]{2,}/g, ' ')))
+        .filter(Boolean);
+    const out = blocks.join(' ').replace(/\s{2,}/g, ' ').trim();
+    return limit > 0 ? cutForSpeech(out, limit) : out;
+}
+
+/** How a fenced block is said: its SIZE, which is all a listener can use —
+ *  they will look at the screen for the code itself. */
+function codeBlockSaid(body: string): string {
+    const lines = String(body ?? '').replace(/\n+$/, '').split('\n').length;
+    return `\n${lines === 1 ? 'a one-line code block' : `a ${lines}-line code block`}.\n`;
+}
+
+/** A token an ear can use: a path keeps its last segment, because the segments
+ *  in front of it are separators read out one by one and nobody says them. */
+function sayableToken(raw: string): string {
+    const t = String(raw).trim();
+    if (!t) { return ''; }
+    if (!/[/\\]/.test(t)) { return t; }
+    const last = t.split(/[/\\]+/).filter(Boolean).pop() ?? '';
+    return last || 'a path';
+}
+
+/** End a run of text as a sentence — a heading with no stop runs into the
+ *  paragraph beneath it and the listener hears one sentence, twice as long. */
+function sentence(raw: string): string {
+    const t = String(raw).trim();
+    if (!t) { return ''; }
+    return /[.!?:;]$/.test(t) ? t : `${t}.`;
+}
+
+/**
+ * ‼️ A-26 — THE CUT, AT A SENTENCE END WHEREVER THERE IS ONE.
+ *
+ * Stopping mid-clause sounds like the machine crashed, which is a worse thing
+ * to hear than a long answer. And the cut SAYS SO: a reading that simply stops
+ * is indistinguishable from an answer that really was that short, so the one
+ * thing a listener would want to know — is there more on the screen — is the
+ * one thing silence cannot tell them.
+ */
+export function cutForSpeech(text: string, limit: number): string {
+    const s = String(text ?? '').trim();
+    if (limit <= 0 || s.length <= limit) { return s; }
+    const head = s.slice(0, limit);
+    const stop = Math.max(head.lastIndexOf('. '), head.lastIndexOf('! '), head.lastIndexOf('? '));
+    // Only when the sentence end is somewhere useful — a stop in the first
+    // tenth would throw away almost everything to gain a tidier pause.
+    const cut = stop > limit * 0.4 ? head.slice(0, stop + 1) : head.replace(/\s+\S*$/, '');
+    return `${sentence(cut.trim())} ${DIALOGUE_MORE}`.trim();
+}

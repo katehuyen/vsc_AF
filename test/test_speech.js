@@ -326,6 +326,88 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'turnAlerts.js'));
                 'Nameless · no language declared · sapi5');
         }
 
+        // ------------------------------------------------------------------
+        // A-26 — READING A TURN ALOUD: what markdown SOUNDS like.
+        //
+        // ‼️ THIS IS THE HALF OF THE FEATURE NOBODY WOULD EVER DEBUG BY EAR.
+        // An announcement is a sentence somebody wrote for a voice; a turn is
+        // markdown written for a SCREEN. Handed to a synthesiser unchanged, a
+        // three-line shell snippet is read character by character for half a
+        // minute and the sentence after it is lost behind the noise — so the
+        // reading is a SPOKEN PARAPHRASE, not the text minus some markup.
+        {
+            const say = t => S.sanitizeForSpeech(t);
+
+            eq('a fenced block becomes its SIZE — the one thing an ear can use,'
+                + ' because the code itself is on the screen to be looked at',
+                say('Fixed it.\n\n```js\nconst a = 1;\nconst b = 2;\n```\n\nTests pass.'),
+                'Fixed it. a 2-line code block. Tests pass.');
+            eq('…one line is said as one line, not as "1"',
+                say('```\nnpm test\n```'), 'a one-line code block.');
+            // ‼️ MEASURED WRONG ONCE: with `m`, `$` matches at every LINE end,
+            // so a lazy body plus `(?:closing|$)` closed the block after its
+            // FIRST line and read the rest of the code out as prose. Closed
+            // blocks and the unclosed tail are two passes for that reason.
+            eq('‼️ a fence that is never closed — a half-streamed turn — takes'
+                + ' the rest of the text with it rather than being read out',
+                say('Here:\n\n```sh\nnpm test\nnpm run package'),
+                'Here: a 2-line code block.');
+
+            eq('a table becomes its size; read cell by cell with no columns it'
+                + ' is noise in the shape of data',
+                say('Results:\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n| 3 | 4 |\n\nDone.'),
+                'Results: a table of 3 rows. Done.');
+
+            // ‼️ THE SYMBOL IS KEPT AND THE PATH IN FRONT OF IT IS NOT. A
+            // camel-cased name is a phrase a voice says perfectly well and it
+            // is usually the SUBJECT of the sentence; the directories are
+            // separators read out one by one and nobody says them aloud.
+            eq('inline code keeps its content, and a path keeps its file name',
+                say('I changed `alertGateStrip` in `media/settings.js` and it works.'),
+                'I changed alertGateStrip in settings.js and it works.');
+            eq('…and a path in plain prose is treated the same way',
+                say('Look at src/core/speech.ts for the rule.'),
+                'Look at speech.ts for the rule.');
+
+            eq('a link becomes its label, and a bare URL becomes the word — no'
+                + ' one has ever needed a URL spelled at them',
+                say('See [the guide](https://example.com/a/b) and https://x.io/y now.'),
+                'See the guide and a link now.');
+
+            // ‼️ A BULLET IS A SENTENCE. The marker is what separated two items
+            // on a screen; take it away without a stop in its place and the two
+            // are heard as one clause.
+            eq('headings and list items each end as their own sentence',
+                say('## What changed\n\n- one thing\n- another thing\n\n1. first\n2. second'),
+                'What changed. one thing. another thing. first. second.');
+
+            eq('symbol runs become a pause, not a word each',
+                say('Done ‼️ → the gate · the strip --- **bold** _it_ ~~no~~'),
+                'Done the gate the strip bold it no.');
+
+            eq('nothing to read is an empty answer, not a noise', say('   \n\n  '), '');
+            eq('…and so is a turn that was only a code block',
+                say('```\n```'), 'a one-line code block.');
+
+            // ‼️ THE CUT SAYS SO. A reading that simply stops is
+            // indistinguishable from an answer that really was that short.
+            const long = 'Sentence one is here. '.repeat(90);
+            const cut = say(long);
+            ok('a long answer is cut at the ceiling and SAYS there is more',
+                cut.length <= S.DIALOGUE_MAX + S.DIALOGUE_MORE.length + 2
+                && cut.endsWith(S.DIALOGUE_MORE));
+            ok('…at a sentence end, because stopping mid-clause sounds like a crash',
+                /\. There is more\.$/.test(cut));
+            eq('a short answer is not touched at all',
+                say('All done.'), 'All done.');
+            ok('the ceiling can be lifted for a caller that wants everything',
+                S.sanitizeForSpeech(long, 0).length > S.DIALOGUE_MAX);
+            // A ceiling with no sentence end in reach still lands on a word.
+            const oneLong = 'x'.repeat(40) + ' ' + 'y'.repeat(40);
+            ok('…and with no sentence end in reach it lands on a word boundary',
+                !/\sy*$/.test(S.cutForSpeech(oneLong, 50).replace(' ' + S.DIALOGUE_MORE, '')));
+        }
+
         console.log(`${pass} passed, ${fail} failed`);
         process.exit(fail ? 1 : 0);
     })();
