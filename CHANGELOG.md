@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.324.0 - X-139: the drop box becomes a pool, with nobody pressing anything (2026-08-29)
+
+X-138 made `_RAW_`. On its own that is a box files go into and nothing comes out
+of: the folder existed, and a conversation saved into it stayed a file. The
+whole gesture is meant to be *save it in there* — so the pool notices, and it
+notices on the calls that are already being made rather than on a button
+somebody has to remember. `wiki.status` and `wiki.candidates.list` both sync
+now, which means a file dropped a second ago is in the answer the cockpit is
+drawing itself from.
+
+A dropped file becomes an **untagged** candidate: whole-scope, `engine:
+raw-file`, `addedBy: auto-raw`, and **no topics**, because what a file is about
+is the one thing only a person can supply and a scan inventing it would file the
+conversation under a guess. Its label is the file's first real line, with a YAML
+front matter block skipped — an exported chat whose first line is `---` would
+otherwise be listed as `---`. Only `.md` and `.txt`; a screenshot is not a
+transcript.
+
+Three rules, each the answer to a way this could quietly go wrong:
+
+- **‼️ The file is the identity, not a turn range.** Every other row in this pool
+  is "this conversation, these turns" and merges by exactly that. A dropped file
+  has no turns, so it is keyed by its own name and a row is created only when no
+  row holds that key **in any state** — which is what stops a candidate somebody
+  dropped on purpose from being resurrected on the next scan, for ever.
+- **It never creates a folder.** Healing the drop box is `ensureRawDirs`'s job
+  and its callers do it first. A listing that silently made directories would
+  also make them from a root that was mistyped.
+- **‼️ A file that vanishes never takes somebody's work with it.** Moved into
+  `_DONE_` means consumed, not gone: the path on the row is corrected (that path
+  is what a compile reads) and the state is kept. Deleted outright may only drop
+  the row when nobody has touched it — no topics, no note, still pending, added
+  by the scan itself. A row a person tagged keeps its state and is told on its
+  own line why it is stuck, because a mark that disappears from the cockpit is
+  indistinguishable from one that was never made.
+
+`wiki.status` reports what the call itself changed, by id, so a scan that
+rewrites the pool is one somebody can debug.
+
 ## 3.323.0 - S-47: a resumed session comes back as itself on EVERY engine (2026-08-29)
 
 S-45 was built and tested against the Claude parser alone, so four of the five

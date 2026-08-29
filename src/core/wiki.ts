@@ -187,6 +187,176 @@ export function ensureRawDirs(root: string): WikiRawDirs {
     return { raw, done, ready: fs.existsSync(raw) && fs.existsSync(done), created };
 }
 
+/** What the drop box may hold. A transcript somebody saved out of a browser is
+ *  text; anything else in there is not one and is left alone rather than being
+ *  turned into a candidate nobody can compile. */
+export const WIKI_RAW_EXTS: readonly string[] = ['.md', '.txt'];
+
+/** The pool key a dropped file gets. One file, one row, for ever — the whole
+ *  point is that dropping the same file twice does not make a second mark. */
+export function rawSessionId(fileName: string): string {
+    return 'raw:' + String(fileName ?? '').trim();
+}
+
+/**
+ * The first line of a dropped file that is worth showing in a list — its
+ * heading if it has one, its own name if it has nothing.
+ *
+ * ‼️ BOUNDED READ. This runs on every status call and on every listing, over a
+ * folder the user is free to drop a 40 MB export into; reading whole files to
+ * find their first line is how a cockpit becomes slow on exactly the machine
+ * that has the most in it.
+ */
+function rawLabel(file: string, fallback: string): string {
+    let head = '';
+    try {
+        const fd = fs.openSync(file, 'r');
+        try {
+            const buf = Buffer.alloc(4096);
+            const n = fs.readSync(fd, buf, 0, 4096, 0);
+            head = buf.subarray(0, n).toString('utf8');
+        } finally { fs.closeSync(fd); }
+    } catch { return fallback; }
+    const lines = head.replace(/^﻿/, '').split(/\r?\n/);
+    let i = 0;
+    // A YAML front matter block is metadata, not a title: skip it whole rather
+    // than labelling every exported file `---` or `af-role: …`.
+    if (lines[0]?.trim() === '---') {
+        i = 1;
+        while (i < lines.length && lines[i].trim() !== '---') { i++; }
+        i++;
+    }
+    for (; i < lines.length; i++) {
+        const t = lines[i].replace(/^#+\s*/, '').replace(/^[-*>]\s+/, '').trim();
+        if (t) { return t.slice(0, 120); }
+    }
+    return fallback;
+}
+
+/** What one sync changed. Every field is a list of candidate ids, so a caller
+ *  can say what happened rather than only that something did. */
+export interface WikiRawSync {
+    /** Files that had no row and now have one. */
+    added: string[];
+    /** Rows whose file has moved between `_RAW_` and `_DONE_`; the path on the
+     *  row was corrected, because that path is what a compile reads. */
+    moved: string[];
+    /** Rows whose file is in neither folder any more. */
+    lost: string[];
+}
+
+/**
+ * ‼️ X-139 — THE DROP BOX BECOMES A POOL WITHOUT ANYBODY PRESSING ANYTHING.
+ *
+ * X-138 built the folder; this is what makes putting a file in it enough. The
+ * user saves a conversation out of a browser into `_RAW_` and that is the whole
+ * gesture: the next time anything asks the pool what it holds, the file is a
+ * candidate — untagged, which is exactly what a raw drop is, and what the
+ * cockpit can then be pointed at.
+ *
+ * Three rules decide everything here, and each of them is the answer to a way
+ * this could quietly go wrong:
+ *
+ * 1. **THE FILE IS THE IDENTITY, NOT THE RANGE.** Every other row in this pool
+ *    is "this conversation, these turns", and `WikiStore.add` merges by exactly
+ *    that. A dropped file has no turns, so it is keyed by its own name
+ *    (`raw:<file>`) and a row is created only when NO row holds that key **in
+ *    any state**. That last part is what stops a candidate somebody dropped on
+ *    purpose from being resurrected on the next scan, for ever.
+ * 2. **IT NEVER CREATES A FOLDER.** Healing the drop box is `ensureRawDirs`'s
+ *    job and its callers do it first; a sync is a READ of what is on disk. A
+ *    listing that silently made directories would also make them from a root
+ *    that was mistyped.
+ * 3. **‼️ A FILE THAT VANISHES NEVER TAKES SOMEBODY'S WORK WITH IT.** Moved
+ *    into `_DONE_` means consumed, not gone: the path is corrected and the row
+ *    keeps its state. Deleted outright is only ALLOWED to drop the row when
+ *    nobody has touched it — no topics, no note, still pending, added by this
+ *    scan. A row a person tagged keeps its state and is told on its own line
+ *    why it cannot proceed, because a mark that disappears from the cockpit is
+ *    indistinguishable from one that was never made.
+ */
+export function syncRawCandidates(root: string, store: WikiStore, now = Date.now()): WikiRawSync {
+    const out: WikiRawSync = { added: [], moved: [], lost: [] };
+    if (!root) { return out; }
+    const raw = path.join(root, WIKI_RAW_REL);
+    const done = path.join(root, WIKI_DONE_REL);
+    let names: string[];
+    try {
+        names = fs.readdirSync(raw, { withFileTypes: true })
+            .filter(d => d.isFile() && WIKI_RAW_EXTS.includes(path.extname(d.name).toLowerCase()))
+            .map(d => d.name);
+    } catch { return out; }
+
+    // ‼️ CASE-INSENSITIVELY, because this pool is written on Windows and read
+    // from a vault a sync client may have renamed. `Notes.MD` and `notes.md`
+    // are one file there and must not become two rows.
+    const byKey = new Map<string, WikiCandidate>();
+    for (const c of store.candidates) {
+        if (c.sessionId.toLowerCase().startsWith('raw:')) { byKey.set(c.sessionId.toLowerCase(), c); }
+    }
+    let changed = false;
+
+    for (const name of names.sort()) {
+        const file = path.join(raw, name);
+        const key = rawSessionId(name);
+        const hit = byKey.get(key.toLowerCase());
+        if (hit) {
+            if (hit.sessionFile !== file) { hit.sessionFile = file; out.moved.push(hit.id); changed = true; }
+            continue;
+        }
+        const candidate: WikiCandidate = {
+            id: 'wc-raw-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7),
+            sessionId: key,
+            sessionFile: file,
+            // ‼️ NOT AN ENGINE THAT EXISTS. This conversation did not happen in
+            // a CLI on this machine, and calling it `claude` would file a web
+            // chat as a local run in every column that reads this field.
+            engine: 'raw-file',
+            agentName: '',
+            // A file has no turns to choose between, and `0` is already this
+            // pool's word for "the whole thing" (S-38).
+            fromTurn: 0,
+            toTurn: 0,
+            // ‼️ EMPTY ON PURPOSE — this is a RAW candidate. The topics are the
+            // one thing only a person can supply, and a scan inventing them
+            // would file the file under a guess.
+            topics: [],
+            label: rawLabel(file, name),
+            note: '',
+            state: 'pending',
+            addedAt: now,
+            addedBy: 'auto-raw'
+        };
+        store.candidates.push(candidate);
+        byKey.set(key.toLowerCase(), candidate);
+        out.added.push(candidate.id);
+        changed = true;
+    }
+
+    const present = new Set(names.map(n => rawSessionId(n).toLowerCase()));
+    for (const c of byKey.values()) {
+        if (present.has(c.sessionId.toLowerCase())) { continue; }
+        const name = c.sessionId.slice('raw:'.length);
+        const inDone = path.join(done, name);
+        if (fs.existsSync(inDone)) {
+            if (c.sessionFile !== inDone) { c.sessionFile = inDone; out.moved.push(c.id); changed = true; }
+            continue;
+        }
+        if (c.state !== 'pending' || c.lastError) { continue; }
+        out.lost.push(c.id);
+        changed = true;
+        const untouched = !c.topics.length && !c.note && c.addedBy === 'auto-raw';
+        if (untouched) {
+            c.state = 'dropped';
+        } else {
+            c.lastError = `the dropped file is gone from ${WIKI_RAW_REL} and ${WIKI_DONE_REL.split(path.sep).join('/')}`;
+            c.lastErrorAt = now;
+        }
+    }
+    if (changed) { store.save(); }
+    return out;
+}
+
 const nowId = (): string =>
     'wc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
 
@@ -1274,6 +1444,10 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
     // op an agent calls before it goes looking for dropped files, so the folder
     // it is about to read is made ready first rather than reported absent.
     const rawDirs = root && fs.existsSync(root) ? ensureRawDirs(root) : ensureRawDirs('');
+    // X-139 — and the box is read while we are standing in front of it. This is
+    // the op every surface calls to ask what the pool holds, so a file dropped
+    // a second ago is already a candidate by the time the answer is written.
+    const rawSync = rawDirs.ready ? syncRawCandidates(root, deps.store()) : undefined;
     const rules = path.join(root, WIKI_RULES_REL);
     const { pages, misplaced } = readWikiPages(root);
     // X-58 — asking what the pool holds is one of the moments a dead claim is
@@ -1312,6 +1486,12 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
             // compiled one goes. Absolute, because the caller is a person or an
             // agent about to use a file path, not this module.
             raw: rawDirs.raw, rawReady: rawDirs.ready, done: rawDirs.done,
+            // ‼️ X-139 — WHAT THIS CALL ITSELF CHANGED, said out loud. A scan
+            // that silently rewrites the pool is a scan nobody can debug: an
+            // agent that drops a file and then asks the status sees its own
+            // candidate appear in the same answer, by id.
+            ...(rawSync && (rawSync.added.length || rawSync.moved.length || rawSync.lost.length)
+                ? { rawSync } : {}),
             // ‼️ U-91/U-92 — the FOLDERS, not the categories that happen to hold
             // a page. A folder somebody made in Obsidian this morning is a
             // category the moment it exists, and a status that omitted it was
@@ -1456,6 +1636,12 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
                 // run died is released here too: a row cannot show [↻ Try again]
                 // for a lock nobody has taken off.
                 releaseStaleClaims(deps);
+                // X-139 — and for the same reason the drop box is read here: the
+                // cockpit draws itself from this list, so a file dropped into
+                // `_RAW_` has to be in it or the folder is a box nothing comes
+                // out of. Nothing is created on disk — see `syncRawCandidates`.
+                const wikiRoot = deps.root();
+                if (wikiRoot && fs.existsSync(wikiRoot)) { syncRawCandidates(wikiRoot, S()); }
                 const state = (optStr(args, 'state') || 'pending').toLowerCase();
                 need(state === 'all' || (WIKI_STATES as readonly string[]).includes(state),
                     `Unknown state "${state}" — use ${WIKI_STATES.join(', ')} or all.`);

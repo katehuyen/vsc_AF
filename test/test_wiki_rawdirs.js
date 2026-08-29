@@ -175,5 +175,119 @@ const freshRoot = () => {
         /the drop-box folder an external transcript is left in/.test(src));
 }
 
+// ================ 6. X-139 — the box becomes a pool with nobody pressing anything
+//
+// ‼️ THE PROMISE THIS KEEPS. X-138 made the folder; on its own that is a box
+// files go into and nothing comes out of. The whole gesture is meant to be
+// "save the conversation in there" — so the pool has to notice, and it has to
+// notice on the calls that are already being made rather than on a button
+// somebody has to remember.
+{
+    const { syncRawCandidates, WikiStore, rawSessionId } = W;
+    const root = freshRoot();
+    ensureRawDirs(root);
+    const raw = path.join(root, WIKI_RAW_REL);
+    const done = path.join(root, WIKI_DONE_REL);
+    const store = new WikiStore(path.join(tmp, 'x139-pool.json'));
+    const drop = (name, text) => fs.writeFileSync(path.join(raw, name), text, 'utf8');
+
+    drop('claude-web.md', '---\naf-role: chat\n---\n\n# Vektor veritabani secimi\n\nbody');
+    drop('plain.txt', 'the first line is the label\nsecond');
+    // Not a transcript: a file the scan must leave alone rather than turn into
+    // a candidate nobody can compile.
+    drop('screenshot.png', 'binary-ish');
+
+    const first = syncRawCandidates(root, store);
+    eq('‼️ a file dropped in the box is a candidate on the next look', first.added.length, 2);
+    const rows = store.candidates;
+    eq('…only the text files; a PNG is not a transcript',
+        rows.map(c => c.sessionId).sort(), ['raw:claude-web.md', 'raw:plain.txt']);
+    const web = rows.find(c => c.sessionId === rawSessionId('claude-web.md'));
+    // ‼️ The label is the file's HEADING, not its front matter: an exported file
+    // whose first line is `---` would otherwise be listed as `---`.
+    eq('…labelled by its own first real line, front matter skipped',
+        web.label, 'Vektor veritabani secimi');
+    eq('…and pointed at the file a compile will actually read',
+        web.sessionFile, path.join(raw, 'claude-web.md'));
+    eq('‼️ …with NO topics, because a scan may not guess what a file is about',
+        [web.topics, web.state, web.addedBy, web.engine, web.fromTurn],
+        [[], 'pending', 'auto-raw', 'raw-file', 0]);
+    ok('the row says it came from a file rather than from a CLI run',
+        /^wc-raw-/.test(web.id));
+    eq('a plain text drop is labelled by its first line too',
+        rows.find(c => c.sessionId === 'raw:plain.txt').label, 'the first line is the label');
+
+    // ‼️ THE DUPLICATE TEST, which is the whole reason the key is the file.
+    const again = syncRawCandidates(root, store);
+    eq('‼️ scanning again makes nothing — one file is one row, for ever',
+        [again.added.length, store.candidates.length], [0, 2]);
+
+    // A person drops the same file, marks it, and it is compiled and archived.
+    web.topics = ['Mimari'];
+    fs.renameSync(path.join(raw, 'claude-web.md'), path.join(done, 'claude-web.md'));
+    const archived = syncRawCandidates(root, store);
+    eq('‼️ a file moved into _DONE_ is consumed, not lost: the path is corrected',
+        [archived.moved, store.candidates.find(c => c.id === web.id).sessionFile],
+        [[web.id], path.join(done, 'claude-web.md')]);
+    eq('…and it keeps its state and the topics somebody typed',
+        [web.state, web.topics], ['pending', ['Mimari']]);
+    eq('…and it is NOT re-created in _RAW_ on the next scan',
+        syncRawCandidates(root, store).added.length, 0);
+
+    // ‼️ AND WHAT HAPPENS WHEN A FILE SIMPLY DISAPPEARS. Untouched rows are the
+    // scan's own noise and may be cleaned up; a row a person invested in must
+    // not vanish from the cockpit, because a mark that disappears is
+    // indistinguishable from one that was never made.
+    fs.unlinkSync(path.join(raw, 'plain.txt'));
+    fs.unlinkSync(path.join(done, 'claude-web.md'));
+    const gone = syncRawCandidates(root, store);
+    eq('a file deleted before anybody touched its row drops that row',
+        store.candidates.find(c => c.sessionId === 'raw:plain.txt').state, 'dropped');
+    eq('‼️ …while a row somebody tagged keeps its state and is TOLD why it is stuck',
+        [web.state, /gone from _RAW_/.test(web.lastError || '')], ['pending', true]);
+    eq('…and both were reported by the call that did it', gone.lost.sort(), [web.id, store.candidates.find(c => c.sessionId === 'raw:plain.txt').id].sort());
+    // A dropped row is a decision. Putting the file back does not undo it by
+    // itself, and it does not make a second row either.
+    drop('plain.txt', 'back again');
+    eq('‼️ a candidate somebody dropped is not resurrected by the file returning',
+        [syncRawCandidates(root, store).added.length,
+            store.candidates.filter(c => c.sessionId === 'raw:plain.txt').length], [0, 1]);
+
+    // It never creates anything: a root that is not there is not a folder to make.
+    const ghost = path.join(tmp, 'x139-ghost');
+    const before = fs.existsSync(ghost);
+    eq('‼️ a sync makes no folders — a missing root stays missing',
+        [syncRawCandidates(ghost, store).added.length, fs.existsSync(ghost), before],
+        [0, false, false]);
+    eq('…and an empty root string is refused outright', syncRawCandidates('', store).added, []);
+}
+
+// ============================== 7. X-139 — it happens on the calls already made
+{
+    const root = freshRoot();
+    ensureRawDirs(root);
+    fs.writeFileSync(path.join(root, WIKI_RAW_REL, 'dropped.md'), '# A web chat\n', 'utf8');
+    const store = new W.WikiStore(path.join(tmp, 'x139-status-pool.json'));
+    const deps = { store: () => store, root: () => root, sessions: () => [] };
+    const st = wikiStatus(deps);
+    eq('‼️ asking the status is enough — the drop is already in the pool',
+        [st.pool.pending, st.pool.total], [1, 1]);
+    ok('…and the call says what it itself changed, by id',
+        st.wiki.rawSync && st.wiki.rawSync.added.length === 1);
+    const quiet = wikiStatus(deps);
+    ok('…and a status that changed nothing does not report a sync at all',
+        quiet.wiki.rawSync === undefined && quiet.pool.total === 1);
+    // The cockpit draws itself from the listing, so the same is true there.
+    const fresh = freshRoot();
+    ensureRawDirs(fresh);
+    fs.writeFileSync(path.join(fresh, WIKI_RAW_REL, 'second.md'), '# Another\n', 'utf8');
+    const store2 = new W.WikiStore(path.join(tmp, 'x139-list-pool.json'));
+    const ops = [];
+    W.registerWikiOps({ register: (rows) => ops.push(...rows) },
+        { store: () => store2, root: () => fresh, sessions: () => [] });
+    const listed = ops.find(o => o.op === 'wiki.candidates.list').handler({});
+    eq('‼️ the cockpit\'s own list shows a file dropped a second ago',
+        [listed.total, listed.candidates[0].sessionId], [1, 'raw:second.md']);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
