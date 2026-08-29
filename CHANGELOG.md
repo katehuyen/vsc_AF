@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.320.0 - X-138: the wiki's drop box, relative and self-healing (2026-08-29)
+
+Groundwork for the wiki's Phase 3: a folder you can simply **drop a file into**.
+A Claude Web answer, a ChatGPT export, something somebody typed by hand — into
+`<wikiRoot>/_RAW_`, with no command, no conversion and no naming rule to get
+right first. A compiled one moves to `_RAW_/_DONE_`, so the drop box stays a
+to-do list rather than a growing pile.
+
+**Relative to the root, never absolute.** `agentFarm.wikiRoot` is a setting the
+user retypes on every machine, `%USERPROFILE%` and all. A path baked into the
+code would be right on exactly one computer.
+
+**‼️ Self-healing, because the folder lives in the user's own vault** — where
+Obsidian, a sync client and their own hand all reach it. It *will* be deleted,
+renamed, or simply absent on a fresh machine, and every one of those is a normal
+Tuesday rather than an error worth a dialog. `ensureRawDirs` makes whatever is
+missing, recursively and silently, and says what it had to make. It runs on
+`scaffoldWiki`, `wikiHealth` and `wikiStatus`: asking "is something wrong here"
+is the moment a user asks, so answering "`_RAW_` is missing" and leaving it
+missing would be a diagnosis where the fix costs one syscall.
+
+**‼️ And it still refuses to create the ROOT.** `mkdir -p <root>/_RAW_/_DONE_`
+brings the root into existence too — and the root is a hand-typed path. A typo
+would quietly become a real empty folder on the disk while the real wiki sat
+untouched beside it, and the health check meant to *report* the problem would
+have manufactured the evidence that there wasn't one. An unset root is refused
+outright: `path.join('', '_RAW_')` is the **relative** `_RAW_`, which would
+appear in whatever directory the process happens to be in.
+
+`wiki.health` and `wiki.status` report the two paths and say in their own
+descriptions that they repair them. The drop box starts with `_`, so it is not a
+category and adds no pages — pinned by a test, because the day that stops being
+true every wiki grows a phantom category.
+
 ## 3.319.0 - U-111: the agent page can be asked about a period (2026-08-29)
 
 The dashboard has had a range row for a long time. The agent page — the one

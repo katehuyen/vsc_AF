@@ -71,8 +71,15 @@ const root = path.join(tmp, 'vault', '00_WIKI');
 
 {
     const r = W.scaffoldWiki(root);
+    // X-138 - the count is no longer three: a scaffold also makes the `_RAW_`
+    // drop box and its `_DONE_` archive. Named rather than counted, so the next
+    // thing a wiki grows does not fail a check about the starter FILES.
     ok('the scaffold creates the root and all three files',
-        r.ok && r.created.length === 3 && r.existed.length === 0);
+        r.ok && r.existed.length === 0
+        && ['_KURALLAR_/-WIKI-ANAYASA-.md', 'index.md', 'log.md']
+            .every(f => r.created.includes(f)));
+    ok('…and the drop box, which is part of the shape of a wiki',
+        r.created.includes('_RAW_') && r.created.includes('_RAW_/_DONE_'));
     ok('…the law is really on disk',
         fs.existsSync(path.join(root, '_KURALLAR_', '-WIKI-ANAYASA-.md')));
 
@@ -143,7 +150,11 @@ async function bridgeOps() {
         before.result.setting === '${env:NOPE}\\00_WIKI');
 
     const made = await bridge.dispatch('wiki.init', {});
-    ok('wiki.init makes it a wiki', made.ok && made.result.created.length === 3);
+    ok('wiki.init makes it a wiki', made.ok
+        && ['_KURALLAR_/-WIKI-ANAYASA-.md', 'index.md', 'log.md']
+            .every(f => made.result.created.includes(f)));
+    ok('…and the drop box comes with it (X-138)',
+        made.result.health.raw.ready === true);
     ok('…and answers with the health it just achieved, not with a promise',
         made.result.health.compilable === true);
 

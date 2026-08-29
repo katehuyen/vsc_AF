@@ -118,6 +118,75 @@ export const WIKI_RULES_REL = path.join('_KURALLAR_', '-WIKI-ANAYASA-.md');
 export const WIKI_INDEX_REL = 'index.md';
 export const WIKI_LOG_REL = 'log.md';
 
+/**
+ * ‼️ X-138 — THE DROP BOX, AND ITS ARCHIVE, ALWAYS RELATIVE TO THE ROOT.
+ *
+ * `_RAW_` is where a session had somewhere else — a Claude Web answer, a
+ * ChatGPT export, a text file somebody wrote by hand — is simply DROPPED, with
+ * no command, no conversion and no naming rule to get right first. `_RAW_/
+ * _DONE_` is where a compiled one is moved so the drop box stays a to-do list
+ * rather than a growing pile.
+ *
+ * ‼️ RELATIVE, NEVER ABSOLUTE. The root is `agentFarm.wikiRoot`, which is a
+ * setting the user retypes on every machine (and writes with `%USERPROFILE%`
+ * in it, deliberately). A path baked in here would be right on exactly one
+ * computer and would be found by nobody on the next one.
+ */
+export const WIKI_RAW_REL = '_RAW_';
+export const WIKI_DONE_REL = path.join('_RAW_', '_DONE_');
+
+/** Where the drop box is, whether it was already there, and what went wrong. */
+export interface WikiRawDirs {
+    /** Absolute `<root>/_RAW_` — '' when there is no root to be relative to. */
+    raw: string;
+    /** Absolute `<root>/_RAW_/_DONE_`. */
+    done: string;
+    /** Both folders exist right now. The only thing a caller has to check. */
+    ready: boolean;
+    /** Which of them this call had to make ('_RAW_' / '_RAW_/_DONE_'). */
+    created: string[];
+    /** Why not, when `ready` is false. Absent on success. */
+    error?: string;
+}
+
+/**
+ * ‼️ X-138 — SELF-HEALING: A MISSING DROP BOX IS MADE, NOT REPORTED.
+ *
+ * The folder lives in the user's vault, where Obsidian, a sync client and the
+ * user's own hand all reach it. It WILL be deleted, renamed or arrive absent on
+ * a fresh machine, and every one of those is a normal Tuesday rather than an
+ * error worth a dialog. So this creates whatever is missing, recursively, and
+ * says what it had to make.
+ *
+ * ‼️ IT NEVER CREATES THE ROOT. `mkdir -p` on `<root>/_RAW_/_DONE_` would
+ * happily bring the ROOT into existence too — and the root is a path the user
+ * typed, so a typo would silently become a real empty folder somewhere on the
+ * disk while the real wiki sat untouched next to it. Callers that legitimately
+ * make the root (`scaffoldWiki`) do that first and then call this.
+ */
+export function ensureRawDirs(root: string): WikiRawDirs {
+    if (!root) {
+        // path.join('', '_RAW_') is the RELATIVE '_RAW_', which would be made
+        // in whatever the process's working directory happens to be.
+        return { raw: '', done: '', ready: false, created: [], error: 'The wiki root is not set.' };
+    }
+    const raw = path.join(root, WIKI_RAW_REL);
+    const done = path.join(root, WIKI_DONE_REL);
+    if (!fs.existsSync(root)) {
+        return { raw, done, ready: false, created: [], error: `The wiki root does not exist: ${root}` };
+    }
+    const created: string[] = [];
+    if (!fs.existsSync(raw)) { created.push(WIKI_RAW_REL); }
+    if (!fs.existsSync(done)) { created.push(WIKI_DONE_REL.split(path.sep).join('/')); }
+    try {
+        // One recursive call makes both: _DONE_ cannot exist without _RAW_.
+        fs.mkdirSync(done, { recursive: true });
+    } catch (e) {
+        return { raw, done, ready: false, created: [], error: String((e as Error).message) };
+    }
+    return { raw, done, ready: fs.existsSync(raw) && fs.existsSync(done), created };
+}
+
 const nowId = (): string =>
     'wc-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
 
@@ -582,6 +651,8 @@ export interface WikiHealth {
     categories: WikiCategory[];
     pages: number;
     misplaced: string[];
+    /** X-138 - the drop box and its archive, made ready by this very call. */
+    raw: WikiRawDirs;
     /** ‼️ The one that stops a compile rather than merely making it messy. */
     compilable: boolean;
 }
@@ -644,6 +715,13 @@ const WIKI_STARTERS: { rel: string; body: () => string }[] = [
 /** What the Settings card asks: is this folder a wiki, and what is missing? */
 export function wikiHealth(root: string, setting = ''): WikiHealth {
     const exists = !!root && fs.existsSync(root);
+    // ‼️ X-138 — the health check is also the moment the drop box is REPAIRED.
+    // Asking "is this folder a wiki" is the one action a user takes when
+    // something looks wrong, so answering "_RAW_ is missing" and leaving it
+    // missing would be a diagnosis where a fix costs one syscall. Guarded on
+    // `exists`: a root that is not there is a question about a path, and a
+    // question about a path must never answer by creating one.
+    const rawDirs = exists ? ensureRawDirs(root) : ensureRawDirs('');
     const files: WikiHealthFile[] = WIKI_STARTERS.map(s => ({
         rel: s.rel.split(path.sep).join('/'),
         file: path.join(root, s.rel),
@@ -657,6 +735,10 @@ export function wikiHealth(root: string, setting = ''): WikiHealth {
         categories: exists ? readWikiCategories(root) : [],
         pages: pages.length,
         misplaced,
+        // X-138 — the drop box, reported rather than merely repaired: a reader
+        // who has never seen `_RAW_` needs to be told the folder exists and
+        // where, or a feature whose whole point is drag-and-drop is invisible.
+        raw: rawDirs,
         // Only the law stops a compile. A missing index or log is repaired by
         // the next compile that writes one; a missing law is a guess.
         compilable: exists && files[0].found
@@ -675,6 +757,9 @@ export function scaffoldWiki(root: string):
     const existed: string[] = [];
     try {
         fs.mkdirSync(root, { recursive: true });
+        // X-138 — the drop box is part of the shape of a wiki, so scaffolding
+        // one makes it. Reported in `created` like everything else here.
+        created.push(...ensureRawDirs(root).created);
         for (const s of WIKI_STARTERS) {
             const file = path.join(root, s.rel);
             const rel = s.rel.split(path.sep).join('/');
@@ -1185,6 +1270,10 @@ export function removeCandidates(store: WikiStore, args: Record<string, unknown>
 /** `wiki.status` — the pool and the vault, read in one breath. */
 export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
     const root = deps.root();
+    // X-138 — same repair as the health check, on the same guard: this is the
+    // op an agent calls before it goes looking for dropped files, so the folder
+    // it is about to read is made ready first rather than reported absent.
+    const rawDirs = root && fs.existsSync(root) ? ensureRawDirs(root) : ensureRawDirs('');
     const rules = path.join(root, WIKI_RULES_REL);
     const { pages, misplaced } = readWikiPages(root);
     // X-58 — asking what the pool holds is one of the moments a dead claim is
@@ -1219,6 +1308,10 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
             log: path.join(root, WIKI_LOG_REL),
             logFound: fs.existsSync(path.join(root, WIKI_LOG_REL)),
             pages: pages.length,
+            // X-138 — where to drop an external transcript, and where a
+            // compiled one goes. Absolute, because the caller is a person or an
+            // agent about to use a file path, not this module.
+            raw: rawDirs.raw, rawReady: rawDirs.ready, done: rawDirs.done,
             // ‼️ U-91/U-92 — the FOLDERS, not the categories that happen to hold
             // a page. A folder somebody made in Obsidian this morning is a
             // category the moment it exists, and a status that omitted it was
@@ -1440,12 +1533,12 @@ export function registerWikiOps(bridge: BridgeRegistry, deps: WikiDeps): void {
         },
         {
             op: 'wiki.status',
-            describe: 'What the pool holds and what the wiki holds. No arguments. Reports both sides: pending/compiled marks and their topics, and the vault\'s own state (root, rules, index, log, page count).',
+            describe: 'What the pool holds and what the wiki holds. No arguments. Reports both sides: pending/compiled marks and their topics, and the vault\'s own state (root, rules, index, log, page count). X-138 — also `raw` / `done`: the drop-box folder an external transcript is left in and the archive a compiled one moves to. Both are created if missing before the answer is built, so `rawReady` is what to check rather than a stat.',
             handler: () => wikiStatus(deps)
         },
         {
             op: 'wiki.health',
-            describe: 'X-57 — is the folder chosen as the wiki root actually a wiki? No arguments. Reports the resolved root (portable variables in agentFarm.wikiRoot are expanded), whether it exists, which of the three files a compile needs are there (_KURALLAR_/-WIKI-ANAYASA-.md, index.md, log.md), the categories and page count, folders nested deeper than one level, and `compilable` — false when the law is missing, which is the one absence that stops every compile.',
+            describe: 'X-57 — is the folder chosen as the wiki root actually a wiki? No arguments. Reports the resolved root (portable variables in agentFarm.wikiRoot are expanded), whether it exists, which of the three files a compile needs are there (_KURALLAR_/-WIKI-ANAYASA-.md, index.md, log.md), the categories and page count, folders nested deeper than one level, and `compilable` — false when the law is missing, which is the one absence that stops every compile. ‼️ X-138 — it also REPAIRS the drop box on the way past: `_RAW_` and `_RAW_/_DONE_` are created if they are not there (silently, recursively, relative to the root) and reported under `raw`. Only when the root itself exists — a question about a path never answers by creating one.',
             handler: () => wikiHealth(deps.root(), deps.rootSetting ? deps.rootSetting() : '')
         },
         {
