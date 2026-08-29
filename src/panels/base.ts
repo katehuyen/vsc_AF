@@ -305,6 +305,13 @@ export function htmlShell(
     // you saved", and a component a page had to opt into is the component the
     // next prompt box does without.
     const snippets = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSnippets.js'));
+    // The "/" command picker (K-30). Ships everywhere for the reason the
+    // snippet picker does, one step further on: the rule is "a box that talks
+    // to an ENGINE offers what that engine could actually be told", and the
+    // catalog it draws is the bridge's own (K-29). It is inert until a page
+    // calls init(), so a page with no engine box pays for a script and nothing
+    // else — while a page that grows one does not have to remember a script tag.
+    const slash = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afSlashPicker.js'));
     // The rich hover panel. Ships everywhere for the same reason the others do:
     // the rule is "any hover carrying TEXT uses this", and a rule that needs a
     // script tag added first is a rule that gets skipped.
@@ -383,6 +390,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${sessCtx}"></script>
 <script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${snippets}"></script>
+<script nonce="${nonce}" src="${slash}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
 <script nonce="${nonce}" src="${combo}"></script>
 <script nonce="${nonce}" src="${wiki}"></script>

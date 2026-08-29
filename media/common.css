@@ -657,6 +657,62 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* ---- K-30: the "/" command picker (media/afSlashPicker.js) ------------------
+   ‼️ A TYPEAHEAD, NOT A WINDOW — and the difference is the whole component. The
+   saved-prompt picker above takes the screen because choosing a prompt is what
+   you stopped to do; this opens WHILE you type, under a caret that must stay
+   where it is, so it hangs off the top edge of the box it serves (.tawrap is
+   the positioning context) and never covers it. The highlighted row is drawn
+   rather than focused, because the focus belongs to the textarea. */
+.af-slbox {
+    position: absolute; left: 0; right: 0; bottom: calc(100% + 4px); z-index: 20;
+    max-height: 260px; display: flex; flex-direction: column; overflow: hidden;
+    border-radius: 6px; box-shadow: 0 6px 22px #0007;
+    border: 1px solid var(--vscode-widget-border, #4444);
+    background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+.af-sllist { overflow: auto; padding: 3px 0; }
+/* One line per command: what you type · what it takes · what it does · where it
+   came from. Fixed-width name and a right-anchored scope, so the descriptions
+   line up and the list is scanned down one column rather than read row by row. */
+.af-slrow {
+    display: flex; gap: 8px; align-items: baseline; width: 100%; text-align: left;
+    background: none; border: none; cursor: pointer; padding: 3px 10px;
+    color: var(--vscode-foreground); font-size: 11.5px;
+}
+.af-slrow:hover { background: var(--vscode-list-hoverBackground); }
+/* ‼️ THE ROW IN HAND IS WHAT ↵ WILL INSERT, so it may not be a shade you have
+   to look for. The selection colour alone is a pale grey in Light Modern —
+   looked at, in dist/render — so the accent bar carries it in both themes. */
+.af-slrow.on {
+    background: var(--vscode-list-activeSelectionBackground);
+    color: var(--vscode-list-activeSelectionForeground, inherit);
+    box-shadow: inset 2px 0 0 var(--vscode-focusBorder, #0078d4);
+}
+.af-slname {
+    flex: none; min-width: 116px; font-family: var(--vscode-editor-font-family);
+}
+.af-slargs {
+    flex: none; min-width: 78px; font-family: var(--vscode-editor-font-family);
+    font-size: 10px; opacity: .55;
+}
+.af-sldesc {
+    flex: 1 1 auto; opacity: .75; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis;
+}
+.af-slscope { flex: none; font-size: 9.5px; opacity: .45; text-transform: uppercase; }
+.af-slnone { padding: 14px 12px; font-size: 11.5px; color: var(--vscode-descriptionForeground); }
+.af-slfoot {
+    padding: 4px 10px; font-size: 10px; opacity: .55;
+    border-top: 1px solid var(--vscode-widget-border, #4443);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* The trigger: the same 17px square as the box's four tools, in the corner they
+   left free. It is a text tool too — it types a slash — so it must not read as
+   a second row of controls competing with Send. */
+.taslash { position: absolute; left: 8px; bottom: 8px; opacity: .4; transition: opacity .12s; }
+.tawrap:hover .taslash, .taslash:hover, .taslash:focus { opacity: 1; }
+
 /* ---- K-26: the wiki tagger --------------------------------------------------
    A POPOVER, not a window. The saved-prompt picker above takes the screen
    because choosing a prompt is what you stopped to do; this is pressed while an

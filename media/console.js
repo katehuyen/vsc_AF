@@ -3098,6 +3098,9 @@
                         <div class="chips" id="c-chips"></div>
                         <div class="tawrap">
                             <textarea id="c-text" placeholder="${placeholder}"${dead ? ' disabled' : ''}></textarea>
+                            <div id="c-slashpop"></div>
+                            <button class="tatool taslash" id="c-slash"
+                                title="The commands this engine could actually be told — /model, /compact, a file you wrote under commands/, a skill installed on this machine. It types the slash for you; typing one yourself opens the same list. ↑↓ move, ↵ inserts, Esc closes — nothing is sent.">/</button>
                             ${window.AFTextTools.html('c')}
                         </div>
                         <div class="crow" id="c-controls">${controls}</div>
@@ -3121,8 +3124,29 @@
             // The keystroke is what decides whether Send after turn and Send can act, so
             // it repaints that row (see renderLive) — `slot()` makes every
             // keystroke but the one that flips "empty" a no-op.
-            text.addEventListener('input', () => { st.draft = text.value; save(); renderLive(); });
+            text.addEventListener('input', () => {
+                st.draft = text.value; save(); renderLive();
+                // ‼️ K-30 — THE BOX IS WHAT DECIDES whether the "/" list is
+                // open. One rule (`slashQueryAt`, in the component), read off
+                // the caret, so there is no second state machine to fall out of
+                // step with what is actually written in the box.
+                window.AFSlashPicker.sync();
+            });
+            // A caret moved by hand is the same question asked again: a click
+            // into the middle of a paragraph is not a query, and a click back
+            // into a `/mod` that is still there is.
+            text.addEventListener('click', () => window.AFSlashPicker.sync());
+            // Leaving the box closes it. The rows stop their own mousedown, so
+            // this cannot fire between pressing a row and the click landing.
+            text.addEventListener('blur', () => window.AFSlashPicker.close());
             text.addEventListener('keydown', ev => {
+                // ‼️ THE PICKER SEES EVERY KEY FIRST and takes exactly four,
+                // only while it is open: ↑ ↓ ↵ Esc. Ctrl+Enter is never its own
+                // — with a list open or shut, that chord means SEND, and a
+                // picker that ate it would be one you must close before you can
+                // talk. Escape is the other way round: while the list is open
+                // it closes the list rather than interrupting the turn.
+                if (window.AFSlashPicker.keydown(ev)) { return; }
                 if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
                 // ↑ in an empty box pulls the last HELD message back to be
                 // rewritten — the terminal's own key for its own queue.
@@ -3195,6 +3219,32 @@
             prefix: 'c', boxId: 'c-text',
             onChange: value => { st.draft = value; save(); renderLive(); }
         });
+
+        // ---- K-30: the "/" command picker ---------------------------------
+        // ‼️ THE CATALOG IS ABOUT A SESSION, NOT ABOUT A PAGE — which is why
+        // the component is handed a function rather than a list. A live card
+        // answers with its OWN engine and what its `system:init` reported; the
+        // composer answers with the engine about to be started and the agent
+        // whose folders will be read. Change the agent picker and the key
+        // changes, so the next `/` asks again instead of offering the previous
+        // agent's own commands.
+        window.AFSlashPicker.init({
+            post: vscode, boxId: 'c-text', hostId: 'c-slashpop',
+            context: () => {
+                const cur = sel();
+                const agent = (DATA.agents || []).find(a => a.id === (st.agentId || ''));
+                return {
+                    engine: (cur && cur.engine) || engineNow(),
+                    agent: (cur && cur.agentName) || (agent && agent.name) || '',
+                    session: (cur && cur.id) || ''
+                };
+            }
+        });
+        // ‼️ mousedown is prevented for the reason the four text tools prevent
+        // it: the press must not blur the box, because the caret IS where the
+        // slash has to land.
+        byId('c-slash', 'mousedown', ev => { if (ev.preventDefault) { ev.preventDefault(); } });
+        byId('c-slash', 'click', () => window.AFSlashPicker.openFromButton());
         // The line filter is the same multi-select the Search and Notices pages
         // use: null = everything, [] = nothing, any subset in between.
         if (s) {
@@ -4289,6 +4339,10 @@
         if (window.AFSnippets.receive(ev.data)) { return; }
         // …and the wiki tagger the same way (K-26).
         if (window.AFWiki.receive(ev.data)) { return; }
+        // …and the "/" catalog, gathered when the picker opened (K-30). It
+        // drops an answer about an engine or agent the composer has moved on
+        // from, so a slow disk cannot repopulate a list with the wrong one.
+        if (window.AFSlashPicker.receive(ev.data)) { return; }
         // A refused send gives the message back whole — text and files — so
         // nothing has to be retyped or re-attached.
         if (ev.data && ev.data.type === 'restore') {

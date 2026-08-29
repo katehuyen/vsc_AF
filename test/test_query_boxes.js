@@ -25,10 +25,30 @@ const read = f => fs.readFileSync(path.join(MEDIA, f), 'utf8');
 // The shape that keeps coming back, in every page that forgot the component
 // exists. Written as a sweep so a new page cannot reintroduce it quietly.
 {
-    const guilty = files.filter(f => /toLowerCase\(\)\s*\.\s*(includes|indexOf)\(/.test(read(f)));
+    /**
+     * ‼️ ONE EXEMPTION, AND IT IS NOT A SEARCH BOX (K-30).
+     *
+     * `afSlashPicker.js` narrows a list of COMMAND NAMES against the `/mod`
+     * being typed in the composer, and its `narrow` is a mirror of
+     * `narrowSlash` in core/slashCommands.ts — the very function the bridge's
+     * `toolbox.slashCommands` op filters with. The rule this sweep enforces is
+     * "a box the user searches in gets the grammar"; applying it here would
+     * make the picker answer a DIFFERENT question from the op that documents
+     * the same catalog to an agent, which is the one failure the mirror is
+     * tested against (test_console_page → "the page and the compiled core
+     * agree"). A `-tag` or a two-word query means nothing to a command name.
+     */
+    const NOT_A_SEARCH_BOX = new Set(['afSlashPicker.js']);
+    const guilty = files.filter(f => !NOT_A_SEARCH_BOX.has(f)
+        && /toLowerCase\(\)\s*\.\s*(includes|indexOf)\(/.test(read(f)));
     ok('‼️ no page decides a match with a lowercased substring — that is what AFQuery is for'
         + (guilty.length ? ' (' + guilty.join(', ') + ')' : ''),
         guilty.length === 0);
+    // The exemption is only worth having while the mirror is real: if the
+    // picker stops matching the core's own filter, it is a hand-rolled search
+    // box again and belongs back under the rule above.
+    ok('‼️ …and the one exemption still mirrors the core rather than inventing a filter',
+        /narrowSlash/.test(read('afSlashPicker.js')));
 }
 
 // ---- a page that filters, explains ----------------------------------------

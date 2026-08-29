@@ -23,6 +23,9 @@ import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
 import { SESSION_COLORS } from '../core/sessionmarks';
+// K-30 — the same two functions the bridge's toolbox.slashCommands op uses.
+import { getSlashCommands } from '../core/slashCommands';
+import { scanSlashSources } from '../core/toolbox';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
 import { afConfig } from '../core/settingsDoor';
 
@@ -996,6 +999,52 @@ export class ConsolePanel {
         if (wikiMarkMessage(this.panel.webview, msg)) { return; }
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
+            /**
+             * ‼️ K-30 — WHAT THIS BOX COULD TYPE AFTER A "/", ANSWERED ON
+             * DEMAND. The same merge the bridge's `toolbox.slashCommands`
+             * performs, through the same two functions — never a second
+             * catalog, because a picker that offered a different list from the
+             * one an agent is told about is a picker that teaches the wrong
+             * commands.
+             *
+             * ‼️ NEVER ON THE PAYLOAD, for the reason the saved prompts are not
+             * either: this page rebuilds its data on every event of every hosted
+             * session, several times a second while a turn runs, and
+             * `scanSlashSources` walks three folders. It is read when the picker
+             * opens — which also means a command file written thirty seconds ago
+             * is there without reloading anything.
+             *
+             * The context comes back with the answer so the page can drop a
+             * late one: the agent picker moves while the disk is being read.
+             */
+            case 'slashCommands': {
+                const engine = (str('engine') || this.chosenEngine()).trim().toLowerCase();
+                const agentRef = str('agent');
+                const agent = agentRef
+                    ? this.deps.getAgents().find(a => a.name === agentRef || a.id === agentRef)
+                    : undefined;
+                const sessionRef = str('session');
+                const live = sessionRef
+                    ? host.list().find(x => x.id === sessionRef || x.sessionId === sessionRef)
+                    : undefined;
+                const disk = scanSlashSources(agent?.dir, os.homedir());
+                const reported = live?.slashCommands;
+                void this.panel.webview.postMessage({
+                    type: 'slashCommands',
+                    engine, agent: agentRef, session: sessionRef,
+                    sources: {
+                        reported: reported?.length ?? 0,
+                        commands: disk.commands.length,
+                        skills: disk.skills.length,
+                        workflows: disk.workflows.length
+                    },
+                    commands: getSlashCommands({
+                        engine,
+                        sources: { ...disk, ...(reported ? { reported } : {}) }
+                    })
+                });
+                break;
+            }
             case 'select':
                 this.selected = str('id');
                 this.refresh();

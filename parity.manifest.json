@@ -1157,6 +1157,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#slashCommands",
+      "ui": [
+        "page:consolePanel.ts#slashCommands"
+      ],
+      "ops": [
+        "toolbox.slashCommands"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#start",
       "ui": [
         "page:consolePanel.ts#start"

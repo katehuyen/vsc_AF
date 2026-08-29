@@ -355,6 +355,44 @@ module.exports = {
             label: 'Console — the colour label on every card kind in the panel',
             data: data()
         },
+        /**
+         * ‼️ K-30 — THE "/" PICKER, WHICH IS ONLY EVER REACHED BY TYPING ONE.
+         * A picture of this composer with nothing open cannot answer the
+         * questions the item was about: does a command, its argument hint and
+         * its description fit on ONE line at 11.5px, does the list read as a
+         * column or as a wall, and is the highlighted row visible without
+         * being loud. So the variant PRESSES the trigger and answers the
+         * catalog request the way the host would.
+         *
+         * The commands below are the shape a real merge produces — the CLI's
+         * own, a file somebody wrote under `commands/`, an installed skill and
+         * an engine workflow — because a list of five `/foo`s would flatter a
+         * layout that has to survive `/wiki:compile-category`.
+         */
+        {
+            id: 'console-slash',
+            label: 'Console — the "/" command picker, open over the composer',
+            data: data(),
+            act: r => {
+                r.query('#c-slash').forEach(b => b.fire('click'));
+                const ask = r.posted.filter(m => m.type === 'slashCommands').pop() || {};
+                r.send({
+                    type: 'slashCommands',
+                    engine: ask.engine || 'claude', agent: ask.agent || '', session: ask.session || '',
+                    commands: [
+                        { name: '/clear', description: 'Start the conversation over, keeping the session', scope: 'engine', engine: 'claude', args: '', reported: true },
+                        { name: '/compact', description: 'Summarise the conversation so far and carry on from the summary', scope: 'engine', engine: 'claude', args: '[instructions]', reported: true },
+                        { name: '/context', description: 'What the window is holding, by category', scope: 'engine', engine: 'claude', args: '', reported: true },
+                        { name: '/cost', description: 'What this session has cost so far', scope: 'engine', engine: 'claude', args: '', reported: true },
+                        { name: '/model', description: 'Pick the model this session runs on', scope: 'engine', engine: 'claude', args: '[model]', tui: true, reported: true },
+                        { name: '/git:cleanup', description: 'Delete every local branch already merged into main', scope: 'local', engine: '', args: '[remote]', source: '.claude/commands/git/cleanup.md' },
+                        { name: '/handover', description: 'Write the cold-start letter for the next session', scope: 'local', engine: '', args: '', source: '.claude/commands/handover.md' },
+                        { name: '/dataviz', description: 'The chart rules — read before the first line of chart code', scope: 'skill', engine: '', args: '' },
+                        { name: '/account-signup', description: 'Sign one Google account up to a list of web services', scope: 'skill', engine: '', args: '<service>' }
+                    ]
+                });
+            }
+        },
         { id: 'console-composer', label: 'Console — the engine picker', data: composerData() },
         {
             id: 'console-lastlaunch',

@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.335.0 - K-30: the "/" picker, where the composer already is (2026-08-30)
+
+K-29 built the catalog — **which commands this session could actually run**, as
+a merge of what is on disk, what the running session reported at `system:init`
+and a short shipped table per engine. This is the half you can see: type `/` in
+the Console composer and the list opens over it.
+
+**‼️ A TYPEAHEAD, NOT A WINDOW, and that is the whole design.** The saved-prompt
+picker takes the screen because choosing a prompt is what you stopped to do;
+this opens *while* you are mid-sentence. A window that took the focus would mean
+typing the query twice — once to open it, once inside it. So the box keeps the
+caret, the box keeps the query, and the list draws above it. There is no filter
+input in the picker: **`/mod` in the composer IS the filter.**
+
+- **The `/` icon in the box's bottom-left corner types the slash** rather than
+  opening a second door. One rule decides when the list is open (`slashQueryAt`,
+  read off the caret), so there is no second state machine to fall out of step
+  with what is written in the box. Mid-word it puts the space in first, because
+  `abc/` is a path and correctly opens nothing.
+- **↑ ↓ move · ↵ inserts · Esc closes · a click on a row does what ↵ does.**
+  Escape belongs to whichever is open: with the list up it closes the list, and
+  the very next Escape stops the running turn the way it always did. Ctrl+Enter
+  is never the picker's — with a list open or shut, that chord sends.
+- **↵ REPLACES the query rather than adding to it.** The `/mod` under the caret
+  is the query; an insert that only added text would send the engine
+  `/mod/model`. What lands is the command and a space — and the space is what
+  ends the query, so the list closes itself and the argument is your own text.
+- **The catalog is asked for once per engine · agent · session**, when the
+  picker opens — never on the payload, because this page rebuilds its data
+  several times a second while a turn runs and the scan walks three folders.
+  Typing narrows in the page. A late answer about an engine the composer has
+  moved on from is dropped rather than drawn.
+- Each row carries what you need to choose: the name, the argument hint the file
+  declared, the description, and where it came from (engine · local · skill ·
+  workflow). Nothing is sent — a pick lands in the box, still yours to edit.
+
+The rule and the filter are mirrored into the page (`media/afSlashPicker.js`)
+because they run per keystroke inside a webview, and the mirror is **pinned
+against the compiled core** — the picker and the bridge's `toolbox.slashCommands`
+cannot come to disagree about what a slash even is.
+
 ## 3.334.0 - Three answers the user gave: the red box, the hover nobody needed, the popup that would not shut (2026-08-30)
 
 Small, and all three are the same kind of fault — a control that was almost

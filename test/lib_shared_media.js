@@ -25,6 +25,10 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // any box that takes a prompt (M-24). Shared the moment a second surface
     // wanted it: the Console's send buttons and the Tasks form's four boxes.
     'afSnippets.js',
+    // afSlashPicker.js was the fifteenth — the "/" command picker (K-30).
+    // Shared for the reason the snippet picker is, one step on: a box that
+    // talks to an engine offers what that engine could actually be told.
+    'afSlashPicker.js',
     'afTip.js',
     // afCombo.js was the fourteenth — the searchable multi-pick box (U-90).
     // Shared because the tagger asks its one question with it and the cockpit

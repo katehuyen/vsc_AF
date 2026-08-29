@@ -60,6 +60,15 @@ function mkEl(id) {
         scrollTop: 0, scrollHeight: 1000, clientHeight: 300,
         set innerHTML(v) { this._html = v; this._writes++; }, get innerHTML() { return this._html; },
         addEventListener(ev, fn) { this.listeners[ev] = fn; },
+        // ‼️ K-30 — REALLY DELIVERED. A component that pastes into a box tells
+        // the page through an `input` event and nothing else (afSnippets does
+        // the same), so a stub that swallowed the dispatch would let the picker
+        // ship writing into a box whose draft never learned about it.
+        dispatchEvent(ev) {
+            const fn = this.listeners[ev && ev.type];
+            if (fn) { fn(ev); }
+            return true;
+        },
         focus() { this._focus++; }, value: '',
         // where the caret is — the whole argument of the ⎘ tool
         selectionStart: 0, selectionEnd: 0,
@@ -189,6 +198,9 @@ const sandbox = {
         };
     },
     Buffer,
+    // The event a paste-into-a-box component fires so the page records the
+    // draft. Enough of one for `dispatchEvent` above to route it by type.
+    Event: function (type, o) { this.type = type; this.bubbles = !!(o && o.bubbles); },
     // the working strip turns its glyph on a timer; the test drives it by hand
     setInterval: (fn) => { timers.push(fn); return timers.length; },
     clearInterval: (h) => { timers[h - 1] = null; },
@@ -2132,6 +2144,148 @@ const html = allHtml;
         /class="cdotc dead"/.test(raw) && !/data-color=""/.test(raw));
     ok('…and the hover says why rather than leaving the reader to guess',
         /has not written its first turn/.test(raw));
+}
+
+// ---------- K-30: the "/" picker in the composer ----------
+//
+// ‼️ THE CATALOG IS K-29's AND IT IS A MERGE, NOT A TABLE — a real Claude
+// `system:init` on this machine named 47 commands, half of them skills that
+// machine happens to have installed. So the one thing this picker must never do
+// is offer a list it invented: it ASKS, once per engine/agent/session, and
+// draws the answer.
+//
+// The failure this block is written against is subtler than "the list is
+// wrong": a typeahead that re-asked the host per keystroke, or that pasted
+// `/model` on top of the `/mod` already typed, or that ate the Escape meant for
+// a running turn, is a picker people learn to work around.
+{
+    const S = require(path.join(__dirname, '..', 'out', 'core', 'slashCommands.js'));
+    const P = sandbox.window.AFSlashPicker;
+
+    // ‼️ THE PAGE HOLDS A COPY OF TWO RULES AND THE COPY IS PINNED. `queryAt`
+    // and `narrow` are mirrored from core/slashCommands.ts because they run per
+    // keystroke inside a webview; mirrored code that nothing compares is code
+    // that drifts, and the drift would be the page and the bridge disagreeing
+    // about what a slash even IS.
+    const CASES = [
+        ['', 0], ['/', 1], ['/mod', 4], ['bir de /mo', 10], ['http://x', 8], ['a/b', 3],
+        ['src/core/launch.ts', 18], ['/model opus', 11], ['/model opus', 6],
+        ['satır bir\n/co', 13], ['/git:cl', 7], ['/mod', 2]
+    ];
+    ok('‼️ the page and the compiled core agree about WHEN a slash is a query',
+        CASES.every(([t, c]) =>
+            JSON.stringify(P.queryAt(t, c) || null) === JSON.stringify(S.slashQueryAt(t, c) || null)));
+
+    const CORE = S.getSlashCommands({ engine: 'claude' });
+    ok('‼️ …and about what a typed query LEAVES',
+        ['', 'mo', '/mo', 'con', 'zzzz', '   '].every(q =>
+            JSON.stringify(P.narrow(CORE, q)) === JSON.stringify(S.narrowSlash(CORE, q))));
+
+    push(data(CONVO.slice(), { status: 'working' }));
+    const box = els['c-text'];
+    const pop = () => (els['c-slashpop'] || {})._html || '';
+    const typeAt = (v, c) => {
+        box.value = v;
+        box.selectionStart = box.selectionEnd = (c === undefined ? v.length : c);
+        box.listeners.input();
+    };
+    const key = (k, extra) => box.listeners.keydown(
+        Object.assign({ key: k, preventDefault() { }, stopPropagation() { } }, extra || {}));
+
+    ok('the composer carries a / trigger and a place for the list to open',
+        /id="c-slash"/.test(app()._html) && /id="c-slashpop"/.test(app()._html));
+
+    posted.length = 0;
+    typeAt('bir de ');
+    ok('nothing is open while nothing is asked', !pop());
+    typeAt('bir de /');
+    ok('‼️ a slash at the START OF A WORD opens the list', /af-slbox/.test(pop()));
+    ok('…and it ASKS the host rather than drawing a list of its own',
+        posted.filter(m => m.type === 'slashCommands').length === 1);
+    const asked = posted.find(m => m.type === 'slashCommands');
+    ok('…about the engine, the agent and the session it is FOR',
+        asked.agent === 'developer' && asked.session === 'cs1' && !!asked.engine);
+    ok('…and says so while it waits, rather than looking empty',
+        /Reading what this engine could run/.test(pop()));
+
+    const ANSWER = {
+        type: 'slashCommands', engine: asked.engine, agent: 'developer', session: 'cs1',
+        commands: [
+            { name: '/model', description: 'Pick the model', scope: 'engine', engine: 'claude', args: '[model]' },
+            { name: '/compact', description: 'Compact the conversation', scope: 'engine', engine: 'claude', args: '' },
+            { name: '/git:cleanup', description: 'Tidy merged branches', scope: 'local', engine: '', args: '' }
+        ]
+    };
+    msgHandler({ data: ANSWER });
+    ok('the answer is what is drawn — name, argument hint and where it came from',
+        /\/model/.test(pop()) && /\[model\]/.test(pop())
+        && /af-slscope">local/.test(pop()) && /3 of 3/.test(pop()));
+
+    posted.length = 0;
+    typeAt('bir de /co');
+    ok('‼️ typing narrows IN THE PAGE — three folders are not walked per keystroke',
+        !posted.some(m => m.type === 'slashCommands')
+        && /\/compact/.test(pop()) && !/\/model/.test(pop()));
+    typeAt('bir de /zzzz');
+    ok('a miss says so and leaves what you typed alone',
+        /Nothing matches/.test(pop()) && box.value === 'bir de /zzzz');
+
+    typeAt('bir de /');
+    ok('the first row is the one in hand', /class="af-slrow on" data-slash="0"/.test(pop()));
+    key('ArrowDown');
+    ok('↓ moves the highlight and does not touch the box',
+        /class="af-slrow on" data-slash="1"/.test(pop()) && box.value === 'bir de /');
+    key('ArrowUp');
+    ok('↑ comes back', /class="af-slrow on" data-slash="0"/.test(pop()));
+
+    key('Enter');
+    ok('‼️ ↵ REPLACES the query rather than adding to it — /mod/model is what a paste gives',
+        box.value === 'bir de /model ');
+    ok('…and the trailing space is what ENDS the query, so the list closes itself', !pop());
+    ok('‼️ …and the page recorded it as its own draft, through the input event',
+        (state.afConsole || {}).draft === 'bir de /model ');
+
+    // ‼️ ESCAPE BELONGS TO WHICHEVER IS OPEN. The composer's Escape stops a
+    // running turn — the terminal's own key, and the working strip promises it.
+    // A picker that took it always would have quietly broken that promise; one
+    // that never took it would be a list you cannot dismiss.
+    typeAt('bir de /');
+    posted.length = 0;
+    key('Escape');
+    ok('‼️ Escape closes the list and does NOT interrupt the turn',
+        !pop() && !posted.some(m => m.type === 'interrupt'));
+    key('Escape');
+    ok('‼️ …and the very next Escape interrupts, because nothing is open now',
+        posted.some(m => m.type === 'interrupt'));
+
+    // Ctrl+Enter is never the picker's: with a list open or shut, it sends.
+    typeAt('bir de /');
+    posted.length = 0;
+    key('Enter', { ctrlKey: true });
+    ok('‼️ Ctrl+↵ still sends with the list open', posted.some(m => m.type === 'send'));
+
+    // The button is a text tool: it types the slash, and one rule opens the list.
+    box.value = 'devam';
+    box.selectionStart = box.selectionEnd = 5;
+    els['c-slash'].listeners.click();
+    ok('‼️ the / button TYPES the slash — mid-word it puts the space in first',
+        box.value === 'devam /' && /af-slbox/.test(pop()));
+
+    msgHandler({
+        data: {
+            type: 'slashCommands', engine: 'codex', agent: 'manager', session: 'cs9',
+            commands: [{ name: '/plan', description: 'x', scope: 'engine', engine: 'codex', args: '' }]
+        }
+    });
+    ok('‼️ a late answer about another engine is DROPPED, not drawn over this one',
+        !/\/plan/.test(pop()) && /\/model/.test(pop()));
+
+    const row = sandbox.document.querySelectorAll('[data-slash]')
+        .find(e => e.dataset.slash === '2');
+    row._fns.click();
+    ok('a row clicked lands exactly as ↵ does', box.value === 'devam /git:cleanup ');
+    ok('‼️ …and the press cannot cost the box its caret',
+        typeof row._fns.mousedown === 'function');
 }
 
 console.log(`${pass} passed, ${fail} failed`);
