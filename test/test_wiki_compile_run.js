@@ -232,6 +232,66 @@ let first;
         /Pass ids, topic, or all/i.test(r5.error || ''));
 }
 
+/**
+ * ---------- U-117: A DROPPED FILE WITH NO TOPIC IS NOT WORK THE COMPILE CAN DO
+ *
+ * X-139 made `_RAW_` fill the pool by itself, and it deliberately leaves the
+ * topics EMPTY — a topic is the key a page is filed under and a scan guessing
+ * one would file the file under that guess for ever. So there is now a mark in
+ * the pool that is pending and not compilable, which is a state nothing else
+ * could be in, and every door has to agree about it:
+ *
+ *   · asked for BY NAME it is refused, and the refusal names the FILE — an id
+ *     tells the reader nothing about which drop they forgot to file;
+ *   · `all:true` simply leaves it out, because one un-triaged drop must not be
+ *     able to block Compile All for ever;
+ *   · and when leaving it out leaves nothing, the refusal says which files are
+ *     waiting rather than "nothing matched".
+ */
+const rawDir = path.join(wikiRoot, '_RAW_');
+{
+    fs.mkdirSync(path.join(rawDir, '_DONE_'), { recursive: true });
+    fs.writeFileSync(path.join(rawDir, 'claude-web-kota.md'), '# Kota mimarisi\n\nmetin\n', 'utf8');
+    const sync = W.syncRawCandidates(wikiRoot, store);
+    ok('a file dropped into _RAW_ becomes a mark of its own', sync.added.length === 1);
+    const raw = store.get(sync.added[0]);
+    ok('‼️ …carrying NO topic, because a scan will not guess what it was about',
+        raw.topics.length === 0);
+    ok('…and it is a raw mark by its KEY, not by the engine string it displays',
+        W.isRawCandidate(raw) && raw.sessionId === 'raw:claude-web-kota.md');
+
+    const v = W.candidateView(raw);
+    ok('‼️ the one view every surface reads answers it, so nobody re-derives it',
+        v.raw === true && v.rawFile === 'claude-web-kota.md' && v.rawDone === false);
+    ok('‼️ …and never claims a turn range a file does not have', v.turns === 'whole file');
+    ok('…and says outright that nothing can be compiled from it yet', v.compilable === false);
+
+    const byName = await call('wiki.compile.run', { ids: [raw.id] });
+    ok('‼️ compiling it by name is REFUSED — a topic is what the page is filed under',
+        !!byName.error && /claude-web-kota\.md/.test(byName.error) && /no topic yet/.test(byName.error));
+    ok('…and the refusal started nothing and claimed nothing', !raw.compileTaskId);
+
+    ok('‼️ "everything waiting" is not "everything untriaged" — `all` leaves it out',
+        !W.chooseCandidates(store, { all: true }).some(c => c.id === raw.id));
+
+    await call('wiki.candidates.edit', { id: raw.id, topics: ['Kota'] });
+    ok('…and the moment it is filed it is an ordinary mark like any other',
+        W.chooseCandidates(store, { all: true }).some(c => c.id === raw.id)
+        && W.candidateView(store.get(raw.id)).compilable === true);
+}
+
+// …and the pool where the drops are ALL there is: the refusal has to be the
+// thing to go and do, not "nothing matched".
+{
+    const s2 = new W.WikiStore(path.join(tmp, 'store2', 'wiki_candidates.json'));
+    fs.writeFileSync(path.join(rawDir, 'ikinci-export.md'), '# ikinci\n', 'utf8');
+    W.syncRawCandidates(wikiRoot, s2);
+    let msg = '';
+    try { W.chooseCandidates(s2, { all: true }); } catch (e) { msg = e.message; }
+    ok('‼️ a pool of nothing but un-triaged drops says WHICH files need a topic',
+        /waiting for a topic/.test(msg) && /ikinci-export\.md/.test(msg));
+}
+
 // ---------- the door a person uses ----------
 {
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');

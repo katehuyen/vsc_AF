@@ -199,6 +199,41 @@ export function rawSessionId(fileName: string): string {
 }
 
 /**
+ * Is this mark a file somebody dropped into `_RAW_`, rather than a run that
+ * happened in a CLI on this machine?
+ *
+ * ‼️ U-117 — THE KEY IS THE ANSWER, NOT THE ENGINE STRING. `raw:<file>` is what
+ * makes a row that file's row (X-139); `engine: 'raw-file'` is how it is
+ * DISPLAYED. One reader deriving this from the key and another from the display
+ * field is how the two come apart, so it is asked in exactly one place and
+ * every surface calls it.
+ */
+export function isRawCandidate(c: { sessionId: string }): boolean {
+    return String(c.sessionId ?? '').toLowerCase().startsWith('raw:');
+}
+
+/** The dropped file's own name, for a surface that must show it — '' for a mark
+ *  that is not a raw drop. */
+export function rawCandidateFile(c: { sessionId: string }): string {
+    return isRawCandidate(c) ? String(c.sessionId).slice('raw:'.length) : '';
+}
+
+/**
+ * ‼️ U-117 — A MARK WITH NO TOPIC IS NOT WORK THE COMPILE CAN DO.
+ *
+ * A topic is the key a page is filed under, and it is the ONE thing only a
+ * person can supply — which is why `syncRawCandidates` leaves it empty rather
+ * than guessing. So a raw drop arrives in a stage of its own: in the pool,
+ * waiting, and not yet compilable. Every surface asks this same question — the
+ * cockpit to decide whether to offer a tick box, `startCompileRun` to decide
+ * whether to refuse — because a tick box the run then rejects is worse than no
+ * tick box, and a run the tick box allowed is worse than both.
+ */
+export function isCompilable(c: { state: string; topics: string[] }): boolean {
+    return c.state === 'pending' && (c.topics ?? []).length > 0;
+}
+
+/**
  * The first line of a dropped file that is worth showing in a list — its
  * heading if it has one, its own name if it has nothing.
  *
@@ -1103,12 +1138,23 @@ export function chooseCandidates(store: WikiStore, args: Record<string, unknown>
         const t = argStr(args, 'topic').toLowerCase();
         chosen = pool.filter(c => c.topics.some(x => x.toLowerCase() === t));
     } else if (args.all === true) {
-        chosen = pool;
+        // ‼️ U-117 — "EVERYTHING WAITING" IS NOT "EVERYTHING UNTRIAGED". A raw
+        // drop sits in the pool with no topic until a person picks one, and it
+        // is the only mark that can. Refusing the whole batch over one would let
+        // a single un-triaged file block Compile All for ever; taking it along
+        // would file it under nothing. It is simply not part of "all" yet — and
+        // it is named below if that leaves nothing to do.
+        chosen = pool.filter(c => isCompilable(c));
     } else {
         need(false, 'Pass ids, topic, or all:true — a compile of "whatever is there" is never implied.');
         chosen = [];
     }
-    need(chosen.length > 0, 'Nothing matched — there is nothing to compile.');
+    const untriaged = pool.filter(c => !isCompilable(c));
+    need(chosen.length > 0, chosen.length === 0 && untriaged.length && args.ids === undefined
+        ? `Nothing is ready to compile. ${untriaged.length} mark(s) are waiting for a topic `
+        + `(${untriaged.map(c => rawCandidateFile(c) || c.id).join(', ')}) — a compile files a page `
+        + 'under a topic, so give them one first.'
+        : 'Nothing matched — there is nothing to compile.');
     return chosen;
 }
 
@@ -1313,12 +1359,33 @@ const shortOf = (id: string): string => id.slice(0, 8);
  *  ‼️ U-70 — exported, because the Wiki page draws the same rows the op prints:
  *  two shapes of one candidate is two places to fix a field. */
 export function candidateView(c: WikiCandidate): Record<string, unknown> {
+    const raw = isRawCandidate(c);
     return {
         id: c.id,
         session: shortOf(c.sessionId),
         sessionId: c.sessionId,
-        turns: (c.fromTurn === 0 ? 'whole session'
-            : c.fromTurn === c.toTurn ? String(c.fromTurn) : `${c.fromTurn}-${c.toTurn}`)
+        // ‼️ U-117 — WHAT THIS ROW IS, said once, for every reader. A dropped
+        // file is not a session: it has no turns to choose between and no CLI
+        // behind it, and a surface that had to spot it by pattern-matching the
+        // engine string would spot it in some places and not others.
+        raw,
+        rawFile: raw ? rawCandidateFile(c) : null,
+        // ‼️ Has a compile already archived it? `_RAW_/_DONE_` is where a
+        // compiled drop goes (X-140), so the folder the file is IN is the third
+        // stage of its life and the only place that fact is recorded. Asked of
+        // the path rather than of a flag, because the agent moves the file and
+        // nothing writes a flag when it does.
+        rawDone: raw && String(c.sessionFile ?? '').split(/[\\/]/).includes('_DONE_'),
+        // Where the file actually is — `_RAW_` while it waits, `_RAW_/_DONE_`
+        // once a compile has archived it (X-140). It is the answer to "which
+        // one of these is that", so the row can show it on hover.
+        sessionFile: c.sessionFile || null,
+        // A raw drop has no topic until somebody gives it one, and it is the
+        // only mark in the pool that can be in that state.
+        compilable: isCompilable(c),
+        turns: (raw ? 'whole file'
+            : c.fromTurn === 0 ? 'whole session'
+                : c.fromTurn === c.toTurn ? String(c.fromTurn) : `${c.fromTurn}-${c.toTurn}`)
             // X-58 — the exclusions are part of what the mark IS, so they travel
             // with the one string every surface prints. A row that said "whole
             // session" while two turns were being left out was a row that lied
@@ -1466,6 +1533,12 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
             // X-58 — pending marks whose last attempt produced no page. Still
             // waiting, but waiting for a second try rather than a first.
             failed: pool.filter(c => c.state === 'pending' && c.lastError).length,
+            // ‼️ U-117 — files somebody dropped, and how many of them nobody has
+            // filed yet. Two figures rather than one, because "12 external
+            // files" and "3 of them still need a category" are different
+            // questions and only the second is a thing to go and do.
+            raw: pool.filter(c => isRawCandidate(c)).length,
+            untriaged: pool.filter(c => c.state === 'pending' && !c.topics.length).length,
             ...(freed.length ? { justReleased: freed.map(c => c.id) } : {}),
             topics: deps.store().topics()
         },
@@ -1510,6 +1583,16 @@ export function startCompileRun(deps: WikiDeps, args: Record<string, unknown>): 
     // Without this the refusal below would name a compile that died last week.
     releaseStaleClaims(deps);
     const chosen = chooseCandidates(deps.store(), args);
+    // ‼️ U-117 — ASKED FOR BY NAME AND NOT READY. `all` leaves an untagged raw
+    // drop out silently because it was never asked for; naming its id is asking
+    // for it, and quietly compiling it under no topic — or quietly skipping the
+    // one mark the caller pointed at — are both worse than saying so.
+    const untagged = chosen.filter(c => !c.topics.length);
+    need(untagged.length === 0,
+        `${untagged.length} of those have no topic yet: `
+        + untagged.map(c => rawCandidateFile(c) || c.id).join(', ')
+        + '. A topic is the key the compile files the page under, so it is the one thing '
+        + 'a run cannot supply for itself — pick one in the cockpit, or pass it with wiki.candidates.edit.');
     // ‼️ CAN A COMPILE HAPPEN AT ALL, before which marks it is about: a missing
     // root or a wiki with no law of its own stops every run, and answering
     // "that mark is busy" first would send the reader after the wrong problem.

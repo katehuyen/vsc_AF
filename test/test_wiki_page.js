@@ -45,7 +45,7 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     const h = r.html();
     ok('the page draws', /Wiki<\/h1>/.test(h));
     ok('the subtitle counts both sides of the system',
-        /4 waiting/.test(h) && /1 compiling/.test(h) && /1 compiled/.test(h) && /14 wiki page\(s\)/.test(h));
+        /6 waiting/.test(h) && /1 compiling/.test(h) && /2 compiled/.test(h) && /14 wiki page\(s\)/.test(h));
     ok('…and names who writes the wiki', /writer: developer/.test(h));
 
     // The default view is what is LIVE: waiting and compiled. A dropped mark is
@@ -69,14 +69,15 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     ok('a mark with a live run reads as compiling, not as waiting', /compiling/.test(h));
     ok('‼️ …and carries NO tick box — asking for it again files the concept twice',
         !el(r, 'cb', 'wc-2') && !!el(r, 'cb', 'wc-1'));
-    // Two waiting marks, one of them claimed: the button must offer two.
+    // Six waiting marks: one claimed by a live run, one still without a topic
+    // (U-117). The button must offer the four that are left.
     ok('‼️ "Compile All Pending" counts only what a run is NOT out for',
-        /Compile All Pending \(3\)/.test(h));
+        /Compile All Pending \(4\)/.test(h));
 
     // Ticking everything selects the compilable rows and no others.
     const all = r.query('#wk-all')[0];
     all.checked = true; all.fire('change');
-    ok('select-all takes every compilable row shown', /Compile Selected \(3\)/.test(r.html()));
+    ok('select-all takes every compilable row shown', /Compile Selected \(4\)/.test(r.html()));
     ok('…and still leaves the claimed one alone', !el(r, 'cb', 'wc-2'));
 
     /**
@@ -260,8 +261,8 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     ok('the source hover spells the scope out — how long, and what is skipped',
         /Whole session \(turns 1–14\) · except 13, 14 — 12 turn\(s\) to read/.test(h));
 
-    ok('the state buttons carry their own counts', /All 6/.test(h)
-        && /⏳ Waiting 4/.test(h) && /✅ Compiled 1/.test(h) && /🚫 Dropped 1/.test(h));
+    ok('the state buttons carry their own counts', /All 9/.test(h)
+        && /⏳ Waiting 6/.test(h) && /✅ Compiled 2/.test(h) && /🚫 Dropped 1/.test(h));
     ok('…and the waiting hover breaks that number down',
         /1 with a run already out/.test(h) && /1 whose last run produced nothing/.test(h));
 }
@@ -436,6 +437,82 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     ok('‼️ an empty pool says where a mark COMES FROM, not just that there is none',
         /pool is empty/.test(h) && /badge/.test(h) && /Add to Wiki Candidates/.test(h));
     ok('…and nothing can be compiled', /id="wk-call"[^>]*disabled/.test(h));
+}
+
+/**
+ * ============================================ U-117 — A DROPPED FILE IS NOT A
+ * SESSION, AND THE PAGE MUST NOT DRAW IT AS ONE.
+ *
+ * X-139 made `_RAW_` a pool that fills itself, which put rows in this table
+ * that never happened in a CLI: no engine, no agent, no turns, and — the whole
+ * point — no topic, because a scan will not guess what a conversation was
+ * about. The failures worth pinning are the ones where the row would look
+ * ordinary and be lying:
+ *
+ *   * eight characters of `raw:notes.md` is `raw:note`, which identifies
+ *     nothing. The file's own name is the only handle the reader has;
+ *   * a mark with no topic has no page to be written to and `startCompileRun`
+ *     refuses it BY NAME — so a tick box over it is a box whose only outcome is
+ *     a warning toast, and it must not be counted in "all pending" either;
+ *   * a file has no turns, so the editor's exclusion strip has nothing to draw.
+ *     Leaving the line out would say nothing about scope at all;
+ *   * and the note stops being "why it was worth keeping" and becomes the one
+ *     way to tell the compiling agent which part of the file matters (X-140).
+ */
+{
+    const r = run();
+    const h = r.html();
+
+    ok('‼️ a dropped file shows its NAME, not eight characters of a key',
+        /claude-web-kota-mimarisi\.md/.test(h) && !/raw:clau</.test(h));
+    ok('…badged as what it is, and CLI rows are badged too so the pair is scannable',
+        /wk-rawbadge[^>]*>RAW</.test(h) && /💬/.test(h) && /📄/.test(h));
+    ok('…and a file a compile has already archived says DONE, off its own path',
+        /wk-rawbadge done[^>]*>DONE</.test(h));
+
+    ok('‼️ a mark with no topic reads as its own stage, not as `waiting`',
+        /🌱 needs a topic/.test(h));
+    ok('…and the empty topics cell is the door to fixing it, not a dash',
+        /pick a category…/.test(h));
+    ok('‼️ …and carries NO tick box — the host refuses a topicless compile by name',
+        !el(r, 'cb', 'wc-7') && !!el(r, 'cb', 'wc-8'));
+
+    // ‼️ THE SAME ROW, ONE CATEGORY LATER. wc-8 is a dropped file too, and it is
+    // an ordinary compilable mark — so the distinction the page draws is
+    // "filed / not filed", never "a file / a session".
+    ok('…while a dropped file that HAS been filed is compilable like any other',
+        /gemini-obsidian-vault-tasarimi\.md/.test(h));
+
+    ok('the row hover says where the file is and that it is not a CLI run',
+        /_RAW_\\claude-web-kota-mimarisi\.md/.test(h)
+        && /not run in a CLI on this machine/.test(h));
+    ok('‼️ …and never claims a turn range it does not have',
+        /External file — the compile reads all of it/.test(h)
+        && !/Whole session \(turns 1–0\)/.test(h));
+
+    // Pressing the seed opens the same editor the ✎ does — it is not a second
+    // act, it is the row's own empty cell made pressable.
+    const seed = r.query('[data-act]').filter(e => e.dataset.act === 'topics' && e.dataset.id === 'wc-7')[0];
+    seed.fire('click');
+    const e = r.html();
+    ok('‼️ pressing 🌱 opens the picker on that row', /wk-cat-in/.test(e));
+    ok('‼️ …with the turn strip REPLACED, not omitted — it says all of it is read',
+        /External file — the compile reads the whole of it/.test(e) && !/data-ex="1"/.test(e));
+    ok('‼️ …and the note relabelled as what it now is: the agent\'s directive',
+        />directive</.test(e) && /what the agent should take from this file/.test(e));
+
+    // The source filter. It is not a fourth state button: a dropped file crosses
+    // every state, so it is a toggle of its own.
+    const t = run();
+    t.query('[data-state]').filter(x => x.dataset.state === 'all')[0].fire('click');
+    t.query('#wk-raw')[0].fire('click');
+    const f = t.html();
+    ok('the 📄 Files toggle narrows the table to the drop box alone',
+        /claude-web-kota-mimarisi/.test(f) && !/wiki\.compile neden sadece brief/.test(f));
+    ok('…and it says how many of them still need a topic before you press it',
+        /still need a topic/.test(f));
+    ok('‼️ …and only the filed one is offered to the filtered compile',
+        /Compile these 1/.test(f));
 }
 
 // ============================================= U-83 — reaching it at all

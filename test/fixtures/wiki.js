@@ -76,6 +76,57 @@ const candidates = [
         lastErrorAt: T - 41 * M,
         compiling: false
     },
+    /**
+     * ‼️ U-117 — THE STAGE A DROPPED FILE ARRIVES IN. No topic, because nothing
+     * guesses one for it; the row's whole job is to say that and to be the door
+     * to fixing it. It is `pending` like everything else and it is the one row
+     * that must NOT offer a tick box.
+     */
+    {
+        id: 'wc-7', sessionTurns: 0, session: 'raw:clau', sessionId: 'raw:claude-web-kota-mimarisi.md',
+        raw: true, rawFile: 'claude-web-kota-mimarisi.md', rawDone: false,
+        sessionFile: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\_RAW_\\claude-web-kota-mimarisi.md',
+        turns: 'whole file', fromTurn: 0, toTurn: 0,
+        topics: [],
+        label: 'Kota mimarisi — 5 saatlik pencere ile 7 günlük kotanın birbirine karıştırılması',
+        note: '', agent: '', engine: 'raw-file',
+        state: 'pending', addedAt: T - 12 * M, addedBy: 'auto-raw',
+        compiledAt: null, pages: null, compileTaskId: null, compileStartedAt: null,
+        compiling: false
+    },
+    /**
+     * …and the SAME kind of row one category later: a file the reader has filed,
+     * which is now compilable like any other mark. The fixture only proves the
+     * distinction if both stages are in it, next to each other.
+     */
+    {
+        id: 'wc-8', sessionTurns: 0, session: 'raw:gemi', sessionId: 'raw:gemini-obsidian-vault-tasarimi.md',
+        raw: true, rawFile: 'gemini-obsidian-vault-tasarimi.md', rawDone: false,
+        sessionFile: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\_RAW_\\gemini-obsidian-vault-tasarimi.md',
+        turns: 'whole file', fromTurn: 0, toTurn: 0,
+        topics: ['Obsidian', 'Bilgi Yönetimi'],
+        label: 'Vault klasör mimarisi — 00_ ile başlayan alan klasörleri neden ayrı',
+        note: 'sadece klasör isimlendirme bölümünü al, gerisi bizde zaten var',
+        agent: '', engine: 'raw-file',
+        state: 'pending', addedAt: T - 55 * M, addedBy: 'you',
+        compiledAt: null, pages: null, compileTaskId: null, compileStartedAt: null,
+        compiling: false
+    },
+    /** The third stage: compiled, and the agent has archived the file under
+     *  `_RAW_/_DONE_` — which is a fact about the PATH, not a flag (X-140). */
+    {
+        id: 'wc-9', sessionTurns: 0, session: 'raw:chat', sessionId: 'raw:chatgpt-prompt-katmanlari.md',
+        raw: true, rawFile: 'chatgpt-prompt-katmanlari.md', rawDone: true,
+        sessionFile: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\_RAW_\\_DONE_\\chatgpt-prompt-katmanlari.md',
+        turns: 'whole file', fromTurn: 0, toTurn: 0,
+        topics: ['Prompt'],
+        label: 'sistem promptu, geliştirici promptu ve kullanıcı promptu arasındaki gerçek fark',
+        note: '', agent: '', engine: 'raw-file',
+        state: 'compiled', addedAt: T - 4 * 24 * 60 * M, addedBy: 'you',
+        compiledAt: T - 3 * 24 * 60 * M,
+        pages: ['D:\\zone\\know\\note\\obsidian\\00_WIKI\\Prompt\\Prompt_Katmanlari.md'],
+        compileTaskId: null, compileStartedAt: null, compiling: false
+    },
     {
         id: 'wc-5', sessionTurns: 5, session: '7d10ba55', sessionId: '7d10ba55-3e64-42aa-9b18-11c0f7de2380',
         turns: '2', fromTurn: 2, toTurn: 2,
@@ -92,9 +143,16 @@ const status = (over) => Object.assign({
     pool: {
         // X-58 — `failed` is a slice OF pending, not a sixth state: the mark is
         // still waiting, and somebody has already tried it once.
-        pending: 4, compiled: 1, dropped: 1, total: 6, compiling: 1, failed: 1,
+        // U-117 — `raw` is every mark that came from a dropped file whatever
+        // became of it; `untriaged` is the slice of pending that still has no
+        // topic, which is the only one that is a thing to go and do.
+        pending: 6, compiled: 2, dropped: 1, total: 9, compiling: 1, failed: 1,
+        raw: 3, untriaged: 1,
         topics: [
             { topic: 'Wiki Derleme', pending: 2, total: 2, lastAt: T - 8 * M },
+            { topic: 'Obsidian', pending: 1, total: 1, lastAt: T - 55 * M },
+            { topic: 'Bilgi Yönetimi', pending: 1, total: 1, lastAt: T - 55 * M },
+            { topic: 'Prompt', pending: 0, total: 1, lastAt: T - 4 * 24 * 60 * M },
             { topic: 'Agent Farm', pending: 1, total: 1, lastAt: T - 8 * M },
             { topic: 'Parity Kapısı', pending: 1, total: 1, lastAt: T - 8 * M },
             { topic: 'Claude Code', pending: 1, total: 1, lastAt: T - 90 * M },
@@ -199,6 +257,29 @@ module.exports = {
             id: 'editor', label: 'Wiki — the row editor: the picker, the turns left out, the note',
             data: data(),
             act: r => openEditor(r, 'wc-6')
+        },
+        /**
+         * ‼️ U-117 — THE SAME EDITOR OVER A DROPPED FILE, which is the case the
+         * turn strip cannot serve: there are no turns to leave out, so the line
+         * that would draw them says what replaces it, and the note stops being
+         * "why it is worth keeping" and becomes the directive the compiling
+         * agent is handed. Opened on the UNTRIAGED row, because that is the
+         * press the row's whole design is asking for.
+         */
+        {
+            id: 'rawedit', label: 'Wiki — a dropped file being filed: no turns, a directive instead of a note',
+            data: data(),
+            act: r => openEditor(r, 'wc-7')
+        },
+        /** …and the pool narrowed to the drop box alone, which is the one press
+         *  that answers "what did I put in there and what still needs filing". */
+        {
+            id: 'rawonly', label: 'Wiki — the 📄 Files filter: the drop box on its own, all three stages',
+            data: data({ status: status() }),
+            act: r => {
+                r.query('[data-state]').filter(e => e.dataset.state === 'all')[0].fire('click');
+                r.query('#wk-raw')[0].fire('click');
+            }
         },
         // …and the same editor with the category list DOWN. Two pictures because
         // the list is drawn over what is under it: with it open the turn strip

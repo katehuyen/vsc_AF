@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
 import {
-    WikiDeps, WikiStore, candidateView, createWikiCategory, editCandidate, lintWiki,
+    WikiDeps, WikiStore, candidateView, createWikiCategory, editCandidate, isRawCandidate, lintWiki,
     readWikiCategories, removeCandidates, scaffoldWiki, startCompileRun, wikiStatus
 } from '../core/wiki';
 
@@ -275,6 +275,16 @@ export class WikiPanel {
             case 'openSession':
                 if (typeof msg.id === 'string' && msg.id) {
                     const mark = this.deps.store().candidates.find(c => c.sessionId === msg.id);
+                    // ‼️ U-117 — A DROPPED FILE IS A DOCUMENT, NOT A TRANSCRIPT.
+                    // Handing `notes.md` to the session viewer asks it to parse a
+                    // browser export as a CLI log and it opens on nothing; the
+                    // file goes through the same door a compiled page does.
+                    if (mark && isRawCandidate(mark)) {
+                        if (mark.sessionFile) {
+                            try { this.deps.openDoc?.(mark.sessionFile); } catch { /* best-effort */ }
+                        }
+                        break;
+                    }
                     try { this.deps.openSession?.(msg.id, mark?.sessionFile ?? ''); } catch { /* best-effort */ }
                 }
                 break;

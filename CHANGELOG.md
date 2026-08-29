@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.325.0 - U-117: a dropped file stops pretending to be a session (2026-08-29)
+
+X-139 put files in the cockpit that never happened in a CLI, and the table drew
+them exactly like the ones that did. A conversation saved out of Claude Web
+appeared as `raw:clau` — eight characters of a key that identify nothing —
+alongside `whole session`, over a markdown export with no turns at all. It is
+now what it is: **📄 the file's own name**, a `RAW` badge, and `DONE` once a
+compile has archived it into `_RAW_/_DONE_`. Sessions carry 💬 in the same
+column, because a distinction only one side of a pair signals is one the eye has
+to work for.
+
+**‼️ And the stage a drop arrives in is its own state, not `waiting`.** A raw
+file lands with no topic on purpose — a topic is the key a page is filed under
+and a scan will not guess one. So the row reads `🌱 needs a topic`, its empty
+topics cell says `pick a category…` instead of a dash, and where the tick box
+would be there is a 🌱 that opens the picker. Three stages, visible at a glance:
+dropped → filed → compiled.
+
+That is not a hint the page draws over a host that would have accepted the
+press. `startCompileRun` now **refuses a topicless mark by name** — and names
+the *file*, because an id tells you nothing about which drop you forgot to file.
+`all:true` simply leaves such marks out, so one un-triaged file can never block
+Compile All; and when leaving them out leaves nothing, the refusal says which
+files are waiting rather than "nothing matched". The cockpit's counts follow the
+same rule, so `Compile All Pending` never offers a mark the run would reject.
+
+The rest of it, each fixing something that was quietly wrong:
+
+- **The row editor's turn strip is REPLACED, not omitted.** A file has no turns,
+  so the strip had nothing to draw — and an editor that simply left the line out
+  said nothing about scope at all. It says the opposite in so many words: all of
+  it is read, and the note below is where you narrow it. The note is relabelled
+  **directive** there, which is what it actually is for a drop (X-140).
+- **📄 Files** is a filter of its own next to the state segment — a source, not a
+  state, since a drop crosses all of them. It carries the count, and its hover
+  says how many still need a topic.
+- **Clicking a dropped file opens the FILE.** It was being handed to the session
+  viewer, which was being asked to parse a browser export as a CLI log; it goes
+  through the same door a compiled page does.
+- `candidateView` answers `raw` / `rawFile` / `rawDone` / `compilable` once, so
+  no surface re-derives any of it from the engine string — and its `turns` reads
+  `whole file` rather than claiming a session's range.
+
 ## 3.324.0 - X-139: the drop box becomes a pool, with nobody pressing anything (2026-08-29)
 
 X-138 made `_RAW_`. On its own that is a box files go into and nothing comes out

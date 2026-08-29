@@ -53,12 +53,15 @@
     let ask = null;
     let escWired = false;
 
-    const DEF ={ fTopic: null, fState: ['pending', 'compiled'], query: '' };
+    const DEF ={ fTopic: null, fState: ['pending', 'compiled'], query: '', fRaw: false };
     const saved = (vscode.getState && vscode.getState()) || {};
     let fTopic = saved.fTopic === undefined ? DEF.fTopic : saved.fTopic;
     let fState = saved.fState === undefined ? DEF.fState : saved.fState;
     let query = saved.query === undefined ? DEF.query : saved.query;
-    function saveState() { if (vscode.setState) { vscode.setState({ fTopic, fState, query }); } }
+    /** U-117 — show only the files somebody dropped into `_RAW_`. A source
+     *  filter, not a state one: it crosses every state the segment offers. */
+    let fRaw = saved.fRaw === undefined ? DEF.fRaw : saved.fRaw;
+    function saveState() { if (vscode.setState) { vscode.setState({ fTopic, fState, query, fRaw }); } }
 
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') { DATA = ev.data.data; render(); }
@@ -98,10 +101,19 @@
         // fact ABOUT a pending mark.
         failed: { icon: '⚠', label: 'failed', cls: 'wk-failed' },
         compiled: { icon: '✅', label: 'compiled', cls: 'wk-compiled' },
-        dropped: { icon: '🚫', label: 'dropped', cls: 'wk-dropped' }
+        dropped: { icon: '🚫', label: 'dropped', cls: 'wk-dropped' },
+        // ‼️ U-117 — THE STAGE A DROPPED FILE ARRIVES IN. It is `pending` in the
+        // store like everything else, and it is the one mark in the pool with no
+        // topic: nothing can be compiled from it until somebody says what it is
+        // about. Drawn apart because a row that read `⏳ waiting` alongside marks
+        // that really are waiting for a run hides the only thing to go and do —
+        // and the label IS the instruction, not a description of one.
+        untriaged: { icon: '🌱', label: 'needs a topic', cls: 'wk-untriaged' }
     };
     const stateOf = c => (c.compiling ? 'compiling'
-        : c.state === 'pending' && c.lastError ? 'failed' : c.state);
+        : c.state === 'pending' && c.lastError ? 'failed'
+            : c.state === 'pending' && !(c.topics || []).length ? 'untriaged'
+                : c.state);
 
     function pool() { return (DATA.status && DATA.status.pool) || {}; }
     function vault() { return (DATA.status && DATA.status.wiki) || {}; }
@@ -118,15 +130,21 @@
         const q = window.AFQuery.compile(query);
         return rows().filter(c => {
             if (fState && fState.indexOf(c.state) < 0) { return false; }
+            if (fRaw && !c.raw) { return false; }
             if (fTopic && !(c.topics || []).some(t => fTopic.indexOf(t) >= 0)) { return false; }
             if (q.empty) { return true; }
-            return q.test([c.label, c.note, c.sessionId, c.agent,
+            // U-117 — the dropped file's own NAME is part of the haystack. It is
+            // the only thing the reader knows about a file they saved out of a
+            // browser an hour ago, and `raw:notes.md` is not what they type.
+            return q.test([c.label, c.note, c.sessionId, c.rawFile, c.agent,
             (c.topics || []).join(' '), (c.pages || []).join(' ')].filter(Boolean).join(' '));
         });
     }
 
-    /** Rows a compile may be started for: waiting, and nothing out for them. */
-    const compilable = list => list.filter(c => c.state === 'pending' && !c.compiling);
+    /** Rows a compile may be started for: waiting, nothing out for them, and
+     *  filed under something — a mark with no topic has no page to be written
+     *  to, and the host refuses it by name (U-117). */
+    const compilable = list => list.filter(c => c.state === 'pending' && !c.compiling && (c.topics || []).length);
 
     // ------------------------------------------------------------- the vault
     /**
@@ -215,6 +233,27 @@
             }));
     }
 
+    /**
+     * ‼️ U-117 — THE SOURCE FILTER, WHICH IS NOT A STATE FILTER.
+     *
+     * A dropped file crosses every state the segment offers, so it cannot be a
+     * fourth button in there. It is one toggle: press it and the table is the
+     * `_RAW_` pool alone. It draws only when there is something to filter TO —
+     * a nobody-has-dropped-anything wiki gets no button for a folder it has
+     * never used, which is the same rule the filtered-compile button follows.
+     */
+    function rawToggle() {
+        const p = pool();
+        const n = p.raw || rows().filter(c => c.raw).length;
+        if (!n && !fRaw) { return ''; }
+        const need = p.untriaged || rows().filter(c => c.state === 'pending' && !(c.topics || []).length).length;
+        return `<button id="wk-raw" class="secondary wk-rawf${fRaw ? ' sel' : ''}"
+            title="${esc(`${n} mark(s) came from a file dropped into _RAW_ rather than from a CLI run`
+            + (need ? ` — ${need} of them still need a topic before anything can be compiled` : '')
+            + `. ${fRaw ? 'Press to show the CLI sessions again.' : 'Press to show only those.'}`)}"
+            >📄 Files ${n}</button>`;
+    }
+
     function filterBar() {
         const p = pool();
         // ‼️ U-92 — the state buttons carry their own counts. "Waiting" with no
@@ -241,6 +280,7 @@
             title: 'What the marks are ABOUT — the key the compile files a concept under. The list is the wiki\'s own folders AND the topics the pool already uses; the number beside a name is how many marks are still waiting under it.'
         })}
             ${seg}
+            ${rawToggle()}
             <input type="text" id="wk-q" class="wk-q" placeholder="search topics, prompts, notes, pages…" value="${esc(query)}"
                 title="${esc(window.AFQuery.tip('Searched against a mark\'s topics, its opening prompt, its note, its session and the pages a compile wrote for it.'))}">
             <button class="secondary" id="wk-reset" title="Clear the topic filter, the state toggles and the search">↺ Reset</button>
@@ -316,6 +356,10 @@
      *  this instead of opening the transcript. */
     /** U-92 — what a compile will actually read, as a sentence. */
     function scopeWords(c) {
+        // ‼️ U-117 — A FILE HAS NO TURNS, so it has no range to state and no
+        // turn to leave out. Saying "whole session (turns 1–0)" over a markdown
+        // export is the sentence that made the two look like the same thing.
+        if (c.raw) { return 'External file — the compile reads all of it.'; }
         const n = c.sessionTurns || 0;
         const ex = c.excludeTurns || [];
         const whole = c.fromTurn === 0;
@@ -332,9 +376,10 @@
         return T.lines([
             c.label || '(no opening line recorded)',
             '',
-            `Session ${c.sessionId}`,
-            c.agent ? `Agent: ${c.agent}` : '',
-            `Engine: ${c.engine || 'claude'}`,
+            c.raw ? `File: ${c.rawFile}` : `Session ${c.sessionId}`,
+            c.raw ? (c.sessionFile || '') : (c.agent ? `Agent: ${c.agent}` : ''),
+            c.raw ? 'Dropped into _RAW_ — it did not happen in a CLI on this machine.'
+                : `Engine: ${c.engine || 'claude'}`,
             scopeWords(c),
             c.note ? '' : null,
             c.note ? 'Note: ' + c.note : null,
@@ -355,12 +400,16 @@
                 title="Show only this topic">${esc(t)}</span>`).join('')
             + (all.length > 3 ? `<span class="wk-more">+${all.length - 3}</span>` : '');
         return T.cell('wk-topics', `data-topics="${esc(c.id)}" role="button" tabindex="0"`,
-            chips || '<span class="muted">—</span>',
+            // ‼️ U-117 — AN EMPTY CELL IS A DEAD END; THIS ONE IS THE DOOR. `—`
+            // reads as "nothing to see", and for the one row where the missing
+            // value is the whole job that is exactly wrong.
+            chips || '<span class="wk-seedcat">pick a category…</span>',
             'Topics', T.lines([
-                (c.topics || []).join(' · ') || 'no topic',
+                (c.topics || []).join(' · ') || 'Filed under nothing yet.',
                 '',
                 'This is the filing key: the compile opens or amends a page per concept under it.',
-                'Click to edit — comma-separated.'
+                (c.topics || []).length ? 'Click to edit.'
+                    : 'Click to pick one — the compile cannot run until it has one.'
             ]));
     }
 
@@ -389,38 +438,74 @@
     function rowHtml(c) {
         const st = STATE[stateOf(c)] || STATE.pending;
         const on = selected.has(c.id);
-        const box = c.state === 'pending' && !c.compiling
+        // ‼️ U-117 — THE TICK BOX IS THE HOST'S ANSWER, DRAWN. A mark with no
+        // topic is refused by `startCompileRun` by name, so offering it here
+        // would be a box whose only outcome is a warning toast. It is the third
+        // stage of a raw drop made visible: dropped → filed → compilable.
+        const untriaged = c.state === 'pending' && !(c.topics || []).length;
+        const box = c.state === 'pending' && !c.compiling && !untriaged
             ? `<input type="checkbox" data-cb="${esc(c.id)}"${on ? ' checked' : ''} aria-label="Select this mark for compiling">`
-            : `<span class="wk-nobox" title="${c.compiling ? 'A compile is already running for this mark' : 'Only a waiting mark can be compiled'}">·</span>`;
+            : untriaged
+                ? `<button class="wk-seed" data-act="topics" data-id="${esc(c.id)}"
+                    title="Nothing can be compiled from this until it has a topic — a compile files a page under one. Press to pick a category.">🌱</button>`
+                : `<span class="wk-nobox" title="${c.compiling ? 'A compile is already running for this mark' : 'Only a waiting mark can be compiled'}">·</span>`;
         return `<tr class="${on ? 'sel' : ''} ${st.cls}">
             <td class="wk-pick">${box}</td>
-            ${T.cell('wk-state', '', `<span class="wk-st">${st.icon} ${st.label}</span>`, 'State',
+            ${T.cell('wk-state', untriaged ? `data-act="topics" data-id="${esc(c.id)}" role="button" tabindex="0"` : '',
+            `<span class="wk-st">${st.icon} ${st.label}</span>`, 'State',
             T.lines([
                 st.label === 'waiting' ? 'Marked, and nothing has been compiled from it yet.'
                     : st.label === 'compiling' ? 'Still waiting — but a run is out for it, so it is not offered again.'
                         : st.label === 'failed' ? 'Still waiting, and the last run over it produced no page:'
                             : st.label === 'compiled' ? 'A run reported the pages it wrote for this mark.'
-                                : 'Taken out of the queue without being compiled.',
+                                // ‼️ U-117 — WHY IT IS NOT A FAULT. A file lands
+                                // in the pool with no topic on purpose: the scan
+                                // will not guess what a conversation was about,
+                                // and a guess would file the page under it for
+                                // ever. So the row says what is missing and who
+                                // has to supply it.
+                                : st.label === 'needs a topic'
+                                    ? (c.raw
+                                        ? 'A file you dropped into _RAW_. It is in the pool, and it is filed under nothing yet.'
+                                        : 'This mark is filed under nothing yet.')
+                                    : 'Taken out of the queue without being compiled.',
                 // X-58 — the reason, in the panel, in the words the host wrote.
                 // A ⚠ with no sentence behind it is a badge, not an answer.
                 ...(st.label === 'failed'
                     ? ['', c.lastError || '', c.lastErrorAt ? '(' + window.AFTime.ago(c.lastErrorAt) + ')' : '',
                         '', 'Press ↻ to clear it and put the mark back in the queue, or simply compile it again.']
-                    : ['', 'Only a run reporting back closes a mark.'])
+                    : st.label === 'needs a topic'
+                        ? ['', 'A topic is the key the compile files the page under — it is the one thing a scan cannot supply, so nothing is offered for compiling until you give it one.',
+                            '', 'Click to pick a category and leave a note for the compiling agent.']
+                        : ['', 'Only a run reporting back closes a mark.'])
             ]))}
-            ${T.cell('wk-sess', `data-session="${esc(c.sessionId)}" role="button" tabindex="0"`,
-            `<code>${esc(c.session)}</code> <span class="wk-turns${(c.excludeTurns || []).length ? ' cut' : ''}">${esc(c.turns)}</span>`,
-            'Where it came from', T.lines([`Session ${c.sessionId}`, c.agent ? 'Agent: ' + c.agent : '',
-                'Engine: ' + (c.engine || 'claude'),
-                // ‼️ U-92 — the scope SPELLED OUT rather than abbreviated: how
-                // long the conversation is, which turns the compile will read,
-                // and which were deliberately left out. "whole session" over a
-                // 40-turn conversation and over a 3-turn one are the same three
-                // words and completely different amounts of work.
-                scopeWords(c),
-                (c.excludeTurns || []).length
-                    ? `Excluded: ${c.excludeTurns.join(', ')} — the compile is told in so many words not to read them.` : '',
-                '', 'Click to open the transcript.']))}
+            ${c.raw
+                // ‼️ U-117 — A DROPPED FILE SHOWS ITS NAME, NOT EIGHT CHARACTERS
+                // OF A KEY. `shortOf('raw:notes.md')` is `raw:note`, which
+                // identifies nothing; the file name is the only handle the
+                // reader has on something they saved out of a browser.
+                ? T.cell('wk-sess wk-rawsess', `data-session="${esc(c.sessionId)}" role="button" tabindex="0"`,
+                    `<span class="wk-rawicon">📄</span> <code>${esc(c.rawFile || c.sessionId)}</code>`
+                    + ` <span class="wk-rawbadge${c.rawDone ? ' done' : ''}">${c.rawDone ? 'DONE' : 'RAW'}</span>`,
+                    'External file', T.lines([c.rawFile || c.sessionId,
+                        c.sessionFile || '',
+                        c.rawDone ? 'Archived — a compile has moved it into _RAW_/_DONE_.' : 'Waiting in _RAW_.',
+                        '', 'Dropped into the wiki\'s _RAW_ folder, not run in a CLI on this machine — so it has no turns, no agent and no engine.',
+                        scopeWords(c),
+                        '', 'Click to open the file.']))
+                : T.cell('wk-sess', `data-session="${esc(c.sessionId)}" role="button" tabindex="0"`,
+                    `<span class="wk-rawicon">💬</span> <code>${esc(c.session)}</code> <span class="wk-turns${(c.excludeTurns || []).length ? ' cut' : ''}">${esc(c.turns)}</span>`,
+                    'Where it came from', T.lines([`Session ${c.sessionId}`, c.agent ? 'Agent: ' + c.agent : '',
+                        'Engine: ' + (c.engine || 'claude'),
+                        // ‼️ U-92 — the scope SPELLED OUT rather than abbreviated: how
+                        // long the conversation is, which turns the compile will read,
+                        // and which were deliberately left out. "whole session" over a
+                        // 40-turn conversation and over a 3-turn one are the same three
+                        // words and completely different amounts of work.
+                        scopeWords(c),
+                        (c.excludeTurns || []).length
+                            ? `Excluded: ${c.excludeTurns.join(', ')} — the compile is told in so many words not to read them.` : '',
+                        '', 'Click to open the transcript.']))}
             ${topicsCell(c)}
             ${T.cell('wk-label', '', esc(c.label || '—') + (c.note ? ` <span class="wk-note">— ${esc(c.note)}</span>` : ''),
             'What was said', markTip(c))}
@@ -429,7 +514,7 @@
                 c.compiledAt ? '' : null, c.compiledAt ? 'Compiled ' + window.AFTime.full(c.compiledAt) : null].filter(x => x !== null)))}
             ${pagesCell(c)}
             <td class="wk-act">
-                ${c.state === 'pending' && !c.compiling
+                ${c.state === 'pending' && !c.compiling && !untriaged
                 ? `<button class="mini wk-go" data-act="compile" data-id="${esc(c.id)}"
                         title="Compile this one mark on its own, without ticking it first. Same run, one mark in it.">⚡</button>`
                 : ''}
@@ -612,6 +697,39 @@
                 .wk-sess { white-space:nowrap; width:1%; cursor:pointer; }
                 .wk-sess code { font-size:11px; }
                 .wk-turns { opacity:.7; }
+                /* ‼️ U-117 — WHERE THE ROW CAME FROM, AT A GLANCE. The icon does
+                   the scanning (💬 a run on this machine · 📄 a file somebody
+                   dropped) and the badge says which shelf the file is on. The
+                   name is not truncated the way a session id is: it is the only
+                   handle the reader has on it. */
+                .wk-rawicon { opacity:.75; font-size:11px; }
+                .wk-rawsess code { max-width:30ch; display:inline-block; overflow:hidden;
+                    text-overflow:ellipsis; vertical-align:bottom; }
+                .wk-rawbadge { padding:0 5px; border-radius:9px; font-size:9.5px; letter-spacing:.4px;
+                    border:1px solid var(--vscode-widget-border,#4444);
+                    color:var(--vscode-descriptionForeground,#888); }
+                .wk-rawbadge.done { border-color:transparent;
+                    background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
+                /* The stage a drop lands in: something to do, not something
+                   wrong — a growing thing, in the theme's own "attention"
+                   colour rather than its error one. */
+                .wk-seed { background:none; border:1px solid transparent; cursor:pointer;
+                    font-size:11px; padding:0 3px; border-radius:4px; }
+                .wk-seed:hover { background:var(--vscode-toolbar-hoverBackground,#8882);
+                    border-color:var(--vscode-widget-border,#4443); }
+                tr.wk-untriaged .wk-st { color:var(--vscode-charts-green,#89d185); }
+                /* No resting opacity — the light theme's own green is already
+                   at the edge of readable and dimming it would put the one
+                   thing on the page that is asking to be pressed below it. */
+                .wk-seedcat { font-style:italic; cursor:pointer;
+                    color:var(--vscode-charts-green,#89d185); }
+                .wk-topics:hover .wk-seedcat { text-decoration:underline; }
+                .wk-rawf.sel { background:var(--vscode-button-background);
+                    color:var(--vscode-button-foreground); }
+                /* The editor's scope line for a file: the strip's replacement,
+                   not its absence. */
+                .wk-rawinfo { font-size:11px; opacity:.8; cursor:help; }
+                .wk-edirective { border-color:var(--vscode-charts-green,#89d185) !important; }
                 .wk-topics { max-width:230px; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
                 .wk-chip { display:inline-block; padding:0 6px; margin:0 3px 0 0; border-radius:9px;
                     font-size:10.5px; background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); }
@@ -757,7 +875,23 @@
         const span = Math.max(0, to - from + 1);
         const kept = span - edit.exclude.length;
         let chips = '';
-        if (span > 1) {
+        /**
+         * ‼️ U-117 — WHAT THE STRIP IS REPLACED BY, NOT WHAT IS MISSING FROM IT.
+         *
+         * A dropped file has no turns, so the exclusion strip has nothing to
+         * draw and an editor that simply left the line out would say nothing
+         * about scope at all — the reader would be left assuming the same
+         * turn-picking applies. It says the opposite in so many words: all of it
+         * is read, and the note below is where you narrow it.
+         */
+        if (c.raw) {
+            chips = `<div class="wk-eline wk-rawnote">
+                <span class="wk-elabel">scope</span>
+                <span class="wk-rawinfo" title="${esc(c.sessionFile || '')}">📄 External file — the compile reads the whole of it${c.rawDone
+                ? ', and a compile has already archived it under _RAW_/_DONE_' : ''}.
+                    To point the agent at one part of it, say so in the directive below.</span>
+            </div>`;
+        } else if (span > 1) {
             let out = '';
             for (let i = from; i <= to; i++) {
                 const off = edit.exclude.indexOf(i) >= 0;
@@ -787,9 +921,11 @@
                 </div>
                 ${chips}
                 <div class="wk-eline">
-                    <span class="wk-elabel" title="Why this was worth keeping. It travels into the compile instruction, so it is the one place to say what the transcript does not.">note</span>
-                    <input type="text" id="wk-enote" class="wk-enote" value="${esc(edit.note)}"
-                        placeholder="why it is worth keeping (optional)">
+                    <span class="wk-elabel" title="${c.raw
+            ? 'X-140 — for a dropped file this is the DIRECTIVE the compiling agent is handed: it is the only way to say which part of the file matters, because there are no turns to exclude.'
+            : 'Why this was worth keeping. It travels into the compile instruction, so it is the one place to say what the transcript does not.'}">${c.raw ? 'directive' : 'note'}</span>
+                    <input type="text" id="wk-enote" class="wk-enote${c.raw ? ' wk-edirective' : ''}" value="${esc(edit.note)}"
+                        placeholder="${c.raw ? 'what the agent should take from this file (optional)' : 'why it is worth keeping (optional)'}">
                 </div>
                 <div class="wk-eline">
                     <button id="wk-esave" title="Save the topics, the note and the excluded turns">Save</button>
@@ -815,8 +951,9 @@
         window.AFFilter.live(document.getElementById('wk-q'), el => {
             query = el.value; refocus = 'search'; saveState(); render();
         });
+        bind('wk-raw', 'click', () => { fRaw = !fRaw; saveState(); render(); });
         bind('wk-reset', 'click', () => {
-            fTopic = DEF.fTopic; fState = DEF.fState; query = DEF.query;
+            fTopic = DEF.fTopic; fState = DEF.fState; query = DEF.query; fRaw = DEF.fRaw;
             selected.clear(); saveState(); render();
         });
         // U-92 — the two ways out of a strip that says the wiki is not there.
