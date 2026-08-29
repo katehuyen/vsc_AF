@@ -252,6 +252,45 @@
         focus(box() || b);
     }
 
+    /**
+     * ‼️ K-31 — WHOSE COMMAND IS THIS, and the answer is not one word for all
+     * four cases. A command the CLI itself owns is drawn with the ENGINE badge
+     * every other surface uses (X-110, media/afEngine.js): `/model` on Claude
+     * and `/model` on Codex are different programs' commands, and a list that
+     * called both of them "engine" would be hiding the one thing that decides
+     * whether it can be typed here at all. A command from a file is not any
+     * engine's, so it gets a plain chip saying which kind of file it came from.
+     */
+    function badgeOf(c) {
+        if (c.scope === 'engine' && c.engine && window.AFEngine) {
+            return window.AFEngine.badge(c.engine);
+        }
+        return `<span class="af-slscope">${esc(c.scope || '')}</span>`;
+    }
+
+    /**
+     * ‼️ K-31 — THE ONE THING A COMMAND LIST CANNOT LEAVE OUT HERE. A `/model`
+     * with no argument opens an interactive menu in a terminal; this session is
+     * hosted over stream-json, where there is no terminal to open it in, so it
+     * can only answer with text. Offering it silently would be offering a way
+     * to spend a turn on nothing.
+     *
+     * It is a LINE IN THE PANEL, not a hover: a hover on a row inside a list
+     * the user is arrowing through is a panel flashing over the very rows being
+     * compared (the rule afSnippets is written to). So the highlighted row's
+     * warning is simply shown, and it moves as the highlight does.
+     */
+    function warnHtml(list) {
+        if (!list.length) { return ''; }
+        const c = list[Math.min(open.sel, list.length - 1)];
+        if (!c || !c.tui) { return ''; }
+        return `<div class="af-slwarn">▤ <b>${esc(c.name)}</b> opens a menu in a terminal.`
+            + ' This session is hosted, so it can only answer with text'
+            + (c.args ? ` — give it its argument (<code>${esc(c.name)} ${esc(c.args)}</code>) and it acts.`
+                : '; the same setting is on the row of boxes under this one.')
+            + '</div>';
+    }
+
     function rowsHtml(list) {
         if (cat.loading) {
             return '<div class="af-slnone">Reading what this engine could run…</div>';
@@ -278,7 +317,8 @@
             <span class="af-slname">${esc(c.name)}</span>
             <span class="af-slargs">${esc(c.args || '')}</span>
             <span class="af-sldesc">${esc(c.description || '')}</span>
-            <span class="af-slscope">${esc(c.scope || '')}</span>
+            ${c.tui ? '<span class="af-sltui">▤</span>' : ''}
+            ${badgeOf(c)}
         </button>`).join('');
     }
 
@@ -289,6 +329,7 @@
         const where = (context() || {});
         return `<div class="af-slbox" id="af-slbox">
             <div class="af-sllist">${rowsHtml(list)}</div>
+            ${warnHtml(list)}
             <div class="af-slfoot">${cat.loading ? 'asking…'
                 : `${list.length} of ${all.length} for ${esc(where.engine || 'this engine')}`}
                 · ↑↓ move · ↵ insert · Esc close · nothing is sent</div>

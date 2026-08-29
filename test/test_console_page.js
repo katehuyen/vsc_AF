@@ -2286,6 +2286,41 @@ const html = allHtml;
     ok('a row clicked lands exactly as ↵ does', box.value === 'devam /git:cleanup ');
     ok('‼️ …and the press cannot cost the box its caret',
         typeof row._fns.mousedown === 'function');
+
+    // ---- K-31: whose command it is, and what it cannot do HERE ----------
+    //
+    // ‼️ THE TUI WARNING IS THE HALF THAT CANNOT BE LEFT OUT. `/model` with no
+    // argument opens an interactive menu in a terminal; this session is hosted
+    // over stream-json and has no terminal to open it in, so it can only answer
+    // with text. Offering it silently is offering a way to spend a turn on
+    // nothing — and it is shown as a LINE, not a hover, because a panel over a
+    // list being arrowed through covers the rows being compared.
+    typeAt('/');
+    msgHandler({
+        data: {
+            type: 'slashCommands', engine: asked.engine, agent: 'developer', session: 'cs1',
+            commands: [
+                { name: '/approvals', description: 'How much Codex may do without asking', scope: 'engine', engine: 'codex', args: '', tui: true },
+                { name: '/git:cleanup', description: 'Tidy merged branches', scope: 'local', engine: '', args: '[remote]' },
+                { name: '/review', description: 'Read the diff on this branch', scope: 'workflow', engine: '', args: '[path]' }
+            ]
+        }
+    });
+    ok('‼️ an engine command wears the ENGINE badge every other surface draws (X-110)',
+        /class="af-eng [^"]*"[^>]*>Codex</.test(pop()));
+    ok('…and a command from a FILE says which kind of file, not which engine',
+        /af-slscope">local</.test(pop()) && /af-slscope">workflow</.test(pop())
+        && !/af-slscope">engine</.test(pop()));
+    ok('‼️ a command that can only open a menu is marked on its own row',
+        /af-sltui/.test(pop()));
+    ok('‼️ …and the sentence follows the HIGHLIGHT rather than hiding in a hover',
+        /af-slwarn/.test(pop()) && /only answer with text/.test(pop())
+        && pop().indexOf('af-slwarn') > pop().indexOf('/approvals'));
+    key('ArrowDown');
+    ok('…so moving onto a command with no such limit takes it away',
+        !/af-slwarn/.test(pop()) && /class="af-slrow on" data-slash="1"/.test(pop()));
+    key('ArrowUp');
+    ok('…and moving back brings it', /af-slwarn/.test(pop()));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

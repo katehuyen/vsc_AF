@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.336.0 - K-31: whose command it is, and the one it cannot run here (2026-08-30)
+
+The picker's rows now say the two things a name and a sentence cannot.
+
+**Whose command it is, in the badge every other surface draws.** A command the
+CLI itself owns wears the ENGINE badge (X-110, the same colour as on a card, a
+turn and a session row): `/model` on Claude and `/model` on Codex are different
+programs' commands, and a list that called both of them "engine" would be hiding
+the one thing that decides whether it can be typed here at all. A command that
+came from a file is nobody's engine, so it says which kind of file instead —
+**local · skill · workflow**.
+
+**‼️ And the one it cannot run here.** `/model` with no argument opens an
+interactive menu *in a terminal*. This session is hosted over stream-json and
+has no terminal to open it in, so it can only answer with text — offering it
+silently is offering a way to spend a turn on nothing. The row carries a ▤, and
+the sentence is a **line in the panel that follows the highlight**: `▤ /model
+opens a menu in a terminal. This session is hosted, so it can only answer with
+text — give it its argument (/model [name]) and it acts.` It is not a hover,
+because a panel over a list you are arrowing through covers the very rows you
+are comparing.
+
+The shipped table is now **swept rather than spot-checked**: every command in it
+must carry a name, a sentence that ends, and an argument hint that is either
+`<required>` or `[optional]` — the picker prints that hint beside the name, so
+the brackets are the explanation. The failure this catches is a sixth engine
+added in a hurry.
+
 ## 3.335.0 - K-30: the "/" picker, where the composer already is (2026-08-30)
 
 K-29 built the catalog — **which commands this session could actually run**, as

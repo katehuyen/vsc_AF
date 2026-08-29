@@ -701,6 +701,21 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     text-overflow: ellipsis;
 }
 .af-slscope { flex: none; font-size: 9.5px; opacity: .45; text-transform: uppercase; }
+/* K-31 — the engine badge is the shared one (X-110), shrunk to the row it is on
+   rather than redrawn: the colour that says "Codex" here is the colour that
+   says it on a card, a turn and a session row. */
+.af-slrow .af-eng { flex: none; font-size: 9px; padding: 0 4px; }
+/* A command whose whole job is to open a menu. The glyph marks the row; the
+   sentence is a line in the panel, because a hover over a list being arrowed
+   through covers the rows being compared. */
+.af-sltui { flex: none; font-size: 10px; opacity: .7; color: var(--vscode-charts-yellow, #cca700); }
+.af-slwarn {
+    padding: 5px 10px; font-size: 10.5px; line-height: 1.35;
+    border-top: 1px solid var(--vscode-widget-border, #4443);
+    background: var(--vscode-inputValidation-warningBackground, #3a2f0b);
+    color: var(--vscode-inputValidation-warningForeground, inherit);
+}
+.af-slwarn code { font-family: var(--vscode-editor-font-family); opacity: .85; }
 .af-slnone { padding: 14px 12px; font-size: 11.5px; color: var(--vscode-descriptionForeground); }
 .af-slfoot {
     padding: 4px 10px; font-size: 10px; opacity: .55;

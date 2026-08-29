@@ -380,17 +380,23 @@ module.exports = {
                     type: 'slashCommands',
                     engine: ask.engine || 'claude', agent: ask.agent || '', session: ask.session || '',
                     commands: [
-                        { name: '/clear', description: 'Start the conversation over, keeping the session', scope: 'engine', engine: 'claude', args: '', reported: true },
-                        { name: '/compact', description: 'Summarise the conversation so far and carry on from the summary', scope: 'engine', engine: 'claude', args: '[instructions]', reported: true },
-                        { name: '/context', description: 'What the window is holding, by category', scope: 'engine', engine: 'claude', args: '', reported: true },
-                        { name: '/cost', description: 'What this session has cost so far', scope: 'engine', engine: 'claude', args: '', reported: true },
-                        { name: '/model', description: 'Pick the model this session runs on', scope: 'engine', engine: 'claude', args: '[model]', tui: true, reported: true },
+                        { name: '/account-signup', description: 'Sign one Google account up to a list of web services', scope: 'skill', engine: '', args: '<service>' },
+                        { name: '/approvals', description: 'How much Codex may do without asking', scope: 'engine', engine: 'codex', args: '', tui: true, reported: true },
+                        { name: '/dataviz', description: 'The chart rules — read before the first line of chart code', scope: 'skill', engine: '', args: '' },
                         { name: '/git:cleanup', description: 'Delete every local branch already merged into main', scope: 'local', engine: '', args: '[remote]', source: '.claude/commands/git/cleanup.md' },
                         { name: '/handover', description: 'Write the cold-start letter for the next session', scope: 'local', engine: '', args: '', source: '.claude/commands/handover.md' },
-                        { name: '/dataviz', description: 'The chart rules — read before the first line of chart code', scope: 'skill', engine: '', args: '' },
-                        { name: '/account-signup', description: 'Sign one Google account up to a list of web services', scope: 'skill', engine: '', args: '<service>' }
+                        { name: '/model', description: 'Which model answers the next turn', scope: 'engine', engine: 'codex', args: '[name]', tui: true, reported: true },
+                        { name: '/new', description: 'Start a fresh thread', scope: 'engine', engine: 'codex', args: '', reported: true },
+                        { name: '/review', description: 'Read the diff on this branch and report what is wrong with it', scope: 'workflow', engine: '', args: '[path]', source: '.agents/workflows/review.md' }
                     ]
                 });
+                // ‼️ K-31 — the highlight is walked onto a TUI command on
+                // purpose. The warning is drawn for the row IN HAND, so a
+                // picture taken on `/clear` would be a picture of the one state
+                // that has nothing to say about the constraint.
+                for (let i = 0; i < 5; i++) {
+                    r.query('#c-text').forEach(t => t.fire('keydown', { key: 'ArrowDown' }));
+                }
             }
         },
         { id: 'console-composer', label: 'Console — the engine picker', data: composerData() },

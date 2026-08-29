@@ -28,6 +28,43 @@ const T = require(path.join(ROOT, 'out', 'core', 'toolbox.js'));
 const nameOf = list => list.map(c => c.name);
 const find = (list, n) => list.find(c => c.name === n);
 
+// ---------- K-31: every shipped row can be READ, and says what it takes ----
+//
+// ‼️ THE PICKER DRAWS THIS TABLE VERBATIM. A row with no sentence is a row the
+// user has to try in order to find out what it does, and a `/model name` with
+// no bracket cannot be told apart from a command called "name" — so the shape
+// of the hint is part of the table, not a matter of taste. Swept rather than
+// spot-checked: the failure this catches is a SIXTH engine added in a hurry.
+{
+    const bad = [];
+    for (const engine of Object.keys(S.BUILTIN_SLASH)) {
+        const seen = new Set();
+        for (const c of S.BUILTIN_SLASH[engine]) {
+            const at = `${engine} ${c.name}`;
+            if (!/^\/[a-z][\w:-]*$/.test(c.name)) { bad.push(at + ' — name'); }
+            if (seen.has(c.name)) { bad.push(at + ' — said twice'); }
+            seen.add(c.name);
+            if (!c.description || c.description.length < 12) { bad.push(at + ' — description'); }
+            if (!/[.!?]$/.test(c.description || '')) { bad.push(at + ' — no full stop'); }
+            // `<required>` or `[optional]`, and nothing else: the picker prints
+            // it beside the name, so the brackets ARE the explanation.
+            if (c.args && !/^(<[^<>]+>|\[[^[\]]+\])$/.test(c.args)) { bad.push(at + ' — args'); }
+            if (c.engine !== engine) { bad.push(at + ' — filed under the wrong engine'); }
+            if (c.scope !== 'engine') { bad.push(at + ' — the shipped table is the ENGINE\'s own'); }
+        }
+    }
+    eq('‼️ every shipped command has a name, a sentence and a legal argument hint', bad, []);
+
+    // ‼️ AND THE TUI FLAG IS NOT DECORATION — K-31 draws a warning off it, so a
+    // table where nothing carries it would ship a picker whose warning can
+    // never appear. Claude's own `/model`, `/config` and `/agents` are the
+    // measured cases.
+    const tui = Object.keys(S.BUILTIN_SLASH)
+        .flatMap(e => S.BUILTIN_SLASH[e]).filter(c => c.tui);
+    ok(`the interactive ones are marked, so the picker can say so (${tui.length})`,
+        tui.length >= 5 && tui.some(c => c.name === '/model'));
+}
+
 // ---------- the shipped table, per engine ----------
 {
     const claude = S.getSlashCommands({ engine: 'claude' });
