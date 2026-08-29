@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.315.0 - M-30: the discipline is a property of the JOB, not only of the agent (2026-08-29)
+
+X-133 put the Superpowers engineering discipline — brainstorm before building,
+a plan before code, systematic debugging before a fix — behind **one switch per
+agent**. That answers *"how does `developer` work"* and cannot answer *"…except
+for this job"*. A nightly lint sweep and a feature build are the same agent
+doing work of two different kinds, and the Console composer's ⚡ chip could say
+so only for a session somebody was sitting in front of.
+
+**`⚡ Superpowers`**, in the new-task form beside Model, Effort and Permissions
+— so a **task, a schedule, a trigger, a template and a workflow step** can each
+say it, and an automation that fires at 03:00 says it when it is *written*,
+which is the only moment anybody is there to say it.
+
+**‼️ THREE ANSWERS, AND THE EMPTY ONE IS NOT "OFF".** *Agent default* hands the
+decision back to the agent's own setting — which is exactly what every task ever
+written before this row existed said, and what they all keep saying. *On* and
+*Off* are a person overriding that default for this job alone. A checkbox would
+have had two states and would have had to invent an answer for every existing
+automation on the day it shipped.
+
+**An explicit pick beats the default, and a retry inherits it.** A rerun that
+quietly fell back to the agent's setting would be a different job from the one
+being retried — the same defect the engine, the model and the finish sound each
+had here once.
+
+Over the bridge it is `superpowers` on `tasks.add`, `schedules.add`,
+`triggers.add`, `templates.add` and `templates.run`; on `schedules.set` and
+`triggers.set`, **`null` is its clear** — the string dimensions beside it clear
+on `""`, and a tri-state boolean has no empty string. Omitting it is the third
+answer, not `false`, in both directions: a schedule read back and written away
+again cannot freeze today's default onto a run that never chose one.
+
 ## 3.314.0 - A-26: the farm reads the answer, not just the news (2026-08-29)
 
 A tone says *something happened*. The announcement (A-20) says *which agent*.

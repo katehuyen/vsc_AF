@@ -250,7 +250,7 @@ import {
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
     argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgePage, bridgeRunDimensions,
-    DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE,
+    DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, SUPERPOWERS_NOTE,
     needOneExecutor, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
 import {
@@ -2956,9 +2956,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // three in the morning. A DELEGATION is excluded with the brief for
             // the same reason the brief is: it arrives with an objective, not
             // with a way of working to adopt.
+            // ‼️ M-30 — …UNLESS THE RUN ITSELF SAID SO. An explicit pick on the
+            // task wins over both the agent default and the delegation rule
+            // above: a person who ticked the box on THIS job has answered the
+            // question the default exists to answer in their absence, and
+            // dropping their answer silently is the one outcome neither rule
+            // was written for. Absent (`undefined`) leaves the line exactly as
+            // it was — every task written before this behaves identically.
             projectContextFile: (task) => systemPromptFileFor(
                 task.projectId, task.missionId ? 'mission' : 'session',
-                !task.missionId && superpowersOnFor(task.agentName)),
+                task.superpowers ?? (!task.missionId && superpowersOnFor(task.agentName))),
             // I5: rule-based model routing + quota-pressure downgrade.
             modelArgsFor: (task) => {
                 const quotaPct = windowPct();
@@ -6657,7 +6664,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // open", so it is the door the wording was written for — but it is
                 // not the only one, and five hand-typed copies would be five
                 // contracts.
-                + INTERACTIVE_NOTE + FINISH_SOUND_NOTE + ' '
+                + INTERACTIVE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + ' '
                 // ‼️ M-7 — the ONE ceiling the caller may lift, and the three it may not.
                 + 'ignoreBudget? (default false — launch even when the daily budget is spent. '
                 + 'It is the user\'s own ceiling about money, so a run they named may pass it; '
@@ -7217,7 +7224,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + ' — ‼️ refused HERE if unknown, rather than at 3 a.m. with nobody watching), model?, effort? (‼️ refused on an engine that has no such setting: '
                 + enginesWithoutEffort()
                 + '), permissionMode? (‼️ the words are shared and the mechanisms are not — a schedule fires UNATTENDED, so on an engine that cannot stop and ask this is a restraint chosen up front, and on one that can there is nobody to answer and the request comes back refused), cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const seeds = parseSeedSchedules(JSON.stringify([
@@ -8431,7 +8438,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // older shape accepted has been taken away.
             op: 'triggers.add',
             describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.triggers.some(t => t.title === title),
@@ -8555,7 +8562,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'templates.add',
             describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (' + ENGINE_ENUM + '), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.templates.some(t => t.title === title),
@@ -8726,7 +8733,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'templates.run',
             describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit = the template\'s own, "" = clear it, a name = that profile; a run may not carry an engine AND a profile, since the profile would replace the command line and drop the engine in silence), workDir?, priority?, project?'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
@@ -12637,7 +12644,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     bridge.register([
         {
             op: 'schedules.edit',
-            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project?/finishSound? — every one of them "" to clear, and the same validation schedules.add applies — and fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails) — plus rounds? ([{prompt, delayMin?}, …], [] or null to clear: the prompts sent AFTER this one, each into the SAME conversation once the round before it has been answered)',
+            describe: 'Edit a schedule in place (id survives — no delete+recreate). args: id or title, then any of: newTitle?, prompt?, agent? (name|id), mode? (headless|interactive), kind? (daily|weekly|once), hour? (0-23), minute? (0-59), dow? (0-6, weekly), onceAt? ("YYYY-MM-DD HH:MM" or epoch ms, once), missed? (skip|run|ask), enabled? (boolean), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project?/finishSound? — every one of them "" to clear — and superpowers? (true|false, or null to hand the answer back to the agent\'s own default; a boolean has no "" so null is its clear), and the same validation schedules.add applies — and fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} or null to clear — the schedule is skipped for free when it fails) — plus rounds? ([{prompt, delayMin?}, …], [] or null to clear: the prompts sent AFTER this one, each into the SAME conversation once the round before it has been answered)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const s = taskManager.schedules.find(x => x.id === ref || x.title === ref);
@@ -12733,6 +12740,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             'cli' in patch ? patch.cli : cur.cli
                         );
                     }
+                }
+                // ‼️ M-30 — NOT ONE OF THE `keys` ABOVE, on purpose. That list is
+                // read with `optStr` and cleared with `""`, which is a STRING
+                // convention; a tri-state boolean has no empty string, and
+                // `false` is a real answer rather than an absence. So `null` is
+                // its clear — it hands the decision back to the agent's own
+                // default, the third state and the one every run made before
+                // this gave.
+                if (args.superpowers !== undefined) {
+                    need(args.superpowers === null || typeof args.superpowers === 'boolean',
+                        'superpowers is true, false, or null to hand the answer back to '
+                        + 'the agent\'s own default.');
+                    patch.superpowers = args.superpowers === null
+                        ? undefined : args.superpowers === true;
                 }
                 if (args.priority !== undefined) {
                     const n = Number(args.priority);
@@ -12872,7 +12893,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'triggers.edit',
-            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project?/finishSound? — each "" to clear, validated exactly as triggers.add validates them — and fireIf? (precondition object, or null to clear)',
+            describe: 'Edit a trigger in place. args: id or title, then any of: newTitle?, prompt? (task/dispatch action), agent? (name|id — task action), watch? (watch type), hookEvent?/hookAgent? (hook type; hookAgent "" = any agent), debounceSec? (≥1), cooldownSec?, maxPerHour? (0 = unlimited), the run dimensions engine? (' + ENGINE_ENUM + ')/model?/effort?/permissionMode?/cli?/workDir?/priority?/project?/finishSound? — each "" to clear — and superpowers? (true|false, or null for the agent\'s own default), validated exactly as triggers.add validates them — and fireIf? (precondition object, or null to clear)',
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const t = taskManager.triggers.find(x => x.id === ref || x.title === ref);
@@ -12954,6 +12975,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             action[k] = (dims[k] as string | undefined) || undefined;
                             updated.push(k);
                         }
+                    }
+                    // ‼️ M-30 — see schedules.edit: `null` is the clear, because a
+                    // tri-state boolean has no `""` and `false` is an answer.
+                    if (args.superpowers !== undefined && tr.action.kind !== 'workflow') {
+                        need(args.superpowers === null || typeof args.superpowers === 'boolean',
+                            'superpowers is true, false, or null to hand the answer back to '
+                            + 'the agent\'s own default.');
+                        tr.action.superpowers = args.superpowers === null
+                            ? undefined : args.superpowers === true;
+                        updated.push('superpowers');
                     }
                     if (args.priority !== undefined && tr.action.kind !== 'workflow') {
                         const n = Number(args.priority);

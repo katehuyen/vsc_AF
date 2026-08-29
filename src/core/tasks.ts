@@ -212,6 +212,24 @@ export interface FarmTask {
      * its ending. Absent = say nothing, and the fleet's chain answers as before.
      */
     finishSound?: string;
+    /**
+     * ‼️ M-30 — DOES THIS RUN WORK TO THE SUPERPOWERS DISCIPLINE, said on the
+     * RUN rather than on the agent.
+     *
+     * X-133 put the hook behind ONE switch per agent, which answers "how does
+     * `developer` work" and cannot answer "…except for this job". A nightly
+     * lint sweep and a feature build are the same agent and are not the same
+     * kind of work, and the composer's ⚡ chip could say so for a Console
+     * session while a scheduled run had no way to.
+     *
+     * ‼️ THREE STATES, AND ABSENT IS ONE OF THEM. `undefined` means "the
+     * agent's own default decides", which is what every task written before
+     * this said and must keep meaning; `true` and `false` are a person
+     * overriding that default for this job alone. A boolean that defaulted to
+     * `false` would silently switch the discipline off on every existing
+     * automation the day it shipped.
+     */
+    superpowers?: boolean;
     /** ‼️ M-26 — the hosted conversation this task was handed to, when it runs
      *  in the Console. The one handle that lets the panel's own report be read
      *  back against this task (see `pumpConsoleTasks`). */
@@ -601,6 +619,16 @@ export interface RunDimensions {
      * when the automation is written or it is not said at all.
      */
     finishSound?: string;
+    /**
+     * ‼️ M-30 — AND WHETHER IT WORKS TO THE DISCIPLINE (see FarmTask.superpowers).
+     *
+     * It rides with the model and the permission mode for the reason every
+     * dimension here does: an automation fires with nobody at a composer, so
+     * "this job in particular gets the engineering hook" can only be said when
+     * the automation is WRITTEN, or it is not said at all. Absent = the agent's
+     * default answers, exactly as before.
+     */
+    superpowers?: boolean;
     workDir?: string;
     priority?: number;
     /**
@@ -670,6 +698,11 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     // reach a run in a shape the applier would have to guess at.
     const finish = normalizeFinishSound(d.finishSound);
     if (finish) { r.finishSound = finish; }
+    // ‼️ M-30 — `undefined` IS A VALUE HERE and must survive as absence, so the
+    // test is against undefined rather than truthiness: `false` is a person
+    // saying "not on this one" and dropping it would silently hand the job back
+    // to the agent's default, which is the opposite of what they asked for.
+    if (d.superpowers !== undefined) { r.superpowers = d.superpowers === true; }
     if (d.workDir) { r.workDir = d.workDir; }
     if (d.priority) { r.priority = Math.trunc(d.priority); }
     if (d.ignoreBudget) { r.ignoreBudget = true; }
@@ -2218,7 +2251,7 @@ export class TaskManager implements vscode.Disposable {
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
             | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
-            | 'interactiveTarget' | 'interactiveClose' | 'finishSound'
+            | 'interactiveTarget' | 'interactiveClose' | 'finishSound' | 'superpowers'
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
             | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits'>>
@@ -4068,7 +4101,7 @@ export class TaskManager implements vscode.Disposable {
         over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
             & Partial<Pick<FarmTask,
                 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
-                | 'interactiveTarget' | 'interactiveClose' | 'finishSound'
+                | 'interactiveTarget' | 'interactiveClose' | 'finishSound' | 'superpowers'
                 | 'priority' | 'projectId' | 'ignoreBudget'>>
     ): FarmTask | undefined {
         if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
@@ -4116,6 +4149,10 @@ export class TaskManager implements vscode.Disposable {
         // engine and the model had here: the run you asked to hear finishing is
         // exactly the run you are not watching.
         copy.finishSound = over?.finishSound ?? task.finishSound;
+        // ‼️ M-30 — and it works the way the original worked, for the same
+        // reason. A rerun that quietly fell back to the agent's default would
+        // be a different job from the one being retried.
+        copy.superpowers = over?.superpowers ?? task.superpowers;
         copy.missionId = task.missionId;
         copy.ignoreBudget = over?.ignoreBudget ?? task.ignoreBudget;
         noteTaskEvent(copy, 'retried', `attempt ${attempt} of "${task.title}"`);

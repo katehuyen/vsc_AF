@@ -1150,6 +1150,10 @@
             // ordinary answer, not a missing one: the fleet's own chain decides,
             // exactly as it did before this row existed.
             finishSound: '',
+            // ‼️ M-30 — and whether it works to the discipline. Empty is the
+            // ordinary answer and NOT "off": the agent's own default decides,
+            // exactly as it did before this row existed.
+            superpowers: '',
             cli: '', workDir: '', priority: 0,
             // ‼️ A TASK OPENS ON THE WINDOW'S PROJECT; AN AUTOMATION DOES NOT.
             // A task made here is made by a person who is looking at a project.
@@ -2425,6 +2429,29 @@
             + 'session\'s ♪, otherwise the choice would do nothing while the fleet switch is off. '
             + '‼️ Silent mutes the WHOLE run, not only its ending: silence is not a tone, it is the '
             + 'session mute, and it is the only thing that can take a sound away.')}
+                ${/**
+                    * ‼️ M-30 — AND WHETHER THIS JOB WORKS TO THE DISCIPLINE.
+                    *
+                    * Beside Model / Effort / Permissions because it is the same
+                    * kind of answer: HOW this run works, decided when the run is
+                    * written. X-133's switch is one per agent, which cannot say
+                    * "…except for this job" — and a nightly lint sweep and a
+                    * feature build are the same agent doing different work.
+                    *
+                    * ‼️ NOT A CHECKBOX. A checkbox has two states and this has
+                    * three: the empty one is "the agent's own default decides",
+                    * which is what every task written before this said, and a
+                    * checkbox would have had to invent an answer for all of them.
+                    */ ''}
+                ${choiceSel('superpowers', '\u26a1 Superpowers', L.superpowersChoices, c.superpowers,
+                'Whether THIS job works to the Superpowers discipline: brainstorm before building, a '
+            + 'plan before code, systematic debugging before a fix. Normally one switch per agent '
+            + '(Farm Settings), which answers "how does this agent work" and cannot answer "…except '
+            + 'for this one" \u2014 a nightly lint sweep and a feature build are the same agent and are '
+            + 'not the same kind of work. '
+            + '\u203c Agent default is a THIRD answer, not Off: it hands the decision back to the '
+            + 'agent\'s own setting, which is what every run made before this row existed did. '
+            + 'Choose Off to switch the discipline off for this job alone.')}
                 <label class="ntf" title="${c.kind === 'task'
                         ? 'The project this task belongs to. Recorded when it is CREATED, not when it runs — a queued task can sit for hours, and by the time it starts the window may be showing something else entirely.'
                         : 'The project its runs belong to. An automation fires with nobody looking at a window, so it has no project unless you declare one here.'}"><span>Project</span>
@@ -2524,6 +2551,9 @@
         // A-24 - what it sounds like when it ends. Always on the page for a
         // run, so no mode-dependent skip applies to it.
         v('finishSound', 'finishSound');
+        // M-30 - and how it works. Always on the page for a run, like the tone
+        // above it, so no mode-dependent skip applies.
+        v('superpowers', 'superpowers');
         v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
         n('priority', 'priority');
         b('start', 'start'); b('enabled', 'enabled'); b('ignorebudget', 'ignoreBudget');
@@ -3591,7 +3621,7 @@
             // silently, because the draft had never been told. Exactly the defect
             // M-21 named on the continuation prompt, on a field two days old.
             ['agent', 'effort', 'permissionMode', 'project', 'cli',
-                'interactiveTarget', 'interactiveClose', 'finishSound',
+                'interactiveTarget', 'interactiveClose', 'finishSound', 'superpowers',
                 'dow', 'missed', 'hookEvent', 'hookAgent', 'workflowId'].forEach(id =>
                     byId('nt-' + id, 'change', () => readComposer()));
             // ‼️ These REDRAW, because they change which fields — or which

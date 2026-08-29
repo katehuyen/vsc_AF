@@ -146,6 +146,24 @@ export interface TasksDeps {
     promptSnippets?(): PromptSnippetsSnapshot;
 }
 
+/**
+ * ‼️ M-30 — THE ONE PLACE THE FORM'S THREE WORDS BECOME THE RUN'S THREE STATES.
+ *
+ * A form carries strings; a run dimension carries `undefined | true | false`,
+ * and `undefined` is a real answer — "the agent's own default decides" — rather
+ * than a missing one. Four call sites read this box (new task · new automation ·
+ * duplicate/retry · the composed run), and four inline ternaries would part
+ * company the first time a fourth word was added.
+ *
+ * ANYTHING THAT IS NOT ONE OF THE TWO WORDS IS THE DEFAULT, deliberately: an
+ * unreadable value must fall back to the behaviour every run had before this
+ * field existed, never to "off".
+ */
+function superpowersChoice(v: string): boolean | undefined {
+    const w = String(v ?? '').trim().toLowerCase();
+    return w === 'on' ? true : w === 'off' ? false : undefined;
+}
+
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -805,6 +823,17 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             // mid-word. "Default" is what its three neighbours (Model, Effort,
             // Permissions) already say, and the sentence explaining it belongs
             // in the row's tooltip, where there is room for it.
+            // ‼️ M-30 — THREE CHOICES, AND THE FIRST ONE IS NOT "OFF". The form
+            // carries strings, so the third state travels as `''` exactly as
+            // every other optional dimension's does — `superpowersChoice` turns
+            // the three words back into `undefined | true | false` on the way
+            // in. SHORTHAND: "Agent default" is what the neighbouring boxes
+            // call it, and the sentence explaining it lives in the row tooltip.
+            superpowersChoices: [
+                { id: '', label: 'Agent default' },
+                { id: 'on', label: 'On — this job works to the discipline' },
+                { id: 'off', label: 'Off — not on this job' }
+            ],
             finishSounds: [
                 { id: '', label: 'Default' },
                 ...(deps.alertVoices ? deps.alertVoices() : []).map(v => ({
@@ -1046,6 +1075,10 @@ function taskSeed(t: FarmTask): Record<string, unknown> {
         interactiveClose: t.interactiveClose ?? 'stay-open',
         // A-24 - and the tone it was set to finish on.
         finishSound: t.finishSound ?? '',
+        // ‼️ M-30 — and whether it was set to work to the discipline. Absent is
+        // `''` = "the agent's default decides", which is a THIRD answer and not
+        // the same as `off`.
+        superpowers: t.superpowers === undefined ? '' : (t.superpowers ? 'on' : 'off'),
         project: t.projectId ?? '', workDir: t.workDir ?? '',
         priority: t.priority ?? 0,
         ignoreBudget: !!t.ignoreBudget,
@@ -1180,6 +1213,10 @@ function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
         interactiveClose: s.interactiveClose ?? 'stay-open',
         // A-24 - and the tone it was set to finish on.
         finishSound: s.finishSound ?? '',
+        // ‼️ M-30 — and whether it was set to work to the discipline. Absent is
+        // `''` = "the agent's default decides", which is a THIRD answer and not
+        // the same as `off`.
+        superpowers: s.superpowers === undefined ? '' : (s.superpowers ? 'on' : 'off'),
         cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
         ignoreBudget: !!s.ignoreBudget,
         // ‼️ M-27 — what it was saved with, so reopening the form shows the
@@ -1211,6 +1248,10 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         interactiveClose: dims.interactiveClose ?? 'stay-open',
         // A-24 - and the tone it was set to finish on.
         finishSound: dims.finishSound ?? '',
+        // ‼️ M-30 — and whether it was set to work to the discipline. Absent is
+        // `''` = "the agent's default decides", which is a THIRD answer and not
+        // the same as `off`.
+        superpowers: dims.superpowers === undefined ? '' : (dims.superpowers ? 'on' : 'off'),
         cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
         ignoreBudget: !!dims.ignoreBudget,
         // ‼️ M-27 — the chain it was saved with (see RunDimensions.rounds).
@@ -1524,6 +1565,10 @@ export class TasksPanel {
             // the one nobody is watching — which is the whole case the field
             // was asked for. Empty stays undefined = GONE, per the note above.
             finishSound: normalizeFinishSound(str('finishSound')) || undefined,
+            // ‼️ M-30 — NOT gated on the mode either, and for the same reason the
+            // finish sound is not: an unattended run is exactly the one whose way
+            // of working nobody is present to choose.
+            superpowers: superpowersChoice(str('superpowers')),
             workDir: str('workDir') || undefined,
             priority: num('priority', 0) || undefined,
             projectId: str('project') || undefined,
@@ -2031,6 +2076,9 @@ export class TasksPanel {
                         // A-24 - and it finishes on the tone the form is showing,
                         // which is the original's unless it was changed there.
                         finishSound: normalizeFinishSound(str('finishSound')) || undefined,
+                        // M-30 - and it works the way the form is showing, which
+                        // is the original's unless it was changed there.
+                        superpowers: superpowersChoice(str('superpowers')),
                         workDir: str('workDir') || undefined,
                         priority: Number(t.priority) ? Math.trunc(Number(t.priority)) : undefined,
                         ignoreBudget: t.ignoreBudget === true ? true : undefined
@@ -2100,6 +2148,10 @@ export class TasksPanel {
                     // a headless run too: that is the one nobody is watching.
                     ...(normalizeFinishSound(str('finishSound'))
                         ? { finishSound: normalizeFinishSound(str('finishSound')) } : {}),
+                    // ‼️ M-30 — omitted when the box says "agent default", so a
+                    // task made from this form claims no decision nobody made.
+                    ...(superpowersChoice(str('superpowers')) !== undefined
+                        ? { superpowers: superpowersChoice(str('superpowers')) } : {}),
                     ...(str('workDir') ? { workDir: str('workDir') } : {}),
                     ...(Number(t.priority) ? { priority: Math.trunc(Number(t.priority)) } : {}),
                     // M-7 — "run it whatever the budget says" (see FarmTask.ignoreBudget)

@@ -203,6 +203,14 @@ const data = () => ({
             { id: 'u-my-gong', label: 'My gong - no player here', off: true },
             { id: 'silent', label: 'Silent - no sound at all' }
         ],
+        // ‼️ M-30 — what the "⚡ Superpowers" row offers. The empty one is FIRST
+        // and is not "off": it hands the decision back to the agent's own
+        // setting, which is what every run made before this row existed did.
+        superpowersChoices: [
+            { id: '', label: 'Agent default' },
+            { id: 'on', label: 'On - this job works to the discipline' },
+            { id: 'off', label: 'Off - not on this job' }
+        ],
         projects: [{ id: 'prj_1', name: 'AgentFarm', icon: '◧' }],
         activeProjectId: 'prj_1'
     }

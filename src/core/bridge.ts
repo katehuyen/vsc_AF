@@ -318,6 +318,23 @@ export function bridgeRunDimensions(
             out.finishSound = finish;
         }
     }
+    // ‼️ M-30 — AND WHETHER IT WORKS TO THE DISCIPLINE. An agent that can queue
+    // a nightly run must be able to say "and this one with the engineering
+    // hook", or the field means one thing on the form and nothing in a request
+    // (`_REF/agentfarm-dev.md`).
+    //
+    // ‼️ THREE STATES, SO THE TEST IS AGAINST `undefined`, NOT TRUTHINESS.
+    // Omitting it means "the agent's default decides"; `false` is a caller
+    // saying "not on this one". Collapsing the two would make it impossible to
+    // turn the discipline OFF for a single job over the bridge, which is half
+    // of what the switch is for.
+    if (args.superpowers !== undefined) {
+        need(typeof args.superpowers === 'boolean',
+            'superpowers is true or false — omit it entirely to let the agent\'s own '
+            + 'default decide, which is a THIRD answer and the one every run made '
+            + 'before this gave.');
+        out.superpowers = args.superpowers === true;
+    }
     // ‼️ M-26 — WHERE AN INTERACTIVE RUN OPENS AND WHETHER IT STAYS, refused
     // here for the same reason the effort is: a schedule is a run that has not
     // happened yet, and a mistyped surface stored happily tonight is a window
@@ -490,6 +507,17 @@ export const FINISH_SOUND_NOTE =
     + 'ending, which is the only way anything can take a sound away (the two authorities over '
     + 'a sound ADD). Omit it and the alert settings decide, exactly as they always have.';
 
+export const SUPERPOWERS_NOTE =
+    ' ‼️ AND WHETHER IT WORKS TO THE DISCIPLINE — superpowers? (true|false). The '
+    + 'engineering hook X-133 puts in front of a run: brainstorm before building, a plan '
+    + 'before code, systematic debugging before a fix. It is normally ONE switch per agent '
+    + '(agentFarm.superpowersDefaults), which answers "how does this agent work" and cannot '
+    + 'answer "…except for this job" — a nightly lint sweep and a feature build are the same '
+    + 'agent and are not the same kind of work. ‼️ OMITTING IT IS A THIRD ANSWER, not false: '
+    + 'absent means the agent\'s own default decides, which is what every run made before '
+    + 'this did and must keep meaning. Pass false to switch the discipline OFF for this job '
+    + 'alone.';
+
 export const DIMS_OUT_NOTE =
     ' ‼️ Each row also says what its ENGINE can do (engineLabel, turnShape, '
     + 'reportsCost, costSource, takesEffort) — read those before the figures beside '
@@ -503,6 +531,7 @@ export function bridgeDimsOut(
         cli?: string; workDir?: string; priority?: number; projectId?: string;
         interactiveTarget?: string; interactiveClose?: string;
         finishSound?: string;
+        superpowers?: boolean;
         ignoreBudget?: boolean; retry?: RetryPolicy; rounds?: TaskRound[];
     },
     projectName?: (id: string) => string | undefined
@@ -547,6 +576,13 @@ export function bridgeDimsOut(
         // reading it back as a tone either way would make a round trip invent a
         // decision, exactly as it would for the retry policy below.
         finishSound: o.finishSound ?? null,
+        // ‼️ M-30 — null is the real answer "this run says nothing about it, so
+        // the agent's default decides", and it is a DIFFERENT answer from
+        // `false`. Reading it back as a boolean either way would make a round
+        // trip freeze today's default onto a run that never chose one — the
+        // same defect the retry policy and the finish sound are guarded against
+        // here.
+        superpowers: o.superpowers ?? null,
         workDir: o.workDir ?? null,
         priority: o.priority ?? 0,
         project: o.projectId ? (projectName?.(o.projectId) ?? o.projectId) : null,
