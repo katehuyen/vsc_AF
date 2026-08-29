@@ -322,6 +322,7 @@ export function mergeModelRows(rows: LaunchChoice[]): LaunchChoice[] {
 export function readAgyCatalog(text: string | undefined): {
     models: LaunchChoice[];
     efforts: Record<string, LaunchChoice[]>;
+    defaultEffort: Record<string, string>;
 } | undefined {
     const lines = String(text ?? '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     if (!lines.length) { return undefined; }
@@ -351,6 +352,25 @@ export function readAgyCatalog(text: string | undefined): {
 
     const models: LaunchChoice[] = [DEFAULT_ROW];
     const efforts: Record<string, LaunchChoice[]> = {};
+    /**
+     * ‼️ X-145 — AND THE SAME ANSWER AGAIN, IN THE FIELD EVERY *OTHER* READER ASKS.
+     *
+     * The row below names the effort it will send, which fixed the PICKER. What
+     * it did not fix is the question `narrowLaunch` asks — `em.defaultEffort[model]`
+     * — because this engine's entry was left `{}` when Codex's was filled. So an
+     * effort of `''` (a fresh composer, a launcher row, a resumed session, a
+     * bridge call that named only a model) found no default to be completed to,
+     * survived narrowing untouched, and `agyModelArgs` then dropped the flag it
+     * had no value for:
+     *
+     *   invalid model selection (--model "gemini-3.7-flash" --effort ""):
+     *   --model gemini-3.7-flash requires --effort (available: low, medium, high)
+     *
+     * and the box on screen still read *Default → medium*, because a `<select>`
+     * whose value matches no option shows its first one. The label was right and
+     * the value behind it was empty — which is the failure this map closes.
+     */
+    const defaultEffort: Record<string, string> = {};
     for (const base of order) {
         const row = bases.get(base)!;
         models.push({
@@ -373,6 +393,7 @@ export function readAgyCatalog(text: string | undefined): {
             // "Default never stands alone"). `agyDefaultEffort` decides it, so
             // the words here and the command line cannot drift apart.
             const fallback = agyDefaultEffort(row.efforts);
+            defaultEffort[base] = fallback;
             efforts[base] = [
                 {
                     id: fallback, label: `Default → ${fallback}`,
@@ -393,7 +414,7 @@ export function readAgyCatalog(text: string | undefined): {
             ];
         }
     }
-    return { models, efforts };
+    return { models, efforts, defaultEffort };
 }
 
 /** `2026-08-10T06:57:08Z` → `10.08.2026` in the user's locale, or ''. */
@@ -505,7 +526,12 @@ export function readEngineModels(
             // ever be the wrong one; a model the catalog has never heard of gets
             // EFFORT_CHOICES through `effortsFor`, which is the honest guess.
             efforts: agyRows.efforts,
-            defaultEffort: {},
+            // ‼️ AND THIS ONE IS NOT `{}` (X-145). Every model here states its own
+            // vocabulary, and the models that state one CANNOT run without it —
+            // so the default a `''` effort completes to is per-model too, and
+            // leaving the map empty is what sent `--effort ""` to a CLI that
+            // refuses it.
+            defaultEffort: agyRows.defaultEffort,
             source: 'catalog',
             fetchedAt: agyCatalog?.fetchedAt,
             note: `${agyRows.models.length - 1} models, read from Antigravity's own \`agy models\` — the same list its picker offers. `
@@ -672,9 +698,39 @@ export function capabilityRefusal(
             + few.join(', ') + (known.length > few.length ? ', …' : '')
             + ' (engines.models has the full list) — pick one of those, or change the engine this runs on';
     }
-    if (!wantEffort || !engineTakesEffort(engine)) { return ''; }
+    if (!engineTakesEffort(engine)) { return ''; }
     const rows = effortsFor(em, row?.id ?? '');
-    const words = rows.filter(e => !!e.id).map(e => e.id);
+    // ‼️ DEDUPED, because a vocabulary row and the default row that RESOLVES to
+    // it are the same word twice: Antigravity's `medium, high, medium, low` is
+    // this list read literally, and a refusal that cannot list three settings
+    // without repeating one reads as a bug in the message rather than a fault
+    // in the row.
+    const words = [...new Set(rows.filter(e => !!e.id).map(e => e.id))];
+    /**
+     * ‼️ X-145 — A MISSING EFFORT IS ALSO A REFUSAL, ON AN ENGINE THAT SAYS SO.
+     *
+     * "No effort" reads as "let the CLI decide" on every other engine, and on
+     * Antigravity it is a fourth wrong answer: a model whose rows contain no
+     * empty one CANNOT be sent bare, and the CLI says exactly that —
+     * *--model gemini-3.7-flash requires --effort (available: low, medium,
+     * high)*. The pickers complete it themselves now (`defaultEffort` above),
+     * but a mission member, a task row or a bridge call states its dimensions
+     * WITHOUT narrowing, so this is the only place that can say so before the
+     * run. The catalogue's own shape is the test — no engine is named here.
+     *
+     * ‼️ AND IT IS THE MODEL'S OWN VOCABULARY THAT SAYS SO, NOT THE SHARED ONE.
+     * `effortsFor` falls back to the engine-wide list for a model the catalogue
+     * states nothing about, and that list carries no empty row on some engines —
+     * so reading it here would refuse a model whose requirements are simply
+     * unknown. Ignorance is not evidence; only an entry written for THIS model
+     * may refuse it.
+     */
+    const own = wantModel ? em.efforts[row?.id ?? ''] : undefined;
+    if (!wantEffort) {
+        if (!own || !own.length || own.some(e => e.id === '')) { return ''; }
+        return `model "${row?.id || wantModel}" cannot run without an effort — `
+            + `${label} refuses it bare, so name one of: ${words.join(', ')}`;
+    }
     // A model that states an EMPTY vocabulary takes no --effort at all; one that
     // states none is unknown, and unknown refuses nothing.
     if (!rows.length) {

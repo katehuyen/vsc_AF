@@ -2,6 +2,54 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.322.0 - S-46: Antigravity keeps its model, and its effort (2026-08-29)
+
+Choosing **Gemini 3.7 Flash** and pressing send got you a session that never
+started:
+
+```
+invalid model selection (--model "gemini-3.7-flash" --effort ""):
+--model gemini-3.7-flash requires --effort (available: low, medium, high)
+```
+
+while the effort box on screen read **Default → medium** the whole time. Both
+halves of that were true, which is why it was invisible: X-26 made the row NAME
+the effort it would send, but the field every reader actually asks —
+`defaultEffort[model]` — was left empty for this engine alone. So an effort of
+`''` had nothing to be completed to, survived every narrowing untouched, and the
+`<select>` showed its first option because its value matched none of them. The
+label was right and the value behind it was empty.
+
+- **The catalog now states the default effort per model**, derived by the same
+  call that writes the label, so the two cannot drift apart again. A model that
+  takes no `--effort` at all still gets none.
+- **And where nothing narrows** — a mission member, a task row, a bridge call —
+  a model that cannot run bare is now **refused before the run** instead of
+  dying at the CLI hours later. It is the catalogue's own shape that refuses,
+  not a named engine, and only a model's OWN vocabulary may do it: an engine
+  that says nothing about a model still refuses nothing.
+
+**‼️ And the second half of S-45, on the engine it never reached.** Resume
+inheritance was built and tested against the Claude parser alone, so an
+Antigravity conversation came back on the fleet default — the exact failure S-45
+exists to end, one engine over. This engine writes no model field anywhere; it
+staples a sentence to the user's step, and that sentence is the record:
+
+```
+The user changed setting `Model Selection` from None to Gemini 3.7 Flash (High).
+```
+
+Measured across every conversation on this machine: **105 of 111 transcripts now
+name their model and effort**, 15 of them having changed model mid-conversation,
+which is why the LAST setting is the one a resume takes. The sixth is
+`Claude Sonnet 4.6 (Thinking)` and it is deliberately left unread — that label is
+`claude-sonnet-4-6` while `Claude Opus 4.6 (Thinking)` is
+`claude-opus-4-6-thinking`, so the id is not derivable from the label and a
+resume that quietly runs the wrong model is worse than one that asks.
+
+`SESSION_PARSER_VERSION` is 3: without the bump every session already indexed
+would keep answering with no model, which is exactly the set that gets resumed.
+
 ## 3.321.0 - B-20: the notices board's own actions, on the bridge (2026-08-29)
 
 An agent could **post** a notice and then do nothing else with it. Four things

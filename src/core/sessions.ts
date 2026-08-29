@@ -769,7 +769,7 @@ const RECENT_MSG_SLACK = 4096;
  * every stored figure becomes a confident lie. Bump this whenever the parse
  * changes and every index on every machine rebuilds itself once, quietly.
  */
-export const SESSION_PARSER_VERSION = 2;
+export const SESSION_PARSER_VERSION = 3;
 
 /** How long the walk may run before it lets the host answer something else. */
 const SCAN_BREATH_MS = 12;

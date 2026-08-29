@@ -1248,6 +1248,59 @@ function agyPromptText(content: string): string {
     return (m ? m[1] : content).trim();
 }
 
+/**
+ * ‼️ S-46 — WHERE ANTIGRAVITY SAYS WHICH MODEL IT IS RUNNING, AND IT IS NOT A FIELD.
+ *
+ * S-45 gave every session its `lastModel` and `effort` and did it in the Claude
+ * parser only, so an Antigravity conversation came back from a resume as
+ * Default/medium whatever it had actually been — the fleet default wearing the
+ * session's name. This engine's step log has no model field at all; what it has
+ * is a sentence the CLI staples to the USER_INPUT step (measured on this
+ * machine, 144 occurrences across 106 conversations):
+ *
+ *   <USER_SETTINGS_CHANGE>
+ *   The user changed setting `Model Selection` from None to Gemini 3.7 Flash (High).
+ *   …
+ *   </USER_SETTINGS_CHANGE>
+ *
+ * ‼️ IT NAMES THE HUMAN LABEL, NOT THE ID — and the id is only derivable for
+ * the models whose parenthetical is an EFFORT. `Gemini 3.7 Flash (High)` is
+ * `gemini-3.7-flash` at `high` and every effort-bearing row in the real catalog
+ * follows that rule (measured against `agy models`: 3.7/3.6/3.5 Flash, 3.1 Pro,
+ * GPT-OSS 120B — five of five). The rows whose parenthetical is something else
+ * do NOT: `Claude Sonnet 4.6 (Thinking)` is `claude-sonnet-4-6` while
+ * `Claude Opus 4.6 (Thinking)` is `claude-opus-4-6-thinking`, two identical
+ * labels mapping two different ways. So those are left unread rather than
+ * guessed — a wrong id is dropped by `narrowLaunch` anyway, and a resume that
+ * quietly runs the wrong model is the failure this whole field exists to end.
+ *
+ * ‼️ THE BACKTICKS ARE PART OF THE PATTERN, and they are load-bearing: the one
+ * conversation on this machine that carries this sentence WITHOUT being a
+ * setting change is a person quoting it inside a fenced code block, and it uses
+ * straight quotes. A quote that reproduces the CLI's own wording exactly would
+ * still be read as a change, which is a limit of reading prose and is stated
+ * rather than papered over.
+ */
+// ‼️ THE SENTENCE ENDS AT A FULL STOP FOLLOWED BY SPACE, not at the first dot:
+// every model here has a version number in its name (`Gemini 3.7 Flash`) and a
+// pattern that stops at any `.` reads it as "Gemini 3".
+const AGY_MODEL_SETTING = /changed setting `Model Selection` from .{1,80}? to (.{1,80}?)\.(?=\s|$)/g;
+
+export function agyModelSetting(content: string): { model: string; effort: string } | undefined {
+    const text = String(content ?? '');
+    if (!text.includes('USER_SETTINGS_CHANGE')) { return undefined; }
+    let last = '';
+    AGY_MODEL_SETTING.lastIndex = 0;
+    for (let m = AGY_MODEL_SETTING.exec(text); m; m = AGY_MODEL_SETTING.exec(text)) {
+        last = m[1].trim();
+    }
+    if (!last || /^none$/i.test(last)) { return undefined; }
+    const paren = /^(.*?)\s*\(\s*(low|medium|high)\s*\)$/i.exec(last);
+    if (!paren) { return undefined; }
+    const model = paren[1].trim().toLowerCase().replace(/\s+/g, '-');
+    return model ? { model, effort: paren[2].toLowerCase() } : undefined;
+}
+
 /** One conversation folder → one row, or nothing when the log is unreadable. */
 function parseAgyTranscript(
     file: string, id: string,
@@ -1275,6 +1328,11 @@ function parseAgyTranscript(
 
     let firstPrompt = '';
     let pending: AgyToolCall | undefined;
+    // S-46 — what this conversation was actually run on. A set in first-seen
+    // order, exactly as every other parser keeps it, and the LAST one seen is
+    // the setting a resume inherits (SessionInfo.lastModel).
+    const models = new Set<string>();
+    let lastModel = '', lastEffort = '';
     // ‼️ S-40 — the conversation unrolled into turns. Antigravity's step log
     // states the boundary (`USER_INPUT`) and the work (announcements, planner
     // prose, tool steps, failures) but publishes NO tokens and NO price, so the
@@ -1286,6 +1344,15 @@ function parseAgyTranscript(
         const failed = agyStepFailed(s);
         if (failed) { info.errors++; }
         if (s.type === 'USER_INPUT') {
+            // ‼️ READ BEFORE THE PROMPT IS UNWRAPPED. The settings sentence sits
+            // OUTSIDE `<USER_REQUEST>`, so `agyPromptText` has already thrown it
+            // away — and a step whose request is empty still carries it.
+            const dims = agyModelSetting(String(s.content ?? ''));
+            if (dims) {
+                models.add(dims.model);
+                lastModel = dims.model;
+                lastEffort = dims.effort;
+            }
             const text = agyPromptText(String(s.content ?? ''));
             if (!text) { continue; }
             info.userTurns++;
@@ -1323,6 +1390,12 @@ function parseAgyTranscript(
             pending = undefined;
         }
     }
+
+    // An engine that never said which model it was on says nothing, rather than
+    // the fleet default wearing this session's name (S-45's own rule).
+    if (models.size) { info.models = [...models]; }
+    if (lastModel) { info.lastModel = lastModel; }
+    if (lastEffort) { info.effort = lastEffort; }
 
     const hint = hints.byId.get(id);
     /**

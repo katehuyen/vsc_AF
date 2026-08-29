@@ -459,5 +459,82 @@ function runAll(lines) {
         without.agy.source === 'settings' && /almost certainly wrong/.test(without.agy.note));
 }
 
+// ---------- X-145: the default the OTHER readers ask for ----------
+//
+// ‼️ THE BUG THIS BLOCK EXISTS FOR, IN ONE LINE: the picker said `Default →
+// medium` and sent `--effort ""`. The row's label was fixed by X-26; the field
+// `narrowLaunch`, the Console composer and the tasks page actually read —
+// `defaultEffort[model]` — was left `{}` for this engine alone, so an empty
+// effort had nothing to be completed to and survived every narrowing. The
+// `<select>` then showed its first option because its value matched none of
+// them, which is why the screen and the command line disagreed silently.
+{
+    const CATALOG = [
+        'gemini-3.7-flash-high\tGemini 3.7 Flash (High)',
+        'gemini-3.7-flash-medium\tGemini 3.7 Flash (Medium)',
+        'gemini-3.7-flash-low\tGemini 3.7 Flash (Low)',
+        'gemini-3.1-pro-high\tGemini 3.1 Pro (High)',
+        'gemini-3.1-pro-low\tGemini 3.1 Pro (Low)',
+        'claude-sonnet-4-6\tClaude Sonnet 4.6 (Thinking)',
+        'gpt-oss-120b-medium\tGPT-OSS 120B (Medium)'
+    ].join('\n');
+    const cat = M.readAgyCatalog(CATALOG);
+    ok('‼️ the catalog states the default effort, not only the word on the label',
+        cat.defaultEffort['gemini-3.7-flash'] === 'medium'
+        // no middle setting on pro, so the default is the cheaper end
+        && cat.defaultEffort['gemini-3.1-pro'] === 'low'
+        && cat.defaultEffort['gpt-oss-120b'] === 'medium');
+    ok('…and states none for a model that takes no --effort at all',
+        !('claude-sonnet-4-6' in cat.defaultEffort));
+    // The label and the value behind it are now derived from the same call, so
+    // they cannot drift apart again.
+    ok('‼️ the row\'s label and the default it resolves to are one answer',
+        cat.efforts['gemini-3.7-flash'][0].id === cat.defaultEffort['gemini-3.7-flash']);
+
+    const probe = {
+        readHome: () => undefined, existsHome: () => false,
+        which: () => undefined, hasSecret: () => false, hasEnv: () => false
+    };
+    const em = M.readEngineModels(probe, ['sonnet'], { text: CATALOG, fetchedAt: Date.now() }).agy;
+    ok('…and it reaches the matrix every picker reads',
+        em.defaultEffort['gemini-3.7-flash'] === 'medium');
+
+    // ‼️ THE FAILURE ITSELF, AS A TEST. This is the exact pair the user's
+    // session was launched with, and the exact value that killed it.
+    const narrowed = M.narrowLaunch(em, 'gemini-3.7-flash', '');
+    ok('‼️ an empty effort on a model that requires one becomes that model\'s default',
+        narrowed.model === 'gemini-3.7-flash' && narrowed.effort === 'medium');
+    ok('‼️ …and the command line then carries the flag the CLI insists on',
+        G.agyModelArgs(narrowed.model, narrowed.effort)
+            .join(' ') === '--model gemini-3.7-flash --effort medium');
+    // The mirror: a model with no effort vocabulary must NOT gain one, because
+    // `--model claude-sonnet-4-6 --effort medium` is refused just as loudly.
+    ok('…while a model that takes no effort is still sent bare',
+        M.narrowLaunch(em, 'claude-sonnet-4-6', '').effort === ''
+        && G.agyModelArgs('claude-sonnet-4-6', '').join(' ') === '--model claude-sonnet-4-6');
+    // An effort the model does not have is corrected to its own default rather
+    // than dropped — pro has low/high, so a kept `medium` becomes `low`.
+    ok('an effort the new model never had becomes ITS default, not nothing',
+        M.narrowLaunch(em, 'gemini-3.1-pro', 'medium').effort === 'low');
+
+    // ‼️ AND WHERE NOTHING NARROWS — a mission member, a task row, a bridge call
+    // — the same knowledge is stated as a refusal instead of a silent death.
+    const bare = M.capabilityRefusal(em, 'agy', 'gemini-3.7-flash', '');
+    ok('‼️ a bare model is refused before the run, by the catalog\'s own shape',
+        /cannot run without an effort/.test(bare) && /medium, high, low/.test(bare));
+    // The default row resolves to a word the vocabulary already contains, so a
+    // refusal that lists the rows literally says `medium, high, medium, low`.
+    ok('…and it names each setting once, not once per row that offers it',
+        !/medium.*medium/.test(bare));
+    ok('…and a model that takes none is not refused for lacking one',
+        M.capabilityRefusal(em, 'agy', 'claude-sonnet-4-6', '') === '');
+    // No engine is named in that rule, so the engines whose "Default" is a real
+    // state must stay untouched: an empty row in the vocabulary means "no flag".
+    const claude = M.readEngineModels(probe, ['sonnet']).claude;
+    ok('‼️ …and "no effort" is still a valid answer everywhere it means one',
+        M.capabilityRefusal(claude, 'claude', 'sonnet', '') === ''
+        && M.capabilityRefusal(em, 'agy', '', '') === '');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

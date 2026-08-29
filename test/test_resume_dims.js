@@ -50,6 +50,7 @@ Module._load = function (request) {
 };
 const S = require(path.join(ROOT, 'out', 'core', 'sessions.js'));
 const { narrowLaunch } = require(path.join(ROOT, 'out', 'core', 'models.js'));
+const CT = require(path.join(ROOT, 'out', 'core', 'cliTranscripts.js'));
 Module._load = origLoad;
 
 const { parseSessionFile, lastRunDimensions, SESSION_PARSER_VERSION } = S;
@@ -260,6 +261,78 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
         && /if \(!o\.permissionMode && inherit\.permissionMode\)/.test(ex));
     ok('…and says so in its describe, because that is all an agent reads',
         /resume\? \(session id[^)]*inherited from its transcript/.test(ex));
+}
+
+// ============================ 7. S-46 — and the engine S-45 never reached
+//
+// ‼️ THE HALF THAT WAS MISSING. S-45 was built and tested against the Claude
+// parser alone, so an Antigravity conversation still came back from a resume on
+// the fleet default: the exact failure S-45 exists to end, on a different
+// engine. This engine writes no model field at all — it staples a SENTENCE to
+// the USER_INPUT step, and the sentence is the record.
+//
+// Every string below is verbatim from `~/.gemini/antigravity-cli/brain`.
+{
+    // The captured shape: the ask inside <USER_REQUEST>, the setting after it.
+    const said = (from, to) => '<USER_REQUEST>\ndo the thing\n</USER_REQUEST>\n'
+        + '<ADDITIONAL_METADATA>\nThe current local time is: 2026-08-19T11:40:30+07:00.\n</ADDITIONAL_METADATA>\n'
+        + '<USER_SETTINGS_CHANGE>\nThe user changed setting `Model Selection` from '
+        + `${from} to ${to}. No need to comment on this change if the user doesn't ask about it. `
+        + 'If reporting what model you are, please use a human readable name instead of the exact string.\n'
+        + '</USER_SETTINGS_CHANGE>';
+
+    eq('‼️ the human label is split back into the id and the effort the CLI takes',
+        CT.agyModelSetting(said('None', 'Gemini 3.7 Flash (High)')),
+        { model: 'gemini-3.7-flash', effort: 'high' });
+    // ‼️ THE VERSION DOT IS THE TRAP. A pattern that stops at the first `.`
+    // reads this model as "Gemini 3", which resolves to nothing and looks like
+    // "the engine did not say" rather than like a broken parse.
+    eq('…including the dot in the version, which is part of the id',
+        CT.agyModelSetting(said('None', 'Gemini 3.1 Pro (Low)')).model, 'gemini-3.1-pro');
+    eq('a model changed mid-conversation is read as the LAST one, not the first',
+        CT.agyModelSetting(said('None', 'Gemini 3.7 Flash (High)') + '\n'
+            + said('Gemini 3.7 Flash (High)', 'Gemini 3.6 Flash (Low)')),
+        { model: 'gemini-3.6-flash', effort: 'low' });
+    // ‼️ AND WHAT IT REFUSES TO GUESS. `Claude Sonnet 4.6 (Thinking)` is
+    // `claude-sonnet-4-6` while `Claude Opus 4.6 (Thinking)` is
+    // `claude-opus-4-6-thinking` — two identical parentheticals mapping two
+    // different ways, so the label does not derive the id and nothing is
+    // invented. Measured: this is the ONE label of 106 that goes unread.
+    ok('‼️ a label whose id is not derivable says nothing rather than a wrong id',
+        CT.agyModelSetting(said('None', 'Claude Sonnet 4.6 (Thinking)')) === undefined);
+    ok('a conversation that never changed the setting says nothing',
+        CT.agyModelSetting('<USER_REQUEST>\nhello\n</USER_REQUEST>') === undefined
+        && CT.agyModelSetting(said('Gemini 3.7 Flash (High)', 'None')) === undefined);
+
+    // End to end, through the source the Sessions table actually reads.
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'af-s46-'));
+    const conv = path.join(home, 'brain', 'conv-agy', '.system_generated', 'logs');
+    fs.mkdirSync(conv, { recursive: true });
+    const t0 = Date.parse('2026-08-19T11:40:30Z');
+    const iso = ms => new Date(ms).toISOString().replace('.000Z', 'Z');
+    fs.writeFileSync(path.join(conv, 'transcript.jsonl'), [
+        { step_index: 0, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', created_at: iso(t0), content: said('None', 'Gemini 3.7 Flash (High)') },
+        { step_index: 1, source: 'MODEL', type: 'PLANNER_RESPONSE', status: 'DONE', created_at: iso(t0 + 1000), content: 'done' },
+        { step_index: 2, source: 'USER_EXPLICIT', type: 'USER_INPUT', status: 'DONE', created_at: iso(t0 + 2000), content: said('Gemini 3.7 Flash (High)', 'Gemini 3.6 Flash (Low)') }
+    ].map(o => JSON.stringify(o)).join('\n') + '\n', 'utf8');
+    const row = CT.agySessionsSource(() => home, () => ({}), undefined, 0).scan()[0];
+    eq('‼️ the row carries the model that answered LAST, which is what a resume takes',
+        [row.lastModel, row.effort], ['gemini-3.6-flash', 'low']);
+    // `models` stays the honest answer to "what has served it" — a set in
+    // first-seen order, so its last element is NOT the current model.
+    eq('…while `models` still names everything it ran on, in the order it did',
+        row.models, ['gemini-3.7-flash', 'gemini-3.6-flash']);
+    eq('…and the resume ladder reads the pair off the row unchanged',
+        lastRunDimensions(row), { model: 'gemini-3.6-flash', effort: 'low' });
+    // The whole point: with the catalogue in hand the pair survives narrowing,
+    // which is where a bare model would have lost its effort and died at the CLI.
+    fs.rmSync(home, { recursive: true, force: true });
+
+    // ‼️ AND THE SAME BUMP AGAIN, FOR THE SAME REASON. Every agy session on this
+    // machine is already cached from a build that read no model; without a new
+    // version they stay modelless for ever, because their files never change.
+    ok('SESSION_PARSER_VERSION was bumped past the build that read no agy model',
+        SESSION_PARSER_VERSION >= 3);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
