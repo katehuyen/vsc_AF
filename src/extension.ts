@@ -1363,7 +1363,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * addition to it, reported on `spoke`; a synthesiser that failed must
          * not turn an alert the user actually heard into a failed one.
          */
-        const spk = speakCfg();
+        /**
+         * ‼️ A-20 — THIS CONVERSATION'S OWN VOICE BEATS THE FLEET'S.
+         *
+         * One voice for eight lanes is the wrong shape the moment two of them
+         * are worth telling apart BY EAR — a Turkish voice for the agent whose
+         * questions are in Turkish, another for the rest, and the difference
+         * carries from the next room without a word being understood. Same
+         * shape as the tone chain: the session answers first, and having no
+         * opinion falls through to the fleet rather than to silence.
+         */
+        const fleet = speakCfg();
+        const own = s ? turnAlerts.speechVoiceFor(s.sessionId) : '';
+        const spk = own ? { ...fleet, voice: own } : fleet;
         const ticket = await alertArbiter.submit(key, event, async () => {
             const tone = await playTurnSound(file);
             if (!speaks(spk, event)) { return tone; }
@@ -9324,12 +9336,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'alerts.speak',
-            describe: 'SESLİ ANONS — the fleet says WHICH agent out loud (`agentFarm.alerts.speak`). A tone answers "what kind of news is this?" and nothing else; with eight lanes running the question from the next room is WHICH ONE, and no palette can carry a name. Local and free: Windows `System.Speech`, macOS `say`, Linux `spd-say` — no network, no account, no model. It rides BEHIND the tone in the same queue ticket, so nothing plays between a chime and the sentence explaining it, and it goes through the same mute, quiet hours and session mute. Ships OFF, and out of the box announces only `question` — the one event where an agent is STOPPED. Read it with no args and the answer also lists the voices this machine actually has: a Turkish sentence read by an en-US voice is unintelligible, and the language packs are free (Windows ▸ Settings ▸ Time & language ▸ Speech ▸ Add voices). args: on? · events? (subset of turn-ready/question/stalled/ended/error) · template? ({agent}, {event}, {session}; anything else is spoken as typed, so a mistyped placeholder is HEARD rather than swallowed) · rate? (−10…10) · volume? (0…100) · voice? (an installed voice name, empty = system default) · say? (a text to speak RIGHT NOW as a test, gate and queue bypassed)',
+            describe: 'SESLİ ANONS — the fleet says WHICH agent out loud (`agentFarm.alerts.speak`). A tone answers "what kind of news is this?" and nothing else; with eight lanes running the question from the next room is WHICH ONE, and no palette can carry a name. Local and free: Windows `System.Speech`, macOS `say`, Linux `spd-say` — no network, no account, no model. It rides BEHIND the tone in the same queue ticket, so nothing plays between a chime and the sentence explaining it, and it goes through the same mute, quiet hours and session mute. Ships OFF, and out of the box announces only `question` — the one event where an agent is STOPPED. Read it with no args and the answer also lists the voices this machine actually has: a Turkish sentence read by an en-US voice is unintelligible, and the language packs are free (Windows ▸ Settings ▸ Time & language ▸ Speech ▸ Add voices). args: on? · events? (subset of turn-ready/question/stalled/ended/error) · template? ({agent}, {event}, {session}; anything else is spoken as typed, so a mistyped placeholder is HEARD rather than swallowed) · rate? (−10…10) · volume? (0…100) · voice? (a voice NAME matched loosely — "Tolga" finds "Microsoft Tolga - Turkish (Turkey)" — or a token registry id; empty = system default. ‼️ BOTH of Windows’ voice registries are searched, so a language pack installed from Settings, which `System.Speech` cannot even list, is selectable here) · sessionId? (‼️ with one, `voice` is written on THAT CONVERSATION and beats the fleet setting — so the agent whose questions are in Turkish can be announced in Turkish while the rest are not. Passing it alone READS that session’s own choice; an empty voice CLEARS it back to the fleet, which is not silence) · say? (a text to speak RIGHT NOW as a test, gate and queue bypassed)',
             handler: async (args) => {
                 const raw = args as {
                     on?: unknown; events?: unknown; template?: unknown;
                     rate?: unknown; volume?: unknown; voice?: unknown; say?: unknown;
+                    sessionId?: unknown;
                 };
+                /**
+                 * ‼️ `sessionId` MAKES `voice` A DIFFERENT SETTING ENTIRELY.
+                 *
+                 * With one, the name is written on THIS conversation and beats
+                 * the fleet's; without one it IS the fleet's. Same argument,
+                 * two scopes — the shape `alerts.voice.set` already uses for
+                 * tones, so there is one idea to learn rather than two.
+                 */
+                const sid = String(raw.sessionId ?? '').trim();
+                if (sid) {
+                    if (raw.voice === undefined) {
+                        return {
+                            sessionId: sid,
+                            voice: turnAlerts.speechVoiceFor(sid),
+                            fleet: speakCfg().voice,
+                            line: turnAlerts.speechVoiceFor(sid)
+                                ? `This session is announced in ${turnAlerts.speechVoiceFor(sid)}`
+                                : 'This session has no voice of its own — the fleet setting answers'
+                        };
+                    }
+                    const set = turnAlerts.setSpeechVoice(sid, String(raw.voice));
+                    await turnAlerts.flush();
+                    const now = turnAlerts.speechVoiceFor(sid);
+                    return {
+                        ...set,
+                        sessionId: sid,
+                        voice: now,
+                        fleet: speakCfg().voice,
+                        line: now
+                            ? `This session is announced in ${now}`
+                            : 'Cleared — the fleet setting answers again (this is not silence)'
+                    };
+                }
                 const cur = speakCfg();
                 const touched = ['on', 'events', 'template', 'rate', 'volume', 'voice']
                     .some(k => (raw as Record<string, unknown>)[k] !== undefined);

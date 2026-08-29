@@ -2,6 +2,48 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.310.0 - A-20: every voice on the machine, and one per conversation (2026-08-29)
+
+3.309.0 shipped the announcement and told the user their machine had only two
+en-US voices. That was wrong, and the user said so.
+
+**Windows keeps its voices in TWO registries and `System.Speech` sees one.**
+SAPI 5 reads `Speech\Voices\Tokens` — David and Zira, en-US. Every voice a user
+has ever installed from Settings goes to `Speech_OneCore\Voices\Tokens`, and
+`SelectVoice` can neither list nor choose one. Measured on this machine: SAPI 5
+had two voices, OneCore had four — one of them **`Microsoft Tolga — Turkish`,
+already installed and completely unreachable.** So the advice the last release
+printed ("install a language pack") was for a problem the user did not have.
+
+**The COM server underneath reaches both.** `SpVoice.GetVoices()` enumerates
+the SAPI 5 set only, but `SpObjectToken.SetId(<registry path>)` loads ANY token
+by id, OneCore included — verified out loud, in Turkish, before it was written.
+The Windows backend is now that, walking both registries to find a voice by
+name: **`Tolga` finds `Microsoft Tolga - Turkish (Turkey)`.** Every voice on the
+machine is selectable, in every language it has.
+
+**The voice list says what it really is.** Six rows here, each with its culture
+and which registry it came from, sorted by language — because the question a
+reader brings to the list is "is there one that speaks mine?".
+
+**A name nothing answers now FAILS, by name.** The old code caught the error and
+fell back to the system default, so somebody who asked for a Turkish voice got
+an English one and was told it worked. A wrong voice is not a smaller failure
+than no voice; it is a harder one to diagnose.
+
+**And a conversation can have its own voice.** One voice for eight lanes is the
+wrong shape the moment two of them are worth telling apart by ear: the agent
+whose questions are in Turkish is announced in Turkish while the rest are not,
+and the difference carries from the next room without a word being understood.
+Same chain as the tones — the session answers first, and having no opinion falls
+through to the fleet rather than to silence. `alerts.speak { sessionId, voice }`
+sets it, reads it, and clears it.
+
+Underneath, the three sticky per-session fields (the chosen tone, the mute, and
+now the voice) are carried by **one helper** instead of three spread expressions
+repeated in three setters — a rule that held only until somebody added a fourth
+field and updated two of them.
+
 ## 3.309.0 - A-20: the fleet can say which agent (2026-08-29)
 
 The third part of A-20. Twenty voices answer "what KIND of news is this?" and

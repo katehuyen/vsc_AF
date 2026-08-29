@@ -164,31 +164,123 @@ export function speaks(cfg: SpeakConfig, event: AlertEvent): boolean {
  * process, so a backend that returned as soon as it started talking would let
  * the next agent's chime land in the middle of this one's sentence.
  */
+/**
+ * ‼️ WINDOWS KEEPS ITS VOICES IN TWO REGISTRIES, AND THE .NET WRAPPER SEES ONE.
+ *
+ * `System.Speech` is SAPI 5 and enumerates
+ * `HKLM\SOFTWARE\Microsoft\Speech\Voices\Tokens` — on a normal Windows 10 that
+ * is `Microsoft David` and `Microsoft Zira`, both en-US, and nothing else.
+ * Every voice a user has ever added from Settings goes to
+ * `Speech_OneCore\Voices\Tokens` instead, and `SelectVoice` can neither list
+ * nor choose one. Measured on the machine this was written on: SAPI 5 had two
+ * voices, OneCore had four, one of them `Microsoft Tolga — Turkish`, installed
+ * and completely unreachable. Telling that user to install a language pack —
+ * which is what the first version of this did — was advice for a problem they
+ * did not have.
+ *
+ * The COM server underneath can reach both. `SpVoice.GetVoices()` enumerates
+ * the SAPI 5 set only, but `SpObjectToken.SetId(<registry path>)` will load ANY
+ * token by id, OneCore included — verified out loud, in Turkish, before this
+ * was written. So the voice is found by walking BOTH registries here, which
+ * makes every voice on the machine selectable in every language it has.
+ *
+ * ‼️ AND A NAME NOBODY ANSWERS IS `exit 5`, NOT A SHRUG. The wrapper's
+ * `try { SelectVoice } catch { }` fell back to the system default, so a user
+ * who asked for a Turkish voice and got an English one was told it worked. A
+ * wrong voice is not a smaller failure than no voice; it is a harder one to
+ * diagnose.
+ *
+ * ‼️ `Speak` IS SYNCHRONOUS (`SpeakAsync` is not used), because the alert queue
+ * measures its gap from the END of a player's process.
+ */
+const VOICE_TOKEN_ROOTS = [
+    'HKLM:\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens',
+    'HKLM:\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens'
+];
+
+const SPVOICE_SCRIPT =
+    'if (-not $env:AF_SPEAK_TEXT) { exit 4 };'
+    + '$v = New-Object -ComObject SAPI.SpVoice;'
+    + 'if ($env:AF_SPEAK_VOICE) {'
+    + '  $want = $env:AF_SPEAK_VOICE; $got = $false;'
+    + '  $tok = New-Object -ComObject SAPI.SpObjectToken;'
+    + '  if ($want.StartsWith("HKEY_")) {'
+    + '    try { $tok.SetId($want); $v.Voice = $tok; $got = $true } catch { }'
+    + '  };'
+    + `  foreach ($root in @('${VOICE_TOKEN_ROOTS.join("','")}')) {`
+    + '    if ($got) { break };'
+    + '    foreach ($k in (Get-ChildItem $root -ErrorAction SilentlyContinue)) {'
+    + '      $n = (Get-ItemProperty $k.PSPath).\'(default)\';'
+    + '      if ($n -and $n.ToLower().Contains($want.ToLower())) {'
+    + '        try { $tok.SetId($k.Name); $v.Voice = $tok; $got = $true; break } catch { }'
+    + '      }'
+    + '    }'
+    + '  };'
+    + '  if (-not $got) { exit 5 }'
+    + '};'
+    + '$v.Rate = [int]$env:AF_SPEAK_RATE;'
+    + '$v.Volume = [int]$env:AF_SPEAK_VOLUME;'
+    + '$v.Speak($env:AF_SPEAK_TEXT) | Out-Null';
+
 export function speakCandidates(platform: string, text: string, cfg: SpeakConfig): PlayerCandidate[] {
     if (platform === 'win32') {
-        return [{
-            backend: 'powershell:SpeechSynthesizer',
-            file: 'powershell',
-            args: [
-                '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                '-Command',
-                'Add-Type -AssemblyName System.Speech;'
-                + '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;'
-                + 'if ($env:AF_SPEAK_VOICE) { try { $s.SelectVoice($env:AF_SPEAK_VOICE) } catch { } };'
-                + '$s.Rate = [int]$env:AF_SPEAK_RATE;'
-                + '$s.Volume = [int]$env:AF_SPEAK_VOLUME;'
-                + 'if (-not $env:AF_SPEAK_TEXT) { exit 4 };'
-                + '$s.Speak($env:AF_SPEAK_TEXT);'
-                + '$s.Dispose()'
-            ],
-            env: {
-                AF_SPEAK_TEXT: text,
-                AF_SPEAK_VOICE: cfg.voice,
-                AF_SPEAK_RATE: String(cfg.rate),
-                AF_SPEAK_VOLUME: String(cfg.volume)
+        return [
+            {
+                backend: 'sapi:SpVoice',
+                file: 'powershell',
+                args: [
+                    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                    '-Command', SPVOICE_SCRIPT
+                ],
+                env: {
+                    AF_SPEAK_TEXT: text,
+                    AF_SPEAK_VOICE: cfg.voice,
+                    AF_SPEAK_RATE: String(cfg.rate),
+                    AF_SPEAK_VOLUME: String(cfg.volume)
+                },
+                codes: {
+                    4: 'there was nothing to say — the template rendered empty',
+                    5: 'no installed voice matched that name'
+                        + ' — `alerts.speak` lists what this machine has'
+                }
             },
-            codes: { 4: 'there was nothing to say — the template rendered empty' }
-        }];
+            {
+                // ‼️ THE FALLBACK CANNOT REACH A ONECORE VOICE and that is
+                // accepted rather than hidden: it is here for a machine where
+                // the COM server is unavailable, where speaking in the WRONG
+                // voice still beats silence, and the result names the backend
+                // that spoke so the difference is visible.
+                backend: 'powershell:SpeechSynthesizer',
+                file: 'powershell',
+                args: [
+                    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+                    '-Command',
+                    'if (-not $env:AF_SPEAK_TEXT) { exit 4 };'
+                    + 'Add-Type -AssemblyName System.Speech;'
+                    + '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;'
+                    + 'if ($env:AF_SPEAK_VOICE) {'
+                    + '  $got = $false;'
+                    + '  try { $s.SelectVoice($env:AF_SPEAK_VOICE); $got = $true } catch { };'
+                    + '  if (-not $got) { exit 5 }'
+                    + '};'
+                    + '$s.Rate = [int]$env:AF_SPEAK_RATE;'
+                    + '$s.Volume = [int]$env:AF_SPEAK_VOLUME;'
+                    + '$s.Speak($env:AF_SPEAK_TEXT);'
+                    + '$s.Dispose()'
+                ],
+                env: {
+                    AF_SPEAK_TEXT: text,
+                    AF_SPEAK_VOICE: cfg.voice,
+                    AF_SPEAK_RATE: String(cfg.rate),
+                    AF_SPEAK_VOLUME: String(cfg.volume)
+                },
+                codes: {
+                    4: 'there was nothing to say — the template rendered empty',
+                    5: 'no installed voice matched that name'
+                        + ' — `alerts.speak` lists what this machine has'
+                }
+            }
+        ];
     }
     if (platform === 'darwin') {
         // `say`'s rate is words per minute, not SAPI's −10..10; 175 is its own
@@ -230,12 +322,11 @@ export function speakCandidates(platform: string, text: string, cfg: SpeakConfig
  * the machine has no voices at all.
  */
 export const SPEECH_ONECORE_NOTE =
-    'These are the SAPI 5 voices, which is all `System.Speech` can select.'
-    + ' Windows 10/11 keeps a second, modern set under `Speech_OneCore` —'
-    + ' that is where an installed language pack (Turkish, German, …) goes, and'
-    + ' this player cannot reach it. If your language is missing here, it is'
-    + ' very likely already installed and simply invisible to this engine:'
-    + ' check `HKLM\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens`.';
+    'Both of Windows\' voice registries are listed: the classic SAPI 5 set and'
+    + ' the modern OneCore set, which is where every language pack installed'
+    + ' from Settings goes. Both are selectable. If a language you want is'
+    + ' missing from this list it really is not installed —'
+    + ' Settings ▸ Time & language ▸ Speech ▸ Add voices, and they are free.';
 
 export function voiceListCandidate(platform: string): PlayerCandidate | null {
     if (platform !== 'win32') { return null; }
@@ -245,22 +336,54 @@ export function voiceListCandidate(platform: string): PlayerCandidate | null {
         args: [
             '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
             '-Command',
-            'Add-Type -AssemblyName System.Speech;'
-            + '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;'
-            + '$s.GetInstalledVoices() | ForEach-Object {'
-            + ' $i = $_.VoiceInfo; Write-Output ($i.Name + [char]9 + $i.Culture) };'
-            + '$s.Dispose()'
+            `foreach ($r in @(@('onecore','${VOICE_TOKEN_ROOTS[0]}'),`
+            + ` @('sapi5','${VOICE_TOKEN_ROOTS[1]}'))) {`
+            + '  foreach ($k in (Get-ChildItem $r[1] -ErrorAction SilentlyContinue)) {'
+            + '    $n = (Get-ItemProperty $k.PSPath).\'(default)\';'
+            + '    $c = \'\';'
+            + '    try {'
+            + '      $a = Get-ItemProperty ($k.PSPath + \'\\Attributes\') -ErrorAction Stop;'
+            + '      $c = [System.Globalization.CultureInfo]::GetCultureInfo('
+            + '        [Convert]::ToInt32((($a.Language -split \';\')[0]), 16)).Name'
+            + '    } catch { $c = \'\' };'
+            + '    if ($n) { Write-Output ($k.Name + [char]9 + $n + [char]9 + $c + [char]9 + $r[0]) }'
+            + '  }'
+            + '}'
         ]
     };
 }
 
-/** One installed voice, as the page shows it. */
-export interface InstalledVoice { name: string; culture: string }
+/** One installed voice, as a picker shows it. */
+export interface InstalledVoice {
+    /** The token's registry path — unambiguous, and what `SetId` takes. */
+    id: string;
+    name: string;
+    /** `tr-TR`, read from the token's own attributes. Empty if it has none. */
+    culture: string;
+    /** Which of Windows' two registries it came from. */
+    engine: 'onecore' | 'sapi5';
+}
 
-/** Parse what `voiceListCandidate` prints. Tab-separated, one per line. */
+/**
+ * Parse what `voiceListCandidate` prints: `id⇥name⇥culture⇥engine`, one a line.
+ *
+ * Sorted by culture then name, because the question a reader brings to this
+ * list is "is there one that speaks MY language" and registry order answers a
+ * different one. A voice with no culture sorts last rather than first — it is
+ * the least informative row, not the most.
+ */
 export function parseVoiceList(stdout: string): InstalledVoice[] {
     return String(stdout || '').split(/\r?\n/)
         .map(l => l.split('\t'))
-        .filter(p => p.length >= 2 && p[0].trim())
-        .map(p => ({ name: p[0].trim(), culture: p[1].trim() }));
+        .filter(p => p.length >= 4 && p[0].trim() && p[1].trim())
+        .map(p => ({
+            id: p[0].trim(),
+            name: p[1].trim(),
+            culture: p[2].trim(),
+            engine: (p[3].trim() === 'sapi5' ? 'sapi5' : 'onecore') as 'onecore' | 'sapi5'
+        }))
+        .sort((a, b) =>
+            (a.culture ? 0 : 1) - (b.culture ? 0 : 1)
+            || a.culture.localeCompare(b.culture)
+            || a.name.localeCompare(b.name));
 }

@@ -97,22 +97,41 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'turnAlerts.js'));
     const cfg = S.speakConfig({ voice: 'Microsoft Zira Desktop', rate: 3, volume: 80 });
 
     const win = S.speakCandidates('win32', evil, cfg);
-    eq('windows speaks through System.Speech, which every install has had for'
-        + ' twenty years', win.map(c => c.backend), ['powershell:SpeechSynthesizer']);
-    ok('‼️ the text is NOT interpolated into the command — it travels as an'
-        + ' environment variable',
-        win[0].args.every(a => a.indexOf(evil) < 0) && win[0].env.AF_SPEAK_TEXT === evil);
-    ok('…and so do the voice, the rate and the volume',
-        win[0].env.AF_SPEAK_VOICE === 'Microsoft Zira Desktop'
-        && win[0].env.AF_SPEAK_RATE === '3' && win[0].env.AF_SPEAK_VOLUME === '80');
-    // ‼️ SYNCHRONOUS ON PURPOSE. `SpeakAsync` would return while the sentence
-    // is still being spoken, and the queue's gap is measured from the END of
-    // the process — the next lane's chime would land mid-sentence.
-    ok('‼️ it uses the BLOCKING call, which is what the alert queue depends on',
-        /\$s\.Speak\(/.test(win[0].args.join(' '))
-        && !/SpeakAsync/.test(win[0].args.join(' ')));
-    ok('…and an empty text leaves as a named exit code rather than silence',
-        /exit 4/.test(win[0].args.join(' ')) && /nothing to say/.test(win[0].codes[4]));
+    // ‼️ WINDOWS KEEPS ITS VOICES IN TWO REGISTRIES AND `System.Speech` SEES
+    // ONE. Every language pack a user installs from Settings lands in
+    // `Speech_OneCore`, which `SelectVoice` can neither list nor choose —
+    // measured on the machine this was written on, SAPI 5 had two en-US voices
+    // while OneCore had four, one of them Turkish, installed and unreachable.
+    // The COM server underneath reaches both, by token id.
+    eq('windows leads with the COM voice, which can reach BOTH registries',
+        win.map(c => c.backend), ['sapi:SpVoice', 'powershell:SpeechSynthesizer']);
+    ok('‼️ …and it really does look in both, so an installed language pack is'
+        + ' selectable rather than merely present',
+        win[0].args.join(' ').indexOf('Speech_OneCore\\Voices\\Tokens') >= 0
+        && win[0].args.join(' ').indexOf('Microsoft\\Speech\\Voices\\Tokens') >= 0);
+    ok('…by loading the token by ID, which is the only call that sees OneCore',
+        /SetId/.test(win[0].args.join(' ')));
+    for (const c of win) {
+        ok(`‼️ ${c.backend}: the text is NOT interpolated into the command`,
+            c.args.every(a => a.indexOf(evil) < 0) && c.env.AF_SPEAK_TEXT === evil);
+        ok(`…and ${c.backend} gets the voice, rate and volume the same way`,
+            c.env.AF_SPEAK_VOICE === 'Microsoft Zira Desktop'
+            && c.env.AF_SPEAK_RATE === '3' && c.env.AF_SPEAK_VOLUME === '80');
+        // ‼️ SYNCHRONOUS ON PURPOSE. An async call returns while the sentence
+        // is still being spoken, and the queue's gap is measured from the END
+        // of the process — the next lane's chime would land mid-sentence.
+        ok(`…and ${c.backend} uses the BLOCKING call the alert queue depends on`,
+            /\.Speak\(/.test(c.args.join(' ')) && !/SpeakAsync/.test(c.args.join(' ')));
+        ok(`…and ${c.backend} reports an empty text as a named code, not silence`,
+            /exit 4/.test(c.args.join(' ')) && /nothing to say/.test(c.codes[4]));
+        // ‼️ A WRONG VOICE IS NOT A SMALLER FAILURE THAN NO VOICE — it is a
+        // harder one to diagnose. The first version caught the error and fell
+        // back to the system default, so a user who asked for Turkish got
+        // English and was told it worked.
+        ok(`‼️ ${c.backend}: a name nothing answers FAILS rather than quietly`
+            + ' using the default voice',
+            /exit 5/.test(c.args.join(' ')) && /matched that name/.test(c.codes[5]));
+    }
 
     const mac = S.speakCandidates('darwin', evil, cfg);
     ok('macOS hands the text to `say` as an ARGUMENT of its own',
@@ -184,15 +203,67 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'turnAlerts.js'));
         // ‼️ THE VOICE LIST IS ASKED OF THE MACHINE. A Turkish sentence read by
         // `Microsoft David` is the commonest way this feature disappoints, and
         // the fix is a free language pack the user has to be told about.
+        const rows = [
+            'HKEY_LOCAL_MACHINE\\...\\Speech\\Voices\\Tokens\\ZIRA\tMicrosoft Zira Desktop\ten-US\tsapi5',
+            'HKEY_LOCAL_MACHINE\\...\\Speech_OneCore\\Voices\\Tokens\\Tolga\tMicrosoft Tolga\ttr-TR\tonecore',
+            'HKEY_LOCAL_MACHINE\\...\\Speech_OneCore\\Voices\\Tokens\\Odd\tSomebody Else\t\tonecore'
+        ].join('\n') + '\n';
         const list = await T.installedSpeechVoices({
-            platform: 'win32',
-            execFile: execScript([{ stdout: 'Microsoft David Desktop\ten-US\nMicrosoft Zira Desktop\ten-US\n' }])
+            platform: 'win32', execFile: execScript([{ stdout: rows }])
         });
-        ok('the installed voices are read from the machine, with their cultures',
-            list.ok && list.voices.length === 2 && list.voices[1].culture === 'en-US');
+        ok('every voice on the machine is listed, from BOTH registries, with the'
+            + ' culture and the engine it came from',
+            list.ok && list.voices.length === 3
+            && list.voices.find(v => v.name === 'Microsoft Tolga').engine === 'onecore'
+            && list.voices.find(v => v.name === 'Microsoft Tolga').culture === 'tr-TR');
+        ok('…and each carries the token id, which is what selects it unambiguously',
+            list.voices.every(v => v.id.indexOf('HKEY_') === 0));
+        // The question a reader brings to this list is "is there one that speaks
+        // MY language", and registry order answers a different one.
+        eq('…sorted by culture, with the ones that name no language last',
+            list.voices.map(v => v.culture), ['en-US', 'tr-TR', '']);
         const nope = await T.installedSpeechVoices({ platform: 'linux', execFile: execScript([{}]) });
         ok('…and where they cannot be listed, THAT is said rather than "none"',
             !nope.ok && nope.voices.length === 0 && /Windows-only/.test(nope.error));
+
+        // ------------------------------------------- this conversation's voice
+        // ‼️ ONE VOICE FOR EIGHT LANES IS THE WRONG SHAPE the moment two of
+        // them are worth telling apart BY EAR. Same chain as the tones: the
+        // session answers first, and having no opinion falls through to the
+        // fleet rather than to silence.
+        const store = new T.TurnAlertStore({
+            read: () => ({}), write: () => { }, readMigration: () => 1, writeMigration: () => { }
+        });
+        store.setVoice('s1', 'question', 'af_zen_chime');
+        store.set('s1', 'sound', true);
+        store.setMuted('s1', true);
+        store.setSpeechVoice('s1', 'Microsoft Tolga');
+        ok('a session can be announced in a voice of its own',
+            store.speechVoiceFor('s1') === 'Microsoft Tolga');
+        // ‼️ EACH SETTER ANSWERS ONE QUESTION AND LEAVES THE OTHERS ALONE.
+        // Three separate spread expressions in three setters is a rule that
+        // holds only until somebody adds a fourth field and updates two.
+        ok('…and adding it did not quietly undo the tone, the box or the mute',
+            store.voicesFor('s1').question === 'af_zen_chime'
+            && store.actionsFor('s1').indexOf('sound') >= 0
+            && store.mutedFor('s1') === true
+            && store.speechVoiceFor('s1') === 'Microsoft Tolga');
+        store.setMuted('s1', false);
+        store.replace('s1', []);
+        ok('‼️ …and clearing the boxes and the mute STILL leaves the voice alone',
+            store.speechVoiceFor('s1') === 'Microsoft Tolga');
+        store.setSpeechVoice('s1', '');
+        ok('clearing hands the answer back to the fleet, which is not silence',
+            store.speechVoiceFor('s1') === '');
+        // ‼️ AND CLEARING IT DID NOT DROP THE TONE EITHER — the record is still
+        // here because the session still has one, which is the same rule read
+        // from the other side.
+        ok('…while the tone this session chose is still its own',
+            store.voicesFor('s1').question === 'af_zen_chime');
+        store.setVoice('s1', 'question', '');
+        ok('…and only when NOTHING is left is the record gone, rather than kept'
+            + ' as a row that says "nothing"',
+            !store.all()['s1']);
 
         console.log(`${pass} passed, ${fail} failed`);
         process.exit(fail ? 1 : 0);

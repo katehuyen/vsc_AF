@@ -122,6 +122,18 @@ export interface SessionAlertPrefs {
      * unmuting restores exactly what was there before.
      */
     muted?: boolean;
+    /**
+     * ‼️ A-20 — WHICH VOICE SAYS THIS CONVERSATION'S NAME OUT LOUD.
+     *
+     * The fleet setting picks one voice for everything, and that is the
+     * wrong shape the moment two agents are worth telling apart BY EAR:
+     * a Turkish voice for the one whose questions are in Turkish, a
+     * different one for the rest, and the difference is audible from the
+     * next room without a word being understood. Absent means "this
+     * session has no opinion" and the fleet setting answers — never
+     * silence, exactly like `voices` above.
+     */
+    speechVoice?: string;
     updatedAt: number;
     lastSeenAt: number;
 }
@@ -246,6 +258,37 @@ export class TurnAlertStore {
      * default — the alternative (clearing the actions) reads identically on the
      * day it is done and is unrecoverable the day after.
      */
+    /**
+     * ‼️ THE FIELDS EVERY SETTER MUST CARRY, IN ONE PLACE.
+     *
+     * Each setter answers ONE question and must leave the other answers
+     * exactly as they were — muting is not unpicking a tone, picking a
+     * tone is not unmuting, clearing the four boxes is neither. That was
+     * three separate spread expressions repeated in three setters, which
+     * is a rule that holds only until somebody adds a fourth field and
+     * updates two of them. Now there is one list, and adding to it reaches
+     * every setter at once.
+     */
+    private keep(
+        prev: SessionAlertPrefs | undefined,
+        over: Partial<SessionAlertPrefs> = {}
+    ): Partial<SessionAlertPrefs> {
+        const voices = over.voices ?? prev?.voices;
+        const muted = over.muted ?? prev?.muted;
+        const speechVoice = over.speechVoice ?? prev?.speechVoice;
+        return {
+            ...(voices && Object.keys(voices).length ? { voices } : {}),
+            ...(muted ? { muted: true } : {}),
+            ...(speechVoice ? { speechVoice } : {})
+        };
+    }
+
+    /** Is there anything left worth a record? Absence, not a record that
+     *  says "nothing" — and it has to ask about EVERY sticky field. */
+    private bare(prev: SessionAlertPrefs | undefined, keep: Partial<SessionAlertPrefs>): boolean {
+        return !Object.keys(keep).length && !prev?.speechVoice;
+    }
+
     setMuted(sessionId: string, muted: boolean): AlertSetResult {
         const id = String(sessionId ?? '').trim();
         if (!id) { return { ok: false, error: 'sessionId is required' }; }
@@ -263,8 +306,8 @@ export class TurnAlertStore {
             };
         }
         const actions = prev ? [...prev.actions] : [];
-        const voices = { ...(prev?.voices ?? {}) };
-        if (!want && !actions.length && !Object.keys(voices).length) {
+        const keep = this.keep(prev, { muted: want });
+        if (!want && !actions.length && !Object.keys(this.keep(prev, { muted: false })).length) {
             // Unmuting a session that had nothing else to say leaves nothing to
             // record — absence, not a record that says "not muted".
             this.map.delete(id);
@@ -274,8 +317,7 @@ export class TurnAlertStore {
         const prefs: SessionAlertPrefs = {
             sessionId: id,
             actions,
-            ...(Object.keys(voices).length ? { voices } : {}),
-            ...(want ? { muted: true } : {}),
+            ...keep,
             updatedAt: t,
             lastSeenAt: prev?.lastSeenAt ?? t
         };
@@ -316,7 +358,8 @@ export class TurnAlertStore {
         const voices = normalizeVoices(draft);
         const t = this.now();
         const actions = prev ? [...prev.actions] : [];
-        if (!actions.length && !Object.keys(voices).length && !prev?.muted) {
+        const keep = this.keep(prev, { voices });
+        if (!actions.length && this.bare(prev, keep)) {
             // Nothing left to say about this session — the same "absence, not a
             // record saying nothing" rule `replace` follows.
             if (prev) { this.map.delete(id); this.persist(); }
@@ -325,11 +368,11 @@ export class TurnAlertStore {
         const prefs: SessionAlertPrefs = {
             sessionId: id,
             actions,
-            ...(Object.keys(voices).length ? { voices } : {}),
-            // ‼️ A-22 — PICKING A TONE IS NOT UNMUTING. Same rule as the voices
-            // below the actions: each surface owns its own question and none of
-            // them may quietly undo an answer given in another.
-            ...(prev?.muted ? { muted: true } : {}),
+            // ‼️ A-22 — PICKING A TONE IS NOT UNMUTING, and it is not
+            // changing the announcing voice either. Each surface owns its
+            // own question and none may quietly undo an answer given in
+            // another; `keep` is where that list lives.
+            ...keep,
             updatedAt: t,
             lastSeenAt: prev?.lastSeenAt ?? t
         };
@@ -339,6 +382,52 @@ export class TurnAlertStore {
             ok: true,
             prefs: { ...prefs, actions: [...prefs.actions], ...(prefs.voices ? { voices: { ...prefs.voices } } : {}) }
         };
+    }
+
+    /**
+     * Pick (or clear) the VOICE that says this one conversation's
+     * announcements — the `session` step above the fleet setting.
+     *
+     * ‼️ THE NAME IS NOT CHECKED HERE, on purpose and for the same reason
+     * the tone id is not: whether this machine still has a voice called
+     * `Microsoft Tolga` is a question for the moment of SPEAKING, and a
+     * second opinion stored here would go stale the day a language pack is
+     * removed. A name nothing answers is reported by the speaker, by name,
+     * and the fleet setting is used instead — never silence.
+     */
+    setSpeechVoice(sessionId: string, voice: unknown): AlertSetResult {
+        const id = String(sessionId ?? '').trim();
+        if (!id) { return { ok: false, error: 'sessionId is required' }; }
+        const want = typeof voice === 'string' ? voice.trim().slice(0, 200) : '';
+        const prev = this.map.get(id);
+        const t = this.now();
+        const actions = prev ? [...prev.actions] : [];
+        const keep = this.keep(prev, { speechVoice: want || undefined });
+        // Clearing hands the answer back to the fleet setting, exactly as a
+        // session that never chose — there is no "this one is silent" here.
+        if (!want) { delete keep.speechVoice; }
+        if (!actions.length && !Object.keys(keep).length) {
+            if (prev) { this.map.delete(id); this.persist(); }
+            return { ok: true, prefs: { sessionId: id, actions: [], updatedAt: t, lastSeenAt: t } };
+        }
+        const prefs: SessionAlertPrefs = {
+            sessionId: id,
+            actions,
+            ...keep,
+            updatedAt: t,
+            lastSeenAt: prev?.lastSeenAt ?? t
+        };
+        this.map.set(id, prefs);
+        this.persist();
+        return {
+            ok: true,
+            prefs: { ...prefs, actions: [...prefs.actions], ...(prefs.voices ? { voices: { ...prefs.voices } } : {}) }
+        };
+    }
+
+    /** What this session chose to be announced in, if anything. */
+    speechVoiceFor(sessionId: string): string {
+        return this.map.get(String(sessionId ?? '').trim())?.speechVoice ?? '';
     }
 
     /** Toggle ONE action on ONE session — the message the gutter sends. */
@@ -375,8 +464,8 @@ export class TurnAlertStore {
         const next = normalizeActions(actions);
         const t = this.now();
         const prev = this.map.get(id);
-        const voices = { ...(prev?.voices ?? {}) };
-        if (!next.length && !Object.keys(voices).length && !prev?.muted) {
+        const keep = this.keep(prev);
+        if (!next.length && this.bare(prev, keep)) {
             // An empty selection carries no information now that there is
             // nothing to be silent ABOUT — so it is the absence of a record,
             // not a record saying "muted". A session that IS muted says the
@@ -392,8 +481,7 @@ export class TurnAlertStore {
             // answer different questions ("alert me about this one" vs "in this
             // voice"), and dropping the tone here would silently undo a choice
             // the user made in another surface entirely.
-            ...(Object.keys(voices).length ? { voices } : {}),
-            ...(prev?.muted ? { muted: true } : {}),
+            ...keep,
             updatedAt: t,
             lastSeenAt: prev?.lastSeenAt ?? t
         };
