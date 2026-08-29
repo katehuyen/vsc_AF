@@ -2,6 +2,61 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.307.0 - A-20: the Windows alert was arriving eight seconds late (2026-08-29)
+
+The first of three parts of A-20 — the player itself, before the sounds it
+plays. It began as "add mp3 and flac" and turned up something worse on the way.
+
+**Measured: every Windows alert was eight seconds late.** `MediaPlayer` is a
+WPF `DispatcherObject`, and its `MediaEnded` event is raised on a Dispatcher
+that `powershell -Command` never runs. So the event never came, the process sat
+in its wait loop for 17.7 seconds, this module's own timeout killed it at eight,
+the backend was reported as broken — and the sound you finally heard was the
+SoundPlayer fallback, announcing a turn that had ended eight seconds earlier.
+Nothing in the extension was in a position to notice: the fallback returned
+success, so the alert was working, just late enough to be useless.
+
+**The player asks the file how long it is instead.** `NaturalDuration` is
+filled in by the media engine and needs no dispatcher — which makes it two
+answers at once: how long to wait, and, when it never arrives, the codec saying
+it cannot open this file. Measured end to end: **1.8 s for a `.wav`, 2.3 s for
+an `.mp3`**, and a file no codec can open now reports that, in those words.
+Before, a refused file left through the same silent loop with exit 0 and was
+reported as PLAYED.
+
+**And it was reported as played.** That is the second half of the same bug and
+the more dangerous one: `.mp3`, `.flac` and anything else the codec refused
+came back green. A user who pointed an alert at their own file was told it
+worked and heard nothing, for ever.
+
+**The format now picks the player, before anything is spawned.** An `.mp3` went
+to the wav-only fallback as a matter of course, failed there, and — because the
+LAST attempt was the reported one — ended carrying `SoundPlayer: wav only`,
+while what the real player had said was already thrown away. A format nothing
+on the machine can open spawns no process at all and names what does play.
+
+**`.flac` is offered on Windows and macOS; `.ogg` deliberately is not.** Read
+out of the registry rather than assumed: Windows carries Media Foundation
+handlers for flac, mp3, m4a and wma, and **none for ogg** — the Web Media
+Extensions that carry Vorbis are a Store package that is on some machines and
+not others, and CoreAudio has never read it either. Promising it would be the
+exact trap this table exists to prevent: the row says playable, the alert is
+silence, nothing reports an error. Vorbis is offered through `ffplay`, which is
+named in the row, so a user who wants it is told what to install.
+
+**On a `.wav` the cheap player now leads.** `SoundPlayer` lives in `System.dll`
+and is already loaded; `MediaPlayer` pulls in PresentationCore first — 0.6 s of
+overhead against 1.2 s, measured. Every built-in voice is a `.wav`, so this is
+the path almost every alert takes.
+
+**When every player fails, the one that explains it is reported.** The chain now
+ends on `ffplay`, which most machines do not have, so "the last attempt is the
+answer" would reply to every silent alert with `spawn ffplay ENOENT` and bury
+the sentence produced two backends earlier. A player that is absent is not why
+the alert was silent.
+
+Also: `pw-play` on Linux, for a desktop that has replaced PulseAudio outright.
+
 ## 3.306.0 - A-22: eight agents finishing together make eight sounds, not one noise (2026-08-29)
 
 The other half of A-22. 3.305.0 answered "should anything sound"; this answers

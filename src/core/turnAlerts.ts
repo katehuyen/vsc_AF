@@ -29,7 +29,7 @@
  *   session, so the same turn is one alert however many events announce it.
  */
 
-import { ALERT_EVENTS, type AlertEvent } from './alertVoices';
+import { ALERT_EVENTS, extensionOf, type AlertEvent } from './alertVoices';
 
 export const TURN_ALERT_ACTIONS = ['sound', 'focus', 'modal', 'toast'] as const;
 export type TurnAlertAction = (typeof TURN_ALERT_ACTIONS)[number];
@@ -584,6 +584,17 @@ export interface SoundResult {
      *  opposite fixes. */
     queuedMs?: number;
     ahead?: number;
+    /**
+     * ‼️ A-20 — THE PLAYER ITSELF IS NOT ON THIS MACHINE.
+     *
+     * `ffplay` is a candidate on every platform and installed on almost
+     * none of them, which makes `spawn ffplay ENOENT` the commonest failure
+     * in the chain and the least informative one: it is not why the alert
+     * was silent, it is why there was nothing left to try. Marked, it can
+     * be ranked below a player that really refused the file — and a row can
+     * say `install ffmpeg` instead of showing a spawn message.
+     */
+    missing?: boolean;
 }
 
 export interface SoundCandidate {
@@ -603,7 +614,93 @@ export interface SoundCandidate {
      * follows.
      */
     formats: readonly string[];
+    /**
+     * ‼️ A-20 — THE EXTENSIONS THIS BACKEND SHOULD BE TRIED FIRST FOR.
+     *
+     * Which players CAN open a file is `formats`; which one should go first
+     * is not derivable from it. On Windows a `.wav` is measurably faster
+     * through `SoundPlayer` — it lives in `System.dll`, already loaded —
+     * than through `MediaPlayer`, which pulls in PresentationCore: 0.6 s of
+     * overhead against 1.2 s, measured on this machine. For every other
+     * format the order is the reverse, because SoundPlayer cannot open it.
+     */
+    lead?: readonly string[];
+    /**
+     * ‼️ WHAT A NON-ZERO EXIT FROM *THIS* PLAYER MEANS, in the user's terms.
+     *
+     * `exit 3` from the MediaPlayer script is not a crash, it is the codec
+     * saying it cannot open the file — a different fix from a missing
+     * player, and indistinguishable from one unless the backend that
+     * chose the number also says what it chose it for.
+     */
+    codes?: Record<number, string>;
 }
+
+/**
+ * ‼️ A-20 — WHAT EACH PLAYER CAN ACTUALLY OPEN, CHECKED RATHER THAN HOPED.
+ *
+ * The temptation is to declare every fashionable format on the built-in player
+ * and let the user find out. On Windows 10, Media Foundation registers byte
+ * stream handlers for `.flac`, `.mp3`, `.m4a` and `.wma` and — read out of
+ * the registry, not assumed — **none for `.ogg`**: the Web Media Extensions
+ * that carry Vorbis are a Store package present on some installs and not
+ * others. So `.ogg` is NOT promised on MediaPlayer. It is offered through
+ * `ffplay`, whose name the settings row shows, so a user who wants Vorbis is
+ * told what to install instead of hearing nothing and being told it worked.
+ */
+const MEDIAFOUNDATION = ['wav', 'mp3', 'm4a', 'wma', 'flac'] as const;
+/** ffmpeg's player opens everything the built-in ones might miss. */
+const FFPLAY = ['wav', 'mp3', 'm4a', 'ogg', 'oga', 'opus', 'flac', 'aac', 'aiff', 'aif', 'wma'] as const;
+/** CoreAudio, which has read FLAC since macOS 10.13 and has never read Vorbis. */
+const AFPLAY = ['wav', 'mp3', 'm4a', 'aiff', 'aif', 'aac', 'caf', 'flac'] as const;
+/** libsndfile's set: lossless and Vorbis, no MPEG. */
+const SNDFILE = ['wav', 'ogg', 'oga', 'flac', 'aiff', 'aif'] as const;
+
+const FFPLAY_ARGS = (asset: string): string[] =>
+    ['-nodisp', '-autoexit', '-loglevel', 'quiet', asset];
+
+/**
+ * ‼️ THE WINDOWS PLAYER HAS TO KNOW WHEN THE SOUND ENDED — AND ITS EVENTS DO
+ * NOT FIRE IN A CONSOLE.
+ *
+ * `MediaPlayer` is a WPF `DispatcherObject`: `MediaEnded` and `MediaFailed`
+ * are raised on a Dispatcher that `powershell -Command` never runs. Measured
+ * on the script this replaces, MediaEnded NEVER ARRIVED — the process sat in
+ * its poll loop for 17.7 s, was killed by this module's timeout, was reported
+ * as a broken backend, and every Windows alert was really played by the
+ * SoundPlayer fallback, eight seconds after the turn it was announcing. Worse
+ * in the other direction: a file the codec REFUSED left through the same loop
+ * with exit 0 and was reported as played.
+ *
+ * So the length is ASKED FOR rather than waited on. `NaturalDuration` is
+ * filled in by the media engine itself and needs no dispatcher, which makes it
+ * two answers in one: how long to sleep, and — when it never arrives — the
+ * codec saying it cannot open this file, which leaves as `exit 3`. Measured
+ * end to end: 2.3 s for a 1.1 s sound, and a refused file reported as refused.
+ *
+ * ‼️ NO QUOTE ENTERS THIS SCRIPT. The reason is not tidiness: the string
+ * travels through `execFile` argument escaping before PowerShell parses it,
+ * and a quoted diagnostic is exactly the kind of thing that survives testing
+ * on one Node version and breaks on another. The exit CODE carries the
+ * meaning; the sentence lives in `codes` below, in TypeScript, where a test
+ * can read it.
+ *
+ * The play wait is capped at 10 s. An alert is not a track: a four-minute file
+ * chosen by mistake is cut off deliberately here, rather than killed by the
+ * outer timeout and reported as a broken player.
+ */
+const MEDIAPLAYER_SCRIPT =
+    'Add-Type -AssemblyName PresentationCore;'
+    + '$p = New-Object System.Windows.Media.MediaPlayer;'
+    + '$p.Open([Uri]$env:AF_TURN_SOUND);'
+    + '$t = 0;'
+    + 'while (-not $p.NaturalDuration.HasTimeSpan -and $t -lt 100) { Start-Sleep -m 20; $t++ };'
+    + 'if (-not $p.NaturalDuration.HasTimeSpan) { exit 3 };'
+    + '$ms = [int]$p.NaturalDuration.TimeSpan.TotalMilliseconds;'
+    + 'if ($ms -gt 10000) { $ms = 10000 };'
+    + '$p.Play();'
+    + 'Start-Sleep -m ($ms + 120);'
+    + '$p.Close()';
 
 /**
  * ‼️ NO SHELL, NO INTERPOLATION, ANYWHERE.
@@ -612,45 +709,39 @@ export interface SoundCandidate {
  * an environment variable, everywhere else as an `execFile` argument. A folder
  * with a quote, a space or a `;` in its name is therefore not a code-injection
  * question at all, which a `cp.exec` string can never claim.
+ *
+ * What comes back is the order to TRY for this asset (see `lead`) — and it is
+ * always the WHOLE table, never filtered. `alertVoices.playableOn` reads it to
+ * answer "can anything here open that file?", and a pre-filtered list would
+ * make an unplayable file look like a platform with no players at all.
  */
 export function soundCandidates(platform: string, asset: string): SoundCandidate[] {
+    const all = rawCandidates(platform, asset);
+    const ext = extensionOf(asset);
+    if (!ext) { return all; }
+    const lead = all.filter(c => (c.lead ?? []).indexOf(ext) >= 0);
+    return lead.length ? lead.concat(all.filter(c => lead.indexOf(c) < 0)) : all;
+}
+
+function rawCandidates(platform: string, asset: string): SoundCandidate[] {
     if (platform === 'win32') {
         return [
-            /**
-             * ‼️ A-18 — MediaPlayer FIRST, because SoundPlayer PLAYS ONLY WAV.
-             *
-             * `SoundPlayer.PlaySync()` was the right answer while there was one
-             * asset and it was a `.wav`. It is the wrong one the moment the
-             * user points an alert at a file of their own: an `.mp3` handed to
-             * it throws, and the alert is silence. `MediaPlayer` is the same
-             * Windows install, opens mp3/m4a/wma/wav, and is asynchronous — so
-             * this waits on its own `Opened`/`Failed` events rather than
-             * blocking, which is what keeps a long sound off the event loop.
-             *
-             * SoundPlayer stays BEHIND it. `MediaPlayer` lives in
-             * PresentationCore, and a stripped or server Windows without WPF
-             * would otherwise lose the alert it has today — the fallback costs
-             * a failed process and keeps `.wav` working everywhere.
-             */
             {
                 backend: 'powershell:MediaPlayer',
                 file: 'powershell',
                 args: [
                     '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
-                    '-Command',
-                    'Add-Type -AssemblyName PresentationCore;'
-                    + '$p = New-Object System.Windows.Media.MediaPlayer;'
-                    + '$done = $false;'
-                    + 'Register-ObjectEvent $p MediaEnded -Action { $global:done = $true } | Out-Null;'
-                    + 'Register-ObjectEvent $p MediaFailed -Action { $global:done = $true } | Out-Null;'
-                    + '$p.Open([Uri]$env:AF_TURN_SOUND); $p.Play();'
-                    + '$t = 0; while (-not $global:done -and $t -lt 100) { Start-Sleep -m 100; $t++ };'
-                    + '$p.Close()'
+                    '-Command', MEDIAPLAYER_SCRIPT
                 ],
                 env: { AF_TURN_SOUND: asset },
-                formats: ['wav', 'mp3', 'm4a', 'wma']
+                formats: MEDIAFOUNDATION,
+                codes: { 3: 'no installed codec could open this file' }
             },
             {
+                // Leads on `.wav` — half the startup cost, and `.wav` is what
+                // every built-in voice is. It stays behind MediaPlayer for
+                // everything else for the reason it always did: a stripped or
+                // server Windows without WPF still gets the alert it has today.
                 backend: 'powershell:SoundPlayer',
                 file: 'powershell',
                 args: [
@@ -658,16 +749,29 @@ export function soundCandidates(platform: string, asset: string): SoundCandidate
                     '-Command', '(New-Object System.Media.SoundPlayer $env:AF_TURN_SOUND).PlaySync()'
                 ],
                 env: { AF_TURN_SOUND: asset },
-                formats: ['wav']
+                formats: ['wav'],
+                lead: ['wav']
+            },
+            {
+                // Not on a stock Windows, and that is the point: it is the only
+                // honest route to Vorbis, and `ENOENT` costs one failed spawn
+                // rather than a promise the machine cannot keep.
+                backend: 'ffplay', file: 'ffplay', args: FFPLAY_ARGS(asset), formats: FFPLAY
             }
         ];
     }
     if (platform === 'darwin') {
-        return [{ backend: 'afplay', file: 'afplay', args: [asset], formats: ['wav', 'mp3', 'm4a', 'aiff', 'aif'] }];
+        return [
+            { backend: 'afplay', file: 'afplay', args: [asset], formats: AFPLAY },
+            { backend: 'ffplay', file: 'ffplay', args: FFPLAY_ARGS(asset), formats: FFPLAY }
+        ];
     }
     return [
-        { backend: 'paplay', file: 'paplay', args: [asset], formats: ['wav', 'ogg', 'flac'] },
-        { backend: 'ffplay', file: 'ffplay', args: ['-nodisp', '-autoexit', '-loglevel', 'quiet', asset], formats: ['wav', 'mp3', 'm4a', 'ogg', 'flac'] },
+        { backend: 'paplay', file: 'paplay', args: [asset], formats: SNDFILE },
+        // PipeWire's own player, for a desktop that has replaced PulseAudio and
+        // ships no `paplay` shim.
+        { backend: 'pw-play', file: 'pw-play', args: [asset], formats: SNDFILE },
+        { backend: 'ffplay', file: 'ffplay', args: FFPLAY_ARGS(asset), formats: FFPLAY },
         { backend: 'aplay', file: 'aplay', args: ['-q', asset], formats: ['wav'] }
     ];
 }
@@ -699,7 +803,7 @@ export interface PlaySoundDeps {
 export async function playTurnSound(asset: string, deps: PlaySoundDeps = {}): Promise<SoundResult> {
     const platform = deps.platform ?? process.platform;
     const now = deps.now ?? (() => Date.now());
-    const timeout = deps.timeoutMs ?? 8000;
+    const timeout = deps.timeoutMs ?? 15000;
     const startedAt = now();
     const exists = deps.exists ?? ((p: string) => {
         try { return require('fs').existsSync(p); } catch { return false; }
@@ -717,8 +821,31 @@ export async function playTurnSound(asset: string, deps: PlaySoundDeps = {}): Pr
     if (!candidates.length) {
         return { ...base('none'), error: `no sound backend known for platform ${platform}` };
     }
+    /**
+     * ‼️ A-20 — A PLAYER THAT CANNOT OPEN THIS FORMAT IS NOT A FALLBACK.
+     *
+     * Walking the whole table regardless of format spawns a process that is
+     * certain to fail and then, because the LAST attempt is what comes back,
+     * overwrites the real story with its own: an `.mp3` used to end carrying
+     * SoundPlayer's "wav only" complaint, while what MediaPlayer actually
+     * said had already been thrown away. The extension picks the candidates,
+     * out of the same `formats` table the settings page promises from — so
+     * the reason a file will not play is stated once, here, before anything
+     * is spawned.
+     */
+    const ext = extensionOf(asset);
+    const usable = ext ? candidates.filter(c => c.formats.indexOf(ext) >= 0) : candidates;
+    if (!usable.length) {
+        const known = Array.from(new Set(candidates.flatMap(c => c.formats as string[]))).sort();
+        return {
+            ...base('none'),
+            error: `no sound backend on ${platform} can play .${ext}`
+                + ` — this platform plays: ${known.join(', ')}`
+        };
+    }
     let last: SoundResult = base('none');
-    for (const c of candidates) {
+    const tried: SoundResult[] = [];
+    for (const c of usable) {
         last = await new Promise<SoundResult>(resolve => {
             let settled = false;
             const done = (r: SoundResult): void => {
@@ -743,9 +870,15 @@ export async function playTurnSound(asset: string, deps: PlaySoundDeps = {}): Pr
                             return done(r);
                         }
                         r.exitCode = typeof err.code === 'number' ? err.code : null;
-                        r.error = String(err.message ?? err).slice(0, 500);
+                        // ‼️ A-20 — A CODE THIS BACKEND NAMED BEATS THE SPAWN MESSAGE.
+                        // `Command failed: powershell -NoProfile …` is true and
+                        // useless; `no installed codec could open this file` is the
+                        // sentence that tells the user to convert the file.
+                        const named = r.exitCode !== null ? c.codes?.[r.exitCode] : undefined;
+                        r.error = named ?? String(err.message ?? err).slice(0, 500);
                         // node reports a timeout kill as `killed`, with no code.
                         if (err.killed) { r.timedOut = true; r.error = `timed out after ${timeout} ms`; }
+                        if (err.code === 'ENOENT') { r.missing = true; }
                         done(r);
                     }
                 );
@@ -756,9 +889,21 @@ export async function playTurnSound(asset: string, deps: PlaySoundDeps = {}): Pr
                 done(r);
             }
         });
+        tried.push(last);
         if (last.ok) { return last; }
     }
-    return last;
+    /**
+     * ‼️ A-20 — WHEN THEY ALL FAILED, REPORT THE ONE THAT EXPLAINS IT.
+     *
+     * The chain ENDS on the least likely player — `ffplay`, which most
+     * machines do not have — so "the last attempt is the answer" would
+     * reply to every silent alert with `spawn ffplay ENOENT` and bury the
+     * sentence produced two backends earlier: no installed codec could open
+     * this file. The earliest player that actually RAN and refused is the
+     * diagnosis; an absent one is not a diagnosis at all. If every player
+     * was absent, the last will do — they all say the same thing.
+     */
+    return tried.find(r => !r.missing) ?? last;
 }
 
 // ------------------------------------------------------------- the dispatch

@@ -295,34 +295,70 @@ function fakeState(seed) {
         // so a folder called `C:\my "stuff"; rm` is not a code question at all.
         const evil = 'C:\\a b\\"; calc.exe & \\turn.wav';
         const win = T.soundCandidates('win32', evil);
-        // ‼️ A-18 — MediaPlayer FIRST, because SoundPlayer plays only `.wav`.
-        // The user may point an alert at a file of their own, and an `.mp3`
-        // handed to SoundPlayer throws: the alert becomes silence with no error
-        // anywhere. SoundPlayer stays BEHIND it, because MediaPlayer lives in
-        // PresentationCore and a Windows without WPF would otherwise lose the
-        // alert it has today.
-        eq('windows tries MediaPlayer, then SoundPlayer as the .wav fallback',
-            win.map(c => c.backend), ['powershell:MediaPlayer', 'powershell:SoundPlayer']);
-        ok('‼️ the path is NOT interpolated into EITHER command',
-            win.every(c => c.args.every(a => a.indexOf(evil) < 0)));
-        ok('…and both hand it over as an environment variable',
-            win.every(c => c.env.AF_TURN_SOUND === evil));
+        // ‼️ A-20 — THE ORDER FOLLOWS THE FORMAT, and on a `.wav` the cheap
+        // player leads. `SoundPlayer` is in `System.dll`, already loaded;
+        // `MediaPlayer` pulls in PresentationCore first — 0.6 s of overhead
+        // against 1.2 s, measured. `.wav` is what every built-in voice is, so
+        // this is the path the alert takes almost every time. It is still the
+        // FALLBACK for everything else, because it opens nothing else.
+        eq('windows leads with SoundPlayer on a .wav',
+            win.map(c => c.backend),
+            ['powershell:SoundPlayer', 'powershell:MediaPlayer', 'ffplay']);
+        eq('…and with MediaPlayer on anything SoundPlayer cannot open',
+            T.soundCandidates('win32', 'C:\\x.mp3').map(c => c.backend),
+            ['powershell:MediaPlayer', 'powershell:SoundPlayer', 'ffplay']);
+        // ‼️ AND THE EXTENSION-LESS PROBE GETS THE WHOLE TABLE AS DECLARED.
+        // `alertVoices.playableOn` calls it that way to ask "can anything here
+        // open that file?"; a reordered or filtered answer would make an
+        // unplayable format look like a platform with no players at all.
+        eq('…while an extension-less probe gets the table as declared',
+            T.soundCandidates('win32', '').map(c => c.backend),
+            ['powershell:MediaPlayer', 'powershell:SoundPlayer', 'ffplay']);
+
+        // ‼️ NO SHELL STRING ANYWHERE. The path may be an `execFile` argument
+        // OF ITS OWN — that is the safe form — but it must never appear glued
+        // inside a longer argument, which is what a command string is.
+        for (const p of ['win32', 'darwin', 'linux']) {
+            ok(`${p} never glues the path into a longer argument`,
+                T.soundCandidates(p, evil).every(c =>
+                    c.args.every(a => a === evil || a.indexOf(evil) < 0)));
+        }
+        ok('…and both windows shells hand it over as an environment variable',
+            win.filter(c => c.file === 'powershell')
+                .every(c => c.env.AF_TURN_SOUND === evil));
         ok('and the players are real ones, not Console.Beep',
-            /MediaPlayer/.test(win[0].args.join(' '))
-            && /SoundPlayer/.test(win[1].args.join(' '))
-            && win.every(c => !/beep/i.test(c.args.join(' '))));
-        // ‼️ AND IT DOES NOT BLOCK. MediaPlayer.Play() returns at once, so the
-        // script waits on the player's own events with a ceiling — a sound that
-        // never ends must not hold a process for ever, and `PlaySync` would
-        // have held the whole call for the length of the sound.
-        ok('‼️ the MediaPlayer call is asynchronous and bounded',
-            /MediaEnded/.test(win[0].args.join(' '))
-            && /MediaFailed/.test(win[0].args.join(' '))
-            && !/PlaySync/.test(win[0].args.join(' ')));
+            win.every(c => !/beep/i.test(c.args.join(' '))));
+
+        const mp = win.find(c => c.backend === 'powershell:MediaPlayer');
+        const mpScript = mp.args.join(' ');
+        // ‼️ A-20 — THE WINDOWS PLAYER ASKS THE FILE HOW LONG IT IS.
+        // `MediaPlayer` is a WPF DispatcherObject and `MediaEnded` is raised on
+        // a Dispatcher that `powershell -Command` never runs: measured, the
+        // event NEVER arrived, the process sat in its poll loop for 17.7 s, was
+        // killed by the outer timeout, and every Windows alert was really
+        // played by the fallback eight seconds after the turn it announced.
+        // `NaturalDuration` is filled in by the media engine and needs no
+        // dispatcher — which is also how a refused file becomes an exit code
+        // instead of the silent success the event version returned.
+        ok('‼️ it waits on the file’s own duration, not on an event that never fires',
+            /NaturalDuration/.test(mpScript)
+            && !/MediaEnded|Register-ObjectEvent/.test(mpScript));
+        ok('…and a file no codec can open leaves as exit 3, with a sentence for it',
+            /exit 3/.test(mpScript) && /codec/.test(mp.codes[3]));
+        // The script travels through execFile argument escaping before
+        // PowerShell parses it, and a quoted diagnostic is the kind of thing
+        // that survives on one Node version and breaks on the next. The exit
+        // CODE carries the meaning; the sentence lives in `codes`, in
+        // TypeScript, where this test can read it.
+        ok('…and not one quote enters either windows script',
+            win.filter(c => c.file === 'powershell')
+                .every(c => c.args.every(a => a.indexOf('"') < 0 && a.indexOf("'") < 0)));
+
         ok('macOS uses afplay with the path as an ARGUMENT',
             T.soundCandidates('darwin', evil)[0].args[0] === evil);
-        eq('linux tries pulse, then ffmpeg’s player, then alsa',
-            T.soundCandidates('linux', 'x').map(c => c.backend), ['paplay', 'ffplay', 'aplay']);
+        eq('linux tries pulse, pipewire, ffmpeg, then alsa',
+            T.soundCandidates('linux', 'x').map(c => c.backend),
+            ['paplay', 'pw-play', 'ffplay', 'aplay']);
 
         // ‼️ EVERY BACKEND DECLARES WHAT IT CAN OPEN, beside itself. The trap is
         // a page that accepts an `.mp3` over a player that only knows `.wav`:
@@ -333,8 +369,28 @@ function fakeState(seed) {
                 T.soundCandidates(p, 'x').every(c =>
                     Array.isArray(c.formats) && c.formats.length && c.formats.indexOf('wav') >= 0));
         }
+        const backend = (p, b) => T.soundCandidates(p, 'x').find(c => c.backend === b);
         ok('…and the wav-only backend says so, rather than claiming everything',
-            win[1].formats.join(',') === 'wav');
+            backend('win32', 'powershell:SoundPlayer').formats.join(',') === 'wav');
+
+        // ‼️ A-20 — VORBIS IS NOT PROMISED BY ANY BUILT-IN PLAYER, because it is
+        // in none of them. Windows carries Media Foundation handlers for
+        // flac/mp3/m4a/wma and — read out of the registry, not assumed — NONE
+        // for `.ogg`: the Web Media Extensions that carry it are a Store
+        // package present on some installs and not others. CoreAudio has never
+        // read it either. Declaring it would be the exact trap this table
+        // exists to prevent — the row says playable, the alert is silence, and
+        // nothing anywhere reports an error.
+        ok('‼️ ogg is NOT claimed by the built-in windows or macOS players',
+            backend('win32', 'powershell:MediaPlayer').formats.indexOf('ogg') < 0
+            && backend('darwin', 'afplay').formats.indexOf('ogg') < 0);
+        ok('…but it has a real, named route on every platform through ffmpeg',
+            ['win32', 'darwin', 'linux'].every(p =>
+                backend(p, 'ffplay').formats.indexOf('ogg') >= 0));
+        ok('…and FLAC, which Windows and CoreAudio both do read, IS claimed',
+            backend('win32', 'powershell:MediaPlayer').formats.indexOf('flac') >= 0
+            && backend('darwin', 'afplay').formats.indexOf('flac') >= 0
+            && backend('linux', 'paplay').formats.indexOf('flac') >= 0);
     }
 
     /** An execFile stand-in driven by a script of outcomes, one per call. */
@@ -366,7 +422,7 @@ function fakeState(seed) {
         const r = await T.playTurnSound('C:\\turn.wav',
             { platform: 'win32', exists, execFile: ex });
         ok('a clean run reports ok with exit 0',
-            r.ok && r.exitCode === 0 && r.backend === 'powershell:MediaPlayer');
+            r.ok && r.exitCode === 0 && r.backend === 'powershell:SoundPlayer');
         ok('the child is hidden and bounded by a timeout',
             ex.calls[0].opts.windowsHide === true && ex.calls[0].opts.timeout > 0);
         ok('the asset is in the child environment',
@@ -380,7 +436,8 @@ function fakeState(seed) {
             // rescues the run — which is exactly what having one is for, and
             // not what this assertion is about.
             execFile: execScript([
-                { err, stderr: 'no audio device' }, { err, stderr: 'no audio device' }
+                { err, stderr: 'no audio device' }, { err, stderr: 'no audio device' },
+                { err, stderr: 'no audio device' }
             ])
         });
         ok('a non-zero exit is a failure with its code',
@@ -389,7 +446,10 @@ function fakeState(seed) {
     {
         const err = Object.assign(new Error('killed'), { killed: true });
         const r = await T.playTurnSound('C:\\turn.wav',
-            { platform: 'win32', exists, execFile: execScript([{ err }, { err }]), timeoutMs: 1234 });
+            {
+                platform: 'win32', exists, timeoutMs: 1234,
+                execFile: execScript([{ err }, { err }, { err }])
+            });
         ok('a timeout is reported as one', !r.ok && r.timedOut && /1234/.test(r.error));
     }
     {
@@ -399,16 +459,60 @@ function fakeState(seed) {
         const ex = execScript([{ err: enoent }, {}]);
         const r = await T.playTurnSound('/tmp/turn.wav',
             { platform: 'linux', exists, execFile: ex });
-        ok('linux falls through to the second backend', r.ok && r.backend === 'ffplay');
+        ok('linux falls through to the second backend', r.ok && r.backend === 'pw-play');
         ok('both were really tried', ex.calls.length === 2);
     }
     {
         const boom = execScript([{ throw: new Error('spawn exploded') },
-            { throw: new Error('again') }, { throw: new Error('and again') }]);
+            { throw: new Error('again') }, { throw: new Error('and again') },
+            { throw: new Error('and once more') }]);
         const r = await T.playTurnSound('/tmp/turn.wav',
             { platform: 'linux', exists, execFile: boom });
         ok('a synchronous spawn failure is caught and reported',
             !r.ok && /exploded|again/.test(r.error));
+    }
+    {
+        // ‼️ A-20 — THE FORMAT PICKS THE PLAYERS, BEFORE ANYTHING IS SPAWNED.
+        // Walking the whole table regardless of format spawns a process that is
+        // certain to fail and then, because the last attempt was what came back,
+        // overwrote the real story with its own: an `.mp3` used to end carrying
+        // SoundPlayer's "wav only" complaint, while what MediaPlayer said had
+        // already been thrown away.
+        const ex = execScript([{}]);
+        const r = await T.playTurnSound('C:\\x.mp3', { platform: 'win32', exists, execFile: ex });
+        ok('an .mp3 goes straight to the player that can open it',
+            r.ok && r.backend === 'powershell:MediaPlayer' && ex.calls.length === 1);
+        const ex2 = execScript([{}]);
+        const r2 = await T.playTurnSound('C:\\x.ogg', { platform: 'win32', exists, execFile: ex2 });
+        ok('…and an .ogg reaches ffmpeg without wasting a spawn on the two that cannot',
+            r2.ok && r2.backend === 'ffplay' && ex2.calls.length === 1);
+        const ex3 = execScript([{}]);
+        const r3 = await T.playTurnSound('C:\\x.mid', { platform: 'win32', exists, execFile: ex3 });
+        ok('‼️ a format nothing here can open spawns NOTHING, and says what does play',
+            !r3.ok && ex3.calls.length === 0
+            && /\.mid/.test(r3.error) && /wav/.test(r3.error) && /flac/.test(r3.error));
+    }
+    {
+        // ‼️ A-20 — WHEN THEY ALL FAILED, THE ONE THAT EXPLAINS IT IS REPORTED.
+        // The chain ENDS on `ffplay`, which most machines do not have, so "the
+        // last attempt is the answer" would reply to every silent alert with
+        // `spawn ffplay ENOENT` and bury the sentence produced two backends
+        // earlier. A player that is absent is not why the alert was silent.
+        const enoent = Object.assign(new Error('spawn ffplay ENOENT'), { code: 'ENOENT' });
+        const refused = Object.assign(new Error('Command failed: powershell -NoProfile'), { code: 3 });
+        const r = await T.playTurnSound('C:\\turn.wav', {
+            platform: 'win32', exists,
+            execFile: execScript([{ err: enoent }, { err: refused }, { err: enoent }])
+        });
+        ok('‼️ the codec’s refusal is reported, not the missing player after it',
+            !r.ok && r.backend === 'powershell:MediaPlayer'
+            && /codec/.test(r.error) && !/ENOENT/.test(r.error));
+        const allGone = await T.playTurnSound('C:\\turn.wav', {
+            platform: 'win32', exists,
+            execFile: execScript([{ err: enoent }, { err: enoent }, { err: enoent }])
+        });
+        ok('…and when every player is absent, that is what it says',
+            !allGone.ok && allGone.missing === true && /ENOENT/.test(allGone.error));
     }
 
     // ------------------------------------------------------------ dispatch

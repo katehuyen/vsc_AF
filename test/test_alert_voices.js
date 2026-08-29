@@ -159,9 +159,16 @@ const base = (over) => Object.assign({
     ok('‼️ …and windows can open an .mp3 only because a backend SAYS it can —'
         + ' the answer names that backend',
         V.playableOn({ backends: win }, 'a.mp3').backend === 'powershell:MediaPlayer');
+    // ‼️ THE UNPLAYABLE EXAMPLE IS `.mid`, AND IT USED TO BE `.flac`. A-20
+    // added the formats Windows really does carry — Media Foundation registers
+    // a FLAC handler, read out of the registry — so flac is now a promise the
+    // machine keeps. MIDI is not a sampled format at all and no backend here
+    // offers it, which is what this assertion needs.
     ok('a format nothing offers is refused rather than accepted and silent',
-        !V.playableOn({ backends: win }, 'a.flac').ok
+        !V.playableOn({ backends: win }, 'a.mid').ok
         && !V.playableOn({ backends: win }, 'noextension').ok);
+    ok('…while FLAC, which Windows really does read, is offered',
+        V.playableOn({ backends: win }, 'a.flac').ok);
     ok('…and the wav-only backend cannot be the one that claims an mp3',
         win.find(b => b.backend === 'powershell:SoundPlayer').formats.indexOf('mp3') < 0);
     ok('the question is asked of the extension, whatever the case',
@@ -209,7 +216,7 @@ const base = (over) => Object.assign({
     ok('‼️ a file that is not there is refused AT THE DOOR, naming the path —'
         + ' rather than accepted and silent when the alert fires',
         !missing.ok && /D:\/s\/no\.wav/.test(missing.error));
-    const bad = V.addCustomVoice([], { label: 'Flac', file: 'D:/s/x.flac' }, deps);
+    const bad = V.addCustomVoice([], { label: 'Midi', file: 'D:/s/x.mid' }, deps);
     ok('‼️ …and so is a format nothing on this machine plays, with the list of'
         + ' what it does play in the refusal',
         !bad.ok && /\.mp3/.test(bad.error) && /\.wav/.test(bad.error));
