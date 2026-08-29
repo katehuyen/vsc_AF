@@ -116,7 +116,7 @@ const { opencodeStatus, syncToOpencode } =
     // and the ops that can act on a set actually say so in their contract
     {
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        for (const op of ['sessions.pin', 'sessions.tag', 'sessions.end', 'sessions.dismiss']) {
+        for (const op of ['sessions.pin', 'sessions.tag', 'sessions.color', 'sessions.end', 'sessions.dismiss']) {
             const block = src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 2000);
             ok(`${op} takes a set and its describe says so`,
                 /argSessionIds\(args\)/.test(block) && /sessionIds/.test(block));
@@ -124,6 +124,15 @@ const { opencodeStatus, syncToOpencode } =
         const pin = src.slice(src.indexOf("op: 'sessions.pin'"), src.indexOf("op: 'sessions.pin'") + 1400);
         ok('‼️ a bulk pin refuses to toggle — a set must be told which way to go',
             /pinned \(true\/false\) is required for a set/.test(pin));
+        // ‼️ K-35 — the colour reaches a `style` attribute in a webview, so the
+        // op must not be the place a raw string gets through. It normalises
+        // with the store's own function, which is the SAME one the page's
+        // message and a hand-edited globalState go through.
+        const col = src.slice(src.indexOf("op: 'sessions.color'"), src.indexOf("op: 'sessions.color'") + 1400);
+        ok('‼️ sessions.color validates through the store rather than trusting its caller',
+            /normalizeColor\(args\.color\)/.test(col) && /setColor\(next, id, want\)/.test(col));
+        ok('…and its describe names the swatches the card offers, from the same list',
+            /SESSION_COLORS\.join/.test(col));
     }
 
     // ---------- X-3: engines.status, registered the way the extension does ----------

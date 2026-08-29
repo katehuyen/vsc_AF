@@ -144,7 +144,8 @@ import {
     profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile
 } from './core/launchProfiles';
 import {
-    allTags, isPinned, normalizeMarks, parseTags, SessionMarks, setTags, tagsOf, togglePin
+    allTags, colorOf, isPinned, normalizeColor, normalizeMarks, parseTags, SESSION_COLORS,
+    SessionMarks, setColor, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import {
     describeKeys, INTERRUPT_KEY, PermissionAnswer, permissionKeys, resolveInterrupt, TermRecord
@@ -9289,6 +9290,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return ids.length === 1
                     ? { sessionId: ids[0], tags: tagsOf(next, ids[0]) }
                     : { sessions: ids.length, tags };
+            }
+        },
+        {
+            op: 'sessions.color',
+            describe: `K-35 — put the user's own colour on a session, or take it off. The colour is drawn as a dot on every Console card that shows that session, and it is what the eye finds before it reads a word on a panel of a dozen cards that look alike. \`color\` is a hex (\`#rrggbb\` or \`#rgb\`); anything else CLEARS it, which is also how you clear it deliberately (pass an empty string). The fixed swatches the card offers are ${SESSION_COLORS.join(', ')} — a colour of your own is allowed and is stored the same way. Pass sessionIds to colour a whole set the same. args: sessionId or sessionIds (array), color (hex, or '' to clear)`,
+            handler: async (args) => {
+                const ids = argSessionIds(args);
+                need(ids.length, 'sessionId (or sessionIds) required');
+                const want = normalizeColor(args.color);
+                let next = sessionMarks();
+                for (const id of ids) { next = setColor(next, id, want); }
+                await saveMarks(next);
+                return ids.length === 1
+                    ? { sessionId: ids[0], color: colorOf(next, ids[0]) }
+                    : { sessions: ids.length, color: want };
             }
         },
         {
@@ -18804,6 +18820,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         olderHistory: consoleOlderHistory,
         lastWindow: () => lastWindow,
         forgetLastWindow,
+        // K-35 — the card's colour dot, read from and written to the SAME marks
+        // store the pin and the labels use, so the dot on a card can never
+        // disagree with the dot on the row below it.
+        colorFor: (sessionId: string) => colorOf(sessionMarks(), sessionId),
+        setColor: async (sessionId: string, color: string) => {
+            await saveMarks(setColor(sessionMarks(), sessionId, color));
+        },
         // …declared just below; the panel only ever calls them from a message
         leftoverOwner: (sessionId: string) => leftoverOwner(sessionId),
         endLeftover: (sessionId: string, pid: number) => endLeftover(sessionId, pid),

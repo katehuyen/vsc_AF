@@ -137,10 +137,15 @@ const data = () => ({
             model: 'gpt-5.6-terra', effort: 'low', permissionMode: 'acceptEdits',
             queued: ['bir de testleri koştur'],
             projectId: 'prj_9ujsbtzr', projectName: 'Agent Farm', projectIcon: '🚜',
+            // K-35 — the user's own colour on this session. Two of the three
+            // cards carry one and the third cannot (no session id yet), which
+            // is the whole of what the picture has to answer.
+            color: '#3d8bfd',
             messages: msgs()
         }),
         session({
             id: 'cs1', tokens: 812000, wTokens: 640000, cost: 0.31, contextTokens: 92000,
+            color: '#e05252',
             lastTurn: {
                 outcome: 'done', ms: 41200, cost: 0.084, tokens: 51200, wTokens: 42100,
                 apiCalls: 6, steps: 19, thinking: 4, model: 'claude-opus-5-20260514', effort: 'high'
@@ -239,7 +244,16 @@ const data = () => ({
     dropZone: true,
     attachMax: 20,
     owned: [],
-    lastWindow: [],
+    // K-35 — the ten fixed swatches, exactly as ConsolePanel sends them
+    // (core/sessionmarks.ts owns the list; the page never writes one of its own).
+    sessionColors: [
+        '#e05252', '#e08a3c', '#d9b310', '#5fb85f', '#2eb6b6',
+        '#3d8bfd', '#8b6ddb', '#d15fa8', '#9c7a5c', '#8a94a6'
+    ],
+    lastWindow: [{
+        sessionId: '019fe4aa-1c2d-70f1', agentName: 'manager', title: 'kota raporu',
+        cwd: 'D:\\zone\\agent\\ajanlar\\manager', endedAt: NOW - 3 * 3600000, color: '#5fb85f'
+    }],
     projects: [{ id: 'prj_9ujsbtzr', name: 'Agent Farm', icon: '🚜', color: '' }],
     activeProjectId: 'prj_9ujsbtzr',
     chipProjectId: 'prj_9ujsbtzr',
@@ -285,6 +299,27 @@ module.exports = {
     data,
     variants: () => [
         { id: 'console', label: 'Console — two engines at once', data: data() },
+        /**
+         * ‼️ K-35 — THE COLOUR LABEL. Three cards, and the picture has to answer
+         * all three states at once: a session with a colour, another with a
+         * different one, and the one that CANNOT have one because it has not
+         * written a session id yet.
+         *
+         * ‼️ THE PALETTE ITSELF IS NOT IN THIS PICTURE, and the reason is a gap
+         * in the harness rather than a choice. It only exists after a press, and
+         * this page repaints by SLOT: `lib_page_dom`'s `html()` reads `#app`
+         * plus the elements it memoised, while a second `slot()` write lands on
+         * the object the markup scan hands back — so everything after the first
+         * paint of a slot is invisible here. Reordering that lookup was tried
+         * and broke two whole-page fixtures, which is the bug the current order
+         * was written against. Until the shim holds ONE identity per id, a
+         * slotted page's post-press state is photographed on its own.
+         */
+        {
+            id: 'console-color',
+            label: 'Console — the colour label on every card kind in the panel',
+            data: data()
+        },
         { id: 'console-composer', label: 'Console — the engine picker', data: composerData() },
         {
             id: 'console-opencode',

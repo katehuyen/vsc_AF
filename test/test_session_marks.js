@@ -10,7 +10,8 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const {
-    normalizeMarks, parseTags, togglePin, setTags, isPinned, tagsOf, allTags, pinnedIds, pinnedFirst
+    normalizeMarks, parseTags, togglePin, setTags, isPinned, tagsOf, allTags, pinnedIds, pinnedFirst,
+    normalizeColor, setColor, colorOf, SESSION_COLORS
 } = require(path.join(__dirname, '..', 'out', 'core', 'sessionmarks.js'));
 
 // ---------- parseTags ----------
@@ -156,6 +157,60 @@ const {
     }
     ok('SessionInfo really does carry a pinned flag (the reason for the rule)',
         /pinned\?: boolean/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'sessions.ts'), 'utf8')));
+}
+
+// ---------- K-35: the colour, which is a mark like the other two ----------
+//
+// ‼️ WHY THE VALIDATION IS THE POINT. The colour ends up in a `style` attribute
+// in a webview, and it arrives from a page, from the bridge, or from a
+// hand-edited globalState. Anything that is not a hex must not survive the
+// store — the page may offer whatever picker it likes; what is KEPT is #rrggbb.
+{
+    ok('a six-digit hex is kept, lower-cased', normalizeColor('#3D8BFD') === '#3d8bfd');
+    ok('…with or without the hash', normalizeColor('3d8bfd') === '#3d8bfd');
+    ok('a three-digit hex is expanded', normalizeColor('#f0a') === '#ff00aa');
+    ok('surrounding space is not an error', normalizeColor('  #f0a  ') === '#ff00aa');
+    ok('‼️ a colour NAME is refused — only a hex reaches a style attribute',
+        normalizeColor('red') === '' && normalizeColor('rgb(1,2,3)') === '');
+    ok('‼️ and so is anything that could carry CSS of its own',
+        normalizeColor('#fff;background:url(x)') === ''
+        && normalizeColor('url(javascript:1)') === ''
+        && normalizeColor('var(--vscode-charts-red)') === '');
+    ok('nothing at all is nothing, not a crash',
+        normalizeColor(undefined) === '' && normalizeColor(null) === ''
+        && normalizeColor(42) === '' && normalizeColor('') === '');
+
+    let m = setColor({}, 's1', '#E05252');
+    ok('setting a colour files it under the session', colorOf(m, 's1') === '#e05252');
+    ok('…and a session with no mark has no colour', colorOf(m, 's2') === '');
+    m = togglePin(m, 's1', true);
+    m = setTags(m, 's1', ['zen']);
+    ok('the three marks live together on one entry',
+        isPinned(m, 's1') && tagsOf(m, 's1').join() === 'zen' && colorOf(m, 's1') === '#e05252');
+    m = setColor(m, 's1', '');
+    ok('clearing the colour leaves the pin and the labels alone',
+        colorOf(m, 's1') === '' && isPinned(m, 's1') && tagsOf(m, 's1').join() === 'zen');
+    // ‼️ The store stays exactly as long as the marks are: an entry that marks
+    // nothing is removed rather than kept as an empty object.
+    let only = setColor({}, 's3', '#5fb85f');
+    only = setColor(only, 's3', 'nonsense');
+    ok('‼️ a session whose only mark was a colour leaves the store entirely',
+        Object.keys(only).length === 0);
+
+    ok('a colour survives a round trip through the store',
+        colorOf(normalizeMarks({ s1: { color: '#D15FA8' } }), 's1') === '#d15fa8');
+    ok('‼️ …and a junk colour written by hand is dropped rather than drawn',
+        Object.keys(normalizeMarks({ s1: { color: 'red' } })).length === 0);
+    ok('…but it does not take a real pin down with it',
+        isPinned(normalizeMarks({ s1: { pinned: true, color: 'red' } }), 's1'));
+
+    ok('the fixed swatches are ten distinct hexes the store would accept',
+        SESSION_COLORS.length === 10
+        && SESSION_COLORS.every(c => normalizeColor(c) === c)
+        && new Set(SESSION_COLORS).size === 10);
+    ok('SessionInfo carries the colour, which is what puts it on every card',
+        /color\?: string;/.test(
+            require('fs').readFileSync(path.join(__dirname, '..', 'src', 'core', 'sessions.ts'), 'utf8')));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

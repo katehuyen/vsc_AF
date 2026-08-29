@@ -51,6 +51,12 @@ function mkEl(id) {
                 contains(c) { return !!self._classes[c]; }
             };
         },
+        // ‼️ K-35 — the colour dots are wired through their own SLOT rather than
+        // through the document, so that a repaint of one list cannot bind a
+        // second listener onto the other's. This shim has one document, so an
+        // element's query is the page's query — the same stand-in lib_page_dom
+        // makes, and for the same reason: everything the page draws is in it.
+        querySelectorAll(sel) { return sandbox.document.querySelectorAll(sel); },
         scrollTop: 0, scrollHeight: 1000, clientHeight: 300,
         set innerHTML(v) { this._html = v; this._writes++; }, get innerHTML() { return this._html; },
         addEventListener(ev, fn) { this.listeners[ev] = fn; },
@@ -148,7 +154,15 @@ const sandbox = {
                 let el = qsCache[key];
                 if (!el) {
                     el = { dataset: { [camel]: hit[1] } };
-                    el.addEventListener = (_t, fn) => { el._fn = fn; };
+                    // ‼️ K-35 — kept BY TYPE as well as last-one-wins. A control
+                    // that listens for two things (the colour input takes a
+                    // `click` to stay open and a `change` to save) had its first
+                    // listener overwritten by its second, so half of what the
+                    // page wires could not be reached from a test at all.
+                    el.addEventListener = (t, fn) => {
+                        el._fn = fn;
+                        (el._fns = el._fns || {})[t] = fn;
+                    };
                     qsCache[key] = el;
                 }
                 out.push(el);
@@ -1942,6 +1956,96 @@ const html = allHtml;
         /function measureScrollbar\(\)[\s\S]{0,400}querySelector\('\.clist'\)[\s\S]{0,200}offsetWidth - col\.clientWidth/.test(src));
     ok('…and an unmeasurable gutter falls back to 0px, which is the old rule and not a break',
         /var\(--af-sbw, 0px\)/.test(src) && /catch \(e\) \{ \/\* the 0px default/.test(src));
+}
+
+// ---------- K-35: the colour label on a card ----------
+//
+// ‼️ THE LEFT PANEL IS A COLUMN OF CARDS THAT LOOK ALIKE. Same shape, same two
+// lines of grey figures, and the agent name repeated down it because three of
+// them belong to one agent. Finding "the one about the wiki" means READING —
+// which is what a panel you GLANCE at cannot ask for. So the colour is a mark,
+// and the failure worth pinning is a colour that is right on one card kind and
+// missing on the next: a colour you cannot trust anywhere is worse than none.
+{
+    const swatches = ['#e05252', '#3d8bfd', '#5fb85f'];
+    const d = data(CONVO.slice(), { color: '#e05252' });
+    d.sessionColors = swatches;
+    d.lastWindow = [{
+        sessionId: '9c67e970-aaaa', agentName: 'developer', title: 'Kalan eksikler',
+        cwd: 'D:/a/dev', endedAt: Date.now() - 3600000, color: '#5fb85f'
+    }];
+    d.resumable = [{
+        sessionId: 'bb11cc22-dddd', title: 'Renk denemesi', agentName: 'developer',
+        engine: 'claude', cwd: 'D:/a/dev', pinned: false, ts: Date.now(), cost: 0.02,
+        tokens: 900, wTokens: 900, turns: 2, color: '#3d8bfd'
+    }];
+    push(d);
+    const list = els['c-list'] ? els['c-list']._html : '';
+    const rlist = els['c-rlist'] ? els['c-rlist']._html : '';
+
+    ok('a live card wears its colour', /class="cdotc on" data-color="407c78cb-aaaa"/.test(list)
+        && /background:#e05252/.test(list));
+    ok('‼️ …and so does the same session on the "where you left off" row',
+        /data-color="9c67e970-aaaa"[^>]*style="background:#5fb85f/.test(list));
+    ok('‼️ …and on a resumable row, which is the third card kind in this panel',
+        /data-color="bb11cc22-dddd"[^>]*style="background:#3d8bfd/.test(rlist));
+
+    // The palette is closed until it is asked for — a colour picker standing
+    // open on every card is a column of pickers, not a list of sessions.
+    ok('nothing is open to begin with', !/class="cpal"/.test(list));
+    posted.length = 0;
+    const dot = sandbox.document.querySelectorAll('[data-color]')
+        .find(e => e.dataset.color === '407c78cb-aaaa');
+    dot._fn({ stopPropagation() { } });
+    const open = els['c-list']._html;
+    ok('pressing the dot opens the palette', /class="cpal"/.test(open));
+    ok('…and it writes NOTHING on the way in', !posted.length);
+    ok('…with the offered swatches, and the one in force marked',
+        (open.match(/class="csw/g) || []).length === 3
+        && /class="csw on" data-swatch="407c78cb-aaaa\|#e05252"/.test(open));
+    ok('‼️ the swatches come DOWN with the payload rather than being a second list in the page',
+        /DATA\.sessionColors/.test(fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8')));
+
+    const swatch = sandbox.document.querySelectorAll('[data-swatch]')
+        .find(e => e.dataset.swatch === '407c78cb-aaaa|#3d8bfd');
+    swatch._fn({ stopPropagation() { } });
+    ok('picking one asks the host to keep it against the session id',
+        posted.some(m => m.type === 'setSessionColor'
+            && m.sessionId === '407c78cb-aaaa' && m.color === '#3d8bfd'));
+
+    // Clearing goes through the same door with an empty string — the store is
+    // what decides that "not a hex" means "no colour".
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-color]')
+        .find(e => e.dataset.color === '407c78cb-aaaa')._fn({ stopPropagation() { } });
+    sandbox.document.querySelectorAll('[data-swatch]')
+        .find(e => e.dataset.swatch === '407c78cb-aaaa|')._fn({ stopPropagation() { } });
+    ok('“none” clears it through the same message', posted.some(m =>
+        m.type === 'setSessionColor' && m.sessionId === '407c78cb-aaaa' && m.color === ''));
+
+    // A colour of your own, which is the half of the item a fixed palette
+    // cannot answer.
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-color]')
+        .find(e => e.dataset.color === '407c78cb-aaaa')._fn({ stopPropagation() { } });
+    const own = sandbox.document.querySelectorAll('[data-custom]')[0];
+    own.value = '#123456';
+    own._fns.change();
+    ok('a colour picked by hand goes the same way',
+        posted.some(m => m.type === 'setSessionColor' && m.color === '#123456'));
+
+    // ‼️ A CARD WITH NO SESSION ID CANNOT CARRY A MARK, and a dot that saved
+    // nothing quietly would be the exact failure this whole panel is drawn to
+    // avoid: a control that looks alive and is not.
+    posted.length = 0;
+    const fresh = data(CONVO.slice(), { sessionId: '', color: '' });
+    fresh.sessionColors = swatches;
+    push(fresh);
+    const raw = els['c-list']._html;
+    ok('‼️ a session with no id yet gets a dead dot, not a live one',
+        /class="cdotc dead"/.test(raw) && !/data-color=""/.test(raw));
+    ok('…and the hover says why rather than leaving the reader to guess',
+        /has not written its first turn/.test(raw));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

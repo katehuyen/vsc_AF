@@ -220,6 +220,39 @@
            A card carries its phase three ways at once — a coloured edge, a dot
            and a WORD — so it survives a light theme, a colourblind reader and a
            glance from two metres away. Only the transient state moves. */
+        /* ‼️ K-35: the colour label. Bottom-right of the card, out of the way of
+           every figure already there — and small, because it is a MARK and not
+           a status: the phase dot on the left is the one that means something
+           by itself, and two loud dots on a card would compete. */
+        .srow { position:relative; }
+        .cdotw { position:absolute; right:7px; bottom:6px; line-height:0; }
+        .cdotc { width:11px; height:11px; padding:0; border-radius:50%; cursor:pointer;
+            background:transparent; border:1px solid var(--vscode-descriptionForeground,#888);
+            opacity:.45; transition:opacity .12s, transform .12s; }
+        .srow:hover .cdotc { opacity:.9; }
+        .cdotc:hover { opacity:1; transform:scale(1.15); }
+        /* A colour that has been chosen is not a hint — it stays at full strength
+           whatever the pointer is doing, or the whole point (glanceability) is
+           only true while you are already looking at it. */
+        .cdotc.on { opacity:1; border-width:1px; }
+        .cdotc.dead { cursor:default; opacity:.25; border-style:dashed; display:inline-block; }
+        .cpal { position:absolute; right:0; bottom:16px; z-index:6; width:132px;
+            padding:6px; border-radius:6px; line-height:normal;
+            border:1px solid var(--vscode-widget-border,#4444);
+            background:var(--vscode-editorWidget-background,var(--vscode-editor-background));
+            box-shadow:0 6px 18px #0007; }
+        .cpalr { display:flex; flex-wrap:wrap; gap:4px; }
+        .csw { width:20px; height:20px; padding:0; border-radius:50%; cursor:pointer;
+            border:2px solid transparent; }
+        .csw:hover { transform:scale(1.12); }
+        .csw.on { border-color:var(--vscode-focusBorder); }
+        .cpalf { display:flex; align-items:center; justify-content:space-between; gap:6px;
+            margin-top:6px; font-size:10px; }
+        .cpalc { display:flex; align-items:center; gap:4px; cursor:pointer; opacity:.8; }
+        .cpalc input { width:20px; height:20px; padding:0; border:none; background:none; cursor:pointer; }
+        .cpalx { background:transparent; border:none; cursor:pointer; font-size:10px;
+            opacity:.7; text-decoration:underline; color:inherit; padding:0; }
+        .cpalx:hover { opacity:1; }
         .srow { border-left:3px solid transparent; transition:background .18s ease; }
         .srow .dot { background:var(--vscode-descriptionForeground,#888); }
         .srow .phase { text-transform:lowercase; }
@@ -1627,6 +1660,116 @@
 
     // ---- the pieces, each rendered on its own ---------------------------------
 
+    /**
+     * ‼️ K-35 — THE ONE THING ON A CARD THE EYE FINDS WITHOUT READING.
+     *
+     * The left panel is a column of cards that all look alike: same shape, same
+     * two lines of grey figures, and the agent name repeated down it because
+     * three of them belong to the same agent. Finding "the one about the wiki"
+     * means READING, every time, and reading is what a panel you glance at
+     * cannot ask for.
+     *
+     * So the user may put a colour on a session, and it is a MARK — the same
+     * kind of thing as the pin and the labels (core/sessionmarks.ts), keyed by
+     * session id and remembered for ever. Which is why the dot is on every card
+     * in this panel that shows that session, live or resumable or "where you
+     * left off": a colour that is right on two surfaces out of three is a
+     * colour nobody trusts on any of them.
+     *
+     * ‼️ AND A CARD WITH NO SESSION ID CANNOT CARRY ONE. The mark is filed
+     * against the id, and a process that has not written its first turn has not
+     * got one yet. That dot is drawn and dead, and says why — rather than being
+     * pressable and silently saving nothing.
+     */
+    let colorPick = '';
+
+    function colorPalette(id, color) {
+        const swatches = (DATA.sessionColors || []).map(c =>
+            `<button class="csw${c === color ? ' on' : ''}" data-swatch="${C.esc(id)}|${C.esc(c)}"
+                style="background:${C.esc(c)}" title="${C.esc(c)}"></button>`).join('');
+        return `<div class="cpal" data-cpal="1">
+            <div class="cpalr">${swatches}</div>
+            <div class="cpalf">
+                <label class="cpalc" title="Any colour you like — it is kept exactly the same way the ten above are">
+                    <input type="color" data-custom="${C.esc(id)}" value="${C.esc(color || '#3d8bfd')}"><span>own</span></label>
+                <button class="cpalx" data-swatch="${C.esc(id)}|"
+                    title="Take the colour off this session — the dot goes back to empty">none</button>
+            </div>
+        </div>`;
+    }
+
+    function colorDot(sessionId, color) {
+        const id = String(sessionId || '');
+        if (!id) {
+            // ‼️ In the SAME absolutely-positioned holder as a live dot. Left in
+            // the flow it added a line to the card, so the one card that cannot
+            // be coloured was also the one that did not look like the others.
+            return `<span class="cdotw">${window.AFTip.wrap(
+                '<span class="cdotc dead"></span>', 'No colour yet',
+                'A colour is remembered against the session id, and this one has not written its'
+                + ' first turn — so there is nothing to file it against. It can be coloured the'
+                + ' moment the CLI names it.', 'nw')}</span>`;
+        }
+        const hex = C.esc(color || '');
+        const dot = `<button class="cdotc${color ? ' on' : ''}" data-color="${C.esc(id)}"${color
+            ? ` style="background:${hex}; border-color:${hex}"` : ''}></button>`;
+        return `<span class="cdotw">${window.AFTip.wrap(dot,
+            color ? `Colour: ${color}` : 'No colour yet',
+            (color
+                ? 'This session is marked with this colour on every card in this panel that shows it.'
+                : 'Put a colour on this session so it is found by eye rather than read for.')
+            + '\n\nIt is remembered against the session id, like the pin and the labels — it survives'
+            + ' the window closing and comes back with the conversation.', 'nw')}${colorPick === id
+            ? colorPalette(id, color || '') : ''}</span>`;
+    }
+
+    /**
+     * One wiring for every card kind — the live list and the resume list are
+     * two slots and repaint separately, and a dot wired in only one of them is
+     * a dot that works on half the panel.
+     *
+     * ‼️ SCOPED TO ITS OWN SLOT, and that is not tidiness. `slot()` only
+     * rewrites what CHANGED, so a document-wide query run from the live list
+     * would bind a second listener onto the resume list's dots — and on the
+     * repaint where the resume list did not change, nothing takes it off again.
+     * Two listeners on a toggle is a toggle that does nothing.
+     */
+    function wireColorDots(slotId) {
+        const root = document.getElementById(slotId);
+        // The same guard every shared component carries: a page script is also
+        // run against a light DOM, and a missing method must degrade rather
+        // than take the whole page down with a message naming nothing.
+        if (!root || typeof root.querySelectorAll !== 'function') { return; }
+        root.querySelectorAll('[data-color]').forEach(b =>
+            b.addEventListener('click', ev => {
+                ev.stopPropagation();
+                colorPick = colorPick === b.dataset.color ? '' : b.dataset.color;
+                renderList();
+            }));
+        root.querySelectorAll('[data-cpal]').forEach(p =>
+            p.addEventListener('click', ev => ev.stopPropagation()));
+        root.querySelectorAll('[data-swatch]').forEach(b =>
+            b.addEventListener('click', ev => {
+                ev.stopPropagation();
+                const at = String(b.dataset.swatch || '').indexOf('|');
+                if (at < 0) { return; }
+                const id = b.dataset.swatch.slice(0, at);
+                colorPick = '';
+                vscode.postMessage({
+                    type: 'setSessionColor', sessionId: id, color: b.dataset.swatch.slice(at + 1)
+                });
+            }));
+        root.querySelectorAll('[data-custom]').forEach(inp => {
+            inp.addEventListener('click', ev => ev.stopPropagation());
+            inp.addEventListener('change', () => {
+                colorPick = '';
+                vscode.postMessage({
+                    type: 'setSessionColor', sessionId: inp.dataset.custom, color: inp.value
+                });
+            });
+        });
+    }
+
     function sessionListHtml() {
         // Agent name alone cannot tell two sessions of the same agent apart, so
         // the row carries the agent, the session id, the session's own name and
@@ -1675,6 +1818,7 @@
                         session: s.sessionId, whole: true, kept: s.wikiKept || []
                     }) : ''}
                 </div>
+                ${colorDot(s.sessionId, s.color)}
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
                 <div class="m">${cardTip(`<span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>`,
                     tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(s))}</span>`, ctxTip(s).head, ctxTip(s).body)}` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
@@ -1718,6 +1862,7 @@
                 ${cardTip(`<span class="t2">${C.esc(r.title || '(no name)')}</span>`,
                     r.title ? `${r.title.length.toLocaleString()} characters` : 'never named',
                     r.title || 'This session ended before the CLI named it.', 't2w')}
+                ${colorDot(r.sessionId, r.color)}
                 <div class="m">ended ${relTime(r.endedAt)} ago · click to continue</div>
             </div>`).join('')}` : '';
         return `${callout}
@@ -1918,6 +2063,7 @@
                         ]), 'nw')}
                     ${resumeEngineBadge(r)}
                 </div>
+                ${colorDot(r.sessionId, r.color)}
                 <div class="m wrap">${cardTip(who(r.agentName, r.sessionId),
                     `${r.agentName || 'session'}${r.sessionId ? ` · #${String(r.sessionId).slice(0, 8)}` : ''}`,
                     window.AFTip.lines([
@@ -3097,6 +3243,7 @@
                 const next = needingYou()[0];
                 if (next) { vscode.postMessage({ type: 'select', id: next.id }); }
             });
+            wireColorDots('c-list');
         }
         renderResume();
     }
@@ -3172,6 +3319,7 @@
                     type: 'resume', sessionId: r.dataset.resume,
                     model: st.model, effort: st.effort, permissionMode: st.permissionMode
                 })));
+            wireColorDots('c-rlist');
         }
     }
 

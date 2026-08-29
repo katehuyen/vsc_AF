@@ -976,6 +976,15 @@
       }
     },
     {
+      "capability": "consolePanel.ts#setSessionColor",
+      "ui": [
+        "page:consolePanel.ts#setSessionColor"
+      ],
+      "ops": [
+        "sessions.color"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#interrupt",
       "ui": [
         "page:consolePanel.ts#interrupt"

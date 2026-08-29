@@ -20,6 +20,7 @@ import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
+import { SESSION_COLORS } from '../core/sessionmarks';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
 import { afConfig } from '../core/settingsDoor';
 
@@ -75,6 +76,21 @@ export interface ConsoleDeps {
     host: ConsoleHost;
     getAgents(): AgentInfo[];
     index: SessionIndex;
+    /**
+     * ‼️ K-35 — THE USER'S OWN COLOUR ON A SESSION, read from the marks store
+     * on every payload rather than captured.
+     *
+     * A live card is a hosted PROCESS record, not a `SessionInfo`, so the colour
+     * the index projects onto the resumable rows never reaches it. Without this
+     * the same session would be coloured on the "where you left off" row and
+     * grey on the card three lines above it — which is the one thing a colour
+     * must never do, because its whole job is to be the same everywhere.
+     */
+    colorFor?(sessionId: string): string;
+    /** K-35 — set (or clear with '') that colour. Optional for the same reason
+     *  every other write dep here is: a host that cannot do it draws a card
+     *  whose dot is read-only rather than a page that throws. */
+    setColor?(sessionId: string, color: string): void | Promise<void>;
     modelAliases(): string[];
     /**
      * S-20 — the model/effort vocabulary PER ENGINE, read from what each engine
@@ -614,6 +630,10 @@ export class ConsolePanel {
                 // thing) — a figure per mark rather than every mark of every
                 // conversation on every repaint.
                 wikiKept: s.sessionId ? wikiMarksOf(s.sessionId).map(m => m.from) : [],
+                // K-35 — the user's own colour, keyed by session id like every
+                // other mark. Empty until they pick one, and empty for a card
+                // whose session has not written its id yet.
+                color: s.sessionId ? (this.deps.colorFor?.(s.sessionId) ?? '') : '',
                 messages: s.id === this.selected ? s.messages.slice(-400) : []
             })),
             agents: this.deps.getAgents().map(a => ({
@@ -669,6 +689,10 @@ export class ConsolePanel {
                 note: engineNote(e.id)
             })),
             engine: this.chosenEngine(),
+            // ‼️ K-35 — the fixed swatches come DOWN rather than being a list in
+            // the page. The same ten are what `sessions.color` documents to an
+            // agent, and a palette written out twice is a palette that drifts.
+            sessionColors: SESSION_COLORS,
             defaults: {
                 engine: d.engine ?? '', model: d.model ?? '',
                 effort: d.effort ?? '', permissionMode: d.permissionMode ?? ''
@@ -689,7 +713,13 @@ export class ConsolePanel {
             owned: this.deps.liveOwners().map(o => o.sessionId),
             // where you were when the last window went away (see lastWindow) —
             // minus anything already running here again
-            lastWindow: this.deps.lastWindow()
+            // K-35 — …coloured too. "Where you left off" is a card in the same
+            // panel, so a session the user coloured is coloured there as well;
+            // a colour that is on two of the three surfaces is a colour that
+            // cannot be trusted anywhere.
+            lastWindow: this.deps.lastWindow().map(r => ({
+                ...r, color: r.sessionId ? (this.deps.colorFor?.(r.sessionId) ?? '') : ''
+            }))
                 .filter(r => !hosted.some(h => h.sessionId === r.sessionId
                     && h.status !== 'ended' && h.status !== 'error')),
             // The project a new session will be started under, and the exact
@@ -816,6 +846,9 @@ export class ConsolePanel {
             // IS Claude by definition, so the page reads the absence as claude.
             engine: s.source || 'claude',
             cwd: s.cwd ?? '', pinned: !!s.pinned, ts: s.lastTs || s.mtime, cost: s.cost,
+            // K-35 — the index projects the mark onto every SessionInfo, so a
+            // resumable row is coloured by the same fact the live card is.
+            color: s.color ?? '',
             // what the session spent — the figure the card leads with, because
             // "$0.03" alone does not say whether that was haiku or opus
             tokens: totalTokens(s.usage),
@@ -1162,6 +1195,22 @@ export class ConsolePanel {
                 this.deps.forgetLastWindow(str('sessionId'));
                 this.refresh();
                 break;
+            /**
+             * ‼️ K-35 — THE COLOUR IS VALIDATED BY THE STORE, NOT BY THE PAGE.
+             *
+             * What arrives here is a string a webview chose, and it ends up in a
+             * `style` attribute. `setColor` normalises it to `#rrggbb` or to
+             * nothing at all, so a page (or a bridge caller, or a hand-edited
+             * globalState) cannot put anything else in front of the reader.
+             * Clearing is the same door with an empty string — the card's own
+             * "no colour" swatch sends exactly that.
+             */
+            case 'setSessionColor': {
+                const id = str('sessionId');
+                if (!id) { break; }
+                void Promise.resolve(this.deps.setColor?.(id, str('color'))).then(() => this.refresh());
+                break;
+            }
             // The page owns the controls, the host owns the answer: it can see
             // every session, the page only what it was sent.
             case 'resumeQuery': {

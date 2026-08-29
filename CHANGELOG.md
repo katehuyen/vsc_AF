@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.330.0 - K-35: a colour label on a Console card (2026-08-29)
+
+The left panel is a column of cards that all look alike — same shape, same two
+lines of grey figures, and the agent name repeated down it because three of them
+belong to one agent. Finding "the one about the wiki" means READING, every time,
+and reading is what a panel you glance at cannot ask for.
+
+**So a session can carry a colour**, picked from a dot at the bottom-right of
+its card: ten fixed swatches, a colour of your own, and "none" to take it off.
+It is a MARK — the same kind of thing as the pin and the labels
+(`core/sessionmarks.ts`), keyed by session id and remembered for ever.
+
+**‼️ Which is why the dot is on every card kind in that panel** — live, "where
+you left off", and resumable. A colour that is right on two surfaces out of
+three is a colour nobody trusts on any of them.
+
+**And a card with no session id cannot carry one.** The mark is filed against
+the id, and a process that has not written its first turn has not got one: that
+dot is drawn dead and says why, rather than being pressable and saving nothing.
+
+The value is validated in the store and nowhere else — it ends up in a `style`
+attribute, so nothing but `#rrggbb` survives, whether it comes from the page,
+from `sessions.color` on the bridge, or from a hand-edited globalState.
+
 ## 3.329.0 - U-122: every object on the vault strip is a path (2026-08-29)
 
 The Wiki cockpit's vault strip named six things and let you press three. A path

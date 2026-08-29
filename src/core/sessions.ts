@@ -211,6 +211,9 @@ export interface SessionInfo {
     pinned?: boolean;
     /** User labels on this session — searched by the tables' text filter. */
     tags?: string[];
+    /** K-35 — the user's own colour on this session (`#rrggbb`), drawn as a dot
+     *  on every card that shows it. Absent until they pick one. */
+    color?: string;
     firstTs: number;
     lastTs: number;
     mtime: number;
@@ -1596,6 +1599,7 @@ export class SessionIndex implements vscode.Disposable {
         const mark = this.marks[info.sessionId];
         info.pinned = mark?.pinned === true ? true : undefined;
         info.tags = mark?.tags?.length ? mark.tags : undefined;
+        info.color = mark?.color || undefined;
         info.consoleHosted = this.consoleIds.has(info.sessionId) ? true : undefined;
         info.launchedBy = this.launchers.get(info.sessionId);
     }
