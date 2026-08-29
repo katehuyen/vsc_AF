@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.331.0 - M-31: the list follows the count (2026-08-30)
+
+The figures at the top of the backlog answer two honest questions one press
+apart — `⊞ every` line, or `⊟ wholes` with the parts folded into the jobs they
+belong to. But the ROWS underneath never moved. Pressing for "how much work is
+left" put the reduced number in the headline and left the full list below it,
+so the strip contradicted the thing it was a strip for.
+
+**Now the press moves the family filter with it.** `⊟` ticks *wholes only*, `⊞`
+puts the axis back to *any* — and because "wholes only" is the SAME predicate
+the roll-up counts by (nobody's part), the rows on screen are exactly the lines
+behind the number, never a near-miss.
+
+**‼️ The arrow points one way.** The strip writes the axis; the axis never
+writes the strip. Narrowing to *part of something* is a question about the
+family tree, not an instruction to change what the headline counts. And what
+you pick AFTER a press stands — change the axis, or clear the filters
+altogether, and nothing re-applies it until you press the figure again.
+
+The press is unconditional on purpose: a press whose effect depended on what
+the axis happened to hold is a press whose result you cannot predict. Both
+hovers say so before it happens — the strip's, and the family axis's own.
+
 ## 3.330.0 - K-35: a colour label on a Console card (2026-08-29)
 
 The left panel is a column of cards that all look alike — same shape, same two

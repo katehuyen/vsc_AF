@@ -2962,7 +2962,11 @@
             id: 'bl-rel', key: 'rel', label: 'family', allLabel: 'any',
             where: 'panel', width: 230, tipDelay: BL_AND_TIP_MS,
             title: '[parent:: CODE] — what an item is PART OF. Not ⛔: a child is not waiting on its parent. '
-                + '"Wholes only" is the roll-up reading: everything that is nobody\'s part, whether or not it has parts of its own.',
+                + '"Wholes only" is the roll-up reading: everything that is nobody\'s part, whether or not it has parts of its own. '
+                // M-31 — the one axis on this page something else writes to, so
+                // this is where a reader who did not expect it comes looking.
+                + 'This is the axis the counts strip moves: pressing ⊟ picks "wholes only", pressing ⊞ puts it back to any. '
+                + 'Nothing you pick here moves the strip, and what you pick after a press stands.',
             options: [
                 // ‼️ M-6 — THE ROLL-UP ROW, AND WHY IT IS NOT THE SAME AS "has
                 // parts". "Show me the wholes, not the parts" is the question
@@ -3562,7 +3566,14 @@
             `Done: ${every.done} · ${tops.done}`,
             `Parts: ${parts} of ${(all || []).length} items are part of another`,
             '',
-            'Press to switch. The area chips below count by the same rule, so the two lines can never disagree.'
+            'Press to switch. The area chips below count by the same rule, so the two lines can never disagree.',
+            // M-31 — the press narrows the list as well, and the hover has to
+            // say so BEFORE it happens: a filter that moves on its own is only
+            // startling the first time if nothing warned you.
+            `Pressing also sets the family filter — ${blRollUp
+                ? 'back to any, so every line is on screen again'
+                : 'to "wholes only", so the rows are the ones being counted'}.`,
+            'It only ever goes that way: change the filter afterwards and it stands, and no filter moves this figure.'
         ]);
         // ‼️ U-62 — WHICH READING IS ON SCREEN, VISIBLE WITHOUT A HOVER.
         //
@@ -7766,7 +7777,34 @@
                 // M-5 — which of the two honest sizes the strip is showing.
                 // Page-side and remembered for as long as the panel lives, the
                 // same way the sort and the filters are.
-                case 'blRollUp': blRollUp = !blRollUp; render(); break;
+                //
+                // ‼️ M-31 — AND THE LIST FOLLOWS THE COUNT, ONE WAY ONLY.
+                //
+                // "⊟ wholes · 3 open" over a list still showing all five lines
+                // is a strip that contradicts what is under it: the reader
+                // pressed the figure to ask "how much work is left", and got
+                // the answer in the headline while the rows kept answering the
+                // other question. So the press moves the family axis too —
+                // `top` is the SAME predicate the roll-up counts by (`!parent`,
+                // see blCounted), which is what makes this honest rather than
+                // merely convenient: the list ends up showing exactly the lines
+                // the figure counted, never a near-miss.
+                //
+                // ‼️ THE ARROW POINTS ONE WAY. The strip sets the axis; the axis
+                // never sets the strip. Narrowing to "part of something" is a
+                // question about the family tree, not an instruction to change
+                // what the headline counts — and a control that moved when you
+                // touched something else would be a control nobody trusts. It
+                // is also unconditional (`every` always clears the axis, whole
+                // always sets it to `top`): a press whose effect depended on
+                // what the axis happened to hold would be a press whose result
+                // you cannot predict. What the reader picks AFTERWARDS stands —
+                // nothing re-applies it until the figure is pressed again.
+                case 'blRollUp':
+                    blRollUp = !blRollUp;
+                    blFilter.rel = blRollUp ? ['top'] : null;
+                    render();
+                    break;
                 case 'blFilters': blFiltersOpen = !blFiltersOpen; render(); break;
                 // U-107 — any → hidden → only → any. Three answers, one press
                 // each; see blArchChipHtml for why it is not a two-state toggle.

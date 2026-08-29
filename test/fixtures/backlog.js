@@ -105,7 +105,13 @@ module.exports = {
             // ‼️ U-62 — the counting mode is a STATE, and a state has to be
             // visible in both of its positions. The pair is what gets judged:
             // 'every line' plain, 'wholes only' marked, side by side.
-            id: 'rollup', label: 'Backlog — counting wholes only (⊟)',
+            //
+            // ‼️ M-31 — and the LIST is part of the same judgement now: one
+            // press marks the strip, ticks the family axis and drops the parts
+            // out of the rows. What has to read as one thought is the headline
+            // figure, the ⚙ filters (1) chip that says why the list is shorter,
+            // and the rows themselves all agreeing.
+            id: 'rollup', label: 'Backlog — counting wholes only (⊟), list narrowed to match',
             data: data(), act: (r) => { r.query('.pj-bl-cnt')[0].click(); }
         },
         {

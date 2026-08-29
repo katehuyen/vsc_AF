@@ -1530,6 +1530,66 @@ const famData = () => {
         !flat.els('act').some(e => e.dataset.act === 'blRollUp'));
 }
 
+// ---- M-31: the list follows the count, and the arrow points one way ----
+//
+// "⊟ wholes · 3 open" over a list still showing all five lines is a strip that
+// contradicts what is under it: the reader pressed the figure to ask "how much
+// work is left", got that answer in the headline, and the rows went on
+// answering the other question. So the press moves the family axis too — by
+// the SAME predicate the roll-up counts by, so the rows are exactly the lines
+// behind the number rather than a near-miss.
+{
+    const codes = h => codesIn(h).slice().sort().join();
+    const r = run(famData());
+    const counts = () => r.els('act').find(e => e.dataset.act === 'blRollUp');
+    r.els('act').find(e => e.dataset.act === 'blFilters').click();
+    ok('the family axis asks nothing to begin with', r.ms.label('bl-rel') === 'family: any');
+    const everyRows = codes(r.html());
+
+    counts().click();
+    ok('‼️ M-31 — pressing the figure picks "wholes only" on the family axis',
+        r.ms.ticked('bl-rel').join() === 'top');
+    ok('…so the rows on screen are exactly the lines the number counted',
+        codes(r.html()) === 'P-1,P-2');
+    ok('…and the hover said it would, before it happened',
+        /Pressing also sets the family filter/.test(r.html()));
+
+    counts().click();
+    ok('‼️ …and pressing it back puts the axis at any, not at some other subset',
+        r.ms.label('bl-rel') === 'family: any' && codes(r.html()) === everyRows);
+
+    // ‼️ ONE WAY. The strip writes the axis; the axis never writes the strip.
+    // Narrowing to "part of something" is a question about the family tree, not
+    // an instruction to change what the headline counts.
+    r.ms.only('bl-rel', ['child']);
+    ok('‼️ the filter does NOT move the strip — it is still counting every line',
+        /pj-bl-cntg">⊞ every/.test(r.html()) && /<b>5<\/b> open/.test(r.html()));
+
+    // And what the reader picks AFTER a press stands: nothing re-applies the
+    // roll-up's choice until the figure is pressed again.
+    const r2 = run(famData());
+    r2.els('act').find(e => e.dataset.act === 'blFilters').click();
+    r2.els('act').find(e => e.dataset.act === 'blRollUp').click();
+    r2.ms.only('bl-rel', ['child']);
+    ok('what the reader picks after the press stands, on both sides',
+        r2.ms.ticked('bl-rel').join() === 'child'
+        && /pj-bl-cntg">⊟ wholes/.test(r2.html()));
+    // Clearing the filters is the reader's own act too: it empties the axis and
+    // leaves the figure exactly where they left it.
+    r2.els('act').find(e => e.dataset.act === 'blClear').click();
+    ok('…and Clear empties the axis without touching the reading',
+        r2.ms.label('bl-rel') === 'family: any' && /pj-bl-cntg">⊟ wholes/.test(r2.html()));
+
+    // The press is unconditional — a press whose effect depended on what the
+    // axis happened to hold is a press whose result you cannot predict.
+    const r3 = run(famData());
+    r3.els('act').find(e => e.dataset.act === 'blFilters').click();
+    r3.ms.only('bl-rel', ['parent']);
+    r3.els('act').find(e => e.dataset.act === 'blRollUp').click();
+    ok('a press overwrites whatever the axis held — the same press, every time',
+        r3.ms.ticked('bl-rel').join() === 'top');
+}
+
 // U-24 — ⚭ Gather families: the QUEUE is rearranged so a family reads as one
 // run. It is the twin of Tidy and the pair has to stay distinguishable: this one
 // writes the 🎯 block, that one moves lines.
