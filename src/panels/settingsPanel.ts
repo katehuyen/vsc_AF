@@ -150,6 +150,24 @@ export interface FarmSettingsDeps {
     alertsVoiceRemove?(id: string): Promise<void>;
     /** Open (creating if need be) the folder the card suggests sounds go in. */
     alertsOpenFolder?(): Promise<void>;
+    /**
+     * ‼️ A-25 — THE ANNOUNCEMENT'S OWN CONTROLS, through the same host
+     * functions `alerts.speak` uses. `agentFarm.alerts.speak` is a seven-field
+     * object and was a raw JSON box: one of those fields is a voice NAME that
+     * has to exist on THIS machine, and a box cannot know whether it does.
+     */
+    alertsSetSpeak?(patch: Record<string, unknown>): Promise<void>;
+    alertsSetSpeakEvent?(event: string, on: boolean): Promise<void>;
+    /** Speak something RIGHT NOW, gate and queue bypassed — "does this machine
+     *  talk at all" is not the same question as "is the feature on". */
+    alertsSpeakTest?(text?: string): Promise<void>;
+    /** Ask the machine which voices it has. Costs a shell, so the page asks
+     *  once and the host keeps the answer; `force` is the reader who has just
+     *  installed a language pack and wants it in the list now. */
+    alertsLoadSpeechVoices?(force?: boolean): Promise<void>;
+    /** Clear ONE conversation's own announcement voice, from the strip that
+     *  listed it — the same act as `alerts.speak { sessionId, voice: '' }`. */
+    alertsClearSessionSpeech?(sessionId: string): Promise<void>;
 }
 
 /** One event's row on the Alert sounds card: what is armed, what was chosen,
@@ -181,8 +199,38 @@ export interface AlertsGate {
     mutedSessions: { sessionId: string; label: string }[];
 }
 
+/**
+ * A-25 — the announcement, resolved rather than printed. `voice` is a loose
+ * fragment (`Tolga` finds `Microsoft Tolga - Turkish (Turkey)`), so the setting
+ * alone does not say what will be heard; `resolved` is what it actually reaches
+ * on this machine and empty means NOTHING does — which fails the announcement
+ * rather than reading it out in the wrong language.
+ */
+export interface AlertsSpeak {
+    on: boolean;
+    events: string[];
+    template: string;
+    rate: number;
+    volume: number;
+    voice: string;
+    defaults: { on: boolean; events: string[]; template: string; rate: number; volume: number; voice: string };
+    max: number;
+    preview: string;
+    voices: { id: string; name: string; culture: string; engine: string; label: string }[];
+    /** ‼️ false is "not asked yet", NOT "this machine has no voices". */
+    voicesLoaded: boolean;
+    voicesError: string;
+    voicesNote: string;
+    resolved: string;
+    /** the matched voice's full name — what the picker's option is keyed on,
+     *  because `Tolga` is a legal setting and no option is called that */
+    resolvedName: string;
+    sessions: { sessionId: string; label: string; voice: string }[];
+}
+
 export interface AlertsPage {
     gate: AlertsGate;
+    speak: AlertsSpeak;
     folder: string;
     limit: number;
     /** extensions any player on THIS machine can open */
@@ -865,6 +913,41 @@ export class FarmSettingsPanel {
                 await this.alertAct(() => this.deps.alertsVoiceRemove?.(id));
                 break;
             }
+            /**
+             * ‼️ A-25 — EVERY FLEET-WIDE WRITE ON THE ANNOUNCEMENT STRIP, one
+             * message. The page sends only the fields it changed and the host
+             * merges them through `speakConfig`, so a rate the box should never
+             * have produced is clamped rather than stored.
+             */
+            case 'alertSpeak': {
+                const patch: Record<string, unknown> = {};
+                for (const k of ['on', 'template', 'rate', 'volume', 'voice']) {
+                    if (msg[k] !== undefined) { patch[k] = msg[k]; }
+                }
+                if (msg.event !== undefined) {
+                    await this.alertAct(() =>
+                        this.deps.alertsSetSpeakEvent?.(String(msg.event), msg.on !== false));
+                    break;
+                }
+                await this.alertAct(() => this.deps.alertsSetSpeak?.(patch));
+                break;
+            }
+            case 'alertSpeakTest':
+                // Not through `alertAct`: speaking changes no setting, so the
+                // redraw it would trigger is a page that flickers for nothing.
+                try {
+                    await this.deps.alertsSpeakTest?.(
+                        msg.text === undefined ? undefined : String(msg.text));
+                } catch (e) { this.alertError(String((e as Error).message)); }
+                break;
+            case 'alertSpeakVoices':
+                await this.alertAct(() =>
+                    this.deps.alertsLoadSpeechVoices?.(msg.force === true));
+                break;
+            case 'alertSpeakSession':
+                await this.alertAct(() =>
+                    this.deps.alertsClearSessionSpeech?.(String(msg.sessionId ?? '')));
+                break;
             case 'alertFolder':
                 await this.alertAct(() => this.deps.alertsOpenFolder?.());
                 break;

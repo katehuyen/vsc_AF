@@ -359,8 +359,8 @@ import {
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
 } from './core/turnAlerts';
 import {
-    announcement, speakConfig, speaks, SPEAK_DEFAULT, SPEAK_MAX,
-    SPEECH_ONECORE_NOTE, type SpeakConfig
+    announcement, matchVoice, speakConfig, speakEvents, speaks, SPEAK_DEFAULT, SPEAK_MAX,
+    SPEECH_ONECORE_NOTE, voiceLabel, type InstalledVoice, type SpeakConfig
 } from './core/speech';
 import {
     addCustomVoice, AlertEvent, ALERT_EVENTS, AlertVoice, builtinVoices, CustomVoice,
@@ -1315,6 +1315,66 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  value captured at activation would need a restart to be heard. */
     const speakCfg = (): SpeakConfig =>
         speakConfig(cfg().get<Partial<SpeakConfig>>('alerts.speak', {}));
+    /**
+     * ‼️ A-25 — ONE FUNCTION WRITES THE ANNOUNCEMENT SETTING, and the card, the
+     * right-click and the `alerts.speak` op all go through it.
+     *
+     * The op used to assemble the merge inline. A settings card that repeated
+     * those six lines would be a second implementation of "what a partial
+     * change means" — and the two would part company on the first argument
+     * added, silently, in the direction of the surface nobody was testing.
+     * Everything passes through `speakConfig`, so a value the page should never
+     * have sent is clamped rather than stored.
+     */
+    const alertsSetSpeak = async (patch: Partial<SpeakConfig>): Promise<SpeakConfig> => {
+        const next = speakConfig({ ...speakCfg(), ...patch });
+        await cfg().update('alerts.speak', next, vscode.ConfigurationTarget.Global);
+        return next;
+    };
+    /** One event armed or disarmed for the announcement — the card's 🗣 tick and
+     *  anything that grows one later, through the core's own set rule. */
+    const alertsSetSpeakEvent = async (event: AlertEvent, on: boolean): Promise<SpeakConfig> =>
+        alertsSetSpeak({ events: speakEvents(speakCfg(), event, on) });
+    /** This conversation's own voice, written and read the same way the tone's
+     *  session choice is — `alerts.speak { sessionId }`, the ♪ right-click and
+     *  the card's ✕ are one act. An empty name CLEARS it, which is not silence. */
+    const alertsSetSessionSpeechVoice = async (sessionId: string, voice: string) => {
+        const set = turnAlerts.setSpeechVoice(sessionId, String(voice ?? ''));
+        await turnAlerts.flush();
+        return { ...set, sessionId, voice: turnAlerts.speechVoiceFor(sessionId) };
+    };
+    /**
+     * ‼️ A-25 — THE VOICE LIST IS ASKED OF THE MACHINE ONCE AND REMEMBERED,
+     * because the question costs a PowerShell process and the answer changes
+     * only when somebody installs a language pack.
+     *
+     * Settings redraws after every write on the card, and an uncached list
+     * would spawn a shell on each of them — the reader would tick a box and
+     * watch the page stall. The cache is therefore not an optimisation but the
+     * reason the card can be drawn at all from a synchronous builder; `force`
+     * is the ↻ for the person who just installed a voice and wants it now.
+     */
+    let speechVoices: { ok: boolean; voices: InstalledVoice[]; error?: string; at: number } | null = null;
+    const alertsSpeechVoices = async (force?: boolean) => {
+        if (!force && speechVoices) { return speechVoices; }
+        const got = await installedSpeechVoices();
+        speechVoices = { ...got, at: Date.now() };
+        return speechVoices;
+    };
+    /**
+     * ‼️ A TEST SPEAKS EVEN WHEN THE ANNOUNCEMENT IS OFF, and says which
+     * backend did it. "Does this machine talk at all?" and "is the feature
+     * switched on?" are two questions, and a ▶ that answers the second when
+     * asked the first teaches nobody anything.
+     */
+    const alertsSpeakTest = async (text?: string) => {
+        const now = speakCfg();
+        const said = String(text ?? '').trim()
+            || announcement(now, {
+                event: now.events[0] ?? 'question', agent: 'developer', session: 'sess-1'
+            });
+        return speakAnnouncement(said.slice(0, SPEAK_MAX), now);
+    };
     /** ‼️ "STILL WAITING ON THE SAME THING", as one string. Any of the three
      *  moving means the conversation moved on, and a reminder about a question
      *  that has been answered is worse than no reminder at all. */
@@ -1683,6 +1743,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             limit: CUSTOM_LIMIT,
             formats: [...new Set(voiceDeps().backends.flatMap(b => [...b.formats]))].sort(),
             sessionEvents: [...SESSION_ALERT_EVENTS],
+            /**
+             * ‼️ A-25 — THE ANNOUNCEMENT, ON THE CARD THAT ALREADY SAYS WHICH
+             * TONE. `agentFarm.alerts.speak` was a raw JSON box: seven fields,
+             * one of them a voice NAME that has to exist on this machine, and
+             * nothing on the page able to say whether it does. The card answers
+             * the two questions the box could not — WHICH VOICE will actually
+             * be reached (a fragment nobody answers fails the announcement, it
+             * does not fall back to English) and WHAT WILL BE SAID.
+             */
+            speak: (() => {
+                const s = speakCfg();
+                const known = speechVoices?.voices ?? [];
+                const hit = matchVoice(known, s.voice);
+                return {
+                    ...s,
+                    defaults: SPEAK_DEFAULT,
+                    max: SPEAK_MAX,
+                    // What the fleet would say next, in full, with the same
+                    // substitution the alert uses — a template is a thing to
+                    // read back, not to imagine.
+                    preview: announcement(s, {
+                        event: s.events[0] ?? 'question', agent: 'developer', session: 'sess-1'
+                    }),
+                    voices: known.map(v => ({ ...v, label: voiceLabel(v) })),
+                    // ‼️ NOT LOADED IS NOT "NO VOICES". The list costs a shell,
+                    // so it is fetched once on request; a card that drew an
+                    // empty box before the answer arrived would read as "this
+                    // machine cannot speak", which is the opposite of the truth.
+                    voicesLoaded: !!speechVoices,
+                    voicesError: speechVoices?.error ?? '',
+                    voicesNote: SPEECH_ONECORE_NOTE,
+                    resolved: hit ? voiceLabel(hit) : '',
+                    // ‼️ AND ITS FULL NAME SEPARATELY, because the picker has to
+                    // be able to SELECT it. `Tolga` is a legal setting and no
+                    // option in the list is called that, so a box matching on
+                    // the raw setting shows "System default" for a machine that
+                    // is about to speak Turkish — the exact lie the strip is
+                    // here to end.
+                    resolvedName: hit?.name ?? '',
+                    // Named rather than counted, for `mutedSessions`' reason:
+                    // "one session speaks Turkish" cannot be acted on without
+                    // knowing which one.
+                    sessions: live.sessions()
+                        .map(x => ({
+                            sessionId: x.sessionId, label: live.labelOf(x),
+                            voice: turnAlerts.speechVoiceFor(x.sessionId)
+                        }))
+                        .filter(x => x.voice)
+                };
+            })(),
             voices: alertVoiceRows().map(v => ({
                 id: v.id, label: v.label, file: v.file, builtin: v.builtin,
                 exists: v.exists, playable: v.playable, backend: v.backend
@@ -9363,13 +9473,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 : 'This session has no voice of its own — the fleet setting answers'
                         };
                     }
-                    const set = turnAlerts.setSpeechVoice(sid, String(raw.voice));
-                    await turnAlerts.flush();
-                    const now = turnAlerts.speechVoiceFor(sid);
+                    const set = await alertsSetSessionSpeechVoice(sid, String(raw.voice));
+                    const now = set.voice;
                     return {
                         ...set,
-                        sessionId: sid,
-                        voice: now,
                         fleet: speakCfg().voice,
                         line: now
                             ? `This session is announced in ${now}`
@@ -9381,7 +9488,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     .some(k => (raw as Record<string, unknown>)[k] !== undefined);
                 let next = cur;
                 if (touched) {
-                    next = speakConfig({
+                    // A-25 — the one function the Settings card writes through
+                    // too, so "what a partial change means" is decided once.
+                    next = await alertsSetSpeak({
                         on: raw.on === undefined ? cur.on : raw.on === true || raw.on === 'true',
                         events: raw.events === undefined
                             ? cur.events
@@ -9391,23 +9500,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         volume: raw.volume === undefined ? cur.volume : Number(raw.volume),
                         voice: raw.voice === undefined ? cur.voice : String(raw.voice)
                     });
-                    await cfg().update('alerts.speak', next, vscode.ConfigurationTarget.Global);
                 }
                 // ‼️ THE VOICE LIST IS ASKED OF THE MACHINE, NOT GUESSED. The
                 // commonest way this feature disappoints is a Turkish sentence
                 // read by `Microsoft David`, and the answer is a free language
-                // pack the caller has to be TOLD about.
-                const installed = await installedSpeechVoices();
+                // pack the caller has to be TOLD about. Asked once and kept
+                // (A-25): a caller reading this op twice in a row should not
+                // pay for two PowerShell processes to be told the same thing.
+                const installed = await alertsSpeechVoices();
+                const hit = matchVoice(installed.voices, next.voice);
                 const preview = announcement(next, {
                     event: next.events[0] ?? 'question', agent: 'developer', session: 'sess-1'
                 });
-                // ‼️ A TEST SPEAKS EVEN WHEN THE FEATURE IS OFF, and says so.
-                // "Does this machine talk at all?" and "is the announcement
-                // switched on?" are two questions, and a test button that
-                // answers the second when asked the first teaches nobody
-                // anything.
                 const said = raw.say === undefined ? null
-                    : await speakAnnouncement(String(raw.say).slice(0, SPEAK_MAX), next);
+                    : await alertsSpeakTest(String(raw.say));
                 return {
                     ...next,
                     changed: touched,
@@ -9416,9 +9522,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     voices: installed.voices,
                     voicesError: installed.error,
                     voicesNote: SPEECH_ONECORE_NOTE,
+                    // ‼️ A-25 — WHICH VOICE THE NAME ACTUALLY REACHES. The
+                    // fragment is matched loosely so nobody has to paste a
+                    // registry path, and the cost is that the setting stops
+                    // saying what will be heard. A name nobody answers is
+                    // reported here rather than at the moment the announcement
+                    // fails with `exit 5` in a log the caller never reads.
+                    resolved: hit ? voiceLabel(hit) : '',
                     line: next.on
                         ? `Announcing ${next.events.join(', ') || '(nothing selected)'}`
-                            + ` as "${preview}"${next.voice ? ` in ${next.voice}` : ''}`
+                            + ` as "${preview}"`
+                            // ‼️ AND THE WARNING IS ONLY SAYABLE WHERE THE LIST
+                            // IS AUTHORITATIVE. Listing voices is Windows-only:
+                            // on macOS `say -v Yelda` works and the list comes
+                            // back empty WITH A REASON, so a warning keyed on
+                            // "no match" alone would call a working setting
+                            // broken on every machine that is not this one.
+                            + (next.voice
+                                ? ` in ${hit
+                                    ? voiceLabel(hit)
+                                    : installed.error
+                                        ? `${next.voice} — this platform cannot list its voices, so whether it is answered is only known when it speaks`
+                                        : `${next.voice} — ‼️ NO VOICE ON THIS MACHINE ANSWERS TO THAT, so the announcement will fail rather than read out in the wrong language`}`
+                                : '')
                         : 'Announcements off — the tones still play',
                     test: said && {
                         ok: said.ok, backend: said.backend, spoke: said.spoke,
@@ -23455,7 +23581,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 const who = live.labelOf(s);
                 const mine = turnAlerts.voicesFor(s.sessionId);
-                type EventItem = vscode.QuickPickItem & { event?: AlertEvent; mute?: boolean };
+                type EventItem = vscode.QuickPickItem & {
+                    event?: AlertEvent; mute?: boolean; speak?: boolean;
+                };
                 const armable = new Set<string>(SESSION_ALERT_EVENTS);
                 // ‼️ A-22 — THE MUTE LIVES HERE, NOT IN A MENU ENTRY OF ITS OWN.
                 // "Which tone" and "no tone at all" are the two things somebody
@@ -23463,6 +23591,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // them across two right-click items would put the second one
                 // three lines away from the first and teach nobody it exists.
                 const wasMuted = turnAlerts.mutedFor(s.sessionId);
+                /**
+                 * ‼️ A-25 — AND WHICH VOICE ANNOUNCES IT, IN THE SAME PICKER,
+                 * for the same argument the mute is here on.
+                 *
+                 * "Which tone", "no tone at all" and "say its name in Turkish"
+                 * are the three things somebody says about ONE conversation,
+                 * and they are said in the same breath. A right-click item of
+                 * its own would put the third three lines from the first and
+                 * teach nobody it exists — and this one is the least
+                 * discoverable of the three, because a fleet-wide voice is the
+                 * setting people find first and per-session is the answer to
+                 * the problem it leaves.
+                 */
+                const ownSpeech = turnAlerts.speechVoiceFor(s.sessionId);
+                const fleetSpeech = speakCfg();
+                type SpeechItem = vscode.QuickPickItem & { voice?: string; clear?: boolean };
                 const eventPick = await vscode.window.showQuickPick<EventItem>([
                     {
                         label: wasMuted
@@ -23477,6 +23621,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             + 'the fleet-wide switch ADDS to a session\'s own selection, and a union '
                             + 'cannot subtract. Every box and tone it has stays where it is.',
                         mute: true
+                    },
+                    {
+                        label: ownSpeech
+                            ? `$(megaphone) Announced as "${ownSpeech}"`
+                            : '$(megaphone) Announce this session in its own voice…',
+                        description: ownSpeech
+                            ? 'this conversation only — it beats the fleet setting'
+                            : fleetSpeech.on
+                                ? `the fleet says "${fleetSpeech.voice || 'system default'}"`
+                                : 'announcements are off for the fleet — this would still be its voice',
+                        detail: 'A tone says what KIND of news this is; with several lanes running, '
+                            + 'the question from the next room is WHICH ONE, and no palette can '
+                            + 'carry a name. The agent whose questions come in Turkish can be '
+                            + 'announced by a Turkish voice while the rest are not.'
+                            + (ownSpeech ? '' : ' Every voice on this machine is offered, from BOTH '
+                                + 'of Windows\' registries.'),
+                        speak: true
                     },
                     { label: 'A tone for one event', kind: vscode.QuickPickItemKind.Separator },
                     ...ALERT_EVENTS.map<EventItem>(event => {
@@ -23504,6 +23665,57 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         wasMuted
                             ? `Agent Farm: ${who} can be heard again`
                             : `Agent Farm: ${who} is muted — its tones and boxes are untouched`,
+                        6000);
+                    return;
+                }
+                if (eventPick?.speak) {
+                    // ‼️ THE LIST IS ASKED OF THE MACHINE, and a machine that
+                    // cannot answer says so BY NAME. Offering a text box here
+                    // instead would invite a name nothing answers to, and the
+                    // engine's reply to that is a failed announcement rather
+                    // than a fall back to English.
+                    const got = await vscode.window.withProgress(
+                        { location: vscode.ProgressLocation.Window, title: 'Agent Farm: reading this machine\'s voices…' },
+                        () => alertsSpeechVoices());
+                    if (!got.voices.length) {
+                        void vscode.window.showWarningMessage(
+                            `Agent Farm: no installed voice could be listed — ${got.error ?? 'the machine returned none'}.`
+                            + ' On Windows they are free: Settings ▸ Time & language ▸ Speech ▸ Add voices.');
+                        return;
+                    }
+                    const items: SpeechItem[] = [
+                        {
+                            label: '$(circle-slash) No voice of its own',
+                            description: fleetSpeech.voice
+                                ? `falls back to the fleet's "${fleetSpeech.voice}"`
+                                : 'falls back to the fleet, which uses the system default',
+                            detail: 'Clears this conversation\'s pick. NOT silence — to make a '
+                                + 'session quiet, use the mute above.',
+                            clear: true, picked: !ownSpeech
+                        },
+                        { label: 'Installed on this machine', kind: vscode.QuickPickItemKind.Separator },
+                        ...got.voices.map<SpeechItem>(v => ({
+                            label: v.name,
+                            description: `${v.culture || 'no language declared'} · ${v.engine}`
+                                + (v.name === ownSpeech ? ' · current' : ''),
+                            detail: v.engine === 'onecore'
+                                ? 'installed from Windows Settings — `System.Speech` cannot even list this one'
+                                : 'the classic SAPI 5 set',
+                            voice: v.name
+                        }))
+                    ];
+                    const pick = await vscode.window.showQuickPick(items, {
+                        title: `Announce ${who} in which voice?`,
+                        placeHolder: 'A voice reading a language it does not know is unintelligible — the language is on every row',
+                        matchOnDescription: true, matchOnDetail: true, ignoreFocusOut: true
+                    });
+                    if (!pick || (!pick.voice && !pick.clear)) { return; }
+                    const set = await alertsSetSessionSpeechVoice(
+                        s.sessionId, pick.clear ? '' : pick.voice ?? '');
+                    void vscode.window.setStatusBarMessage(
+                        set.voice
+                            ? `Agent Farm: ${who} is announced by ${set.voice}`
+                            : `Agent Farm: ${who} follows the fleet's voice again — which is not silence`,
                         6000);
                     return;
                 }
@@ -26481,6 +26693,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         muteBar.update();
                     },
                     alertsPlayVoice: async (voice) => { await alertsPlayVoice(voice); },
+                    // A-25 — the announcement strip. Same four host functions
+                    // as the `alerts.speak` op and the ♪ right-click, so the
+                    // card cannot drift from what the bridge does.
+                    alertsSetSpeak: async (patch) => {
+                        await alertsSetSpeak(patch as Partial<SpeakConfig>);
+                    },
+                    alertsSetSpeakEvent: async (event, on) => {
+                        await alertsSetSpeakEvent(event as AlertEvent, on);
+                    },
+                    alertsSpeakTest: async (text) => {
+                        const said = await alertsSpeakTest(text);
+                        // ‼️ A REFUSED SENTENCE IS SAID OUT LOUD IN WORDS. The
+                        // commonest failure here is a voice name nothing
+                        // answers to (`exit 5`), and a ▶ that silently does
+                        // nothing is indistinguishable from a broken speaker.
+                        if (!said.ok) {
+                            throw new Error(
+                                `nothing was said — ${said.error ?? said.skipped ?? 'the speech backend failed'}`);
+                        }
+                    },
+                    alertsLoadSpeechVoices: async (force) => { await alertsSpeechVoices(force); },
+                    alertsClearSessionSpeech: async (sessionId) => {
+                        await alertsSetSessionSpeechVoice(sessionId, '');
+                    },
                     alertsVoiceAdd: async () => { await alertsPickVoice(); },
                     alertsVoiceRename: async (id, label) => { await alertsVoiceRename(id, label); },
                     alertsVoiceRemove: (id) => alertsVoiceRemove(id),

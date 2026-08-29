@@ -2,6 +2,48 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.311.0 - A-25: the announcement has a face (2026-08-29)
+
+A-20 built the whole engine and left it behind a raw JSON box. Seven fields,
+one of them a voice NAME that has to exist on this machine — and a settings box
+cannot know whether it does. **That was the worst of the four boxes this card
+has now absorbed**, because the engine's answer to a name nothing answers to is
+a FAILED announcement (`exit 5`), on purpose, rather than a quiet fall back to
+English. The one thing the box could never show was the one thing that decided
+whether the feature worked at all.
+
+**The strip.** Under the gate, on the same card, in the order the two are read:
+*is anything heard at all* → *and what does it say*. Switch · voice · rate ·
+volume · the sentence · ▶ test. `agentFarm.alerts.speak` no longer appears as a
+box beside it.
+
+**Every voice on the machine, with its LANGUAGE on the row.** Both of Windows'
+registries, asked of the machine and not guessed, sorted by language — because
+an `en-US` voice reading Turkish is not accented, it is unintelligible. The
+answer costs a PowerShell process, so it is asked once when the card opens and
+kept; ↻ is for the language pack installed a minute ago.
+
+**And which voice the setting ACTUALLY REACHES.** `Tolga` is a legal setting and
+no voice is called that, so the picker selects the voice it *resolves to* —
+`Microsoft Tolga - Turkish (Turkey)` — and a name **nothing** answers to is
+shown as a warning here rather than discovered at the moment the alert does not
+arrive. ‼️ Only where the list is authoritative: listing voices is Windows-only,
+so on macOS the strip says the platform cannot answer instead of calling a
+working setting broken.
+
+**Which events are spoken is a 🗣 column in the table that already says what
+they play** — not five more ticks three lines above it, which the reader would
+have had to match up by name.
+
+**And the ♪ right-click gained the third thing somebody says about one
+conversation:** *announce this one in its own voice*. The engine and the store
+shipped in A-20; only the surface was missing. It is in the same picker as the
+tone and the mute because those three are said in the same breath.
+
+Every gesture goes through the same host functions `alerts.speak` does — the
+card and the bridge cannot part company on what a partial change means. The op
+now answers `resolved` as well, so a caller learns the same thing.
+
 ## 3.310.0 - A-20: every voice on the machine, and one per conversation (2026-08-29)
 
 3.309.0 shipped the announcement and told the user their machine had only two

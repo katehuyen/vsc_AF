@@ -153,7 +153,21 @@ KEPT_ON_PURPOSE.forEach(cmd => {
     // to that list is the sweep undoing itself, and the next reader would have
     // no way to tell the two apart.
     ok(`no more than 33 commands use a box (measured ${m.builders} of ${m.total})`, m.builders <= 33);
-    ok(`no more than 4 are chains of two or more (measured ${m.chains})`, m.chains <= 4);
+    /**
+     * ‼️ 4 → 5 FOR `agentfarm.setSessionAlertVoice` (A-25), and it is worth
+     * saying exactly what changed, because the command's SHAPE did not.
+     *
+     * It has been a chain since A-23 — pick the event, then pick the tone — and
+     * this counted it as one box only because the second is a `createQuickPick`
+     * (built by hand so each row can carry its own ▶ without the picker
+     * closing). A-25 adds the third thing somebody says about one conversation
+     * — WHICH VOICE ANNOUNCES IT — to the first pick, and the list behind it
+     * is a plain `showQuickPick`, so the chain that was always there is now
+     * visible to the measurement. The alternative was a right-click item of its
+     * own, which would put the least discoverable of the three three lines from
+     * the other two.
+     */
+    ok(`no more than 5 are chains of two or more (measured ${m.chains})`, m.chains <= 5);
     ok('‼️ the scan is not fooled by the last command in a push() block',
         (BODIES['agentfarm.missionStepOutput'] || '').split('\n').length < 8);
 }

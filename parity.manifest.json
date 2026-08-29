@@ -5063,6 +5063,7 @@
         "ctx:agentfarm.setSessionAlertVoice"
       ],
       "ops": [
+        "alerts.speak",
         "alerts.voice.set"
       ]
     },
@@ -5167,6 +5168,42 @@
       ],
       "ops": [
         "alerts.quiet"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertSpeak",
+      "ui": [
+        "page:settingsPanel.ts#alertSpeak"
+      ],
+      "ops": [
+        "alerts.speak"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertSpeakSession",
+      "ui": [
+        "page:settingsPanel.ts#alertSpeakSession"
+      ],
+      "ops": [
+        "alerts.speak"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertSpeakTest",
+      "ui": [
+        "page:settingsPanel.ts#alertSpeakTest"
+      ],
+      "ops": [
+        "alerts.speak"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertSpeakVoices",
+      "ui": [
+        "page:settingsPanel.ts#alertSpeakVoices"
+      ],
+      "ops": [
+        "alerts.speak"
       ]
     },
     {

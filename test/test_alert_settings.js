@@ -316,5 +316,157 @@ const byAttr = (p, attr, key) =>
         && last(p).sessionId === 'a1b2c3d4-1111-2222-3333-444455556666');
 }
 
+// ---------------------------------------------------------------------------
+// A-25 — THE ANNOUNCEMENT STRIP.
+//
+// ‼️ `agentFarm.alerts.speak` was the FOURTH raw JSON box on this card, and the
+// worst of the four: seven fields, one of them a voice NAME that has to exist
+// on this machine. A box cannot know whether it does — and the engine's answer
+// to a name nothing answers to is a FAILED announcement (`exit 5`), by design,
+// not a quiet fall back to English. So the one thing the box could never show
+// is the one thing that decides whether the feature works at all.
+{
+    const p = open(fx.inUse());
+    const html = p.html();
+    ok('‼️ A-25 — the box is ABSORBED: no raw agentFarm.alerts.speak control is'
+        + ' left beside the strip that draws it',
+        !/data-set="agentFarm\.alerts\.speak"/.test(html));
+    ok('the strip is on the card, below the gate and above the table — the two'
+        + ' are read in the order they take effect: is anything heard at all,'
+        + ' then what does it say',
+        html.indexOf('alertgate alertspeak') > html.indexOf('id="alertmute"')
+        && html.indexOf('alertgate alertspeak') < html.indexOf('<table class="settbl alerttbl">'));
+    ok('‼️ WHICH VOICE THE SETTING ACTUALLY REACHES is the selected row, not the'
+        + ' fragment the user typed — "Tolga" is a legal setting and no voice is'
+        + ' called that, so a box keyed on the raw value would read "System'
+        + ' default" on a machine about to speak Turkish',
+        byId(p, 'alertspeakvoice').value === 'Microsoft Tolga - Turkish (Turkey)');
+    ok('…and every row carries the LANGUAGE, which is what the choice is made on',
+        /tr-TR · onecore/.test(html) && /en-US · sapi5/.test(html));
+    ok('what will actually be SAID is on the strip, filled in — a template is a'
+        + ' thing to read back, not to imagine',
+        /developer, asking you/.test(html));
+    ok('MIRROR — the switch and the numbers show what they are set to',
+        byId(p, 'alertspeakon').checked === true
+        && byId(p, 'alertspeakrate').value === '1'
+        && byId(p, 'alertspeakvol').value === '100');
+    ok('‼️ a conversation with a voice of ITS OWN is NAMED, not counted:'
+        + ' "one session speaks Turkish" cannot be acted on without knowing which',
+        /their own voice/.test(html) && /Microsoft Zira Desktop/.test(html));
+
+    // Every gesture goes to the host, through the same function `alerts.speak`
+    // is. The page holds no rule of its own about clamping, or about what a
+    // partial change means.
+    byId(p, 'alertspeakon').checked = false;
+    byId(p, 'alertspeakon').dispatchEvent(new p.sandbox.Event('change'));
+    ok('the switch is a host act', last(p).type === 'alertSpeak' && last(p).on === false);
+
+    const sel = byId(p, 'alertspeakvoice');
+    sel.value = 'Microsoft Mark - English (United States)';
+    sel.dispatchEvent(new p.sandbox.Event('change'));
+    ok('picking a voice writes its FULL name — the user\'s own act, never a'
+        + ' silent rewrite of the fragment they typed',
+        last(p).type === 'alertSpeak'
+        && last(p).voice === 'Microsoft Mark - English (United States)');
+
+    const rate = byId(p, 'alertspeakrate');
+    rate.value = '4';
+    rate.dispatchEvent(new p.sandbox.Event('change'));
+    ok('the rate goes as a NUMBER, not as text',
+        last(p).type === 'alertSpeak' && last(p).rate === 4);
+
+    const tpl = byId(p, 'alertspeaktpl');
+    const before = sent(p).length;
+    tpl.value = '   ';
+    tpl.dispatchEvent(new p.sandbox.Event('change'));
+    ok('‼️ an emptied template is PUT BACK rather than sent: the host would'
+        + ' restore the default and the reader would watch their sentence'
+        + ' reappear without being told why',
+        sent(p).length === before && tpl.value === '{agent}, {event}');
+
+    byId(p, 'alertspeaktest').dispatchEvent(new p.sandbox.Event('click'));
+    ok('‼️ ▶ sends NO text — the host reads back what the setting would say,'
+        + ' filled in. The box\'s raw contents would be read out as'
+        + ' "{agent}, {event}", the one sentence the feature never produces',
+        last(p).type === 'alertSpeakTest' && last(p).text === undefined);
+
+    const clear = p.query('[data-alertspeakclear]')[0];
+    clear.dispatchEvent(new p.sandbox.Event('click'));
+    ok('…and a session\'s own voice is cleared from the chip that named it',
+        last(p).type === 'alertSpeakSession'
+        && last(p).sessionId === 'c3d4e5f6-1111-2222-3333-444455556666');
+}
+{
+    // ‼️ WHICH EVENTS ARE SPOKEN LIVES IN THE TABLE THAT ALREADY SAYS WHAT THEY
+    // PLAY. `alerts.speak.events` is a list of the same five names; five more
+    // ticks in the strip would be a second event table three lines from this
+    // one, and the reader would have to match them up by name to answer "and
+    // what happens on `question`?".
+    const p = open(fx.inUse());
+    const q = byAttr(p, 'alertsay', 'question');
+    ok('A-25 — every event row carries its own 🗣 tick', !!q && q.checked === true);
+    ok('…and an event nobody announces is shown unticked, not hidden',
+        byAttr(p, 'alertsay', 'ended').checked === false);
+    q.checked = false;
+    q.dispatchEvent(new p.sandbox.Event('change'));
+    ok('…and it is one act on one event, never a rewritten list',
+        last(p).type === 'alertSpeak' && last(p).event === 'question'
+        && last(p).on === false);
+}
+{
+    const p = open(fx.broken());
+    const html = p.html();
+    ok('‼️ A-25 — A VOICE NAME NOTHING ANSWERS TO IS THE LOUDEST STATE ON THE'
+        + ' STRIP. The announcement FAILS rather than reading out in English,'
+        + ' and until this existed the only place to find that out was the'
+        + ' moment the alert did not arrive',
+        /no voice answers to that/.test(html) && /voice not found/.test(html));
+    ok('…and the name is still SELECTED, so the reader can see what was asked for',
+        byId(p, 'alertspeakvoice').value === 'Ayşe');
+}
+{
+    // ‼️ NOT ASKED YET IS NOT "NO VOICES". The list costs a PowerShell process,
+    // so an empty picker drawn before the answer arrives reads as "this machine
+    // cannot speak" — the opposite of the truth.
+    const p = open(fx.fresh());
+    ok('A-25 — before the list arrives the box says it is READING, and is'
+        + ' disabled rather than empty',
+        /id="alertspeakvoice" disabled/.test(p.html())
+        && /reading this machine's voices/.test(p.html()));
+    ok('…and the page asks for it ONCE, by itself',
+        sent(p).filter(m => m.type === 'alertSpeakVoices').length === 1);
+    const rescan = byId(p, 'alertspeakrescan');
+    rescan.dispatchEvent(new p.sandbox.Event('click'));
+    ok('…with ↻ as the deliberate second ask, for the language pack installed'
+        + ' a minute ago',
+        last(p).type === 'alertSpeakVoices' && last(p).force === true);
+}
+{
+    // ‼️ "NOTHING ANSWERS TO THAT" IS ONLY SAYABLE WHERE THE LIST IS
+    // AUTHORITATIVE. Listing installed voices is Windows-only: on macOS
+    // `say -v Yelda` works perfectly and the list comes back EMPTY WITH A
+    // REASON. A warning keyed on "no match" alone would therefore call a
+    // working setting broken on every machine that is not this one — the same
+    // class of mistake as A-20's "install a language pack", which was advice
+    // for a problem the user did not have.
+    const d = fx.inUse();
+    d.alerts.speak = {
+        ...d.alerts.speak, voice: 'Yelda', resolved: '', resolvedName: '',
+        voices: [], voicesLoaded: true,
+        voicesError: 'listing installed voices is Windows-only; on darwin the'
+            + ' system voice is used unless a name is set by hand'
+    };
+    const p = open(d);
+    const html = p.html();
+    ok('‼️ A-25 — an UNREADABLE list is not a wrong name: the strip says the'
+        + ' platform cannot answer, and does not call the setting broken',
+        !/no voice answers to that/.test(html) && !/voice not found/.test(html));
+    ok('…the reason is shown rather than swallowed',
+        /the voice list could not be read/.test(html));
+    ok('…and the setting is still SELECTED, because a picker that silently'
+        + ' drops the value it is set to is the box this strip replaced',
+        byId(p, 'alertspeakvoice').value === 'Yelda');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -387,3 +387,66 @@ export function parseVoiceList(stdout: string): InstalledVoice[] {
             || a.culture.localeCompare(b.culture)
             || a.name.localeCompare(b.name));
 }
+
+/**
+ * ‼️ A-25 — ONE EVENT ARMED OR DISARMED, WITHOUT REWRITING THE LIST.
+ *
+ * The Settings card ticks events one at a time, and so does anything else that
+ * grows a tick later. Each of them would otherwise read the list, add or drop
+ * a name and hand the whole array back — the same three lines written twice,
+ * in two languages, with each copy free to disagree about duplicates and
+ * order. The rule they share lives here instead: the list is a SET, and it
+ * comes back in the order the events are DECLARED in, so ticking `error`
+ * before `question` cannot produce a settings file that reads backwards from
+ * the card which wrote it.
+ */
+export function speakEvents(cfg: SpeakConfig, event: AlertEvent, on: boolean): AlertEvent[] {
+    const want = new Set(cfg.events);
+    if (on) { want.add(event); } else { want.delete(event); }
+    return (Object.keys(EVENT_LABEL) as AlertEvent[]).filter(e => want.has(e));
+}
+
+/**
+ * ‼️ A-25 — WHAT A PICKER CALLS ONE VOICE, DECIDED ONCE.
+ *
+ * Two surfaces draw this list — the Settings card's box and the ♪ right-click's
+ * QuickPick — and in both the fact that decides the choice is NOT the name.
+ * `Microsoft Tolga` reading English is exactly as wrong as `Microsoft David`
+ * reading Turkish, so the culture comes second and the engine third: `engine`
+ * explains an ABSENCE (`sapi5` is the short classic list, everything a language
+ * pack ever installed is `onecore`) rather than driving a decision.
+ */
+export function voiceLabel(v: InstalledVoice): string {
+    return `${v.name} · ${v.culture || 'no language declared'} · ${v.engine}`;
+}
+
+/**
+ * ‼️ A-25 — WHICH VOICE THE SETTING ACTUALLY REACHES, ANSWERED WITHOUT SPEAKING.
+ *
+ * `voice` is a loose fragment on purpose: `"Tolga"` finds
+ * `Microsoft Tolga - Turkish (Turkey)`, so nobody has to copy a registry path
+ * out of a shell. The cost of that kindness is that the SETTING no longer says
+ * what will be heard, and the card exists to close exactly that gap — the same
+ * argument as the tone table's "Plays" column, which is why it is drawn the
+ * same way. A name nobody answers is `null` and the card SAYS SO, because the
+ * engine's own answer to that is `exit 5` and not a shrug: the announcement
+ * will fail rather than quietly read out in English.
+ *
+ * The rule is `SPVOICE_SCRIPT`'s, in its order: a full `HKEY_` token id is
+ * taken as an id, otherwise the first voice whose name CONTAINS the fragment
+ * wins, OneCore before SAPI 5. Within one registry the engine walks
+ * enumeration order and this walks the sorted list; the two can only differ
+ * when a fragment matches two voices in the same registry, which is a fragment
+ * worth lengthening either way.
+ */
+export function matchVoice(voices: InstalledVoice[], want: string): InstalledVoice | null {
+    const w = String(want ?? '').trim();
+    if (!w) { return null; }
+    if (/^HKEY_/i.test(w)) {
+        return voices.find(v => v.id.toLowerCase() === w.toLowerCase()) ?? null;
+    }
+    const lower = w.toLowerCase();
+    const byEngine = [...voices].sort((a, b) =>
+        (a.engine === 'onecore' ? 0 : 1) - (b.engine === 'onecore' ? 0 : 1));
+    return byEngine.find(v => v.name.toLowerCase().includes(lower)) ?? null;
+}

@@ -77,6 +77,7 @@ const MINE = 'D:\\zone\\media\\sounds';
  */
 const V = require('../../out/core/alertVoices.js');
 const T = require('../../out/core/turnAlerts.js');
+const S = require('../../out/core/speech.js');
 
 const BUILTIN = V.builtinVoices(SOUNDS.replace(/\\/g, '/')).map(v => ({
     ...v, file: v.file.replace(/\//g, '\\'),
@@ -110,6 +111,54 @@ const CUSTOM = [
     }
 ];
 
+/**
+ * ‼️ A-25 — THE VOICES THIS MACHINE HAS, AS WINDOWS REALLY REPORTS THEM.
+ *
+ * Both registries, because that IS the trap the strip exists to make visible:
+ * `System.Speech` enumerates the two `sapi5` rows and nothing else, so a reader
+ * looking at the classic list concludes their language pack never installed.
+ * These four are the ones measured on the machine A-20 was written on —
+ * `Microsoft Tolga` among them, already there and previously unreachable.
+ */
+const SPEECH_VOICES = S.parseVoiceList([
+    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\MSTTS_V110_trTR_TolgaM\tMicrosoft Tolga - Turkish (Turkey)\ttr-TR\tonecore',
+    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\TTS_MS_EN-US_DAVID_11.0\tMicrosoft David - English (United States)\ten-US\tonecore',
+    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\TTS_MS_EN-US_MARK_11.0\tMicrosoft Mark - English (United States)\ten-US\tonecore',
+    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\TTS_MS_EN-US_ZIRA_11.0\tMicrosoft Zira - English (United States)\ten-US\tonecore',
+    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\TTS_MS_EN-US_DAVID_11.0\tMicrosoft David Desktop\ten-US\tsapi5',
+    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\TTS_MS_EN-US_ZIRA_11.0\tMicrosoft Zira Desktop\ten-US\tsapi5'
+].join('\n'));
+
+/**
+ * The announcement strip's data, resolved the way `alertsPage` resolves it —
+ * so the fixture cannot draw a state the real host would never produce. The
+ * sentence, the ceiling and the match are all the CORE's, never restated:
+ * A-20 is the proof of why (the ten voices moved and the hand-written fixture
+ * went on drawing the old ones while every string test passed).
+ */
+const speakOf = (over, voices, sessions) => {
+    const cfg = S.speakConfig({ ...S.SPEAK_DEFAULT, ...(over || {}) });
+    // `undefined` is "this machine's list"; `null` is the state before the
+    // answer has arrived, which is NOT the same as having no voices.
+    const known = voices === undefined ? SPEECH_VOICES : (voices || []);
+    const hit = S.matchVoice(known, cfg.voice);
+    return {
+        ...cfg,
+        defaults: S.SPEAK_DEFAULT,
+        max: S.SPEAK_MAX,
+        preview: S.announcement(cfg, {
+            event: cfg.events[0] || 'question', agent: 'developer', session: 'sess-1'
+        }),
+        voices: known.map(v => ({ ...v, label: S.voiceLabel(v) })),
+        voicesLoaded: voices !== null,
+        voicesError: '',
+        voicesNote: S.SPEECH_ONECORE_NOTE,
+        resolved: hit ? S.voiceLabel(hit) : '',
+        resolvedName: hit ? hit.name : '',
+        sessions: sessions || []
+    };
+};
+
 const voiceOf = (voices, id) => voices.find(v => v.id === id);
 
 /** The resolution, done the way `alertVoices.resolveVoice` does it, so the
@@ -127,8 +176,9 @@ const rowOf = (voices, on, chosen, event, skipped) => {
     };
 };
 
-const page = (on, chosen, voices, skips, gate) => ({
+const page = (on, chosen, voices, skips, gate, speak) => ({
     gate: gate || GATE_OPEN,
+    speak: speak || speakOf(),
     folder: 'c:\\Users\\rotam\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm\\sounds',
     limit: 10,
     formats: FORMATS,
@@ -138,22 +188,43 @@ const page = (on, chosen, voices, skips, gate) => ({
         .map(e => rowOf(voices, on, chosen, e, (skips || {})[e]))
 });
 
-const base = (on, chosen, voices, skips, gate) => ({
+const base = (on, chosen, voices, skips, gate, speak) => ({
     focus: '', profiles: [], prompts: null, docOpen: null, folders: null,
     claude: null, engines: null, engineModels: null, wiki: null, superpowers: null,
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
     categories: [{
         id: 'live', label: 'Live Monitoring & Alerts', items: ITEMS(on, chosen)
     }],
-    alerts: page(on, chosen, voices, skips, gate)
+    alerts: page(on, chosen, voices, skips, gate, speak)
 });
 
-const fresh = () => base({}, {}, BUILTIN);
+/**
+ * ‼️ A-25 — AND THE ANNOUNCEMENT STRIP BEFORE THE VOICE LIST HAS ARRIVED. This
+ * is the first second of every page open: the list costs a PowerShell process,
+ * so the box says it is READING rather than drawing an empty picker — which is
+ * the state a reader would take for "this machine cannot speak", the opposite
+ * of the truth.
+ */
+const fresh = () => base({}, {}, BUILTIN, null, null, speakOf({}, null));
 
+/**
+ * ‼️ A-25 — SET UP AND WORKING, which for the announcement means the strip can
+ * say WHO is speaking. `Tolga` is a fragment, and the resolved line is the only
+ * place a reader can see that it reaches `Microsoft Tolga - Turkish (Turkey)`
+ * rather than nothing at all. One conversation carries a voice of its own —
+ * the state no settings box could ever have shown.
+ */
 const inUse = () => base(
     { 'turn-ready': true, question: true },
     { question: 'u-kapi-zili', ended: 'u-uzak-gong' },
-    BUILTIN.concat(CUSTOM));
+    BUILTIN.concat(CUSTOM), null, null,
+    speakOf(
+        { on: true, voice: 'Tolga', events: ['question', 'stalled'], rate: 1 },
+        undefined,
+        [{
+            sessionId: 'c3d4e5f6-1111-2222-3333-444455556666',
+            label: 'yazar · sürüm notları', voice: 'Microsoft Zira Desktop'
+        }]));
 
 /**
  * ‼️ Three different breakages at once, because they are three different
@@ -185,7 +256,14 @@ const broken = () => base(
             origin: 'settings', voice: 'u-studio-take',
             why: 'nothing on this machine plays .aiff'
         }]
-    });
+    },
+    null,
+    // ‼️ A-25 — A FOURTH BREAKAGE, and the one with no symptom until it is too
+    // late: the announcement is ON and names a voice NOTHING ON THIS MACHINE
+    // ANSWERS TO. The engine's reply is `exit 5` — the sentence FAILS rather
+    // than being read out in English — so the only place the reader can find
+    // out before the alert does is this strip.
+    speakOf({ on: true, voice: 'Ayşe', events: ['question', 'error'] }));
 
 /**
  * ‼️ A-22 — THE STATE THE CARD USED TO HAVE NO WAY OF SHOWING. Everything is
@@ -215,7 +293,11 @@ const gated = () => base(
             { sessionId: 'a1b2c3d4-1111-2222-3333-444455556666', label: 'developer · TalkScribe' },
             { sessionId: 'b2c3d4e5-1111-2222-3333-444455556666', label: 'yazar · release notes' }
         ]
-    });
+    },
+    // The announcement goes through the SAME gate: armed, configured, correct —
+    // and held shut with everything else. The strip says what it would say; the
+    // strip above it says why nobody will hear it.
+    speakOf({ on: true, voice: 'Mark', events: ['question'] }));
 
 const data = () => inUse();
 

@@ -265,6 +265,67 @@ const T = require(path.join(__dirname, '..', 'out', 'core', 'turnAlerts.js'));
             + ' as a row that says "nothing"',
             !store.all()['s1']);
 
+        // ------------------------------------------------------------- A-25
+        // ‼️ ONE EVENT AT A TIME, AND THE ORDER IS THE DECLARED ONE. The rule
+        // lives in the core because two surfaces tick these boxes and a copy
+        // in each would be free to disagree about duplicates and order — a
+        // settings file that reads backwards from the card that wrote it.
+        {
+            const off = S.speakConfig({});
+            eq('A-25 — arming an event ADDS it to the list',
+                S.speakEvents(off, 'error', true), ['question', 'error']);
+            eq('…and the order is the events\' own, never the click order',
+                S.speakEvents(S.speakConfig({ events: ['error'] }), 'question', true),
+                ['question', 'error']);
+            eq('…arming what is already armed changes nothing (it is a SET)',
+                S.speakEvents(off, 'question', true), ['question']);
+            eq('…and disarming the last one leaves an EMPTY list, which is a'
+                + ' switch that is on with nothing selected — not "announce'
+                + ' everything" and not an error',
+                S.speakEvents(off, 'question', false), []);
+        }
+        // ‼️ WHICH VOICE THE SETTING ACTUALLY REACHES. `voice` is a loose
+        // fragment on purpose, so nobody has to paste a registry path — and the
+        // cost is that the SETTING stops saying what will be heard.
+        {
+            const list = S.parseVoiceList([
+                'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\Tolga'
+                    + '\tMicrosoft Tolga - Turkish (Turkey)\ttr-TR\tonecore',
+                'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech_OneCore\\Voices\\Tokens\\David'
+                    + '\tMicrosoft David - English (United States)\ten-US\tonecore',
+                'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\David'
+                    + '\tMicrosoft David Desktop\ten-US\tsapi5'
+            ].join('\n'));
+            ok('A-25 — a fragment finds the voice, the way the engine does',
+                (S.matchVoice(list, 'Tolga') || {}).name === 'Microsoft Tolga - Turkish (Turkey)');
+            ok('…case does not matter, because a name typed by hand never matches case',
+                (S.matchVoice(list, 'tolga') || {}).name === 'Microsoft Tolga - Turkish (Turkey)');
+            ok('‼️ …OneCore is searched BEFORE SAPI 5, exactly as the engine'
+                + ' walks them — otherwise the strip would name one voice and'
+                + ' another would speak',
+                (S.matchVoice(list, 'David') || {}).engine === 'onecore');
+            ok('…a full token id is taken as an id and not as a fragment',
+                (S.matchVoice(list,
+                    'HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Speech\\Voices\\Tokens\\David')
+                || {}).name === 'Microsoft David Desktop');
+            ok('‼️ …and a name NOBODY answers to is null, never the nearest'
+                + ' thing: the engine\'s own reply is `exit 5`, because a wrong'
+                + ' voice is not a smaller failure than no voice, it is a'
+                + ' harder one to diagnose',
+                S.matchVoice(list, 'Ayşe') === null);
+            ok('…an empty setting is not a search — it is the system default',
+                S.matchVoice(list, '') === null && S.matchVoice(list, '  ') === null);
+            ok('‼️ a picker names a voice by its LANGUAGE as well, because that'
+                + ' is what the choice is made on — an en-US voice reading'
+                + ' Turkish is not accented, it is unintelligible',
+                S.voiceLabel(S.matchVoice(list, 'Tolga')).indexOf('tr-TR') > 0
+                && S.voiceLabel(S.matchVoice(list, 'Tolga')).indexOf('onecore') > 0);
+            eq('…and a voice with no declared language says so rather than'
+                + ' showing a blank the reader has to interpret',
+                S.voiceLabel({ id: 'x', name: 'Nameless', culture: '', engine: 'sapi5' }),
+                'Nameless · no language declared · sapi5');
+        }
+
         console.log(`${pass} passed, ${fail} failed`);
         process.exit(fail ? 1 : 0);
     })();

@@ -8,6 +8,11 @@
     let filter = '';
     let saveOpen = false;          // "Save current as…" inline input visibility
     const errors = {};             // key -> validation error from the host
+    // A-25 — the installed-voice list costs a PowerShell process, so the card
+    // asks for it ONCE per open page. The answer arrives as a redraw and a
+    // redraw is where the ask lives, so without this the page would spawn a
+    // shell per frame; the ↻ on the strip is the deliberate second ask.
+    let speakVoicesAsked = false;
     /**
      * ‼️ U-108 — THE LIST BEING EDITED, and whether the user asked for the
      * raw JSON instead.
@@ -1571,7 +1576,11 @@
      *  and one of them the shape A-21 removed. */
     const ALERT_CARD_KEYS = [
         'agentFarm.alerts.on', 'agentFarm.alerts.voices',
-        'agentFarm.alerts.muted', 'agentFarm.alerts.quietHours'
+        'agentFarm.alerts.muted', 'agentFarm.alerts.quietHours',
+        // A-25 — a seven-field object whose `voice` has to name something this
+        // machine actually has. Left out of this list it would sit beside the
+        // strip that draws it as a raw JSON box: two controls, one setting.
+        'agentFarm.alerts.speak'
     ];
     const ALERT_ORIGIN_TEXT = {
         session: 'this conversation\'s own ♪ choice',
@@ -1632,8 +1641,29 @@
             + ((row.skipped || []).length
                 ? '\n\nPassed over on the way:\n' + row.skipped.map(s => `· ${s.voice} (${ALERT_ORIGIN_TEXT[s.origin] || s.origin}) — ${s.why}`).join('\n')
                 : ''));
+        // ‼️ A-25 — WHETHER THIS EVENT IS ALSO SPOKEN, IN THE TABLE THAT ALREADY
+        // SAYS WHAT IT PLAYS. `alerts.speak.events` is a list of the same five
+        // names, and drawn as five more ticks in the strip above it would be a
+        // second event table three lines from this one — the reader would have
+        // to match them up by name to answer "and what happens on `question`?".
+        const sp = al.speak || {};
+        const said = (sp.events || []).indexOf(row.event) >= 0;
+        const say = window.AFTip.wrap(
+            `<label class="alertonlbl alertsaylbl"><input type="checkbox" data-alertsay="${C.esc(row.event)}" ${said ? 'checked' : ''}></label>`,
+            `${text[0]} — ${said ? 'the agent\'s NAME is spoken after the tone' : 'tone only, no name'}`,
+            (said
+                ? 'After this event\'s tone, the sentence below is read out loud — so the '
+                  + 'question from the next room is answered without walking to the screen.'
+                : 'This event makes its noise and says nothing. A tone answers "what kind of '
+                  + 'news is this?"; with several lanes running, the question is WHICH ONE, '
+                  + 'and no palette can carry a name.')
+            + (sp.on ? '' : '\n\n‼️ Announcements are switched OFF above, so nothing is spoken on '
+                + 'any event yet — this tick decides what happens once they are on.')
+            + '\n\nThe tone and the sentence are ONE queue ticket, in that order: no other '
+            + 'lane\'s chime can land in the middle of this one\'s sentence.');
         return `<tr>
             <td><label class="alertonlbl"><input type="checkbox" data-alerton="${C.esc(row.event)}" ${row.on ? 'checked' : ''}>${name}</label></td>
+            <td class="alertsay">${say}</td>
             <td>${alertVoiceSelect(al, row)}</td>
             <td>${plays}</td>
             <td class="alertbtn"><button class="secondary small" data-alertplay="${C.esc(row.voice)}" ${row.playable ? '' : 'disabled'} title="Play it now — this is what this event sounds like">▶</button></td>
@@ -1732,6 +1762,137 @@
         </div>${err}`;
     }
 
+    /**
+     * ‼️ A-25 — WHO IS SPEAKING, AND WHAT THEY WILL SAY.
+     *
+     * `agentFarm.alerts.speak` was a raw JSON box with seven fields in it, and
+     * one of them — `voice` — is a NAME that has to exist on this machine. A
+     * box cannot know whether it does, and the engine's answer to a name
+     * nothing answers to is a FAILED announcement (`exit 5`), deliberately, not
+     * a quiet fall back to English. So the one thing the box could never show
+     * is the one thing that decides whether the feature works, and the strip
+     * shows it: the voice list is asked of Windows, both of its registries, and
+     * the reader sees the culture of every voice they can pick.
+     *
+     * It is its own strip and not more controls on the gate's line: the gate
+     * answers "will anything be heard at all", this answers "and what will it
+     * say" — ONE SUBJECT, and the two are read in that order down the card.
+     */
+    function alertSpeakStrip(al) {
+        const sp = al.speak || {};
+        const voices = sp.voices || [];
+        const chosen = String(sp.voice || '');
+        // MIRROR — the box is narrow enough to cut its own text, so it opens
+        // with what it is set to right now.
+        const onTip = window.AFQuery.tip(
+            (sp.on ? 'On — the fleet says which agent out loud' : 'Off — tones only')
+            + '\n\nLocal and free: no network, no account, no model. The sentence rides BEHIND '
+            + 'the tone in the same queue ticket, and goes through the same mute, the same quiet '
+            + 'hours and the same per-session mute as the tone it follows.\n\nWhich events are '
+            + 'spoken is the 🗣 column in the table below.');
+        /**
+         * ‼️ "NOTHING ANSWERS TO THAT" IS ONLY SAYABLE WHERE THE LIST IS
+         * AUTHORITATIVE. Listing voices is Windows-only: on macOS `say -v Yelda`
+         * works perfectly and the list comes back EMPTY with a reason, so a
+         * warning keyed on "no match" alone would call a working setting broken
+         * on every machine that is not this one. An unreadable list is a
+         * question the page cannot answer, and it says that instead.
+         */
+        const bad = chosen && !sp.resolved && sp.voicesLoaded && !sp.voicesError;
+        const voiceTip = window.AFQuery.tip(
+            (chosen
+                ? (sp.resolved
+                    ? `Set to "${chosen}" — which reaches ${sp.resolved}`
+                    : bad
+                        ? `Set to "${chosen}" — ‼️ NOTHING ON THIS MACHINE ANSWERS TO THAT`
+                        : `Set to "${chosen}" — this platform cannot list its voices, so whether that name is answered is only known when it speaks`)
+                : 'Not set — whichever voice the system reads with')
+            + '\n\nA voice reading a language it does not know is not accented, it is '
+            + 'unintelligible, so the language of each voice is on its row.\n\n'
+            + (bad
+                ? '‼️ The announcement will FAIL rather than read out in the wrong voice — which '
+                  + 'is deliberate: a wrong voice is not a smaller error than no voice, it is a '
+                  + 'harder one to diagnose. Pick one from this list, or clear it.\n\n'
+                : '')
+            + sp.voicesNote);
+        // ‼️ THE ROW THE SETTING REACHES IS THE SELECTED ONE, not the row whose
+        // name equals it. `Tolga` is a legal setting and no voice is called
+        // that, so a box matching the raw value would read "System default" on
+        // a machine that is about to speak Turkish — the exact lie this strip
+        // exists to end. Picking a row writes the FULL name, which is the
+        // user's own act and not a silent rewrite of what they typed.
+        const at = String(sp.resolvedName || chosen);
+        const opt = v => `<option value="${C.esc(v.name)}"${v.name === at ? ' selected' : ''}>${C.esc(v.label)}</option>`;
+        // The setting is ALWAYS shown, whether or not the list could confirm it
+        // — a picker that silently drops the value it is set to is the box this
+        // strip replaced. Only the ⚠ is conditional.
+        const unknown = chosen && !sp.resolvedName
+            ? `<option value="${C.esc(chosen)}" selected>${bad ? '⚠ ' : ''}${C.esc(chosen)}${bad ? ' — no voice answers to that' : ' — set by hand'}</option>`
+            : '';
+        const box = !sp.voicesLoaded
+            // ‼️ NOT ASKED YET IS NOT "NO VOICES". The list costs a PowerShell
+            // process, so it is fetched once when the card first draws; an
+            // empty box in the meantime would read as "this machine cannot
+            // speak", which is the opposite of the truth.
+            ? `<select id="alertspeakvoice" disabled><option>reading this machine's voices…</option></select>`
+            : `<select id="alertspeakvoice" title="${C.esc(voiceTip)}">
+                <option value=""${chosen ? '' : ' selected'}>System default — whichever voice Windows reads with</option>
+                ${unknown}
+                ${voices.map(opt).join('')}
+            </select>`;
+        const err = sp.voicesError
+            ? `<div class="seterr">⚠ the voice list could not be read — ${C.esc(sp.voicesError)}</div>` : '';
+        // What will actually be said, in full. A template is a thing to READ
+        // BACK, not to imagine: `{agnet}` is spoken as "agnet" on purpose, and
+        // the only place that mistake is visible before it is heard is here.
+        const state = window.AFTip.wrap(
+            `<span class="alertgatestate ${sp.on && !bad ? 'on' : 'off'}">${sp.on ? (bad ? '⚠ voice not found' : '🗣 ' + C.esc(sp.preview || '')) : 'not announcing'}</span>`,
+            sp.on ? `Next announcement: “${sp.preview}”` : 'Announcements are off',
+            (sp.on
+                ? `Spoken by: ${sp.resolved || (bad ? '‼️ nothing — the name matches no voice here' : chosen || 'the system default voice')}.`
+                : 'The tones still play. Nothing is spoken until the tick to the left is on.')
+            + '\n\nThe sentence is your template with three names filled in — '
+            + '{agent}, {event} and {session}. Anything else is left exactly as typed, so a '
+            + 'mistyped {agnet} is HEARD rather than silently swallowed.'
+            + `\n\nAt most ${sp.max || 160} characters: every announcement holds the whole farm's `
+            + 'alerts for as long as it takes to read, so a template that grew into a paragraph '
+            + 'would silence everything queued behind it.');
+        // Named rather than counted, for the muted sessions' reason: "one
+        // conversation speaks Turkish" cannot be acted on without knowing which.
+        const ses = (sp.sessions || []).map(s =>
+            `<span class="alertmuteses">${C.esc(s.label || s.sessionId)} · ${C.esc(s.voice)}<button class="secondary small" data-alertspeakclear="${C.esc(s.sessionId)}" title="${C.esc('Clear this conversation\'s own voice — the fleet setting answers for it again. That is NOT silence.')}">✕</button></span>`).join('');
+        return `<div class="alertgate alertspeak">
+            <label class="alertgatelbl" title="${C.esc(onTip)}">
+                <input type="checkbox" id="alertspeakon" ${sp.on ? 'checked' : ''}>🗣 Say which agent</label>
+            <span class="alertgatebar"></span>
+            ${box}
+            <button class="secondary small" id="alertspeakrescan"
+                title="${C.esc('Ask Windows again. A language pack you installed from Settings a minute ago is exactly what this is for — and it is the same free list at Settings ▸ Time & language ▸ Speech ▸ Add voices.')}">↻</button>
+            <span class="alertgatebar"></span>
+            <label class="alertgatelbl" title="${C.esc(window.AFQuery.tip(`Rate: ${sp.rate === 0 ? '0 — the voice\'s own normal speed' : sp.rate}\n\nSAPI's own scale, −10 (slow) to 10 (fast). An announcement you have heard a hundred times can be read faster than one you have not.`))}">rate
+                <input class="alertqtime" type="number" id="alertspeakrate" min="-10" max="10"
+                    value="${C.esc(String(sp.rate === undefined ? 0 : sp.rate))}" data-alertsp="${C.esc(String(sp.rate === undefined ? 0 : sp.rate))}"></label>
+            <label class="alertgatelbl" title="${C.esc(window.AFQuery.tip(`Volume: ${sp.volume === undefined ? 100 : sp.volume} of 100\n\nThe SENTENCE's volume, and separate from the tone's — that one is the OS mixer's. A quiet name behind a loud chime is a real setting: the chime carries down the corridor, the name only has to reach the next room.`))}">vol
+                <input class="alertqtime" type="number" id="alertspeakvol" min="0" max="100"
+                    value="${C.esc(String(sp.volume === undefined ? 100 : sp.volume))}" data-alertsp="${C.esc(String(sp.volume === undefined ? 100 : sp.volume))}"></label>
+            <span class="alertgatebar"></span>
+            <input class="alertspeaktpl" type="text" id="alertspeaktpl" maxlength="${Number(sp.max) || 160}"
+                value="${C.esc(String(sp.template || ''))}" data-alertsp="${C.esc(String(sp.template || ''))}"
+                title="${C.esc(window.AFQuery.tip(`Says: ${sp.template}\n\n{agent}, {event} and {session} are filled in; everything else is spoken exactly as typed.`))}">
+            <button class="secondary small" id="alertspeaktest"
+                title="${C.esc('Say it now, where you are standing. ‼️ It speaks even when announcements are OFF and even inside quiet hours — "can this machine talk at all" and "is the feature switched on" are two questions, and a test that answers the second when asked the first teaches nobody anything.')}">▶</button>
+            ${state}
+            ${ses ? `<span class="alertgatebar"></span><span class="alertmuteseswrap">${window.AFTip.wrap(
+                '<span class="alertmuteseslbl">their own voice</span>',
+                `${(sp.sessions || []).length} conversation${(sp.sessions || []).length === 1 ? '' : 's'} announced in a voice of their own`,
+                'A session\'s own voice BEATS the fleet\'s — so the agent whose questions come in '
+                + 'Turkish can be announced in Turkish while the rest are not, and the difference '
+                + 'carries from the next room without a word being understood.\n\nSet from the ♪ '
+                + 'right-click on the session\'s Live Timeline row. ✕ clears it back to the fleet '
+                + 'setting, which is not silence.')}${ses}</span>` : ''}
+        </div>${err}`;
+    }
+
     function alertsCard(al) {
         const mine = (al.voices || []).filter(v => !v.builtin);
         const on = (al.events || []).filter(e => e.on).length;
@@ -1757,10 +1918,12 @@
                 single session from the ♪ in its Live Timeline row — the two <b>add up</b> rather than
                 overriding each other, so unticking here never silences a session that armed itself.</div>
             ${alertGateStrip(al)}
+            ${alertSpeakStrip(al)}
             ${err}
             <table class="settbl alerttbl">
                 <thead><tr>
                     <th class="setth" title="${C.esc(window.AFQuery.tip('What happened. Tick one and its sound plays on every session in the fleet.'))}">Event</th>
+                    <th class="setth" title="${C.esc(window.AFQuery.tip('Also SAY WHICH AGENT, out loud, after this event\'s tone. A tone answers "what kind of news is this?" and nothing else; with several lanes running the question from the next room is WHICH ONE, and no palette can carry a name. Out of the box only question is spoken — the one event where an agent is STOPPED and the cost of not knowing is the whole run standing still.'))}">🗣</th>
                     <th class="setth" title="${C.esc(window.AFQuery.tip('Your choice for everybody. Leave it on Default and the built-in answer stands — turn-ready and question deliberately differ, so the two can be told apart from another room without configuring anything.'))}">Sound</th>
                     <th class="setth" title="${C.esc(window.AFQuery.tip('What would ACTUALLY play, and which step of the chain chose it: this session > this agent > your choice here > the built-in default. A sound whose file has gone falls through to the next step rather than going silent.'))}">Plays</th>
                     <th class="setthx"></th>
@@ -1964,9 +2127,14 @@
                    free-width: what would actually play, which is the sentence
                    the reader came for. The ▶ column carries one button and must
                    not take an equal share of a fixed layout. */
-                .alerttbl { max-width:860px; margin-top:6px; }
+                .alerttbl { max-width:900px; margin-top:6px; }
                 .alerttbl th:nth-child(1), .alerttbl td:nth-child(1) { width:170px; }
-                .alerttbl th:nth-child(2), .alerttbl td:nth-child(2) { width:210px; }
+                /* A-25 — one tick wide and no wider. It is the same question as
+                   the column to its left asked about a different output, so it
+                   sits beside it rather than at the far end of the row. */
+                .alerttbl th:nth-child(2), .alerttbl td.alertsay { width:30px; text-align:center; }
+                .alerttbl td.alertsay .alertonlbl { justify-content:center; }
+                .alerttbl th:nth-child(3), .alerttbl td:nth-child(3) { width:210px; }
                 .alerttbl th.setthx, .alerttbl td.alertbtn { width:34px; padding-right:0; }
                 .alerttbl td.alertbtn button { width:100%; padding:0 4px; }
                 .alertonlbl { display:flex; gap:6px; align-items:center; cursor:pointer;
@@ -2012,6 +2180,16 @@
                     padding:0 2px 0 6px; border-radius:9px;
                     border:1px solid var(--vscode-widget-border, #4444); }
                 .alertmuteses button { padding:0 4px; min-width:0; }
+                /* A-25 — the announcement strip. Same shape as the gate above
+                   it on purpose: the two are read as one instrument, in the
+                   order they take effect (is anything heard → what does it say).
+                   The voice box is the wide one because a voice's LANGUAGE is
+                   what the reader is choosing on, and a cut label hides it. */
+                .alertspeak #alertspeakvoice { flex:1 1 260px; min-width:180px; max-width:340px; }
+                .alertspeak .alertqtime { width:56px; }
+                .alertspeak .alertspeaktpl { flex:1 1 200px; min-width:120px; max-width:280px;
+                    font-family:var(--vscode-editor-font-family); }
+                .alertspeak button.small { flex:none; padding:0 6px; min-width:0; }
                 .alertmine .wikimark.ok { color:var(--vscode-textLink-foreground); }
                 .alertmine .wikirel { flex:0 0 180px; }
                 .alertmine button { flex:none; margin-left:2px; }
@@ -2168,6 +2346,85 @@
         document.querySelectorAll('[data-alertunmute]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({
                 type: 'alertUnmuteSession', sessionId: el.dataset.alertunmute
+            })));
+        /**
+         * ‼️ A-25 — THE ANNOUNCEMENT STRIP. Every write goes back to the host
+         * through `alertSpeak`, which is the same function `alerts.speak` is,
+         * so the card and the bridge cannot part company on what a partial
+         * change means.
+         */
+        document.querySelectorAll('[data-alertsay]').forEach(el =>
+            el.addEventListener('change', () => vscode.postMessage({
+                type: 'alertSpeak', event: el.dataset.alertsay, on: el.checked
+            })));
+        const speakOnEl = document.getElementById('alertspeakon');
+        if (speakOnEl) {
+            speakOnEl.addEventListener('change', () => vscode.postMessage({
+                type: 'alertSpeak', on: speakOnEl.checked
+            }));
+        }
+        const speakVoiceEl = document.getElementById('alertspeakvoice');
+        if (speakVoiceEl && !speakVoiceEl.disabled) {
+            speakVoiceEl.addEventListener('change', () => vscode.postMessage({
+                type: 'alertSpeak', voice: speakVoiceEl.value
+            }));
+        }
+        /**
+         * ‼️ ASKED ONCE, AND ONLY WHILE THE CARD IS ON SCREEN. The list costs a
+         * PowerShell process; the answer arrives as a redraw, and a redraw
+         * without this flag would ask again — a loop that spawns a shell per
+         * frame. `voicesLoaded` is set by the host even when the read FAILED,
+         * so a machine that cannot answer is asked once and then left alone.
+         */
+        if (speakVoiceEl && DATA.alerts && DATA.alerts.speak
+            && !DATA.alerts.speak.voicesLoaded && !speakVoicesAsked) {
+            speakVoicesAsked = true;
+            vscode.postMessage({ type: 'alertSpeakVoices' });
+        }
+        const speakRescanEl = document.getElementById('alertspeakrescan');
+        if (speakRescanEl) {
+            speakRescanEl.addEventListener('click', () => vscode.postMessage({
+                type: 'alertSpeakVoices', force: true
+            }));
+        }
+        [['alertspeakrate', 'rate'], ['alertspeakvol', 'volume'], ['alertspeaktpl', 'template']]
+            .forEach(([id, field]) => {
+                const el = document.getElementById(id);
+                if (!el) { return; }
+                // Enter LETS GO of the box, exactly as the quiet-hours times and
+                // the sound-name rows do: the page holds a refresh while a field
+                // has focus, so an Enter that kept it would leave the old value
+                // on screen after the write.
+                el.addEventListener('keydown', e => { if (e.key === 'Enter') { el.blur(); } });
+                el.addEventListener('change', () => {
+                    const next = el.value.trim();
+                    // ‼️ AN EMPTIED TEMPLATE IS NOT A SILENT ONE — the host would
+                    // put the default back and the reader would watch their
+                    // sentence reappear without being told why. Put it back here
+                    // instead, where nothing has been written yet.
+                    if (next === '' || next === el.dataset.alertsp) {
+                        el.value = el.dataset.alertsp;
+                        return;
+                    }
+                    const msg = { type: 'alertSpeak' };
+                    msg[field] = field === 'template' ? next : Number(next);
+                    vscode.postMessage(msg);
+                });
+            });
+        const speakTestEl = document.getElementById('alertspeaktest');
+        if (speakTestEl) {
+            // ‼️ NO TEXT IS SENT — the host reads back what the SETTING would
+            // say, filled in. A draft typed into the box beside it is saved by
+            // the blur this very click causes, so "read me back what I just
+            // typed" still works; sending the box's raw contents instead would
+            // read "{agent}, {event}" out loud, which is the one sentence the
+            // announcement never produces.
+            speakTestEl.addEventListener('click', () =>
+                vscode.postMessage({ type: 'alertSpeakTest' }));
+        }
+        document.querySelectorAll('[data-alertspeakclear]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({
+                type: 'alertSpeakSession', sessionId: el.dataset.alertspeakclear
             })));
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {
