@@ -128,8 +128,8 @@ import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
 import { mergeConsoleIds, readConsoleIds, recordConsoleIds } from './core/consoleRegistry';
 import {
-    provenanceFields, SESSION_PARSER_VERSION, SessionIndex, SessionInfo, SessionLauncher, sessionMission,
-    sessionOrigin, sessionHeadless
+    lastRunDimensions, provenanceFields, SESSION_PARSER_VERSION, SessionIndex, SessionInfo,
+    SessionLauncher, sessionMission, sessionOrigin, sessionHeadless
 } from './core/sessions';
 import { SessionStore } from './core/sessionStore';
 import {
@@ -158,7 +158,7 @@ import {
     claudeOnlyScopeNote
 } from './core/engines';
 import { EngineRunner, testEngine } from './core/engineTest';
-import { capabilityRefusal, effortsFor, readEngineModels } from './core/models';
+import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable } from './core/processTree';
@@ -9128,7 +9128,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'sessions.start',
             describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? ('
                 + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
@@ -9142,6 +9142,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     resume: optStr(args, 'resume'),
                     continueLast: args.continue === true
                 };
+                /**
+                 * ‼️ S-45 — A BRIDGE RESUME INHERITS TOO, but under a different
+                 * order from the panels, and the difference is the point.
+                 *
+                 * In the Console the value travelling with the click is the
+                 * composer box, which is SEEDED from the fleet defaults — so it
+                 * is not a choice and the transcript beats it. Here a caller
+                 * that wrote `model=` typed it on purpose: an explicit argument
+                 * is the most deliberate answer in the room and wins. What the
+                 * caller left out is where the transcript speaks, and the fleet
+                 * defaults are the last word rather than the first.
+                 */
+                const resumed = optStr(args, 'resume')
+                    ? sessionFromArg(optStr(args, 'resume'))
+                    : undefined;
+                const inherit = resumed ? lastRunDimensions(resumed) : {};
+                if (!o.model && inherit.model) { o.model = inherit.model; }
+                if (!o.effort && inherit.effort) { o.effort = inherit.effort; }
+                if (!o.permissionMode && inherit.permissionMode) {
+                    o.permissionMode = inherit.permissionMode;
+                }
                 const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
                 const errors = validateLaunch(merged);
                 need(!errors.length, errors.join(' · '));
@@ -17642,7 +17663,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         findSession: (id) => {
             const s = index.allWithExternal().find(x => x.sessionId === id);
             return s ? {
-                sessionId: s.sessionId, file: s.file, cwd: s.cwd, model: s.models[s.models.length - 1],
+                // S-45 - the model that ANSWERED last. sessions.context resumes
+                // this session to run /context, so reading the first-seen set
+                // meant capturing on a model the session had moved off.
+                sessionId: s.sessionId, file: s.file, cwd: s.cwd, model: lastRunDimensions(s).model,
                 engine: s.source ?? 'claude', agentName: s.agentName, title: s.title
             } : undefined;
         },
@@ -23640,9 +23664,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const base: LaunchOptions = { resume: s.sessionId, engine };
                 const fleet = launchDefaults();
                 const ownerAgent = s.agentId ? agents.find(a => a.id === s.agentId) : undefined;
-                const merged = engine === ((fleet.engine || 'claude') as EngineId)
+                const defaulted = engine === ((fleet.engine || 'claude') as EngineId)
                     ? withDefaults(base, fleet)
                     : (ownerAgent ? withAgentEngineDefaults(ownerAgent, base) : base);
+                /**
+                 * ‼️ S-45 — …AND THE SESSION'S OWN LAST SETTINGS BEAT ALL OF THEM.
+                 *
+                 * Everything above answers "what does this fleet/agent start
+                 * things as today", which is the right question for a NEW run
+                 * and the wrong one for picking a conversation back up: a
+                 * session put on a bigger model at higher effort came back on
+                 * whatever the settings page currently said, and the person had
+                 * to notice and re-pick all three, every time. The transcript
+                 * knows — including a `/model` typed INSIDE the session, which
+                 * nothing Agent Farm could have written down at launch would.
+                 *
+                 * ‼️ It still passes `narrowLaunch`: the pair is a fact about the
+                 * catalogue as it stood then, and an effort the model no longer
+                 * offers is the X-30 error with an older date on it. An empty
+                 * answer from it is a real answer — "this engine offers no such
+                 * flag" — and is passed on rather than fallen back over.
+                 *
+                 * The mode is inherited on the same rule and is NOT trusted on
+                 * the way out: `resolveLaunchPermission` below still resolves it
+                 * against the folder's own layers (K-22), so a bypass carried
+                 * back from a transcript can never grant more than starting a
+                 * fresh session in that folder would.
+                 */
+                const inherit = lastRunDimensions(s);
+                const want = narrowLaunch(engineModelMatrix()[engine],
+                    inherit.model || defaulted.model,
+                    inherit.effort || defaulted.effort);
+                const merged: LaunchOptions = {
+                    ...defaulted,
+                    model: want.model,
+                    effort: want.effort,
+                    permissionMode: inherit.permissionMode || defaulted.permissionMode
+                };
                 // ‼️ …and it carries the project context too — the flag does not
                 // survive `--resume` (measured), so a resumed session that is
                 // not re-told knows nothing about its project. It is the
@@ -25167,6 +25225,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // back untouched, and a card that has ended is the seat the
                 // resumed session takes. This route used to ask half of it by
                 // hand and the other five routes asked neither.
+                /**
+                 * ‼️ S-45 — ALL THREE DIMENSIONS COME BACK, not just the model.
+                 *
+                 * This route already reached for the model and reached WRONG:
+                 * `models` is a set in first-seen order, so a session that went
+                 * opus → sonnet → opus handed back sonnet — the model it had
+                 * STOPPED using. `lastModel` is the line that actually answered
+                 * last. Effort and the permission mode were not asked for at
+                 * all and fell to the fleet's current settings.
+                 *
+                 * The pair is narrowed for the engine on the row (X-30): it is
+                 * a fact about the catalogue as it stood then, and an effort the
+                 * model no longer offers must not become a flag now.
+                 */
+                const inherit = lastRunDimensions(s);
+                const sameEngine = defaultEngine === engine;
+                const want = narrowLaunch(engineModelMatrix()[engine],
+                    inherit.model || (sameEngine ? d.model : undefined),
+                    inherit.effort || (sameEngine ? d.effort : undefined));
                 const id = consoleHost.start({
                     agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
                     cwd: s.cwd, resume: s.sessionId,
@@ -25175,10 +25252,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // for that same engine; a Claude alias must never be handed
                     // to `codex exec resume` (or vice versa).
                     engine,
-                    model: s.models[s.models.length - 1]
-                        || (defaultEngine === engine ? d.model : undefined),
-                    effort: defaultEngine === engine ? d.effort : undefined,
-                    permissionMode: d.permissionMode,
+                    model: want.model || undefined,
+                    effort: want.effort || undefined,
+                    // The mode is inherited on the same rule; what actually
+                    // reaches the process is still resolved against the
+                    // folder's own layers (K-22), so this cannot grant more
+                    // than a fresh session there would.
+                    permissionMode: inherit.permissionMode || d.permissionMode,
                     // ‼️ …and the project it is TOLD about is its OWN, never the
                     // window's active one — see sessionOwnProject. The context
                     // does not survive `--resume` (measured), so this is the

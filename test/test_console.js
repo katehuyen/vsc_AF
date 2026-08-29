@@ -728,9 +728,14 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('external sessions are resolved and their real transcript is backfilled too',
         /\[\.\.\.index\.all\(\), \.\.\.index\.external\(\)\]/.test(ext2)
         && /parseCliViewer\(raw, file, pricing\)/.test(ext2));
+    // S-45 - the handle used to be `model: s.models[s.models.length - 1]`, which
+    // was reading the FIRST-SEEN set and therefore pinning a bug: a session that
+    // went opus -> sonnet -> opus came back on sonnet. Same invariant, current
+    // spelling - the model still comes off the row rather than off a default.
     ok('a resume uses the transcript engine instead of forcing Claude',
         /const engine = \(s\.source/.test(ext2)
-        && /engine,\s*\n\s*model: s\.models/.test(ext2)
+        && /engine,\s*\n\s*model: want\.model/.test(ext2)
+        && /const inherit = lastRunDimensions\(s\)/.test(ext2)
         && !/every row this command can reach is a Claude session/.test(ext2));
     ok('Console-hosted Antigravity dialogue is persisted in a readable transcript',
         /farmConsoleTranscript\(s\)/.test(ext2)

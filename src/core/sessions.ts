@@ -239,6 +239,27 @@ export interface SessionInfo {
     version?: string;
     gitBranch?: string;
     permissionMode?: string;
+    /**
+     * !! S-45 - THE MODEL THAT ANSWERED LAST, which is NOT `models[models.length - 1]`.
+     *
+     * `models` is a SET rendered in first-seen order, so a session that went
+     * opus -> sonnet -> opus holds `[opus, sonnet]` and its last element names
+     * the model that stopped being used. Every "what is it on now" reader wants
+     * this field; `models` stays the honest answer to "what has served it".
+     * Absent on a transcript whose every assistant line was synthetic.
+     */
+    lastModel?: string;
+    /**
+     * !! S-45 - THE REASONING EFFORT THE LAST ANSWER RAN AT.
+     *
+     * The transcript states it on the assistant line itself (a top-level
+     * `effort`, beside `type`/`timestamp` - not inside `message`), so the last
+     * line that names one is the session's current setting. Like
+     * `permissionMode` its absence is an ABSENCE, never a default: an engine
+     * that never writes the field, and every line written before the CLI began
+     * to, say nothing rather than "low".
+     */
+    effort?: string;
     /** Last time a tool touched the agent's DUTIES.md in this session (duty compliance signal). */
     dutiesReadTs?: number;
     /** Approximate context size after the last assistant reply (prompt + cache + output of the latest request). */
@@ -502,6 +523,53 @@ export function sessionHeadless(s: OriginFacts | SessionInfo): boolean {
     return false;
 }
 
+/**
+ * !! S-45 - THE THREE DIMENSIONS A TRANSCRIPT CAN ANSWER FOR ITSELF.
+ *
+ * A resumed session used to come back on the fleet's current defaults, so a
+ * conversation the user had put on a big model at high effort under bypass
+ * restarted on whatever the settings page happened to say - and, because the
+ * composer's boxes are SEEDED from those same defaults, the value travelling
+ * with the click was the default too. There was no layer between them that
+ * knew what the session had actually been run as.
+ *
+ * The transcript is that layer, and it is the RIGHT one: a user who types
+ * `/model opus` inside the session changes the run without Agent Farm ever
+ * hearing about it, so anything Agent Farm had written down at launch would be
+ * stale exactly when it mattered. What the file says is what happened.
+ *
+ * A field that is absent stays absent - the caller falls through to its own
+ * next layer (the composer box, then the fleet default) rather than being
+ * handed an invention. And what comes back must still pass `narrowLaunch`:
+ * these are facts about ONE engine, and the row may be resumed after the
+ * catalogue that offered them has moved on.
+ */
+export interface LastRunDims {
+    model?: string;
+    effort?: string;
+    permissionMode?: string;
+}
+
+export function lastRunDimensions(s: {
+    lastModel?: string;
+    models?: string[];
+    effort?: string;
+    permissionMode?: string;
+} | undefined | null): LastRunDims {
+    const out: LastRunDims = {};
+    if (!s) { return out; }
+    // `models` is the fallback for a parse remembered by an older build, and
+    // only that: it is ordered by first sight, so it names the last model to
+    // APPEAR rather than the last to answer (see SessionInfo.lastModel).
+    const model = String(s.lastModel ?? s.models?.[s.models.length - 1] ?? '').trim();
+    if (model) { out.model = model; }
+    const effort = String(s.effort ?? '').trim();
+    if (effort) { out.effort = effort; }
+    const mode = String(s.permissionMode ?? '').trim();
+    if (mode) { out.permissionMode = mode; }
+    return out;
+}
+
 interface JsonlLine {
     type?: string;
     summary?: string;
@@ -513,6 +581,8 @@ interface JsonlLine {
     version?: string;
     gitBranch?: string;
     permissionMode?: string;
+    /** S-45 - reasoning effort, written on the assistant line itself. */
+    effort?: string;
     requestId?: string;
     entrypoint?: string;
     costUSD?: number;
@@ -699,7 +769,7 @@ const RECENT_MSG_SLACK = 4096;
  * every stored figure becomes a confident lie. Bump this whenever the parse
  * changes and every index on every machine rebuilds itself once, quietly.
  */
-export const SESSION_PARSER_VERSION = 1;
+export const SESSION_PARSER_VERSION = 2;
 
 /** How long the walk may run before it lets the host answer something else. */
 const SCAN_BREATH_MS = 12;
@@ -931,7 +1001,17 @@ export function feedSessionParser(
             const msg = line.message;
             if (msg.model && msg.model !== '<synthetic>') {
                 models.add(msg.model);
+                // !! S-45 - the SET cannot answer "which one is it on now": it is
+                // ordered by first sight, so a model returned to after another
+                // is not re-appended. Overwriting on every real line is.
+                info.lastModel = msg.model;
                 if (turnModelSets.length) { turnModelSets[turnModelSets.length - 1].add(msg.model); }
+            }
+            // S-45 - and the effort that answer ran at. Guarded on the value
+            // rather than assigned blind: a line that says nothing must not
+            // erase what the line before it said.
+            if (typeof line.effort === 'string' && line.effort.trim()) {
+                info.effort = line.effort.trim();
             }
 
             // Zero = no measurement (a synthetic row), so the last REAL figure

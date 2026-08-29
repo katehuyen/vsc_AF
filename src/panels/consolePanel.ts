@@ -19,7 +19,7 @@ import { EngineModels, narrowLaunch } from '../core/models';
 import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
-import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin } from '../core/sessions';
+import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
 import { afConfig } from '../core/settingsDoor';
 
@@ -1100,14 +1100,29 @@ export class ConsolePanel {
                 // are BOTH written without knowing which engine this row was
                 // recorded with, so they are narrowed to what that engine (and
                 // that model) actually offers before they become flags.
+                // !! S-45 - THE SESSION'S OWN LAST SETTING COMES FIRST, and it has
+                // to be first for the feature to exist at all: the composer's
+                // boxes are seeded FROM `launchDefaults()`, so `str('model')`
+                // is normally holding the fleet default rather than nothing,
+                // and a transcript value placed after it could never win. The
+                // order is therefore transcript -> box -> fleet default.
+                //
+                // The MODE is inherited on the same rule and is not trusted for
+                // it: ConsoleHost resolves what actually reaches the command
+                // line against the folder's own layers (K-22), so a bypass
+                // carried back from a transcript can never grant more than
+                // starting a fresh session in that folder would.
+                const inherit = lastRunDimensions(row);
                 const back = narrowLaunch(this.engineModelsFor(engine),
-                    str('model') || d.model, str('effort') || d.effort);
+                    inherit.model || str('model') || d.model,
+                    inherit.effort || str('effort') || d.effort);
                 this.selected = host.start({
                     agentId: agent?.id ?? '', agentName: row.agentName ?? 'session',
                     cwd: row.cwd, resume: sessionId, engine,
                     model: back.model,
                     effort: back.effort,
-                    permissionMode: str('permissionMode') || d.permissionMode,
+                    // S-45 — the mode the transcript last stated (see above).
+                    permissionMode: inherit.permissionMode || str('permissionMode') || d.permissionMode,
                     // ‼️ …and the project it comes back UNDER is its OWN. Left
                     // out, ConsoleHost.start falls back to the window's active
                     // project — which is not this session's answer and is

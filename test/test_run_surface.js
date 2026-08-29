@@ -285,7 +285,9 @@ const base = read('src/panels/base.ts');
         /has no system-prompt channel, so this terminal session was NOT told about the project/.test(ext));
     ok('‼️ a RESUME is pinned to the engine its transcript belongs to',
         /const engine = \(s\.source && s\.source in ENGINES \? s\.source : 'claude'\) as EngineId/.test(ext)
-        && /\n\s*engine,\s*\n\s*model: s\.models/.test(ext)
+        // S-45 - was `model: s.models[...]` (the first-seen set, a bug the
+        // regex was holding in place); the model is still the ROW'S.
+        && /\n\s*engine,\s*\n\s*model: want\.model/.test(ext)
         && /projectId: sessionOwnProject\(s\)/.test(ext));
 
     const startOp = ext.slice(ext.indexOf("op: 'sessions.start'"),

@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.317.0 - S-45: a resumed session comes back as itself (2026-08-29)
+
+Picking a conversation back up handed it whatever the **settings page currently
+said**. So a session you had deliberately put on a bigger model, at a higher
+effort, under bypass, restarted on the fleet default every time — and the three
+had to be re-chosen by hand on every sitting. Worse than tedious: nothing on the
+row says the model changed, so the wrong one just runs.
+
+**The transcript is the answer, and it is the right one.** A `/model` typed
+INSIDE a session changes the run without Agent Farm ever hearing about it, so
+anything written down at launch would be stale exactly when it mattered. The
+file records what actually happened, so a resume now reads it:
+
+- **the model that answered last** — `SessionInfo.lastModel`. ‼️ Not
+  `models[models.length - 1]`, which every reader had been using: `models` is a
+  set in first-seen order, so a session that went opus -> sonnet -> opus named
+  **sonnet**, the model it had stopped using.
+- **the effort it ran at** — new. The CLI writes it on the assistant line
+  itself, beside `type` and `timestamp`; nothing had ever read it.
+- **the permission mode** — X-124's field, now used rather than only shown.
+
+**All four doors, not the two the report named.** The Console's own resume, the
+terminal resume, *Resume in Console* (which already reached for the model — and
+reached wrong) and the `sessions.start` bridge op. `sessions.context` was
+resuming on the wrong model for the same reason and is fixed with them.
+
+**‼️ Order, and one deliberate exception.** In the panels the transcript comes
+**first**: the composer's boxes are *seeded from* the fleet defaults, so the
+value travelling with a resume click is a default rather than a choice, and
+anything placed after it could never win. On the bridge it is the other way
+round — an argument a caller actually wrote is the most deliberate answer in the
+room, so it beats the transcript, and the defaults are consulted only for what
+neither answers.
+
+The inherited pair still passes `narrowLaunch`: it is a fact about the catalogue
+as it stood **then**, and an effort a model no longer offers is the X-30 error
+with an older date on it. An inherited **bypass** is not trusted either —
+`resolveEffectivePermission` still resolves it against the folder's own layers
+(K-22), so a mode carried back from a transcript can never grant more than
+starting a fresh session there would.
+
+`SESSION_PARSER_VERSION` is bumped: without it every session already indexed on
+your machine would come back with neither field — which is exactly the set of
+sessions you resume.
+
 ## 3.316.0 - K-34: every door that starts a session carries the same setup (2026-08-29)
 
 X-133 gave the Console composer a ⚡ chip. That is **one of ten** ways a session
