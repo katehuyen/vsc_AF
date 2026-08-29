@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.332.0 - S-34: the setup an agent last ran with belongs to every door (2026-08-30)
+
+Agent Farm has always remembered what an agent was last started with — the
+engine, the model, the effort, the permission mode, the discipline switch and
+the window it ran in. It remembered it in **one** place and offered it back in
+**one** place: the multi-dimension launcher. Press ▶ on the same agent's row
+instead, or open its composer from "Talk to agent", or start it from a project
+page, and it ran on the fleet defaults, whatever it had been running as ten
+minutes earlier. A memory nine doors out of ten cannot see is not a memory; it
+is a feature of one picker.
+
+**Now it is a layer, and every door stands on it.** The resolution order is the
+same everywhere: what this launch states → what this AGENT was last started
+with → the agent's engine defaults → `agentFarm.launchDefaults`. Reading is one
+function (`seedLastLaunch`), writing is one function (`rememberLaunch`), and
+what is kept is decided once, in the core — so the next dimension added to a
+launch is remembered by the shape rather than by ten call sites, which is the
+failure this item is named for.
+
+Where you will see it:
+
+- **▶ and the tree menus** open the surface picker on the agent's own last
+  engine and last window, and the row says *last used for `<agent>`* rather
+  than crediting the window for a choice that agent never made.
+- **The Console composer** opens on the remembered model, effort, permission
+  mode and Superpowers state instead of five boxes reading "Default".
+- **Changing the agent in the composer's own picker** reseeds those boxes from
+  the new agent's record — an agent chosen there used to keep the previous
+  agent's setup, with nothing on screen saying so.
+- **"Talk to agent" and the Projects page** start it as it last ran; only the
+  project is new.
+
+**‼️ What the composer shows is what runs.** The boxes are seeded from the
+record and then left alone: an empty box is a person asking for the default,
+and re-applying the memory at Send would be the panel arguing with a control
+they had just cleared.
+
+**‼️ And the bridge records without inheriting.** `sessions.start` writes the
+record — the record means "what this agent was last RUN with", so a headless
+start that skipped it would leave ▶ offering a setup that had been overtaken —
+but it is never seeded from it: an unattended call that says nothing means the
+documented defaults, not whatever a person last clicked. The new
+`sessions.lastLaunch` op reads the record, so an agent can answer "how does
+this one normally run" without guessing.
+
+Neither a name nor a first prompt is ever remembered: re-applying them would
+give the next session the same name and send the same opening message on your
+behalf.
+
 ## 3.331.0 - M-31: the list follows the count (2026-08-30)
 
 The figures at the top of the backlog answer two honest questions one press

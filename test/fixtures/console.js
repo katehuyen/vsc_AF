@@ -161,8 +161,22 @@ const data = () => ({
     agents: [
         // X-133 — the per-agent default rides on the agent's own row: the page
         // resolves the switch against whichever agent the picker is showing.
-        { id: 'a-dev', name: 'developer', dir: 'D:\\zone\\agent\\ajanlar\\developer', superpowers: true },
-        { id: 'a-mgr', name: 'manager', dir: 'D:\\zone\\agent\\ajanlar\\manager', superpowers: false }
+        {
+            id: 'a-dev', name: 'developer', dir: 'D:\\zone\\agent\\ajanlar\\developer', superpowers: true,
+            // ‼️ S-34 — what this one was last started with. It rides on the
+            // agent row so the picker can resolve it without a round trip; see
+            // seedFromAgent in media/console.js.
+            lastLaunch: {
+                engine: 'claude', model: 'opus', effort: 'high',
+                permissionMode: 'plan', superpowers: true, surface: 'console'
+            }
+        },
+        {
+            id: 'a-mgr', name: 'manager', dir: 'D:\\zone\\agent\\ajanlar\\manager', superpowers: false,
+            // …and one that has never been started, which falls through to the
+            // fleet defaults. `null` is a different answer from an empty record.
+            lastLaunch: null
+        }
     ],
     // The flat pair is the pre-engine FALLBACK, so it stays Claude's own.
     models: [
@@ -289,6 +303,27 @@ const noSkillsData = () => Object.assign(composerData(), {
     }
 });
 
+/**
+ * ‼️ S-34 — THE COMPOSER OPENED ON WHAT THIS AGENT LAST RAN AS.
+ *
+ * The picture is the whole point of the item: five boxes that used to read
+ * "Default · Default · Default" for an agent that has been running on opus at
+ * high effort in plan mode all week. `composerSeed` is what makes the page read
+ * the handed-over setup (K-34's edge), so a fixture without it draws the
+ * defaults and proves nothing.
+ */
+const rememberedComposerData = () => Object.assign(composerData(), {
+    // ‼️ THE ENGINE IS PART OF THE RECORD, and it has to agree with the model in
+    // the picture: `ConsolePanel.show` seeds both from the SAME record, and the
+    // page then drops a model the chosen engine does not offer (reconcileComposer).
+    // A fixture that remembered `opus` on Codex would draw "Default" and look
+    // like the bug this item fixes.
+    engine: 'claude',
+    composerSeed: 1,
+    composerLaunch: { model: 'opus', effort: 'high', permissionMode: 'plan' },
+    superpowersChoice: 'on'
+});
+
 /** ‼️ U-59 — the same composer with the SHARED-ACP engine chosen, which is the
  *  only state in which the effort box is absent and the permission tooltip says
  *  the engine can stop and ask. Five boxes become four; that is the picture. */
@@ -321,6 +356,11 @@ module.exports = {
             data: data()
         },
         { id: 'console-composer', label: 'Console — the engine picker', data: composerData() },
+        {
+            id: 'console-lastlaunch',
+            label: 'Console — the composer opened on what this agent last ran as (S-34)',
+            data: rememberedComposerData()
+        },
         {
             id: 'console-opencode',
             label: 'Console — OpenCode chosen: no effort box, and permissions it can really ask about',

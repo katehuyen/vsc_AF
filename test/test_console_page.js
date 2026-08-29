@@ -588,6 +588,60 @@ const html = allHtml;
         && state.afConsole.permissionMode === 'default'
         && /value="claude" selected/.test(allHtml())
         && /value="sonnet" selected/.test(allHtml()));
+
+    // ---- ‼️ S-34 — AND THE ONE DOOR THE HOST NEVER HEARS ABOUT ----
+    //
+    // Every host-side door now hands this composer the setup its agent last ran
+    // as. The AGENT PICKER is not one of them: it changes page-side and
+    // repaints, so choosing another agent here left the model, the effort and
+    // the permission mode describing the PREVIOUS one — the same defect X-133
+    // fixed for the Superpowers chip, one row along. The record therefore rides
+    // on the agent row, and the picker resolves it the same way.
+    const twoAgents = Object.assign({}, again, {
+        composerSeed: 3,
+        agents: [
+            { id: 'dev', name: 'developer', dir: 'D:/a/dev', superpowers: false, lastLaunch: null },
+            {
+                id: 'ops', name: 'ops', dir: 'D:/a/ops', superpowers: false,
+                lastLaunch: {
+                    engine: 'codex', model: 'gpt-5.6-terra', effort: 'high',
+                    permissionMode: 'acceptEdits', superpowers: true, surface: 'terminal'
+                }
+            }
+        ]
+    });
+    push(twoAgents);
+    posted.length = 0;
+    els['c-agent'].value = 'ops';
+    els['c-agent'].listeners.change({ target: els['c-agent'] });
+    ok('‼️ choosing another agent reseeds the launch boxes from ITS record',
+        state.afConsole.model === 'gpt-5.6-terra'
+        && state.afConsole.effort === 'high'
+        && state.afConsole.permissionMode === 'acceptEdits');
+    // The engine and the discipline live host-side, so they are asked for
+    // rather than written here — a second path would let the box and the spawn
+    // disagree about which CLI was chosen.
+    ok('…the engine through the host, which owns it',
+        posted.some(m => m.type === 'setEngine' && m.id === 'codex'));
+    ok('…and the discipline the same way, as a real ON rather than a cleared box',
+        posted.some(m => m.type === 'setSuperpowers' && m.on === true));
+
+    // …and back to an agent that has never been started: the fleet defaults,
+    // not the last agent's setup. `null` is a real answer.
+    //
+    // The host's side of the exchange, played out: it took the `setSuperpowers`
+    // above and repainted with the switch ON. Without this the page would be
+    // asked to change something it already believes, and the guard that keeps
+    // this from costing a repaint per keystroke would (correctly) say nothing.
+    push(Object.assign({}, twoAgents, { composerSeed: 3, superpowersChoice: 'on' }));
+    posted.length = 0;
+    els['c-agent'].value = 'dev';
+    els['c-agent'].listeners.change({ target: els['c-agent'] });
+    ok('‼️ an agent with no record falls through to the defaults, not to the last agent',
+        state.afConsole.model === 'sonnet' && state.afConsole.effort === 'high'
+        && state.afConsole.permissionMode === 'default');
+    ok('…and the discipline question is handed back to that agent\'s own default',
+        posted.some(m => m.type === 'setSuperpowers' && m.on === null));
 }
 
 // ---------- whose turn is it ----------

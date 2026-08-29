@@ -16,7 +16,9 @@ import {
 } from '../core/consoleEngine';
 import { EngineOption, engineRefusal } from '../core/engines';
 import { EngineModels, narrowLaunch } from '../core/models';
-import { EFFORT_CHOICES, modelChoices, PERMISSION_CHOICES } from '../core/launch';
+import {
+    EFFORT_CHOICES, LastLaunch, LaunchOptions, modelChoices, PERMISSION_CHOICES, RunSurface
+} from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
@@ -114,6 +116,20 @@ export interface ConsoleDeps {
      */
     engines(): EngineOption[];
     launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
+    /**
+     * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, and where.
+     *
+     * The composer is one of ten doors onto the same launch, and it was the one
+     * that always opened on the fleet defaults: an agent last run on `opus` at
+     * high effort came back at whatever the settings said, so the setup was
+     * "remembered" in the launcher and forgotten everywhere a person actually
+     * works. The panel does not own the record — `extension.ts` holds the one
+     * copy in `globalState` — so it asks for it and writes back through these
+     * two, exactly like every other door.
+     */
+    lastLaunch(agentId: string): LastLaunch | undefined;
+    /** …and the write-back, made by `start` because `start` is the launch. */
+    rememberLaunch(agentId: string, o: LaunchOptions, surface: RunSurface): void;
     /**
      * Which sessions a live process already owns (the CLI's own registry).
      *
@@ -382,11 +398,26 @@ export class ConsolePanel {
                 // This is also a fresh launch decision. An already-open Console
                 // must not lend it the previous agent's engine/model/effort.
                 const d = c.deps.launchDefaults();
-                c.composerEngine = (opts.engine ?? d.engine ?? '').trim() || 'claude';
+                // ‼️ S-34 — …and THIS agent's own last setup is what it opens on
+                // instead. The rule that made the line above right is "not the
+                // PREVIOUS agent's"; falling all the way through to the fleet
+                // defaults was never the point, and it is why an agent you last
+                // ran on opus came back on the settings file's model.
+                const last = c.deps.lastLaunch(opts.agentId);
+                c.composerEngine = (opts.engine ?? last?.engine ?? d.engine ?? '').trim() || 'claude';
                 c.composerSeed++;
                 c.presetAgent = opts.agentId;
                 c.selected = '';
                 c.pinnedAgent = opts.pinAgent ? opts.agentId : undefined;
+                // A caller that handed over a setup of its own is answered by
+                // the block below; this is the door that handed over nothing.
+                if (!opts.launch && last) {
+                    c.composerLaunch = {
+                        model: last.model, effort: last.effort,
+                        permissionMode: last.permissionMode
+                    };
+                    c.composerSuperpowers = last.superpowers;
+                }
             }
             // ‼️ K-34 — the setup lands on the composer, and the seed is bumped
             // so the page actually reads it: `applyComposerSeed` is edge-driven,
@@ -644,7 +675,14 @@ export class ConsolePanel {
                 // switch against whichever agent the picker is showing, and a
                 // second list keyed by name would have to be kept in step with
                 // this one for no gain.
-                superpowers: this.deps.superpowersDefault(a.name)
+                superpowers: this.deps.superpowersDefault(a.name),
+                // ‼️ S-34 — …and what THIS one was last started with, on the row
+                // for the same reason the switch above is: the picker can change
+                // the agent without the host hearing about it, and the boxes
+                // have to follow the agent that is showing. `null` is "never
+                // started", which falls through to the fleet defaults — a
+                // different answer from a record that says nothing.
+                lastLaunch: this.deps.lastLaunch(a.id) ?? null
             })),
             // The flat pair stays as the FALLBACK every surface had before
             // engines existed; `engineModels` below is what a picker actually
@@ -1010,12 +1048,31 @@ export class ConsolePanel {
                     void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
                     return;
                 }
-                this.selected = host.start({
-                    agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+                /**
+                 * ‼️ S-34 — WHAT ACTUALLY RUNS, IN ONE OBJECT, so the record
+                 * written below cannot drift from the launch above it.
+                 *
+                 * The memory is NOT applied here even though it is applied at
+                 * every other door: these boxes are on screen and they were
+                 * SEEDED from it, so an empty one is a person saying "the
+                 * default, please" — and re-filling it from the record would be
+                 * the panel arguing with a control the user just cleared.
+                 * Seeding is the mechanism; a second layer at the last moment
+                 * would make the visible setup a lie.
+                 */
+                const started: LaunchOptions = {
                     engine: engine as EngineId,
                     model: str('model') || d.model,
                     effort: str('effort') || d.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
+                    superpowers: msg.superpowers === true
+                };
+                this.selected = host.start({
+                    agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+                    engine: engine as EngineId,
+                    model: started.model,
+                    effort: started.effort,
+                    permissionMode: started.permissionMode,
                     // ‼️ ALWAYS EXPLICIT, including the empty string. Leaving it
                     // out means "inherit the window's active project" one layer
                     // down (ConsoleHost.start), which is the inheritance the box
@@ -1031,6 +1088,11 @@ export class ConsolePanel {
                     firstPrompt: str('text') || undefined,
                     firstAttachments: attachmentsOf(msg)
                 });
+                // ‼️ S-34 — and THIS is a launch, so it is remembered like one.
+                // The composer used to be the door that read the record and
+                // never wrote to it, which made the launcher reopen on a setup
+                // the agent had not run in a week.
+                this.deps.rememberLaunch(agent.id, started, 'console');
                 // the next new session starts its own two answers from scratch
                 this.composerProject = '';
                 // …and its own agent's answer for the discipline, rather than

@@ -44,7 +44,7 @@ const base = read('src/panels/base.ts');
         return i < 0 ? '' : ext.slice(i, i + 2200);
     };
     ok('agentfarm.startSession asks where it should run',
-        /\? \{ surface: arg\.surface, projectId: '', engine: [^}]+\}\s*\n\s*: await pickRunSurface\(/.test(body('startSession')));
+        /\? \{\s*\n\s*surface: arg\.surface, projectId: '',\s*\n\s*engine: [^\n]+\n\s*\}\s*\n\s*: await pickRunSurface\(/.test(body('startSession')));
     ok('agentfarm.continueSession asks where it should run',
         /arg\?\.surface\s*\n?\s*\?\? \(await pickRunSurface\(/.test(body('continueSession')));
     // the launcher asks inside itself instead: WHERE is one of its rows
@@ -59,8 +59,12 @@ const base = read('src/panels/base.ts');
     // then opened on a terminal whatever the last session had been, so a setup
     // that was right in four dimensions out of five read as "it does not
     // remember" — the window is the part you see before you have read a row.
+    // ‼️ S-34 (reopened) — and it is stored by the ONE recorder every other door
+    // calls, not by a block this picker wrote for itself. That was the whole
+    // defect: a memory the launcher kept and nobody else could see or add to.
     ok('…the surface is stored with the rest of the setup',
-        /surface: where\s*\n\s*\}\s*\n\s*\};\s*\n\s*await context\.globalState\.update\(LAST_LAUNCH_KEY/.test(ext));
+        /await rememberLaunch\(agent\.id, o, where\);/.test(ext)
+        && /const rememberLaunch = async \(\s*\n\s*agentId: string, o: LaunchOptions, surface\?: RunSurface\s*\n\s*\): Promise<void> => \{[\s\S]{0,220}\[agentId\]: launchToRemember\(o, surface\)/.test(ext));
     ok('…and read back before the window\'s last answer, then a terminal',
         /const \{ surface: lastWhere, \.\.\.seed \} = lastLaunch\(\)\[agent\.id\] \?\? \{\}/.test(ext)
         && /\?\? context\.globalState\.get<RunSurface>\(SURFACE_KEY\) \?\? 'terminal'/.test(ext));
@@ -79,7 +83,7 @@ const base = read('src/panels/base.ts');
 // WHAT it belongs to are dimensions of the same launch and travel together.
 {
     ok('the surface picker can carry the project too',
-        /const pickRunSurface = async \(\s*\n?\s*what: string, opts: \{ project\?: boolean; engine\?: boolean \} = \{\}/.test(ext));
+        /const pickRunSurface = async \(\s*\n\s*what: string,\s*\n\s*opts: \{\s*\n\s*project\?: boolean; engine\?: boolean;/.test(ext));
     ok('…drawn by one shared row, so it says what the Console\'s chip says',
         /const launchProjectRow = \(\s*\n?\s*projectId: string, fromStatusBar = false\s*\n?\s*\)/.test(ext)
         && /'◧ No project'/.test(ext)
@@ -121,11 +125,17 @@ const base = read('src/panels/base.ts');
         /registerCommand\('agentfarm\.setActiveProject', async \(arg\?: \{ id\?: string \}\) => \{[\s\S]{0,400}await chooseActiveProject\(\);/.test(ext));
 
     const startBody = ext.slice(ext.indexOf("registerCommand('agentfarm.startSession'"),
-        ext.indexOf("registerCommand('agentfarm.startSession'") + 2600);
+        ext.indexOf("registerCommand('agentfarm.startSession'") + 4200);
     ok('‼️ one-click Start asks for the project as well as the place',
-        /pickRunSurface\(`New session for \$\{agent\.name\}`, \{ project: true \}\)/.test(startBody));
+        /pickRunSurface\(`New session for \$\{agent\.name\}`,\s*\n\s*\{ project: true, last, agentName: agent\.name \}\)/.test(startBody));
+    // ‼️ S-34 (reopened) — and the launch it hands over is the SEEDED one, not a
+    // bare engine. ▶ used to throw the model, the effort, the permission mode
+    // and the discipline away and start the agent on the fleet defaults.
     ok('…and the answer really reaches the launch',
-        /startClaudeSession\(agent, \{ engine: chosen\.engine as EngineId \},\s*\n\s*undefined, undefined, chosen\.projectId\)/.test(startBody));
+        /const o = seedLastLaunch\(agent\.id, \{ engine: chosen\.engine as EngineId \}\);/.test(startBody)
+        && /startClaudeSession\(agent, o, undefined, undefined, chosen\.projectId\)/.test(startBody));
+    ok('…and the terminal arm records what it just ran, like every other door',
+        /await rememberLaunch\(agent\.id, o, 'terminal'\);/.test(startBody));
     // ▶ → In the Console opens the COMPOSER: the project can only be chosen
     // before the first prompt, and spawning on the spot skipped that moment.
     ok('…and the Console path opens the composer with the agent pinned',
@@ -255,8 +265,12 @@ const base = read('src/panels/base.ts');
     ok('…and returns it with the rest of the answer',
         /interface RunChoice \{ surface: RunSurface; projectId: string; engine: string \}/.test(ext)
         && /return \{ surface: pick\.surface, projectId, engine \};/.test(ext));
-    ok('…opening on the DEFAULT rather than on the last one-off',
-        /let engine = \(launchDefaults\(\)\.engine \|\| 'claude'\);/.test(ext));
+    // ‼️ S-34 (reopened) — the picker still does not remember ITSELF (that would
+    // make `agentFarm.launchDefaults.engine` a lie), but the agent's own last
+    // engine is a different fact and it leads: the door knows which agent it is
+    // about, and the launcher beside it has always opened that way.
+    ok('…opening on this agent\'s own last engine, then the DEFAULT — never on the picker\'s last one-off',
+        /let engine = \(opts\.last\?\.engine \|\| launchDefaults\(\)\.engine \|\| 'claude'\);/.test(ext));
     ok('the full launcher has an Engine row of its own',
         /label: '\$\(server-process\) Engine'/.test(ext) && /act: 'engine'/.test(ext));
     // ‼️ …WITH THE FOLDER ON IT. Antigravity works in its own scratch workspace

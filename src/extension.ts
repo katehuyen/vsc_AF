@@ -135,9 +135,9 @@ import {
 import { SessionStore } from './core/sessionStore';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
-    LaunchOptions, LaunchProfile, MODEL_ID_REFUSAL, modelChoices, modelIdOk, ONE_EXECUTOR,
-    PERMISSION_CHOICES, RunSurface, SUPERPOWERS_CHOICES, normSuperpowers, superpowersWord,
-    twoExecutors, validateLaunch, withDefaults
+    LastLaunch, launchToRemember, LaunchOptions, LaunchProfile, MODEL_ID_REFUSAL, modelChoices,
+    modelIdOk, ONE_EXECUTOR, PERMISSION_CHOICES, RunSurface, SUPERPOWERS_CHOICES,
+    normSuperpowers, superpowersWord, twoExecutors, validateLaunch, withDefaults, withLastLaunch
 } from './core/launch';
 import {
     applyProfile, deleteProfile, describeProfile, editProfile, matchProfile, profileFrom,
@@ -9130,7 +9130,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'sessions.start',
             describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? ('
                 + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults — this op is deliberately NOT seeded from what the agent was last started with, because an unattended call that says nothing means the documented defaults and not whatever a person last clicked. ‼️ S-34 — but what it DOES start IS recorded as this agent\'s last setup (engine, model, effort, permissionMode, superpowers, surface), so the UI doors that DO inherit are offering a fact rather than a stale one; ask sessions.lastLaunch to read it. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
@@ -9191,11 +9191,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 };
                 if (surface === 'console') {
                     startConsoleSession(agent, o, project);
+                    // ‼️ S-34 — RECORDED, NOT INHERITED, and the asymmetry is the
+                    // design. The record means "what this agent was last RUN
+                    // with", so a headless start that skipped the write would
+                    // leave the ▶ offering a setup that has since been overtaken.
+                    // Inheriting is the other direction: an unattended call that
+                    // says nothing means the documented defaults, and quietly
+                    // running it on whatever a person last clicked would be the
+                    // opposite of what this item asked for.
+                    void rememberLaunch(agent.id, o, 'console');
                     return { agent: agent.name, cwd: agent.dir, surface, ...shape };
                 }
                 const command = startClaudeSession(agent, o, undefined, undefined, project);
                 need(command, 'launch rejected — see the warning in the window');
+                void rememberLaunch(agent.id, o, 'terminal');
                 return { agent: agent.name, cwd: agent.dir, surface, command, ...shape };
+            }
+        },
+        {
+            op: 'sessions.lastLaunch',
+            describe: 'What an agent was LAST started with — engine, model, effort, permissionMode, superpowers and the surface it ran on. ‼️ S-34 — this is the record every UI door now opens on: the ▶ on an agent\'s row, the multi-dimension launcher, the Console composer, "Talk to agent" and the Projects page all seed from it, and every launch that actually happens (including sessions.start) writes it back. Read it to answer "how does this agent normally run" without guessing, or to check what a door will offer before you tell the user to press it. An agent that has never been started answers null; a field that was left at "default" when it ran is stored empty and still falls through to agentFarm.launchDefaults. Reads only — nothing is started and nothing is written. args: agent? (name|id — omit for every agent that has a record)',
+            handler: (args) => {
+                const who = optStr(args, 'agent');
+                if (who) {
+                    const agent = findAgent(who);
+                    return { agent: agent.name, id: agent.id, last: lastLaunchOf(agent.id) ?? null };
+                }
+                return {
+                    agents: agents
+                        .map(a => ({ agent: a.name, id: a.id, last: lastLaunchOf(a.id) ?? null }))
+                        .filter(r => r.last)
+                };
             }
         },
         {
@@ -16860,9 +16886,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * reason `LaunchProfile` keeps it outside `LaunchOptions`: it is not a flag
      * on a command line, it decides which surface runs the command. An absent
      * value is a record written before this and means nothing was said.
+     *
+     * ‼️ S-34 (REOPENED) — AND IT IS EVERY DOOR'S MEMORY, NOT THE LAUNCHER'S.
+     *
+     * The record was read in one place and written in one place — the
+     * multi-dimension launcher — so the ▶ on an agent's row, the Console's own
+     * composer, the Projects page and the tree menus all started their agent on
+     * the fleet defaults, whatever it had actually last run as. A memory that
+     * nine doors out of ten cannot see is not a memory; it is a feature of one
+     * picker. The type, the layering rule and the write-back shape now live in
+     * `core/launch.ts` (`LastLaunch` · `withLastLaunch` · `launchToRemember`),
+     * and the three functions below are the ONLY way this extension reads or
+     * writes it — so a new door inherits by calling one of them, and a door
+     * that forgets is a door that never mentioned the memory at all.
      */
-    type LastLaunch = LaunchOptions & { surface?: RunSurface };
     const lastLaunch = () => context.globalState.get<Record<string, LastLaunch>>(LAST_LAUNCH_KEY, {});
+
+    /** What this agent was last started with — `undefined` if never. */
+    const lastLaunchOf = (agentId: string): LastLaunch | undefined => lastLaunch()[agentId];
+
+    /**
+     * ‼️ S-34 — THE ONE SEEDING CALL EVERY HUMAN DOOR MAKES. What the door was
+     * told stays on top; the memory fills in only what nobody stated.
+     */
+    const seedLastLaunch = (agentId: string, o: LaunchOptions = {}): LaunchOptions =>
+        withLastLaunch(o, lastLaunchOf(agentId));
+
+    /**
+     * ‼️ S-34 — AND THE ONE RECORDING CALL, made by every door that actually
+     * STARTS something — including the bridge.
+     *
+     * The record means "what this agent was last run with", which is a fact
+     * about the agent and not about which button was pressed: a headless start
+     * that skipped the write would leave the ▶ offering a setup that has since
+     * been overtaken. Inheriting is the other direction and the bridge
+     * deliberately does NOT do it — an unattended `session.start` that says
+     * nothing means the documented defaults, and silently running it on
+     * whatever a person last clicked is the opposite of a fix.
+     */
+    const rememberLaunch = async (
+        agentId: string, o: LaunchOptions, surface?: RunSurface
+    ): Promise<void> => {
+        await context.globalState.update(LAST_LAUNCH_KEY, {
+            ...lastLaunch(),
+            [agentId]: launchToRemember(o, surface)
+        });
+    };
 
     /** Sub-picker for one dimension. Cancelling keeps the current value;
      *  "Other…" accepts anything the installed CLI might know that we don't. */
@@ -17388,26 +17457,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const ran = startClaudeSession(agent, o, undefined, undefined, project);
                     if (!ran) { continue; } // invalid value — the picker stays up
                 }
-                const remembered = {
-                    ...lastLaunch(),
-                    [agent.id]: {
-                        // the engine rides along: the second time you start the
-                        // same kind of session it is one Enter, engine included
-                        engine: o.engine, model: o.model, effort: o.effort,
-                        permissionMode: o.permissionMode,
-                        // ‼️ K-34 — remembered like the four beside it. Left out,
-                        // the launcher would reopen on the agent's default after
-                        // a session deliberately started without the discipline,
-                        // which is the S-34 defect on a newer row.
-                        superpowers: o.superpowers,
-                        // ‼️ S-34 — and WHERE it ran. Without this the launcher
-                        // reopened on a terminal after a Console session, which
-                        // is the one part of the setup a person notices before
-                        // they have read a single row.
-                        surface: where
-                    }
-                };
-                await context.globalState.update(LAST_LAUNCH_KEY, remembered);
+                // ‼️ S-34 — the SAME recorder every other door calls. The engine
+                // rides along (the second time you start the same kind of
+                // session it is one Enter, engine included), the discipline
+                // switch does too (K-34), and so does WHERE it ran — the one
+                // part of a setup a person notices before reading a single row.
+                // What is kept and what is dropped is `launchToRemember`'s call,
+                // in the core, so it cannot differ from door to door.
+                await rememberLaunch(agent.id, o, where);
                 await context.globalState.update(SURFACE_KEY, where);
                 return;
             }
@@ -18815,6 +18872,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // composer's Model and Effort boxes follow the Engine box.
         engineModels: () => engineModelMatrix(),
         launchDefaults: () => launchDefaults(),
+        // ‼️ S-34 — the per-agent record, read and written through the SAME two
+        // functions every other door uses. The panel gets no copy of its own:
+        // a second store would be a second answer to "what did this agent last
+        // run as", and the whole item is that there must be one.
+        lastLaunch: (agentId: string) => lastLaunchOf(agentId),
+        rememberLaunch: (agentId: string, o: LaunchOptions, surface: RunSurface) =>
+            void rememberLaunch(agentId, o, surface),
         liveOwners: () => readCliSessions(claudeDir()),
         history: consoleHistory,
         olderHistory: consoleOlderHistory,
@@ -19180,23 +19244,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * be a question whose answer is thrown away.
      */
     const pickRunSurface = async (
-        what: string, opts: { project?: boolean; engine?: boolean } = {}
+        what: string,
+        opts: {
+            project?: boolean; engine?: boolean;
+            /** ‼️ S-34 — the setup THIS agent was last started with. Passed by
+             *  every per-agent door; absent on the window-level ones, which have
+             *  no agent to remember anything about. */
+            last?: LastLaunch;
+            /** …and whose memory it is, so the row can say so rather than
+             *  claiming the window's answer for an agent that never had it. */
+            agentName?: string;
+        } = {}
     ): Promise<RunChoice | undefined> => {
         // ‼️ `engine: false` is for the ONE caller that already has an engine row
         // of its own (the full launcher). Asking there too would not merely
         // repeat the question — it would silently overwrite the answer.
         const askEngine = opts.engine !== false;
         interface Item extends vscode.QuickPickItem { surface?: RunSurface; act?: string }
-        const last = context.globalState.get<RunSurface>(SURFACE_KEY);
+        // ‼️ S-34 — THIS AGENT'S OWN ANSWER LEADS, and the window's is the
+        // fallback. An agent you always talk to in the Console does not stop
+        // being that one because the last thing you started anywhere was a
+        // terminal — and the row says WHICH of the two it is crediting, or a
+        // reader cannot tell a fact about their agent from a fact about the
+        // window.
+        const last = opts.last?.surface ?? context.globalState.get<RunSurface>(SURFACE_KEY);
+        const lastWord = opts.last?.surface && opts.agentName
+            ? ` • last used for ${opts.agentName}` : ' • last used';
         // The window's answer is this launch's STARTING answer (see
         // launchProjectRow). `seeded` is only true until it is touched: once
         // you have chosen here, the row stops crediting the status bar for it.
         let projectId = opts.project ? seedLaunchProject() : '';
         let seeded = !!projectId;
-        // ‼️ The engine opens on the DEFAULT, not on the last thing chosen here:
-        // it is a setting (`agentFarm.launchDefaults.engine`), and a picker that
-        // silently remembered a one-off would make the setting a lie.
-        let engine = (launchDefaults().engine || 'claude');
+        // ‼️ The engine does NOT open on the last thing chosen HERE: this picker
+        // is shared by every agent, and one that silently remembered a one-off
+        // would make `agentFarm.launchDefaults.engine` a lie.
+        //
+        // ‼️ S-34 — but the agent's OWN last engine is a different fact, and it
+        // wins over the fleet default when the door knows which agent it is
+        // about. That is not a picker remembering itself; it is the same
+        // per-agent record the launcher has always opened on, finally readable
+        // from the doors beside it.
+        let engine = (opts.last?.engine || launchDefaults().engine || 'claude');
         for (;;) {
             const spec = ENGINES[engine as EngineId] ?? ENGINES.claude;
             const where: Item[] = [
@@ -19213,7 +19301,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             ];
             for (const it of where) {
-                if (it.surface === last) { it.description += ' • last used'; }
+                if (it.surface === last) { it.description += lastWord; }
             }
             // ‼️ THE ENGINE IS A DIMENSION LIKE THE OTHERS, AND IT COMES FIRST —
             // it decides what the other rows even mean (a terminal is a
@@ -22879,18 +22967,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             }
             if (!agent) { return; }
+            // The Console opens its COMPOSER rather than spawning — the same
+            // rule `agentfarm.startSession` follows: the project can only be
+            // chosen before the first prompt, because the context rides in
+            // on the system prompt at spawn.
+            //
+            // ‼️ S-34 — the same setup the other doors start on. A project page
+            // is a different reason to start a session, not a different session:
+            // the agent still runs as it last ran, and only the project is new.
+            const o = seedLastLaunch(agent.id, {
+                engine: (launchDefaults().engine || 'claude') as EngineId
+            });
             if (how === 'console') {
-                // The Console opens its COMPOSER rather than spawning — the same
-                // rule `agentfarm.startSession` follows: the project can only be
-                // chosen before the first prompt, because the context rides in
-                // on the system prompt at spawn.
                 ConsolePanel.show(consoleDeps, {
                     agentId: agent.id, pinAgent: true, projectId: id,
-                    engine: launchDefaults().engine || 'claude'
+                    engine: o.engine || 'claude',
+                    launch: {
+                        model: o.model, effort: o.effort,
+                        permissionMode: o.permissionMode, superpowers: o.superpowers
+                    }
                 });
             } else {
-                startClaudeSession(agent, { engine: (launchDefaults().engine || 'claude') as EngineId },
-                    undefined, undefined, id);
+                if (!startClaudeSession(agent, o, undefined, undefined, id)) { return; }
+                void rememberLaunch(agent.id, o, 'terminal');
             }
         },
         newTask: id => {
@@ -25342,7 +25441,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // The agent is PINNED, not merely preselected: you came here from
             // that agent's row, so the picker would only be a way to lose it by
             // accident. It can still be let go — the composer says how.
-            ConsolePanel.show(consoleDeps, { agentId: agent.id, pinAgent: true });
+            //
+            // ‼️ S-34 — and the composer opens on what this agent last ran as.
+            // "Talk to X" is the door with the fewest questions in it, which is
+            // exactly why it must not be the door that quietly answers them all
+            // with the fleet defaults.
+            const o = seedLastLaunch(agent.id);
+            ConsolePanel.show(consoleDeps, {
+                agentId: agent.id, pinAgent: true,
+                ...(o.engine ? { engine: o.engine } : {}),
+                launch: {
+                    model: o.model, effort: o.effort,
+                    permissionMode: o.permissionMode, superpowers: o.superpowers
+                }
+            });
         }),
 
         // ---------- C1: the web view, and how to reach it ----------
@@ -25789,14 +25901,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async (arg: AgentArg & { surface?: RunSurface }) => {
                 const agent = await resolveAgent(arg);
                 if (!agent) { return; }
+                /**
+                 * ‼️ S-34 — ▶ IS THE DOOR THAT REMEMBERED NOTHING, AND IT IS THE
+                 * ONE PEOPLE PRESS.
+                 *
+                 * This command asked where to run and which engine, and then
+                 * threw the rest away: a session started here ran on the fleet
+                 * model, the fleet effort, the fleet permission mode and the
+                 * agent's default discipline, whatever the same agent had been
+                 * running as ten minutes earlier in the launcher. Two doors to
+                 * the same agent, two different sessions, and nothing on screen
+                 * saying why — which reads as "the setup is not remembered".
+                 */
+                const last = lastLaunchOf(agent.id);
                 // `project: true` — a new session gets the project question
                 // wherever it is started from, not only in the Console's
                 // composer, and it opens on the window's active project when
                 // there is one (see launchProjectRow).
                 const chosen: RunChoice | undefined = arg?.surface
-                    ? { surface: arg.surface, projectId: '', engine: launchDefaults().engine || 'claude' }
-                    : await pickRunSurface(`New session for ${agent.name}`, { project: true });
+                    ? {
+                        surface: arg.surface, projectId: '',
+                        engine: last?.engine || launchDefaults().engine || 'claude'
+                    }
+                    : await pickRunSurface(`New session for ${agent.name}`,
+                        { project: true, last, agentName: agent.name });
                 if (!chosen) { return; }
+                // What the picker settled wins; the memory fills in the four
+                // dimensions the picker never asked about.
+                const o = seedLastLaunch(agent.id, { engine: chosen.engine as EngineId });
                 if (chosen.surface === 'console') {
                     /**
                      * ‼️ THE CONSOLE OPENS ITS COMPOSER — IT DOES NOT SPAWN.
@@ -25819,12 +25951,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         agentId: agent.id, pinAgent: true, projectId: chosen.projectId,
                         // …and the engine the picker settled on, carried into the
                         // composer's own box rather than asked a second time.
-                        engine: chosen.engine
+                        engine: chosen.engine,
+                        // ‼️ S-34 — and the rest of the setup, into the boxes the
+                        // person is about to look at. Nothing is spawned here, so
+                        // nothing is recorded either: the composer's own Send is
+                        // the launch, and it does the remembering.
+                        launch: {
+                            model: o.model, effort: o.effort,
+                            permissionMode: o.permissionMode, superpowers: o.superpowers
+                        }
                     });
                     return;
                 }
-                startClaudeSession(agent, { engine: chosen.engine as EngineId },
-                    undefined, undefined, chosen.projectId);
+                if (!startClaudeSession(agent, o, undefined, undefined, chosen.projectId)) { return; }
+                await rememberLaunch(agent.id, o, 'terminal');
             }),
 
         vscode.commands.registerCommand('agentfarm.continueSession',

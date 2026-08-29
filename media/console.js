@@ -2797,6 +2797,50 @@
         reconcileComposer(engineNow(), false);
         save();
     }
+
+    /**
+     * ‼️ S-34 — CHANGING THE AGENT IN THE PICKER IS A FRESH LAUNCH DECISION,
+     * AND THE BOXES HAVE TO FOLLOW IT.
+     *
+     * Every host-side door now opens this composer on what its agent last ran
+     * as (ConsolePanel.show → composerLaunch). The picker is the one door the
+     * host never hears about: `c-agent` changes page-side and repaints, so an
+     * agent chosen here kept the PREVIOUS agent's model, effort and permission
+     * mode — the same defect X-133 fixed for the Superpowers chip on the same
+     * control, one row along.
+     *
+     * The record rides on the agent row (`agents[].lastLaunch`) rather than as
+     * a map beside it, for the reason the discipline default does: the page
+     * resolves both against whichever agent the picker is showing, and a second
+     * list keyed by id would have to be kept in step for no gain. `null` there
+     * is "never started" and falls through to the fleet defaults — a different
+     * answer from a record that says nothing.
+     */
+    function seedFromAgent(agentId) {
+        const a = (DATA.agents || []).find(x => x.id === agentId);
+        const last = (a && a.lastLaunch) || null;
+        const d = DATA.defaults || {};
+        st.model = (last && last.model) || d.model || '';
+        st.effort = (last && last.effort) || d.effort || '';
+        st.permissionMode = (last && last.permissionMode) || d.permissionMode || '';
+        // The engine is the host's answer, not a page value: `setEngine` is how
+        // it is changed anywhere else in this panel, and a second path would let
+        // the box and the spawn disagree about which CLI was chosen.
+        const eng = (last && last.engine) || '';
+        const nextEngine = eng || engineNow();
+        reconcileComposer(nextEngine, false);
+        if (eng && eng !== engineNow()) { vscode.postMessage({ type: 'setEngine', id: eng }); }
+        // …and the discipline switch, which also lives host-side. '' means "this
+        // agent's own default", which is exactly what a never-started agent
+        // should land on. Only posted when it would actually change something —
+        // every message here costs a repaint.
+        const want = last && typeof last.superpowers === 'boolean'
+            ? (last.superpowers ? 'on' : 'off') : '';
+        if (want !== (DATA.superpowersChoice || '')) {
+            vscode.postMessage({ type: 'setSuperpowers', on: want === '' ? null : want === 'on' });
+        }
+        save();
+    }
     /**
      * ‼️ U-59 — THE FLAG IN THE PARENTHESIS IS THE ENGINE'S OWN, OR THERE IS NO
      * PARENTHESIS.
@@ -3141,7 +3185,14 @@
             // agent's own default until the user presses it, so an agent chosen
             // after the strip was drawn left the strip describing the previous
             // one — a switch reading "on" for an agent that starts plain.
-            byId('c-agent', 'change', e => { st.agentId = e.target.value; save(); paint(); });
+            // ‼️ S-34 — …and the launch boxes are reseeded from the new agent's
+            // own record for the same reason (see seedFromAgent).
+            byId('c-agent', 'change', e => {
+                st.agentId = e.target.value;
+                seedFromAgent(st.agentId);
+                save();
+                paint();
+            });
             pick('c-effort', 'effort');
             byId('c-model', 'change', e => {
                 st.model = e.target.value;

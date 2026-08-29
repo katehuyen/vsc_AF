@@ -132,7 +132,13 @@ const launchTs = read('src', 'core', 'launch.ts');
     // ‼️ 4 · REMEMBERED. Left out of `lastLaunch`, the launcher reopens on the
     //     agent's default after a session deliberately started without the
     //     discipline — the S-34 defect, on a newer row.
-    ok('the launcher remembers it for next time', /superpowers: o\.superpowers,/.test(extTs));
+    // ‼️ S-34 (reopened) — what is kept is now `launchToRemember`'s call, in the
+    // core, and every door writes through the one recorder. The dimension is
+    // remembered because the SHAPE remembers it, not because one call site
+    // happened to list it.
+    ok('the launcher remembers it for next time',
+        /await rememberLaunch\(agent\.id, o, where\);/.test(extTs)
+        && /o\.superpowers === undefined \? \{\} : \{ superpowers: o\.superpowers \}/.test(launchTs));
     // 5 · THE PROFILE EDITOR — a setup that cannot store it drops it silently
     //     every time somebody loads the profile they saved it into.
     ok('the profile editor offers it as a row',
@@ -193,6 +199,132 @@ const launchTs = read('src', 'core', 'launch.ts');
         !/label: 'Agent default'/.test(extTs));
     ok('…and it is defined once, in core',
         /export const SUPERPOWERS_CHOICES: LaunchChoice\[\]/.test(launchTs));
+}
+
+// ---------- ‼️ S-34 (reopened) — THE MEMORY IS EVERY DOOR'S, NOT THE LAUNCHER'S
+//
+// K-34 above pins ONE dimension across ten doors. S-34 pins the thing that
+// carries every dimension at once: what an agent was LAST started with. The
+// record existed and was read in exactly one place — `runLauncher` — so the ▶
+// on an agent's row, the Console composer, "Talk to agent", the Projects page
+// and the tree menus all started the same agent on the fleet defaults, whatever
+// it had actually been running as ten minutes earlier. A memory nine doors out
+// of ten cannot see is not a memory; it is a feature of one picker.
+//
+// THE RULE BEING PINNED: reading is `seedLastLaunch` / `lastLaunch(agentId)`,
+// writing is `rememberLaunch` / `launchToRemember`, and there is no second copy
+// of either. A door that inherits by hand is a door that will be forgotten the
+// next time a dimension is added — which is the failure this item is named for.
+{
+    const panelTs = read('src', 'panels', 'consolePanel.ts');
+    const consoleJs = read('media', 'console.js');
+    // ---- the layer itself, as a value ----
+    const last = { engine: 'codex', model: 'opus', effort: 'high', permissionMode: 'plan' };
+    eq('what the launch states wins over the record',
+        L.withLastLaunch({ model: 'sonnet' }, last).model, 'sonnet');
+    eq('…and what it does not state comes from the record',
+        L.withLastLaunch({ model: 'sonnet' }, last).effort, 'high');
+    eq('…including the engine', L.withLastLaunch({}, last).engine, 'codex');
+    eq('no record at all changes nothing',
+        JSON.stringify(L.withLastLaunch({ model: 'x' }, undefined)), '{"model":"x"}');
+    // ‼️ THE TRI-STATE. `false` is a person saying "not this session"; `||`
+    // would promote it into "nobody said" and quietly turn the discipline back
+    // on for a launch that deliberately turned it off.
+    eq('a remembered OFF stays off', L.withLastLaunch({}, { superpowers: false }).superpowers, false);
+    eq('…and an explicit ON beats a remembered OFF',
+        L.withLastLaunch({ superpowers: true }, { superpowers: false }).superpowers, true);
+    eq('…while a record that never mentioned it leaves the question open',
+        L.withLastLaunch({}, last).superpowers, undefined);
+
+    // ---- and what gets written back ----
+    const kept = L.launchToRemember(
+        { engine: 'claude', model: 'opus', effort: 'high', permissionMode: 'plan',
+            superpowers: true, name: 'nightly', prompt: 'go', resume: 'abc', continueLast: true },
+        'console');
+    eq('the five dimensions and the surface are kept',
+        [kept.engine, kept.model, kept.effort, kept.permissionMode, kept.superpowers, kept.surface].join(),
+        'claude,opus,high,plan,true,console');
+    // ‼️ …AND THE PER-LAUNCH ONES ARE NOT. Re-applying them would give the next
+    // session the same name and send the same opening message on the user's
+    // behalf — the one thing a "remembered setup" must never do.
+    ok('a name, a first prompt and a resume are NOT remembered',
+        kept.name === undefined && kept.prompt === undefined
+        && kept.resume === undefined && kept.continueLast === undefined);
+
+    // ---- one reader, one writer, no second copy ----
+    ok('the extension reads the record through one function',
+        /const lastLaunchOf = \(agentId: string\): LastLaunch \| undefined => lastLaunch\(\)\[agentId\];/.test(extTs));
+    ok('…and layers it through one more',
+        /const seedLastLaunch = \(agentId: string, o: LaunchOptions = \{\}\): LaunchOptions =>\s*\n\s*withLastLaunch\(o, lastLaunchOf\(agentId\)\);/.test(extTs));
+    ok('…and writes it through exactly one recorder',
+        (extTs.match(/context\.globalState\.update\(LAST_LAUNCH_KEY/g) || []).length === 1);
+    ok('…whose shape is decided in core, not at the call site',
+        /export function launchToRemember/.test(launchTs)
+        && /export function withLastLaunch/.test(launchTs));
+
+    // ---- the doors ----
+    // ▶ on an agent's row / the command palette / the tree menus.
+    ok('▶ seeds from the record',
+        /const o = seedLastLaunch\(agent\.id, \{ engine: chosen\.engine as EngineId \}\);/.test(extTs));
+    ok('…and carries it into the Console composer as well as the terminal',
+        /launch: \{\s*\n\s*model: o\.model, effort: o\.effort,\s*\n\s*permissionMode: o\.permissionMode, superpowers: o\.superpowers\s*\n\s*\}/.test(extTs));
+    // "Talk to agent" — the door with the fewest questions, which is exactly why
+    // it must not be the one that answers them all with the fleet defaults.
+    ok('"Talk to agent" opens the composer on the record',
+        /const o = seedLastLaunch\(agent\.id\);\s*\n\s*ConsolePanel\.show\(consoleDeps, \{\s*\n\s*agentId: agent\.id, pinAgent: true,/.test(extTs));
+    // The Projects page: a different reason to start a session, not a different
+    // session — only the project is new.
+    ok('the Projects page starts the agent as it last ran',
+        /const o = seedLastLaunch\(agent\.id, \{\s*\n\s*engine: \(launchDefaults\(\)\.engine \|\| 'claude'\) as EngineId\s*\n\s*\}\);/.test(extTs));
+    // The launcher, which always did — through the shared recorder now.
+    ok('the launcher records through the same recorder',
+        /await rememberLaunch\(agent\.id, o, where\);/.test(extTs));
+
+    // ‼️ THE BRIDGE RECORDS AND DOES NOT INHERIT, AND THE ASYMMETRY IS THE
+    // DESIGN. The record means "what this agent was last RUN with", so a
+    // headless start that skipped the write would leave ▶ offering a setup that
+    // has been overtaken. Inheriting is the other direction: an unattended call
+    // that says nothing means the documented defaults.
+    ok('the bridge records both surfaces',
+        /void rememberLaunch\(agent\.id, o, 'console'\);/.test(extTs)
+        && /void rememberLaunch\(agent\.id, o, 'terminal'\);/.test(extTs));
+    const startOp = extTs.slice(extTs.indexOf("op: 'sessions.start'"),
+        extTs.indexOf("op: 'sessions.start'") + 12000);
+    ok('…and never seeds itself from it', !/seedLastLaunch/.test(startOp));
+    ok('…and says so, where an agent calling it will read it',
+        /recorded as this agent\\'s last setup/.test(extTs));
+
+    // ---- the Console panel, both directions ----
+    ok('the panel is handed the record rather than keeping a copy',
+        /lastLaunch\(agentId: string\): LastLaunch \| undefined;/.test(panelTs)
+        && /rememberLaunch\(agentId: string, o: LaunchOptions, surface: RunSurface\): void;/.test(panelTs));
+    ok('…and the extension wires both to the same two functions',
+        /lastLaunch: \(agentId: string\) => lastLaunchOf\(agentId\),/.test(extTs)
+        && /rememberLaunch: \(agentId: string, o: LaunchOptions, surface: RunSurface\) =>\s*\n\s*void rememberLaunch\(agentId, o, surface\),/.test(extTs));
+    ok('a composer opened for an agent opens on that agent\'s last setup',
+        /const last = c\.deps\.lastLaunch\(opts\.agentId\);/.test(panelTs)
+        && /c\.composerEngine = \(opts\.engine \?\? last\?\.engine \?\? d\.engine \?\? ''\)/.test(panelTs));
+    ok('…and a caller that handed over its own setup still wins',
+        /if \(!opts\.launch && last\) \{/.test(panelTs));
+    ok('‼️ and Send is a launch, so it is remembered like one',
+        /this\.deps\.rememberLaunch\(agent\.id, started, 'console'\);/.test(panelTs));
+    // ‼️ THE BOXES ARE NOT RE-LAYERED AT SEND. They were SEEDED from the record
+    // and they are on screen: an empty one is a person asking for the default,
+    // and re-filling it would be the panel arguing with a control they cleared.
+    ok('…without the record arguing with a box the user just cleared',
+        /Seeding is the mechanism; a second layer at the last moment/.test(panelTs));
+
+    // ---- and the one door the host never hears about ----
+    // The agent picker changes page-side and repaints; without this the boxes
+    // describe the PREVIOUS agent, which is the X-133 defect one row along.
+    ok('the record rides on the agent row, for the picker to resolve',
+        /lastLaunch: this\.deps\.lastLaunch\(a\.id\) \?\? null/.test(panelTs));
+    ok('…and changing the agent reseeds the boxes from it',
+        /function seedFromAgent\(agentId\) \{/.test(consoleJs)
+        && /st\.model = \(last && last\.model\) \|\| d\.model \|\| '';/.test(consoleJs));
+    ok('…engine and discipline through the host, which owns them',
+        /vscode\.postMessage\(\{ type: 'setEngine', id: eng \}\)/.test(consoleJs)
+        && /type: 'setSuperpowers', on: want === '' \? null : want === 'on'/.test(consoleJs));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

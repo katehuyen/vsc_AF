@@ -2565,13 +2565,14 @@ const { opencodeStatus, syncToOpencode } =
     // I keeping on my shelf?" answers through the same code the UI clicks.
     {
         const reg = new BridgeRegistry();
-        const { buildLaunchCommand, withDefaults, validateLaunch } =
+        const { buildLaunchCommand, launchToRemember, withDefaults, validateLaunch } =
             require(path.join(__dirname, '..', 'out', 'core', 'launch.js'));
         const { togglePin, setTags, parseTags, isPinned, tagsOf, normalizeMarks } =
             require(path.join(__dirname, '..', 'out', 'core', 'sessionmarks.js'));
         const { resolveInterrupt } = require(path.join(__dirname, '..', 'out', 'core', 'interrupt.js'));
 
         // stand-ins for the extension's live state
+        const remembered = {};
         let marks = {};
         const titles = {};
         const launched = [];
@@ -2599,7 +2600,24 @@ const { opencodeStatus, syncToOpencode } =
                     need(!errors.length, errors.join(' · '));
                     const command = buildLaunchCommand('claude', withDefaults(o, defaults));
                     launched.push(command);
+                    // ‼️ S-34 — a launch that happens is a launch that is
+                    // RECORDED, on the bridge exactly as in the UI: the record
+                    // means "what this agent was last run with", and a headless
+                    // start that skipped the write would leave the ▶ offering a
+                    // setup that has since been overtaken. What is kept is
+                    // `launchToRemember`'s call, so it cannot differ per door.
+                    remembered[argStr(args, 'agent')] = launchToRemember(o, 'terminal');
                     return { agent: argStr(args, 'agent'), command };
+                }
+            },
+            {
+                op: 'sessions.lastLaunch',
+                describe: 'What an agent was last started with. args: agent?',
+                handler: (args) => {
+                    const who = optStr(args, 'agent');
+                    return who
+                        ? { agent: who, last: remembered[who] ?? null }
+                        : { agents: Object.keys(remembered).map(a => ({ agent: a, last: remembered[a] })) };
                 }
             },
             {
@@ -2676,8 +2694,9 @@ const { opencodeStatus, syncToOpencode } =
 
         const cat = reg.catalog().map(c => c.op);
         ok('every session op is in the catalog',
-            ['sessions.start', 'sessions.pin', 'sessions.rename', 'sessions.tag', 'sessions.shelf',
-                'sessions.page', 'sessions.interrupt'].every(op => cat.includes(op)));
+            ['sessions.start', 'sessions.lastLaunch', 'sessions.pin', 'sessions.rename',
+                'sessions.tag', 'sessions.shelf', 'sessions.page',
+                'sessions.interrupt'].every(op => cat.includes(op)));
 
         // S-7: the page, and the scope that is the reason it is on the bridge.
         const page = await reg.dispatch('sessions.page', {});
@@ -2699,6 +2718,24 @@ const { opencodeStatus, syncToOpencode } =
         const bad = await reg.dispatch('sessions.start', { agent: 'dev', effort: 'turbo' });
         ok('an invalid effort is refused with a readable error',
             !bad.ok && /effort "turbo"/.test(bad.error) && launched.length === 1);
+
+        // ‼️ S-34 — THE RECORD IS READABLE, AND IT IS WHAT ACTUALLY RAN.
+        // Every UI door now opens on this; an agent asked "how does this one
+        // normally run" gets the same answer the ▶ is about to offer.
+        const mem = await reg.dispatch('sessions.lastLaunch', { agent: 'dev' });
+        ok('sessions.lastLaunch reports what the launch above actually used',
+            mem.ok && mem.result.last.effort === 'high' && mem.result.last.surface === 'terminal');
+        // …and NOT the per-launch half of it: re-applying a name would give the
+        // next session the same one, and re-applying a prompt would send the
+        // same opening message on the user's behalf.
+        ok('…without the name or the first prompt, which are per-launch by nature',
+            mem.result.last.name === undefined && mem.result.last.prompt === undefined);
+        const noMem = await reg.dispatch('sessions.lastLaunch', { agent: 'ops' });
+        ok('an agent that has never been started answers null rather than a guess',
+            noMem.ok && noMem.result.last === null);
+        const allMem = await reg.dispatch('sessions.lastLaunch', {});
+        ok('…and asking for none of them lists only the agents that have a record',
+            allMem.ok && allMem.result.agents.length === 1 && allMem.result.agents[0].agent === 'dev');
 
         const pin = await reg.dispatch('sessions.pin', { sessionId: 'sid1' });
         ok('sessions.pin toggles on and reports the new state', pin.ok && pin.result.pinned === true);
@@ -2737,7 +2774,7 @@ const { opencodeStatus, syncToOpencode } =
         // the engine axis arrived, and a window that stops inside the prose
         // tests the prose rather than the handler.
         const startBlock = src.slice(src.indexOf("op: 'sessions.start'"),
-            src.indexOf("op: 'sessions.rename'"));
+            src.indexOf("op: 'sessions.lastLaunch'"));
         ok('sessions.start calls the shared launcher, not its own command builder',
             /startClaudeSession\(agent, o[,)]/.test(startBlock) && /validateLaunch/.test(startBlock));
         ok('sessions.start says it is interactive and points at tasks.add for headless work',

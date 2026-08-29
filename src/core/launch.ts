@@ -494,6 +494,79 @@ export function withDefaults(o: LaunchOptions, d: LaunchDefaults | undefined): L
     };
 }
 
+/**
+ * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, INCLUDING WHERE.
+ *
+ * Kept per agent, not per window: the launcher, the ▶ button and the composer
+ * are all per-agent doors, and an agent you always talk to in the Console on
+ * `opus` does not stop being that one because the last thing you started
+ * somewhere else was a Codex terminal.
+ *
+ * `surface` sits beside the options rather than inside them for the reason
+ * `LaunchProfile` keeps it outside `LaunchOptions`: it is not a flag on a
+ * command line, it decides which surface runs the command. Absent means
+ * nothing was said — a record written before this existed reads the same as
+ * an agent that has never been started.
+ */
+export interface LastLaunch extends LaunchOptions {
+    surface?: RunSurface;
+}
+
+/**
+ * ‼️ S-34 — THE MEMORY AS A LAYER, BETWEEN WHAT THE CALLER SAID AND THE FLEET
+ * DEFAULTS.
+ *
+ * The resolution order every door now shares is: what this launch states →
+ * what this AGENT was last started with → the agent's engine defaults → the
+ * fleet's `agentFarm.launchDefaults`. The memory is a layer rather than a
+ * seeding step so it can be applied at a door without that door having to know
+ * which fields exist: a dimension added to `LaunchOptions` later is remembered
+ * by the recorder and re-applied here, instead of being forgotten by nine
+ * doors out of ten — which is the defect this item is named for.
+ *
+ * ‼️ `superpowers` IS A TRI-STATE AND `??` IS THE WHOLE REASON IT WORKS.
+ * `undefined` is "nobody said"; `false` is a person saying "not this session",
+ * and `||` would quietly promote the second into the first — reinstating a
+ * discipline the previous launch deliberately turned off.
+ */
+export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): LaunchOptions {
+    if (!last) { return o; }
+    const pick = (own: string | undefined, prev: string | undefined) =>
+        (own?.trim() ? own.trim() : (prev?.trim() ?? ''));
+    const engine = pick(o.engine, last.engine);
+    const sp = o.superpowers ?? last.superpowers;
+    return {
+        ...o,
+        ...(engine ? { engine: engine as EngineId } : {}),
+        model: pick(o.model, last.model),
+        effort: pick(o.effort, last.effort),
+        permissionMode: pick(o.permissionMode, last.permissionMode),
+        ...(sp === undefined ? {} : { superpowers: sp })
+    };
+}
+
+/**
+ * ‼️ S-34 — AND WHAT GETS WRITTEN BACK, derived from the launch that actually
+ * happened.
+ *
+ * One function, so the record cannot differ door to door — the failure this
+ * item exists to fix was exactly that: one door writing five dimensions and
+ * the rest writing none. Only the dimensions that MEAN something for the next
+ * launch are kept: `name`, `prompt` and `resume`/`continueLast` are per-launch
+ * by nature, and re-applying them would give a second session the same name
+ * and send the same opening message on the user's behalf.
+ */
+export function launchToRemember(o: LaunchOptions, surface?: RunSurface): LastLaunch {
+    return {
+        ...(o.engine ? { engine: o.engine } : {}),
+        model: o.model ?? '',
+        effort: o.effort ?? '',
+        permissionMode: o.permissionMode ?? '',
+        ...(o.superpowers === undefined ? {} : { superpowers: o.superpowers }),
+        ...(surface ? { surface } : {})
+    };
+}
+
 /** Sanity-check values that came from settings or the bridge (not from a
  *  picker), so a typo fails with a readable message instead of the CLI
  *  refusing to start in a terminal the user then has to read. */
