@@ -1698,28 +1698,36 @@
         </div>`;
     }
 
+    /**
+     * ‼️ THE LIVE DOT CARRIES NO HOVER, AND THAT IS THE DECISION — not an
+     * omission. It used to open an AFTip, and the panel said the same three
+     * sentences on every card in the list: a colour is a mark, it is kept
+     * against the session id, it survives the window closing. A hover that is
+     * word-for-word identical on twenty cards is not information, it is a
+     * paragraph the reader has to dismiss twenty times — and this one also
+     * spilled under the conversation pane, so it was unreadable where it
+     * mattered. The dot IS its own answer: what colour it is, is the colour it
+     * is drawn in, and what it does is one press away.
+     *
+     * The dead dot is the exception, and for the reason a disabled control is
+     * always the exception: it refuses a press, so it owes a sentence saying
+     * why. That one is a native `title` — short, and drawn by the host above
+     * every pane, so it cannot be clipped by the one it sits in.
+     */
     function colorDot(sessionId, color) {
         const id = String(sessionId || '');
         if (!id) {
             // ‼️ In the SAME absolutely-positioned holder as a live dot. Left in
             // the flow it added a line to the card, so the one card that cannot
             // be coloured was also the one that did not look like the others.
-            return `<span class="cdotw">${window.AFTip.wrap(
-                '<span class="cdotc dead"></span>', 'No colour yet',
-                'A colour is remembered against the session id, and this one has not written its'
-                + ' first turn — so there is nothing to file it against. It can be coloured the'
-                + ' moment the CLI names it.', 'nw')}</span>`;
+            return '<span class="cdotw"><span class="cdotc dead" title="No colour yet'
+                + ' — this session has not written its first turn, so there is nothing to file a'
+                + ' colour against. It can be coloured the moment the CLI names it."></span></span>';
         }
         const hex = C.esc(color || '');
         const dot = `<button class="cdotc${color ? ' on' : ''}" data-color="${C.esc(id)}"${color
             ? ` style="background:${hex}; border-color:${hex}"` : ''}></button>`;
-        return `<span class="cdotw">${window.AFTip.wrap(dot,
-            color ? `Colour: ${color}` : 'No colour yet',
-            (color
-                ? 'This session is marked with this colour on every card in this panel that shows it.'
-                : 'Put a colour on this session so it is found by eye rather than read for.')
-            + '\n\nIt is remembered against the session id, like the pin and the labels — it survives'
-            + ' the window closing and comes back with the conversation.', 'nw')}${colorPick === id
+        return `<span class="cdotw">${dot}${colorPick === id
             ? colorPalette(id, color || '') : ''}</span>`;
     }
 
@@ -1734,12 +1742,37 @@
      * repaint where the resume list did not change, nothing takes it off again.
      * Two listeners on a toggle is a toggle that does nothing.
      */
+    /**
+     * ‼️ A THING THAT OPENS MUST CLOSE THE WAY EVERYTHING ELSE CLOSES. The
+     * palette was openable and un-closable: the only way out was to press the
+     * same dot again, because every control inside it — and the dot itself —
+     * stops the click from travelling, and nothing was listening beyond them.
+     * So it stood open over the next card while the reader worked elsewhere.
+     *
+     * The listener is on the DOCUMENT and is bound ONCE (`colorDocWired`) — a
+     * repaint rewires the dots, and a close handler rebound with them would be
+     * added again on every list repaint. It repaints only when something was
+     * actually open, so a click anywhere else in a busy page costs nothing.
+     * Same shape as `afFilters.wireDocClose`; Escape closes it for the reader
+     * whose hand is on the keyboard.
+     */
+    let colorDocWired = false;
+
+    function wireColorClose() {
+        if (colorDocWired || typeof document === 'undefined' || !document.addEventListener) { return; }
+        colorDocWired = true;
+        const shut = () => { if (colorPick) { colorPick = ''; renderList(); } };
+        document.addEventListener('click', shut);
+        document.addEventListener('keydown', ev => { if (ev && ev.key === 'Escape') { shut(); } });
+    }
+
     function wireColorDots(slotId) {
         const root = document.getElementById(slotId);
         // The same guard every shared component carries: a page script is also
         // run against a light DOM, and a missing method must degrade rather
         // than take the whole page down with a message naming nothing.
         if (!root || typeof root.querySelectorAll !== 'function') { return; }
+        wireColorClose();
         root.querySelectorAll('[data-color]').forEach(b =>
             b.addEventListener('click', ev => {
                 ev.stopPropagation();

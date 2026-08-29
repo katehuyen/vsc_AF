@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.334.0 - Three answers the user gave: the red box, the hover nobody needed, the popup that would not shut (2026-08-30)
+
+Small, and all three are the same kind of fault — a control that was almost
+right and cost the reader something every time they met it.
+
+**U-121, settled — the box stays, and it goes red.** The mark filed under
+nothing keeps the ordinary checkbox, so it can still be ticked with four others
+and dropped in one press; what it gets is a **red frame**. No icon beside it and
+no second word: the colour is the whole message, and the sentence explaining it
+already lives in the State cell (ONE SUBJECT). The pick button that briefly
+stood there took the row out of every bulk act to say something the row could
+say by looking different.
+
+**The colour dot no longer opens a hover.** It said the same three sentences on
+every card in the list — a colour is a mark, it is kept against the session id,
+it survives the window closing — and it spilled under the conversation pane, so
+it was unreadable exactly where it appeared. A hover identical on twenty cards
+is not information; it is a paragraph dismissed twenty times. The dot is its own
+answer: the colour it is drawn in is the colour it carries. The **dead** dot
+keeps a short native title, because a control that refuses a press still owes a
+reason — and a native tooltip is drawn by the host above every pane, so it
+cannot be clipped by the one it sits in.
+
+**The colour palette closes the way everything else closes.** It was openable
+and un-closable: every control inside it stops the click, so the only way out
+was the same dot that opened it, and it stood over the next card while the
+reader worked on. A click anywhere else now shuts it, and so does Escape. The
+listener is on the document and bound once — a repaint rewires the dots, and a
+close handler rebound with them would stack up one per repaint — and it repaints
+only when something was actually open.
+
 ## 3.333.0 - K-29: the slash command catalog, and whose answer it is (2026-08-30)
 
 The groundwork for the `/` picker (K-14): a catalog that can say **which

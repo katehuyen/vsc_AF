@@ -73,6 +73,10 @@ const jump = () => els['c-jump'];
 let posted = [];
 let state = {};
 let msgHandler = null;
+/** Document-level listeners the page bound, by event type. */
+const docFns = {};
+/** Fire every document listener of one type, the way the browser would. */
+const fireDoc = (t, ev) => (docFns[t] || []).forEach(fn => fn(ev || {}));
 
 const sandbox = {
     acquireVsCodeApi: () => ({
@@ -170,7 +174,11 @@ const sandbox = {
             return out;
         },
         querySelector: sel => (sel.indexOf('[data-afms') === 0 ? afms.querySelector(sel) : null),
-        addEventListener: () => { }
+        // ‼️ K-35 — RECORDED, not swallowed. The colour palette closes on a
+        // click that lands anywhere else, and that listener is on the document:
+        // a stub that dropped it on the floor would let the page ship with the
+        // popup that only the dot that opened it could close.
+        addEventListener: (t, fn) => { (docFns[t] = docFns[t] || []).push(fn); }
     },
     // a dropped/pasted file is read as a data URL before it is handed over;
     // here the read lands synchronously so the assertion sits under the drop
@@ -2054,6 +2062,30 @@ const html = allHtml;
     const open = els['c-list']._html;
     ok('pressing the dot opens the palette', /class="cpal"/.test(open));
     ok('…and it writes NOTHING on the way in', !posted.length);
+
+    // ‼️ A POPUP THAT ONLY ITS OWN BUTTON CAN CLOSE IS NOT CLOSED. Everything
+    // inside the palette stops the click, so without a listener on the document
+    // the picker stayed open over the next card while the reader worked on.
+    fireDoc('click', {});
+    ok('‼️ a click anywhere else shuts the palette', !/class="cpal"/.test(els['c-list']._html));
+    sandbox.document.querySelectorAll('[data-color]')
+        .find(e => e.dataset.color === '407c78cb-aaaa')._fn({ stopPropagation() { } });
+    ok('…it reopens on the dot', /class="cpal"/.test(els['c-list']._html));
+    fireDoc('keydown', { key: 'Escape' });
+    ok('…and Escape shuts it too', !/class="cpal"/.test(els['c-list']._html));
+    const writesBefore = els['c-list']._writes;
+    fireDoc('click', {});
+    ok('‼️ …while a click with nothing open repaints nothing',
+        els['c-list']._writes === writesBefore);
+    sandbox.document.querySelectorAll('[data-color]')
+        .find(e => e.dataset.color === '407c78cb-aaaa')._fn({ stopPropagation() { } });
+
+    // K-35 — the dot says what it is by BEING it. The hover it used to open
+    // repeated the same three sentences on every card in the list and spilled
+    // under the conversation pane, so it is gone; the dead dot keeps a native
+    // title, because a control that refuses a press owes a reason.
+    ok('‼️ a live dot opens no hover panel of its own',
+        !/cdotw[^>]*>\s*<span class="tip/.test(open) && !/Colour: #e05252/.test(open));
     ok('…with the offered swatches, and the one in force marked',
         (open.match(/class="csw/g) || []).length === 3
         && /class="csw on" data-swatch="407c78cb-aaaa\|#e05252"/.test(open));

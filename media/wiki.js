@@ -587,9 +587,17 @@
         // simply never counted by a compile button, and the State and Topics
         // cells both say why in words. The one row with NO box is the one a run
         // is already out for: there, everything you could do fights the run.
+        // ‼️ U-121, SETTLED — THE BOX STAYS AND IT GOES RED. A pick button in
+        // its place took the row out of the one thing every other row can do
+        // (be ticked with four others and dropped in one press); a plain box
+        // put it back, but then the row that cannot be compiled looked exactly
+        // like the rows that can, and the reason was three cells to the right.
+        // So the box carries it: same control, same shape, red frame. No icon
+        // and no second word beside it — the colour is the whole message, and
+        // the State cell is where the sentence already lives (ONE SUBJECT).
         const untriaged = c.state === 'pending' && !(c.topics || []).length;
         const box = !c.compiling
-            ? `<input type="checkbox" data-cb="${esc(c.id)}"${on ? ' checked' : ''} aria-label="Select this mark">`
+            ? `<input type="checkbox"${untriaged ? ' class="wk-cbwarn"' : ''} data-cb="${esc(c.id)}"${on ? ' checked' : ''} aria-label="Select this mark">`
             : `<span class="wk-nobox" title="A compile is already running for this mark — leave it alone until the run reports back">·</span>`;
         return `<tr class="${on ? 'sel' : ''} ${st.cls}">
             <td class="wk-pick">${box}</td>
@@ -831,6 +839,12 @@
                 .wktable tbody tr:hover td { background:var(--vscode-list-hoverBackground); }
                 .wk-pick { width:20px; }
                 .wk-nobox { opacity:.3; }
+                /* U-121 — the box of a mark filed under nothing. accent-color
+                   reddens it once it is ticked; the outline is what carries it
+                   while it is empty, which is the state the reader is scanning. */
+                .wk-cbwarn { accent-color:var(--vscode-charts-red,#e51400);
+                    outline:1px solid var(--vscode-charts-red,#e51400); outline-offset:1px;
+                    border-radius:2px; }
                 .wk-state { white-space:nowrap; width:1%; }
                 .wk-st { opacity:.9; }
                 tr.wk-compiled .wk-st { color:var(--vscode-charts-green,#4caf50); }

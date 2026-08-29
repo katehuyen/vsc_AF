@@ -546,6 +546,14 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     ok('‼️ …is tickable like any row, but no compile button counts it',
         !!el(r, 'cb', 'wc-7') && !/Compile All Pending \(5\)/.test(h)
         && /Compile All Pending \(4\)/.test(h));
+    // ‼️ U-121, SETTLED — AND THE BOX IS WHERE IT SHOWS. Keeping the ordinary
+    // checkbox kept the row in every bulk act; what it cost was the one glance
+    // that used to say "this one is different". The box wears it: red frame,
+    // no icon, no second word — and ONLY on the row filed under nothing.
+    ok('‼️ …and its box is drawn red, so the odd row is seen and not read for',
+        /<input type="checkbox" class="wk-cbwarn" data-cb="wc-7"/.test(h)
+        && !/<input type="checkbox" class="wk-cbwarn" data-cb="wc-8"/.test(h)
+        && /\.wk-cbwarn \{[^}]*var\(--vscode-charts-red/.test(h));
 
     // ‼️ THE SAME ROW, ONE CATEGORY LATER. wc-8 is a dropped file too, and it is
     // an ordinary compilable mark — so the distinction the page draws is
