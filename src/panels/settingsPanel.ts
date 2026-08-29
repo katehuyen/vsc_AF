@@ -132,6 +132,13 @@ export interface FarmSettingsDeps {
      *  same act as an `alerts.*` bridge op and they share the function. */
     alertsSetOn?(event: string, on: boolean): Promise<void>;
     alertsSetVoice?(event: string, voice: string): Promise<void>;
+    /** A-22 — the gate. The same two functions the status bar and the
+     *  `alerts.mute` / `alerts.quiet` ops go through. */
+    alertsSetMuted?(on: boolean): Promise<void>;
+    alertsSetQuiet?(patch: { on?: boolean; from?: string; to?: string }): Promise<void>;
+    /** Unmute ONE session from the card that listed it as muted — the row says
+     *  which conversation is quiet, so it has to be able to undo it. */
+    alertsUnmuteSession?(sessionId: string): Promise<void>;
     /** Play one voice by id — "what does this one sound like". Named after the
      *  host function it is wired to, so the parity gate can SEE that the ▶ and
      *  `alerts.play` are the same act rather than two implementations. */
@@ -161,7 +168,21 @@ export interface AlertEventRow {
     skipped: { origin: string; voice: string; why: string }[];
 }
 
+/** A-22 — who is holding the gate shut, drawn on the same card that says which
+ *  tone would play. The two questions are asked together and answering only the
+ *  second is how "I set it up and heard nothing" happens. */
+export interface AlertsGate {
+    muted: boolean;
+    quiet: {
+        configured: boolean; inside: boolean; from: string; to: string;
+        nextChangeAt: number; inMinutes: number; error?: string; line: string;
+    };
+    silence: { silent: boolean; reason?: string; reasons: string[]; detail?: string };
+    mutedSessions: { sessionId: string; label: string }[];
+}
+
 export interface AlertsPage {
+    gate: AlertsGate;
     folder: string;
     limit: number;
     /** extensions any player on THIS machine can open */
@@ -802,6 +823,24 @@ export class FarmSettingsPanel {
             case 'alertVoice':
                 await this.alertAct(() =>
                     this.deps.alertsSetVoice?.(String(msg.event ?? ''), String(msg.voice ?? '')));
+                break;
+            // A-22 — the gate. A refused quiet window (a time that is not
+            // HH:MM) comes back through the same `alertError` channel and is
+            // shown against the card, because a schedule that reads as
+            // configured and silences nothing is the worst of the outcomes.
+            case 'alertMute':
+                await this.alertAct(() => this.deps.alertsSetMuted?.(msg.on !== false));
+                break;
+            case 'alertQuiet':
+                await this.alertAct(() => this.deps.alertsSetQuiet?.({
+                    ...(msg.on === undefined ? {} : { on: msg.on !== false }),
+                    ...(msg.from === undefined ? {} : { from: String(msg.from) }),
+                    ...(msg.to === undefined ? {} : { to: String(msg.to) })
+                }));
+                break;
+            case 'alertUnmuteSession':
+                await this.alertAct(() =>
+                    this.deps.alertsUnmuteSession?.(String(msg.sessionId ?? '')));
                 break;
             // ▶ — plays and changes nothing, so the page is NOT redrawn: a
             // redraw under the hand would close the picker the reader just

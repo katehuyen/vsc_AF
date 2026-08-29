@@ -67,7 +67,23 @@
                 skipped.push(`${name(e)}: ${s.voice} (${s.origin}) — ${s.why}`));
         });
         if (!said.length) { return ''; }
+        // ‼️ A-22 — WHETHER ANY OF IT IS HEARD, BEFORE WHICH TONE IT WOULD BE.
+        // The lines above are true on a muted farm and at 03:00, and a panel
+        // that named a tone without saying the gate is shut is the one surface
+        // actively misleading the reader who opened it asking why they heard
+        // nothing. Every authority is named, because unmuting while quiet hours
+        // are still on leaves the row just as silent.
+        const g = DATA.alertGate || {};
+        const shut = [];
+        if (g.muted) { shut.push('the farm is muted (the 🔇 in the status bar)'); }
+        if ((g.mutedSessions || []).indexOf(sid) >= 0) {
+            shut.push('this session is muted on its own (right-click → Sound for this session…)');
+        }
+        if (g.quiet && g.quiet.inside) {
+            shut.push('quiet hours ' + g.quiet.from + '–' + g.quiet.to + ', silent until ' + g.quiet.to);
+        }
         return window.AFTip.lines([
+            shut.length ? '⚠ NOTHING PLAYS RIGHT NOW — ' + shut.join(' · ') + '\n' : '',
             said.join('\n'),
             on
                 ? '\nThis row is armed: the tone above plays when this session reaches that edge.'

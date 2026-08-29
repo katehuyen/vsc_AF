@@ -30,12 +30,38 @@ const ITEMS = (on, voices) => ([
         modified: Object.keys(voices).length > 0,
         description: 'Which sound each event plays.'
     },
+    // A-22 — the two boxes the gate strip replaces. Here so the fixture proves
+    // they are ABSORBED: a raw JSON box beside the card that already draws them
+    // would be two controls for one setting.
+    {
+        key: 'agentFarm.alerts.muted', type: 'boolean', default: false,
+        value: false, modified: false,
+        description: 'Mute every alert SOUND, across the whole farm.'
+    },
+    {
+        key: 'agentFarm.alerts.quietHours', type: 'object',
+        default: { on: false, from: '23:00', to: '08:00' },
+        value: { on: false, from: '23:00', to: '08:00' }, modified: false,
+        description: 'The hours the farm makes no noise in.'
+    },
     {
         key: 'agentFarm.stuckThresholdSeconds', type: 'number', default: 180,
         value: 180, modified: false,
         description: 'Seconds of silence before a working session is called stalled.'
     }
 ]);
+
+/** A-22 — nothing is holding the gate shut: the state every install starts in
+ *  and the one the three variants above are drawn in. */
+const GATE_OPEN = {
+    muted: false,
+    quiet: {
+        configured: false, inside: false, from: '23:00', to: '08:00',
+        nextChangeAt: 0, inMinutes: 0, line: 'Quiet hours off (23:00–08:00)'
+    },
+    silence: { silent: false, reasons: [] },
+    mutedSessions: []
+};
 
 const SOUNDS = 'c:\\Users\\rotam\\.vscode\\extensions\\muvusoft.agent-farm\\media\\sounds';
 const MINE = 'D:\\zone\\media\\sounds';
@@ -95,7 +121,8 @@ const rowOf = (voices, on, chosen, event, skipped) => {
     };
 };
 
-const page = (on, chosen, voices, skips) => ({
+const page = (on, chosen, voices, skips, gate) => ({
+    gate: gate || GATE_OPEN,
     folder: 'c:\\Users\\rotam\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm\\sounds',
     limit: 10,
     formats: ['m4a', 'mp3', 'ogg', 'wav', 'wma'],
@@ -105,14 +132,14 @@ const page = (on, chosen, voices, skips) => ({
         .map(e => rowOf(voices, on, chosen, e, (skips || {})[e]))
 });
 
-const base = (on, chosen, voices, skips) => ({
+const base = (on, chosen, voices, skips, gate) => ({
     focus: '', profiles: [], prompts: null, docOpen: null, folders: null,
     claude: null, engines: null, engineModels: null, wiki: null, superpowers: null,
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
     categories: [{
         id: 'live', label: 'Live Monitoring & Alerts', items: ITEMS(on, chosen)
     }],
-    alerts: page(on, chosen, voices, skips)
+    alerts: page(on, chosen, voices, skips, gate)
 });
 
 const fresh = () => base({}, {}, BUILTIN);
@@ -154,6 +181,36 @@ const broken = () => base(
         }]
     });
 
+/**
+ * ‼️ A-22 — THE STATE THE CARD USED TO HAVE NO WAY OF SHOWING. Everything is
+ * armed and correctly configured, and not one of it makes a sound: the farm is
+ * muted AND it is 03:12, inside the quiet window, AND two conversations are
+ * muted on their own. All three are reported, because unmuting here would still
+ * leave the farm silent and a card that named only the first would have sent
+ * the reader looking in the wrong place.
+ */
+const gated = () => base(
+    { 'turn-ready': true, question: true, stalled: true },
+    { question: 'u-kapi-zili' },
+    BUILTIN.concat(CUSTOM),
+    null,
+    {
+        muted: true,
+        quiet: {
+            configured: true, inside: true, from: '23:00', to: '08:00',
+            nextChangeAt: Date.now() + 4.8 * 3600_000, inMinutes: 288,
+            line: 'Quiet hours 23:00–08:00 — silent until 08:00'
+        },
+        silence: {
+            silent: true, reason: 'fleet', reasons: ['fleet', 'quiet-hours'],
+            detail: 'the farm is muted (the 🔇 in the status bar) · quiet hours 23:00–08:00, silent until 08:00'
+        },
+        mutedSessions: [
+            { sessionId: 'a1b2c3d4-1111-2222-3333-444455556666', label: 'developer · TalkScribe' },
+            { sessionId: 'b2c3d4e5-1111-2222-3333-444455556666', label: 'yazar · release notes' }
+        ]
+    });
+
 const data = () => inUse();
 
 const variants = () => ([
@@ -163,7 +220,12 @@ const variants = () => ([
         id: 'alertsettings-broken',
         label: 'Settings ▸ Alert sounds — ‼️ armed events whose sound cannot be played',
         data: broken()
+    },
+    {
+        id: 'alertsettings-gated',
+        label: 'Settings ▸ Alert sounds — ‼️ armed, configured, and silent: muted · quiet hours · two sessions',
+        data: gated()
     }
 ]);
 
-module.exports = { script: 'settings.js', data, variants, fresh, inUse, broken };
+module.exports = { script: 'settings.js', data, variants, fresh, inUse, broken, gated };

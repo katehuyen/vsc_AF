@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.305.0 - A-22: the farm can be told to be quiet (2026-08-29)
+
+Alert sounds could be configured and armed, and there was no way to make them
+stop. Somebody walks into the room at 23:40 with eight agents finishing turns,
+and the only remedy was to walk to the machine and untick five boxes they would
+then have to remember to tick again. **A-22 adds the gate: a 🔇 in the status
+bar, a nightly window, and a mute for one conversation.**
+
+**Which sound and whether it sounds are two questions, and they stay two.**
+`resolveVoice` answers the first and is guaranteed to always have an answer;
+teaching it to resolve to nothing would make every fall-through in it
+indistinguishable from a deliberate silence. The gate (`core/alertGate.ts`) sits
+in FRONT of the chain, names who closed it, and edits no choice.
+
+**🔇, one click, from wherever the eye already is.** A status bar item that
+APPEARS the first time anything is armed — the whole family ships off, and an
+icon sitting there for months on a fleet that has never made a noise is clutter
+— and stays up while muted, because a control that hides itself once pressed is
+one nobody can undo. It is the same act as `Agent Farm: Mute / Unmute Alert
+Sounds`, the Settings card and the `alerts.mute` op: one function, three doors.
+
+**Quiet hours WRAP MIDNIGHT.** 23:00→08:00 read as `from <= now < to` is quiet
+for exactly no minutes of the day, and that is the only shape anybody sets. A
+time that is not `HH:MM` is refused BY NAME rather than stored: a schedule that
+reads as configured and silences nothing is the worst of the three outcomes.
+Start equal to end is an EMPTY window, never all day, so a typo cannot mute a
+farm around the clock.
+
+**One conversation can be quiet while the others ring.** The fleet-wide switch
+ADDS to a session's own ♪ selection and a union cannot subtract, so unticking ♪
+never silenced a session while `alerts.on.question` was on. The session mute is
+that missing authority — and it clears nothing: every armed box and chosen tone
+stays exactly as it is, so unmuting restores the setup rather than the defaults.
+
+**A gated sound is `skipped`, never `failed`.** Reported as a failure it raises
+the broken-player warning and teaches the user to ignore the one message that
+matters. The branch carries the reason instead, which is the answer to the only
+question anybody opens the alert page with.
+
+**Every authority is named, not just the first.** Unmuting at 03:00 and still
+hearing nothing is a half-truth nobody can debug, so the card's badge, the ♪
+panel, the status bar tooltip and `alerts.gate` all list every one of them.
+
+Sounds only: the notification, the modal and the focus jump are separate
+branches with their own switches. New ops: `alerts.mute`, `alerts.quiet`,
+`alerts.gate`.
+
 ## 3.304.0 - X-142: reopening something archived takes it out of the archive (2026-08-28)
 
 Ticking an archived item back open changed one character and left the line

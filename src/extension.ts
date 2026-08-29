@@ -363,6 +363,10 @@ import {
     CUSTOM_LIMIT, DEFAULT_VOICE, EVENT_LABEL, ORIGIN_LABEL, playableOn, removeCustomVoice,
     renameCustomVoice, ResolveDeps, ResolvedVoice, resolveVoice
 } from './core/alertVoices';
+import {
+    QuietHours, quietHours, QuietVerdict, quietLine, QUIET_HOURS_DEFAULT,
+    Silence, silence
+} from './core/alertGate';
 import { TurnsPanel } from './panels/turnsPanel';
 import { SessionsPanel } from './panels/sessionsPanel';
 import { ToolboxTreeProvider } from './views/toolboxTree';
@@ -390,6 +394,7 @@ import {
 } from './panels/sessionViewer';
 import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
+import { MuteStatusBar } from './views/muteBar';
 import { PlanUsageBar } from './views/planUsageBar';
 import { TaskNode, TasksTreeProvider } from './views/tasksTree';
 import {
@@ -1200,6 +1205,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     skipped: r.skipped
                 };
             },
+            // A-22 — the same gate the alert itself goes through, so the row's
+            // ♪ panel cannot promise a sound the dispatch would skip.
+            alertGate: () => {
+                const q = alertQuiet();
+                return {
+                    muted: alertsMuted(),
+                    quiet: { configured: q.configured, inside: q.inside, from: q.from, to: q.to },
+                    mutedSessions: live.sessions()
+                        .filter(s => turnAlerts.mutedFor(s.sessionId))
+                        .map(s => s.sessionId)
+                };
+            },
             testSessionAlert: (sessionId, delayMs, event) =>
                 testSessionAlert(sessionId, delayMs, event)
         });
@@ -1249,7 +1266,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const resolveAlertVoice = (event: AlertEvent, s?: LiveSession): ResolvedVoice =>
         resolveVoice(event, voiceDeps(),
             { sessionId: s?.sessionId, agentName: s?.agentName });
+    /**
+     * ‼️ A-22 — WHETHER IT SOUNDS AT ALL, ASKED IN ONE PLACE AND NEVER IN THE
+     * CHAIN. `resolveVoice` answers WHICH tone and is guaranteed to always have
+     * an answer; teaching it to resolve to nothing would make every
+     * fall-through in it indistinguishable from a deliberate silence. The gate
+     * sits in FRONT of it, names who closed it, and edits no choice.
+     */
+    const alertQuiet = (at = Date.now()): QuietVerdict =>
+        quietHours(at, cfg().get<QuietHours>('alerts.quietHours', {}) ?? {});
+    /** `agentFarm.alerts.muted` — the 🔇 in the status bar. A SETTING rather
+     *  than window state on purpose: a farm is muted for the person, not for
+     *  one VS Code window, and every window has to see it change. */
+    const alertsMuted = (): boolean => cfg().get<boolean>('alerts.muted', false) === true;
+    const alertSilence = (sessionId?: string): Silence => silence({
+        muted: alertsMuted(),
+        sessionMuted: sessionId ? turnAlerts.mutedFor(sessionId) : false,
+        quiet: alertQuiet()
+    });
     const alertSound = (event: AlertEvent, s?: LiveSession): Promise<SoundResult> => {
+        // ‼️ SILENCE WITH A REASON, NEVER SILENCE. The branch comes back as
+        // `skipped` carrying the sentence — a muted farm reported as a failed
+        // player raises the broken-backend warning and teaches the user to
+        // ignore the one message that matters.
+        const gate = alertSilence(s?.sessionId);
+        if (gate.silent) {
+            return Promise.resolve({
+                backend: 'none', ok: false, startedAt: Date.now(), durationMs: 0,
+                exitCode: null, stderr: '', skipped: `no sound — ${gate.detail}`
+            });
+        }
         const picked = resolveAlertVoice(event, s);
         // ‼️ NEVER SILENCE ON A BROKEN PICK. `resolveVoice` already fell through
         // every step it could not honour; if even the default is missing from
@@ -1310,6 +1356,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const alertsSetOn = async (event: AlertEvent, enabled: boolean): Promise<void> => {
         await cfg().update('alerts.on', { ...alertsOn(), [event]: enabled },
             vscode.ConfigurationTarget.Global);
+    };
+    /**
+     * ‼️ A-22 — THE ONE DOOR EVERY MUTE GOES THROUGH: the status bar, the
+     * command, the Settings card and `alerts.mute`. Passing `undefined` TOGGLES,
+     * which is what a one-click control needs and what a bridge caller asking
+     * "make it stop" means.
+     */
+    const alertsSetMuted = async (on?: boolean): Promise<boolean> => {
+        const next = on === undefined ? !alertsMuted() : on === true;
+        await cfg().update('alerts.muted', next, vscode.ConfigurationTarget.Global);
+        FarmSettingsPanel.refreshIfOpen();
+        TimelinePanel.refreshIfOpen();
+        return next;
+    };
+    /** Quiet hours, written whole so a half-set window can never exist: a `from`
+     *  saved without its `to` would be a schedule nobody configured. */
+    const alertsSetQuiet = async (patch: QuietHours): Promise<QuietVerdict> => {
+        const cur = cfg().get<QuietHours>('alerts.quietHours', {}) ?? {};
+        const next: QuietHours = {
+            on: patch.on === undefined ? cur.on === true : patch.on === true,
+            from: (patch.from ?? cur.from ?? QUIET_HOURS_DEFAULT.from).trim(),
+            to: (patch.to ?? cur.to ?? QUIET_HOURS_DEFAULT.to).trim()
+        };
+        // ‼️ REFUSED BY NAME RATHER THAN STORED AND IGNORED. A window that does
+        // not parse leaves the fleet audible (`quietHours`), so accepting it
+        // here would be a setting that reads as configured and does nothing.
+        const check = quietHours(Date.now(), { ...next, on: true });
+        if (check.error) { throw new Error(check.error); }
+        await cfg().update('alerts.quietHours', next, vscode.ConfigurationTarget.Global);
+        FarmSettingsPanel.refreshIfOpen();
+        return alertQuiet();
+    };
+    /** Silence ONE conversation. The only authority that can subtract from the
+     *  union `alertPlan` builds — see `SessionAlertPrefs.muted`. */
+    const alertsSetSessionMuted = async (
+        sessionId: string, on?: boolean
+    ): Promise<{ sessionId: string; muted: boolean; prefs?: SessionAlertPrefs }> => {
+        const s = live.sessions().find(x => x.sessionId === sessionId);
+        if (!s) { throw new Error(`no live session ${sessionId || '(empty)'} is being watched`); }
+        const next = on === undefined ? !turnAlerts.mutedFor(sessionId) : on === true;
+        const r = turnAlerts.setMuted(sessionId, next);
+        if (!r.ok) { throw new Error(r.error ?? 'refused'); }
+        await turnAlerts.flush();
+        TimelinePanel.refreshIfOpen();
+        return { sessionId, muted: next, prefs: r.prefs };
     };
     /** Write the `settings` step of the chain. An empty voice CLEARS it — the
      *  event falls back to its built-in default, never to silence. */
@@ -1437,7 +1528,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const alertsPage = () => {
         const on = alertsOn();
         const picked = cfg().get<Record<string, string>>('alerts.voices', {}) ?? {};
+        const quiet = alertQuiet();
         return {
+            // ‼️ A-22 — WHETHER ANYTHING IS HEARD AT ALL, ON THE SAME CARD AS
+            // WHICH TONE. A page that answers "question plays ask-double" while
+            // the farm is muted has told the reader the one thing they did not
+            // ask and withheld the one they did.
+            gate: {
+                muted: alertsMuted(),
+                quiet: { ...quiet, line: quietLine(quiet) },
+                silence: alertSilence(),
+                // Named rather than counted: "2 sessions are muted" is a fact
+                // the reader cannot act on without knowing which two.
+                mutedSessions: live.sessions()
+                    .filter(s => turnAlerts.mutedFor(s.sessionId))
+                    .map(s => ({ sessionId: s.sessionId, label: live.labelOf(s) }))
+            },
             folder: alertSoundsFolder(),
             limit: CUSTOM_LIMIT,
             formats: [...new Set(voiceDeps().backends.flatMap(b => [...b.formats]))].sort(),
@@ -9021,6 +9127,81 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'alerts.mute',
+            describe: '‼️ MAKE IT STOP — the 🔇 in the status bar, as an op. No args TOGGLES the fleet-wide mute; `on` states a direction. `scope:"session"` + `sessionId` mutes ONE conversation instead, which is the only authority that can subtract from what `alerts.on` and a session\'s own ♪ selection ADD UP to — unticking the ♪ box cannot silence a session while the fleet-wide switch for that event is on. ‼️ MUTING CLEARS NOTHING: every armed box and chosen tone stays exactly where it is, so unmuting restores the setup rather than a default. It silences the SOUND branch only — the modal, the toast and the focus jump are separate branches with their own switches. args: on? (default: toggle), scope? (fleet|session, default fleet), sessionId? (required for scope session — full id or 8-char prefix)',
+            handler: async (args) => {
+                const scope = (optStr(args, 'scope')?.trim() || 'fleet');
+                const raw = (args as { on?: unknown }).on;
+                const want = raw === undefined ? undefined : !!raw;
+                if (scope === 'session') {
+                    const id = argStr(args, 'sessionId').trim();
+                    const s = live.sessions().find(x =>
+                        x.sessionId === id || x.sessionId.startsWith(id));
+                    if (!s) { throw new Error(`no live session matches "${id}"`); }
+                    const r = await alertsSetSessionMuted(s.sessionId, want);
+                    muteBar.update();
+                    return {
+                        scope, sessionId: s.sessionId, label: live.labelOf(s), muted: r.muted,
+                        // ‼️ The whole gate, because muting one session while the
+                        // fleet is already muted changes nothing audible and a
+                        // bare `muted: true` would read as if it had.
+                        silence: alertSilence(s.sessionId)
+                    };
+                }
+                if (scope !== 'fleet') {
+                    throw new Error(`mute is "fleet" or "session"; "${scope}" is neither`);
+                }
+                const now = await alertsSetMuted(want);
+                muteBar.update();
+                return { scope, muted: now, silence: alertSilence() };
+            }
+        },
+        {
+            op: 'alerts.quiet',
+            describe: 'SESSIZ SAATLER — the window the farm makes no noise in (`agentFarm.alerts.quietHours`). Read it with no args; set it with `on` / `from` / `to`. ‼️ THE WINDOW WRAPS MIDNIGHT, which is the only shape anybody sets: 23:00→08:00 is quiet from 23:00 through 07:59 the next morning. A time that is not HH:MM is REFUSED by name rather than stored — a schedule that reads as configured and silences nothing is the worst of the three outcomes. Start == end is an EMPTY window, never "all day", so a typo cannot mute a farm around the clock. Answers with `inside` (is it quiet right now), `nextChangeAt` and `inMinutes` (when that flips). args: on?, from? (HH:MM), to? (HH:MM)',
+            handler: async (args) => {
+                const on = (args as { on?: unknown }).on;
+                const from = optStr(args, 'from')?.trim();
+                const to = optStr(args, 'to')?.trim();
+                const touched = on !== undefined || from !== undefined || to !== undefined;
+                const v = touched
+                    ? await alertsSetQuiet({
+                        ...(on === undefined ? {} : { on: !!on }),
+                        ...(from === undefined ? {} : { from }),
+                        ...(to === undefined ? {} : { to })
+                    })
+                    : alertQuiet();
+                muteBar.update();
+                return { ...v, changed: touched, line: quietLine(v) };
+            }
+        },
+        {
+            op: 'alerts.gate',
+            describe: '‼️ WHY DID I HEAR NOTHING — the machine answer, and the sibling of `alerts.resolve` (which says WHICH tone would play, never whether it would be heard). Names every authority holding the gate shut right now, in order: the fleet mute, this session\'s own mute, and quiet hours. ALL of them, not the first — unmuting at 03:00 and still hearing nothing is a half-truth nobody can debug. Reads only; nothing is played and nothing is changed. args: sessionId? (full id or 8-char prefix — adds that lane\'s own mute to the answer)',
+            handler: (args) => {
+                const raw = optStr(args, 'sessionId')?.trim();
+                const s = raw
+                    ? live.sessions().find(x => x.sessionId === raw || x.sessionId.startsWith(raw))
+                    : undefined;
+                if (raw && !s) { throw new Error(`no live session matches "${raw}"`); }
+                const quiet = alertQuiet();
+                const on = alertsOn();
+                return {
+                    ...alertSilence(s?.sessionId),
+                    fleetMuted: alertsMuted(),
+                    sessionMuted: s ? turnAlerts.mutedFor(s.sessionId) : null,
+                    sessionId: s?.sessionId ?? null,
+                    label: s ? live.labelOf(s) : null,
+                    quiet: { ...quiet, line: quietLine(quiet) },
+                    // ‼️ "Nothing is armed" is the other way to hear nothing, and
+                    // it is not a gate — so it is reported beside the gate rather
+                    // than as one of its reasons.
+                    armed: ALERT_EVENTS.filter(e => on[e] === true),
+                    sessionArmed: s ? turnAlerts.actionsFor(s.sessionId) : null
+                };
+            }
+        },
+        {
             op: 'alerts.voice.set',
             describe: '‼️ WHICH SOUND AN EVENT PLAYS — and it says WHICH STEP of the resolution chain it wrote to, by name, because "I set the sound and the old one played" is the way this feature breaks. TWO WRITABLE STEPS: `settings` (everybody, `agentFarm.alerts.voices`) and — A-23 — `session`, the top of the chain, "just this conversation, in this tone", which needs a `sessionId` and takes only a session the live monitor is actually watching. The `agent` step between them has no surface yet and is refused by name rather than silently written to the wrong place. An empty `voice` CLEARS that step and the event falls back to the one below it — never to silence, because a session with no opinion is not a muted session (that is the ♪ control, a different question). A voice id nothing knows is refused, and so is one whose file this machine cannot play: accepting it would promise a sound that never arrives. args: event (required, '
                 + ALERT_EVENTS.join('|') + '), voice (required — a built-in id, a `u-…` of your own, or "" to clear), scope? (settings|session, default settings), sessionId? (required for scope session — full id or 8-char prefix)',
@@ -14048,6 +14229,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     });
     context.subscriptions.push(statusBar);
+
+    // A-22 — 🔇 for the whole farm, one click, from wherever the eye already is.
+    const muteBar = new MuteStatusBar({
+        muted: () => alertsMuted(),
+        quiet: () => alertQuiet(),
+        armedEvents: () => {
+            const on = alertsOn();
+            return ALERT_EVENTS.filter(e => on[e] === true);
+        },
+        armedSessions: () => live.sessions()
+            .filter(s => turnAlerts.actionsFor(s.sessionId).includes('sound')).length,
+        mutedSessions: () => live.sessions()
+            .filter(s => turnAlerts.mutedFor(s.sessionId)).length,
+        silence: () => alertSilence()
+    });
+    context.subscriptions.push(muteBar);
+    // ‼️ THE BAR IS DRAWN FROM STATE THAT CHANGES BEHIND IT — a setting written
+    // from another window, a session arming its own ♪. Both are cheap reads, so
+    // it simply re-asks rather than trying to be told.
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('agentFarm.alerts')) { muteBar.update(); }
+    }));
+    context.subscriptions.push(live.onDidUpdate(() => muteBar.update()));
 
     // Plan usage — the subscription limits Anthropic itself reports (what
     // /usage prints), cached behind one service so the dashboard card, its ⟳
@@ -22870,6 +23074,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
 
         /**
+         * ‼️ A-22 — MUTE THE FARM, ONE GESTURE, FROM ANYWHERE.
+         *
+         * The status bar item's click, the palette entry and `alerts.mute` are
+         * the same act and go through the same function. No argument TOGGLES —
+         * a control whose one click has to first read the current state is not
+         * a one-click control — and `{ on: true|false }` is there for a caller
+         * that means one direction rather than "the other one".
+         *
+         * ‼️ IT SILENCES SOUND AND NOTHING ELSE. The modal, the toast and the
+         * focus jump are separate branches with their own switches; folding
+         * them in would make "mute" mean "stop telling me things", which is a
+         * different request and one nobody could undo by accident-proof means.
+         */
+        vscode.commands.registerCommand('agentfarm.toggleMute', async (arg?: unknown) => {
+            const explicit = arg && typeof arg === 'object' && 'on' in (arg as object)
+                ? (arg as { on?: unknown }).on === true
+                : undefined;
+            const now = await alertsSetMuted(explicit);
+            muteBar.update();
+            const quiet = alertQuiet();
+            void vscode.window.setStatusBarMessage(
+                now
+                    ? 'Agent Farm: alert sounds muted — click 🔇 again to bring them back'
+                    : (quiet.inside
+                        // ‼️ UNMUTING INTO QUIET HOURS IS STILL SILENCE, AND
+                        // saying "sounds on" here would be a lie the user can
+                        // only discover by waiting for a turn that never rings.
+                        ? `Agent Farm: unmuted — but quiet hours are on until ${quiet.to}, so nothing plays yet`
+                        : 'Agent Farm: alert sounds on'),
+                6000);
+            return { muted: now };
+        }),
+
+        /**
          * ‼️ A-23 — "SOUND FOR THIS SESSION…", THE SURFACE THE TOP STEP OF THE
          * CHAIN WAS WAITING FOR.
          *
@@ -22913,10 +23151,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 const who = live.labelOf(s);
                 const mine = turnAlerts.voicesFor(s.sessionId);
-                type EventItem = vscode.QuickPickItem & { event?: AlertEvent };
+                type EventItem = vscode.QuickPickItem & { event?: AlertEvent; mute?: boolean };
                 const armable = new Set<string>(SESSION_ALERT_EVENTS);
-                const eventPick = await vscode.window.showQuickPick<EventItem>(
-                    ALERT_EVENTS.map(event => {
+                // ‼️ A-22 — THE MUTE LIVES HERE, NOT IN A MENU ENTRY OF ITS OWN.
+                // "Which tone" and "no tone at all" are the two things somebody
+                // opens this picker to say about ONE conversation; splitting
+                // them across two right-click items would put the second one
+                // three lines away from the first and teach nobody it exists.
+                const wasMuted = turnAlerts.mutedFor(s.sessionId);
+                const eventPick = await vscode.window.showQuickPick<EventItem>([
+                    {
+                        label: wasMuted
+                            ? '$(unmute) Let this session be heard again'
+                            : '$(mute) Mute this session',
+                        description: wasMuted
+                            ? 'muted — nothing it does makes a sound'
+                            : 'silences THIS conversation, and nothing else',
+                        detail: wasMuted
+                            ? 'Puts back exactly what was here before — muting cleared nothing.'
+                            : 'The only way one conversation can be quiet while the others ring: '
+                            + 'the fleet-wide switch ADDS to a session\'s own selection, and a union '
+                            + 'cannot subtract. Every box and tone it has stays where it is.',
+                        mute: true
+                    },
+                    { label: 'A tone for one event', kind: vscode.QuickPickItemKind.Separator },
+                    ...ALERT_EVENTS.map<EventItem>(event => {
                         const r = resolveAlertVoice(event, s);
                         const label = alertVoiceRows().find(v => v.id === r.voice)?.label ?? r.voice;
                         return {
@@ -22928,12 +23187,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 + (mine[event] ? ' · this session has already picked a tone' : ''),
                             event
                         };
-                    }),
+                    })],
                     {
-                        title: `Sound for ${who} — which event?`,
+                        title: `Sound for ${who}${wasMuted ? ' — MUTED' : ''} — which event?`,
                         placeHolder: 'What each one plays today, and which step chose it',
                         matchOnDescription: true, matchOnDetail: true, ignoreFocusOut: true
                     });
+                if (eventPick?.mute) {
+                    await alertsSetSessionMuted(s.sessionId, !wasMuted);
+                    muteBar.update();
+                    void vscode.window.setStatusBarMessage(
+                        wasMuted
+                            ? `Agent Farm: ${who} can be heard again`
+                            : `Agent Farm: ${who} is muted — its tones and boxes are untouched`,
+                        6000);
+                    return;
+                }
                 if (!eventPick?.event) { return; }
                 const event = eventPick.event;
                 const play = new vscode.ThemeIcon('play');
@@ -25898,6 +26167,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     alerts: () => alertsPage(),
                     alertsSetOn: (event, on) => alertsSetOn(event as AlertEvent, on),
                     alertsSetVoice: (event, voice) => alertsSetVoice(event as AlertEvent, voice),
+                    // A-22 — same two functions as the status bar click and the
+                    // `alerts.mute` / `alerts.quiet` ops. The page owns the
+                    // gesture; the act is the host's, once.
+                    alertsSetMuted: async (on) => { await alertsSetMuted(on); muteBar.update(); },
+                    alertsSetQuiet: async (patch) => { await alertsSetQuiet(patch); muteBar.update(); },
+                    alertsUnmuteSession: async (sessionId) => {
+                        await alertsSetSessionMuted(sessionId, false);
+                        muteBar.update();
+                    },
                     alertsPlayVoice: async (voice) => { await alertsPlayVoice(voice); },
                     alertsVoiceAdd: async () => { await alertsPickVoice(); },
                     alertsVoiceRename: async (id, label) => { await alertsVoiceRename(id, label); },

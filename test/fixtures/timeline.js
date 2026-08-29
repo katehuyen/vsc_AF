@@ -311,7 +311,19 @@ const base = () => ({
         { event: 'ended', label: 'Session ended' },
         { event: 'error', label: 'Error' }
     ],
-    sessionAlertEvents: ['turn-ready', 'question']
+    sessionAlertEvents: ['turn-ready', 'question'],
+    /**
+     * ‼️ A-22 — AND WHETHER ANY OF IT IS HEARD. Two of the three authorities
+     * are shut here on purpose: the farm is muted AND `developer #2` silenced
+     * itself. Every ♪ panel on the page must open by saying so — a panel that
+     * names a tone on a muted farm is the one surface actively misleading the
+     * reader who came to it asking why they heard nothing.
+     */
+    alertGate: {
+        muted: true,
+        quiet: { configured: true, inside: false, from: '23:00', to: '08:00' },
+        mutedSessions: ['019ff43f-ff3d-7790-9431-63799a45b1b2']
+    }
 });
 
 const data = base;

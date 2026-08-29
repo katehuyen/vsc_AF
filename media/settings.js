@@ -1565,6 +1565,14 @@
         error: ['Error',
             'A critical error. Nothing emits this edge yet — the voice is settable so it is ready when something does.']
     };
+    /** ‼️ EVERY BOX THE CARD REPLACES, IN ONE LIST. Keyed on `alerts.on` alone,
+     *  a search for "mute" or "quiet" would leave a raw JSON box on the page
+     *  beside the card that already draws it — two controls for one setting,
+     *  and one of them the shape A-21 removed. */
+    const ALERT_CARD_KEYS = [
+        'agentFarm.alerts.on', 'agentFarm.alerts.voices',
+        'agentFarm.alerts.muted', 'agentFarm.alerts.quietHours'
+    ];
     const ALERT_ORIGIN_TEXT = {
         session: 'this conversation\'s own ♪ choice',
         agent: 'this agent\'s choice',
@@ -1650,12 +1658,86 @@
         </div>`;
     }
 
+    /**
+     * ‼️ A-22 — WHETHER ANYTHING IS HEARD AT ALL, ON THE CARD THAT SAYS WHICH
+     * TONE.
+     *
+     * The rows below answer "question plays ask-double, chosen by you". If the
+     * farm is muted or it is 03:00, that sentence is true and useless: the
+     * reader is on this page because they heard nothing, and the answer to that
+     * is a different question the card could not previously ask. Three
+     * authorities, all of them on ONE line at the top — DENSITY, and the order
+     * is the order they take effect in.
+     *
+     * The mute is the SAME switch as the 🔇 in the status bar, not a copy of
+     * it: both call `alertsSetMuted`, so they cannot drift apart.
+     */
+    function alertGateStrip(al) {
+        const g = al.gate || {};
+        const q = g.quiet || {};
+        const sil = g.silence || { silent: false, reasons: [] };
+        const muted = !!g.muted;
+        const state = window.AFTip.wrap(
+            `<span class="alertgatestate ${sil.silent ? 'off' : 'on'}">${sil.silent ? '🔇 silent' : '🔊 sounds on'}</span>`,
+            sil.silent ? 'Nothing plays right now' : 'Armed events play',
+            sil.silent
+                ? `Held by: ${sil.detail || 'unknown'}.\n\nEvery authority holding it is listed — `
+                  + 'unmuting while quiet hours are still on would leave the farm silent with '
+                  + 'nothing on screen saying why.'
+                : 'Nothing is holding the gate shut. Whether a particular event makes a noise is '
+                  + 'the table below — armed, and with a tone this machine can play.');
+        const muteTip = window.AFQuery.tip(
+            (muted ? 'Muted — nothing in the farm makes a sound' : 'Not muted')
+            + '\n\nThe same switch as the 🔇 in the status bar. It clears nothing: every armed '
+            + 'event and chosen tone stays exactly as it is, so unmuting restores your setup '
+            + 'rather than the defaults.\n\nSounds only — the notification, the modal and the '
+            + 'focus jump are separate branches with their own switches.');
+        const quietTip = window.AFQuery.tip(
+            (q.error ? `⚠ ${q.error}` : q.line || `Quiet hours off (${q.from || '23:00'}–${q.to || '08:00'})`)
+            + '\n\nThe window WRAPS MIDNIGHT: 23:00–08:00 is quiet from 23:00 through 07:59 the '
+            + 'next morning. The start is included and the end is not, so at 08:00 sounds are '
+            + 'back.\n\nA time that is not HH:MM is refused rather than stored — a schedule that '
+            + 'reads as configured and silences nothing is the worst of the three outcomes.');
+        const err = q.error
+            ? `<div class="seterr">⚠ ${C.esc(q.error)}</div>` : '';
+        const ses = (g.mutedSessions || []).map(s =>
+            `<span class="alertmuteses">${C.esc(s.label || s.sessionId)}<button class="secondary small" data-alertunmute="${C.esc(s.sessionId)}" title="${C.esc('Let ' + (s.label || s.sessionId) + ' be heard again. Nothing it chose was cleared, so this puts back exactly what was there before.')}">✕</button></span>`).join('');
+        return `<div class="alertgate">
+            <label class="alertgatelbl" title="${C.esc(muteTip)}">
+                <input type="checkbox" id="alertmute" ${muted ? 'checked' : ''}>🔇 Mute the farm</label>
+            <span class="alertgatebar"></span>
+            <label class="alertgatelbl" title="${C.esc(quietTip)}">
+                <input type="checkbox" id="alertquieton" ${q.configured ? 'checked' : ''}>Quiet hours</label>
+            <input class="alertqtime" type="text" id="alertquietfrom" size="5" maxlength="5"
+                value="${C.esc(q.from || '23:00')}" data-alertq="${C.esc(q.from || '23:00')}"
+                title="${C.esc('When the quiet starts, HH:MM, local time. Included.')}">
+            <span class="alertgatedash">–</span>
+            <input class="alertqtime" type="text" id="alertquietto" size="5" maxlength="5"
+                value="${C.esc(q.to || '08:00')}" data-alertq="${C.esc(q.to || '08:00')}"
+                title="${C.esc('When it ends, HH:MM, local time. Excluded — at this minute sounds are back.')}">
+            ${state}
+            ${ses ? `<span class="alertgatebar"></span><span class="alertmuteseswrap">${window.AFTip.wrap(
+                '<span class="alertmuteseslbl">muted on their own</span>',
+                `${(g.mutedSessions || []).length} session${(g.mutedSessions || []).length === 1 ? '' : 's'} muted individually`,
+                'These stay quiet whatever the two switches to the left say — a session\'s own mute '
+                + 'is the only authority that can subtract from what the fleet switch and the row\'s '
+                + '♪ box ADD UP to.\n\nNothing they chose was cleared; ✕ puts each one back exactly '
+                + 'as it was.')}${ses}</span>` : ''}
+        </div>${err}`;
+    }
+
     function alertsCard(al) {
         const mine = (al.voices || []).filter(v => !v.builtin);
         const on = (al.events || []).filter(e => e.on).length;
         const broken = (al.events || []).filter(e => e.on && !e.playable).length;
-        const cls = broken ? 'eng-warn' : on ? 'eng-ok' : 'eng-off';
-        const badge = broken
+        const sil = (al.gate && al.gate.silence) || { silent: false };
+        // ‼️ THE GATE OUTRANKS THE COUNT IN THE BADGE. "3 of 5 events armed" on
+        // a muted farm is the true sentence that sends somebody looking in the
+        // wrong place for ten minutes.
+        const cls = sil.silent ? 'eng-off' : broken ? 'eng-warn' : on ? 'eng-ok' : 'eng-off';
+        const badge = sil.silent
+            ? `<span class="rootbadge warn">silent — ${C.esc(sil.detail || '')}</span>`
+            : broken
             ? `<span class="rootbadge warn">${broken} armed event${broken === 1 ? '' : 's'} cannot be played</span>`
             : `<span class="rootbadge">${on ? `${on} of ${al.events.length} events armed` : 'nothing armed — every event is off'}</span>`;
         const err = errors['agentFarm.alerts.voices']
@@ -1668,6 +1750,7 @@
                 (${al.sessionEvents.map(e => `<code>${C.esc(e)}</code>`).join(' · ')}) can also be armed for a
                 single session from the ♪ in its Live Timeline row — the two <b>add up</b> rather than
                 overriding each other, so unticking here never silences a session that armed itself.</div>
+            ${alertGateStrip(al)}
             ${err}
             <table class="settbl alerttbl">
                 <thead><tr>
@@ -1703,7 +1786,7 @@
         // away with the box it replaced.
         let drawn = false;
         return items.map(it => {
-            if (it.key !== 'agentFarm.alerts.on' && it.key !== 'agentFarm.alerts.voices') {
+            if (ALERT_CARD_KEYS.indexOf(it.key) < 0) {
                 return itemHtml(it);
             }
             if (drawn) { return ''; }
@@ -1894,6 +1977,35 @@
                 .alertplays { font-family:var(--vscode-editor-font-family); }
                 .alertplays.bad { color:var(--vscode-charts-yellow, #d7ba7d); }
                 .alertorigin { font-family:var(--vscode-font-family); opacity:.55; font-size:10px; }
+                /* A-22 — the gate strip. ONE LINE above the table: three
+                   authorities and what they add up to right now, in the order
+                   they take effect. It wraps rather than scrolls, because on a
+                   narrow page the reader still needs all of it. */
+                .alertgate { display:flex; flex-wrap:wrap; gap:8px; align-items:center;
+                    margin:8px 0 2px; padding:6px 8px; border-radius:4px;
+                    background:var(--vscode-editorWidget-background, #0002);
+                    border:1px solid var(--vscode-widget-border, #4443); }
+                .alertgatelbl { display:flex; gap:5px; align-items:center; cursor:pointer;
+                    white-space:nowrap; }
+                .alertgatelbl input[type=checkbox] { margin:0; flex:none; width:auto; }
+                .alertgatebar { width:1px; align-self:stretch;
+                    background:var(--vscode-widget-border, #4444); }
+                .alertgatedash { opacity:.6; }
+                .alertqtime { width:52px; flex:none; text-align:center;
+                    font-family:var(--vscode-editor-font-family); }
+                /* Beside the two switches, NOT pushed to the far edge: this is
+                   what they add up to, and a result parked half a screen from
+                   its causes is read as a fourth unrelated control. */
+                .alertgatestate { white-space:nowrap;
+                    border-bottom:1px dotted var(--vscode-widget-border, #4444); }
+                .alertgatestate.off { color:var(--vscode-charts-yellow, #d7ba7d); }
+                .alertmuteseswrap { display:flex; gap:4px; flex-wrap:wrap; align-items:center; }
+                .alertmuteseslbl { opacity:.6; font-size:11px; white-space:nowrap;
+                    border-bottom:1px dotted var(--vscode-widget-border, #4444); }
+                .alertmuteses { display:flex; align-items:center; gap:2px; font-size:11px;
+                    padding:0 2px 0 6px; border-radius:9px;
+                    border:1px solid var(--vscode-widget-border, #4444); }
+                .alertmuteses button { padding:0 4px; min-width:0; }
                 .alertmine .wikimark.ok { color:var(--vscode-textLink-foreground); }
                 .alertmine .wikirel { flex:0 0 180px; }
                 .alertmine button { flex:none; margin-left:2px; }
@@ -2014,6 +2126,42 @@
         document.querySelectorAll('[data-alertremove]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({
                 type: 'alertVoiceRemove', id: el.dataset.alertremove
+            })));
+        // A-22 — the gate. Same three host functions as the status bar click
+        // and the `alerts.mute` / `alerts.quiet` ops.
+        const muteEl = document.getElementById('alertmute');
+        if (muteEl) {
+            muteEl.addEventListener('change', () => vscode.postMessage({
+                type: 'alertMute', on: muteEl.checked
+            }));
+        }
+        const quietOnEl = document.getElementById('alertquieton');
+        if (quietOnEl) {
+            quietOnEl.addEventListener('change', () => vscode.postMessage({
+                type: 'alertQuiet', on: quietOnEl.checked
+            }));
+        }
+        ['from', 'to'].forEach(which => {
+            const el = document.getElementById('alertquiet' + which);
+            if (!el) { return; }
+            // Enter LETS GO of the box, exactly as the sound-name rows do: the
+            // page holds a refresh while a field has focus, so an Enter that
+            // kept it would leave the old value on screen.
+            el.addEventListener('keydown', e => { if (e.key === 'Enter') { el.blur(); } });
+            el.addEventListener('change', () => {
+                const next = el.value.trim();
+                // ‼️ EMPTIED IS NOT A TIME. Sent through, it would be refused by
+                // the host and the reader would read an error to learn they had
+                // deleted something — put it back instead.
+                if (!next || next === el.dataset.alertq) { el.value = el.dataset.alertq; return; }
+                const msg = { type: 'alertQuiet' };
+                msg[which] = next;
+                vscode.postMessage(msg);
+            });
+        });
+        document.querySelectorAll('[data-alertunmute]').forEach(el =>
+            el.addEventListener('click', () => vscode.postMessage({
+                type: 'alertUnmuteSession', sessionId: el.dataset.alertunmute
             })));
         const filterEl = document.getElementById('filter');
         filterEl.addEventListener('input', () => {

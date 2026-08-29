@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.304.0",
+  "version": "3.305.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -620,6 +620,12 @@
         "title": "Sound for This Session…",
         "category": "Agent Farm",
         "icon": "$(unmute)"
+      },
+      {
+        "command": "agentfarm.toggleMute",
+        "title": "Mute / Unmute Alert Sounds",
+        "category": "Agent Farm",
+        "icon": "$(mute)"
       },
       {
         "command": "agentfarm.sessionToWiki",
@@ -8466,6 +8472,34 @@
             "error": {
               "type": "boolean",
               "description": "A critical error. Nothing emits this edge yet; the voice is settable so it is ready when something does."
+            }
+          }
+        },
+        "agentFarm.alerts.muted": {
+          "type": "boolean",
+          "default": false,
+          "description": "Mute every alert SOUND, across the whole farm. This is the 🔇 in the status bar — one click, and the setting is here so it survives a restart and every VS Code window sees it. It clears nothing: the events you armed and the tones you chose stay exactly as they are, so unmuting brings back the setup rather than the defaults. Sounds only — the notifications, the modal and the focus jump are separate switches and keep working. A single session can also be muted on its own from its Live Timeline row."
+        },
+        "agentFarm.alerts.quietHours": {
+          "type": "object",
+          "description": "The hours the farm makes no noise in. The window WRAPS MIDNIGHT — 23:00 to 08:00 means quiet from 23:00 through 07:59 the next morning, which is the only shape anybody actually sets. A time that is not HH:MM leaves quiet hours OFF and says so on the Settings card, rather than silencing the fleet on a guess; a start equal to the end is an empty window, never all day. Sounds only, exactly like the mute above.",
+          "default": {
+            "on": false,
+            "from": "23:00",
+            "to": "08:00"
+          },
+          "properties": {
+            "on": {
+              "type": "boolean",
+              "description": "Whether the window is in force at all. Off out of the box."
+            },
+            "from": {
+              "type": "string",
+              "description": "When the quiet starts, HH:MM, local time. Inclusive."
+            },
+            "to": {
+              "type": "string",
+              "description": "When it ends, HH:MM, local time. Exclusive — at this minute sounds are back."
             }
           }
         },

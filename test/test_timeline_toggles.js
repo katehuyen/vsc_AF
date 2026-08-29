@@ -97,7 +97,8 @@ const voices = (over) => Object.assign({
     }
 }, over || {});
 
-const base = (sessions, sessionAlerts, events, sessionVoices) => ({
+const base = (sessions, sessionAlerts, events, sessionVoices, alertGate) => ({
+    ...(alertGate ? { alertGate } : {}),
     listener: { state: 'listening', port: 1 },
     sessions, events: events || [], workflowRuns: [],
     sessionAlerts: sessionAlerts || {},
@@ -326,6 +327,33 @@ ok('a refused test says so', /not run/.test(three.html) && /nothing selected/.te
         !/data-action="sound"[^>]*>[\s\S]{0,400}?<title>Sound \(chime\)/.test(mine.html));
     ok('the three booleans keep theirs — a native title is the right size for a boolean',
         /<title>Focus \/ bring forward/.test(mine.html));
+    ok('nothing shutting the gate adds no warning to the panel',
+        !/NOTHING PLAYS RIGHT NOW/.test(mine.html));
+
+    // -----------------------------------------------------------------------
+    // ‼️ A-22 — AND WHETHER ANY OF IT IS HEARD. Every line above stays true on
+    // a muted farm and at 03:00, which makes the panel the one surface actively
+    // misleading the reader who opened it asking why they heard nothing.
+    // -----------------------------------------------------------------------
+    const shut = boot(base(
+        [sess('V1aaaaaa-1111', 'dev #1'), sess('V2bbbbbb-2222', 'dev #2')],
+        { 'V1aaaaaa-1111': ['sound'], 'V2bbbbbb-2222': ['sound'] },
+        [{ ts: t0, sessionId: 'V1aaaaaa-1111', agentName: 'dev', kind: 'prompt' }],
+        undefined,
+        {
+            muted: true,
+            quiet: { configured: true, inside: true, from: '23:00', to: '08:00' },
+            mutedSessions: ['V2bbbbbb-2222']
+        }
+    ));
+    ok('‼️ A-22 — the ♪ panel opens by saying nothing plays right now',
+        /NOTHING PLAYS RIGHT NOW/.test(shut.html));
+    ok('…and names EVERY authority, because unmuting at 03:00 is still silence',
+        /the farm is muted/.test(shut.html) && /quiet hours 23:00/.test(shut.html));
+    ok('…and the session that silenced ITSELF is named on its own row only',
+        (shut.html.match(/this session is muted on its own/g) || []).length === 1);
+    ok('…while the tone it WOULD play is still reported below it',
+        /Turn finished: /.test(shut.html));
 
     // A row with no live session resolves to nothing, and must not invent one.
     const cold = boot(base(

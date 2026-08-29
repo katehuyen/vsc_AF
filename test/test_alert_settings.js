@@ -33,6 +33,7 @@ const fx = require(path.join(__dirname, 'fixtures', 'alertsettings.js'));
 const open = (data) => runPage(fx.script, data);
 const sent = (p) => p.posted;
 const last = (p) => p.last();
+const byId = (p, id) => p.sandbox.document.getElementById(id);
 const byAttr = (p, attr, key) =>
     p.query(`[data-${attr}]`).find(b => b.dataset[attr] === key);
 
@@ -216,9 +217,17 @@ const byAttr = (p, attr, key) =>
     ok('the settings page is handed the RESOLVED rows, not the raw setting',
         /alerts: \(\) => alertsPage\(\)/.test(src));
 
+    for (const fn of ['alertsSetMuted', 'alertsSetQuiet']) {
+        const defs = (src.match(new RegExp(`const ${fn} =`, 'g')) || []).length;
+        const calls = (src.match(new RegExp(`\\b${fn}\\(`, 'g')) || []).length;
+        ok(`A-22 — ${fn} is defined once and reached from the op, the page and the bar`,
+            defs === 1 && calls >= 2);
+    }
+
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'settingsPanel.ts'), 'utf8');
     for (const msg of ['alertOn', 'alertVoice', 'alertPlay', 'alertVoiceAdd',
-        'alertVoiceRename', 'alertVoiceRemove', 'alertFolder']) {
+        'alertVoiceRename', 'alertVoiceRemove', 'alertFolder',
+        'alertMute', 'alertQuiet', 'alertUnmuteSession']) {
         ok(`settingsPanel handles ${msg}`, panel.includes(`case '${msg}':`));
     }
     ok('‼️ a refusal is SHOWN on the card rather than swallowed — a sound feature'
@@ -228,6 +237,67 @@ const byAttr = (p, attr, key) =>
         + ' picker the reader opened to compare two tones',
         /case 'alertPlay':[\s\S]{0,260}alertsPlay/.test(panel)
         && !/case 'alertPlay':[\s\S]{0,260}this\.refresh\(\)/.test(panel));
+}
+
+// ---------------------------------------------------------------------------
+// A-22 — the gate strip: whether anything is heard at all
+// ---------------------------------------------------------------------------
+{
+    const p = open(fx.inUse());
+    const html = p.html();
+    ok('A-22 — the gate strip is on the card', /class="alertgate"/.test(html));
+    ok('…with the mute and the quiet window on it',
+        !!byId(p, 'alertmute') && !!byId(p, 'alertquieton')
+        && !!byId(p, 'alertquietfrom') && !!byId(p, 'alertquietto'));
+    ok('‼️ …and the two settings it draws are ABSORBED, not left as JSON boxes'
+        + ' beside it — two controls for one setting is the shape A-21 removed',
+        !/id="c-agentFarm\.alerts\.muted"/.test(html)
+        && !/id="c-agentFarm\.alerts\.quietHours"/.test(html));
+    ok('nothing holding the gate reads as sounds on', /🔊 sounds on/.test(html));
+
+    byId(p, 'alertmute').checked = true;
+    byId(p, 'alertmute').dispatchEvent(new p.sandbox.Event('change'));
+    ok('the mute goes to the HOST — same function as the status bar and the op',
+        last(p).type === 'alertMute' && last(p).on === true);
+
+    byId(p, 'alertquieton').checked = true;
+    byId(p, 'alertquieton').dispatchEvent(new p.sandbox.Event('change'));
+    ok('so does the quiet-hours switch',
+        last(p).type === 'alertQuiet' && last(p).on === true);
+
+    const from = byId(p, 'alertquietfrom');
+    from.value = '22:30';
+    from.dispatchEvent(new p.sandbox.Event('change'));
+    ok('…and an edited start time, on its own', last(p).type === 'alertQuiet'
+        && last(p).from === '22:30' && last(p).to === undefined);
+
+    // ‼️ Emptied is not a time. Sent through it would come back as an error the
+    // reader has to read in order to learn they deleted something.
+    const before = sent(p).length;
+    const to = byId(p, 'alertquietto');
+    to.value = '   ';
+    to.dispatchEvent(new p.sandbox.Event('change'));
+    ok('‼️ an emptied box is PUT BACK rather than sent as a refusal',
+        sent(p).length === before && to.value === '08:00');
+}
+{
+    const p = open(fx.gated());
+    const html = p.html();
+    ok('‼️ A-22 — a muted farm SAYS SO on the badge, above the row counts:'
+        + ' "3 of 5 armed" on a silent farm is the true sentence that sends'
+        + ' somebody looking in the wrong place',
+        /rootbadge warn">silent/.test(html));
+    ok('…and every authority holding it is named, not just the first',
+        /muted/.test(html) && /quiet hours 23:00/.test(html));
+    ok('…including the sessions muted on their own', /muted on their own/.test(html)
+        && /developer · TalkScribe/.test(html));
+    ok('the mute and the window are shown as SET (MIRROR)',
+        byId(p, 'alertmute').checked === true && byId(p, 'alertquieton').checked === true);
+    const x = p.query('[data-alertunmute]')[0];
+    x.dispatchEvent(new p.sandbox.Event('click'));
+    ok('…and one of them can be given its voice back from the row that named it',
+        last(p).type === 'alertUnmuteSession'
+        && last(p).sessionId === 'a1b2c3d4-1111-2222-3333-444455556666');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -5056,7 +5056,16 @@
         "why": "Handler only opens a page card — it moves the eye and changes nothing."
       }
     },
-    {"capability":"setSessionAlertVoice","ui":["cmd:agentfarm.setSessionAlertVoice","ctx:agentfarm.setSessionAlertVoice"],"ops":["alerts.voice.set"]},
+    {
+      "capability": "setSessionAlertVoice",
+      "ui": [
+        "cmd:agentfarm.setSessionAlertVoice",
+        "ctx:agentfarm.setSessionAlertVoice"
+      ],
+      "ops": [
+        "alerts.voice.set"
+      ]
+    },
     {
       "capability": "settingsPanel.ts#afnav",
       "ui": [
@@ -5125,6 +5134,15 @@
       }
     },
     {
+      "capability": "settingsPanel.ts#alertMute",
+      "ui": [
+        "page:settingsPanel.ts#alertMute"
+      ],
+      "ops": [
+        "alerts.mute"
+      ]
+    },
+    {
       "capability": "settingsPanel.ts#alertOn",
       "ui": [
         "page:settingsPanel.ts#alertOn"
@@ -5140,6 +5158,24 @@
       ],
       "ops": [
         "alerts.play"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertQuiet",
+      "ui": [
+        "page:settingsPanel.ts#alertQuiet"
+      ],
+      "ops": [
+        "alerts.quiet"
+      ]
+    },
+    {
+      "capability": "settingsPanel.ts#alertUnmuteSession",
+      "ui": [
+        "page:settingsPanel.ts#alertUnmuteSession"
+      ],
+      "ops": [
+        "alerts.mute"
       ]
     },
     {
@@ -6495,6 +6531,15 @@
       ],
       "ops": [
         "duties.togglePause"
+      ]
+    },
+    {
+      "capability": "toggleMute",
+      "ui": [
+        "cmd:agentfarm.toggleMute"
+      ],
+      "ops": [
+        "alerts.mute"
       ]
     },
     {

@@ -51,6 +51,20 @@ export interface TimelineDeps {
         playable: boolean; chosen: string;
         skipped: { origin: VoiceOrigin; voice: string; why: string }[];
     };
+    /**
+     * ‼️ A-22 — AND WHETHER ANY OF IT IS HEARD. `resolveSessionVoice` answers
+     * WHICH tone and always has an answer; on a muted farm, at 03:00, or on a
+     * session somebody silenced, that answer is true and the row is quiet. A ♪
+     * panel that named a tone and said nothing about the gate would be the one
+     * surface actively misleading the person who came to it asking why they
+     * heard nothing.
+     */
+    alertGate: () => {
+        muted: boolean;
+        quiet: { configured: boolean; inside: boolean; from: string; to: string };
+        /** Session ids muted on their own. */
+        mutedSessions: string[];
+    };
     /** Run one session's selected alerts on purpose, after a countdown — for
      *  the event the page asked for (A-23), `turn-ready` when it names none. */
     testSessionAlert: (sessionId: string, delayMs: number, event?: AlertEvent) => Promise<{
@@ -200,7 +214,10 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
             }))
         ])),
         alertEvents: ALERT_EVENTS.map(e => ({ event: e, label: EVENT_LABEL[e] })),
-        sessionAlertEvents: [...SESSION_ALERT_EVENTS]
+        sessionAlertEvents: [...SESSION_ALERT_EVENTS],
+        // A-22 — one object for the whole page: the gate is fleet-wide except
+        // for the list of sessions that silenced themselves.
+        alertGate: deps.alertGate()
     };
 }
 

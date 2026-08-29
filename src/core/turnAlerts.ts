@@ -102,6 +102,22 @@ export interface SessionAlertPrefs {
      * and finally the built-in default, and something is always heard.
      */
     voices?: Partial<Record<AlertEvent, string>>;
+    /**
+     * ‼️ A-22 — THE ONE THING A UNION CANNOT EXPRESS: "not this conversation".
+     *
+     * `alertPlan` adds the session's own selection to the fleet-wide
+     * `agentFarm.alerts.on`, on purpose — neither authority may take away what
+     * the other granted, or an upgrade would silence installs that have been
+     * ringing for months. The cost of that guarantee is that unticking the ♪
+     * box does NOT make a session quiet while `alerts.on.question` is on, and
+     * one loud agent in a fleet of eight had no answer at all.
+     *
+     * Mute is that answer, and it is deliberately NOT part of the plan: it is a
+     * GATE in front of the sound (`alertGate.silence`), it names itself in the
+     * branch it skips, and it leaves every choice underneath it untouched, so
+     * unmuting restores exactly what was there before.
+     */
+    muted?: boolean;
     updatedAt: number;
     lastSeenAt: number;
 }
@@ -168,12 +184,17 @@ export class TurnAlertStore {
         // had only picked a tone: nothing is armed on it from here yet, but the
         // global `alerts.on` switch can still ring it, and the choice has to
         // survive the reload that follows making it.
-        if (!actions.length && !Object.keys(voices).length) { return undefined; }
+        // ‼️ A-22 — …and a session that says only "keep me quiet" says something
+        // too. Dropped here, a mute would survive exactly until the next reload
+        // and then the agent would start talking again by itself.
+        const muted = o.muted === true;
+        if (!actions.length && !Object.keys(voices).length && !muted) { return undefined; }
         const t = this.now();
         return {
             sessionId,
             actions,
             ...(Object.keys(voices).length ? { voices } : {}),
+            ...(muted ? { muted: true } : {}),
             updatedAt: typeof o.updatedAt === 'number' && o.updatedAt > 0 ? o.updatedAt : t,
             lastSeenAt: typeof o.lastSeenAt === 'number' && o.lastSeenAt > 0 ? o.lastSeenAt : t
         };
@@ -185,7 +206,8 @@ export class TurnAlertStore {
         for (const [id, p] of this.map) {
             out[id] = {
                 ...p, actions: [...p.actions],
-                ...(p.voices ? { voices: { ...p.voices } } : {})
+                ...(p.voices ? { voices: { ...p.voices } } : {}),
+                ...(p.muted ? { muted: true } : {})
             };
         }
         return out;
@@ -203,6 +225,62 @@ export class TurnAlertStore {
      *  chain falls through it rather than going quiet. */
     voicesFor(sessionId: string): Partial<Record<AlertEvent, string>> {
         return { ...(this.map.get(String(sessionId ?? '').trim())?.voices ?? {}) };
+    }
+
+    /** ‼️ A-22 — WHAT THE GATE READS. A session nobody has muted is not muted;
+     *  there is no fallback behind this and there must never be one, or "the
+     *  fleet is quiet" would start meaning "this session is quiet" too. */
+    mutedFor(sessionId: string): boolean {
+        return this.map.get(String(sessionId ?? '').trim())?.muted === true;
+    }
+
+    /**
+     * Silence ONE session, or let it speak again.
+     *
+     * ‼️ MUTING TOUCHES NOTHING ELSE. The four boxes and the chosen tones stay
+     * exactly as they were, so unmuting restores the setup rather than the
+     * default — the alternative (clearing the actions) reads identically on the
+     * day it is done and is unrecoverable the day after.
+     */
+    setMuted(sessionId: string, muted: boolean): AlertSetResult {
+        const id = String(sessionId ?? '').trim();
+        if (!id) { return { ok: false, error: 'sessionId is required' }; }
+        const want = muted === true;
+        const prev = this.map.get(id);
+        const t = this.now();
+        if (prev?.muted === want || (!prev && !want)) {
+            // Already there. Reported as done rather than as an error: two
+            // clicks on the same box must not raise anything.
+            return {
+                ok: true,
+                prefs: prev
+                    ? { ...prev, actions: [...prev.actions], ...(prev.voices ? { voices: { ...prev.voices } } : {}) }
+                    : { sessionId: id, actions: [], updatedAt: t, lastSeenAt: t }
+            };
+        }
+        const actions = prev ? [...prev.actions] : [];
+        const voices = { ...(prev?.voices ?? {}) };
+        if (!want && !actions.length && !Object.keys(voices).length) {
+            // Unmuting a session that had nothing else to say leaves nothing to
+            // record — absence, not a record that says "not muted".
+            this.map.delete(id);
+            this.persist();
+            return { ok: true, prefs: { sessionId: id, actions: [], updatedAt: t, lastSeenAt: t } };
+        }
+        const prefs: SessionAlertPrefs = {
+            sessionId: id,
+            actions,
+            ...(Object.keys(voices).length ? { voices } : {}),
+            ...(want ? { muted: true } : {}),
+            updatedAt: t,
+            lastSeenAt: prev?.lastSeenAt ?? t
+        };
+        this.map.set(id, prefs);
+        this.persist();
+        return {
+            ok: true,
+            prefs: { ...prefs, actions: [...prefs.actions], ...(prefs.voices ? { voices: { ...prefs.voices } } : {}) }
+        };
     }
 
     /**
@@ -234,7 +312,7 @@ export class TurnAlertStore {
         const voices = normalizeVoices(draft);
         const t = this.now();
         const actions = prev ? [...prev.actions] : [];
-        if (!actions.length && !Object.keys(voices).length) {
+        if (!actions.length && !Object.keys(voices).length && !prev?.muted) {
             // Nothing left to say about this session — the same "absence, not a
             // record saying nothing" rule `replace` follows.
             if (prev) { this.map.delete(id); this.persist(); }
@@ -244,6 +322,10 @@ export class TurnAlertStore {
             sessionId: id,
             actions,
             ...(Object.keys(voices).length ? { voices } : {}),
+            // ‼️ A-22 — PICKING A TONE IS NOT UNMUTING. Same rule as the voices
+            // below the actions: each surface owns its own question and none of
+            // them may quietly undo an answer given in another.
+            ...(prev?.muted ? { muted: true } : {}),
             updatedAt: t,
             lastSeenAt: prev?.lastSeenAt ?? t
         };
@@ -290,10 +372,11 @@ export class TurnAlertStore {
         const t = this.now();
         const prev = this.map.get(id);
         const voices = { ...(prev?.voices ?? {}) };
-        if (!next.length && !Object.keys(voices).length) {
+        if (!next.length && !Object.keys(voices).length && !prev?.muted) {
             // An empty selection carries no information now that there is
             // nothing to be silent ABOUT — so it is the absence of a record,
-            // not a record saying "muted".
+            // not a record saying "muted". A session that IS muted says the
+            // opposite, and its record stays (A-22).
             this.map.delete(id);
             this.persist();
             return { ok: true, prefs: { sessionId: id, actions: [], updatedAt: t, lastSeenAt: t } };
@@ -306,6 +389,7 @@ export class TurnAlertStore {
             // voice"), and dropping the tone here would silently undo a choice
             // the user made in another surface entirely.
             ...(Object.keys(voices).length ? { voices } : {}),
+            ...(prev?.muted ? { muted: true } : {}),
             updatedAt: t,
             lastSeenAt: prev?.lastSeenAt ?? t
         };
@@ -483,6 +567,17 @@ export interface SoundResult {
     timedOut?: boolean;
     /** The file that was handed to the player. */
     asset?: string;
+    /**
+     * ‼️ A-22 — WHY NOTHING WAS PLAYED, WHEN NOTHING WENT WRONG.
+     *
+     * A muted farm, a quiet hour and a queue that dropped a stale alert are all
+     * "no sound", and none of them is a FAILURE — reported as one they raise
+     * the broken-player warning and teach the user to ignore it. Set, this
+     * turns the branch into `skipped` carrying this sentence, which is the
+     * answer to the only question anybody asks the alert page ("why did I hear
+     * nothing?").
+     */
+    skipped?: string;
 }
 
 export interface SoundCandidate {
@@ -696,6 +791,13 @@ export async function runTurnAlerts(
         try {
             if (action === 'sound') {
                 const sound = await runners.sound();
+                // ‼️ A-22 — A GATE IS NOT A FAILURE. Muted, inside quiet hours
+                // or dropped by the queue: the branch says `skipped` and names
+                // who did it, so the broken-player warning stays reserved for a
+                // player that is actually broken.
+                if (sound.skipped) {
+                    return { action, sound, ms: now() - t0, status: 'skipped', detail: sound.skipped };
+                }
                 return {
                     action, sound, ms: now() - t0,
                     status: sound.ok ? 'ok' : 'failed',
