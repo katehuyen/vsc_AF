@@ -67,6 +67,7 @@
 import { BYPASS, bypassVerdict, EffectivePermission, permissionFlags } from './permissionmode';
 import { addUsage, contextAfter, emptyUsage, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { isQuotableContextPath, quoteContextPath } from './projectContext';
+import { mergeReported } from './slashCommands';
 import { StepKind, stepKindForTool } from './stepkind';
 
 export type ConsoleStatus = 'starting' | 'idle' | 'working' | 'ended' | 'error';
@@ -371,6 +372,17 @@ export interface ConsoleSessionState {
      * has to be able to say months later which engine a turn ran on.
      */
     engine?: string;
+    /**
+     * ‼️ K-29 — THE SLASH COMMANDS THIS SESSION SAID IT HAS, as names.
+     *
+     * On the state and not on the host because it is a fact about THIS process:
+     * two sessions of the same agent can report different sets (one started
+     * before a skill was added, one after), and a single per-window list would
+     * offer each of them the other's commands. Names only — the descriptions
+     * are worked out where the catalog is assembled (`core/slashCommands.ts`),
+     * which is also where the disk's own files get to replace them.
+     */
+    slashCommands?: string[];
     /** The active project this session was STARTED under, if there was one. Kept
      *  on the state because the stamp can only be written once `sessionId`
      *  arrives, and by then the status bar may already say something else — the
@@ -1074,6 +1086,16 @@ export function reduceEvent(
                     // (see turnModel).
                     ...(state.turnStartedAt ? { turnModel: model } : {}),
                     permissionMode: typeof o.permissionMode === 'string' ? o.permissionMode : state.permissionMode,
+                    // ‼️ K-29 — THE COMMANDS THIS INSTALL ACTUALLY HAS, from the
+                    // only source that knows: the process. Measured here, the
+                    // list came back with 47 entries mixing the CLI's own with
+                    // the skills on THIS machine — which is precisely why no
+                    // shipped table can be the answer, only the fallback.
+                    // Merged rather than replaced: a resume or a /reload-skills
+                    // sends a second init, and a picker that lost commands
+                    // because the second report was shorter would be worse than
+                    // one that never had them (see mergeReported).
+                    slashCommands: mergeReported(state.slashCommands, o.slash_commands),
                     status: state.status === 'starting' ? 'idle' : state.status,
                     lastTs: now
                 },

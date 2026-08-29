@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.333.0 - K-29: the slash command catalog, and whose answer it is (2026-08-30)
+
+The groundwork for the `/` picker (K-14): a catalog that can say **which
+commands this session could actually run**. No UI yet — that is K-30 — but the
+answer exists and is readable from the bridge.
+
+**‼️ The finding that shaped it, measured rather than assumed.** A real Claude
+`system:init` on this machine named **47** slash commands, and the list mixed
+the CLI's own (`/model`, `/compact`, `/context`) with the SKILLS this machine
+happens to have installed (`/dataviz`, `/account-signup`) and two internal names
+nobody types (`__remote-workflow`). No table shipped inside Agent Farm can be
+right about that. So the catalog is a **merge**, not a table.
+
+Three sources, and they do not carry the same authority:
+
+1. **The disk** — `.claude/commands/**/*.md` namespaced by their own folders, so
+   `commands/git/cleanup.md` is `/git:cleanup`; the skill folders; and an
+   engine's own `.agents/workflows`. Read by the scanners the Toolbox page
+   already uses, never by a second reader.
+2. **The running session** — what it reported at `system:init`, the only source
+   that knows THIS install.
+3. **A short shipped table per engine** — for the one moment before any session
+   exists to be asked. Antigravity's `/goal` and `/plan` are not Claude's
+   `/compact` and `/context`, and offering one engine's commands on another is
+   offering a way to break the session.
+
+**Precedence is one-way: disk beats the session's report beats the shipped
+table** — a file is the only source with a description somebody wrote on
+purpose. A second `system:init` (a resume, a `/reload-skills`) **adds** rather
+than replaces, so a picker never loses commands it had a moment ago. Internal
+names beginning `_` are dropped rather than offered.
+
+Each row already carries what the picker will need: `scope`
+(engine · local · skill · workflow), the argument hint the file declared, the
+source file, whether the session confirmed it, and `tui: true` for a command
+whose whole job is to open an interactive menu — those can only answer with
+text in a hosted session, which is what K-31 will warn about.
+
+**New bridge op: `toolbox.slashCommands`** — ask it for an engine, an agent, or
+a live session, and it answers with the merged list plus a count of what each
+layer contributed, so a surprising list can be explained without reading the
+merge.
+
 ## 3.332.0 - S-34: the setup an agent last ran with belongs to every door (2026-08-30)
 
 Agent Farm has always remembered what an agent was last started with — the

@@ -667,3 +667,49 @@ export function buildToolboxInventory(agents: AgentInfo[], home = os.homedir()):
     for (const it of items) { counts[it.kind][it.scope]++; }
     return { generatedAt: Date.now(), items, counts };
 }
+
+// ------------------------------------------------- K-29: the slash catalog's disk half
+
+/**
+ * K-29 — WHAT IS ON DISK THAT A SESSION COULD TYPE AS A SLASH COMMAND.
+ *
+ * It lives here rather than in `core/slashCommands.ts` on purpose: this module
+ * is the one that reads folders, and the catalog module runs on every keystroke
+ * of the composer's `/` box. Two readers of the same folders would be two
+ * answers about the same disk — the Toolbox page's and the picker's — which is
+ * exactly how a list comes to disagree with a page listing the same files.
+ *
+ * ‼️ NEAREST WINS. The user's folders are listed first and the agent's second,
+ * because the merge in `getSlashCommands` lets a later entry of the same name
+ * replace an earlier one: an agent that keeps its own `/review` means its own.
+ */
+export function scanSlashSources(agentDir?: string, home = os.homedir()): {
+    commands: { name: string; description: string; source: string; argumentHint?: string }[];
+    skills: { name: string; description: string; source: string }[];
+    workflows: { name: string; description: string; source: string }[];
+} {
+    const roots: string[] = [userClaudeDir(home)];
+    if (agentDir) { roots.push(path.join(agentDir, '.claude')); }
+    const commands: { name: string; description: string; source: string; argumentHint?: string }[] = [];
+    const skills: { name: string; description: string; source: string }[] = [];
+    for (const root of roots) {
+        for (const c of scanCommandsDir(path.join(root, 'commands'))) {
+            commands.push({
+                name: c.name, description: c.description, source: c.source,
+                ...(c.argumentHint ? { argumentHint: c.argumentHint } : {})
+            });
+        }
+        for (const s of scanSkillsDir(path.join(root, 'skills'))) {
+            skills.push({ name: s.name, description: s.description, source: s.source });
+        }
+    }
+    // ‼️ Antigravity keeps its workflows OUTSIDE .claude — they are that engine's
+    // own files and belong to the folder being worked in, not to Claude's config.
+    // Same scanner, so a workflow in a subfolder is namespaced the same way a
+    // command is, and the picker does not learn two naming rules.
+    const workflows = agentDir
+        ? scanCommandsDir(path.join(agentDir, '.agents', 'workflows'))
+            .map(w => ({ name: w.name, description: w.description, source: w.source }))
+        : [];
+    return { commands, skills, workflows };
+}

@@ -13496,7 +13496,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // detail, and the live MCP tools/list probe — same code paths as the page.
     registerToolboxOps(bridge, {
         getAgents: () => agents,
-        cacheFile: toolboxProbeCacheFile
+        cacheFile: toolboxProbeCacheFile,
+        // ‼️ K-29 — addressed by EITHER id, because a hosted session has two and
+        // the caller has whichever one it was given: Agent Farm's own handle
+        // (`id`) and the engine's (`sessionId`). A lookup that knew only one of
+        // them would refuse a session that is plainly on the list.
+        reportedSlash: (sessionId: string) => {
+            const s = consoleHost.list().find(x => x.id === sessionId || x.sessionId === sessionId);
+            return s ? (s.slashCommands ?? []) : undefined;
+        }
     });
     // Turns ops (§19.C): the Turns page's rows as data.
     // ‼️ …which means the PAGE's pool (X-35). The op takes an `engine` filter

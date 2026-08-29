@@ -10,9 +10,10 @@ import { queryMatches } from './query';
 import { copySkillTo, moveSkillScope, readAgentSkills, SkillDef } from './skills';
 import {
     buildToolboxInventory, HookEntry, readUserMcpServerRaw, removeHookEntry, removeUserMcpServer,
-    removeWithBackup, scaffoldItem, setPluginEnabled, ToolboxItem, ToolboxKind, TOOLBOX_KINDS,
-    userClaudeDir
+    removeWithBackup, scaffoldItem, scanSlashSources, setPluginEnabled, ToolboxItem, ToolboxKind,
+    TOOLBOX_KINDS, userClaudeDir
 } from './toolbox';
+import { BUILTIN_SLASH, getSlashCommands } from './slashCommands';
 
 /**
  * Toolbox bridge ops (§ constitution 19.C) — everything the Toolbox page can
@@ -27,6 +28,15 @@ export interface ToolboxBridgeDeps {
     home?: string;
     /** disk cache for probe results (shared with the Toolbox panel) */
     cacheFile: string;
+    /**
+     * ‼️ K-29 — the slash commands a RUNNING session reported at `system:init`.
+     *
+     * Optional, and the op works without it: a catalog assembled from the disk
+     * and the shipped table is the honest answer for "what could this agent
+     * type", while this is the answer for "what can THAT session type". They are
+     * different questions and only the second needs a live process.
+     */
+    reportedSlash?(sessionId: string): string[] | undefined;
 }
 
 export function probeCacheKey(scope: string, agentId: string | undefined, server: string): string {
@@ -336,6 +346,43 @@ export function registerToolboxOps(bridge: BridgeRegistry, deps: ToolboxBridgeDe
                         kind: it.kind, name: it.name, scope: it.scope, agent: it.agentName,
                         description: it.description.slice(0, 200), source: it.source
                     }))
+                };
+            }
+        },
+        {
+            op: 'toolbox.slashCommands',
+            describe: 'K-29 — WHAT THIS PLACE COULD TYPE AFTER A "/". Three sources, and they do not carry the same authority: what is on DISK (.claude/commands/**\/*.md namespaced by folder, so commands/git/cleanup.md is /git:cleanup · skill folders · an engine\'s .agents/workflows), what the running SESSION reported at system:init (pass `session` — the only source that knows THIS install; measured, a real Claude init named 47 including the skills on that machine), and a short shipped table per engine for the moment before any session exists. ‼️ Precedence is one-way: disk beats the session\'s report beats the shipped table, because a file is the only source with a description somebody wrote on purpose. Each row says `scope` (engine|local|skill|workflow), whether the session `reported` it, its `args` hint, its `source` file, and `tui: true` for a command whose whole job is to open an interactive menu — those can only answer with text in a hosted session. Reads only; nothing is run. args: engine? (claude|codex|gemini|agy|opencode — default claude), agent? (name|id, adds that agent\'s own folders), session? (a hosted session id, adds what it reported), provider? (X-97, carried through), q? (narrows by name or description; a leading / is optional)',
+            handler: (args) => {
+                const engine = (optStr(args, 'engine') || 'claude').toLowerCase();
+                const agentRef = optStr(args, 'agent');
+                const agent = agentRef ? findAgent(agentRef) : undefined;
+                const sessionId = optStr(args, 'session');
+                const reported = sessionId ? deps.reportedSlash?.(sessionId) : undefined;
+                need(!sessionId || reported !== undefined,
+                    `No hosted session "${sessionId}" — sessions.list shows what is running here.`);
+                const disk = scanSlashSources(agent?.dir, deps.home);
+                const list = getSlashCommands({
+                    engine,
+                    ...(optStr(args, 'provider') ? { provider: optStr(args, 'provider') } : {}),
+                    sources: { ...disk, ...(reported ? { reported } : {}) },
+                    q: optStr(args, 'q')
+                });
+                return {
+                    engine,
+                    agent: agent?.name ?? null,
+                    session: sessionId || null,
+                    // What each layer contributed, so a surprising list can be
+                    // explained without reading the merge: an empty `reported`
+                    // on a live session means that engine names none.
+                    sources: {
+                        builtin: (BUILTIN_SLASH[engine] ?? []).length,
+                        reported: reported?.length ?? 0,
+                        commands: disk.commands.length,
+                        skills: disk.skills.length,
+                        workflows: disk.workflows.length
+                    },
+                    count: list.length,
+                    commands: list
                 };
             }
         },
