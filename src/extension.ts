@@ -13498,6 +13498,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         rootSetting: () => (cfg().get<string>('wikiRoot') ?? '').trim(),
         sessions: () => index.allWithExternal(),
         procedure: '_REF/wiki.md',
+        // U-122 — the roots `_REF/wiki.md` is resolved against, so the Wiki page
+        // can OPEN the agent procedure rather than print its name.
+        agentRoots: () => cfg().get<string[]>('agentRoots', []),
         /**
          * ‼️ M-23 — WHAT TURNS A BRIEF INTO SOMEBODY DOING THE WORK.
          *

@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.329.0 - U-122: every object on the vault strip is a path (2026-08-29)
+
+The Wiki cockpit's vault strip named six things and let you press three. A path
+you can see and cannot copy, a drop box you can read the name of and cannot
+open, and the agent procedure rendered as a dead `<span>` are one omission with
+three faces: the object is DRAWN but is not an object.
+
+**‼️ `_REF/wiki.md` opens.** It is the file a compile is told to read first,
+named on the one page that starts compiles, and it could not be opened from
+there. It is resolved against the configured agent roots — the FIRST root that
+really holds it wins — and on a machine where none of them do it stays plain
+text rather than becoming a link that opens nothing.
+
+**📥 `_RAW_` is on the strip, with the count that is the reason to look at it.**
+The whole promised gesture is "drop a browser export in `_RAW_` and do nothing
+else"; a folder you have to hunt for in Explorer is that gesture with a hunt in
+front of it. Pressing it opens the folder.
+
+**Everything on the strip has a right-click menu** — open it in the editor, show
+it in the folder, copy the absolute path, and for the root, open Wiki settings.
+Nothing there is new behaviour invented for a menu: each item sends the message
+the strip's own press already sends, so the menu and the button cannot drift.
+
+**And every named file states its four figures on hover**: how many lines, how
+big, when it last changed — and, for the drop box, how many transcripts are
+waiting and how many are already archived in `_DONE_`. A line count is refused
+rather than guessed on a file past 2 MB.
+
+A door that opens nothing is not drawn as a door: a drop box that is not there
+yet and a root that does not exist are text, not links.
+
 ## 3.328.0 - U-120: a chip says which scope it belongs to (2026-08-29)
 
 A mark on the WHOLE conversation covers turn 2, so pressing turn 2's badge

@@ -178,6 +178,15 @@ const EVAL_CASE = "webviewSection == 'afEvalCase'";
 const CAP_CELL = "webviewSection == 'afCapCell'";
 const CAP_ROW = "webviewSection == 'afCapRow'";
 
+/**
+ * U-122 — one object on the Wiki cockpit's vault strip: the root, one of the
+ * three files it must hold, the drop box, or the agent procedure. They share a
+ * section because they share their whole menu — a path is a path, and the only
+ * thing that varies is whether it can be opened in an editor (`afOpenable`) and
+ * whether it is the root (`afRoot`, which is the one with a settings page).
+ */
+const WIKI_VAULT = "webviewSection == 'afWikiVault'";
+
 /** Farm Settings, and the vault. */
 const SETTING_ROW = "webviewSection == 'afSettingRow'";
 const AGENT_ROOT = "webviewSection == 'afAgentRoot'";
@@ -1141,6 +1150,29 @@ export const CTX_ITEMS: CtxItem[] = [
         id: 'stCopyValue', title: 'Copy what it is set to', act: 'stCopy:value',
         when: SETTING_ROW, group: '5_copy@2'
     },
+    // =====================================================================
+    // U-122 — THE WIKI COCKPIT'S VAULT STRIP. Every object on it is a path,
+    // and until now not one of them could be copied, shown or (for the agent
+    // procedure) opened at all. Nothing here is new behaviour invented for a
+    // menu: `wvOpen` is the same `openWikiFile` the left click sends, and
+    // `wvSettings` is the same `openSettings` the strip's own button sends.
+    {
+        id: 'wvOpen', title: 'Open it in the editor', act: 'wvOpen',
+        when: `${WIKI_VAULT} && afOpenable`, group: '1_open@1'
+    },
+    {
+        id: 'wvReveal', title: 'Show it in the folder', act: 'wvReveal',
+        when: `${WIKI_VAULT} && !afMissing`, group: '1_open@2'
+    },
+    {
+        id: 'wvSettings', title: 'Open Wiki settings', act: 'wvSettings',
+        when: `${WIKI_VAULT} && afRoot`, group: '2_edit@1'
+    },
+    {
+        id: 'wvCopy', title: 'Copy the absolute path', act: 'wvCopy',
+        when: WIKI_VAULT, group: '5_copy@1'
+    },
+
     {
         id: 'rtReveal', title: 'Show the folder', act: 'rtReveal',
         when: `${AGENT_ROOT} && !afMissing`, group: '1_open@1'

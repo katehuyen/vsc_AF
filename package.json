@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.328.0",
+  "version": "3.329.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -2701,6 +2701,26 @@
         "category": "Agent Farm"
       },
       {
+        "command": "agentfarm.ctx.wvOpen",
+        "title": "Open it in the editor",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.wvReveal",
+        "title": "Show it in the folder",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.wvSettings",
+        "title": "Open Wiki settings",
+        "category": "Agent Farm"
+      },
+      {
+        "command": "agentfarm.ctx.wvCopy",
+        "title": "Copy the absolute path",
+        "category": "Agent Farm"
+      },
+      {
         "command": "agentfarm.ctx.rtReveal",
         "title": "Show the folder",
         "category": "Agent Farm"
@@ -5238,6 +5258,26 @@
           "group": "5_copy@2"
         },
         {
+          "command": "agentfarm.ctx.wvOpen",
+          "when": "webviewSection == 'afWikiVault' && afOpenable",
+          "group": "1_open@1"
+        },
+        {
+          "command": "agentfarm.ctx.wvReveal",
+          "when": "webviewSection == 'afWikiVault' && !afMissing",
+          "group": "1_open@2"
+        },
+        {
+          "command": "agentfarm.ctx.wvSettings",
+          "when": "webviewSection == 'afWikiVault' && afRoot",
+          "group": "2_edit@1"
+        },
+        {
+          "command": "agentfarm.ctx.wvCopy",
+          "when": "webviewSection == 'afWikiVault'",
+          "group": "5_copy@1"
+        },
+        {
           "command": "agentfarm.ctx.rtReveal",
           "when": "webviewSection == 'afAgentRoot' && !afMissing",
           "group": "1_open@1"
@@ -7220,6 +7260,26 @@
         },
         {
           "command": "agentfarm.ctx.stCopyValue",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.wvOpen",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.wvReveal",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.wvSettings",
+          "when": "false",
+          "group": "ctx"
+        },
+        {
+          "command": "agentfarm.ctx.wvCopy",
           "when": "false",
           "group": "ctx"
         },

@@ -992,6 +992,13 @@ export interface WikiDeps {
     /** The agent procedure, so the brief can point at it by path. */
     procedure?: string;
     /**
+     * ‼️ U-122 — WHERE AGENT FOLDERS LIVE, so `_REF/wiki.md` can be OPENED
+     * rather than printed. `procedure` is a name relative to an agent root and
+     * a name is not something a reader can click; the roots are the only thing
+     * that turns it into a file, and they are the host's to know.
+     */
+    agentRoots?(): string[];
+    /**
      * ‼️ M-23 — HOW A BRIEF BECOMES SOMEBODY DOING THE WORK.
      *
      * This module cannot reach vscode or the task manager, and it must not: the
@@ -1626,6 +1633,81 @@ export function removeCandidates(store: WikiStore, args: Record<string, unknown>
 }
 
 /** `wiki.status` — the pool and the vault, read in one breath. */
+/**
+ * ‼️ U-122 — WHAT A FILE IS, IN THE FOUR FIGURES A READER ACTUALLY ASKS FOR.
+ *
+ * The strip named four files and said nothing else about any of them, so
+ * "is the index up to date?" cost a trip to Obsidian. These are the figures a
+ * hover can carry: whether it is there, how big it is, how many lines it holds
+ * and when it last changed.
+ *
+ * Lines are counted only up to a size, and a file past it reports `null` rather
+ * than a number — a count that would stall the page on a 40 MB log is not a
+ * figure worth having, and a WRONG count (a partial read) is worse than none.
+ */
+const LINE_COUNT_LIMIT = 2 * 1024 * 1024;
+
+export interface WikiFileFacts {
+    path: string;
+    found: boolean;
+    bytes: number;
+    /** null when the file is absent, unreadable, or past LINE_COUNT_LIMIT. */
+    lines: number | null;
+    /** Epoch ms of the last write, 0 when there is nothing to date. */
+    mtime: number;
+}
+
+export function wikiFileFacts(p: string): WikiFileFacts {
+    if (!p) { return { path: '', found: false, bytes: 0, lines: null, mtime: 0 }; }
+    try {
+        const st = fs.statSync(p);
+        if (!st.isFile()) { return { path: p, found: false, bytes: 0, lines: null, mtime: 0 }; }
+        let lines: number | null = null;
+        if (st.size <= LINE_COUNT_LIMIT) {
+            try {
+                const text = fs.readFileSync(p, 'utf8');
+                lines = text ? text.split('\n').length : 0;
+            } catch { lines = null; }
+        }
+        return { path: p, found: true, bytes: st.size, lines, mtime: st.mtimeMs };
+    } catch {
+        return { path: p, found: false, bytes: 0, lines: null, mtime: 0 };
+    }
+}
+
+/**
+ * ‼️ U-122 — `_REF/wiki.md` RESOLVED AGAINST THE AGENT ROOTS, or ''.
+ *
+ * The procedure is stated as a name relative to an agent root (`_REF/wiki.md`)
+ * because that is how every agent's own constitution refers to it. The FIRST
+ * root that actually holds it wins; a machine where no root does gets '', and
+ * the strip keeps printing the name rather than offering a link that opens
+ * nothing (Principle 1: a dead link is worse than plain text).
+ */
+export function resolveProcedure(deps: WikiDeps): string {
+    const rel = deps.procedure ?? '_REF/wiki.md';
+    if (path.isAbsolute(rel)) { return fs.existsSync(rel) ? rel : ''; }
+    const roots = deps.agentRoots ? deps.agentRoots() : [];
+    for (const root of roots) {
+        if (!root) { continue; }
+        const p = path.join(root, ...rel.split(/[\\/]/));
+        if (fs.existsSync(p)) { return p; }
+    }
+    return '';
+}
+
+/** How many transcripts are sitting in a drop box. The strip says the figure
+ *  because the folder is the whole gesture: a reader who has just dropped three
+ *  files wants to see three, without opening anything. */
+function countRawFiles(dir: string): number {
+    if (!dir) { return 0; }
+    try {
+        return fs.readdirSync(dir, { withFileTypes: true })
+            .filter(e => e.isFile() && WIKI_RAW_EXTS.includes(path.extname(e.name).toLowerCase()))
+            .length;
+    } catch { return 0; }
+}
+
 export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
     const root = deps.root();
     // X-138 — same repair as the health check, on the same guard: this is the
@@ -1671,15 +1753,33 @@ export function wikiStatus(deps: WikiDeps): Record<string, unknown> {
             // could not find them" is never an invitation to proceed from memory.
             rules, rulesFound: fs.existsSync(rules),
             procedure: deps.procedure ?? '_REF/wiki.md',
+            // ‼️ U-122 — and WHERE it is, so the strip can open it. '' on a
+            // machine whose agent roots do not hold it; the page keeps the name
+            // and offers no link rather than one that opens nothing.
+            procedureFile: resolveProcedure(deps),
             index: path.join(root, WIKI_INDEX_REL),
             indexFound: fs.existsSync(path.join(root, WIKI_INDEX_REL)),
             log: path.join(root, WIKI_LOG_REL),
             logFound: fs.existsSync(path.join(root, WIKI_LOG_REL)),
+            // U-122 — the four figures a hover carries for each of the files the
+            // strip names. Keyed the way the strip names them, so the page picks
+            // one up by the same word it draws.
+            facts: {
+                rules: wikiFileFacts(rules),
+                index: wikiFileFacts(path.join(root, WIKI_INDEX_REL)),
+                log: wikiFileFacts(path.join(root, WIKI_LOG_REL)),
+                procedure: wikiFileFacts(resolveProcedure(deps))
+            },
             pages: pages.length,
             // X-138 — where to drop an external transcript, and where a
             // compiled one goes. Absolute, because the caller is a person or an
             // agent about to use a file path, not this module.
             raw: rawDirs.raw, rawReady: rawDirs.ready, done: rawDirs.done,
+            // U-122 — what is IN the two boxes right now. `rawFiles` is what is
+            // waiting to be compiled out of the drop box and `doneFiles` is what
+            // a compile has already moved; the strip prints the first because
+            // dropping files is the gesture the folder exists for.
+            rawFiles: countRawFiles(rawDirs.raw), doneFiles: countRawFiles(rawDirs.done),
             // ‼️ X-139 — WHAT THIS CALL ITSELF CHANGED, said out loud. A scan
             // that silently rewrites the pool is a scan nobody can debug: an
             // agent that drops a file and then asks the status sees its own

@@ -290,4 +290,58 @@ const freshRoot = () => {
         [listed.total, listed.candidates[0].sessionId], [1, 'raw:second.md']);
 }
 
+// ============ U-122: what the vault strip says about each of its own objects
+//
+// ‼️ THE STRIP NAMED FILES AND SAID NOTHING ABOUT THEM, so "is the index up to
+// date?" cost a trip to Obsidian. These are the figures a hover can carry —
+// and the one figure it must refuse to invent.
+{
+    const root = freshRoot();
+    scaffoldWiki(root);
+    const idx = path.join(root, 'index.md');
+    fs.writeFileSync(idx, 'a\nb\nc\n', 'utf8');
+    const f = W.wikiFileFacts(idx);
+    eq('a file states its size and its length', [f.found, f.bytes, f.lines], [true, 6, 4]);
+    ok('…and when it last changed', f.mtime > 0);
+    const gone = W.wikiFileFacts(path.join(root, 'nothing.md'));
+    eq('a file that is not there says so and invents no figures',
+        [gone.found, gone.bytes, gone.lines, gone.mtime], [false, 0, null, 0]);
+    eq('…and neither does an empty name', W.wikiFileFacts('').found, false);
+    // ‼️ A DIRECTORY IS NOT A FILE. statSync answers for both, and a strip that
+    // reported "0 lines" for a folder would be stating a figure about the wrong
+    // kind of thing.
+    eq('a folder is not reported as a file', W.wikiFileFacts(root).found, false);
+
+    // ‼️ THE PROCEDURE IS A NAME UNTIL A ROOT HOLDS IT. `_REF/wiki.md` is
+    // relative to an agent root, and a page cannot open a name.
+    const agents = freshRoot();
+    const other = freshRoot();
+    const deps = { store: () => new W.WikiStore(path.join(tmp, 'u122-pool.json')), root: () => root, sessions: () => [] };
+    eq('with no roots configured there is nothing to open',
+        W.resolveProcedure({ ...deps, agentRoots: () => [] }), '');
+    eq('…and a root that does not hold it is not an answer either',
+        W.resolveProcedure({ ...deps, agentRoots: () => [other] }), '');
+    fs.mkdirSync(path.join(agents, '_REF'), { recursive: true });
+    fs.writeFileSync(path.join(agents, '_REF', 'wiki.md'), '# procedure\n', 'utf8');
+    eq('‼️ the FIRST root that really holds it wins',
+        W.resolveProcedure({ ...deps, agentRoots: () => [other, agents] }),
+        path.join(agents, '_REF', 'wiki.md'));
+
+    // And the whole of it, through the op every surface actually calls.
+    fs.writeFileSync(path.join(root, WIKI_RAW_REL, 'one.md'), '# one\n', 'utf8');
+    fs.writeFileSync(path.join(root, WIKI_RAW_REL, 'two.txt'), 'two\n', 'utf8');
+    fs.writeFileSync(path.join(root, WIKI_RAW_REL, 'notes.pdf'), 'x', 'utf8');
+    fs.writeFileSync(path.join(root, WIKI_DONE_REL, 'old.md'), '# old\n', 'utf8');
+    const st = wikiStatus({ ...deps, procedure: '_REF/wiki.md', agentRoots: () => [agents] });
+    eq('‼️ the drop box is counted in what it can actually hold, not in files',
+        [st.wiki.rawFiles, st.wiki.doneFiles], [2, 1]);
+    ok('the status carries the resolved procedure, so the strip can open it',
+        st.wiki.procedureFile === path.join(agents, '_REF', 'wiki.md'));
+    ok('…and the four figures for each file it names',
+        st.wiki.facts.rules.found && st.wiki.facts.index.found
+        && st.wiki.facts.log.found && st.wiki.facts.procedure.lines === 2);
+    ok('a machine whose roots do not hold the procedure gets an empty path',
+        wikiStatus({ ...deps, agentRoots: () => [other] }).wiki.procedureFile === '');
+}
+
 console.log(`${pass} passed, ${fail} failed`);

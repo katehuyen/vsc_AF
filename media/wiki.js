@@ -86,6 +86,27 @@
     const esc = s => C.esc(String(s == null ? '' : s));
     const post = m => vscode.postMessage(m);
 
+    /**
+     * ‼️ U-122 — THE MENU AND THE PRESS ARE ONE PATH. Every act below sends the
+     * message the strip's own click (or its own button) already sends, so the
+     * two cannot drift into two behaviours: `wvOpen` is `data-open`, `wvReveal`
+     * is `data-reveal`, `wvSettings` is the `⚙ Choose the folder` button.
+     * Copying is the one that never reaches the host — the clipboard is the
+     * shell's, and `AFCtx.copy` is the door to it.
+     *
+     * Wired ONCE, at module scope: render() rebuilds the page on every tick and
+     * a listener added per render would answer one click N times.
+     */
+    window.AFCtx.listen((act, ctx) => {
+        const which = String((ctx && ctx.afWhich) || '');
+        switch (act) {
+            case 'wvOpen': if (which) { post({ type: 'openWikiFile', which }); } return;
+            case 'wvReveal': if (which) { post({ type: 'revealWikiPath', which }); } return;
+            case 'wvSettings': post({ type: 'openSettings', focus: 'agentFarm.wikiRoot' }); return;
+            case 'wvCopy': window.AFCtx.copy(ctx && ctx.afPath); return;
+        }
+    });
+
     // A mark is in one of four states on screen, and `compiling` is not a state
     // in the pool (B-14 — the dictionary is a published contract): it is a
     // PENDING row with a live run out for it. Drawn apart because the one thing
@@ -169,16 +190,64 @@
      * missing (core/wiki.ts) — so the reader is told that HERE, in words, next
      * to the buttons, rather than by a refusal after they press one.
      */
+    /** Bytes as the shortest true figure. A file is quoted in the unit a reader
+     *  would say it in, never in six digits. */
+    function bytes(n) {
+        const b = Number(n) || 0;
+        if (b < 1024) { return `${b} B`; }
+        if (b < 1024 * 1024) { return `${(b / 1024).toFixed(b < 10240 ? 1 : 0)} KB`; }
+        return `${(b / 1048576).toFixed(1)} MB`;
+    }
+
+    /**
+     * ‼️ U-122 — THE FOUR FIGURES A FILE ON THIS STRIP CARRIES. Whether it is
+     * there, how long it is, how big it is and when it last changed — which is
+     * the difference between a strip that names files and one that answers
+     * "is the index up to date?" without a trip to Obsidian.
+     */
+    function factWords(f) {
+        if (!f || !f.found) { return 'This file is not there.'; }
+        return T.lines([
+            f.lines === null || f.lines === undefined ? '' : `${f.lines} line(s)`,
+            bytes(f.bytes),
+            f.mtime ? `Last changed: ${window.AFTime.full(f.mtime)} (${window.AFTime.ago(f.mtime)})` : ''
+        ]);
+    }
+
+    /**
+     * ‼️ U-122 — EVERY OBJECT ON THIS STRIP IS A PATH, AND SAYS SO.
+     *
+     * The strip named six things and let you press three of them. A path you
+     * can see and cannot copy, a folder you can read the name of and cannot
+     * open, and a procedure file rendered as a dead `<span>` are all the same
+     * omission: the object is DRAWN but is not an object. One context shape
+     * covers the lot — `afWhich` is what the host resolves, `afPath` is what
+     * the clipboard gets, and the two flags decide which items are drawn.
+     */
+    function vaultCtx(which, p, o) {
+        return window.AFCtx.row('afWikiVault', {
+            afWhich: which,
+            afPath: p || '',
+            afOpenable: !!(o && o.openable),
+            afRoot: which === 'root',
+            afMissing: !(o && o.found)
+        });
+    }
+
     function vaultStrip() {
         const v = vault();
+        const facts = v.facts || {};
         const file = (which, label, found, p) => {
-            const inner = `<a class="wk-file${found ? '' : ' bad'}" data-open="${which}">${found ? '' : '⚠ '}${esc(label)}</a>`;
+            const inner = `<a class="wk-file${found ? '' : ' bad'}" data-open="${which}"
+                ${vaultCtx(which, p, { openable: found, found })}>${found ? '' : '⚠ '}${esc(label)}</a>`;
             return T.wrap(inner, label, T.lines([
                 p || '',
-                found ? '' : 'This file is not there.',
+                factWords(facts[which]),
                 which === 'rules' && !found
                     ? 'The wiki\'s own law outranks the agent procedure, so a compile is refused until it exists.'
-                    : ''
+                    : '',
+                '',
+                window.AFCtx.HINT
             ]), 'wk-tipw');
         };
         const ok = v.exists && v.rulesFound;
@@ -195,18 +264,76 @@
                 title="Create the folder if it is not there and write whatever of -WIKI-ANAYASA-.md, index.md and log.md is missing. It only CREATES: a file already on disk is left exactly as it is, because the law is yours.">🛠 Start the wiki here</button>
             <button class="mini wk-fix secondary" id="wk-vsettings"
                 title="Open Settings ▸ Wiki & Knowledge Base — choose the folder, and see which files it holds">⚙ Choose the folder</button>`;
+        const cats = (v.categories || []).length;
+        /**
+         * ‼️ A DOOR THAT OPENS NOTHING IS NOT A DOOR. A folder that is not
+         * there has no path to reveal, so it is drawn as text: pressing it
+         * would post a message the host answers with silence, which is exactly
+         * the failure the whole strip exists to prevent (Principle 1).
+         */
+        const press = (which, found) => (found ? ` data-reveal="${which}"` : '');
+        const dead = found => (found ? '' : ' wk-dead');
+        const rootLive = !!(v.exists && v.root);
+        const root = T.wrap(
+            `<a class="wk-file wk-vroot${v.exists ? '' : ' bad'}${dead(rootLive)}"${press('root', rootLive)}
+                ${vaultCtx('root', v.root, { openable: false, found: !!v.exists })}>${esc(v.root || '—')}</a>`,
+            'Wiki root',
+            T.lines([v.root || '',
+                v.exists ? `${v.pages || 0} page(s) in ${cats} categor${cats === 1 ? 'y' : 'ies'}` : 'This folder does not exist.',
+                cats ? 'Categories: ' + (v.categories || []).join(' · ') : '',
+                (v.misplaced || []).length ? `${v.misplaced.length} page(s) nested deeper than one category` : '',
+                '', rootLive ? 'Press it to show the folder — ' + window.AFCtx.HINT : window.AFCtx.HINT]), 'wk-tipw');
+        /**
+         * ‼️ X-138/U-122 — THE DROP BOX, ON THE STRIP RATHER THAN IN A NOTE.
+         *
+         * The whole promised gesture is "drop a browser export in `_RAW_` and do
+         * nothing else". A folder you have to go and find in Explorer is a
+         * gesture with a hunt in front of it, so the strip carries the door AND
+         * the count: three files waiting is the thing you came to check.
+         */
+        const waiting = Number(v.rawFiles) || 0;
+        const rawLive = !!(v.rawReady && v.raw);
+        const raw = T.wrap(
+            `<a class="wk-file wk-raw${v.rawReady ? '' : ' bad'}${dead(rawLive)}"${press('raw', rawLive)}
+                ${vaultCtx('raw', v.raw, { openable: false, found: !!v.rawReady })}>📥 _RAW_${waiting ? ` (${waiting})` : ''}</a>`,
+            'The drop box',
+            T.lines([v.raw || '',
+                v.rawReady ? '' : 'The folder is not there yet — it is made the next time the pool is read.',
+                `${waiting} transcript(s) waiting${Number(v.doneFiles) ? ` · ${v.doneFiles} already archived in _DONE_` : ''}`,
+                'Drop a browser export here (.md or .txt) and it becomes a candidate on the next read — nothing else to do.',
+                '', rawLive ? 'Press it to open the folder — ' + window.AFCtx.HINT : window.AFCtx.HINT]), 'wk-tipw');
+        /**
+         * ‼️ U-122 — THE AGENT PROCEDURE WAS A DEAD `<span>`. It is the file a
+         * compile is told to read first, named on the one page that starts
+         * compiles, and it could not be opened from there. It is a link when the
+         * agent roots actually hold it and stays plain text when they do not,
+         * because a link that opens nothing is worse than a name.
+         */
+        const procFound = !!(v.facts && v.facts.procedure && v.facts.procedure.found);
+        const procInner = procFound
+            ? `<a class="wk-file wk-proc" data-open="procedure"
+                ${vaultCtx('procedure', v.procedureFile, { openable: true, found: true })}>${esc(v.procedure || '_REF/wiki.md')}</a>`
+            : `<span class="muted small">${esc(v.procedure || '_REF/wiki.md')}</span>`;
+        const proc = T.wrap(procInner, 'The agent procedure', T.lines([
+            v.procedureFile || v.procedure || '',
+            'How a compile writes a page — the template, atomicity, provenance and what to do with a contradiction.',
+            'The wiki\'s own law outranks it.',
+            procFound ? factWords(v.facts.procedure)
+                : 'Not on this machine — no configured agent root holds it, so there is nothing to open.',
+            procFound ? '' : null,
+            procFound ? window.AFCtx.HINT : null
+        ].filter(x => x !== null)), 'wk-tipw');
         return `<div class="wk-vault ${ok ? '' : 'bad'}">
             <span class="wk-vlabel">${ok ? '📚' : '⚠'} wiki</span>
-            ${T.wrap(`<code class="${v.exists ? '' : 'bad'}">${esc(v.root || '—')}</code>`, 'Wiki root',
-            T.lines([v.root || '', v.exists ? `${v.pages || 0} page(s) in ${(v.categories || []).length} categor${(v.categories || []).length === 1 ? 'y' : 'ies'}` : 'This folder does not exist.',
-            (v.categories || []).length ? 'Categories: ' + (v.categories || []).join(' · ') : '',
-            (v.misplaced || []).length ? `${v.misplaced.length} page(s) nested deeper than one category` : '']), 'wk-tipw')}
+            ${root}
             <span class="wk-vsep">·</span>
             ${file('rules', '-WIKI-ANAYASA-.md', !!v.rulesFound, v.rules)}
             ${file('index', 'index.md', !!v.indexFound, v.index)}
             ${file('log', 'log.md', !!v.logFound, v.log)}
             <span class="wk-vsep">·</span>
-            <span class="muted small">${esc(v.procedure || '_REF/wiki.md')}</span>
+            ${raw}
+            <span class="wk-vsep">·</span>
+            ${proc}
             ${ways}
         </div>`;
     }
@@ -674,6 +801,19 @@
                 .wk-vault code.bad, .wk-file.bad { color:var(--vscode-editorWarning-foreground,#cca700); }
                 .wk-file { cursor:pointer; text-decoration:none; color:var(--vscode-textLink-foreground); }
                 .wk-file:hover { text-decoration:underline; }
+                /* ‼️ U-122: the root is a PATH you can press, so it is drawn as
+                   the same kind of thing every other pressable object on the
+                   strip is — a code element you can click is a control with no
+                   role at all.
+                   It keeps the monospace, because a path read in the body font
+                   is a path you cannot check character by character. */
+                .wk-vroot { font-family:var(--vscode-editor-font-family); opacity:.85; }
+                /* The drop box: the one object on this strip that is a GESTURE
+                   rather than a file, so it carries the count it exists for. */
+                .wk-raw { font-family:var(--vscode-editor-font-family); }
+                /* ‼️ A door that opens nothing does not look like a door. */
+                .wk-dead { cursor:default; text-decoration:none; }
+                .wk-dead:hover { text-decoration:none; }
                 .wk-vsep { opacity:.4; margin:0 2px; }
                 .wk-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:0 0 8px; }
                 /* U-121: the table's own toolbar, under the filters that decide
@@ -1121,6 +1261,9 @@
         bind('wk-lclose', 'click', () => { LINT = null; render(); });
 
         each('[data-open]', 'click', e => post({ type: 'openWikiFile', which: e.currentTarget.dataset.open }));
+        // U-122 — a FOLDER has no editor to open in; pressing it shows it where
+        // it actually is, which for the drop box is the entire gesture.
+        each('[data-reveal]', 'click', e => post({ type: 'revealWikiPath', which: e.currentTarget.dataset.reveal }));
         each('[data-session]', 'click', e => {
             if (e.target.closest('[data-topics],[data-act]')) { return; }
             post({ type: 'openSession', id: e.currentTarget.dataset.session });

@@ -6925,6 +6925,16 @@
       }
     },
     {
+      "capability": "wikiPanel.ts#revealWikiPath",
+      "ui": [
+        "page:wikiPanel.ts#revealWikiPath"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
       "capability": "wikiPanel.ts#refresh",
       "ui": [
         "page:wikiPanel.ts#refresh"

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
+import { revealPath } from '../core/reveal';
 import {
     WikiDeps, WikiStore, candidateView, createWikiCategory, editCandidate, isRawCandidate, lintWiki,
     readWikiCategories, removeCandidates, scaffoldWiki, startCompileRun, wikiStatus
@@ -166,6 +167,27 @@ export class WikiPanel {
         }
     }
 
+    /**
+     * ‼️ U-122 — WHICH OF THE STRIP'S OBJECTS, RESOLVED HERE AND NOWHERE ELSE.
+     *
+     * The page names the object (`rules`, `_RAW_`, `procedure`); the host turns
+     * the name into a path out of the SAME `wikiStatus` the strip was drawn
+     * from. A webview that posted a path would be a webview deciding which file
+     * the editor opens — the rule `openPage` and `openSession` already follow.
+     *
+     * It is a LOOKUP rather than a switch on purpose: seven `case` labels in a
+     * panel read to the parity scanner as seven user-triggerable doors, and
+     * they are not — they are one resolver with seven names for the same act.
+     */
+    private vaultPath(which: string): string {
+        const s = wikiStatus(this.deps.wiki()).wiki as Record<string, string>;
+        const at: Record<string, string> = {
+            rules: s.rules, index: s.index, log: s.log,
+            procedure: s.procedureFile, root: s.root, raw: s.raw, done: s.done
+        };
+        return at[which] ?? '';
+    }
+
     private onMessage(msg: { type: string;[k: string]: unknown }): void {
         switch (msg.type) {
             // ‼️ THE PAGE'S MAIN BUTTON IS THE BRIDGE'S MAIN OP. `ids` is the
@@ -304,11 +326,25 @@ export class WikiPanel {
             // Same rule: the page names WHICH of the four, the host resolves it.
             case 'openWikiFile':
                 this.guard(() => {
-                    const s = wikiStatus(this.deps.wiki()).wiki as Record<string, string>;
-                    const which = String(msg.which ?? '');
-                    const p = which === 'rules' ? s.rules : which === 'index' ? s.index
-                        : which === 'log' ? s.log : '';
+                    const p = this.vaultPath(String(msg.which ?? ''));
                     if (p) { this.deps.openDoc?.(p, typeof msg.mode === 'string' ? msg.mode : undefined); }
+                });
+                break;
+            /**
+             * ‼️ U-122 — THE STRIP'S OWN PATHS, AND THE ONE THING ONLY THE HOST
+             * CAN DO WITH THEM.
+             *
+             * Copying a path is the page's job (`AFCtx.copy` goes through the
+             * shell's clipboard door), so it never reaches here. Showing a file
+             * in the OS is not: `revealPath` knows that revealing a FOLDER means
+             * opening it and revealing a FILE means selecting it in its parent,
+             * which is the difference between "here is your drop box" and "here
+             * is the folder your drop box lives in".
+             */
+            case 'revealWikiPath':
+                this.guard(() => {
+                    const p = this.vaultPath(String(msg.which ?? ''));
+                    if (p) { void revealPath(p); }
                 });
                 break;
             case 'afnav':

@@ -169,6 +169,19 @@ const status = (over) => Object.assign({
         procedure: '_REF/wiki.md',
         index: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\index.md', indexFound: true,
         log: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\log.md', logFound: true,
+        // U-122 — the strip's own objects. `_RAW_` is a door with a count on
+        // it, `_REF/wiki.md` resolves to a real file, and every named file
+        // carries the four figures its hover states.
+        procedureFile: 'D:\\zone\\agent\\ajanlar\\_REF\\wiki.md',
+        raw: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\_RAW_', rawReady: true,
+        done: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\_RAW_\\_DONE_',
+        rawFiles: 2, doneFiles: 1,
+        facts: {
+            rules: { found: true, bytes: 8140, lines: 121, mtime: T - 6 * 24 * 60 * M },
+            index: { found: true, bytes: 3072, lines: 58, mtime: T - 40 * M },
+            log: { found: true, bytes: 21504, lines: 306, mtime: T - 40 * M },
+            procedure: { found: true, bytes: 6300, lines: 94, mtime: T - 2 * 24 * 60 * M }
+        },
         pages: 14, categories: ['Ajanlar', 'Sistem', 'Ürünler'], misplaced: []
     }
 }, over || {});
@@ -239,6 +252,17 @@ module.exports = {
                         procedure: '_REF/wiki.md',
                         index: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\index.md', indexFound: true,
                         log: 'D:\\zone\\know\\note\\obsidian\\00_WIKI\\log.md', logFound: false,
+                        // U-122 — the other end of the strip too: the drop box
+                        // is not there, and no agent root holds the procedure,
+                        // so neither may be drawn as something to press.
+                        procedureFile: '', raw: '', rawReady: false, done: '',
+                        rawFiles: 0, doneFiles: 0,
+                        facts: {
+                            rules: { found: false, bytes: 0, lines: null, mtime: 0 },
+                            index: { found: true, bytes: 512, lines: 12, mtime: T - 3 * 24 * 60 * M },
+                            log: { found: false, bytes: 0, lines: null, mtime: 0 },
+                            procedure: { found: false, bytes: 0, lines: null, mtime: 0 }
+                        },
                         pages: 0, categories: [], misplaced: []
                     }
                 })

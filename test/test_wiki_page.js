@@ -62,6 +62,71 @@ const el = (r, attr, value) => r.query(`[data-${attr}]`)
     ok('…and the agent procedure beside them', /_REF\/wiki\.md/.test(h));
 }
 
+// ================ U-122: the vault strip, where every object IS a path
+//
+// ‼️ THE STRIP NAMED SIX THINGS AND LET YOU PRESS THREE. A path you can see and
+// cannot copy, a drop box you can read the name of and cannot open, and the
+// agent procedure rendered as a dead `<span>` are one omission with three
+// faces: the object is DRAWN but is not an object.
+{
+    const r = run();
+    const h = r.html();
+
+    // 1 — the procedure. It is the file a compile is told to read FIRST, named
+    // on the one page that starts compiles, and it could not be opened there.
+    const proc = el(r, 'open', 'procedure');
+    ok('‼️ the agent procedure is a link, not a dead span', !!proc);
+    proc.fire('click');
+    ok('…and pressing it asks the HOST which file that is',
+        r.posted.some(m => m.type === 'openWikiFile' && m.which === 'procedure'));
+    ok('…and the page never posts the path itself',
+        !r.posted.some(m => typeof m.path === 'string' && /wiki\.md/.test(m.path)));
+
+    // 3 — the drop box, with the count that is the reason to look at it.
+    const raw = el(r, 'reveal', 'raw');
+    ok('‼️ the drop box is on the strip, carrying what is waiting in it',
+        !!raw && /📥 _RAW_ \(2\)/.test(h));
+    raw.fire('click');
+    ok('…and pressing it opens the FOLDER rather than an editor',
+        r.posted.some(m => m.type === 'revealWikiPath' && m.which === 'raw'));
+
+    // 2 — the root is a path you can press, and everything is a menu.
+    const root = el(r, 'reveal', 'root');
+    ok('the root shows itself in the file manager', !!root);
+    root.fire('click');
+    ok('…through the same door', r.posted.some(m => m.type === 'revealWikiPath' && m.which === 'root'));
+    const ctx = (h.match(/afWikiVault/g) || []).length;
+    ok('‼️ every object on the strip carries the right-click contract',
+        ctx === 6 && /&quot;afWhich&quot;:&quot;procedure&quot;/.test(h)
+        && /&quot;afWhich&quot;:&quot;raw&quot;/.test(h) && /&quot;afWhich&quot;:&quot;root&quot;/.test(h));
+    ok('…and the path travels with it, because the clipboard is the page\'s job',
+        /&quot;afPath&quot;:&quot;D:\\\\zone\\\\agent\\\\ajanlar\\\\_REF\\\\wiki.md&quot;/.test(h));
+    ok('…and only the root offers the settings item',
+        (h.match(/&quot;afRoot&quot;:true/g) || []).length === 1);
+
+    // 4 — the four figures. A strip that names a file and says nothing about it
+    // sends the reader to Obsidian to answer "is the index up to date?".
+    ok('‼️ a named file states its length, its size and when it last changed',
+        /58 line\(s\)/.test(h) && /3.0 KB/.test(h) && /Last changed:/.test(h));
+    ok('…and the drop box states both boxes', /2 transcript\(s\) waiting/.test(h)
+        && /1 already archived in _DONE_/.test(h));
+}
+
+// ‼️ AND THE OTHER END: a door that opens nothing is not drawn as a door.
+{
+    const r = page(fixture.variants().find(v => v.id === 'nolaw').data);
+    const h = r.html();
+    ok('‼️ a procedure no agent root holds stays plain text', !el(r, 'open', 'procedure'));
+    ok('…and says why there is nothing to open', /no configured agent root holds it/.test(h));
+    ok('a drop box that is not there yet cannot be pressed', !el(r, 'reveal', 'raw'));
+    ok('…and it is drawn as text rather than as a link', /wk-raw bad wk-dead/.test(h));
+    // The root of this variant DOES exist — only the law is missing — so it
+    // stays pressable. The dead-door rule is about the path, not about health.
+    ok('…while the root, which is there, is still a door', !!el(r, 'reveal', 'root'));
+    ok('…but they are still right-clickable, and the menu knows they are missing',
+        /&quot;afMissing&quot;:true/.test(h) && /afWikiVault/.test(h));
+}
+
 // ============================================= a run in flight is not a choice
 {
     const r = run();
