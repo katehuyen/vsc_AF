@@ -5063,6 +5063,7 @@
         "ctx:agentfarm.setSessionAlertVoice"
       ],
       "ops": [
+        "alerts.read",
         "alerts.speak",
         "alerts.voice.set"
       ]

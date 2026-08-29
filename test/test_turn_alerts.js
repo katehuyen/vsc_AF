@@ -270,6 +270,80 @@ function fakeState(seed) {
             !reloaded.migrateFromAgentDefaults(legacy, liveSessions).migrated);
     }
 
+    // ------------------------------------------------ A-26 (3/4) read aloud
+    //
+    // A per-session switch, and the thing that breaks a per-session switch is
+    // never the setter — it is the OTHER setters, and the reload. Each is one
+    // list in the store (`keep` and `sanitize`), and a field added to one and
+    // not the other fails silently. That is what these defend.
+    {
+        const k = fakeState();
+        const s6 = new T.TurnAlertStore(k.deps());
+
+        ok('a session nobody asked for is not read', !s6.readAloudFor('R1'));
+        ok('turning it off on a session with no record is not an error',
+            s6.setReadAloud('R1', false).ok);
+        eq('and it wrote no record to say "not reading"', Object.keys(s6.all()), []);
+
+        s6.setReadAloud('R1', true);
+        ok('the switch answers where the turn-ended edge reads it',
+            s6.readAloudFor('R1'));
+        ok('a second click the same way is done, not an error',
+            s6.setReadAloud('R1', true).ok);
+
+        // ‼️ THE ONLY PREFERENCE THIS SESSION HAS. Dropped by `sanitize` it
+        // would survive exactly until the next window reload — the reading
+        // would stop by itself and nothing would say why.
+        await s6.flush();
+        const back = new T.TurnAlertStore(k.deps());
+        ok('a session whose ONLY preference is the reading survives a reload',
+            back.readAloudFor('R1'));
+
+        // ‼️ EVERY OTHER SETTER MUST CARRY IT — that is what `keep` is for.
+        s6.set('R1', 'sound', true);
+        ok('arming a box does not stop the reading', s6.readAloudFor('R1'));
+        s6.setMuted('R1', true);
+        ok('muting the session does not stop the reading either',
+            s6.readAloudFor('R1'));
+        s6.setVoice('R1', 'question', 'chime');
+        ok('picking a tone does not stop the reading', s6.readAloudFor('R1'));
+        s6.setSpeechVoice('R1', 'Tolga');
+        ok('choosing the announcing voice does not stop the reading',
+            s6.readAloudFor('R1'));
+
+        // …and it takes nothing away on its way out.
+        s6.setReadAloud('R1', false);
+        eq('turning the reading off leaves the boxes alone',
+            s6.actionsFor('R1'), ['sound']);
+        ok('…and the mute', s6.mutedFor('R1'));
+        eq('…and the tone', s6.voicesFor('R1').question, 'chime');
+        eq('…and the voice', s6.speechVoiceFor('R1'), 'Tolga');
+
+        // A session with nothing else to say leaves no record behind — absence,
+        // not a record that says "not reading".
+        const k2 = fakeState();
+        const s7 = new T.TurnAlertStore(k2.deps());
+        s7.setReadAloud('R2', true);
+        s7.setReadAloud('R2', false);
+        eq('a session with nothing else left is forgotten, not recorded as off',
+            Object.keys(s7.all()), []);
+
+        // ‼️ A-20'S OWN FIELD, FIXED HERE. `speechVoice` was written by its
+        // setter, carried by `keep` and asked for by `speechVoiceFor` — and
+        // never read back by `sanitize`, so a chosen voice was lost on every
+        // window reload, and a session that had only chosen a voice was dropped
+        // whole. Found while adding the field beside it.
+        const k3 = fakeState();
+        const s8 = new T.TurnAlertStore(k3.deps());
+        s8.setSpeechVoice('V1', 'Microsoft Tolga - Turkish (Turkey)');
+        await s8.flush();
+        const back2 = new T.TurnAlertStore(k3.deps());
+        eq('the announcing voice survives a reload',
+            back2.speechVoiceFor('V1'), 'Microsoft Tolga - Turkish (Turkey)');
+        ok('…and a session whose only choice was that voice is still there',
+            !!back2.all()['V1']);
+    }
+
     // ------------------------------------------------------------- dedupe
     {
         const d = new T.TurnKeyDedupe();

@@ -177,8 +177,17 @@ export interface LiveConfig {
      *
      * Once per edge, exactly as `onTurnReady` has always been — a session
      * PARKED in a state must not keep ringing.
+     *
+     * ‼️ A-26 — `said` IS WHAT THE TURN ENDED WITH, and it rides here rather
+     * than on a second callback ON PURPOSE. Reading a turn out loud needs the
+     * same edge the alert needs; arming `onTurnReady` for it would have put two
+     * subscribers on one emit site, which is exactly what the note above
+     * forbids. It carries only on the edges that HAVE a last word
+     * (`turn-ready`, `ended`) and is already cut to `SAID` at its source —
+     * a length `DIALOGUE_MAX` is deliberately equal to, so the reader never
+     * cuts a second time. Undefined means the edge said nothing, not silence.
      */
-    onAttention?: (s: LiveSession, event: AlertEvent) => void;
+    onAttention?: (s: LiveSession, event: AlertEvent, said?: string) => void;
     /**
      * ‼️ A-18 — IS THIS SESSION'S TURN PARKED ON A QUESTION? `waiting-input`
      * means two different things: a turn that ended, and a turn still open that
@@ -864,6 +873,12 @@ export class LiveMonitor implements vscode.Disposable {
         s.notifiedStuck = false;
         const prevStatus = s.status;
 
+        // ‼️ A-26 — THE TURN'S LAST WORD, carried out of the switch to the emit
+        // site below. It is computed once, where it is already computed for the
+        // timeline, so the reader and the lane can never quote the same turn
+        // differently.
+        let lastWord = '';
+
         switch (payload.hook_event_name) {
             case 'SessionStart':
                 s.status = 'idle';
@@ -953,6 +968,7 @@ export class LiveMonitor implements vscode.Disposable {
                 // the hook already names (lastSaid).
                 const ended = truncate((payload.message ?? '').trim(), SAID)
                     || (s.transcriptPath ? lastSaid(s.transcriptPath, this.readTail) : '');
+                lastWord = ended;
                 this.push(s, 'stop', undefined, ended || undefined);
                 if (cfg.notifyTurnEnd) {
                     this.notify('info', `${this.labelOf(s)} finished its turn`, s.lastPrompt ?? '');
@@ -992,9 +1008,10 @@ export class LiveMonitor implements vscode.Disposable {
                 // hands control back; a turn parked on an `AskUserQuestion` is
                 // still open and wants an ANSWER. Same status, different sound.
                 this.emitAttention(cfg, s,
-                    this.askPending(cfg, s) ? 'question' : 'turn-ready');
+                    this.askPending(cfg, s) ? 'question' : 'turn-ready',
+                    lastWord);
             } else if (s.status === 'ended') {
-                this.emitAttention(cfg, s, 'ended');
+                this.emitAttention(cfg, s, 'ended', lastWord);
             }
         }
 
@@ -1008,8 +1025,8 @@ export class LiveMonitor implements vscode.Disposable {
      * happened; each is guarded on its own, because a subscriber that throws
      * must not swallow the other one or break event handling.
      */
-    private emitAttention(cfg: LiveConfig, s: LiveSession, event: AlertEvent): void {
-        try { cfg.onAttention?.(s, event); } catch { /* best effort */ }
+    private emitAttention(cfg: LiveConfig, s: LiveSession, event: AlertEvent, said?: string): void {
+        try { cfg.onAttention?.(s, event, said || undefined); } catch { /* best effort */ }
         if (event === 'turn-ready') {
             try { cfg.onTurnReady?.(s); } catch { /* best effort */ }
         }

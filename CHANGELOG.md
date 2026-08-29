@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.314.0 - A-26: the farm reads the answer, not just the news (2026-08-29)
+
+A tone says *something happened*. The announcement (A-20) says *which agent*.
+Neither says **what it answered** — so the walk back to the screen happened
+anyway, and for most turns the answer was one sentence long.
+
+**`🔊 Read this session aloud`**, in the same right-click the mute and the voice
+already live in (`Sound for this session…`). Turn it on for the ONE conversation
+you walked away from, and every turn it finishes is read out loud in that
+session's own voice.
+
+**Per session, and only per session.** There is no fleet-wide "read
+everything": eight agents reading over each other is a crowd, not a cockpit.
+For the same reason there is **one reader for the window** — a newer answer cuts
+short an older one still being read, on purpose.
+
+**It is not part of the alert plan.** A session with every ♪ box unticked still
+reads when you ask it to, and a muted fleet does not silence it: mute exists to
+stop noise nobody chose, and this switch was thrown by hand. It does not go
+through the alert queue either — that queue serialises short tones, and a
+minute-long reading would hold every chime in the farm behind it.
+
+**Only a FINISHED turn is read.** A turn parked on a question has not said its
+answer yet, and a session ending would repeat the turn that was already read.
+Markdown, code fences and links are stripped first; the text is cut at the same
+1200 characters the timeline quotes, and *"There is more."* is spoken when it
+did not fit.
+
+`alerts.read { sessionId, on?, stop? }` is the same act from the bridge — with
+`stop` as the panic button, which cuts the current reading short and changes no
+setting.
+
+**Fixed on the way:** a session's chosen announcing voice (A-20) was **lost on
+every window reload**. It was written by its setter and asked for by the
+announcement, but the store never read it back when loading — and a session
+whose only preference was that voice was dropped entirely. Found while adding
+the field beside it.
+
 ## 3.313.0 - U-123: the nudge has a control instead of a JSON box (2026-08-29)
 
 The last raw box on the Alert sounds card, and the odd one out: the rest of the

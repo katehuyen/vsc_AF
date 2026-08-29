@@ -134,6 +134,20 @@ export interface SessionAlertPrefs {
      * silence, exactly like `voices` above.
      */
     speechVoice?: string;
+    /**
+     * ‼️ A-26 — DOES THIS CONVERSATION GET READ OUT LOUD WHEN A TURN ENDS.
+     *
+     * Per session and nothing else: there is no fleet-wide "read everything",
+     * because a farm of eight agents reading their answers over each other is
+     * not a cockpit, it is a crowd. The user turns it on for the ONE session
+     * they walked away from.
+     *
+     * Absent is off — like `muted` above, only `true` is ever recorded, so
+     * there is no third "explicitly not reading" state to keep in step. Which
+     * voice does the reading is `speechVoice`, already beside it, and turning
+     * this on does not choose one.
+     */
+    readAloud?: boolean;
     updatedAt: number;
     lastSeenAt: number;
 }
@@ -203,14 +217,31 @@ export class TurnAlertStore {
         // ‼️ A-22 — …and a session that says only "keep me quiet" says something
         // too. Dropped here, a mute would survive exactly until the next reload
         // and then the agent would start talking again by itself.
+        // ‼️ A-26 — …and EVERY sticky field has to be listed here, not just the
+        // two that were. `speechVoice` was written by its setter, carried by
+        // `keep()` and asked for by `speechVoiceFor`, but never READ BACK: this
+        // function rebuilds the record from the raw object, so a chosen voice
+        // was dropped on the next window reload, and a session whose only
+        // preference was that voice was dropped whole. The list a setter must
+        // carry (`keep`) and the list a reload must restore (here) are the same
+        // list, and they are the reason a field added to one and not the other
+        // fails silently.
         const muted = o.muted === true;
-        if (!actions.length && !Object.keys(voices).length && !muted) { return undefined; }
+        const readAloud = o.readAloud === true;
+        const speechVoice = typeof o.speechVoice === 'string' && o.speechVoice.trim()
+            ? o.speechVoice.trim().slice(0, 200)
+            : '';
+        if (!actions.length && !Object.keys(voices).length && !muted && !readAloud && !speechVoice) {
+            return undefined;
+        }
         const t = this.now();
         return {
             sessionId,
             actions,
             ...(Object.keys(voices).length ? { voices } : {}),
             ...(muted ? { muted: true } : {}),
+            ...(speechVoice ? { speechVoice } : {}),
+            ...(readAloud ? { readAloud: true } : {}),
             updatedAt: typeof o.updatedAt === 'number' && o.updatedAt > 0 ? o.updatedAt : t,
             lastSeenAt: typeof o.lastSeenAt === 'number' && o.lastSeenAt > 0 ? o.lastSeenAt : t
         };
@@ -276,10 +307,12 @@ export class TurnAlertStore {
         const voices = over.voices ?? prev?.voices;
         const muted = over.muted ?? prev?.muted;
         const speechVoice = over.speechVoice ?? prev?.speechVoice;
+        const readAloud = over.readAloud ?? prev?.readAloud;
         return {
             ...(voices && Object.keys(voices).length ? { voices } : {}),
             ...(muted ? { muted: true } : {}),
-            ...(speechVoice ? { speechVoice } : {})
+            ...(speechVoice ? { speechVoice } : {}),
+            ...(readAloud ? { readAloud: true } : {})
         };
     }
 
@@ -428,6 +461,63 @@ export class TurnAlertStore {
     /** What this session chose to be announced in, if anything. */
     speechVoiceFor(sessionId: string): string {
         return this.map.get(String(sessionId ?? '').trim())?.speechVoice ?? '';
+    }
+
+    /** ‼️ A-26 — WHAT THE TURN-ENDED EDGE ASKS. Same shape of answer as
+     *  `mutedFor`: no record means no reading, and there is no fallback behind
+     *  it, because a fleet-wide default here would read eight conversations at
+     *  once the first time somebody upgraded. */
+    readAloudFor(sessionId: string): boolean {
+        return this.map.get(String(sessionId ?? '').trim())?.readAloud === true;
+    }
+
+    /**
+     * Read THIS conversation's answers out loud, or stop.
+     *
+     * ‼️ LIKE MUTE, IT TOUCHES NOTHING ELSE — the four boxes, the tones and the
+     * chosen voice stay exactly as they were, so turning reading off and on
+     * again restores the setup rather than the default. Turning it ON does not
+     * pick a voice either: that is `setSpeechVoice`, a different question, and
+     * a session with no voice is read by the fleet's.
+     */
+    setReadAloud(sessionId: string, on: boolean): AlertSetResult {
+        const id = String(sessionId ?? '').trim();
+        if (!id) { return { ok: false, error: 'sessionId is required' }; }
+        const want = on === true;
+        const prev = this.map.get(id);
+        const t = this.now();
+        if (prev?.readAloud === want || (!prev && !want)) {
+            // Already there — two clicks on the same box must not raise
+            // anything, exactly as `setMuted` answers.
+            return {
+                ok: true,
+                prefs: prev
+                    ? { ...prev, actions: [...prev.actions], ...(prev.voices ? { voices: { ...prev.voices } } : {}) }
+                    : { sessionId: id, actions: [], updatedAt: t, lastSeenAt: t }
+            };
+        }
+        const actions = prev ? [...prev.actions] : [];
+        const keep = this.keep(prev, { readAloud: want });
+        if (!want && !actions.length && !Object.keys(this.keep(prev, { readAloud: false })).length) {
+            // Turning reading off on a session that had nothing else to say
+            // leaves nothing to record — absence, not a record saying "silent".
+            this.map.delete(id);
+            this.persist();
+            return { ok: true, prefs: { sessionId: id, actions: [], updatedAt: t, lastSeenAt: t } };
+        }
+        const prefs: SessionAlertPrefs = {
+            sessionId: id,
+            actions,
+            ...keep,
+            updatedAt: t,
+            lastSeenAt: prev?.lastSeenAt ?? t
+        };
+        this.map.set(id, prefs);
+        this.persist();
+        return {
+            ok: true,
+            prefs: { ...prefs, actions: [...prefs.actions], ...(prefs.voices ? { voices: { ...prefs.voices } } : {}) }
+        };
     }
 
     /** Toggle ONE action on ONE session — the message the gutter sends. */

@@ -170,6 +170,47 @@ function rig(over = {}) {
     eq('…and still reaches waiting-input', live.sessions()[0].status, 'waiting-input');
 }
 
+// ------------------------------------- A-26 (3/4) the turn's LAST WORD rides
+//
+// ‼️ IT TRAVELS ON `onAttention`, NOT ON A SECOND CALLBACK. Both callbacks are
+// fed from one emit site, and this file's own rule is "wire one or the other,
+// never both": arming `onTurnReady` for the reading would have put a second
+// subscriber on that site, which is the double-alert trap A-18 wrote down.
+{
+    const said = [];
+    const { ev } = rig({
+        onAttention: (s, event, text) => said.push(`${event}:${text === undefined ? '-' : text}`)
+    });
+    ev('S1', 'SessionStart', {});
+    ev('S1', 'UserPromptSubmit', { prompt: 'hi' });
+    ev('S1', 'Stop', { message: '  Done: the build is green.  ' });
+    eq('the turn-ended edge carries what the turn ended with',
+        said, ['turn-ready:Done: the build is green.']);
+
+    // A turn that ended with nothing to quote hands over `undefined`, not an
+    // empty string: "the edge said nothing" and "it said the empty string" are
+    // different answers, and only one of them is honest.
+    const q = [];
+    const r2 = rig({ onAttention: (s, event, text) => q.push([event, text]) });
+    r2.ev('S2', 'SessionStart', {});
+    r2.ev('S2', 'UserPromptSubmit', { prompt: 'hi' });
+    r2.ev('S2', 'Stop');
+    eq('a turn with nothing quotable carries undefined, not an empty string',
+        q, [['turn-ready', undefined]]);
+
+    // ‼️ A PARKED TURN IS NOT A FINISHED ONE. The text is still handed over —
+    // the host decides — but the EVENT says `question`, and the reader keys off
+    // that, so half an answer is never read out loud.
+    const p = [];
+    const r3 = rig({ onAttention: (s, event, text) => p.push([event, text]) });
+    r3.asks.add('S3');
+    r3.ev('S3', 'SessionStart', {});
+    r3.ev('S3', 'UserPromptSubmit', { prompt: 'hi' });
+    r3.ev('S3', 'Stop', { message: 'Which one do you want?' });
+    eq('a turn parked on a question is a question, not a finished turn',
+        p, [['question', 'Which one do you want?']]);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 Module._load = origLoad;
 process.exit(fail ? 1 : 0);
