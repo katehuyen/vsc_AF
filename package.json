@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.308.0",
+  "version": "3.309.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8500,6 +8500,64 @@
             "to": {
               "type": "string",
               "description": "When it ends, HH:MM, local time. Exclusive — at this minute sounds are back."
+            }
+          }
+        },
+        "agentFarm.alerts.speak": {
+          "type": "object",
+          "description": "Say WHICH agent out loud. A tone answers 'what kind of news is this?' and nothing else; with eight lanes running, the question from the next room is which one — and no palette of tones can carry a name. This is local and free: Windows System.Speech, macOS `say`, Linux `spd-say`. No network, no account, no model. It rides BEHIND the tone in the same queue slot, so nothing plays between a chime and the sentence explaining it, and it follows the same mute, quiet hours and per-session mute. ‼️ A sentence in your own language needs a voice for that language, and an en-US voice reading Turkish is not accented, it is unintelligible. Windows keeps TWO separate sets of voices: the SAPI 5 set this player uses (usually just David and Zira) and the modern `Speech_OneCore` set, which is where every language pack you have ever installed from Settings actually goes. This engine cannot reach the second one — so if your language is missing from the list, it is very likely already installed and simply invisible here. `alerts.speak` lists what this player can select and says so.",
+          "default": {
+            "on": false,
+            "events": [
+              "question"
+            ],
+            "template": "{agent}, {event}",
+            "rate": 0,
+            "volume": 100,
+            "voice": ""
+          },
+          "properties": {
+            "on": {
+              "type": "boolean",
+              "default": false,
+              "description": "Off out of the box. A machine that talks unbidden is one people switch off entirely, taking the tones with it."
+            },
+            "events": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "turn-ready",
+                  "question",
+                  "stalled",
+                  "ended",
+                  "error"
+                ]
+              },
+              "default": [
+                "question"
+              ],
+              "description": "Which events are announced. Just 'question' by default: it is the one event where an agent is STOPPED and the cost of not knowing is the whole run standing still. A fleet that announces every finished turn out loud is one you silence in an afternoon — and then you hear nothing at all, including the question."
+            },
+            "template": {
+              "type": "string",
+              "default": "{agent}, {event}",
+              "description": "What is said. `{agent}`, `{event}` and `{session}` are substituted; everything else is spoken exactly as typed, so a mistyped `{agnet}` is HEARD rather than silently vanishing. Capped at 160 characters — every announcement holds the whole fleet's alerts for as long as it is speaking."
+            },
+            "rate": {
+              "type": "number",
+              "default": 0,
+              "description": "Speaking rate, −10 (slow) to 10 (fast). 0 is the voice's own normal. On macOS this is mapped onto `say`'s words per minute for you."
+            },
+            "volume": {
+              "type": "number",
+              "default": 100,
+              "description": "0–100, the synthesiser's own volume. Separate from the tones, which are the OS mixer's."
+            },
+            "voice": {
+              "type": "string",
+              "default": "",
+              "description": "An installed voice by name, e.g. 'Microsoft Zira Desktop'. Empty means the system default. `alerts.speak` with no arguments lists what this player can select — the SAPI 5 set, which is not everything the machine has."
             }
           }
         },

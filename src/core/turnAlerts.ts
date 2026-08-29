@@ -30,6 +30,10 @@
  */
 
 import { ALERT_EVENTS, extensionOf, type AlertEvent } from './alertVoices';
+import {
+    parseVoiceList, speakCandidates, voiceListCandidate,
+    type InstalledVoice, type SpeakConfig
+} from './speech';
 
 export const TURN_ALERT_ACTIONS = ['sound', 'focus', 'modal', 'toast'] as const;
 export type TurnAlertAction = (typeof TURN_ALERT_ACTIONS)[number];
@@ -595,14 +599,43 @@ export interface SoundResult {
      * say `install ffmpeg` instead of showing a spawn message.
      */
     missing?: boolean;
+    /**
+     * ‼️ A-20 — WHAT WAS SAID, when this result is an announcement rather
+     * than a tone. The Timeline row for a spoken alert is otherwise a
+     * backend name and a duration, and "it said the wrong agent's name" is
+     * then a report nobody can check against anything.
+     */
+    spoke?: string;
 }
 
-export interface SoundCandidate {
+/**
+ * ‼️ A-20 — WHAT IT TAKES TO RUN A PLAYER, WITH NOTHING ABOUT SOUND FILES.
+ *
+ * A spoken announcement is a process with arguments, an environment and an
+ * exit code, exactly like a tone — and NOT a file with a format. Splitting
+ * the shape here is what lets both go through one runner, so the timeout,
+ * the shell-free contract, the `ENOENT`-is-not-a-diagnosis rule and the
+ * named exit codes are written once and cannot drift apart.
+ */
+export interface PlayerCandidate {
     backend: string;
     file: string;
     args: string[];
     /** Passed to the child as env rather than pasted into a command string. */
     env?: Record<string, string>;
+    /**
+     * ‼️ WHAT A NON-ZERO EXIT FROM *THIS* PLAYER MEANS, in the user's terms.
+     *
+     * `exit 3` from the MediaPlayer script is not a crash, it is the codec
+     * saying it cannot open the file; `exit 4` from the speech synthesiser
+     * is a template that rendered empty. Both are a different fix from a
+     * missing player, and indistinguishable from one unless the backend
+     * that chose the number also says what it chose it for.
+     */
+    codes?: Record<number, string>;
+}
+
+export interface SoundCandidate extends PlayerCandidate {
     /**
      * ‼️ A-18 — WHAT THIS BACKEND CAN ACTUALLY OPEN, declared beside it.
      *
@@ -625,15 +658,6 @@ export interface SoundCandidate {
      * format the order is the reverse, because SoundPlayer cannot open it.
      */
     lead?: readonly string[];
-    /**
-     * ‼️ WHAT A NON-ZERO EXIT FROM *THIS* PLAYER MEANS, in the user's terms.
-     *
-     * `exit 3` from the MediaPlayer script is not a crash, it is the codec
-     * saying it cannot open the file — a different fix from a missing
-     * player, and indistinguishable from one unless the backend that
-     * chose the number also says what it chose it for.
-     */
-    codes?: Record<number, string>;
 }
 
 /**
@@ -815,8 +839,11 @@ export async function playTurnSound(asset: string, deps: PlaySoundDeps = {}): Pr
     if (!asset || !exists(asset)) {
         return { ...base('none'), error: `alert sound asset is missing: ${asset || '(unset)'}` };
     }
-    const execFile = deps.execFile
-        ?? (require('child_process') as typeof import('child_process')).execFile;
+    // node's own overloaded signature is wider than what this file uses; the
+    // cast is to the shape the runner is written against, not away from a check.
+    const execFile = (deps.execFile
+        ?? (require('child_process') as typeof import('child_process')).execFile
+    ) as NonNullable<PlaySoundDeps['execFile']>;
     const candidates = soundCandidates(platform, asset);
     if (!candidates.length) {
         return { ...base('none'), error: `no sound backend known for platform ${platform}` };
@@ -843,67 +870,176 @@ export async function playTurnSound(asset: string, deps: PlaySoundDeps = {}): Pr
                 + ` — this platform plays: ${known.join(', ')}`
         };
     }
-    let last: SoundResult = base('none');
-    const tried: SoundResult[] = [];
-    for (const c of usable) {
-        last = await new Promise<SoundResult>(resolve => {
-            let settled = false;
-            const done = (r: SoundResult): void => {
-                if (settled) { return; }
-                settled = true;
-                resolve(r);
-            };
-            try {
-                execFile(
-                    c.file, c.args,
-                    {
-                        timeout, windowsHide: true,
-                        env: c.env ? { ...process.env, ...c.env } : undefined
-                    },
-                    (err, _stdout, stderr) => {
-                        const r = base(c.backend);
-                        r.durationMs = now() - startedAt;
-                        r.stderr = String(stderr ?? '').trim().slice(0, 500);
-                        if (!err) {
-                            r.ok = true;
-                            r.exitCode = 0;
-                            return done(r);
-                        }
-                        r.exitCode = typeof err.code === 'number' ? err.code : null;
-                        // ‼️ A-20 — A CODE THIS BACKEND NAMED BEATS THE SPAWN MESSAGE.
-                        // `Command failed: powershell -NoProfile …` is true and
-                        // useless; `no installed codec could open this file` is the
-                        // sentence that tells the user to convert the file.
-                        const named = r.exitCode !== null ? c.codes?.[r.exitCode] : undefined;
-                        r.error = named ?? String(err.message ?? err).slice(0, 500);
-                        // node reports a timeout kill as `killed`, with no code.
-                        if (err.killed) { r.timedOut = true; r.error = `timed out after ${timeout} ms`; }
-                        if (err.code === 'ENOENT') { r.missing = true; }
-                        done(r);
-                    }
-                );
-            } catch (e) {
-                const r = base(c.backend);
-                r.durationMs = now() - startedAt;
-                r.error = String((e as Error)?.message ?? e).slice(0, 500);
-                done(r);
-            }
-        });
-        tried.push(last);
-        if (last.ok) { return last; }
+    return runPlayers(usable, { execFile, timeout, now, startedAt, base });
+}
+
+/**
+ * ‼️ A-20 — ONE RUNNER FOR EVERY PLAYER, TONE OR SENTENCE.
+ *
+ * The timeout, the hidden window, the environment handover, `ENOENT` being
+ * a reason to try the next one rather than a diagnosis, the named exit
+ * codes and the rule about which failure to REPORT are one behaviour, and
+ * a second copy of it for speech would have drifted from this one inside a
+ * release. What varies between a tone and an announcement is the candidate
+ * table and nothing else.
+ */
+function runPlayers(
+    usable: PlayerCandidate[],
+    ctx: {
+        execFile: NonNullable<PlaySoundDeps['execFile']>;
+        timeout: number;
+        now: () => number;
+        startedAt: number;
+        base: (backend: string) => SoundResult;
     }
-    /**
-     * ‼️ A-20 — WHEN THEY ALL FAILED, REPORT THE ONE THAT EXPLAINS IT.
-     *
-     * The chain ENDS on the least likely player — `ffplay`, which most
-     * machines do not have — so "the last attempt is the answer" would
-     * reply to every silent alert with `spawn ffplay ENOENT` and bury the
-     * sentence produced two backends earlier: no installed codec could open
-     * this file. The earliest player that actually RAN and refused is the
-     * diagnosis; an absent one is not a diagnosis at all. If every player
-     * was absent, the last will do — they all say the same thing.
-     */
-    return tried.find(r => !r.missing) ?? last;
+): Promise<SoundResult> {
+    const { execFile, timeout, now, startedAt, base } = ctx;
+    return (async () => {
+        let last: SoundResult = base('none');
+        const tried: SoundResult[] = [];
+        for (const c of usable) {
+            last = await new Promise<SoundResult>(resolve => {
+                let settled = false;
+                const done = (r: SoundResult): void => {
+                    if (settled) { return; }
+                    settled = true;
+                    resolve(r);
+                };
+                try {
+                    execFile(
+                        c.file, c.args,
+                        {
+                            timeout, windowsHide: true,
+                            env: c.env ? { ...process.env, ...c.env } : undefined
+                        },
+                        (err, _stdout, stderr) => {
+                            const r = base(c.backend);
+                            r.durationMs = now() - startedAt;
+                            r.stderr = String(stderr ?? '').trim().slice(0, 500);
+                            if (!err) {
+                                r.ok = true;
+                                r.exitCode = 0;
+                                return done(r);
+                            }
+                            r.exitCode = typeof err.code === 'number' ? err.code : null;
+                            // ‼️ A-20 — A CODE THIS BACKEND NAMED BEATS THE SPAWN MESSAGE.
+                            // `Command failed: powershell -NoProfile …` is true and
+                            // useless; `no installed codec could open this file` is the
+                            // sentence that tells the user to convert the file.
+                            const named = r.exitCode !== null ? c.codes?.[r.exitCode] : undefined;
+                            r.error = named ?? String(err.message ?? err).slice(0, 500);
+                            // node reports a timeout kill as `killed`, with no code.
+                            if (err.killed) { r.timedOut = true; r.error = `timed out after ${timeout} ms`; }
+                            if (err.code === 'ENOENT') { r.missing = true; }
+                            done(r);
+                        }
+                    );
+                } catch (e) {
+                    const r = base(c.backend);
+                    r.durationMs = now() - startedAt;
+                    r.error = String((e as Error)?.message ?? e).slice(0, 500);
+                    done(r);
+                }
+            });
+            tried.push(last);
+            if (last.ok) { return last; }
+        }
+        /**
+         * ‼️ A-20 — WHEN THEY ALL FAILED, REPORT THE ONE THAT EXPLAINS IT.
+         *
+         * The chain ENDS on the least likely player — `ffplay`, which most
+         * machines do not have — so "the last attempt is the answer" would
+         * reply to every silent alert with `spawn ffplay ENOENT` and bury the
+         * sentence produced two backends earlier: no installed codec could open
+         * this file. The earliest player that actually RAN and refused is the
+         * diagnosis; an absent one is not a diagnosis at all. If every player
+         * was absent, the last will do — they all say the same thing.
+         */
+        return tried.find(r => !r.missing) ?? last;
+    })();
+}
+
+
+/**
+ * ‼️ A-20 — SAY IT OUT LOUD, THROUGH THE SAME RUNNER AS EVERY TONE.
+ *
+ * A tone says what KIND of news this is; with eight lanes running, the question
+ * from the next room is WHICH ONE, and no palette can carry a name. This is the
+ * only part of the fleet that can answer it, it costs nothing — `System.Speech`
+ * has been in Windows for twenty years, `say` and `spd-say` are already there —
+ * and it needs no network, no account and no model.
+ *
+ * Two contracts it is held to, both of them the sound path's:
+ *
+ * - **The text never enters a command string.** It is written by the user, in a
+ *   settings box, and an agent's NAME is substituted into it. On Windows it
+ *   travels as an environment variable; elsewhere as an argument of its own.
+ * - **It blocks until it has finished speaking.** The alert queue measures its
+ *   500 ms gap from the END of a player's process, so a backend that returned
+ *   as soon as it started talking would let the next agent's chime land in the
+ *   middle of this one's sentence.
+ *
+ * An empty text is not an error and not a failure — it is a template that
+ * rendered to nothing, which is `skipped` with the reason, exactly like a muted
+ * farm. Reporting it as a broken synthesiser would teach the user to ignore the
+ * one warning that matters.
+ */
+export async function speakAnnouncement(
+    text: string, cfg: SpeakConfig, deps: PlaySoundDeps = {}
+): Promise<SoundResult> {
+    const platform = deps.platform ?? process.platform;
+    const now = deps.now ?? (() => Date.now());
+    const timeout = deps.timeoutMs ?? 20000;
+    const startedAt = now();
+    const said = String(text ?? '').trim();
+    const base = (backend: string): SoundResult => ({
+        backend, ok: false, startedAt, durationMs: now() - startedAt,
+        exitCode: null, stderr: '', spoke: said
+    });
+    if (!said) {
+        return { ...base('none'), skipped: 'nothing to say — the template rendered empty' };
+    }
+    const execFile = (deps.execFile
+        ?? (require('child_process') as typeof import('child_process')).execFile
+    ) as NonNullable<PlaySoundDeps['execFile']>;
+    const usable = speakCandidates(platform, said, cfg);
+    if (!usable.length) {
+        return { ...base('none'), error: `no speech backend known for platform ${platform}` };
+    }
+    return runPlayers(usable, { execFile, timeout, now, startedAt, base });
+}
+
+/**
+ * What this machine can actually say it with — asked of the machine, never
+ * guessed. The commonest way for the announcement to disappoint is a Turkish
+ * sentence read by `Microsoft David`, and the fix is a free language pack the
+ * user has to be TOLD about; a settings box cannot know, so it asks.
+ */
+export async function installedSpeechVoices(
+    deps: PlaySoundDeps = {}
+): Promise<{ ok: boolean; voices: InstalledVoice[]; error?: string }> {
+    const platform = deps.platform ?? process.platform;
+    const c = voiceListCandidate(platform);
+    if (!c) {
+        return {
+            ok: false, voices: [],
+            error: `listing installed voices is Windows-only; on ${platform} the`
+                + ` system voice is used unless a name is set by hand`
+        };
+    }
+    const execFile = (deps.execFile
+        ?? (require('child_process') as typeof import('child_process')).execFile
+    ) as NonNullable<PlaySoundDeps['execFile']>;
+    return new Promise(resolve => {
+        try {
+            execFile(c.file, c.args, { timeout: deps.timeoutMs ?? 15000, windowsHide: true },
+                (err, stdout) => resolve(err
+                    ? { ok: false, voices: [], error: String(err.message ?? err).slice(0, 300) }
+                    : { ok: true, voices: parseVoiceList(String(stdout ?? '')) }));
+        } catch (e) {
+            resolve({ ok: false, voices: [], error: String((e as Error)?.message ?? e) });
+        }
+    });
 }
 
 // ------------------------------------------------------------- the dispatch

@@ -2,6 +2,71 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.309.0 - A-20: the fleet can say which agent (2026-08-29)
+
+The third part of A-20. Twenty voices answer "what KIND of news is this?" and
+nothing else. With eight lanes running, the question you actually have from the
+next room is **which one** — and no palette of tones can carry a name.
+
+**A spoken line can, and it costs nothing.** `System.Speech` has been in every
+Windows install for twenty years; macOS `say` and Linux `spd-say` are equally
+already there. No network, no account, no model, no per-token anything.
+
+**It is an addition to the tone, not a replacement.** A tone reaches the ear in
+half a second and is recognised before it finishes; a sentence takes two and
+cannot be told from a podcast in the next room until it is over. So the tone
+still says what kind, immediately, and the sentence arrives behind it saying
+which one. **Both ride in one queue ticket** — submitted separately, another
+lane's chime would land in the middle of this one's sentence, which is the exact
+overlap the queue exists to stop. It follows the same mute, the same quiet
+hours and the same per-session mute.
+
+**It ships off, and out of the box announces only `question`.** That is the
+argument for the feature rather than a limitation of it: `question` is the one
+event where an agent is STOPPED and the cost of not knowing is the whole run
+standing still. A fleet that announces every finished turn out loud is one you
+silence in an afternoon — and then you hear nothing at all, including the
+question.
+
+**The text never enters a command string,** which matters more here than for
+the tones, not less: the sentence is written by you, in a settings box, and an
+agent's NAME is substituted into it. On Windows it travels as an environment
+variable, elsewhere as an argument of its own. An agent called `; rm -rf ~` is
+a strange name and nothing else.
+
+**The substitution is deliberately dumb.** `{agent}`, `{event}` and `{session}`
+are replaced and everything else is spoken exactly as typed, so a mistyped
+`{agnet}` is HEARD — a placeholder that silently vanishes is a bug with no
+symptom at all.
+
+**And it lists the voices — while saying plainly that the list is about the
+PLAYER, not about the machine.** A Turkish sentence read by `Microsoft David`
+is unintelligible rather than accented, so which voice is used matters. But
+Windows keeps **two separate sets**: `System.Speech` is SAPI 5 and sees
+`Speech\Voices\Tokens`, which usually holds only David and Zira; every language
+pack a user has ever installed goes to `Speech_OneCore\Voices\Tokens`, which
+this engine cannot reach at all. Measured on this machine: SAPI 5 has two en-US
+voices, OneCore has four — **one of them `Microsoft Tolga — Turkish`, already
+installed and invisible to the player.** So the list says so, instead of
+telling somebody to install what they already have.
+
+New op **`alerts.speak`**: read the configuration and the installed voices, set
+any of it, and `say:` speaks a line RIGHT NOW as a test — even when the feature
+is off, and it says so. "Does this machine talk at all?" and "is the
+announcement switched on?" are two questions, and a test that answers the second
+when asked the first teaches nobody anything.
+
+Under it, the tone and the sentence now go through **one runner**: the timeout,
+the shell-free contract, "a missing player is not a diagnosis" and the named
+exit codes are written once and cannot drift apart.
+
+‼️ **Still to come.** Two named pieces, both in the backlog:
+**3b** — `agentFarm.alerts.speak` has no control in the Alert sounds card yet
+and is drawn as a raw JSON box; the op and the setting are complete and
+working. **3c** — reaching the OneCore voices, so an installed Turkish (or
+German, or Japanese) voice can actually be used, which needs the WinRT
+synthesiser rather than `System.Speech`.
+
 ## 3.308.0 - A-20: ten sounds that are ten different objects (2026-08-29)
 
 The second part of A-20 — the palette. The nine tones A-18 generated are one

@@ -354,10 +354,14 @@ import {
 } from './core/superpowers';
 import { lintWiki, normTopics, registerWikiOps, scaffoldWiki, WikiDeps, wikiHealth, WikiStore } from './core/wiki';
 import {
-    alertPlan, playTurnSound, RateLimit, runTurnAlerts, SessionAlertPrefs, SESSION_ALERT_EVENTS,
-    soundCandidates, SoundResult,
+    alertPlan, installedSpeechVoices, playTurnSound, RateLimit, runTurnAlerts,
+    SessionAlertPrefs, SESSION_ALERT_EVENTS, soundCandidates, SoundResult, speakAnnouncement,
     TurnAlertAction, TurnAlertBranch, TurnAlertStore, TURN_ALERT_ACTIONS, TurnKeyDedupe
 } from './core/turnAlerts';
+import {
+    announcement, speakConfig, speaks, SPEAK_DEFAULT, SPEAK_MAX,
+    SPEECH_ONECORE_NOTE, type SpeakConfig
+} from './core/speech';
 import {
     addCustomVoice, AlertEvent, ALERT_EVENTS, AlertVoice, builtinVoices, CustomVoice,
     CUSTOM_LIMIT, DEFAULT_VOICE, EVENT_LABEL, ORIGIN_LABEL, playableOn, removeCustomVoice,
@@ -1306,6 +1310,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const alertNudges = new NudgeStore();
     const nudgeCfg = (): NudgeConfig =>
         nudgeConfig(cfg().get<Partial<NudgeConfig>>('alerts.nudge', {}));
+    /** ‼️ A-20 — READ ON EVERY ALERT, never cached. The template and the voice
+     *  are the two settings a user changes WHILE listening to the result, and a
+     *  value captured at activation would need a restart to be heard. */
+    const speakCfg = (): SpeakConfig =>
+        speakConfig(cfg().get<Partial<SpeakConfig>>('alerts.speak', {}));
     /** ‼️ "STILL WAITING ON THE SAME THING", as one string. Any of the three
      *  moving means the conversation moved on, and a reminder about a question
      *  that has been answered is worse than no reminder at all. */
@@ -1340,7 +1349,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // indistinguishable from an alert that never fired.
         const file = picked.file || turnSoundAsset;
         const key = queueKey || `${s?.sessionId ?? '-'}:${event}`;
-        const ticket = await alertArbiter.submit(key, event, () => playTurnSound(file));
+        /**
+         * ‼️ A-20 — THE TONE AND THE SENTENCE ARE ONE TICKET.
+         *
+         * A tone says what KIND of news this is and is recognised before it
+         * finishes; the sentence says WHICH AGENT and takes two seconds. Both
+         * are wanted, in that order — but submitted as two tickets, another
+         * lane's chime would land in the middle of this one's sentence, which
+         * is the exact overlap the queue exists to stop. So the announcement
+         * runs INSIDE the play function, after the tone has ended.
+         *
+         * What comes back is still the TONE's result. The announcement is an
+         * addition to it, reported on `spoke`; a synthesiser that failed must
+         * not turn an alert the user actually heard into a failed one.
+         */
+        const spk = speakCfg();
+        const ticket = await alertArbiter.submit(key, event, async () => {
+            const tone = await playTurnSound(file);
+            if (!speaks(spk, event)) { return tone; }
+            const said = announcement(spk, {
+                event, agent: s?.agentName, session: s?.sessionId
+            });
+            const spoken = await speakAnnouncement(said, spk);
+            return {
+                ...tone,
+                spoke: said,
+                // The tone is the alert; the sentence is commentary on it. Only
+                // if the sentence FAILED is that worth carrying up, and even
+                // then it never turns `ok` off.
+                stderr: spoken.ok ? tone.stderr
+                    : [tone.stderr, `speech: ${spoken.error ?? spoken.skipped ?? 'failed'}`]
+                        .filter(Boolean).join(' · ').slice(0, 500)
+            };
+        });
         if (!ticket.played) {
             // Dropped by the queue is `skipped`, not `failed` — nothing is
             // broken, the news simply lost its place to more urgent news.
@@ -9279,6 +9320,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     : alertQuiet();
                 muteBar.update();
                 return { ...v, changed: touched, line: quietLine(v) };
+            }
+        },
+        {
+            op: 'alerts.speak',
+            describe: 'SESLİ ANONS — the fleet says WHICH agent out loud (`agentFarm.alerts.speak`). A tone answers "what kind of news is this?" and nothing else; with eight lanes running the question from the next room is WHICH ONE, and no palette can carry a name. Local and free: Windows `System.Speech`, macOS `say`, Linux `spd-say` — no network, no account, no model. It rides BEHIND the tone in the same queue ticket, so nothing plays between a chime and the sentence explaining it, and it goes through the same mute, quiet hours and session mute. Ships OFF, and out of the box announces only `question` — the one event where an agent is STOPPED. Read it with no args and the answer also lists the voices this machine actually has: a Turkish sentence read by an en-US voice is unintelligible, and the language packs are free (Windows ▸ Settings ▸ Time & language ▸ Speech ▸ Add voices). args: on? · events? (subset of turn-ready/question/stalled/ended/error) · template? ({agent}, {event}, {session}; anything else is spoken as typed, so a mistyped placeholder is HEARD rather than swallowed) · rate? (−10…10) · volume? (0…100) · voice? (an installed voice name, empty = system default) · say? (a text to speak RIGHT NOW as a test, gate and queue bypassed)',
+            handler: async (args) => {
+                const raw = args as {
+                    on?: unknown; events?: unknown; template?: unknown;
+                    rate?: unknown; volume?: unknown; voice?: unknown; say?: unknown;
+                };
+                const cur = speakCfg();
+                const touched = ['on', 'events', 'template', 'rate', 'volume', 'voice']
+                    .some(k => (raw as Record<string, unknown>)[k] !== undefined);
+                let next = cur;
+                if (touched) {
+                    next = speakConfig({
+                        on: raw.on === undefined ? cur.on : raw.on === true || raw.on === 'true',
+                        events: raw.events === undefined
+                            ? cur.events
+                            : (Array.isArray(raw.events) ? raw.events : [raw.events]) as AlertEvent[],
+                        template: raw.template === undefined ? cur.template : String(raw.template),
+                        rate: raw.rate === undefined ? cur.rate : Number(raw.rate),
+                        volume: raw.volume === undefined ? cur.volume : Number(raw.volume),
+                        voice: raw.voice === undefined ? cur.voice : String(raw.voice)
+                    });
+                    await cfg().update('alerts.speak', next, vscode.ConfigurationTarget.Global);
+                }
+                // ‼️ THE VOICE LIST IS ASKED OF THE MACHINE, NOT GUESSED. The
+                // commonest way this feature disappoints is a Turkish sentence
+                // read by `Microsoft David`, and the answer is a free language
+                // pack the caller has to be TOLD about.
+                const installed = await installedSpeechVoices();
+                const preview = announcement(next, {
+                    event: next.events[0] ?? 'question', agent: 'developer', session: 'sess-1'
+                });
+                // ‼️ A TEST SPEAKS EVEN WHEN THE FEATURE IS OFF, and says so.
+                // "Does this machine talk at all?" and "is the announcement
+                // switched on?" are two questions, and a test button that
+                // answers the second when asked the first teaches nobody
+                // anything.
+                const said = raw.say === undefined ? null
+                    : await speakAnnouncement(String(raw.say).slice(0, SPEAK_MAX), next);
+                return {
+                    ...next,
+                    changed: touched,
+                    defaults: SPEAK_DEFAULT,
+                    preview,
+                    voices: installed.voices,
+                    voicesError: installed.error,
+                    voicesNote: SPEECH_ONECORE_NOTE,
+                    line: next.on
+                        ? `Announcing ${next.events.join(', ') || '(nothing selected)'}`
+                            + ` as "${preview}"${next.voice ? ` in ${next.voice}` : ''}`
+                        : 'Announcements off — the tones still play',
+                    test: said && {
+                        ok: said.ok, backend: said.backend, spoke: said.spoke,
+                        error: said.error, skipped: said.skipped, ms: said.durationMs
+                    }
+                };
             }
         },
         {
