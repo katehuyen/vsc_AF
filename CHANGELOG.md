@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.337.0 - K-32: the parity that matters is not "both exist" (2026-08-30)
+
+The acceptance half of K-14. The bridge op, the merge and the picker were built
+across K-29 · K-30 · K-31; this is what now **fails the build** if they come
+apart.
+
+**‼️ The Console's door and the bridge op are the same capability, and it is
+pinned by DERIVATION.** `parity.manifest.json` already said so; what makes it
+true is that the page's `slashCommands` handler calls the same
+`scanSlashSources` + `getSlashCommands` rather than assembling a catalog of its
+own. A second assembler would drift on the first engine anybody added, and the
+symptom would be an agent being told about commands the picker never offers. The
+sweep also checks the door hands over the **whole** catalog — the narrowing is
+the page's, per keystroke, and a `q` on that message would be the round trip
+K-29 was built to avoid.
+
+**‼️ X-97's `provider` is carried and does not narrow — now measured as such.**
+A provider decides which *models* a session may run on; nothing anybody has
+measured says it decides which *commands* the CLI offers. The op accepts it and
+returns the identical list, and the test says why: a filter invented here would
+take commands away on the strength of a guess, and the loss would look exactly
+like a catalog that failed to scan.
+
+Also pinned: an engine this build has never measured is not an error — it gets
+what is on disk plus whatever it reports, which is the honest answer for a CLI
+nobody has sat down with.
+
 ## 3.336.0 - K-31: whose command it is, and the one it cannot run here (2026-08-30)
 
 The picker's rows now say the two things a name and a sentence cannot.

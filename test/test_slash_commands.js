@@ -287,6 +287,29 @@ const find = (list, n) => list.find(c => c.name === n);
         r3.state.slashCommands, ['model', 'compact', 'dataviz', 'newthing']);
 }
 
+// ---------- K-32: the picker's answer IS the op's answer ------------------
+//
+// ‼️ THE PARITY THAT MATTERS IS NOT "BOTH EXIST". `parity.manifest.json` says
+// the Console's `slashCommands` message and `toolbox.slashCommands` are the
+// same capability; what makes that true is that the page's door calls the same
+// two functions rather than assembling a catalog of its own. A second
+// assembler would drift on the first engine anybody added, and the symptom
+// would be an agent being told about commands the picker never offers.
+{
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    const at = src.indexOf('case \'slashCommands\'');
+    const block = at < 0 ? '' : src.slice(at, at + 2200);
+    ok('the Console page has a door for the catalog at all', at > 0);
+    ok('‼️ …and it answers off the SAME two functions the bridge op uses',
+        /scanSlashSources\(/.test(block) && /getSlashCommands\(/.test(block));
+    ok('‼️ …rather than a second table nobody would keep in step',
+        !/name:\s*'\//.test(block));
+    // The picker filters in the page (K-29), so the door must not be a
+    // per-keystroke one: it takes no `q` and answers the whole catalog.
+    ok('…and it hands over the WHOLE catalog, because the narrowing is the page\'s',
+        !/\bq:\s/.test(block));
+}
+
 // ---------- the bridge op answers the same way the catalog does ----------
 {
     const { BridgeRegistry } = require(path.join(ROOT, 'out', 'core', 'bridge.js'));
@@ -325,6 +348,30 @@ const find = (list, n) => list.find(c => c.name === n);
         const q = await reg.dispatch('toolbox.slashCommands', { agent: 'dev', q: 'ship' });
         ok('the op narrows the same way the box does',
             q.ok && q.result.count === 1 && q.result.commands[0].name === '/ship');
+
+        // ---- K-32: X-97's `provider` is CARRIED, and it does not narrow ----
+        //
+        // ‼️ MEASURED, OR NOT AT ALL. A provider decides which MODELS a session
+        // may run on; nothing anybody has measured says it decides which
+        // COMMANDS the CLI offers. So the argument travels — an agent may pass
+        // it, and a rule that measures it later will read it — and the answer
+        // is deliberately the same list. A filter invented here would take
+        // commands away from a picker on the strength of a guess, and the loss
+        // would look exactly like a catalog that failed to scan.
+        const noProv = await reg.dispatch('toolbox.slashCommands', { agent: 'dev' });
+        const withProv = await reg.dispatch('toolbox.slashCommands',
+            { agent: 'dev', provider: 'bedrock' });
+        ok('a provider is accepted rather than refused', withProv.ok);
+        eq('‼️ …and changes nothing, because nothing measured says it should',
+            withProv.result.commands.map(c => c.name), noProv.result.commands.map(c => c.name));
+
+        // An engine this build has never measured is not an error: it gets what
+        // is on disk plus whatever it reports, which is the honest answer.
+        const unknown = await reg.dispatch('toolbox.slashCommands',
+            { engine: 'somecli', agent: 'dev' });
+        ok('an engine with no shipped table still answers with the files it can see',
+            unknown.ok && unknown.result.sources.builtin === 0
+            && unknown.result.commands.some(c => c.name === '/ship'));
 
         fs.rmSync(tmp, { recursive: true, force: true });
         fs.rmSync(home, { recursive: true, force: true });
