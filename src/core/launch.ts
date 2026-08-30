@@ -552,6 +552,43 @@ export function withDefaults(o: LaunchOptions, d: LaunchDefaults | undefined): L
  */
 export interface LastLaunch extends LaunchOptions {
     surface?: RunSurface;
+    /**
+     * ‼️ X-134 — AND THE ENGINE'S OWN WORDS, KEPT PER ENGINE.
+     *
+     * The record used to hold ONE model, ONE effort and ONE permission mode for
+     * the whole agent, so the three engines an agent is used on shared a single
+     * row and overwrote each other. Starting OpenCode in `manual` and then
+     * pressing ▶ on the same agent with Claude produced a Claude session in
+     * `manual` — not because anyone said so about Claude, but because the last
+     * thing typed anywhere else was still sitting in the one box there was.
+     *
+     * Keyed by engine id. `byEngine.claude` is what this agent last ran as ON
+     * CLAUDE and answers no question about any other engine, which is the whole
+     * point: switching the engine now RECALLS that engine's setup instead of
+     * dropping to nothing or carrying the previous one across.
+     *
+     * The flat fields above stay and still mean "the last launch, whatever
+     * engine it was on" — they are what a record written before this says, and
+     * `rememberedOn` is the one place that decides which of the two answers.
+     */
+    byEngine?: Record<string, EngineLaunchMemory>;
+}
+
+/**
+ * ‼️ X-134 — THE THREE DIMENSIONS THAT BELONG TO AN ENGINE.
+ *
+ * The model and the effort are the engine's own vocabulary (`opus` means
+ * nothing to Codex). The permission mode is Agent Farm's word, spelled the same
+ * everywhere — but what it TURNS INTO is the engine's (on Codex it becomes a
+ * sandbox chosen up front, on Claude a `--permission-mode` flag that overrides
+ * the settings file), so a person who chose `manual` chose it for the engine
+ * they were looking at. All three are per engine; `superpowers` and `surface`
+ * are not, and stay on the record itself.
+ */
+export interface EngineLaunchMemory {
+    model?: string;
+    effort?: string;
+    permissionMode?: string;
 }
 
 /**
@@ -585,7 +622,10 @@ export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): 
         ...(engine ? { engine: engine as EngineId } : {}),
         model: pick(o.model, prev.model),
         effort: pick(o.effort, prev.effort),
-        permissionMode: pick(o.permissionMode, last.permissionMode),
+        // ‼️ X-134 — `prev`, NOT `last`. The permission mode is per engine like
+        // the other two: reading it off the flat record was how a mode chosen
+        // for one engine arrived on the next one as a flag nobody typed.
+        permissionMode: pick(o.permissionMode, prev.permissionMode),
         ...(sp === undefined ? {} : { superpowers: sp })
     };
 }
@@ -603,9 +643,22 @@ export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): 
  * of levels is looked up BY model, and several engines draw no effort box at
  * all), so it is dropped with it.
  *
- * The permission mode and the discipline are NOT dropped: they are this
- * extension's own vocabulary, spelled the same whatever the engine is, and a
- * person who said "plan mode" said it about the session and not about the CLI.
+ * ‼️ X-134 — AND THE ANSWER IS NO LONGER "NOTHING": THE ENGINE HAS ITS OWN ROW.
+ *
+ * Dropping was only ever half the fix. An agent used on two engines has two
+ * setups, and emptying the boxes on every switch made the user retype the one
+ * they had already chosen ten minutes earlier — so `byEngine` holds one row per
+ * engine and this reads THAT row first. Only when the engine has no row of its
+ * own does the flat record answer, and then only if it does not name a
+ * different engine.
+ *
+ * ‼️ THE PERMISSION MODE FALLS WITH THEM. It used to be kept across the switch
+ * on the grounds that `plan` is Agent Farm's word rather than the CLI's — true
+ * about the spelling, false about the effect: it becomes a FLAG, and a flag
+ * beats the engine's own settings file. A `manual` typed for OpenCode therefore
+ * arrived at Claude as an explicit `--permission-mode manual` and overrode the
+ * `bypassPermissions` the user had set in `~/.claude/settings.json`. Silence is
+ * what lets that file decide, so silence is what an engine with no row gets.
  *
  * ‼️ A RECORD WITH NO ENGINE ON IT IS INHERITED. It predates the engine being
  * recorded, so it cannot contradict anything — and treating silence as a
@@ -615,8 +668,16 @@ export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): 
 export function rememberedOn(engine: string | undefined, last: LastLaunch): LastLaunch {
     const was = (last.engine || '').trim();
     const now = (engine || '').trim();
+    const own = now ? last.byEngine?.[now] : undefined;
+    if (own) {
+        return {
+            ...last,
+            model: own.model ?? '', effort: own.effort ?? '',
+            permissionMode: own.permissionMode ?? ''
+        };
+    }
     if (!was || !now || was === now) { return last; }
-    return { ...last, model: '', effort: '' };
+    return { ...last, model: '', effort: '', permissionMode: '' };
 }
 
 /**
@@ -630,14 +691,38 @@ export function rememberedOn(engine: string | undefined, last: LastLaunch): Last
  * by nature, and re-applying them would give a second session the same name
  * and send the same opening message on the user's behalf.
  */
-export function launchToRemember(o: LaunchOptions, surface?: RunSurface): LastLaunch {
-    return {
-        ...(o.engine ? { engine: o.engine } : {}),
+export function launchToRemember(
+    o: LaunchOptions, surface?: RunSurface, prev?: LastLaunch
+): LastLaunch {
+    const mem: EngineLaunchMemory = {
         model: o.model ?? '',
         effort: o.effort ?? '',
-        permissionMode: o.permissionMode ?? '',
+        permissionMode: o.permissionMode ?? ''
+    };
+    const engine = (o.engine || '').trim();
+    /**
+     * ‼️ X-134 — THE OTHER ENGINES' ROWS SURVIVE THIS LAUNCH.
+     *
+     * `prev` is the record being replaced, and its `byEngine` is carried
+     * forward with only THIS engine's row rewritten. Writing the map from
+     * scratch would make every start erase what the agent runs as on the two
+     * engines it was not started on — a memory that only ever remembers the
+     * last engine, which is the one it already had.
+     *
+     * A launch that names no engine writes no row: the caller means "whatever
+     * the fleet default is", and this module cannot read that setting. Its
+     * flat fields still record what ran, which is what such a record has always
+     * meant. The recorder in `extension.ts` resolves the engine before calling
+     * here, so the unnamed case is the bridge's and the tests', not a door's.
+     */
+    return {
+        ...(o.engine ? { engine: o.engine } : {}),
+        ...mem,
         ...(o.superpowers === undefined ? {} : { superpowers: o.superpowers }),
-        ...(surface ? { surface } : {})
+        ...(surface ? { surface } : {}),
+        ...(engine
+            ? { byEngine: { ...(prev?.byEngine ?? {}), [engine]: mem } }
+            : (prev?.byEngine ? { byEngine: prev.byEngine } : {}))
     };
 }
 

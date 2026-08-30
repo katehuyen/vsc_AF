@@ -64,7 +64,7 @@ const base = read('src/panels/base.ts');
     // defect: a memory the launcher kept and nobody else could see or add to.
     ok('…the surface is stored with the rest of the setup',
         /await rememberLaunch\(agent\.id, o, where\);/.test(ext)
-        && /const rememberLaunch = async \(\s*\n\s*agentId: string, o: LaunchOptions, surface\?: RunSurface\s*\n\s*\): Promise<void> => \{[\s\S]{0,220}\[agentId\]: launchToRemember\(o, surface\)/.test(ext));
+        && /const rememberLaunch = async \(\s*\n\s*agentId: string, o: LaunchOptions, surface\?: RunSurface\s*\n\s*\): Promise<void> => \{[\s\S]{0,1400}\[agentId\]: launchToRemember\(\{ \.\.\.o, engine \}, surface, lastLaunchOf\(agentId\)\)/.test(ext));
     ok('…and read back before the window\'s last answer, then a terminal',
         /const \{ surface: lastWhere, \.\.\.seed \} = lastLaunch\(\)\[agent\.id\] \?\? \{\}/.test(ext)
         && /\?\? context\.globalState\.get<RunSurface>\(SURFACE_KEY\) \?\? 'terminal'/.test(ext));
@@ -132,13 +132,35 @@ const base = read('src/panels/base.ts');
     const startBody = ext.slice(ext.indexOf("registerCommand('agentfarm.startSession'"),
         ext.indexOf("registerCommand('agentfarm.startSession'") + 9000);
     ok('‼️ one-click Start asks for the project as well as the place',
-        /pickRunSurface\(`New session for \$\{agent\.name\}`,\s*\n\s*\{ project: true, last, agentName: agent\.name \}\)/.test(startBody));
-    // ‼️ S-34 (reopened) — and the launch it hands over is the SEEDED one, not a
-    // bare engine. ▶ used to throw the model, the effort, the permission mode
-    // and the discipline away and start the agent on the fleet defaults.
+        /pickRunSurface\(`New session for \$\{agent\.name\}`, \{\s*\n\s*project: true, last, agentName: agent\.name,/.test(startBody));
+    /**
+     * ‼️ X-134 — AND WHAT IT HANDS OVER IS FARM SETTINGS' ANSWER, NOT THE MEMORY'S.
+     *
+     * S-34 made this door inherit the record, which fixed "▶ ignores everything"
+     * and created a worse one: the door asks three questions (engine · project ·
+     * where) and silently answered four more — model, effort, permission mode
+     * and the discipline — out of a record written by a DIFFERENT door on a
+     * DIFFERENT engine. Starting OpenCode in `manual` from the launcher and then
+     * pressing ▶ for Claude gave a Claude session in `manual`, whose explicit
+     * `--permission-mode` overrode the `bypassPermissions` in the user's own
+     * settings file.
+     *
+     * Here the agent is known and the dialog makes you choose the engine, so
+     * both halves of the Settings key are settled before anything starts — and
+     * `agentEngineSeed` is that resolution: this agent's per-engine default →
+     * the fleet default → the engine's own file. Deterministic, and the same
+     * pair of functions the spawn itself applies.
+     */
     ok('…and the answer really reaches the launch',
-        /const o = seedLastLaunch\(agent\.id, \{ engine: chosen\.engine as EngineId \}\);/.test(startBody)
+        /const o = agentEngineSeed\(agent, \(chosen\.engine \|\| 'claude'\) as EngineId\);/.test(startBody)
         && /startClaudeSession\(agent, o, undefined, undefined, chosen\.projectId\)/.test(startBody));
+    ok('…built out of the SAME two layers the spawn applies, not a second copy',
+        /const agentEngineSeed = \(agent: AgentInfo, engine: EngineId\): LaunchOptions =>\s*\n\s*withDefaults\(withAgentEngineDefaults\(agent, \{ engine \}\), launchDefaults\(\)\);/.test(ext));
+    // ‼️ …AND THE HEADER LINE FOLLOWS IT. A picker that kept quoting the record
+    // while the door resolved from Settings would describe a session that is not
+    // the one about to run — the exact failure mode of a setup line.
+    ok('…and the picker prints what THIS door will start',
+        /setup: \(e\) => agentEngineSeed\(agent, \(e \|\| 'claude'\) as EngineId\)/.test(startBody));
     ok('…and the terminal arm records what it just ran, like every other door',
         /await rememberLaunch\(agent\.id, o, 'terminal'\);/.test(startBody));
     // ▶ → In the Console opens the COMPOSER: the project can only be chosen

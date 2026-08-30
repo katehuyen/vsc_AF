@@ -254,9 +254,24 @@ const launchTs = read('src', 'core', 'launch.ts');
         L.withLastLaunch({ engine: 'claude' }, last).model, '');
     eq('…and the effort goes with it, being read off the model',
         L.withLastLaunch({ engine: 'claude' }, last).effort, '');
-    eq('…while the permission mode is not the engine\'s word and stays',
-        L.withLastLaunch({ engine: 'claude' }, last).permissionMode, 'plan');
-    eq('…and the discipline stays too',
+    /**
+     * ‼️ X-134 — AND THE PERMISSION MODE FALLS WITH THEM.
+     *
+     * S-34 kept it across the switch on the grounds that `plan` is Agent Farm's
+     * word rather than any CLI's. True about the spelling, false about the
+     * effect: it becomes a FLAG, and a flag beats the engine's own settings
+     * file. The user's measured case — OpenCode started in `manual`, then ▶ on
+     * the same agent with Claude — produced a Claude session carrying an
+     * explicit `--permission-mode manual` that overrode the
+     * `bypassPermissions` in their own `~/.claude/settings.json`. Nobody said
+     * `manual` about Claude; the one box there was still had it.
+     *
+     * Silence is what lets that file decide, so silence is what an engine with
+     * no row of its own gets.
+     */
+    eq('…and so does the permission mode, which becomes a flag on the new engine',
+        L.withLastLaunch({ engine: 'claude' }, last).permissionMode, '');
+    eq('…while the discipline stays: it is the agent\'s word, not an engine\'s',
         L.withLastLaunch({ engine: 'claude' }, { ...last, superpowers: true }).superpowers, true);
     eq('the same engine restated still inherits everything',
         L.withLastLaunch({ engine: 'codex' }, last).model, 'opus');
@@ -264,6 +279,35 @@ const launchTs = read('src', 'core', 'launch.ts');
         L.withLastLaunch({ engine: 'claude' }, { model: 'opus', effort: 'high' }).model, 'opus');
     eq('what THIS launch states on the new engine is never dropped',
         L.withLastLaunch({ engine: 'claude', model: 'sonnet' }, last).model, 'sonnet');
+
+    /**
+     * ‼️ X-134 — AND THE ANSWER IS NO LONGER "NOTHING": THE ENGINE HAS A ROW.
+     *
+     * Dropping was half the fix. An agent used on two engines has two setups,
+     * and emptying the boxes on every switch made the user retype the one they
+     * had chosen on that engine an hour earlier. `byEngine` holds one row per
+     * engine and it is read FIRST — the flat fields only answer for an engine
+     * that has no row, and then only if they do not name a different one.
+     */
+    const twoEngines = {
+        engine: 'opencode', model: 'ling', effort: '', permissionMode: 'manual',
+        byEngine: {
+            opencode: { model: 'ling', effort: '', permissionMode: 'manual' },
+            claude: { model: 'opus', effort: 'xhigh', permissionMode: 'bypassPermissions' }
+        }
+    };
+    eq('the engine\'s own row is what a switch recalls',
+        L.withLastLaunch({ engine: 'claude' }, twoEngines).model, 'opus');
+    eq('…including the effort',
+        L.withLastLaunch({ engine: 'claude' }, twoEngines).effort, 'xhigh');
+    eq('…and its own permission mode, not the other engine\'s',
+        L.withLastLaunch({ engine: 'claude' }, twoEngines).permissionMode, 'bypassPermissions');
+    eq('…and switching back finds the first one untouched',
+        L.withLastLaunch({ engine: 'opencode' }, twoEngines).permissionMode, 'manual');
+    eq('an engine with no row of its own still gets silence',
+        L.withLastLaunch({ engine: 'codex' }, twoEngines).permissionMode, '');
+    eq('what THIS launch states still beats the row',
+        L.withLastLaunch({ engine: 'claude', model: 'sonnet' }, twoEngines).model, 'sonnet');
 
     // ---- and what gets written back ----
     const kept = L.launchToRemember(
@@ -273,6 +317,62 @@ const launchTs = read('src', 'core', 'launch.ts');
     eq('the five dimensions and the surface are kept',
         [kept.engine, kept.model, kept.effort, kept.permissionMode, kept.superpowers, kept.surface].join(),
         'claude,opus,high,plan,true,console');
+    eq('…and the same three are filed under the engine that ran them',
+        JSON.stringify(kept.byEngine),
+        '{"claude":{"model":"opus","effort":"high","permissionMode":"plan"}}');
+    // ‼️ X-134 — AND THE OTHER ENGINES' ROWS SURVIVE THE LAUNCH. Writing the map
+    // from scratch would make every start erase what the agent runs as on the
+    // engines it was not started on — a memory that only remembers the last
+    // engine, which is the one it already had.
+    const merged = L.launchToRemember(
+        { engine: 'claude', model: 'sonnet', effort: '', permissionMode: '' },
+        'terminal', twoEngines);
+    // ‼️ Reached with `?.`, not with a dot: a lost row is exactly what this
+    // checks for, and a gate that CRASHES on the defect it is watching for
+    // reports a broken test rather than a broken behaviour.
+    eq('a launch rewrites its own engine\'s row',
+        merged.byEngine?.claude?.model, 'sonnet');
+    eq('…and leaves the other engine\'s alone',
+        merged.byEngine?.opencode?.permissionMode, 'manual');
+    // A launch that names no engine writes no row: this module cannot read the
+    // fleet default, and guessing `claude` would file another engine's setup
+    // under Claude's name. The recorder in extension.ts resolves it first.
+    ok('a launch with no engine files no row',
+        L.launchToRemember({ model: 'x' }, 'terminal').byEngine === undefined);
+    ok('…and does not destroy the rows already there',
+        L.launchToRemember({ model: 'x' }, 'terminal', twoEngines).byEngine?.claude?.model === 'opus');
+    /**
+     * ‼️ X-134 — THE REPORTED FAULT, WALKED END TO END THROUGH THE TWO REAL
+     * FUNCTIONS RATHER THAN ASSERTED ABOUT.
+     *
+     * The user's own sequence: start OpenCode from the launcher without
+     * permissions (manual), then press ▶ on the same agent and choose Claude —
+     * whose default in their `~/.claude/settings.json` is `bypassPermissions`.
+     * The Claude session came up `manual`. Nobody had said `manual` about
+     * Claude; the record had one permission box for the whole agent, and an
+     * explicit flag beats a settings file.
+     */
+    {
+        const afterOpenCode = L.launchToRemember(
+            { engine: 'opencode', model: 'ling', permissionMode: 'manual' }, 'console');
+        eq('the OpenCode launch is filed under OpenCode',
+            afterOpenCode.byEngine?.opencode?.permissionMode, 'manual');
+        eq('‼️ and Claude does not inherit it — silence lets its own file decide',
+            L.withLastLaunch({ engine: 'claude' }, afterOpenCode).permissionMode, '');
+        eq('…nor the model it cannot run',
+            L.withLastLaunch({ engine: 'claude' }, afterOpenCode).model, '');
+        // …and going back to OpenCode still finds what was actually chosen there.
+        const afterClaude = L.launchToRemember(
+            { engine: 'claude', model: '', effort: 'xhigh', permissionMode: '' },
+            'console', afterOpenCode);
+        eq('returning to OpenCode finds its own answer intact',
+            L.withLastLaunch({ engine: 'opencode' }, afterClaude).permissionMode, 'manual');
+        eq('…while Claude keeps the effort Farm Settings gave it',
+            L.withLastLaunch({ engine: 'claude' }, afterClaude).effort, 'xhigh');
+    }
+
+    ok('the recorder resolves the engine before it writes, so no door can leave one out',
+        /const engine = \(\(o\.engine \?\? launchDefaults\(\)\.engine \?\? ''\) \|\| 'claude'\) as EngineId;\s*\n\s*await context\.globalState\.update\(LAST_LAUNCH_KEY/.test(extTs));
     // ‼️ …AND THE PER-LAUNCH ONES ARE NOT. Re-applying them would give the next
     // session the same name and send the same opening message on the user's
     // behalf — the one thing a "remembered setup" must never do.
@@ -292,9 +392,26 @@ const launchTs = read('src', 'core', 'launch.ts');
         && /export function withLastLaunch/.test(launchTs));
 
     // ---- the doors ----
-    // ▶ on an agent's row / the command palette / the tree menus.
-    ok('▶ seeds from the record',
-        /const o = seedLastLaunch\(agent\.id, \{ engine: chosen\.engine as EngineId \}\);/.test(extTs));
+    /**
+     * ‼️ X-134 — ▶ IS THE ONE DOOR THAT DOES **NOT** SEED FROM THE RECORD, AND
+     * SAYING SO IS PART OF THE RULE.
+     *
+     * S-34 made every door inherit, which was right for the doors that SHOW the
+     * setup and wrong for the one that does not: ▶ asks engine · project · where
+     * and would answer four more questions out of a record written elsewhere, on
+     * another engine, with nothing on screen mentioning it. Here the agent is
+     * known and the dialog settles the engine, so both halves of the Farm
+     * Settings key are in hand — and Settings is what answers.
+     *
+     * The record is still READ, for the two answers the dialog draws as rows and
+     * labels "• last used": which engine it opens on, and which surface. A value
+     * you can see and overrule in the same breath is not the defect.
+     */
+    ok('▶ resolves its setup from Farm Settings, not from the record',
+        /const o = agentEngineSeed\(agent, \(chosen\.engine \|\| 'claude'\) as EngineId\);/.test(extTs)
+        && !/const o = seedLastLaunch\(agent\.id, \{ engine: chosen\.engine as EngineId \}\);/.test(extTs));
+    ok('…and Claude\'s per-agent EFFORT finally reaches a command line',
+        /model: \(o\.model \?\? ''\)\.trim\(\) \|\| \(engine === 'claude' \? '' : own\.model\) \|\| '',\s*\n\s*effort: \(o\.effort \?\? ''\)\.trim\(\) \|\| own\.effort \|\| ''/.test(extTs));
     ok('…and carries it into the Console composer as well as the terminal',
         /launch: \{\s*\n\s*model: o\.model, effort: o\.effort,\s*\n\s*permissionMode: o\.permissionMode, superpowers: o\.superpowers\s*\n\s*\}/.test(extTs));
     // "Talk to agent" — the door with the fewest questions, which is exactly why
@@ -432,8 +549,21 @@ const launchTs = read('src', 'core', 'launch.ts');
     // Being per-engine is a thing that has to be CHECKED — the setup names the
     // engine it was built for and the seeder tests it — and the engine-change
     // handler, which is the plain case, passes no keep at all.
-    ok('changing the engine still clears what that engine cannot run',
-        /reconcileComposer\(next, false\);/.test(consoleJs));
+    /**
+     * ‼️ X-134 — AND THE ENGINE YOU MOVE TO BRINGS ITS OWN SETUP BACK.
+     *
+     * Clearing was right and was only half the answer. The page is now the
+     * mirror of `rememberedOn`: the engine's own row, else the flat record when
+     * it names this engine or names none, else nothing — and nothing is what
+     * leaves that engine's own settings file in charge. The permission box moves
+     * with the other two, because it was the one carrying a value across.
+     */
+    ok('changing the engine recalls THAT engine\'s row',
+        /const mem = memoryOn\(rec, next\);\s*\n\s*st\.model = \(mem && mem\.model\) \|\| '';\s*\n\s*st\.effort = \(mem && mem\.effort\) \|\| '';\s*\n\s*st\.permissionMode = \(mem && mem\.permissionMode\) \|\| '';/.test(consoleJs));
+    ok('…through the page\'s mirror of the core rule, not a second guess',
+        /function memoryOn\(last, engineId\) \{[\s\S]{0,400}last\.byEngine\[eng\][\s\S]{0,300}was === eng\) \{ return last; \}\s*\n\s*return null;/.test(consoleJs));
+    ok('…and an engine with no row still ends up empty, which is what silence means',
+        /reconcileComposer\(next, false,\s*\n\s*mem \? \{ model: st\.model, effort: st\.effort \} : null\);/.test(consoleJs));
 }
 
 /* ---------- the setup line: what is about to start, on the row that starts it */

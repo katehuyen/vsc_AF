@@ -2897,17 +2897,44 @@
      * is "never started" and falls through to the fleet defaults — a different
      * answer from a record that says nothing.
      */
+    /**
+     * ‼️ X-134 — ONE AGENT'S RECORD, READ FOR ONE ENGINE.
+     *
+     * The host keeps `byEngine`: one row of model/effort/permission per engine,
+     * because those three are the engine's own answer and a single shared row
+     * meant OpenCode's `manual` turned up on Claude. The page is the mirror of
+     * `rememberedOn` in `core/launch.ts` and follows the same three steps: the
+     * engine's own row, else the flat record when it names this engine or names
+     * none (it predates `byEngine` and cannot contradict anything), else
+     * nothing — which is what lets the engine's own settings file decide.
+     */
+    function memoryOn(last, engineId) {
+        if (!last) { return null; }
+        const eng = (engineId || '').trim();
+        const own = eng && last.byEngine ? last.byEngine[eng] : null;
+        if (own) { return own; }
+        const was = (last.engine || '').trim();
+        if (!was || !eng || was === eng) { return last; }
+        return null;
+    }
+
     function seedFromAgent(agentId) {
         const a = (DATA.agents || []).find(x => x.id === agentId);
-        const last = (a && a.lastLaunch) || null;
+        const rec = (a && a.lastLaunch) || null;
         const d = DATA.defaults || {};
+        // The engine this record lands on is decided below; the values have to
+        // be that engine's, or the boxes describe a setup that never ran.
+        const last = memoryOn(rec, (rec && rec.engine) || engineNow());
         st.model = (last && last.model) || d.model || '';
         st.effort = (last && last.effort) || d.effort || '';
         st.permissionMode = (last && last.permissionMode) || d.permissionMode || '';
         // The engine is the host's answer, not a page value: `setEngine` is how
         // it is changed anywhere else in this panel, and a second path would let
         // the box and the spawn disagree about which CLI was chosen.
-        const eng = (last && last.engine) || '';
+        // ‼️ …off the RECORD, not off `last`: a per-engine row holds the three
+        // values and nothing else, so asking it which engine it is would return
+        // undefined and silently move the composer to whatever is showing.
+        const eng = (rec && rec.engine) || '';
         const nextEngine = eng || engineNow();
         // S-34 - the record IS a launch that happened, on the engine it names,
         // so its model and effort survive the catalog check for that engine. A
@@ -2920,9 +2947,10 @@
         // …and the discipline switch, which also lives host-side. '' means "this
         // agent's own default", which is exactly what a never-started agent
         // should land on. Only posted when it would actually change something —
-        // every message here costs a repaint.
-        const want = last && typeof last.superpowers === 'boolean'
-            ? (last.superpowers ? 'on' : 'off') : '';
+        // every message here costs a repaint. It is the AGENT's answer and not
+        // an engine's, so it is read off the record rather than a per-engine row.
+        const want = rec && typeof rec.superpowers === 'boolean'
+            ? (rec.superpowers ? 'on' : 'off') : '';
         if (want !== (DATA.superpowersChoice || '')) {
             vscode.postMessage({ type: 'setSuperpowers', on: want === '' ? null : want === 'on' });
         }
@@ -3378,7 +3406,27 @@
             // the moment the new engine stops offering it. Keeping it quietly is
             // how the box came to disagree with the engine in the first place.
             const next = e.target.value;
-            reconcileComposer(next, false);
+            /**
+             * ‼️ X-134 — AND THE ENGINE YOU MOVED TO HAS ITS OWN SETUP.
+             *
+             * Dropping the previous engine's model was right and was only half
+             * the answer: an agent used on two engines has two setups, and
+             * emptying the boxes made the user retype the one they had chosen on
+             * that engine an hour earlier. The record is per engine now, so the
+             * switch RECALLS rather than clears — and the permission mode moves
+             * with it, because it is the box that had been carrying one engine's
+             * answer onto every other one.
+             *
+             * A engine with no row of its own still ends up empty, and empty is
+             * what leaves that engine's own settings file in charge.
+             */
+            const rec = ((DATA.agents || []).find(x => x.id === (st.agentId || '')) || {}).lastLaunch;
+            const mem = memoryOn(rec, next);
+            st.model = (mem && mem.model) || '';
+            st.effort = (mem && mem.effort) || '';
+            st.permissionMode = (mem && mem.permissionMode) || '';
+            reconcileComposer(next, false,
+                mem ? { model: st.model, effort: st.effort } : null);
             save();
             vscode.postMessage({ type: 'setEngine', id: next });
         });

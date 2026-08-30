@@ -2,6 +2,59 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.344.0 - X-134: a remembered setup belongs to ONE engine, and ▶ answers from Settings (2026-08-30)
+
+**The reported fault, in the user's own sequence.** Start OpenCode from the
+launcher without permissions (`manual`). Then press ▶ on the same agent's row and
+choose Claude — whose default in `~/.claude/settings.json` is
+`bypassPermissions`. The Claude session came up in `manual`. Nobody had ever said
+`manual` about Claude.
+
+Three separate defects were behind it, and this release closes all three.
+
+**1. The memory had ONE box for an agent used on three engines.** The record kept
+one model, one effort and one permission mode per agent, so every engine
+overwrote the last. S-34 had already dropped the model and the effort on an
+engine switch — half a fix, because dropping is not remembering: an agent used on
+two engines has two setups, and emptying the boxes made the user retype the one
+they had chosen on that engine an hour earlier. The record now holds `byEngine`,
+one row per engine, and a switch **recalls** that engine's setup. The other
+engines' rows survive every launch.
+
+‼️ **And the permission mode falls with them.** S-34 kept it across the switch on
+the grounds that `plan` is Agent Farm's word rather than any CLI's — true about
+the spelling, false about the effect. It becomes a **flag**, and a flag beats the
+engine's own settings file. Silence is what lets that file decide, so silence is
+what an engine with no row of its own gets.
+
+**2. ▶ answered four questions it never asked.** The ▶ on an agent's row asks
+engine · project · where, and inherited the model, the effort, the permission
+mode and the discipline from a record written by a **different door** on a
+**different engine**, with nothing on screen mentioning any of them. But at that
+door the agent is known and the dialog makes you choose the engine — both halves
+of the Farm Settings key are settled before anything starts. So that channel now
+resolves the way the Settings page draws it: this agent's per-engine default →
+`agentFarm.launchDefaults` → the engine's own settings file. The same agent on
+the same engine gives the same session every time.
+
+It still reads the record for the two answers its dialog **draws as rows** and
+labels "• last used": which engine to open on, and which surface. A value you can
+see and overrule in the same breath is not the defect.
+
+**3. Claude's per-agent EFFORT was a control that stored what it was told and
+changed nothing.** `withAgentEngineDefaults` returned early for Claude, on the
+correct ground that its CLI reads `<agent>/.claude/settings.json` itself and
+passing the same **model** again would be a second source of truth. The early
+return took the **effort** with it — and nothing anywhere reads an effort out of
+that file; Claude Code has no such key. So Farm Settings drew an effort box on
+the Claude row, wrote `agentEngineDefaults[<agent>].claude.effort`, and no session
+ever carried it. Now only the model is left to Claude's own file; the effort goes
+through the layer like every other engine's, as `--effort` on the command line.
+
+**Not touched:** resumed sessions still reopen exactly as they were left — that is
+a different question with its own answer, and this release does not go near it.
+Launch Profiles are a separate store and are unchanged.
+
 ## 3.343.0 - X-100 (core): who owns which fact, and where the vault boundary runs (2026-08-30)
 
 ‼️ **The core half of X-100. The Engines/Providers surface, its bridge ops and

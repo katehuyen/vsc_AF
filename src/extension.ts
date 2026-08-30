@@ -9215,7 +9215,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.lastLaunch',
-            describe: 'What an agent was LAST started with — engine, model, effort, permissionMode, superpowers and the surface it ran on. ‼️ S-34 — this is the record every UI door now opens on: the ▶ on an agent\'s row, the multi-dimension launcher, the Console composer, "Talk to agent" and the Projects page all seed from it, and every launch that actually happens (including sessions.start) writes it back. Read it to answer "how does this agent normally run" without guessing, or to check what a door will offer before you tell the user to press it. An agent that has never been started answers null; a field that was left at "default" when it ran is stored empty and still falls through to agentFarm.launchDefaults. Reads only — nothing is started and nothing is written. args: agent? (name|id — omit for every agent that has a record)',
+            describe: 'What an agent was LAST started with — engine, model, effort, permissionMode, superpowers and the surface it ran on, PLUS `byEngine`: the same model/effort/permissionMode kept separately for every engine that agent has been started on. ‼️ X-134 — those three are the ENGINE\'s answer and are read out of `byEngine[<engine>]` first; the flat fields are the last launch whatever engine it was on, and only answer for an engine that has no row of its own (and then only if they do not name a different engine). That is why a `manual` chosen for OpenCode no longer arrives at Claude as a flag overriding its settings file. `superpowers` and `surface` are the agent\'s own answer and stay flat. ‼️ S-34 — the multi-dimension launcher, the Console composer, "Talk to agent" and the Projects page seed from this record, and every launch that actually happens (including sessions.start) writes it back. ‼️ THE ▶ ON AN AGENT\'S ROW DELIBERATELY DOES NOT: it knows the agent and its dialog settles the engine, so it resolves model/effort/permission from Farm Settings instead (agentFarm.agentEngineDefaults for that agent+engine → agentFarm.launchDefaults → the engine\'s own settings file). It still reads the record for the two answers its dialog draws as rows — which engine and which surface to open on. Read this to answer "how does this agent normally run" without guessing. An agent that has never been started answers null; a field left at "default" when it ran is stored empty and still falls through. Reads only — nothing is started and nothing is written. args: agent? (name|id — omit for every agent that has a record)',
             handler: (args) => {
                 const who = optStr(args, 'agent');
                 if (who) {
@@ -16685,15 +16685,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     const withAgentEngineDefaults = (agent: AgentInfo, o: LaunchOptions): LaunchOptions => {
         const engine = ((o.engine ?? launchDefaults().engine ?? '') || 'claude') as EngineId;
-        if (engine === 'claude') { return o; }
         const store = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
         const own = storedDefault(store, agent.dir, engine);
         return {
             ...o,
-            model: (o.model ?? '').trim() || own.model || '',
+            /**
+             * ‼️ X-134 — THE MODEL IS CLAUDE'S FILE'S, THE EFFORT IS NOT.
+             *
+             * This whole function used to return early for Claude, on the
+             * correct ground that its CLI reads `<agent>/.claude/settings.json`
+             * itself and passing the same model again would be a second source
+             * of truth. But the early return took the EFFORT with it, and
+             * nothing anywhere reads an effort out of that file — Claude Code
+             * has no such key. So Farm Settings drew an effort box on the Claude
+             * row, wrote `agentEngineDefaults[<agent>].claude.effort`, and no
+             * session ever carried it: a control that stores what it is told and
+             * changes nothing, which is the exact shape of the U-29 bug this
+             * store was created to end.
+             *
+             * Now only the MODEL is left to Claude's own file; the effort goes
+             * through the layer like every other engine's, as `--effort` on the
+             * command line (`buildLaunchCommand`).
+             */
+            model: (o.model ?? '').trim() || (engine === 'claude' ? '' : own.model) || '',
             effort: (o.effort ?? '').trim() || own.effort || ''
         };
     };
+
+    /**
+     * ‼️ X-134 — WHAT THE SETTINGS SAY THIS AGENT RUNS AS ON THIS ENGINE, with
+     * no memory in it at all.
+     *
+     * The resolution the Farm Settings page draws, as a value a door can hand
+     * to a composer: the agent's own per-engine default → the fleet-wide
+     * `agentFarm.launchDefaults` → nothing, which is what leaves the engine's
+     * own settings file in charge. It is deliberately the SAME pair of
+     * functions `startClaudeSession` and `startConsoleSession` apply at spawn,
+     * so a door that shows the setup and a door that runs it cannot disagree.
+     *
+     * This is the answer for a door where the agent AND the engine are both
+     * already settled — see `agentfarm.startSession`.
+     */
+    const agentEngineSeed = (agent: AgentInfo, engine: EngineId): LaunchOptions =>
+        withDefaults(withAgentEngineDefaults(agent, { engine }), launchDefaults());
 
     /** Build + launch one claude session. Defaults fill whatever the caller
      *  left open; an invalid value is reported here rather than in a terminal
@@ -16985,9 +17019,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const rememberLaunch = async (
         agentId: string, o: LaunchOptions, surface?: RunSurface
     ): Promise<void> => {
+        /**
+         * ‼️ X-134 — THE ENGINE IS RESOLVED HERE, because the record is keyed by
+         * it and `core/launch.ts` cannot read a VS Code setting.
+         *
+         * A door that left `engine` empty meant "the fleet default", which is
+         * `claude` unless the user changed it — and storing that launch under no
+         * engine at all would put its model and its permission mode in the flat
+         * fields, where the NEXT engine would read them. That is the leak this
+         * item is about, arriving through the back door. What actually ran is
+         * what gets written down.
+         */
+        const engine = ((o.engine ?? launchDefaults().engine ?? '') || 'claude') as EngineId;
         await context.globalState.update(LAST_LAUNCH_KEY, {
             ...lastLaunch(),
-            [agentId]: launchToRemember(o, surface)
+            // …and the previous record, so the OTHER engines' rows survive.
+            [agentId]: launchToRemember({ ...o, engine }, surface, lastLaunchOf(agentId))
         });
     };
 
@@ -19344,6 +19391,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             /** …and whose memory it is, so the row can say so rather than
              *  claiming the window's answer for an agent that never had it. */
             agentName?: string;
+            /**
+             * ‼️ X-134 — WHAT THIS DOOR WILL ACTUALLY START, for the header line.
+             *
+             * The header used to build the setup out of `last` alone, which was
+             * right while every door inherited the memory and wrong the moment
+             * one stopped: ▶ now resolves from Farm Settings, and a header that
+             * kept quoting the record would describe a session that is not the
+             * one about to run. So the door that knows how it resolves says so,
+             * and the picker prints it. Absent = the memory, as before.
+             */
+            setup?: (engine: string) => LaunchOptions;
         } = {}
     ): Promise<RunChoice | undefined> => {
         // ‼️ `engine: false` is for the ONE caller that already has an engine row
@@ -19457,15 +19515,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * effort the person could not see anywhere. It is the same setup
              * line the launcher's Start row carries, off the same memory.
              */
-            const setup = opts.last
-                ? ' — ' + launchSummary(
-                    withLastLaunch({ engine: engine as EngineId }, opts.last),
-                    {
-                        superpowers: opts.last.superpowers
-                            ?? (opts.agentName ? superpowersOnFor(opts.agentName) : undefined),
-                        project: launchProjectName(projectId)
-                    })
-                : '';
+            const setup = opts.setup
+                ? ' — ' + launchSummary(opts.setup(engine), {
+                    superpowers: opts.agentName ? superpowersOnFor(opts.agentName) : undefined,
+                    project: launchProjectName(projectId)
+                })
+                : opts.last
+                    ? ' — ' + launchSummary(
+                        withLastLaunch({ engine: engine as EngineId }, opts.last),
+                        {
+                            superpowers: opts.last.superpowers
+                                ?? (opts.agentName ? superpowersOnFor(opts.agentName) : undefined),
+                            project: launchProjectName(projectId)
+                        })
+                    : '';
             const pick = await vscode.window.showQuickPick(items, {
                 placeHolder: `${what} — where should it run?${setup}`, ignoreFocusOut: true
             });
@@ -26049,17 +26112,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // wherever it is started from, not only in the Console's
                 // composer, and it opens on the window's active project when
                 // there is one (see launchProjectRow).
+                //
+                // ‼️ X-134 — THE RECORD IS STILL READ, FOR THE TWO ANSWERS THE
+                // PICKER SHOWS AND ASKS ABOUT: which engine it opens on and
+                // which surface. Both are rows in the dialog, both are labelled
+                // "• last used for <agent>", and both are the user's to change
+                // before pressing anything. A remembered value you can see and
+                // overrule in the same breath is not the defect below.
                 const chosen: RunChoice | undefined = arg?.surface
                     ? {
                         surface: arg.surface, projectId: '',
                         engine: last?.engine || launchDefaults().engine || 'claude'
                     }
-                    : await pickRunSurface(`New session for ${agent.name}`,
-                        { project: true, last, agentName: agent.name });
+                    : await pickRunSurface(`New session for ${agent.name}`, {
+                        project: true, last, agentName: agent.name,
+                        setup: (e) => agentEngineSeed(agent, (e || 'claude') as EngineId)
+                    });
                 if (!chosen) { return; }
-                // What the picker settled wins; the memory fills in the four
-                // dimensions the picker never asked about.
-                const o = seedLastLaunch(agent.id, { engine: chosen.engine as EngineId });
+                /**
+                 * ‼️ X-134 — AND THE REST COMES FROM FARM SETTINGS, NOT FROM THE
+                 * MEMORY. THE USER'S OWN WORDING, AND IT IS EXACT: "when you
+                 * start from there the agent is known, the dialog makes you pick
+                 * the engine so the engine is known too — and if those two are
+                 * known then Settings already has this agent's default model,
+                 * its default effort and its permission for that engine. So a
+                 * launch from THAT channel has to open with them."
+                 *
+                 * This door asks three questions (engine · project · where) and
+                 * used to inherit four more — model, effort, permission mode and
+                 * the discipline — from a record written by a DIFFERENT door, on
+                 * a DIFFERENT engine, that nothing on screen mentioned. Opening
+                 * OpenCode in `manual` from the launcher and then pressing ▶ for
+                 * Claude therefore produced a Claude session in `manual`, with a
+                 * `--permission-mode manual` overriding the `bypassPermissions`
+                 * the user had set in their own settings file.
+                 *
+                 * So this channel resolves the way the Settings page draws it:
+                 * this agent's per-engine default → the fleet default → the
+                 * engine's own file. Deterministic — the same agent on the same
+                 * engine gives the same session every time, whatever anyone did
+                 * in another window ten minutes ago.
+                 *
+                 * `superpowers` is left unstated on purpose: it is the same
+                 * decision one dimension along, and unstated is precisely how
+                 * `agentFarm.superpowersDefaults` gets to answer it.
+                 */
+                const o = agentEngineSeed(agent, (chosen.engine || 'claude') as EngineId);
                 if (chosen.surface === 'console') {
                     /**
                      * ‼️ THE CONSOLE OPENS ITS COMPOSER — IT DOES NOT SPAWN.
