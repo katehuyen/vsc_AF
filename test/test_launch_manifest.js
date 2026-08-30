@@ -166,5 +166,34 @@ console.log('\n== the line a person reads names the route AND the request ==');
         /inherited route/.test(M.describeManifest(none)) === false);
 }
 
+console.log('\n== the join to the run that was identified ==');
+{
+    const a = base({ launchId: 'lch_aaa' });
+    const b = base({ launchId: 'lch_bbb', cwd: 'D:/other' });
+    eq('a binding carrying a launchId finds its own manifest',
+        M.manifestOf([a, b], { launchId: 'lch_bbb' }).cwd, 'D:/other');
+    ok('‼️ a binding with NO launchId gets undefined, not the nearest or the newest — '
+        + 'every binding written before X-102 is in that state, and a run whose setup '
+        + 'is genuinely unknown must read as unknown. An invented certainty is worse '
+        + 'than a gap, because a gap is visible',
+        M.manifestOf([a, b], {}) === undefined
+        && M.manifestOf([a, b], undefined) === undefined
+        && M.manifestOf([a, b], { launchId: '   ' }) === undefined);
+    ok('…and an id nothing matches is undefined too',
+        M.manifestOf([a, b], { launchId: 'lch_zzz' }) === undefined);
+    ok('an empty store answers nothing rather than throwing',
+        M.manifestOf([], { launchId: 'lch_aaa' }) === undefined);
+
+    // ‼️ THE REASON THE JOIN IS NOT `taskId`. A task can be retried, and a retry
+    // is a NEW spawn with its own route resolution and its own manifest under
+    // the same task — keyed off the task, the second run would silently claim
+    // the first one's setup and the record would say two runs shared a route
+    // they never shared.
+    const fs = require('fs');
+    const bind = fs.readFileSync(path.join(ROOT, 'src', 'core', 'launchBinding.ts'), 'utf8');
+    ok('‼️ the binding carries the launchId, and says why it is not the task id',
+        /launchId\?: string;/.test(bind) && /NOT A SECOND `taskId`/.test(bind));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

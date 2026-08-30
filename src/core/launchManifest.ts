@@ -236,6 +236,30 @@ export function manifestLeaks(m: unknown, path = ''): string[] {
 }
 
 /**
+ * ‼️ X-102 — THE MANIFEST FOR A RUN SOMETHING ELSE ALREADY IDENTIFIED.
+ *
+ * The join between the two records, written once so no surface invents its own.
+ * A binding answers "which run produced this transcript"; a manifest answers
+ * "what was that run set up to be". The transcript answers neither, so the pair
+ * is the whole historical record and the `launchId` is the only thing holding
+ * them together.
+ *
+ * ‼️ `undefined` IS A REAL ANSWER AND THE COMMON ONE FOR A WHILE: every binding
+ * written before this item carries no launchId, and a run whose manifest was
+ * lost is a run whose setup is genuinely unknown. Returning a nearest-match or a
+ * newest-manifest guess would be inventing exactly the certainty this family
+ * exists to refuse — an unknown route stated as a known one is worse than a gap,
+ * because a gap is visible.
+ */
+export function manifestOf(
+    manifests: readonly LaunchManifest[], run: { launchId?: string } | undefined
+): LaunchManifest | undefined {
+    const id = str(run?.launchId);
+    if (!id) { return undefined; }
+    return (manifests || []).find(m => m && m.launchId === id);
+}
+
+/**
  * One line a person can read, for a notice or a row.
  *
  * ‼️ IT NAMES THE ROUTE AND THE REQUEST SEPARATELY, because that is the pair the

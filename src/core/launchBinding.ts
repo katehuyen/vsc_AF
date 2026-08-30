@@ -47,6 +47,24 @@ export type BindingProof =
 export interface LaunchBinding {
     /** the run this is about — a task id; every mechanism produces a task */
     taskId: string;
+    /**
+     * ‼️ X-102 — WHICH SPAWN, and therefore which MANIFEST.
+     *
+     * A binding says which run produced a transcript; the manifest says what
+     * that run was set up to be — the route, the profile revision, the catalog,
+     * what was requested as against what came back. Neither is derivable from
+     * the other and the transcript records neither (measured: a Claude JSONL
+     * carries sessionId, cwd, version, gitBranch, userType, entrypoint,
+     * permissionMode and promptSource, and nothing else that matters here). The
+     * launchId is the one field that joins them.
+     *
+     * ‼️ AND IT IS NOT A SECOND `taskId`. A task can be retried, and a retry is
+     * a NEW spawn with its own route resolution and its own manifest under the
+     * same task; keying the manifest off `taskId` would make the second run
+     * silently claim the first one's setup. Absent on every binding written
+     * before this item, which is what `manifestOf` returning `undefined` means.
+     */
+    launchId?: string;
     agentId: string;
     agentName: string;
     projectId?: string;
