@@ -123,8 +123,83 @@ const find = (list, n) => list.find(c => c.name === n);
     // list; offering them is offering a way to break the session.
     ok('‼️ an internal name is dropped rather than offered',
         !list.some(c => c.name.startsWith('/_')));
-    ok('a table entry the session did NOT name is still offered, unmarked',
-        find(list, '/clear') && !find(list, '/clear').reported);
+    // ‼️ K-35 — AND A REPORT IS A COMPLETE ANSWER, NOT AN ADDITION.
+    //
+    // This used to assert the opposite: a shipped row the session never named
+    // stayed on the list. Measured against a real Claude (49 names), `/cost` is
+    // in the shipped table and is NOT among them — so the old rule offered a
+    // command whose only possible answer is "unknown", while the picker's whole
+    // claim is that it lists what this session can run. A process that has
+    // named its commands has named all of them.
+    ok('‼️ a table entry the session did NOT name is dropped, not offered',
+        !find(list, '/clear') && !find(list, '/context'));
+    ok('…and the ones it DID name are all there',
+        !!find(list, '/model') && !!find(list, '/compact'));
+    // …but only once somebody has ASKED. With no report the table is all there
+    // is, and that is the moment it exists for.
+    ok('a catalog with nothing reported is still the shipped table',
+        S.getSlashCommands({ engine: 'claude' }).some(c => c.name === '/clear'));
+    ok('‼️ an internal name the CLI reports anyway is not offered either',
+        !find(list, '/workflow-launch-exec')
+        && !S.getSlashCommands({ engine: 'claude', sources: { reported: ['workflow-launch-exec'] } })
+            .some(c => c.name === '/workflow-launch-exec'));
+
+    // ---- K-35: the same init says WHICH are skills, and which need a terminal
+    //
+    // ‼️ MEASURED, NOT DECIDED HERE. `system:init` carries `skills` (17 of the
+    // 49 names on this machine) and `terminal_slash_commands` (`doctor`,
+    // `color`). Filing a skill as the engine's own printed a claim about a
+    // MACHINE as a claim about a PROGRAM, and the hand-marked `tui` flags were
+    // a guess sitting next to the CLI's own answer about the same question.
+    const rich = S.getSlashCommands({
+        engine: 'claude',
+        sources: {
+            reported: ['model', 'dataviz', 'doctor', 'color', 'compact'],
+            reportedSkills: ['dataviz'],
+            reportedTerminalOnly: ['doctor', 'color']
+        }
+    });
+    ok('a reported SKILL is filed as one, not as the engine\'s own',
+        find(rich, '/dataviz').scope === 'skill' && find(rich, '/dataviz').engine === '');
+    ok('…and a reported command is still the engine\'s',
+        find(rich, '/model').scope === 'engine' && find(rich, '/model').engine === 'claude');
+    ok('‼️ the CLI\'s own terminal-only list wins over the shipped guess',
+        find(rich, '/color').tui === true && !find(rich, '/model').tui);
+    ok('…and a report that says nothing about it leaves the guess alone',
+        find(list, '/model').tui === true);
+}
+
+// ---------- K-35: the report, remembered ----------
+//
+// ‼️ THE COMPOSER'S `/` IS PRESSED BEFORE A SESSION EXISTS — which is exactly
+// when the only authoritative source is not there to ask. The picker offered 18
+// shipped rows where the same machine's terminal offers 49, and no table can
+// close that: two thirds of the list is skills and plugins, i.e. facts about
+// THIS install. So the answer a process gave once is kept.
+{
+    const r = { names: ['model', 'dataviz'], skills: ['dataviz'], terminalOnly: ['doctor'], at: 5 };
+    const store = S.rememberSlashReport({}, 'claude', 'a1', r);
+    ok('a report is written under the agent AND under the engine',
+        !!store['claude|a1'] && !!store.claude);
+    ok('the agent that owns it reads its own', S.recallSlashReport(store, 'claude', 'a1') === r);
+    ok('…an agent that has never run reads the engine\'s',
+        S.recallSlashReport(store, 'claude', 'other') === r);
+    ok('…and an engine nobody has run answers nothing',
+        S.recallSlashReport(store, 'codex') === undefined);
+    // ‼️ An older CLI that names nothing must not erase what a newer one proved.
+    eq('an empty report changes nothing',
+        S.rememberSlashReport(store, 'claude', 'a1', { names: [], at: 9 }), store);
+    eq('a remembered report reaches the merge in one piece',
+        S.reportToSources(r),
+        {
+            reported: ['model', 'dataviz'], reportedSkills: ['dataviz'],
+            reportedTerminalOnly: ['doctor']
+        });
+    eq('…and nothing remembered is nothing to merge', S.reportToSources(undefined), {});
+    const back = S.getSlashCommands({ engine: 'claude', sources: S.reportToSources(r) });
+    eq('so a composer with nothing running answers with the install\'s own list',
+        nameOf(back), ['/dataviz', '/model']);
+    ok('…skills included, badged as what they are', find(back, '/dataviz').scope === 'skill');
 }
 
 // ---------- the disk, and folder namespacing ----------
@@ -298,7 +373,7 @@ const find = (list, n) => list.find(c => c.name === n);
 {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8');
     const at = src.indexOf('case \'slashCommands\'');
-    const block = at < 0 ? '' : src.slice(at, at + 2200);
+    const block = at < 0 ? '' : src.slice(at, at + 4000);
     ok('the Console page has a door for the catalog at all', at > 0);
     ok('‼️ …and it answers off the SAME two functions the bridge op uses',
         /scanSlashSources\(/.test(block) && /getSlashCommands\(/.test(block));

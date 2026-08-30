@@ -83,6 +83,40 @@ check('retry: an EMPTY prompt really does win over the original — the caller m
 const rAbsent = mgr.retryTask(t1, undefined);
 check('retry: undefined is what "not stated" looks like here', rAbsent.prompt === t1.prompt);
 
+/**
+ * ‼️ M-32 — A RETRY BY HAND RUNS THE WAY THE ORIGINAL RAN, LIKE AN AUTOMATIC
+ * ONE ALWAYS HAS.
+ *
+ * `maybeScheduleRetry` has carried the retry policy, the round chain and the
+ * conversation being continued since M-27/S-19; `retryTask` — the rerun button
+ * and the retry form — carried none of them. So the same failed run retried by
+ * the machine and retried by a person were two different runs: one kept "and
+ * then ask it these three things" and its own ceiling, the other silently fell
+ * back to the fleet default and one prompt. That is the loss M-32 is named for.
+ */
+const rich = mgr.addTask(agent, 'Zincir', 'ilk tur', 'headless', {
+    rounds: [{ prompt: 'sonra bunu sor' }],
+    retry: { max: 4, delayMin: 15, when: 'any' }
+});
+rich.resumeSessionId = 'ses_keep';
+rich.resumedEngine = 'opencode';
+rich.status = 'failed'; rich.endedAt = Date.now();
+const rRich = mgr.retryTask(rich);
+check('‼️ M-32 retry: the round chain survives',
+    JSON.stringify(rRich.rounds) === JSON.stringify(rich.rounds));
+check('‼️ M-32 retry: so does the policy — the ceiling is not silently the default',
+    !!rRich.retry && rRich.retry.max === 4 && rRich.retry.when === 'any');
+check('‼️ M-32 retry: and the conversation it was continuing',
+    rRich.resumeSessionId === 'ses_keep' && rRich.resumedEngine === 'opencode');
+// …and the form can still CHANGE any of them: the boxes are on screen, so a
+// save that ignored them would make the form a display rather than a form.
+const rOver = mgr.retryTask(rich, undefined, {
+    retry: { max: 1 }, rounds: undefined, resumeSessionId: undefined
+});
+check('M-32 retry: what the form states wins over the original',
+    rOver.retry.max === 1 && !rOver.resumeSessionId);
+check('M-32 retry: …including emptying the chain', !rOver.rounds);
+
 // ---- 3. runTaskNext + priority ----
 const q1 = mgr.addTask(agent, 'A', 'a', 'headless');
 const q2 = mgr.addTask(agent, 'B', 'b', 'headless');

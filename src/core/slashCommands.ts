@@ -133,6 +133,88 @@ export interface SlashSources {
     workflows?: { name: string; description: string; source: string }[];
     /** ‼️ The names the RUNNING session reported — this install, not this build. */
     reported?: string[];
+    /**
+     * ‼️ K-35 — WHICH OF THOSE NAMES ARE SKILLS, from the same init event
+     * (`system:init.skills`). Measured: 17 of the 49 names a real Claude reports
+     * here are skills, and filing them as `engine` made the picker say the CLI
+     * ships `/dataviz` — a claim about a machine, printed as a claim about a
+     * program. Absent means the report did not say, and nothing is re-labelled.
+     */
+    reportedSkills?: string[];
+    /**
+     * ‼️ K-35 — AND WHICH ONES NEED A REAL TERMINAL, from
+     * `system:init.terminal_slash_commands`. This is the `tui` flag MEASURED
+     * rather than guessed: the shipped table marks five by hand, and the CLI
+     * itself names two (`doctor`, `color`). An empty array is an answer ("none
+     * of them"); `undefined` is silence, and silence leaves the guesses alone.
+     */
+    reportedTerminalOnly?: string[];
+}
+
+/**
+ * ‼️ K-35 — WHAT ONE `system:init` SAID, KEPT SO THE NEXT COMPOSER CAN USE IT.
+ *
+ * The catalog's best source is a running session, and the composer's `/` box is
+ * pressed exactly when there is not one yet — so the picker offered the shipped
+ * table (18 rows) where the same machine's terminal offers 49. That is not a
+ * missing table; it is a fact this install has already proved being thrown away
+ * the moment the process exited. Remembering the report costs nothing (nothing
+ * is spawned to learn it) and puts the shipped table back to being what it
+ * claims: the answer before ANY session has ever run here.
+ */
+export interface SlashReport {
+    /** `system:init.slash_commands` — names, with or without the slash. */
+    names: string[];
+    /** `system:init.skills`, when the CLI named them. */
+    skills?: string[];
+    /** `system:init.terminal_slash_commands`, when the CLI named them. */
+    terminalOnly?: string[];
+    /** When it was heard, so a stale record can be told from a fresh one. */
+    at: number;
+}
+
+/** Engine-wide and per-agent records, in one map. */
+export type SlashReports = Record<string, SlashReport>;
+
+/**
+ * ‼️ TWO KEYS FOR ONE REPORT, AND THAT IS THE POINT. A skill folder can live in
+ * an agent's own `.claude`, so two agents on the same engine do not always have
+ * the same list — but an agent that has never run still learns more from a
+ * sibling's report than from a shipped table. So a report is written under
+ * both, and read most-specific-first.
+ */
+export function slashReportKey(engine: string, agentId?: string): string {
+    const e = (engine || 'claude').trim().toLowerCase();
+    return agentId?.trim() ? `${e}|${agentId.trim()}` : e;
+}
+
+/** Write one report under its agent key AND its engine key. An EMPTY report is
+ *  not written: it would erase a real one with the silence of an older CLI. */
+export function rememberSlashReport(
+    all: SlashReports, engine: string, agentId: string | undefined, report: SlashReport
+): SlashReports {
+    if (!report.names.length) { return all; }
+    const next = { ...all, [slashReportKey(engine)]: report };
+    if (agentId?.trim()) { next[slashReportKey(engine, agentId)] = report; }
+    return next;
+}
+
+/** The agent's own answer if it has one, else the engine's. */
+export function recallSlashReport(
+    all: SlashReports, engine: string, agentId?: string
+): SlashReport | undefined {
+    return (agentId?.trim() ? all[slashReportKey(engine, agentId)] : undefined)
+        ?? all[slashReportKey(engine)];
+}
+
+/** A report in the shape the merge reads — so a caller cannot spell it wrong. */
+export function reportToSources(report: SlashReport | undefined): Partial<SlashSources> {
+    if (!report?.names.length) { return {}; }
+    return {
+        reported: report.names,
+        ...(report.skills ? { reportedSkills: report.skills } : {}),
+        ...(report.terminalOnly ? { reportedTerminalOnly: report.terminalOnly } : {})
+    };
 }
 
 export interface SlashQuery {
@@ -157,7 +239,9 @@ const withSlash = (n: string): string => (n.startsWith('/') ? n : '/' + n);
  * person types — measured here: `__remote-workflow`, `workflow-launch-exec`.
  * Offering them in a picker is offering a way to break the session.
  */
-const typeable = (name: string): boolean => !/^\/?_/.test(name);
+const INTERNAL_SLASH = new Set(['/__remote-workflow', '/workflow-launch-exec']);
+const typeable = (name: string): boolean =>
+    !/^\/?_/.test(name) && !INTERNAL_SLASH.has(withSlash(name));
 
 /**
  * The catalog for one place, in precedence order: disk beats the session's
@@ -173,16 +257,47 @@ export function getSlashCommands(query: SlashQuery = {}): SlashCommand[] {
     // 2 — what the session said it has. A name already in the table keeps its
     // description (ours is the only one there is) and is marked as CONFIRMED by
     // the running process; a name we had never heard of is added plainly.
+    //
+    // ‼️ K-35 — AND THE REPORT SAYS MORE THAN THE NAMES. The same init event
+    // names the SKILLS among them and the ones that only work in a real
+    // terminal, so both are read off the process instead of being decided here.
+    const skillSet = new Set((query.sources?.reportedSkills ?? []).map(x => withSlash(String(x).trim())));
+    const terminalOnly = query.sources?.reportedTerminalOnly;
+    const tuiSet = new Set((terminalOnly ?? []).map(x => withSlash(String(x).trim())));
+    const seen = new Set<string>();
     for (const raw of query.sources?.reported ?? []) {
         const name = withSlash(String(raw).trim());
         if (!typeable(name)) { continue; }
+        seen.add(name);
         const had = byName.get(name);
-        byName.set(name, had
-            ? { ...had, reported: true }
-            : {
-                name, description: '', scope: 'engine',
-                engine: engine as EngineId, args: '', reported: true
-            });
+        const isSkill = skillSet.has(name);
+        // The CLI's own answer wins outright where it gave one; where it said
+        // nothing, the shipped guess stands.
+        const tui = terminalOnly ? tuiSet.has(name) : had?.tui === true;
+        byName.set(name, {
+            name,
+            description: had?.description ?? '',
+            // ‼️ A SKILL IS NOT THE ENGINE'S OWN — it is this machine's, and the
+            // badge the picker draws says so. `engine: ''` is "any engine could
+            // run it", which is exactly what a skill folder is.
+            scope: isSkill ? 'skill' : (had?.scope ?? 'engine'),
+            engine: isSkill ? '' : (had?.engine ?? engine as EngineId),
+            args: had?.args ?? '',
+            ...(had?.source ? { source: had.source } : {}),
+            ...(tui ? { tui: true } : {}),
+            reported: true
+        });
+    }
+    // ‼️ K-35 — AND A REPORT IS A COMPLETE ANSWER, NOT AN ADDITION. `/cost` is
+    // in the shipped table and this CLI no longer has it (measured: 49 names,
+    // `/cost` not among them) — offering it anyway teaches a command that
+    // answers "unknown". So once a process has named its commands, a shipped
+    // row it did NOT name is dropped. The disk below is untouched by this: a
+    // file that exists is a command whether or not a running session listed it.
+    if (seen.size) {
+        for (const [name, c] of [...byName]) {
+            if (!seen.has(name) && !c.reported) { byName.delete(name); }
+        }
     }
     // 1 — the disk. A file is the only source with a description somebody wrote
     // on purpose, so it wins outright.
