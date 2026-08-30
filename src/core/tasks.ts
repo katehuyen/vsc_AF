@@ -191,6 +191,20 @@ export interface FarmTask {
     effort?: string;
     permissionMode?: string;
     /**
+     * ‼️ X-102 — WHICH SPAWN THIS RUN IS, and therefore which manifest.
+     *
+     * Written at the spawn and never after it. It is on the TASK rather than on
+     * the binding because the binding is DERIVED from this row every time the
+     * store changes (`publishLaunchBindings`), so a handle held anywhere else
+     * would be rebuilt away — and because a RETRY is a new task with its own
+     * route resolution and its own manifest, which is exactly the distinction
+     * `taskId` cannot make.
+     *
+     * Absent on every task started before this item, and on a run whose agent
+     * could not be resolved: an honest gap, never a nearest match.
+     */
+    launchId?: string;
+    /**
      * ‼️ M-26 — WHERE THIS INTERACTIVE RUN OPENS, and what it does once the
      * agent has answered. Both are ignored on a headless run, and both are
      * absent on every task written before they existed — which reads as
@@ -1248,6 +1262,29 @@ export interface TaskManagerOptions {
          */
         route?: { providerId?: string; tier?: string }
     ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined;
+    /**
+     * ‼️ X-102 — WRITE THIS SPAWN'S MANIFEST AND HAND BACK ITS ID.
+     *
+     * Same doctrine as `engineRuntime` above: it arrives as an ANSWER. The
+     * runner states the plain facts of the run it is about to start — who, on
+     * what, asking for what, where, and what set it going — and the resolution
+     * of the route, the assembly of the record and the bounded store all stay on
+     * the side that owns them. A runner that built the manifest itself would be
+     * a second resolver of the same route, living in a file nobody thinks of as
+     * provider logic.
+     *
+     * Absent (the headless service, a test harness) means nothing is recorded,
+     * and a task with no `launchId` is a run whose setup is genuinely unknown —
+     * which is the honest answer, not a defect to paper over.
+     */
+    recordLaunch?: (run: {
+        agentId: string; engine: string;
+        options: { model?: string; effort?: string; permissionMode?: string };
+        cwd: string; projectId?: string;
+        mechanism: 'task' | 'schedule' | 'trigger' | 'workflow' | 'mission';
+        mechanismId?: string;
+        surface: 'terminal' | 'external-terminal' | 'headless';
+    }) => string | undefined;
     /** {secret:NAME} substitution for webhook templates. */
     resolveTemplate?: (s: string) => string;
     /** Outbound notification forwarding (B4). */
@@ -2732,6 +2769,43 @@ export class TaskManager implements vscode.Disposable {
         noteTaskEvent(task, 'started', `${engineOf(task.engine).label} · ${task.mode}`
             + (task.model ? ` · ${task.model}` : '')
             + (task.resumeSessionId ? ` · resuming ${task.resumedFrom || task.resumeSessionId}` : ''));
+        /**
+         * ‼️ X-102 — THE MANIFEST, AT THE ONE POINT EVERY SHAPE OF A RUN PASSES
+         * THROUGH.
+         *
+         * Written here rather than beside each spawn for the reason the route
+         * environment is built once above: three shapes leave this method and a
+         * record written in three places is two places somebody can forget. It
+         * is also the last line at which the run is still only intended — a
+         * manifest with no run attached is a run that failed to start, and that
+         * is an answer worth keeping.
+         *
+         * ‼️ THE CONSOLE SHAPE IS SKIPPED ON PURPOSE: that branch hands the spawn
+         * to the panel, and the Console door writes its own manifest with its
+         * own surface. Recording here as well would put two rows under one run
+         * and make "which setup did it have" depend on which was read first.
+         */
+        const target = normInteractiveTarget(task.interactiveTarget);
+        const hostedHere = task.mode !== 'headless' && target === 'console'
+            && !!this.opts.startConsoleTask;
+        if (!hostedHere) {
+            task.launchId = this.opts.recordLaunch?.({
+                agentId: agent.id,
+                engine: engineOf(task.engine).id,
+                options: {
+                    model: task.model, effort: task.effort,
+                    permissionMode: task.permissionMode
+                },
+                // The folder the process is really spawned in — the same rule the
+                // binding follows, and the reason a task in a code repo is not
+                // filed under the agent's own folder.
+                cwd: task.workDir ?? agent.dir,
+                ...(task.projectId ? { projectId: task.projectId } : {}),
+                ...this.launchMechanismOf(task),
+                surface: task.mode === 'headless'
+                    ? 'headless' : target === 'external' ? 'external-terminal' : 'terminal'
+            });
+        }
         if (task.mode === 'headless') {
             this.spawnHeadless(task, agent);
         } else if (normInteractiveTarget(task.interactiveTarget) === 'console'
@@ -2982,6 +3056,32 @@ export class TaskManager implements vscode.Disposable {
 
     /** Explicit per-task model (mission member override) beats the policy engine.
      *  Strict charset: a stored value can never smuggle shell syntax. */
+    /**
+     * ‼️ X-102 — WHAT SET THIS RUN GOING, in the manifest's vocabulary.
+     *
+     * The same precedence the binding uses and deliberately the same words
+     * (`LaunchMechanism` shares its vocabulary with `LaunchBinding.kind`): two
+     * spellings of `schedule` would be two mechanisms as far as a reader is
+     * concerned.
+     *
+     * ‼️ IT READS THE TASK'S OWN FIELDS AND DOES NOT WALK THE RETRY CHAIN. A
+     * retry IS a new spawn, with its own route resolution and its own manifest —
+     * that is the whole reason the record is keyed by `launchId` and not by
+     * `taskId`. Naming the origin's mechanism here would describe the run that
+     * came before this one. Walking the chain is the BINDING's job, where the
+     * question is "whose work is this" rather than "what was started".
+     */
+    private launchMechanismOf(task: FarmTask): {
+        mechanism: 'task' | 'schedule' | 'trigger' | 'workflow' | 'mission';
+        mechanismId?: string;
+    } {
+        if (task.missionId) { return { mechanism: 'mission', mechanismId: task.missionId }; }
+        if (task.fromSchedule) { return { mechanism: 'schedule', mechanismId: task.fromSchedule }; }
+        if (task.fromTrigger) { return { mechanism: 'trigger', mechanismId: task.fromTrigger }; }
+        if (task.workflowId) { return { mechanism: 'workflow', mechanismId: task.workflowId }; }
+        return { mechanism: 'task' };
+    }
+
     private modelArgs(task: FarmTask): { args: string; reason: string } | undefined {
         if (task.model && modelIdOk(task.model)) {
             return { args: `--model ${task.model}`, reason: `explicit override (${task.model})` };

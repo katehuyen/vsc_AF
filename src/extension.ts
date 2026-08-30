@@ -2837,6 +2837,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         state: ConsoleStatus; answered: boolean; failed?: boolean; reason?: string;
     } | undefined) | undefined;
 
+    /**
+     * ‼️ X-102 — declared here, filled where the manifest store exists. Same
+     * shape as `TaskManagerOptions.recordLaunch`, which is the one that owns the
+     * contract; this is the hole the runner's dep reads through.
+     */
+    let recordTaskLaunch: ((run: {
+        agentId: string; engine: string;
+        options: { model?: string; effort?: string; permissionMode?: string };
+        cwd: string; projectId?: string;
+        mechanism: 'task' | 'schedule' | 'trigger' | 'workflow' | 'mission';
+        mechanismId?: string;
+        surface: 'terminal' | 'external-terminal' | 'headless';
+    }) => string | undefined) | undefined;
+
     const taskManager = new TaskManager(
         path.join(context.globalStorageUri.fsPath, 'farm-tasks.json'),
         () => agents,
@@ -2965,6 +2979,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * environment it has always had, byte for byte.
              */
             engineRuntime: (agentId, engine, route) => engineRuntimeFor(agentId, engine, route),
+            /**
+             * ‼️ X-102 — THE RUNNER STATES THE FACTS; THIS SIDE WRITES THE
+             * RECORD. Same doctrine as `engineRuntime` above, and the same
+             * reason: the route resolution, the assembly and the bounded store
+             * belong to the side that owns them, or a runner becomes a second
+             * resolver living in a file nobody reads as provider logic.
+             *
+             * The hole (`recordTaskLaunch`) is filled further down, where the
+             * store exists. Unfilled it records nothing, which is the documented
+             * absent case rather than a failure: a task with no manifest is a
+             * run whose setup is genuinely unknown, and saying so is the point.
+             */
+            recordLaunch: (run) => recordTaskLaunch?.(run),
             resolveTemplate: (s) => vault.substitute(s),
             forward: postForward,
             // J5: alternative CLI executors (gemini / codex / …).
@@ -3291,6 +3318,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(origin.missionId && missionRunTitle
                     ? { launcherTitle: missionRunTitle(origin.missionId) } : {}),
                 engine: t.engine,
+                // ‼️ X-102 — WHICH SPAWN, and therefore which manifest. It comes
+                // off the task rather than being derived like everything else
+                // around it, because it is the one fact here that was true at a
+                // moment nothing else in this loop witnessed: the spawn. A retry
+                // has its own, which is the distinction `taskId` cannot make.
+                ...(t.launchId ? { launchId: t.launchId } : {}),
                 cwd,
                 startedAt: t.startedAt,
                 endedAt: t.endedAt,
@@ -17346,6 +17379,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const m = manifestFor({ ...input, launchId: newLaunchId(at), at });
         writeLaunchManifest(m);
         return m.launchId;
+    };
+
+    /**
+     * ‼️ X-102 — AND THE RUNNER'S HALF OF IT, filled in here because this is
+     * where the store and the resolver both exist (see the dep, far above).
+     *
+     * ‼️ NO ROUTE IS PASSED, AND THAT IS THE TRUTH RATHER THAN AN OMISSION: a
+     * stored automation object carries no provider selection yet (X-106), so an
+     * automated run lands on the agent's standing route — and the manifest has
+     * to record the route that will actually serve it, which is exactly what
+     * resolving with nothing chosen returns.
+     *
+     * ‼️ THE DISCIPLINE IS THE AGENT'S OWN. There is no composer to tick a box
+     * in at three in the morning, so the honest answer is the one the agent
+     * would have started with anyway — the same rule the runner already applies
+     * to the prompt it builds.
+     */
+    recordTaskLaunch = (run) => {
+        const agent = agents.find(a => a.id === run.agentId);
+        const resolved = agent ? resolveLaunchRoute(agent.id, run.engine) : undefined;
+        if (!agent || !resolved) { return undefined; }
+        return recordLaunch({
+            engine: run.engine,
+            identity: resolved.identity,
+            options: run.options,
+            agentId: agent.id,
+            agentName: agent.name,
+            ...(run.projectId ? { projectId: run.projectId } : {}),
+            mechanism: run.mechanism,
+            ...(run.mechanismId ? { mechanismId: run.mechanismId } : {}),
+            cwd: run.cwd,
+            surface: run.surface,
+            superpowers: superpowersOnFor(agent.name)
+        });
     };
 
     const startClaudeSession = (

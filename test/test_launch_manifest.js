@@ -302,6 +302,34 @@ console.log('\n== the store is bounded before the first row is written ==');
             (host.match(/launchId: init\.launchId,/g) || []).length === 4);
     }
 
+    // ---- the automated door: one record for three shapes of run ----
+    {
+        const tasks = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+        ok('‼️ the runner states the facts and does NOT resolve the route itself',
+            /recordLaunch\?: \(run: \{/.test(tasks)
+            && !/resolveRuntime|providerProfiles/.test(tasks));
+        ok('…written once, at the point every shape of a run passes through',
+            (tasks.match(/task\.launchId = this\.opts\.recordLaunch\?\.\(\{/g) || []).length === 1);
+        ok('‼️ …and the Console shape is skipped, or one run would have two records',
+            /const hostedHere = task\.mode !== 'headless' && target === 'console'/.test(tasks)
+            && /if \(!hostedHere\) \{/.test(tasks));
+        ok('the surface tells headless, an OS window and an integrated terminal apart',
+            /surface: task\.mode === 'headless'\s*\n\s*\? 'headless' : target === 'external' \? 'external-terminal' : 'terminal'/.test(tasks));
+        ok('‼️ the mechanism does NOT walk the retry chain — a retry is its own spawn',
+            /private launchMechanismOf\(task: FarmTask\)/.test(tasks)
+            && !/retryOf/.test(tasks.slice(tasks.indexOf('private launchMechanismOf'),
+                tasks.indexOf('private launchMechanismOf') + 900)));
+        ok('…and the run is recorded on the TASK, which is what the binding is built from',
+            /launchId\?: string;/.test(tasks)
+            && /\.\.\.\(t\.launchId \? \{ launchId: t\.launchId \} : \{\}\),/.test(ext));
+        ok('‼️ an automated run passes NO route, because a stored automation carries '
+            + 'none yet (X-106) — so the manifest records the standing route that '
+            + 'will really serve it',
+            /const resolved = agent \? resolveLaunchRoute\(agent\.id, run\.engine\) : undefined;/.test(ext));
+        ok('…and an unfilled hole records nothing rather than throwing at a spawn',
+            /recordLaunch: \(run\) => recordTaskLaunch\?\.\(run\),/.test(ext));
+    }
+
     // ---- the bridge can read it, which is what makes it evidence ----
     ok('the manifests are readable over the bridge', /op: 'launch\.manifests',/.test(ext));
     ok('‼️ …and an id with no record returns nothing rather than a nearest match',
