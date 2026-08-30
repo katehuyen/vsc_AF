@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.340.0 - S-34 reopened: a remembered model belongs to the engine it ran on (2026-08-30)
+
+**‼️ Switch the launcher from Antigravity to Claude, press Start, and the Console
+came up saying Claude with the Antigravity model in the box beside it.** A setup
+that cannot run, drawn as if it would. 3.339.0 taught the composer to keep a
+seeded model the engine's published catalog does not list — right, because a
+catalog is what an engine OFFERS and not everything it can run — but it decided
+whether to keep by comparing the seeded value against itself, a comparison that
+cannot fail. So the reconcile was not narrowed, it was silenced, and the one case
+it exists for went with it.
+
+Being per-engine is a thing that has to be **checked**, and three readers now
+check it against the same rule (`rememberedOn`):
+
+- **The memory layer.** `withLastLaunch` inherited the model and the effort from
+  the record whatever engine the launch stated. `gemini-3-pro` is not something
+  Claude can be asked to be, and the record is one row per agent — so any door
+  that changed the engine carried the previous engine's model across. The model
+  and the effort are the engine's own vocabulary and are dropped with it; the
+  permission mode and the ⚡ discipline are this extension's own words, spelled
+  the same on every engine, and stay.
+- **The Console panel.** It reads the record directly rather than through that
+  layer, so the rule did not reach it: told to open on Claude for an agent whose
+  record says Antigravity, it handed the composer the Antigravity model.
+- **The page.** A handed-over setup now names the engine it was built for, and
+  the composer keeps it only while that engine is the one on screen.
+
+‼️ **A record with no engine on it is still inherited.** It predates the engine
+being recorded, so it cannot contradict anything, and treating silence as a
+mismatch would empty the boxes for every agent that has not been started since.
+
+**And two tests were reporting green on prose.** `test_run_surface.js` slices the
+`startSession` command out of the source at a fixed length, and its last check had
+drifted to offset 4190 of a 4200-character window — the command had not changed,
+the comment above it had. `test_finish_sound.js` matched a bare `\n` and passed
+only while that file happened to be sitting in the working tree with LF endings.
+Both now measure the behaviour rather than the layout.
+
 ## 3.339.0 - S-34: it remembered, but not all of it — and the row never said what it would start (2026-08-30)
 
 Three defects with one shape: a launch setup that is known and not shown, or

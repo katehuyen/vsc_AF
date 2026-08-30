@@ -570,21 +570,53 @@ export interface LastLaunch extends LaunchOptions {
  * `undefined` is "nobody said"; `false` is a person saying "not this session",
  * and `||` would quietly promote the second into the first — reinstating a
  * discipline the previous launch deliberately turned off.
+ *
+ * ‼️ AND THE MEMORY IS SCOPED BY ENGINE — see `rememberedOn` below.
  */
 export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): LaunchOptions {
     if (!last) { return o; }
     const pick = (own: string | undefined, prev: string | undefined) =>
         (own?.trim() ? own.trim() : (prev?.trim() ?? ''));
     const engine = pick(o.engine, last.engine);
+    const prev = rememberedOn(engine, last);
     const sp = o.superpowers ?? last.superpowers;
     return {
         ...o,
         ...(engine ? { engine: engine as EngineId } : {}),
-        model: pick(o.model, last.model),
-        effort: pick(o.effort, last.effort),
+        model: pick(o.model, prev.model),
+        effort: pick(o.effort, prev.effort),
         permissionMode: pick(o.permissionMode, last.permissionMode),
         ...(sp === undefined ? {} : { superpowers: sp })
     };
+}
+
+/**
+ * ‼️ A REMEMBERED MODEL BELONGS TO THE ENGINE IT RAN ON.
+ *
+ * `gemini-3-pro` is not something Claude can be asked to be, and `opus` means
+ * nothing to Codex. The record is one row per agent, so a launch that changes
+ * the engine was reading the previous engine's model out of it and carrying it
+ * across: switch the launcher from Antigravity to Claude, press Start, and the
+ * Console opened with the engine box saying Claude and the model box saying the
+ * Antigravity model underneath it — a setup that cannot run, drawn as if it
+ * would. The effort follows the model rather than standing on its own (the list
+ * of levels is looked up BY model, and several engines draw no effort box at
+ * all), so it is dropped with it.
+ *
+ * The permission mode and the discipline are NOT dropped: they are this
+ * extension's own vocabulary, spelled the same whatever the engine is, and a
+ * person who said "plan mode" said it about the session and not about the CLI.
+ *
+ * ‼️ A RECORD WITH NO ENGINE ON IT IS INHERITED. It predates the engine being
+ * recorded, so it cannot contradict anything — and treating silence as a
+ * mismatch would empty the boxes for every agent that has not been started
+ * since, which is a regression dressed up as a fix.
+ */
+export function rememberedOn(engine: string | undefined, last: LastLaunch): LastLaunch {
+    const was = (last.engine || '').trim();
+    const now = (engine || '').trim();
+    if (!was || !now || was === now) { return last; }
+    return { ...last, model: '', effort: '' };
 }
 
 /**

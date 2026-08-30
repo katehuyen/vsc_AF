@@ -168,7 +168,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     // edge-driven, so a setup delivered without a bumped seed is ignored by an
     // already-open Console — which is the case this whole path exists for.
     ok('handing a setup over bumps the seed the page reads',
-        /if \(opts\?\.launch\) \{[\s\S]{0,400}?c\.composerSeed\+\+;/.test(panelTs));
+        /if \(opts\?\.launch\) \{[\s\S]{0,800}?c\.composerSeed\+\+;/.test(panelTs));
     ok('…and the page prefers a handed-over setup to the user\'s defaults',
         /const seeded = DATA\.composerLaunch \|\| null;/.test(consoleJs)
         && /const d = seeded \|\| DATA\.defaults \|\| \{\};/.test(consoleJs));
@@ -235,6 +235,35 @@ const launchTs = read('src', 'core', 'launch.ts');
         L.withLastLaunch({ superpowers: true }, { superpowers: false }).superpowers, true);
     eq('…while a record that never mentioned it leaves the question open',
         L.withLastLaunch({}, last).superpowers, undefined);
+
+    // ‼️ S-34 (reopened) — A REMEMBERED MODEL BELONGS TO THE ENGINE IT RAN ON.
+    //
+    // The memory layer inherited the model and the effort from the record
+    // whatever engine the launch stated, and `gemini-3-pro` is not something
+    // Claude can be asked to be. Switching the engine on the launcher and
+    // pressing Start therefore opened a Console whose engine box said Claude
+    // and whose model box said the Antigravity model underneath it — a setup
+    // that cannot run, shown as if it would.
+    //
+    // The model and the effort are the engine's own vocabulary and are dropped
+    // with it; the permission mode and the discipline are this extension's own
+    // words, are spelled the same on every engine, and stay. A record with no
+    // engine on it predates the engine being recorded — it cannot contradict
+    // anything, so it is inherited, which is what it did yesterday.
+    eq('a remembered model does not cross to another engine',
+        L.withLastLaunch({ engine: 'claude' }, last).model, '');
+    eq('…and the effort goes with it, being read off the model',
+        L.withLastLaunch({ engine: 'claude' }, last).effort, '');
+    eq('…while the permission mode is not the engine\'s word and stays',
+        L.withLastLaunch({ engine: 'claude' }, last).permissionMode, 'plan');
+    eq('…and the discipline stays too',
+        L.withLastLaunch({ engine: 'claude' }, { ...last, superpowers: true }).superpowers, true);
+    eq('the same engine restated still inherits everything',
+        L.withLastLaunch({ engine: 'codex' }, last).model, 'opus');
+    eq('a record from before the engine was recorded is still inherited',
+        L.withLastLaunch({ engine: 'claude' }, { model: 'opus', effort: 'high' }).model, 'opus');
+    eq('what THIS launch states on the new engine is never dropped',
+        L.withLastLaunch({ engine: 'claude', model: 'sonnet' }, last).model, 'sonnet');
 
     // ---- and what gets written back ----
     const kept = L.launchToRemember(
@@ -314,8 +343,8 @@ const launchTs = read('src', 'core', 'launch.ts');
         /lastLaunch: \(agentId: string\) => lastLaunchOf\(agentId\),/.test(extTs)
         && /rememberLaunch: \(agentId: string, o: LaunchOptions, surface: RunSurface\) =>\s*\n\s*void rememberLaunch\(agentId, o, surface\),/.test(extTs));
     ok('a composer opened for an agent opens on that agent\'s last setup',
-        /const last = c\.deps\.lastLaunch\(opts\.agentId\);/.test(panelTs)
-        && /c\.composerEngine = \(opts\.engine \?\? last\?\.engine \?\? d\.engine \?\? ''\)/.test(panelTs));
+        /const remembered = c\.deps\.lastLaunch\(opts\.agentId\);/.test(panelTs)
+        && /\(opts\.engine \?\? remembered\?\.engine \?\? d\.engine \?\? ''\)/.test(panelTs));
     ok('…and a caller that handed over its own setup still wins',
         /if \(!opts\.launch && last\) \{/.test(panelTs));
     ok('‼️ and Send is a launch, so it is remembered like one',
@@ -337,6 +366,27 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('…engine and discipline through the host, which owns them',
         /vscode\.postMessage\(\{ type: 'setEngine', id: eng \}\)/.test(consoleJs)
         && /type: 'setSuperpowers', on: want === '' \? null : want === 'on'/.test(consoleJs));
+
+    // ‼️ S-34 (reopened) — AND THE PANEL SCOPES THE RECORD BY THE ENGINE IT IS
+    // ABOUT TO SHOW. This door reads `lastLaunch` directly instead of going
+    // through `withLastLaunch`, so the engine rule in core did not reach it:
+    // told to open on Claude for an agent whose record says Antigravity, it
+    // handed the composer the Antigravity model with the Claude engine.
+    ok('the panel drops a model the engine it is opening on cannot run',
+        /rememberedOn\(c\.composerEngine, remembered\)/.test(panelTs)
+        && /export function rememberedOn/.test(launchTs));
+
+    // ‼️ …AND THE SETUP SAYS WHICH ENGINE IT IS FOR, so the page can check it.
+    // `keep` compared the seeded value against itself (`kept.model === st.model`
+    // where `st.model` had just been assigned from the same object), which is a
+    // check that cannot fail — it silenced the catalog reconcile completely
+    // instead of narrowing it. The engine the setup was built for is the fact
+    // that decides, and it has to travel with the setup to be readable here.
+    ok('the handed-over setup names the engine it was built for',
+        /model\?: string; effort\?: string; permissionMode\?: string; prompt\?: string; engine\?: string;/
+            .test(panelTs));
+    ok('…and the page keeps it only while that engine is the one on screen',
+        /seeded && \(!seeded\.engine \|\| seeded\.engine === engineNow\(\)\)/.test(consoleJs));
 }
 
 /* =========================================================================
@@ -365,7 +415,8 @@ const launchTs = read('src', 'core', 'launch.ts');
         && /if \(!keepModel && !models\.some/.test(consoleJs));
     ok('‼️ …nor a kept effort, which used to go with the model',
         /const keepEffort = !preferModelDefault && !!st\.effort && kept\.effort === st\.effort;/.test(consoleJs));
-    ok('a handed-over setup is kept', /reconcileComposer\(engineNow\(\), false, seeded \?/.test(consoleJs));
+    ok('a handed-over setup is kept',
+        /reconcileComposer\(engineNow\(\), false,\s*\n\s*forThisEngine \?/.test(consoleJs));
     ok('…and so is the agent picker\'s own record',
         /reconcileComposer\(nextEngine, false,\s*\n\s*last \?/.test(consoleJs));
     // ‼️ AND THE BOX HAS TO DRAW WHAT SURVIVED, or the select shows its first
@@ -374,9 +425,13 @@ const launchTs = read('src', 'core', 'launch.ts');
         /function withCurrent\(list, current\) \{/.test(consoleJs)
         && /opts\(withCurrent\(modelsFor\(engineNow\(\)\), st\.model\), st\.model\)/.test(consoleJs)
         && /opts\(withCurrent\(effortsForModel\(engineNow\(\), st\.model\), st\.effort\), st\.effort\)/.test(consoleJs));
-    // ‼️ AN ENGINE CHANGE IS STILL A RESET. The keep is per-engine by
-    // construction (the caller passes a record that names this engine), and the
-    // engine-change handler passes none.
+    // ‼️ AN ENGINE CHANGE IS STILL A RESET, AND THAT IS WHAT THIS FUNCTION IS
+    // FOR. The claim used to be that the keep was per-engine "by construction",
+    // and it was not: `applyComposerSeed` handed it values it had itself just
+    // read out of the setup, so the comparison could not fail on any engine.
+    // Being per-engine is a thing that has to be CHECKED — the setup names the
+    // engine it was built for and the seeder tests it — and the engine-change
+    // handler, which is the plain case, passes no keep at all.
     ok('changing the engine still clears what that engine cannot run',
         /reconcileComposer\(next, false\);/.test(consoleJs));
 }

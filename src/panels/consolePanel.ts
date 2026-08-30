@@ -17,7 +17,8 @@ import {
 import { EngineOption, engineRefusal } from '../core/engines';
 import { EngineModels, narrowLaunch } from '../core/models';
 import {
-    EFFORT_CHOICES, LastLaunch, LaunchOptions, modelChoices, PERMISSION_CHOICES, RunSurface
+    EFFORT_CHOICES, LastLaunch, LaunchOptions, modelChoices, PERMISSION_CHOICES,
+    rememberedOn, RunSurface
 } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
@@ -336,9 +337,15 @@ export class ConsolePanel {
      * One-shot, like `presetAgent`: it seeds a composer once (a bumped
      * `composerSeed` is what makes the page read it) and is let go on the next
      * start, or the setup would silently reapply itself to a later session.
+     *
+     * ‼️ AND IT NAMES THE ENGINE IT WAS BUILT FOR. A model is a word in one
+     * engine's vocabulary; handed over without saying whose, the page has no
+     * way to tell a value it should keep (an alias this engine runs but does
+     * not advertise) from one it must drop (the model of the engine the user
+     * just switched away from). Both look identical in the box.
      */
     private composerLaunch?: {
-        model?: string; effort?: string; permissionMode?: string; prompt?: string;
+        model?: string; effort?: string; permissionMode?: string; prompt?: string; engine?: string;
     };
 
     /**
@@ -417,8 +424,18 @@ export class ConsolePanel {
                 // PREVIOUS agent's"; falling all the way through to the fleet
                 // defaults was never the point, and it is why an agent you last
                 // ran on opus came back on the settings file's model.
-                const last = c.deps.lastLaunch(opts.agentId);
-                c.composerEngine = (opts.engine ?? last?.engine ?? d.engine ?? '').trim() || 'claude';
+                const remembered = c.deps.lastLaunch(opts.agentId);
+                c.composerEngine =
+                    (opts.engine ?? remembered?.engine ?? d.engine ?? '').trim() || 'claude';
+                // ‼️ S-34 (reopened) — AND THE RECORD IS READ FOR THE ENGINE THIS
+                // COMPOSER IS ABOUT TO SHOW. This door reads the record directly
+                // rather than through `withLastLaunch`, so the rule in core did
+                // not reach it: told to open on Claude for an agent whose record
+                // says Antigravity, it handed the composer the Antigravity model
+                // under a Claude engine box. `rememberedOn` is that one rule, and
+                // both readers now go through it.
+                const last = remembered
+                    ? rememberedOn(c.composerEngine, remembered) : undefined;
                 c.composerSeed++;
                 c.presetAgent = opts.agentId;
                 c.selected = '';
@@ -428,7 +445,7 @@ export class ConsolePanel {
                 if (!opts.launch && last) {
                     c.composerLaunch = {
                         model: last.model, effort: last.effort,
-                        permissionMode: last.permissionMode
+                        permissionMode: last.permissionMode, engine: c.composerEngine
                     };
                     c.composerSuperpowers = last.superpowers;
                 }
@@ -439,9 +456,14 @@ export class ConsolePanel {
             // already-open Console, which is the case this exists for.
             if (opts?.launch) {
                 const l = opts.launch;
+                // The engine is `composerEngine` and not something the setup
+                // carries separately: the caller states it in the same call
+                // (`opts.engine`), and a setup describing one engine while the
+                // panel opens on another is the disagreement this records.
                 c.composerLaunch = {
                     model: l.model, effort: l.effort,
-                    permissionMode: l.permissionMode, prompt: l.prompt
+                    permissionMode: l.permissionMode, prompt: l.prompt,
+                    engine: c.composerEngine
                 };
                 c.composerSuperpowers = l.superpowers;
                 c.composerSeed++;

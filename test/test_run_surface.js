@@ -124,8 +124,13 @@ const base = read('src/panels/base.ts');
     ok('…while the command that owns that list still does',
         /registerCommand\('agentfarm\.setActiveProject', async \(arg\?: \{ id\?: string \}\) => \{[\s\S]{0,400}await chooseActiveProject\(\);/.test(ext));
 
+    // ‼️ THE WINDOW IS PART OF THE ASSERTION, so it is sized with room to grow.
+    // At 4200 the last check below sat at offset 4190 and was sliced in half by
+    // it: the command had not changed, the comment above it had. A window that
+    // must be re-measured every time somebody writes a paragraph reports prose
+    // as a missing behaviour, which is the one thing a test must not do.
     const startBody = ext.slice(ext.indexOf("registerCommand('agentfarm.startSession'"),
-        ext.indexOf("registerCommand('agentfarm.startSession'") + 4200);
+        ext.indexOf("registerCommand('agentfarm.startSession'") + 9000);
     ok('‼️ one-click Start asks for the project as well as the place',
         /pickRunSurface\(`New session for \$\{agent\.name\}`,\s*\n\s*\{ project: true, last, agentName: agent\.name \}\)/.test(startBody));
     // ‼️ S-34 (reopened) — and the launch it hands over is the SEEDED one, not a

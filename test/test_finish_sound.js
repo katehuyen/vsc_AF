@@ -232,9 +232,14 @@ function fakeState() {
     // Both doors, or the field works on one shape of run and not the other.
     ok('a declared id is preferred over a deduced one',
         /t\.consoleSessionId \|\| t\.resumeSessionId \|\| t\.runSessionId \|\| ''/.test(extTs));
+    // ‼️ `\s*` AND NOT `\n` — the checkout decides the line ending, not the
+    // author. This read `…();\n` and passed for as long as the file happened to
+    // be sitting in the working tree with LF endings; the first time git wrote
+    // it back with CRLF the assertion reported a missing behaviour for a source
+    // file nobody had edited.
     ok('…and both the task change and the binding pass apply it',
         /taskManager\.onDidChange\(\(\) => applyFinishSounds\(\)\)/.test(extTs)
-        && /applyFinishSounds\(\);\n\s*\};\n\s*context\.subscriptions\.push\(index\.onDidUpdate/.test(extTs));
+        && /applyFinishSounds\(\);\s*\};\s*context\.subscriptions\.push\(index\.onDidUpdate/.test(extTs));
     // ‼️ ONCE, AND ONLY WHILE THE RUN IS STILL GOING. A reload must not
     // re-stamp a preference over a finished task the user has since edited by
     // hand, and writing into a conversation that is over announces nothing.

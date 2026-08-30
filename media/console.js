@@ -2859,12 +2859,23 @@
             const box = document.getElementById('c-text');
             if (box) { box.value = seeded.prompt; }
         }
-        // S-34 - the handed-over setup is a real launch's answer for the engine
-        // this composer is showing (the door set both together), so it survives
-        // the catalog check. Without this the launcher could open the composer
-        // on a model the catalog does not advertise and the box would quietly
-        // show something else.
-        reconcileComposer(engineNow(), false, seeded ? { model: st.model, effort: st.effort } : null);
+        // ‼️ S-34 (reopened) - AND THE SETUP ONLY SURVIVES ON THE ENGINE IT WAS
+        // BUILT FOR.
+        //
+        // A handed-over setup is a real launch's answer, so it beats the
+        // engine's published catalog - the catalog lists what an engine is
+        // OFFERING, not everything it can run. But that is only true while the
+        // setup and the composer are talking about the SAME engine. The check
+        // here used to compare the seeded value against itself (st.model had
+        // just been assigned out of the same object two lines up), so it could
+        // not fail and the reconcile was silenced rather than narrowed: switch
+        // the launcher from Antigravity to Claude and the Claude engine box came
+        // up with the Antigravity model beside it. The engine the setup names is
+        // the fact that decides. A setup from before it was carried names none,
+        // and is trusted, exactly as it was yesterday.
+        const forThisEngine = seeded && (!seeded.engine || seeded.engine === engineNow());
+        reconcileComposer(engineNow(), false,
+            forThisEngine ? { model: st.model, effort: st.effort } : null);
         save();
     }
 
