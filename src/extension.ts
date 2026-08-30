@@ -28202,6 +28202,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         catch (e) { throw new Error(`could not create ${dir}: ${(e as Error).message}`); }
                         await revealPath(dir);
                     },
+                    /**
+                     * U-84 — THE SAME BRIDGE HOST THE TOOLBOX IS GIVEN, by
+                     * reference rather than by a second literal. The snapshot
+                     * caches the bot's name in a variable this closure shares;
+                     * a copy made here would be a second cache, and the two
+                     * pages would then disagree about who the bot is.
+                     */
+                    telegram: toolboxDeps.telegram,
+                    /** U-84 (d) — what a `x-af-values: "agent"` picker offers.
+                     *  Read at draw time, so an agent added since the window
+                     *  opened is in the list. */
+                    agentNames: () => agents.map(a => a.name),
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.
                     docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),

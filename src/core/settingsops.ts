@@ -114,6 +114,22 @@ export interface SettingSpec {
      * through untouched.
      */
     browse?: 'file' | 'folder';
+    /**
+     * ‼️ U-84 — A SETTING WHOSE ANSWER IS A NAME THAT HAS TO EXIST.
+     *
+     * `telegram.defaultAgent` is a string, so the page drew a text box, so the
+     * one way to get it wrong — type a name no agent has — was the easiest thing
+     * to do and produced no error anywhere: a chat then binds to nobody and the
+     * bridge looks broken. The values are not a schema `enum` because they are
+     * not a fact of the manifest at all; they are whatever agents this machine
+     * has TODAY.
+     *
+     * So the schema names a SOURCE (`"x-af-values": "agent"`) and the host fills
+     * it in on every draw. Same reason as `x-af-browse` one field up, and the
+     * same `x-` prefix for the same hard-won reason: a key VS Code recognises
+     * and cannot validate makes it refuse the whole property.
+     */
+    values?: string;
 }
 
 export interface SettingItem extends SettingSpec {
@@ -279,7 +295,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 /** Build the category → items model from the live schema + current values. */
 export function buildSettingsModel(
-    properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown }>,
+    properties: Record<string, SchemaNode & { 'x-af-browse'?: unknown; 'x-af-values'?: unknown }>,
     valueOf: (key: string) => unknown,
     refusalOf?: (key: string) => string | undefined
 ): SettingsCategory[] {
@@ -297,6 +313,11 @@ export function buildSettingsModel(
             markdownDescription: p.markdownDescription,
             ...(p['x-af-browse'] === 'file' ? { browse: 'file' as const } : {}),
             ...(p['x-af-browse'] === 'folder' ? { browse: 'folder' as const } : {}),
+            // U-84 — a picker whose options only the host knows. Read here for
+            // the reason the shape below is: asked for on the page, it would be
+            // a thing the NEXT surface that lists settings does without.
+            ...(typeof p['x-af-values'] === 'string' && p['x-af-values']
+                ? { values: p['x-af-values'] as string } : {}),
             // ‼️ U-89 — read here, once, for every key. A shape asked for on the
             // page would be a shape the NEXT surface that lists settings does
             // without.

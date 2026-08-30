@@ -179,3 +179,78 @@ export function budgetReading(ledger: SpendLedger, capUSD: number, day: string):
         blocked: !withinBudget(ledger, capUSD, day)
     };
 }
+
+/**
+ * ‼️ U-84 — WHAT A SNAPSHOT OF THE BRIDGE IS, and why the host takes it.
+ *
+ * Three of these facts are unreachable from a panel. The bot token is in the
+ * secret vault, the day's spend is in `globalState`, and the last poll error is
+ * held by a poller that lives for the length of `activate()`. A panel that
+ * reached for any of them would either fail or grow its own second copy — so
+ * the extension, which owns all three, hands over the ANSWER.
+ *
+ * ‼️ AND `hasToken` IS A BOOLEAN ON PURPOSE. A card has to be able to draw
+ * "this bridge has no token yet" without the token ever entering a webview —
+ * the same boundary X-100 draws with `hasSecret`, for the same reason.
+ */
+export interface TelegramSnapshot {
+    hasToken: boolean;
+    /** The bot's own name, once something has asked Telegram for it. */
+    botUsername?: string;
+    ledger: SpendLedger;
+    /** The local day the ledger is being read against. */
+    day: string;
+    lastError?: string;
+}
+
+/** The four settings the card reads, on top of the snapshot the host takes. */
+export interface TelegramCardInput extends TelegramSnapshot {
+    enabled: boolean;
+    allowedChats: readonly number[];
+    maxDailyUSD: number;
+    defaultAgent: string;
+}
+
+export interface TelegramCard {
+    enabled: boolean;
+    hasToken: boolean;
+    botUsername?: string;
+    allowedChats: number[];
+    maxDailyUSD: number;
+    defaultAgent: string;
+    status: BridgeStatus;
+    budget: BudgetReading;
+}
+
+/**
+ * ‼️ THE CARD IS COMPOSED ONCE, FOR EVERY SURFACE THAT DRAWS IT.
+ *
+ * U-84 asks for this card in TWO places — the Toolbox's Services tab and Farm
+ * Settings — and the second one is exactly where a copy gets made: given
+ * `enabled`, `hasToken` and a list length, a second panel can work a badge out
+ * for itself in four lines, and those four lines then go quietly out of date
+ * the first time `applyChatBridge` changes. They would go out of date IN GREEN,
+ * which is the failure worth spending a function on.
+ *
+ * So each panel reads the settings (only a host can) and hands them here; what
+ * reaches either page is the same decided object.
+ */
+export function telegramCard(input: TelegramCardInput): TelegramCard {
+    const allowedChats = [...input.allowedChats]
+        .filter(n => typeof n === 'number' && Number.isFinite(n));
+    return {
+        enabled: !!input.enabled,
+        hasToken: !!input.hasToken,
+        ...(input.botUsername ? { botUsername: input.botUsername } : {}),
+        allowedChats,
+        maxDailyUSD: input.maxDailyUSD,
+        defaultAgent: input.defaultAgent,
+        status: bridgeStatus({
+            enabled: !!input.enabled,
+            hasToken: !!input.hasToken,
+            allowCount: allowedChats.length,
+            ...(input.lastError ? { lastError: input.lastError } : {})
+        }),
+        budget: budgetReading(input.ledger, input.maxDailyUSD, input.day)
+    };
+}

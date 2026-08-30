@@ -135,6 +135,66 @@ const T = require(path.join(ROOT, 'out', 'core', 'telegramCockpit.js'));
         /withinBudget/.test(src) && /from '\.\/messaging'/.test(src));
 }
 
+// ---------- ONE CARD, TWO SURFACES: the composer both pages go through ----------
+//
+// ‼️ WHAT THIS SECTION IS WATCHING. U-84 asks for this card in the Toolbox AND
+// in Farm Settings, and a card written twice disagrees the first day one copy is
+// touched — in green, on the page nobody updated. `telegramCard` is the single
+// composer; these checks are what makes a second one impossible to add quietly.
+{
+    const day = '2026-08-30';
+    const card = o => T.telegramCard(Object.assign({
+        enabled: true, hasToken: true, allowedChats: [-1001, 88], maxDailyUSD: 1,
+        defaultAgent: 'developer', ledger: { day, usd: 0.25 }, day
+    }, o));
+
+    const c = card({ botUsername: 'muvu_farm_bot' });
+    eq('the composed card carries the badge the core decided', c.status.state, 'connected');
+    eq('…and the same tone the badge is painted with', c.status.tone, 'ok');
+    eq('…and the budget the ledger really shows', c.budget.spent, 0.25);
+    eq('…and the bot name, when something has asked Telegram for it', c.botUsername, 'muvu_farm_bot');
+
+    // ‼️ NEVER THE TOKEN. The card travels into a webview; a token that reached
+    // this object would be one JSON.stringify away from the page.
+    ok('the card carries whether there is a token, never the token',
+        Object.keys(c).indexOf('token') < 0 && c.hasToken === true);
+
+    // The allowlist decides the badge, so a card that quietly kept a junk entry
+    // would report "connected" for a list that admits nobody.
+    const junk = card({ allowedChats: [88, 'x', null, NaN, 1e21] });
+    eq('a chat id that is not a real number is dropped rather than counted',
+        junk.allowedChats, [88, 1e21]);
+
+    const empty = card({ allowedChats: [] });
+    eq('an empty allowlist is polling-but-deaf, not off', empty.status.state, 'no-chats');
+    ok('…and the poller is still reported as alive, because it is', empty.status.running === true);
+
+    const off = card({ enabled: false });
+    eq('switched off outranks everything else', off.status.state, 'disabled');
+    ok('…and nothing is polled', off.status.running === false);
+
+    // ‼️ THE COMPOSER IS THE ONE BOTH PANELS USE. The check is on the source
+    // rather than on behaviour, because the failure it guards against is a
+    // second panel quietly growing its own four lines of `enabled && hasToken`.
+    const base = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'base.ts'), 'utf8');
+    ok('the shared panel module composes the card through the core',
+        /telegramCard\(/.test(base));
+    for (const p of ['toolboxPanel.ts', 'settingsPanel.ts']) {
+        const src = fs.readFileSync(path.join(ROOT, 'src', 'panels', p), 'utf8');
+        ok(`${p} asks for the shared card rather than deriving one`,
+            /telegramCardData\(/.test(src) && !/bridgeStatus\(/.test(src));
+        ok(`${p} hands the card's messages to the shared handler`,
+            /telegramCardMessage\(/.test(src));
+    }
+    // And the page draws it from one file too — a second card in HTML is the
+    // same defect one layer up.
+    for (const p of ['toolbox.js', 'settings.js']) {
+        const src = fs.readFileSync(path.join(ROOT, 'media', p), 'utf8');
+        ok(`media/${p} draws the card with the shared component`,
+            /window\.AFTelegram\.card\(/.test(src));
+    }
+}
+
 // ---------- ‼️ THE BADGE MUST STOP LYING WHEN THE NETWORK COMES BACK ----------
 //
 // The card shows the poller's last complaint. Clearing that complaint when a

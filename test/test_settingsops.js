@@ -51,6 +51,25 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
         props['agentFarm.promptSnippetsFile']
         && props['agentFarm.promptSnippetsFile']['x-af-browse'] === 'file');
 
+    // ‼️ U-84 (d) — AND "THIS ONE IS A NAME THAT HAS TO EXIST" TRAVELS THE SAME
+    // WAY. A string whose only correct values are the agents on THIS machine
+    // cannot be a schema `enum`, so the schema names a source and the host fills
+    // it in. Same reason as the browse flag above; same `x-` prefix, because a
+    // keyword VS Code recognises and cannot validate makes it refuse the whole
+    // property (which cost a release once already).
+    const picks = SO.buildSettingsModel({
+        'agentFarm.anAgent': { type: 'string', 'x-af-values': 'agent', default: '', description: 'a' },
+        'agentFarm.plainText': { type: 'string', default: '', description: 't' }
+    }, () => '').flatMap(c => c.items);
+    ok('a setting that names a value source gets one',
+        picks.find(i => i.key === 'agentFarm.anAgent').values === 'agent');
+    ok('…and an ordinary string does not',
+        picks.find(i => i.key === 'agentFarm.plainText').values === undefined);
+    for (const k of ['agentFarm.telegram.defaultAgent', 'agentFarm.wikiAgent']) {
+        ok(`${k} asks for the agent picker in the real manifest`,
+            props[k] && props[k]['x-af-values'] === 'agent');
+    }
+
     // ‼️ SAVED PROMPTS HAS ITS OWN SECTION. It shipped as one more row under
     // "Display & Labels" and was indistinguishable from a setting nobody had
     // filled in — which is exactly what it looked like for a week while VS Code

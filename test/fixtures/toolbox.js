@@ -10,32 +10,24 @@
  * long after the rule behind it changed.
  */
 const path = require('path');
-const { bridgeStatus, budgetReading } =
+const { telegramCard } =
     require(path.join(__dirname, '..', '..', 'out', 'core', 'telegramCockpit.js'));
 
 const DAY = '2026-08-30';
 
-/** One telegram block, built the way the panel builds it. */
-const tg = (o) => {
-    const allowedChats = o.allowedChats === undefined ? [-1001234567890, 88112233] : o.allowedChats;
-    const maxDailyUSD = o.maxDailyUSD === undefined ? 1 : o.maxDailyUSD;
-    const ledger = o.ledger || { day: DAY, usd: 0.3812 };
-    return {
-        enabled: o.enabled !== false,
-        hasToken: o.hasToken !== false,
-        ...(o.botUsername ? { botUsername: o.botUsername } : {}),
-        allowedChats,
-        maxDailyUSD,
-        defaultAgent: o.defaultAgent === undefined ? 'developer' : o.defaultAgent,
-        status: bridgeStatus({
-            enabled: o.enabled !== false,
-            hasToken: o.hasToken !== false,
-            allowCount: allowedChats.length,
-            ...(o.lastError ? { lastError: o.lastError } : {})
-        }),
-        budget: budgetReading(ledger, maxDailyUSD, DAY)
-    };
-};
+/** One telegram block, built by the function the panels build it with —
+ *  `telegramCard` is the single composer both surfaces go through. */
+const tg = (o) => telegramCard({
+    enabled: o.enabled !== false,
+    hasToken: o.hasToken !== false,
+    ...(o.botUsername ? { botUsername: o.botUsername } : {}),
+    allowedChats: o.allowedChats === undefined ? [-1001234567890, 88112233] : o.allowedChats,
+    maxDailyUSD: o.maxDailyUSD === undefined ? 1 : o.maxDailyUSD,
+    defaultAgent: o.defaultAgent === undefined ? 'developer' : o.defaultAgent,
+    ledger: o.ledger || { day: DAY, usd: 0.3812 },
+    day: DAY,
+    ...(o.lastError ? { lastError: o.lastError } : {})
+});
 
 const counts = () => ({
     skill: { user: 12, agent: 5 },

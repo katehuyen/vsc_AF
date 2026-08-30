@@ -19,7 +19,9 @@ import { normPath } from '../core/util';
 import { revealPath } from '../core/reveal';
 import { WikiHealth } from '../core/wiki';
 import { SuperpowersHealth } from '../core/superpowers';
-import { handleAfNav, htmlShell } from './base';
+import {
+    handleAfNav, htmlShell, TelegramBridgeHost, telegramCardData, telegramCardMessage
+} from './base';
 
 /** Webview-ready snapshot of one agent root for the Agent folders section. */
 export interface AgentFolderReport {
@@ -171,6 +173,22 @@ export interface FarmSettingsDeps {
     /** Clear ONE conversation's own announcement voice, from the strip that
      *  listed it — the same act as `alerts.speak { sessionId, voice: '' }`. */
     alertsClearSessionSpeech?(sessionId: string): Promise<void>;
+    /**
+     * ‼️ U-84 — THE TELEGRAM BRIDGE, WHICH FOUR SETTINGS ROWS CANNOT REPORT ON.
+     *
+     * Reaching the farm from a phone is configured here — the switch, the
+     * allowlist, the ceiling and the default agent are all `access` category
+     * rows. What none of them can say is whether the thing WORKS: the token is
+     * in the secret vault, the day's spend is in `globalState`, and whether the
+     * poller is alive is a fact about a running process. A page made of settings
+     * rows is exactly where somebody goes to find out why their phone gets no
+     * answer, so the host hands over the same card the Toolbox draws.
+     */
+    telegram?: TelegramBridgeHost;
+    /** ‼️ U-84 (d) — the agent names a `x-af-values: "agent"` setting offers.
+     *  Read live: an agent added since the window opened is in the picker on the
+     *  next draw, and a name typed from memory into a text box is not. */
+    agentNames?(): string[];
 }
 
 /** One event's row on the Alert sounds card: what is armed, what was chosen,
@@ -478,7 +496,18 @@ export class FarmSettingsPanel {
             // for. Read on every build rather than cached: a sign-in that
             // happened in the terminal thirty seconds ago is exactly the change
             // somebody comes back to this page to confirm.
-            engines: this.deps.engines?.() ?? null
+            engines: this.deps.engines?.() ?? null,
+            // U-84 — read on every draw for the same reason the four above are:
+            // a token connected in another window, a poll that has just failed
+            // and today's spend are all facts that change under an open page.
+            // Composed by `telegramCardData`, so this page and the Toolbox draw
+            // one card rather than two that agree until one of them is touched.
+            telegram: telegramCardData(this.deps.telegram) ?? null,
+            // ‼️ U-84 (d) — the live values a picker setting offers, keyed by the
+            // source its schema names (`x-af-values`). A hand-written list of
+            // keys on the page would go stale the first time a setting is added;
+            // a source declared in the manifest travels with the setting.
+            valueSources: { agent: this.deps.agentNames?.() ?? [] }
         };
     }
 
@@ -520,6 +549,14 @@ export class FarmSettingsPanel {
     }
 
     private async onMessage(msg: { type: string; [k: string]: unknown }): Promise<void> {
+        // U-84 — the bridge card's own messages, handled by the module the
+        // Toolbox handles them with. One card, one set of rules, two pages.
+        if (await telegramCardMessage(msg, {
+            ...(this.deps.telegram ? { host: this.deps.telegram } : {}),
+            webview: this.panel.webview,
+            warn: t => void vscode.window.showWarningMessage('Agent Farm: ' + t),
+            refresh: () => this.refresh()
+        })) { return; }
         switch (msg.type) {
             case 'set': {
                 const key = String(msg.key ?? '');

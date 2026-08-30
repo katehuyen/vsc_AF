@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { createWikiCategory, normTopics, normTurnList, readWikiCategories, turnFor } from '../core/wiki';
 import { afConfig } from '../core/settingsDoor';
+import {
+    parseChatId, telegramCard, TelegramCard, TelegramSnapshot
+} from '../core/telegramCockpit';
 
 /**
  * The global nav's 🔔 Notices button shows the current unread count in
@@ -351,6 +354,11 @@ export function htmlShell(
     // Four models carry a project now (Faz 5), so a mark invented per page is a
     // mark that disagrees per page.
     const project = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afProject.js'));
+    // The Telegram bridge card (U-84). Ships everywhere for the reason the
+    // badges above do, with one extra: the fact it draws is "can your phone
+    // reach the farm", and a card invented per page is a card that answers that
+    // differently per page — in green, on the page that was not updated.
+    const telegram = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTelegram.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
@@ -399,6 +407,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${time}"></script>
 <script nonce="${nonce}" src="${engine}"></script>
 <script nonce="${nonce}" src="${project}"></script>
+<script nonce="${nonce}" src="${telegram}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>
@@ -655,6 +664,120 @@ export function wikiMarkMessage(
                 merged: r.merged, pending: r.pending,
                 from, to, ...wikiSnapshot(session)
             });
+            return true;
+        }
+        default:
+            return false;
+    }
+}
+
+// ---------------------------------------------------------------- U-84
+/**
+ * THE TELEGRAM BRIDGE CARD, HOSTED IN ONE PLACE FOR THE TWO PAGES THAT DRAW IT.
+ *
+ * ‼️ U-84 asks for the card on the Toolbox AND in Farm Settings, and a card is
+ * not only what it draws: it is four settings it may write, one allowlist that
+ * has to be able to REFUSE what was typed, and a live `getMe` whose answer goes
+ * back to the page that asked. Written twice, the second copy is where the
+ * allowlist of writable keys is forgotten — and that allowlist is the whole
+ * difference between a card with four controls and a webview with write access
+ * to every Agent Farm setting there is.
+ *
+ * So the composing and the handling both live here, beside `htmlShell`, which
+ * is the module a page already has to import to exist.
+ */
+export interface TelegramBridgeHost {
+    snapshot(): TelegramSnapshot;
+    /** A live `getMe` against the stored token. Returns the bot's name or the
+     *  reason it could not be had — never the token. */
+    verify(): Promise<{ ok: boolean; username?: string; error?: string }>;
+}
+
+/**
+ * ‼️ THE ONLY SETTINGS THE CARD MAY WRITE, named one by one.
+ *
+ * The alternative is a page that posts `{key, value}` and a host that obeys it,
+ * which is a webview with write access to everything. `allowedChats` is NOT
+ * here: it has its own two cases, because adding an id has to be able to refuse.
+ */
+const TELEGRAM_CARD_KEYS = new Set([
+    'telegram.enabled', 'telegram.maxDailyUSD', 'telegram.defaultAgent'
+]);
+
+/** The card's data, composed once by the core. `undefined` when the window has
+ *  no bridge host — the page then simply does not draw the card. */
+export function telegramCardData(host: TelegramBridgeHost | undefined): TelegramCard | undefined {
+    if (!host) { return undefined; }
+    const cfg = afConfig();
+    const snap = host.snapshot();
+    return telegramCard({
+        ...snap,
+        enabled: cfg.get<boolean>('telegram.enabled', false),
+        allowedChats: (cfg.get<number[]>('telegram.allowedChats', []) ?? [])
+            .filter(n => typeof n === 'number'),
+        maxDailyUSD: cfg.get<number>('telegram.maxDailyUSD', 1),
+        defaultAgent: cfg.get<string>('telegram.defaultAgent', '').trim()
+    });
+}
+
+/**
+ * Every `svc-*` message the card can post, handled identically on either page.
+ * Returns `true` when the message was one of the card's, so a panel's own
+ * switch can fall through to its other cases.
+ */
+export async function telegramCardMessage(
+    msg: { type?: unknown;[k: string]: unknown },
+    ctx: {
+        host?: TelegramBridgeHost;
+        webview: vscode.Webview;
+        /** How this page tells the user a value was refused. */
+        warn(text: string): void;
+        /** Redraw — the card never paints a value before the write lands. */
+        refresh(): void;
+    }
+): Promise<boolean> {
+    switch (msg.type) {
+        case 'svc-connect':
+            // The token is collected by the command that already knows how to
+            // store it — a second input box here would be a second place a
+            // secret is handled.
+            await vscode.commands.executeCommand('agentfarm.connectTelegram');
+            ctx.refresh();
+            return true;
+        case 'svc-verify': {
+            const r = await ctx.host?.verify();
+            if (!r) { return true; }
+            void ctx.webview.postMessage({ type: 'svc-verified', ...r });
+            ctx.refresh();
+            return true;
+        }
+        case 'svc-set': {
+            const key = String(msg.key ?? '');
+            if (!TELEGRAM_CARD_KEYS.has(key)) { return true; }
+            await afConfig().update(key, msg.value, vscode.ConfigurationTarget.Global);
+            ctx.refresh();
+            return true;
+        }
+        case 'svc-allow-add': {
+            const list = (afConfig().get<number[]>('telegram.allowedChats', []) ?? [])
+                .filter(n => typeof n === 'number');
+            const parsed = parseChatId(String(msg.text ?? ''), list);
+            // The refusal is SHOWN. Dropping a bad id silently is the one
+            // behaviour that makes somebody type it again, identically.
+            if (!parsed.ok) { ctx.warn(parsed.error ?? 'that is not a chat id.'); return true; }
+            await afConfig().update('telegram.allowedChats', [...list, parsed.id],
+                vscode.ConfigurationTarget.Global);
+            ctx.refresh();
+            return true;
+        }
+        case 'svc-allow-remove': {
+            const id = Number(msg.id);
+            if (!Number.isFinite(id)) { return true; }
+            const list = (afConfig().get<number[]>('telegram.allowedChats', []) ?? [])
+                .filter(n => typeof n === 'number' && n !== id);
+            await afConfig().update('telegram.allowedChats', list,
+                vscode.ConfigurationTarget.Global);
+            ctx.refresh();
             return true;
         }
         default:

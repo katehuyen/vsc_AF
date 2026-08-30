@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.350.0",
+  "version": "3.351.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8164,6 +8164,7 @@
         "agentFarm.telegram.defaultAgent": {
           "type": "string",
           "default": "",
+          "x-af-values": "agent",
           "description": "Agent a new chat talks to before it picks one with /agent. Empty = a chat must bind an agent first."
         },
         "agentFarm.providerProfiles": {
@@ -9527,6 +9528,7 @@
         "agentFarm.wikiAgent": {
           "type": "string",
           "default": "",
+          "x-af-values": "agent",
           "description": "Which agent writes the wiki. wiki.compile.run starts a headless run under this agent unless one is named in the call — the synthesis belongs to an agent, so a compile needs somebody to be one. Empty = the first agent the farm knows."
         },
         "agentFarm.wikiEngine": {

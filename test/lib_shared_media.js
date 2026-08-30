@@ -45,7 +45,12 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     'afEngine.js',
     // afProject.js was the eleventh — which project a thing belongs to, drawn
     // one way, once four models grew a projectId (Faz 5)
-    'afProject.js'];
+    'afProject.js',
+    // afTelegram.js was the sixteenth — the Telegram bridge card (U-84).
+    // Shared the moment the item asked for it in two places: the fact it draws
+    // is "can your phone reach the farm", and a card invented per page is a
+    // card that answers that differently per page, in green.
+    'afTelegram.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

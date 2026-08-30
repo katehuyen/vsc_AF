@@ -13,6 +13,10 @@
     // redraw is where the ask lives, so without this the page would spawn a
     // shell per frame; the ↻ on the strip is the deliberate second ask.
     let speakVoicesAsked = false;
+    // U-84 — what the last live `getMe` said, drawn inside the bridge card.
+    // Held on the page rather than in DATA: it is an answer to a question this
+    // reader asked, not a fact about the farm, and it does not survive a reload.
+    let svcMsg = null;
     /**
      * ‼️ U-108 — THE LIST BEING EDITED, and whether the user asked for the
      * raw JSON instead.
@@ -84,7 +88,8 @@
         // and nothing about right-clicking Send (see PROMPT_TERMS).
         const extra = it.key === 'agentFarm.promptSnippetsFile' ? ' ' + PROMPT_TERMS
             : /^agentFarm\.wiki/.test(it.key) ? ' ' + WIKI_TERMS
-                : /^agentFarm\.superpowers/.test(it.key) ? ' ' + SP_TERMS : '';
+                : /^agentFarm\.superpowers/.test(it.key) ? ' ' + SP_TERMS
+                    : /^agentFarm\.telegram/.test(it.key) ? ' ' + TG_TERMS : '';
         return window.AFQuery.compile(filter).test(it.key + ' ' + (it.description || '') + extra);
     }
 
@@ -772,6 +777,28 @@
         if (it.enum && it.enum.length) {
             return `<select id="${id}" data-set="${C.esc(it.key)}">${it.enum.map(o =>
                 `<option value="${C.esc(o)}"${String(it.value) === o ? ' selected' : ''}>${C.esc(o)}</option>`).join('')}</select>`;
+        }
+        /**
+         * ‼️ U-84 (d) — A PICKER WHOSE OPTIONS ARE NOT IN THE MANIFEST.
+         *
+         * `telegram.defaultAgent` and `wikiAgent` are strings whose only correct
+         * values are the names of agents this machine has — which the schema
+         * cannot enumerate and a text box cannot check. The schema names a
+         * SOURCE and the host fills it in (`DATA.valueSources`).
+         *
+         * ‼️ AND THE STORED VALUE IS ALWAYS AN OPTION, even when the source has
+         * never heard of it. An agent that was renamed or is not on this machine
+         * would otherwise be silently swapped for whatever sits first in the
+         * list, which is a settings page changing a setting nobody touched.
+         */
+        const src = it.values && (DATA.valueSources || {})[it.values];
+        if (src) {
+            const cur = String(it.value ?? '');
+            const names = cur && src.indexOf(cur) < 0 ? [cur].concat(src) : src;
+            return `<select id="${id}" data-set="${C.esc(it.key)}">
+                <option value=""${cur ? '' : ' selected'}>— none —</option>
+                ${names.map(o => `<option value="${C.esc(o)}"${cur === o ? ' selected' : ''}>${C.esc(o)}${
+                src.indexOf(o) < 0 ? ' (not on this machine)' : ''}</option>`).join('')}</select>`;
         }
         if (it.type === 'number') {
             return `<input type="number" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:110px">`;
@@ -2026,6 +2053,42 @@
         </div>`;
     }
 
+    /**
+     * ‼️ U-84 — THE ACCESS CATEGORY LEADS WITH WHETHER IT WORKS.
+     *
+     * Four rows here configure the Telegram bridge and not one of them can say
+     * whether the thing is up: the token is in the secret vault, the day's spend
+     * is in the extension's own storage, and "is the poller alive" is a fact
+     * about a running process. That is the question somebody has when they open
+     * this page — their phone got no answer — and the four boxes answer a
+     * different one.
+     *
+     * ‼️ THE CARD DOES NOT REPEAT THE FOUR CONTROLS. ONE SUBJECT: the rows below
+     * own them, and a second switch two inches above the first is a page that
+     * can disagree with itself. What the card carries is exactly what no row
+     * can — token, bot, poller, today's spend — plus the two acts that are not
+     * settings at all (connect a token, ask Telegram who this bot is).
+     * `media/afTelegram.js` draws it, the same file the Toolbox draws it from.
+     */
+    const TG_TERMS = 'telegram bot phone mobile chat bridge remote token botfather '
+        + 'allowlist chat id budget ceiling daily usd getMe poller polling';
+
+    function accessSection(cat) {
+        const items = (cat && cat.items) || [];
+        const boxes = items.map(itemHtml).join('');
+        const t = DATA.telegram;
+        // Nothing to add when this window has no bridge host, or when the filter
+        // has narrowed the category down to the web-server rows.
+        if (!t || !items.some(it => /^agentFarm\.telegram/.test(it.key))) { return boxes; }
+        return window.AFTelegram.card(t, {
+            controls: false,
+            msg: svcMsg,
+            footer: '<div class="muted small" style="margin-top:6px">The switch, the allowlist, '
+                + 'the ceiling and the default agent are the boxes below — this card is what they '
+                + 'cannot tell you.</div>'
+        }) + boxes;
+    }
+
     /** The Live category, with the two alert-sound boxes replaced by the card
      *  IN THEIR OWN PLACE — beside the notification switches, where the reader
      *  who confused the two will be looking. */
@@ -2282,6 +2345,7 @@
                 .alertmine .wikimark.ok { color:var(--vscode-textLink-foreground); }
                 .alertmine .wikirel { flex:0 0 180px; }
                 .alertmine button { flex:none; margin-left:2px; }
+                ${window.AFTelegram.css()}
             </style>
             ${window.AFHeader.html({
                 page: 'settings',
@@ -2304,13 +2368,17 @@
                     : c.id === 'wiki' ? wikiSection(c)
                         : c.id === 'superpowers' ? superpowersSection(c)
                             : c.id === 'live' ? alertsSection(c)
-                                : c.items.map(itemHtml).join('')}`).join('')
+                                : c.id === 'access' ? accessSection(c)
+                                    : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeHtml}
         `;
 
         // -- wiring --
         window.AFHeader.wire(vscode);
+        // U-84 — the bridge card's own controls, wired by the component that
+        // drew them. Safe on a draw that has no card: every lookup finds nothing.
+        window.AFTelegram.wire(m => vscode.postMessage(m));
         const dcMode = document.getElementById('docopenmode');
         if (dcMode) { dcMode.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'defaultMode', value: dcMode.value })); }
         const dcCmd = document.getElementById('docopencmd');
@@ -3109,6 +3177,14 @@
             else { list.push(String(ev.data.path)); }
             listDraft[ev.data.key] = list.map(v => String(v));
             delete errors[ev.data.key];
+            render();
+            return;
+        }
+        // U-84 — the live getMe answer. Shown IN THE CARD rather than as a
+        // notification: the question was asked here and the answer belongs
+        // beside the badge it is about.
+        if (ev.data.type === 'svc-verified') {
+            svcMsg = window.AFTelegram.verifiedMessage(ev.data);
             render();
             return;
         }

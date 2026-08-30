@@ -813,7 +813,7 @@
       "capability": "connectTelegram",
       "ui": [
         "cmd:agentfarm.connectTelegram",
-        "page:toolboxPanel.ts#svc-connect"
+        "page:base.ts#svc-connect"
       ],
       "exempt": {
         "kind": "secrets",
@@ -6774,36 +6774,36 @@
       ]
     },
     {
-      "capability": "toolboxPanel.ts#svc-allow-add",
+      "capability": "base.ts#svc-allow-add",
       "ui": [
-        "page:toolboxPanel.ts#svc-allow-add"
+        "page:base.ts#svc-allow-add"
       ],
       "ops": [
         "settings.set"
       ]
     },
     {
-      "capability": "toolboxPanel.ts#svc-allow-remove",
+      "capability": "base.ts#svc-allow-remove",
       "ui": [
-        "page:toolboxPanel.ts#svc-allow-remove"
+        "page:base.ts#svc-allow-remove"
       ],
       "ops": [
         "settings.set"
       ]
     },
     {
-      "capability": "toolboxPanel.ts#svc-set",
+      "capability": "base.ts#svc-set",
       "ui": [
-        "page:toolboxPanel.ts#svc-set"
+        "page:base.ts#svc-set"
       ],
       "ops": [
         "settings.set"
       ]
     },
     {
-      "capability": "toolboxPanel.ts#svc-verify",
+      "capability": "base.ts#svc-verify",
       "ui": [
-        "page:toolboxPanel.ts#svc-verify"
+        "page:base.ts#svc-verify"
       ],
       "ops": [
         "telegram.status"

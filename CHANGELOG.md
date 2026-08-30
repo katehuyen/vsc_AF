@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.351.0 - U-84: the Telegram bridge card, on the page that is made of its settings (2026-08-30)
+
+U-84's first half put a live management card on the Toolbox. Its item asked for
+that card in TWO places, and the second one was the harder half to get right:
+Farm Settings already draws `telegram.enabled`, `allowedChats`, `maxDailyUSD`
+and `defaultAgent` as four ordinary rows, and a card that repeated them would be
+a page that can disagree with itself.
+
+**So the card carries only what a settings row cannot.** The token is in the
+secret vault, the day's spend is in the extension's own storage, and "is the
+poller alive" is a fact about a running process — none of the three is in any
+box, and all three are the reason somebody opens this page when their phone gets
+no answer. The card says: token in the vault or not, which bot answered, poller
+alive or stopped, how many chats the list admits, and what today has cost
+against today's ceiling. Plus the two acts that are not settings at all —
+connect a token, ask Telegram who this bot is.
+
+**‼️ ONE CARD, and that is now structural rather than a promise.** The badge,
+the tones, the budget bar and the wiring live in `media/afTelegram.js`, shipped
+to every page by the shell; the data is composed once by `telegramCard()` in
+`core/telegramCockpit.ts`; and every `svc-*` message both pages can post is
+handled by one function in `panels/base.ts` — including the allowlist of the
+three settings a webview may write, which is the thing a second copy forgets.
+The tests fail if either page grows a tone vocabulary of its own.
+
+**‼️ A SETTING WHOSE ANSWER IS A NAME THAT HAS TO EXIST NOW GETS A PICKER.**
+`telegram.defaultAgent` was a text box, so the one way to get it wrong — type a
+name no agent has — was the easiest thing to do and produced no error anywhere.
+The correct values are not a fact of the manifest (they are whatever agents this
+machine has today), so the schema names a SOURCE instead: `"x-af-values":
+"agent"`, and the host fills it in on every draw. Derived, never a list of keys
+on the page — the same rule `x-af-browse` follows, and `wikiAgent` gets the
+picker for free. A stored name the host has never heard of stays selected and is
+marked "not on this machine", because a page that silently swapped it would be
+changing a setting nobody touched.
+
+**Fixed while looking at the render.** The card's two buttons carried a class
+(`mini`) that is defined nowhere in the extension, so they drew as full-size
+primary buttons — two blocks of button-blue over the one thing the card exists
+to say. An action on a status card is secondary by definition.
+
 ## 3.350.0 - X-103: the route is something you can PICK (2026-08-30)
 
 X-101 built one entrance for resolving which route a launch runs on, and then
