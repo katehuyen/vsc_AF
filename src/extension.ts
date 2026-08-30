@@ -250,6 +250,7 @@ import {
     SpendLedger, withinBudget
 } from './core/messaging';
 import { getMe, sendMessage, TelegramPoller } from './core/telegram';
+import { bridgeStatus, budgetReading } from './core/telegramCockpit';
 import { generateToken, RunningWebServer, startWebServer, lanAddress } from './core/webserver';
 import { buildPortfolioRows } from './panels/portfolioPanel';
 import {
@@ -15933,7 +15934,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         index,
         cacheFile: toolboxProbeCacheFile,
-        refreshTrees: () => refreshAll()
+        refreshTrees: () => refreshAll(),
+        /**
+         * U-84 — the three facts a panel cannot reach: the vault's answer about
+         * a token, the day's ledger, and the poller's last complaint.
+         *
+         * ‼️ `hasToken`, NEVER THE TOKEN. The card has to draw "no sign-in yet"
+         * without a secret entering a webview — the boundary X-100 draws with
+         * `hasSecret`. The declarations these read live further down `activate`;
+         * they are only ever CALLED once a person opens the page, which is long
+         * after activation has finished.
+         */
+        telegram: {
+            snapshot: () => ({
+                hasToken: !!vault.get(TELEGRAM_SECRET),
+                ...(chatBotName ? { botUsername: chatBotName } : {}),
+                ledger: chatState().ledger,
+                day: dayKey(Date.now()),
+                ...(chatLastError ? { lastError: chatLastError } : {})
+            }),
+            verify: async () => {
+                const token = vault.get(TELEGRAM_SECRET);
+                if (!token) { return { ok: false, error: 'there is no bot token in the vault yet' }; }
+                try {
+                    const me = await getMe(token);
+                    // Cached so the badge keeps the name after the next refresh;
+                    // a name that vanishes on redraw reads as a lost connection.
+                    if (me.ok) { chatBotName = me.username; }
+                    return me.ok
+                        ? { ok: true, ...(me.username ? { username: me.username } : {}) }
+                        : { ok: false, error: 'Telegram rejected the token' };
+                } catch (e) {
+                    return { ok: false, error: String((e as Error).message ?? e) };
+                }
+            }
+        }
     };
     const viewerDeps = {
         extensionUri: context.extensionUri,
@@ -19911,6 +19946,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         defaultAgent: cfg().get<string>('telegram.defaultAgent', '').trim()
     });
     let poller: TelegramPoller | undefined;
+    /**
+     * ‼️ U-84 — THE BRIDGE'S LAST COMPLAINT, KEPT WHERE SOMETHING CAN READ IT.
+     *
+     * A failed poll used to go to `console.warn` and nowhere else, so a token
+     * that expired on Tuesday looked exactly like a bridge nobody had switched
+     * on. Held rather than counted: the CURRENT complaint is what a person acts
+     * on, and it is cleared by the next successful poll — a card still showing
+     * this morning's timeout at teatime would send somebody to fix nothing.
+     */
+    let chatLastError: string | undefined;
+    /** The bot's own name, once something has asked Telegram for it. */
+    let chatBotName: string | undefined;
 
     const chatSend = async (chatId: number, text: string) => {
         const token = vault.get(TELEGRAM_SECRET);
@@ -20060,7 +20107,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void saveChatState({ ...chatState(), offset: next });
                 for (const m of msgs) { void chatHandle(m); }
             },
-            onError: e => console.warn('Agent Farm: telegram poll failed', e.message)
+            // ‼️ CLEARED HERE, NOT IN `onMessages`. A bridge nobody is texting
+            // polls all day and receives nothing; hanging the recovery on an
+            // arriving message would leave this morning's timeout on the badge
+            // until somebody happened to write to it.
+            onPoll: () => { chatLastError = undefined; },
+            onError: e => {
+                chatLastError = e.message;
+                console.warn('Agent Farm: telegram poll failed', e.message);
+            }
         });
         poller.start();
     };
@@ -29187,6 +29242,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await clearProviderSecret(id);
                 EnginesPanel.refreshIfOpen();
                 return { removed: id, credentialCollected: hadSecret };
+            }
+        },
+        {
+            op: 'telegram.status',
+            describe: 'U-84 — IS THE TELEGRAM BRIDGE ALIVE, and if not, what is wrong with it. Returns '
+                + 'the state (disabled · no-token · no-chats · connected · error) with the sentence '
+                + 'behind it, whether the poller is running, the bot name once something has asked '
+                + 'for it, how many chats are on the allowlist, and today\'s chat-started spend '
+                + 'against its ceiling. ‼️ NO TOKEN IS RETURNED AND NONE IS TAKEN — `hasToken` is a '
+                + 'boolean, because whether a sign-in exists is public and the sign-in is not; the '
+                + 'token is set from the panel only ("Connect Telegram…"), the same deliberate '
+                + 'exception the secret vault has. ‼️ AND AN EMPTY ALLOWLIST DOES NOT MEAN STOPPED: '
+                + 'the poller runs and refuses every message that arrives, which is why `running` '
+                + 'and `state` are two answers rather than one. args: verify? (true asks Telegram '
+                + 'itself with getMe — one network call, and the only thing here that makes one)',
+            handler: async (args) => {
+                const verify = optStr(args, 'verify') === 'true' || args?.verify === true;
+                const hasToken = !!vault.get(TELEGRAM_SECRET);
+                if (verify && hasToken) {
+                    // The name is cached so every later read carries it without
+                    // another round trip; a failure is reported, not thrown,
+                    // because "the bridge is broken" is the answer being asked for.
+                    try {
+                        const me = await getMe(vault.get(TELEGRAM_SECRET) as string);
+                        if (me.ok) { chatBotName = me.username; } else { chatLastError = 'Telegram rejected the token'; }
+                    } catch (e) { chatLastError = String((e as Error).message ?? e); }
+                }
+                const c = chatCfg();
+                const status = bridgeStatus({
+                    enabled: c.enabled, hasToken, allowCount: c.allow.length,
+                    ...(chatLastError ? { lastError: chatLastError } : {})
+                });
+                return {
+                    ...status,
+                    hasToken,
+                    ...(chatBotName ? { botUsername: chatBotName } : {}),
+                    allowedChats: c.allow.length,
+                    defaultAgent: c.defaultAgent,
+                    budget: budgetReading(chatState().ledger, c.maxDailyUSD, dayKey(Date.now()))
+                };
             }
         }
     ]);

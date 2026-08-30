@@ -11,6 +11,9 @@ import {
 import {
     formatToolPairs, probeCacheKey, removeToolboxItem, resolveServerConfig, saveToolboxItem
 } from '../core/toolboxBridge';
+import { SpendLedger } from '../core/messaging';
+import { afConfig } from '../core/settingsDoor';
+import { bridgeStatus, budgetReading, parseChatId } from '../core/telegramCockpit';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -20,6 +23,30 @@ import { handleAfNav, htmlShell } from './base';
  * actions (open, reveal, create, remove-with-backup, enable/disable).
  */
 
+/**
+ * U-84 — THE LIVE FACTS THE TELEGRAM CARD DRAWS, and the reason they arrive as
+ * a dependency rather than being read here.
+ *
+ * ‼️ THREE OF THEM ARE UNREACHABLE FROM A PANEL. The bot token is in the secret
+ * vault, the day's spend is in `globalState`, and the last poll error is held by
+ * a poller that lives for the length of `activate()`. A panel that reached for
+ * any of them would either fail or grow its own second copy — so the extension,
+ * which owns all three, hands over the ANSWER.
+ *
+ * ‼️ AND `hasToken` IS A BOOLEAN ON PURPOSE. The card has to be able to draw
+ * "this bridge has no token yet" without the token ever entering a webview —
+ * the same boundary X-100 draws with `hasSecret`, for the same reason.
+ */
+export interface TelegramSnapshot {
+    hasToken: boolean;
+    /** The bot's own name, once something has asked Telegram for it. */
+    botUsername?: string;
+    ledger: SpendLedger;
+    /** The local day the ledger is being read against. */
+    day: string;
+    lastError?: string;
+}
+
 export interface ToolboxPanelDeps {
     extensionUri: vscode.Uri;
     getAgents(): AgentInfo[];
@@ -28,6 +55,14 @@ export interface ToolboxPanelDeps {
     cacheFile: string;
     refreshTrees(): void;
     home?: string;
+    /** U-84 — optional so every existing caller and test keeps working; the
+     *  card simply does not draw when nothing supplies it. */
+    telegram?: {
+        snapshot(): TelegramSnapshot;
+        /** A live `getMe` against the stored token. Returns the bot's name or
+         *  the reason it could not be had — never the token. */
+        verify(): Promise<{ ok: boolean; username?: string; error?: string }>;
+    };
 }
 
 /**
@@ -58,6 +93,19 @@ export interface ToolCompose {
 
 const USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 
+/**
+ * ‼️ U-84 — THE ONLY SETTINGS THE SERVICES CARD MAY WRITE, named one by one.
+ *
+ * The alternative is a page that posts `{key, value}` and a host that obeys it,
+ * which is a webview with write access to every Agent Farm setting there is.
+ * The allowlist is the difference between a card with four controls and a
+ * general-purpose settings writer nobody meant to build. `allowedChats` is NOT
+ * here: it has its own two cases, because adding an id has to be able to refuse.
+ */
+const SERVICE_KEYS = new Set([
+    'telegram.enabled', 'telegram.maxDailyUSD', 'telegram.defaultAgent'
+]);
+
 function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
     const agents = deps.getAgents();
     const inv = buildToolboxInventory(agents, deps.home);
@@ -85,6 +133,43 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
         paths: {
             userClaudeDir: userClaudeDir(deps.home),
             userConfigJson: userConfigJson(deps.home)
+        },
+        services: buildServices(deps)
+    };
+}
+
+/**
+ * U-84 — the Services card's data, ALREADY DECIDED.
+ *
+ * ‼️ THE PAGE IS HANDED CONCLUSIONS, NOT INGREDIENTS. Given `enabled`,
+ * `hasToken` and an allowlist length, a page would have to work out for itself
+ * whether the bridge is running — which is a second implementation of
+ * `applyChatBridge`'s rules, in a file nobody thinks of as launch logic, going
+ * quietly out of date the first time that function changes. `bridgeStatus` and
+ * `budgetReading` are asked here and the answers are what travel.
+ */
+function buildServices(deps: ToolboxPanelDeps): Record<string, unknown> | undefined {
+    if (!deps.telegram) { return undefined; }
+    const cfg = afConfig();
+    const snap = deps.telegram.snapshot();
+    const allowedChats = (cfg.get<number[]>('telegram.allowedChats', []) ?? [])
+        .filter(n => typeof n === 'number');
+    const maxDailyUSD = cfg.get<number>('telegram.maxDailyUSD', 1);
+    return {
+        telegram: {
+            enabled: cfg.get<boolean>('telegram.enabled', false),
+            hasToken: snap.hasToken,
+            ...(snap.botUsername ? { botUsername: snap.botUsername } : {}),
+            allowedChats,
+            maxDailyUSD,
+            defaultAgent: cfg.get<string>('telegram.defaultAgent', '').trim(),
+            status: bridgeStatus({
+                enabled: cfg.get<boolean>('telegram.enabled', false),
+                hasToken: snap.hasToken,
+                allowCount: allowedChats.length,
+                ...(snap.lastError ? { lastError: snap.lastError } : {})
+            }),
+            budget: budgetReading(snap.ledger, maxDailyUSD, snap.day)
         }
     };
 }
@@ -233,6 +318,53 @@ export class ToolboxPanel {
                 if (!node) { this.warn('a user-scope skill is already shared by every agent.'); break; }
                 await vscode.commands.executeCommand('agentfarm.shareSkill', node);
                 this.changed();
+                break;
+            }
+            // ---------------------------------------- U-84 · Services card
+            case 'svc-connect':
+                // The token is collected by the command that already knows how
+                // to store it — a second input box here would be a second place
+                // a secret is handled.
+                await vscode.commands.executeCommand('agentfarm.connectTelegram');
+                this.refresh();
+                break;
+            case 'svc-verify': {
+                const r = await this.deps.telegram?.verify();
+                if (!r) { break; }
+                void this.panel.webview.postMessage({ type: 'svc-verified', ...r });
+                this.refresh();
+                break;
+            }
+            case 'svc-set': {
+                // ‼️ AN ALLOW-LIST, NOT A PASS-THROUGH. A page that can name any
+                // setting is a page that can write any setting, and this one is
+                // reachable by anything that can post a message into a webview.
+                const key = String(msg.key ?? '');
+                if (!SERVICE_KEYS.has(key)) { break; }
+                await afConfig().update(key, msg.value, vscode.ConfigurationTarget.Global);
+                this.refresh();
+                break;
+            }
+            case 'svc-allow-add': {
+                const list = (afConfig().get<number[]>('telegram.allowedChats', []) ?? [])
+                    .filter(n => typeof n === 'number');
+                const parsed = parseChatId(String(msg.text ?? ''), list);
+                // The refusal is SHOWN. Dropping a bad id silently is the one
+                // behaviour that makes somebody type it again, identically.
+                if (!parsed.ok) { this.warn(parsed.error ?? 'that is not a chat id.'); break; }
+                await afConfig().update('telegram.allowedChats', [...list, parsed.id],
+                    vscode.ConfigurationTarget.Global);
+                this.refresh();
+                break;
+            }
+            case 'svc-allow-remove': {
+                const id = Number(msg.id);
+                if (!Number.isFinite(id)) { break; }
+                const list = (afConfig().get<number[]>('telegram.allowedChats', []) ?? [])
+                    .filter(n => typeof n === 'number' && n !== id);
+                await afConfig().update('telegram.allowedChats', list,
+                    vscode.ConfigurationTarget.Global);
+                this.refresh();
                 break;
             }
         }

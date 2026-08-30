@@ -2,6 +2,59 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.346.0 - U-84: the Telegram bridge, on a card that cannot lie about it (2026-08-30)
+
+The bridge that lets a chat talk to your agents has been in the extension for a
+while, and it announced itself through two `showWarningMessage` calls at startup
+and then went silent. A token that expired on Tuesday looked exactly like a
+bridge nobody had switched on, and the only way to change anything about it was
+to find four settings by name.
+
+The Toolbox page grows a **Services** tab — the first tab on that page that is
+about something RUNNING rather than files on disk — holding a Telegram Bridge
+card with its state, its sign-in, its allowlist, its ceiling and its default
+agent.
+
+**‼️ The card derives nothing for itself.** Every badge and figure comes from
+`core/telegramCockpit.ts`, which is measured against what `applyChatBridge()`
+really does. A page working out "is it running" from `enabled && hasToken` would
+be a second copy of the launch rules living in a file nobody thinks of as launch
+logic, going out of date the first time that function changes — in green.
+
+**‼️ RUNNING and USABLE are two different questions**, and this was measured
+rather than assumed: an empty allowlist does NOT stop the poller. It warns and
+starts anyway, and every message that arrives is refused. A single badge
+collapsing the two would call a live-but-deaf bridge "off" and send somebody to
+restart a service that is running fine.
+
+**‼️ A poll that returns nothing still reports that it completed.** The last
+error used to be cleared when a MESSAGE arrived — but a bridge nobody is texting
+polls all day and receives nothing, so this morning's timeout would still be on
+the badge at teatime. `TelegramPoller` gained an `onPoll` signal for exactly
+that, and an injectable transport, which is what finally made the loop testable:
+until now it was the one part of the bridge no test had ever run.
+
+**‼️ Two defects were found by LOOKING at the rendered page, not by a test.**
+The ceiling row stacked a box, its unit and today's figure into three lines for
+one fact; and the switch read "on — polling Telegram" underneath a red "no
+token" badge, contradicting itself in two adjacent lines. Both are visible in
+`dist/render/toolbox.png`; neither would have failed a string assertion.
+
+Also here:
+
+- `hasToken` is a boolean and never the token — the boundary X-100 draws with
+  `hasSecret`, for the same reason. Nothing about the credential reaches a
+  webview, and the new `telegram.status` bridge op neither takes nor returns one.
+- The page may only write three named settings. A webview that could post
+  `{key, value}` at the host would be a general-purpose settings writer nobody
+  meant to build; `allowedChats` has its own two doors because adding an id has
+  to be able to refuse — and it refuses BY NAME, since a button that silently
+  does nothing is indistinguishable from a broken one.
+- A group chat id is negative and is accepted as such; an id too long to hold
+  exactly is refused rather than rounded into a number that belongs to nobody.
+- Five new doors, five new parity entries, in this commit. The gap budget is
+  unchanged at 34.
+
 ## 3.345.0 - X-100 (surface): the routes Agent Farm holds, and the boundary drawn where it can be measured (2026-08-30)
 
 The other half of X-100. 3.343.0 shipped the core — who owns which fact, how a

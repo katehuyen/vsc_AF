@@ -17,8 +17,18 @@
         { id: 'hook', label: 'Hooks' },
         { id: 'plugin', label: 'Plugins' },
         { id: 'style', label: 'Styles' },
-        { id: 'settings', label: 'Files' }
+        { id: 'settings', label: 'Files' },
+        // ‼️ U-84 — NOT AN INVENTORY TAB, AND THE CODE BELOW HAS TO KNOW IT.
+        // Every other tab counts things found on disk; this one manages RUNNING
+        // SERVICES, so it has no count for the tab bar and no count card on the
+        // overview. Both places are guarded by name rather than by a `counts`
+        // lookup that would quietly draw "0".
+        { id: 'service', label: 'Services' }
     ];
+
+    /** The tabs that are an inventory of files. `service` is deliberately not
+     *  one of them — see the note on TABS. */
+    const COUNTED = TABS.filter(t => t.id !== 'overview' && t.id !== 'service');
 
     const EXPLAIN = {
         skill: 'Multi-step procedures claude loads on demand — invoked as /name or picked automatically when the task matches the description.',
@@ -28,7 +38,8 @@
         hook: 'Shell commands claude runs on lifecycle events (settings.json "hooks") — the automation glue.',
         plugin: 'Marketplace bundles of commands/agents/MCP/hooks. Enabled per user via settings.json enabledPlugins.',
         style: 'Output styles (.claude/output-styles/*.md) — switch how claude formats its answers.',
-        settings: 'The config files themselves at both scopes — what exists, what keys it sets, one click to open.'
+        settings: 'The config files themselves at both scopes — what exists, what keys it sets, one click to open.',
+        service: 'Running services rather than files on disk — the Telegram bridge that lets a chat talk to your agents, with its sign-in, its allowlist and its daily spending ceiling.'
     };
 
     /**
@@ -122,7 +133,15 @@
 
     /** Per TAB, so stepping into MCP to check something does not throw away the
      *  plugin filter you spent four clicks building. */
-    const state = { tab: 'overview', q: '', expanded: {}, facets: {}, sort: {} };
+    // ‼️ `DATA.tab` OPENS THE PAGE SOMEWHERE OTHER THAN THE OVERVIEW. Two
+    // callers need it: the render harness, which cannot photograph a tab it has
+    // no way to reach (and a visual change that cannot be looked at is one that
+    // ships blind), and a surface that wants to land a person on Services.
+    // Absent means the overview, which is what every existing caller means.
+    const state = {
+        tab: (DATA && typeof DATA.tab === 'string' && DATA.tab) || 'overview',
+        q: '', expanded: {}, facets: {}, sort: {}
+    };
 
     const facetsFor = (kind) => FACETS[kind] || [];
     /** null = all. Kept per tab AND per facet. */
@@ -152,6 +171,16 @@
             // A receipt means the write happened; a refusal keeps the card open
             // with everything that was typed still in it.
             if (toolMsgOk) { toolForm = null; }
+            render();
+            return;
+        }
+        // U-84 — the live getMe answer. Shown IN THE CARD rather than as a
+        // notification: the question was asked here and the answer belongs
+        // beside the badge it is about.
+        if (m.type === 'svc-verified') {
+            svcMsg = m.ok
+                ? { ok: true, text: 'Telegram answered — the bot is @' + (m.username || '?') + '.' }
+                : { ok: false, text: 'Telegram did not accept that token — ' + (m.error || 'no reason given') };
             render();
             return;
         }
@@ -333,6 +362,8 @@
     let toolForm = null;
     let toolMsg = '';
     let toolMsgOk = false;
+    /** U-84 — the last verify answer, kept until the next one replaces it. */
+    let svcMsg = null;
 
     const KIND_LABEL = { skill: 'skill', subagent: 'subagent', command: 'command', mcp: 'MCP server' };
     const KIND_LEDE = {
@@ -474,7 +505,7 @@
     // ---------------------------------------------------------------- tabs
 
     function overviewTab() {
-        const cards = TABS.slice(1).map(t => {
+        const cards = COUNTED.map(t => {
             const c = DATA.counts[t.id] || { user: 0, agent: 0 };
             return `<div class="card tb-card" data-tab="${t.id}">
                 <div class="tb-num">${c.user + c.agent}</div>
@@ -490,6 +521,16 @@
                 <div class="tb-cat">Airtable Engine</div>
                 <div class="muted small">built-in module</div>
                 <div class="muted small tb-exp">Your data engine (knowledge + media records) with the airtable_* agent tools — instances, folders and registration live on its own page.</div>
+            </div>`
+            // ‼️ U-84 — THE SERVICES CARD SHOWS ITS STATE, NOT A COUNT. "How
+            // many services are there" is a question nobody has; "is the bridge
+            // to my phone alive" is the only one, so the number position carries
+            // the badge instead. DENSITY: the answer costs no click.
+            + `<div class="card tb-card" data-tab="service">
+                <div class="tb-num">${svcOverviewIcon()}</div>
+                <div class="tb-cat">Services</div>
+                <div class="muted small">${esc(svcOverviewLine())}</div>
+                <div class="muted small tb-exp">${esc(EXPLAIN.service)}</div>
             </div>`;
         return `<div class="card" style="margin-bottom:10px">
             <b>Two scopes, one picture.</b> <span class="muted">USER scope lives in <code>${esc(DATA.paths.userClaudeDir)}</code>
@@ -640,6 +681,173 @@
              <td class="desc">${esc(x.it.description)}</td><td class="act">${actionBtns(x)}</td></tr>`);
     }
 
+    // ------------------------------------------------------------- U-84
+    /**
+     * ‼️ THE SERVICES TAB DECIDES NOTHING.
+     *
+     * `DATA.services.telegram.status` and `.budget` arrive already worked out by
+     * `core/telegramCockpit.ts`, which is measured against what
+     * `applyChatBridge()` really does. A page that re-derived "is it running"
+     * from `enabled && hasToken` would be a second copy of the launch rules,
+     * living in a file nobody thinks of as launch logic and going out of date
+     * the first time that function changes — in green.
+     */
+    const tg = () => (DATA.services || {}).telegram;
+
+    const TONE_DOT = { ok: '●', bad: '●', warn: '●', off: '○' };
+
+    function svcOverviewIcon() {
+        const t = tg();
+        if (!t) { return '⚙️'; }
+        return `<span class="svc-dot t-${esc(t.status.tone)}">${TONE_DOT[t.status.tone] || '●'}</span>`;
+    }
+
+    function svcOverviewLine() {
+        const t = tg();
+        if (!t) { return 'not available'; }
+        return 'Telegram bridge — ' + t.status.state.replace(/-/g, ' ');
+    }
+
+    /**
+     * ‼️ THE SWITCH DESCRIBES THE SETTING AND THE REALITY, WHICH ARE NOT THE
+     * SAME FACT. `enabled: true` with no token in the vault is a switch that is
+     * on and a bridge that is not polling anything — and a label reading "on —
+     * polling Telegram" under a red "no token" badge is the card contradicting
+     * itself in two adjacent lines. `running` already knows the difference.
+     */
+    function switchLabel(t) {
+        if (!t.enabled) { return 'off — nothing is polled'; }
+        return t.status.running ? 'on — polling Telegram' : 'on, but not polling yet';
+    }
+
+    function serviceTab() {
+        const t = tg();
+        if (!t) {
+            return `<div class="card"><b>Services are not available in this window.</b>
+                <span class="muted">The page was opened without the extension's service view.</span></div>`;
+        }
+        const s = t.status;
+        const b = t.budget;
+        // MIRROR — a control narrow enough to cut its own text puts its CURRENT
+        // value on the first line of its tooltip, then the description.
+        const badge = window.AFTip.wrap(
+            `<span class="svc-badge t-${esc(s.tone)}">${TONE_DOT[s.tone] || '●'} ${esc(s.state.replace(/-/g, ' '))}</span>`,
+            'Telegram bridge — ' + s.state.replace(/-/g, ' '),
+            s.detail + (s.next ? '\n\n' + s.next : '')
+            + (s.lastError ? '\n\nLast error: ' + s.lastError : '')
+            + '\n\nPolling: ' + (s.running ? 'the poller is alive' : 'nothing is being polled'),
+            'svc-tip');
+
+        const chats = t.allowedChats.length
+            ? t.allowedChats.map(id => `<span class="svc-chip">${esc(id)}
+                <button class="svc-x" data-svc="allow-remove" data-id="${esc(id)}" title="remove ${esc(id)}">×</button>
+              </span>`).join('')
+            : '<span class="muted small">empty — every message that arrives is refused</span>';
+
+        const bar = `<span class="svc-bar"><i style="width:${b.pct}%" class="${b.blocked ? 'over' : ''}"></i></span>`;
+        const budgetTip = window.AFTip.wrap(
+            `<span class="svc-budget">$${b.spent.toFixed(4)} / $${b.cap.toFixed(2)} ${bar}</span>`,
+            'Today’s chat-started spend',
+            'Spent today: $' + b.spent.toFixed(4)
+            + '\nCeiling: $' + b.cap.toFixed(2)
+            + '\nLeft: $' + b.remaining.toFixed(4)
+            + (b.blocked
+                ? '\n\nThe ceiling is reached, so a message from chat is answered with a refusal rather than a run.'
+                : '\n\nThe ledger rolls over at local midnight; yesterday’s total does not count against today.'),
+            'svc-tip');
+
+        return `<div class="card svc-card">
+            <div class="svc-head">
+                <b>Telegram Bridge</b> ${badge}
+                ${t.botUsername ? `<span class="muted small">@${esc(t.botUsername)}</span>` : ''}
+                <span class="svc-sp"></span>
+                <button class="mini" data-svc="verify">verify</button>
+                <button class="mini" data-svc="connect">${t.hasToken ? 'replace token' : 'connect…'}</button>
+            </div>
+            <div class="muted small svc-detail">${esc(s.detail)}${s.next ? ' <b>' + esc(s.next) + '</b>' : ''}</div>
+            ${svcMsg ? `<div class="svc-msg ${svcMsg.ok ? 'ok' : 'bad'}">${esc(svcMsg.text)}</div>` : ''}
+
+            <div class="svc-row">
+                <label class="svc-lbl">Bridge</label>
+                <label class="svc-sw"><input type="checkbox" id="svc-enabled" ${t.enabled ? 'checked' : ''}>
+                    <span>${esc(switchLabel(t))}</span></label>
+            </div>
+
+            <div class="svc-row">
+                <label class="svc-lbl">Allowed chats</label>
+                <div class="svc-val col">
+                    <div class="svc-chips">${chats}</div>
+                    <div><input id="svc-allow" class="svc-in" placeholder="chat id (negative for a group)" size="28">
+                        <button class="mini add" data-svc="allow-add">add</button></div>
+                </div>
+            </div>
+
+            <div class="svc-row">
+                <label class="svc-lbl">Daily ceiling</label>
+                <div class="svc-val">
+                    <input id="svc-cap" class="svc-in" type="number" min="0" step="0.25" value="${esc(t.maxDailyUSD)}" size="8">
+                    <span class="muted small">USD/day · today: </span>${budgetTip}
+                </div>
+            </div>
+
+            <div class="svc-row">
+                <label class="svc-lbl">Default agent</label>
+                <div class="svc-val">
+                    <select id="svc-agent" class="svc-in">
+                        <option value=""${t.defaultAgent ? '' : ' selected'}>— none —</option>
+                        ${(DATA.agents || []).map(a =>
+            `<option value="${esc(a.name)}"${a.name === t.defaultAgent ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}
+                    </select>
+                    <span class="muted small">the agent a chat talks to before it picks one with <code>/agent</code></span>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    /**
+     * ‼️ EVERY CONTROL POSTS AND WAITS. Nothing here writes to `DATA` and
+     * re-renders optimistically: the host owns the settings file, and a card
+     * that painted the new value before the write landed would show a state
+     * that does not exist the moment a write is refused or a file is read-only.
+     * The refresh that follows the write is what redraws it.
+     */
+    function wireServices() {
+        const on = (id, ev, fn) => {
+            const el = document.getElementById(id);
+            if (el) { el.addEventListener(ev, () => fn(el)); }
+        };
+        on('svc-enabled', 'change', el =>
+            post({ type: 'svc-set', key: 'telegram.enabled', value: !!el.checked }));
+        on('svc-cap', 'change', el => {
+            const v = Number(el.value);
+            // A ceiling that is not a number is not sent — the host would store
+            // NaN and every run after it would be refused with no explanation.
+            if (Number.isFinite(v) && v >= 0) {
+                post({ type: 'svc-set', key: 'telegram.maxDailyUSD', value: v });
+            }
+        });
+        on('svc-agent', 'change', el =>
+            post({ type: 'svc-set', key: 'telegram.defaultAgent', value: el.value }));
+
+        const addChat = () => {
+            const el = document.getElementById('svc-allow');
+            if (el && el.value.trim()) { post({ type: 'svc-allow-add', text: el.value }); }
+        };
+        const allow = document.getElementById('svc-allow');
+        if (allow) {
+            allow.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); addChat(); }
+            });
+        }
+        document.querySelectorAll('[data-svc]').forEach(b => b.addEventListener('click', () => {
+            const act = b.dataset.svc;
+            if (act === 'connect') { post({ type: 'svc-connect' }); }
+            else if (act === 'verify') { post({ type: 'svc-verify' }); }
+            else if (act === 'allow-add') { addChat(); }
+            else if (act === 'allow-remove') { post({ type: 'svc-allow-remove', id: Number(b.dataset.id) }); }
+        }));
+    }
+
     function settingsTab() {
         return mdTable('settings', ['File', 'Scope', 'Contents', ''], x => {
             const d = x.it.detail;
@@ -659,7 +867,8 @@
         const c = DATA.counts;
         const total = Object.keys(c).reduce((a, k) => a + c[k].user + c[k].agent, 0);
         const tabBar = TABS.map(t => {
-            const n = t.id === 'overview' ? '' :
+            // ‼️ The services tab counts nothing — see the note on TABS.
+            const n = (t.id === 'overview' || t.id === 'service') ? '' :
                 ` <span class="cnt">${(c[t.id] || { user: 0, agent: 0 }).user + (c[t.id] || { user: 0, agent: 0 }).agent}</span>`;
             return `<button class="seg${state.tab === t.id ? ' active' : ''}" data-tab="${t.id}">${t.label}${n}</button>`;
         }).join('');
@@ -672,7 +881,8 @@
             state.tab === 'mcp' ? mcpTab() :
             state.tab === 'hook' ? hookTab() :
             state.tab === 'plugin' ? pluginTab() :
-            state.tab === 'style' ? styleTab() : settingsTab();
+            state.tab === 'style' ? styleTab() :
+            state.tab === 'service' ? serviceTab() : settingsTab();
 
         document.getElementById('app').innerHTML = `
             <style>
@@ -702,6 +912,40 @@
                 .tb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
                 .tb-card { cursor: pointer; }
                 .tb-card:hover { outline: 1px solid var(--vscode-charts-blue, #3794ff); }
+                /* U-84 — the services card. One tone vocabulary, used by the
+                   overview dot and the tab badge, so the two can never disagree. */
+                .svc-dot.t-ok, .svc-badge.t-ok { color: var(--vscode-charts-green, #4caf50); }
+                .svc-dot.t-bad, .svc-badge.t-bad { color: var(--vscode-charts-red, #f14c4c); }
+                .svc-dot.t-warn, .svc-badge.t-warn { color: var(--vscode-charts-orange, #d18616); }
+                .svc-dot.t-off, .svc-badge.t-off { opacity: .55; }
+                .svc-badge { font-size: 11px; border: 1px solid currentColor; border-radius: 8px; padding: 0 7px; margin-left: 6px; }
+                .svc-card { display: block; }
+                .svc-head { align-items: center; display: flex; gap: 6px; }
+                .svc-sp { flex: 1; }
+                .svc-detail { margin: 4px 0 8px; }
+                .svc-row { align-items: flex-start; border-top: 1px solid var(--vscode-widget-border, #4443); display: flex; gap: 10px; padding: 7px 0; }
+                .svc-lbl { flex: 0 0 108px; font-size: 11px; opacity: .75; padding-top: 3px; }
+                /* ‼️ ROW BY DEFAULT. Drawn as a column, a ceiling box, its unit
+                   and today's figure stacked into three lines for one fact —
+                   which is the opposite of what a dense card is for. Only the
+                   chip list, which genuinely has two rows of content, opts out. */
+                .svc-val { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
+                .svc-val.col { align-items: flex-start; flex-direction: column; }
+                .svc-sw { align-items: center; cursor: pointer; display: flex; gap: 6px; }
+                .svc-in { background: var(--vscode-input-background, #2223); border: 1px solid var(--vscode-widget-border, #666);
+                          border-radius: 4px; color: inherit; font: inherit; padding: 1px 5px; }
+                .svc-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+                .svc-chip { align-items: center; border: 1px solid var(--vscode-widget-border, #666); border-radius: 8px;
+                            display: inline-flex; font-size: 11px; gap: 3px; padding: 0 3px 0 7px; }
+                .svc-x { background: none; border: 0; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; opacity: .6; padding: 0 3px; }
+                .svc-x:hover { color: var(--vscode-charts-red, #f14c4c); opacity: 1; }
+                .svc-budget { align-items: center; display: inline-flex; gap: 6px; }
+                .svc-bar { background: var(--vscode-widget-border, #4443); border-radius: 3px; display: inline-block; height: 6px; overflow: hidden; width: 70px; }
+                .svc-bar i { background: var(--vscode-charts-green, #4caf50); display: block; height: 100%; }
+                .svc-bar i.over { background: var(--vscode-charts-red, #f14c4c); }
+                .svc-msg { border-left: 2px solid currentColor; font-size: 12px; margin: 0 0 8px; padding: 2px 8px; }
+                .svc-msg.ok { color: var(--vscode-charts-green, #4caf50); }
+                .svc-msg.bad { color: var(--vscode-charts-red, #f14c4c); }
                 .tb-num { font-size: 26px; font-weight: 700; }
                 .tb-cat { font-weight: 600; margin: 2px 0; }
                 .tb-exp { margin-top: 6px; line-height: 1.35; }
@@ -791,6 +1035,7 @@
             }));
         document.querySelectorAll('[data-afnav]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'afnav', to: b.dataset.afnav })));
+        wireServices();
         const q = document.getElementById('tb-q');
         if (q) {
             // live() keeps the caret across the re-render it triggers, and the

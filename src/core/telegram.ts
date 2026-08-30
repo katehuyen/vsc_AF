@@ -48,8 +48,24 @@ export interface PollerOptions {
     offset: number;
     onMessages: (msgs: InboundMessage[], nextOffset: number) => void;
     onError: (err: Error) => void;
+    /**
+     * ‼️ U-84 — A POLL COMPLETED, WHICH IS NOT THE SAME AS A POLL PRODUCING
+     * WORK. `onMessages` only fires when something arrived, so a bridge nobody
+     * is texting gives no sign of life at all — and a badge that clears its
+     * last error on `onMessages` would still be showing this morning's timeout
+     * at teatime, sending somebody to fix a connection that healed hours ago.
+     * This fires on every successful round trip, empty or not.
+     */
+    onPoll?: () => void;
     /** seconds Telegram holds the connection open with nothing to say */
     longPollSec?: number;
+    /**
+     * The transport, injectable. Default is the real HTTPS call; a test passes
+     * its own, which is the only way this loop can be exercised without a
+     * network — and until it could be, it was the one part of the bridge no
+     * test had ever run.
+     */
+    fetch?: (method: string, params: Record<string, string | number>, timeoutMs: number) => Promise<unknown>;
 }
 
 /**
@@ -84,8 +100,11 @@ export class TelegramPoller {
     private async loop(): Promise<void> {
         if (this.stopped) { return; }
         const wait = this.opts.longPollSec ?? 25;
+        const call = this.opts.fetch
+            ?? ((method: string, params: Record<string, string | number>, timeoutMs: number) =>
+                request(this.opts.token, method, params, timeoutMs));
         try {
-            const payload = await request(this.opts.token, 'getUpdates',
+            const payload = await call('getUpdates',
                 { offset: this.offset, timeout: wait, allowed_updates: '["message"]' },
                 (wait + 10) * 1000);
             const msgs = parseUpdates(payload);
@@ -93,6 +112,10 @@ export class TelegramPoller {
                 this.offset = Math.max(...msgs.map(m => m.updateId)) + 1;
                 this.opts.onMessages(msgs, this.offset);
             }
+            // ‼️ The round trip completed — announced whether or not it carried
+            // anything, because "the bridge is reachable" is the fact a badge
+            // needs and an empty inbox is not evidence against it.
+            this.opts.onPoll?.();
             this.backoff = 2000;
             this.schedule(250);
         } catch (e) {
