@@ -2,6 +2,65 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.353.0 - X-102: what a run was asked to be, beside what actually answered (2026-08-31)
+
+Agent Farm has always recorded which MODEL a session ran. It recorded nothing
+about which ROUTE served it, which stored profile at which revision, or what was
+REQUESTED as opposed to what came back — and no transcript carries any of those.
+Measured on a real Claude JSONL (2.1.251, 1373 records): the file names the
+session id, the folder, the version, the entrypoint and the permission mode, and
+nothing else that matters here. So for those questions the launch manifest is
+not the convenient witness, it is the only one.
+
+The manifest itself has been written on every spawn since 3.352.0 — terminal,
+Console and every automated run. This release is the half that makes it worth
+having: the answer that comes BACK, and the two held side by side.
+
+**What the engine actually said, read out of its own events.** One rule, and it
+is the one the catalogs already followed: *the field, not the printed prefix*. A
+provider is reported when the engine NAMED it in a field of its own; a model
+spelled with a slash in it proves nothing. OpenCode publishes the same fact
+three ways — its export, its JSON run stream, its ACP config options — and has
+changed its wire shape twice already, so one scan collects the named fields
+wherever they sit rather than three readers that each need remembering. The one
+qualified name the engine states as its own current value is cut only where the
+head is a provider that same engine published.
+
+**Claude reports no route, and never will.** Measured in August against a local
+fake endpoint: two Claude processes ran concurrently on separate routes under
+one model name, and the transcript preserved neither. So `claude-opus-5` is not
+evidence of Anthropic, the reported-provider list on this engine is permanently
+empty, and that is an answer rather than a gap. The MODEL is a different field
+and the transcript does name it — which is what the manifest now has to compare
+itself against.
+
+**Asked vs answered, one turn at a time.** Both halves genuinely move inside one
+session: OpenCode may change provider at a turn boundary because the engine
+documents that, and on Claude a compaction or a sub-agent is served by a smaller
+model than the turn that spawned it. So the comparison is per turn, and it is
+deliberately not a verdict. A launch asks for `opus`; the transcript says
+`claude-opus-5`. Those are the same run — an alias and an id — and a check that
+called it a mismatch would paint almost every honest session red, which is the
+fastest way to make a correctness signal ignored. The states are `matched`, `not
+proven`, `no model requested` and `no model recorded`, and `not proven` means go
+and look, never "this ran on the wrong thing".
+
+**And you can see it.** The Engine cell's hover now carries the route, the
+profile revision, what was requested and how the two halves compare, directly
+under the models that answered. A session with no recorded launch shows none of
+those lines rather than a guess — most sessions are in that state for a while,
+and the row says so by staying silent. The column's own header explains what the
+four states mean, once.
+
+Under it, the chain that was missing its last link: a binding knew which spawn
+produced a transcript and never handed that id to the session, so no session
+could reach its own manifest. It does now.
+
+`launch.runtime { sessionId }` on the bridge returns the manifest, the per-turn
+rows and the run's drift with a one-line note that is empty on an ordinary run.
+
+258 files · 17 079 checks · 0 failures.
+
 ## 3.352.0 - S-49 + S-48: the composer stops arguing with the hand on it, and the row you pressed is the agent you get (2026-08-31)
 
 Two halves of the same complaint — the agent · engine · model · effort ·
