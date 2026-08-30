@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.343.0 - X-100 (core): who owns which fact, and where the vault boundary runs (2026-08-30)
+
+‼️ **The core half of X-100. The Engines/Providers surface, its bridge ops and
+the parity entry are NOT in this release** — the item stays open.
+
+**The failure this prevents is two vaults.** The obvious design gives every
+engine the same provider-profile manager. For Claude Code that is exactly right:
+a provider there is a route Agent Farm assembles, and if Agent Farm does not hold
+it, nobody does. For OpenCode it is exactly wrong — that engine already owns
+`/connect`, `opencode auth login`, `auth.json` and `opencode.json`, and a second
+copy makes two vaults and two revisions where the stale one wins silently.
+
+So ownership is a fact **per engine per kind of data**, in one table a surface
+can draw, each row saying WHY in words a person can check. `core/providerOwnership.ts`
+also settles three things once:
+
+- **The secret is keyed by the profile ID, never the label.** A key built from a
+  name moves the moment somebody edits the name, and the old entry stays in the
+  OS keychain forever with nothing to collect it — the profile silently has no
+  credential.
+- **The public half is built by NAMING what is public, never by deleting what is
+  not.** Settings, the bridge, the CLI, a notice and an export are the same
+  question asked five times; a deny-list grows a hole the first time somebody
+  adds a field. ‼️ Whether a credential EXISTS is public; the credential is not.
+- **Agent Farm refuses to manage what it does not own** — and the refusal names
+  the engine's own way of doing it (`opencode auth login`), because a refusal
+  that does not say what to do instead is just a wall.
+
+One kind is Agent Farm's on every engine, present or future: **which provider a
+run was actually started with.** That is history, not configuration, and no
+engine keeps it — Claude's transcript demonstrably cannot.
+
 ## 3.342.0 - X-99: what is on offer, from the two places that actually know (2026-08-30)
 
 **Two engines, two owners, and the ownership is the design.** OpenCode owns its
