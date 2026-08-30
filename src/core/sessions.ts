@@ -1255,6 +1255,9 @@ export class SessionIndex implements vscode.Disposable {
     private launchers = new Map<string, SessionLauncher>();
     /** ‼️ S-31 — the runs Agent Farm started, written at the spawn. */
     private bindings: LaunchBinding[] = [];
+    /** ‼️ X-102 — sessionId → launchId for the runs no binding covers: the
+     *  terminals and Console cards a person opens by hand. See `setSpawnIds`. */
+    private spawnIds = new Map<string, string>();
     /** Files the scope filter dropped, as little of them as a binding needs to
      *  claim one later. Five fields, not the parsed session — this is a memo,
      *  not a second index. */
@@ -1466,6 +1469,7 @@ export class SessionIndex implements vscode.Disposable {
         // already answered it in writing. Asked afterwards, the answer arrives
         // for a session that has just been thrown away.
         this.applyLaunchBinding(info);
+        this.applySpawnId(info);
         if (!info.agentId && !this.includeUnmatched()) {
             // Keep it out of the index — but REMEMBER the little it takes to
             // test it again. A binding published after this scan (a task that
@@ -1714,10 +1718,62 @@ export class SessionIndex implements vscode.Disposable {
         }
         // …and the sessions already indexed learn who started them, which is
         // what puts the schedule's name on the Origin column.
-        for (const info of this.sessions.values()) { this.applyLaunchBinding(info); }
-        for (const info of this.externalList) { this.applyLaunchBinding(info); }
+        for (const info of this.sessions.values()) { this.applyLaunchBinding(info); this.applySpawnId(info); }
+        for (const info of this.externalList) { this.applyLaunchBinding(info); this.applySpawnId(info); }
         void rescued;
         this.onDidUpdateEmitter.fire();
+    }
+
+    /**
+     * ‼️ X-102 — WHICH SPAWN PRODUCED WHICH SESSION, FOR THE RUNS NO BINDING
+     * COVERS — which is most of them.
+     *
+     * A `LaunchBinding` is built from a TASK, so it exists for automation and
+     * for nothing else. A person opening a terminal or a Console card writes a
+     * manifest exactly the same way (v11.183 / v11.184), and until this channel
+     * that manifest had nothing to be joined to: the setup was on file and
+     * permanently unattachable to the conversation it produced.
+     *
+     * ‼️ AND IT IS A SECOND CHANNEL RATHER THAN A SIXTH `LaunchBinding.kind`,
+     * deliberately. A binding does not only say which spawn — it supplies the
+     * OWNER and the LAUNCHER, and `sessionOrigin` reads the launcher to decide
+     * 🧑 you against 🤖 automation. Filing a terminal a person opened by hand as
+     * a binding would stamp it with a launcher and move it into the automation
+     * lane on every surface that filters by origin. This writes ONE field and
+     * touches nothing else, which is the only reason it is safe to feed it from
+     * the doors a human uses.
+     *
+     * Ids only, so the caller has already done the joining it is entitled to do:
+     * a terminal learns its session id from the live monitor, a card is handed
+     * one by the panel it owns. Nothing here deduces anything.
+     */
+    setSpawnIds(pairs: readonly { sessionId: string; launchId: string }[]): void {
+        const next = new Map<string, string>();
+        for (const p of pairs ?? []) {
+            const sid = String(p?.sessionId ?? '').trim();
+            const lid = String(p?.launchId ?? '').trim();
+            // ‼️ FIRST WINS, and it is never overwritten. A session belongs to
+            // the spawn that produced it; a later record naming the same session
+            // is a bookkeeping slip, and taking the newer one would let one slip
+            // rewrite history that was correct.
+            if (sid && lid && !next.has(sid)) { next.set(sid, lid); }
+        }
+        const sig = (m: Map<string, string>): string =>
+            [...m].map(([k, v]) => `${k}:${v}`).sort().join('|');
+        if (sig(next) === sig(this.spawnIds)) { return; }
+        this.spawnIds = next;
+        for (const info of this.sessions.values()) { this.applySpawnId(info); }
+        for (const info of this.externalList) { this.applySpawnId(info); }
+        this.onDidUpdateEmitter.fire();
+    }
+
+    /** The one field, filled where the session carries none — the same rule
+     *  `applyBinding` follows, so a binding and this channel cannot disagree
+     *  about a session both of them know. */
+    private applySpawnId(info: SessionInfo): void {
+        if (info.launchId) { return; }
+        const hit = this.spawnIds.get(info.sessionId);
+        if (hit) { info.launchId = hit; }
     }
 
     /**
@@ -1840,6 +1896,7 @@ export class SessionIndex implements vscode.Disposable {
             // has to be redone with it or a rescued session loses its owner the
             // first time an agent folder changes.
             this.applyLaunchBinding(info);
+            this.applySpawnId(info);
             for (const ev of info.events) {
                 ev.agentId = info.agentId;
                 ev.agentName = info.agentName;
@@ -1917,7 +1974,7 @@ export class SessionIndex implements vscode.Disposable {
         // and for exactly the same wrong reason; a fix that only reached the
         // claude parse would make the scope switch mean two different things
         // again, which is the bug this filter was corrected for once already.
-        for (const s of sessions) { this.applyLaunchBinding(s); }
+        for (const s of sessions) { this.applyLaunchBinding(s); this.applySpawnId(s); }
         const kept = sessions.filter(s => s.agentId || include);
         for (const s of kept) {
             if (!s.agentId && !s.agentName) {

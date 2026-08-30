@@ -296,6 +296,24 @@ const CLAUDE_ROUTE = {
         wired.length, 3);
     ok('…and the host actually hands it over',
         (ext.match(/launchManifests: \(\) => launchManifests\(\)/g) || []).length === 3);
+
+    // ‼️ AND THE RUNS A PERSON STARTED THEMSELVES ARE JOINED TOO. `publishLaunch
+    // Bindings` is built out of TASKS, so without this second channel everything
+    // above would have been visible on automation only — which is the minority
+    // of sessions and the one nobody was asking about.
+    ok('a hand-opened terminal or card gets its spawn joined as well',
+        /const publishSpawnIds = \(\): void =>/.test(ext)
+        && /index\.setSpawnIds\(pairs\);/.test(ext));
+    ok('…fed by both doors that write a manifest without a task behind them',
+        /for \(const b of termBindings\) \{/.test(ext)
+        && /for \(const s of consoleHost\.list\(\)\) \{/.test(ext));
+    ok('…at the moment the session id becomes known',
+        ext.indexOf('publishSpawnIds();') > ext.indexOf('const publishSpawnIds'));
+    // ‼️ AND IT IS NOT A SIXTH BINDING KIND. The behaviour that would break is
+    // measured in test_launch_binding.js; this is the shape that keeps it true.
+    ok('‼️ …through a channel that writes ONE field and no launcher',
+        /setSpawnIds\(pairs: readonly \{ sessionId: string; launchId: string \}\[\]\): void/.test(sess)
+        && /private applySpawnId\(info: SessionInfo\): void \{/.test(sess));
 }
 
 console.log(`test_turn_runtime: ${pass} passed, ${fail} failed`);

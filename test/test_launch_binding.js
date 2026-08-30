@@ -352,6 +352,64 @@ const session = (over) => Object.assign({
             wide.all().length === 1 && wide.all()[0].agentName === 'developer');
         wide.dispose();
 
+        // ================================================================
+        // X-102 - THE JOIN FOR A RUN NO BINDING COVERS, and the thing it must
+        // NOT do on the way.
+        //
+        // `publishLaunchBindings` is built out of TASKS. A terminal or a
+        // Console card a person opens by hand writes a manifest exactly the
+        // same way and has no binding at all, so its launchId had nowhere to
+        // go: the setup was on file and unattachable to the conversation it
+        // produced. `setSpawnIds` is the second channel, and its whole safety
+        // is that it writes ONE field.
+        // ================================================================
+        const own = new SessionIndex(
+            dir, () => [], pricing,
+            () => [{ id: AGENTDIR, name: 'developer', dir: AGENTDIR, normDir: AGENTDIR }],
+            () => true, () => 150000
+        );
+        await own.scanAll();
+        // Whatever the path test made of it, that is what it must still be after.
+        const ownerBefore = JSON.stringify(own.all().map(s => [s.sessionId, s.agentName, s.agentId]));
+        own.setSpawnIds([{ sessionId: SID, launchId: 'lch_byhand01' }]);
+        const mine = own.all().find(s => s.sessionId === SID);
+        ok('!! a session nobody bound still reaches its manifest',
+            !!mine && mine.launchId === 'lch_byhand01');
+        // !! THE SAFETY PROPERTY. A binding also supplies the LAUNCHER, and
+        // `sessionOrigin` reads the launcher to decide 'you' against
+        // 'automation'. Filing a hand-opened terminal as a binding would move
+        // it into the automation lane on every surface that filters by origin.
+        ok('!! ...and it is still YOUR session, not an automation run',
+            !!mine && !mine.launchedBy);
+        ok('...and nothing about who owns it moved',
+            JSON.stringify(own.all().map(s => [s.sessionId, s.agentName, s.agentId])) === ownerBefore);
+        // Idempotent: the same pairs again change nothing, which is what makes
+        // it safe to call on every hook event.
+        own.setSpawnIds([{ sessionId: SID, launchId: 'lch_byhand01' }]);
+        ok('the same pairing again is not a second answer',
+            own.all().find(s => s.sessionId === SID).launchId === 'lch_byhand01');
+        // !! AND IT NEVER OVERWRITES. A session belongs to the spawn that
+        // produced it; a later record naming it is a bookkeeping slip, and
+        // taking the newer one would let one slip rewrite a correct history.
+        own.setSpawnIds([{ sessionId: SID, launchId: 'lch_someother' }]);
+        ok('!! a later id does not rewrite the one already recorded',
+            own.all().find(s => s.sessionId === SID).launchId === 'lch_byhand01');
+        own.dispose();
+
+        // ...and a binding that carries one still wins, because it is applied
+        // first and this channel only fills an empty field.
+        const bothWays = new SessionIndex(
+            dir, () => [], pricing,
+            () => [{ id: AGENTDIR, name: 'developer', dir: AGENTDIR, normDir: AGENTDIR }],
+            () => true, () => 150000
+        );
+        bothWays.setLaunchBindings([binding({ launchId: 'lch_fromtask' })]);
+        await bothWays.scanAll();
+        bothWays.setSpawnIds([{ sessionId: SID, launchId: 'lch_byhand01' }]);
+        ok('!! the binding is the stronger statement and keeps its id',
+            bothWays.all().find(s => s.sessionId === SID).launchId === 'lch_fromtask');
+        bothWays.dispose();
+
         try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* temp */ }
         console.log(`\n${pass} passed, ${fail} failed`);
         process.exit(fail ? 1 : 0);

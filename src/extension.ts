@@ -17052,6 +17052,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         launchId?: string;
     }
     const termBindings: TermBinding[] = [];
+    /**
+     * ‼️ X-102 — THE JOIN FOR EVERY RUN A PERSON STARTED THEMSELVES.
+     *
+     * `publishLaunchBindings` above is built out of TASKS, so it covers
+     * automation and nothing else. A terminal or a Console card opened by hand
+     * writes a manifest exactly the same way, and until this its launchId had
+     * nowhere to go: the setup was on file and unattachable to the conversation
+     * it produced, which made the record readable from the bridge and invisible
+     * on every surface.
+     *
+     * Both doors already know both halves — they just knew them at different
+     * moments. A terminal is given its launchId at the spawn and learns its
+     * session id from the live monitor minutes later; a card carries both on the
+     * state the panel owns. This is only the pairing, and it deduces nothing.
+     *
+     * ‼️ NOT A SIXTH `LaunchBinding.kind`. A binding also supplies the owner and
+     * the LAUNCHER, and `sessionOrigin` reads the launcher to decide 🧑 you
+     * against 🤖 automation — so filing a hand-opened terminal as one would move
+     * it into the automation lane on every surface that filters by origin.
+     * `setSpawnIds` writes one field and touches nothing else.
+     */
+    const publishSpawnIds = (): void => {
+        const pairs: { sessionId: string; launchId: string }[] = [];
+        for (const b of termBindings) {
+            if (b.sessionId && b.launchId) { pairs.push({ sessionId: b.sessionId, launchId: b.launchId }); }
+        }
+        for (const s of consoleHost.list()) {
+            if (s.sessionId && s.launchId) { pairs.push({ sessionId: s.sessionId, launchId: s.launchId }); }
+        }
+        index.setSpawnIds(pairs);
+    };
     // persisted so a fresh "#n" never collides with a window from the previous run
     let launchSeq = context.globalState.get<number>('agentfarm.termLaunchSeq', 0);
 
@@ -17560,6 +17591,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (hit.projectId) { stampSessionProject(s.sessionId, hit.projectId); }
             }
         }
+        // ‼️ X-102 — AND THIS IS THE MOMENT THE JOIN BECOMES POSSIBLE. The
+        // terminal above has just learned the id it was waiting for, and a card
+        // learns its own on the same hook traffic. Cheap and idempotent:
+        // `setSpawnIds` compares before it does anything, so the ordinary tick
+        // where nothing changed costs one map and returns.
+        publishSpawnIds();
     }, null, context.subscriptions);
 
     /**
