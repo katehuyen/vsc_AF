@@ -20415,9 +20415,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
             return;
         }
+        /**
+         * ‼️ X-102 — THE MANIFEST FOR A CARD, WRITTEN BEFORE THE PROCESS STARTS.
+         *
+         * The Console is where a session's setup is most editable and therefore
+         * least reconstructable afterwards: the boxes above the card are cleared
+         * the moment it starts, and the transcript records none of them. The
+         * identity comes from the same resolution `ConsoleHost` will spawn with
+         * (`merged` already carries the route), so the card cannot be recorded
+         * against a different endpoint from the one it talks to.
+         *
+         * `surface: 'console'` and mechanism `session` — a card started from the
+         * composer is a person starting a session, whatever door sent them here.
+         */
+        const resolved = resolveLaunchRoute(agent.id, engineOf(merged.engine).id, {
+            providerId: merged.providerId, tier: merged.tier
+        });
+        const launchId = resolved && recordLaunch({
+            engine: engineOf(merged.engine).id,
+            identity: resolved.identity,
+            options: merged,
+            agentId: agent.id,
+            agentName: agent.name,
+            ...(project ? { projectId: project } : {}),
+            mechanism: 'session',
+            cwd: agent.dir,
+            surface: 'console',
+            superpowers: merged.superpowers ?? superpowersOnFor(agent.name)
+        });
         const id = consoleHost.start({
             agentId: agent.id, agentName: agent.name, cwd: agent.dir,
             engine: engineOf(merged.engine).id,
+            // ‼️ X-102 — and the handle that joins this card to the record above,
+            // kept on the card's own state so a window reload cannot lose it.
+            ...(launchId ? { launchId } : {}),
             model: merged.model, effort: merged.effort, permissionMode: merged.permissionMode,
             // ‼️ X-103 — AND WHICH ROUTE. `merged` has the agent's stored record
             // under it already, so a card started with nothing chosen lands on

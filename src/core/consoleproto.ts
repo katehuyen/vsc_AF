@@ -432,6 +432,20 @@ export interface ConsoleSessionState {
     /** Claude only — which tier of that route. Travels WITH `providerId`: a tier
      *  read against a different route maps the word through the wrong endpoint. */
     tier?: string;
+    /**
+     * ‼️ X-102 — WHICH SPAWN THIS CARD IS, and therefore which manifest.
+     *
+     * The card learns its `sessionId` from the engine minutes into the
+     * conversation; the manifest was written before the process existed. This is
+     * the only field present at both moments, so it is the whole join between
+     * "what was this run set up to be" and "which conversation did it produce".
+     *
+     * On the STATE for the same reason `providerId` is: the state survives a
+     * window reload, and a join held only in memory would be lost exactly when
+     * somebody comes back to ask what the conversation had been started as.
+     * Absent on every card started before this item — an honest gap.
+     */
+    launchId?: string;
     permissionMode: string;
     status: ConsoleStatus;
     messages: ConsoleMessage[];
@@ -1637,6 +1651,9 @@ export function newSessionState(o: {
     /** X-103 — the route this card runs on; kept on the state so a window reload
      *  cannot quietly move a live conversation to a different endpoint. */
     providerId?: string; tier?: string;
+    /** X-102 — the spawn this card is, so its manifest can be found again once
+     *  the engine finally names the conversation (see ConsoleSessionState). */
+    launchId?: string;
     sessionId?: string;
     /** the window's active project at the moment this session was started */
     projectId?: string;
@@ -1662,6 +1679,10 @@ export function newSessionState(o: {
         // "nothing" for a card that outlives the setting.
         ...(o.providerId?.trim() ? { providerId: o.providerId.trim() } : {}),
         ...(o.tier?.trim() ? { tier: o.tier.trim() } : {}),
+        // Absent rather than '' for the same reason the route is: a card with no
+        // manifest is a card whose setup is genuinely unknown, and an empty
+        // string would be a handle that looks like one and finds nothing.
+        ...(o.launchId?.trim() ? { launchId: o.launchId.trim() } : {}),
         permissionMode: o.permissionMode?.trim() || 'default',
         status: 'starting', messages: [], queued: [],
         costUSD: c?.costUSD ?? 0, turns: c?.turns ?? 0, tokens: c?.tokens ?? 0,

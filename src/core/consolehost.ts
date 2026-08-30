@@ -287,6 +287,12 @@ export interface HostedSessionInit {
      */
     providerId?: string;
     tier?: string;
+    /**
+     * ‼️ X-102 — THE SPAWN THIS CARD IS, minted and recorded by the door that
+     * started it. Absent means no manifest was written for this card, which is
+     * a real answer and the one every card started before this item gives.
+     */
+    launchId?: string;
     /** resume an existing claude session instead of starting a new one */
     resume?: string;
     /** the window's active project — recorded on the session so the stamp can be
@@ -671,7 +677,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-            providerId: init.providerId, tier: init.tier,
+            providerId: init.providerId, tier: init.tier, launchId: init.launchId,
             now, sessionId: init.resume, projectId, resumed: !!init.resume,
             carried: init.resume ? init.carried : undefined
         });
@@ -753,7 +759,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-            providerId: init.providerId, tier: init.tier,
+            providerId: init.providerId, tier: init.tier, launchId: init.launchId,
             now: Date.now(),
             // a resumed session already HAS an id — see newSessionState
             sessionId: init.resume,
@@ -843,7 +849,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-            providerId: init.providerId, tier: init.tier,
+            providerId: init.providerId, tier: init.tier, launchId: init.launchId,
             now: Date.now(),
             sessionId: init.resume,
             projectId, superpowers,
@@ -935,7 +941,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-            providerId: init.providerId, tier: init.tier,
+            providerId: init.providerId, tier: init.tier, launchId: init.launchId,
             now: Date.now(),
             sessionId: init.resume,
             projectId, superpowers,

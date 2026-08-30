@@ -276,10 +276,31 @@ console.log('\n== the store is bounded before the first row is written ==');
         door.indexOf('const launchId = resolved && recordLaunch({')
         < door.indexOf('launchClaudeTerminal(`${spec.exe}'));
 
-    // ---- and the join ----
+    // ---- the console door ----
+    const card = ext.slice(ext.indexOf('const startConsoleSession = ('),
+        ext.indexOf('const startConsoleSession = (') + 4500);
+    ok('‼️ a Console card writes one too, off the same resolution',
+        /const resolved = resolveLaunchRoute\(agent\.id, engineOf\(merged\.engine\)\.id, \{/.test(card)
+        && /const launchId = resolved && recordLaunch\(\{/.test(card));
+    ok('…as a console session, and the handle goes onto the card',
+        /surface: 'console',/.test(card) && /\.\.\.\(launchId \? \{ launchId \} : \{\}\),/.test(card));
+    ok('…before the process is asked for, not after it answers',
+        card.indexOf('const launchId = resolved && recordLaunch({')
+        < card.indexOf('const id = consoleHost.start({'));
+
+    // ---- and the join, on both surfaces ----
     ok('‼️ the launch id lands on the record that will learn the session id',
         /launchId\?: string;/.test(ext)
         && (ext.match(/termBindings\.push\(\{[^}]*launchId \}\);/g) || []).length === 2);
+    {
+        const proto = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consoleproto.ts'), 'utf8');
+        const host = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consolehost.ts'), 'utf8');
+        ok('‼️ …and on a card it lives on the STATE, which is what survives a reload',
+            /launchId\?: string;/.test(proto)
+            && /\.\.\.\(o\.launchId\?\.trim\(\) \? \{ launchId: o\.launchId\.trim\(\) \} : \{\}\)/.test(proto));
+        ok('…handed to every state the host builds, including the refused one',
+            (host.match(/launchId: init\.launchId,/g) || []).length === 4);
+    }
 
     // ---- the bridge can read it, which is what makes it evidence ----
     ok('the manifests are readable over the bridge', /op: 'launch\.manifests',/.test(ext));
