@@ -905,11 +905,59 @@
          * `{ head, body }` for AFTip: `head` is one line of scale (what this is,
          * how big), `body` is the thing itself, whole.
          */
+        /**
+         * ‼️ X-102 — WHAT THE RUN WAS ASKED TO BE, which no transcript carries.
+         *
+         * Measured on a real Claude JSONL: the file names the model, the folder,
+         * the version and the permission mode, and says NOTHING about which
+         * ROUTE served it or what was REQUESTED as opposed to what came back.
+         * The manifest is the only witness, and until this hover a person could
+         * not see it at all — it was readable from the bridge and nowhere else.
+         *
+         * ‼️ ABSENT RATHER THAN ASSUMED. A session with no manifest ran before
+         * the record existed, or was started by hand outside a bound mechanism;
+         * these lines simply do not appear, because a row that filled the gap in
+         * would be inventing the certainty the whole family refuses.
+         *
+         * ‼️ AND IT STAYS `Label: value`. This hover is a native `title`, so by
+         * CONVENTIONS it carries figures and never an explanation — what the
+         * four agreement states MEAN is written once, on the column's own <th>,
+         * which is the only place a definition belongs.
+         */
+        const AGREEMENT = {
+            // Short values, not sentences. The one that matters reads `not
+            // proven` rather than `wrong`, because `opus` against
+            // `claude-opus-5` is an alias and resolving that needs a catalog
+            // this row does not have.
+            matched: 'matched',
+            unproven: 'not proven',
+            'nothing-requested': 'no model requested',
+            'nothing-reported': 'no model recorded'
+        };
+        const launchLines = r => {
+            const L = r.launch;
+            if (!L) { return []; }
+            return [
+                line('Route', L.route + (L.revision ? ` · profile revision ${L.revision}` : '')),
+                line('Requested', L.requested),
+                line('Started as', L.surface),
+                line('Asked vs answered', AGREEMENT[L.agreement] || L.agreement),
+                // ‼️ EMPTY ON AN ORDINARY RUN, and `line` drops it — a note that
+                // said "all fine" on every row is a line the reader stops seeing.
+                line('Note', L.note)
+            ];
+        };
+
         // The Engine cell's hover, figures only (CONVENTIONS → a cell hover is
         // `Label: value`, never an explanation — the definition is on the <th>).
         TIP.engine = r => [
             line('Engine', window.AFEngine.label(r.engine)),
             line('Models', modelNames(r).join(', ')),
+            // ‼️ THE REQUESTED HALF SITS DIRECTLY UNDER THE ANSWERED ONE. That
+            // adjacency is the whole point of X-102: two facts that are allowed
+            // to differ, and a reader who can see both at once is the only one
+            // who can tell when they do.
+            ...launchLines(r),
             line('Transcript', r.file ? 'on disk' : 'none this build can open'),
             line('Cost reported', r.cost ? C.fmtUSD(r.cost) : 'no — plan or account billing'),
             line('Tokens', r.tokens ? C.fmtTok(r.tokens) : 'not published by this CLI')
@@ -957,7 +1005,23 @@
             // were one, so "why did that one cost nothing" had no answer on
             // the row. The badge and its colour come from AFEngine, the same
             // ones the Console and the Engines page draw.
-            engine: '<th title="Which CLI ran the session: ' + window.AFEngine.names() + '">Engine</th>',
+            // ‼️ THE COLUMN IS DEFINED ONCE, HERE — including what the cell's
+            // "Asked vs answered" line means. X-102 records what a run was set
+            // up to be beside what actually served it, and the two are ALLOWED
+            // to differ: an alias asked for and an id answered is the same run.
+            // So "not proven" is a prompt to look, never a verdict, and saying
+            // that on every cell would put an explanation in a figures hover.
+            engine: '<th title="Which CLI ran the session: ' + window.AFEngine.names()
+                + '.&#10;&#10;A cell also carries what the launch ASKED FOR, where Agent Farm '
+                + 'recorded it: the route, the profile revision and the model requested — none of '
+                + 'which any transcript carries. &quot;Asked vs answered&quot; compares that with '
+                + 'the models that really served the turns. matched = one of them is a name the '
+                + 'launch asked for (an extra internal model, a compaction or a sub-agent, is '
+                + 'normal). not proven = neither side matches the other, which is a reason to look '
+                + 'and NOT proof of a fault: &quot;opus&quot; against &quot;claude-opus-5&quot; is '
+                + 'an alias. no model requested = the launch named none and took the default. '
+                + 'Sessions with no recorded launch show none of these lines rather than a guess.'
+                + '">Engine</th>',
             project: '<th title="Project this session\'s work belongs to">Project</th>',
             files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',
             title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests. unread = transcript above the scan limit, its figures were not read">Title</th>',

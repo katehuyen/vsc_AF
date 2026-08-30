@@ -15414,7 +15414,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         projects: () => projectRollup(),
         agentProjects: () => agentProjectNames(
             agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
-        projectStyle: (name: string) => projectStyleOf(name)
+        projectStyle: (name: string) => projectStyleOf(name),
+        // X-102 - what each run was SET UP to be, so the row can hold the
+        // requested half beside the reported one. Same store all three tables read.
+        launchManifests: () => launchManifests()
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -15429,6 +15432,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agentProjects: () => agentProjectNames(
             agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
         projectStyle: (name: string) => projectStyleOf(name),
+        // X-102 - what each run was SET UP to be, so the row can hold the
+        // requested half beside the reported one. Same store all three tables read.
+        launchManifests: () => launchManifests(),
         // The page writes DUTIES.md now (U-14). Nothing watches that file, so
         // the trees and the Toolbox would keep yesterday's list until the next
         // Refresh — the write has to say so itself.
@@ -26895,7 +26901,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     getPricing: () => pricing,
                     agentProjects: () => agentProjectNames(
                         agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
-                    projectStyle: (name: string) => projectStyleOf(name)
+                    projectStyle: (name: string) => projectStyleOf(name),
+                    // X-102 - the requested half of every run on this page too.
+                    launchManifests: () => launchManifests()
                 }, {
                     ...(typeof arg?.project === 'string' && arg.project ? { project: arg.project } : {}),
                     ...(typeof arg?.agentName === 'string' && arg.agentName ? { agentName: arg.agentName } : {}),

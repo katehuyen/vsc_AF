@@ -6,6 +6,7 @@ import {
     DUTIES_FILENAME, DUTY_TEMPLATES, moveDuty, togglePauseDuty, updateDuty, watchStatus
 } from '../core/duties';
 import { Insight } from '../core/health';
+import { LaunchManifest } from '../core/launchManifest';
 import { mcpUsage, readAgentMcpServers, readDisabledServers } from '../core/mcp';
 import { indexedMemoryNames, memoryUsage } from '../core/memusage';
 import { readAgentSkills, skillUsage } from '../core/skills';
@@ -31,6 +32,13 @@ export interface AgentDetailDeps {
     agentProjects?(): Record<string, string>;
     /** A project's own colour, icon and description, by name. */
     projectStyle?(name: string): { icon?: string; color?: string; detail?: string } | undefined;
+    /**
+     * X-102 - the launch manifests, so a session row can say what its run was
+     * SET UP to be. Optional like `projectStyle`: a page can be built before the
+     * store exists, and a missing manifest degrades to a row that says nothing
+     * rather than to one that guesses.
+     */
+    launchManifests?(): readonly LaunchManifest[];
     /** Re-read the agent folders and repaint every tree and page. Writing a
      *  duty changes a file no session index is watching, so the page has to say
      *  so itself — otherwise the tree keeps yesterday's duty list. */
@@ -255,7 +263,7 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
         sessions: sessionRowPool(tableSessions,
             s => deps.index.isSessionActive(s), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
-            name => deps.projectStyle?.(name)),
+            name => deps.projectStyle?.(name), deps.launchManifests?.()),
         sessionTableN: tableN,
         /**
          * ‼️ U-111 — EVERY SESSION'S SPAN, because `sessions` above CANNOT

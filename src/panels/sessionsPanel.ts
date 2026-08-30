@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { PricingEngine } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
+import { LaunchManifest } from '../core/launchManifest';
 import { handleAfNav, htmlShell } from './base';
 import { sessionRowPool } from './dashboard';
 import { buildData as buildViewerData } from './sessionViewer';
@@ -34,6 +35,13 @@ export interface SessionsPageDeps {
     agentProjects?(): Record<string, string>;
     /** A project's own colour and icon, by name. */
     projectStyle?(name: string): { icon?: string; color?: string } | undefined;
+    /**
+     * X-102 - the launch manifests, so a session row can say what its run was
+     * SET UP to be. Optional like `projectStyle`: a page can be built before the
+     * store exists, and a missing manifest degrades to a row that says nothing
+     * rather than to one that guesses.
+     */
+    launchManifests?(): readonly LaunchManifest[];
 }
 
 /** What the page opens scoped to. Everything is optional: with nothing set the
@@ -86,7 +94,7 @@ function buildData(
         },
         sessions: sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
-            name => deps.projectStyle?.(name)),
+            name => deps.projectStyle?.(name), deps.launchManifests?.()),
         sessionTableN: tableN
     };
 }

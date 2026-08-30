@@ -11,6 +11,8 @@ import { dayKey } from '../core/util';
 import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 import { afConfig } from '../core/settingsDoor';
+import { LaunchManifest, manifestOf } from '../core/launchManifest';
+import { describeDrift, runDrift, turnRuntimes } from '../core/turnRuntime';
 
 export interface DashboardDeps {
     extensionUri: vscode.Uri;
@@ -44,6 +46,13 @@ export interface DashboardDeps {
     /** A project's colour and icon by name — so the sessions table marks a
      *  project the same way the sidebar and its own page do. */
     projectStyle?(name: string): { icon?: string; color?: string } | undefined;
+    /**
+     * X-102 - the launch manifests, so a session row can say what its run was
+     * SET UP to be. Optional like `projectStyle`: a page can be built before the
+     * store exists, and a missing manifest degrades to a row that says nothing
+     * rather than to one that guesses.
+     */
+    launchManifests?(): readonly LaunchManifest[];
 }
 
 interface AgentSummary {
@@ -111,7 +120,18 @@ export function sessionRowPool(
      * because the dashboard can be asked for rows before the registry is
      * available, and a missing mark must degrade to the plain name.
      */
-    projectStyle?: (name: string) => { icon?: string; color?: string; detail?: string } | undefined
+    projectStyle?: (name: string) => { icon?: string; color?: string; detail?: string } | undefined,
+    /**
+     * ‼️ X-102 — THE LAUNCH MANIFESTS, so a row can say what its run was SET UP
+     * to be and not only what came out of it.
+     *
+     * Optional for the same reason `projectStyle` is: a table can be asked for
+     * rows before the store is available, and a missing manifest must degrade to
+     * a row that says nothing rather than to a row that guesses. The lookup is
+     * by the launchId the BINDING wrote onto the session — nothing here reads a
+     * route off a transcript, because no transcript carries one (measured).
+     */
+    manifests?: readonly LaunchManifest[]
 ): unknown[] {
     /**
      * ‼️ THE DENOMINATOR UNDER THE CTX CELL, PER ENGINE (X-35).
@@ -128,6 +148,47 @@ export function sessionRowPool(
      * on which the hover prints the token count and no fraction rather than a
      * confident figure with the wrong ceiling underneath it.
      */
+    /**
+     * ‼️ X-102 — THE HALF OF A RUN NO TRANSCRIPT CARRIES, put on the row.
+     *
+     * Measured on a real Claude JSONL (2.1.251, 1373 records): the file names
+     * the model, the cwd, the version and the permission mode, and says NOTHING
+     * about which route served it, which stored profile at which revision, or
+     * what was REQUESTED as opposed to what came back. Every one of those is a
+     * question a person asks of a row, and until now the only honest answer the
+     * table could give was silence.
+     *
+     * ‼️ NULL RATHER THAN A DEFAULT when there is no manifest. A session that
+     * ran before v11.183, or one a person started by hand outside a bound
+     * mechanism, genuinely has no recorded setup — and a row that filled that in
+     * would be inventing exactly the certainty this whole family refuses.
+     */
+    const launchFacts = (s: SessionInfo) => {
+        const m = manifests ? manifestOf(manifests, s) : undefined;
+        if (!m) { return null; }
+        const drift = runDrift(turnRuntimes(m, s.source ?? 'claude',
+            (s.turns ?? []).map(t => ({ n: t.n, models: t.models }))));
+        return {
+            // The route, named the way `describeManifest` names it: a label when
+            // one was injected, and "inherited route" when nothing was — which
+            // is NOT "Anthropic". Nothing was injected and nothing was cleared,
+            // so the run took whatever the window already carried.
+            route: m.identity.providerLabel || m.identity.providerId
+                || (m.identity.origin === 'not-applicable' ? '' : 'inherited route'),
+            revision: m.identity.providerProfileRevision ?? null,
+            // What was ASKED FOR, kept apart from what came back on purpose:
+            // folded together, "which model ran" stops being answerable.
+            requested: [m.requested.tier ? `tier ${m.requested.tier}` : '',
+                m.requested.model || 'default model', m.requested.variant || '', m.requested.effort || '']
+                .filter(Boolean).join(' · '),
+            surface: m.surface,
+            at: m.at,
+            agreement: drift.agreement,
+            // ‼️ EMPTY ON AN ORDINARY RUN. A line stating "all fine" on every
+            // row is a column the reader learns to stop looking at.
+            note: describeDrift(drift)
+        };
+    };
     const forced = afConfig().get<number>('contextWindowTokens', 0);
     const windowOf = (s: SessionInfo): number => {
         if (forced > 0) { return forced; }
@@ -260,7 +321,11 @@ export function sessionRowPool(
             .map(([name, n]) => ({ name, n })),
         // How many memory files it opened — the recall signal, on the row that
         // already knows it.
-        memoryReads: Object.keys(s.memoryReads ?? {}).length
+        memoryReads: Object.keys(s.memoryReads ?? {}).length,
+        // ‼️ X-102 — WHAT THIS RUN WAS ASKED TO BE. Null on every session with
+        // no manifest, which is most of them for a while and is an ABSENCE the
+        // hover states rather than fills in.
+        launch: launchFacts(s)
     }));
     type Row = typeof rows[number];
     if (!(n > 0) || n >= rows.length) {
@@ -416,7 +481,7 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
     const sessionRows = sessionRowPool(deps.index.allWithExternal(),
         s => deps.index.isSessionActive(s, now), tableN,
         s => (s.agentName ? projectByAgent[s.agentName] : undefined),
-        name => deps.projectStyle?.(name));
+        name => deps.projectStyle?.(name), deps.launchManifests?.());
 
     const win = deps.index.windowUsage(now);
 

@@ -29,8 +29,26 @@ const data = () => ({
     totals: { sessions: 4, active: 1 },
     scope: { project: '', agentName: '' },
     sessions: [
-        row(1, { engine: '', models: ['claude-opus-5'] }),
-        row(2, { engine: 'codex', models: ['gpt-5.6-sol'] }),
+        // X-102 - a run whose launch WAS recorded: the Engine cell can say what
+        // it was asked to be beside what answered. A third-party route, so the
+        // profile revision matters and the models genuinely came from elsewhere.
+        row(1, {
+            engine: '', models: ['claude-opus-5'],
+            launch: {
+                route: 'Kimi (work)', revision: 3, requested: 'tier opus - kimi-k2-thinking',
+                surface: 'terminal', at: NOW - 400000, agreement: 'matched', note: ''
+            }
+        }),
+        // ...and one where the two halves disagree, which is the only case the
+        // Note line ever appears in. It reads as a reason to LOOK, never a verdict.
+        row(2, {
+            engine: 'codex', models: ['gpt-5.6-sol'],
+            launch: {
+                route: 'inherited route', revision: null, requested: 'gpt-5.6-thinking',
+                surface: 'console', at: NOW - 900000, agreement: 'unproven',
+                note: 'the model that answered is not one of the names the launch asked for'
+            }
+        }),
         row(3, { engine: 'agy', models: ['gemini-3.5-flash'] }),
         row(4, { engine: 'gemini', models: ['gemini-2.5-pro'] }),
         // ‼️ S-32 — the row whose transcript was too large to read. Its figures

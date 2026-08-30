@@ -277,6 +277,25 @@ const CLAUDE_ROUTE = {
             .test(bind));
     const sess = fs.readFileSync(path.join(ROOT, 'src', 'core', 'sessions.ts'), 'utf8');
     ok('…and the session has somewhere to keep it', /^\s*launchId\?: string;$/m.test(sess));
+
+    // ‼️ AND A PERSON CAN SEE IT. Until this, the manifest was readable from the
+    // bridge and nowhere else — written on every spawn since v11.183 and never
+    // once shown to the human it was recorded for.
+    const dash = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'dashboard.ts'), 'utf8');
+    ok('the row carries what the run was set up to be',
+        /const launchFacts = \(s: SessionInfo\) =>/.test(dash) && /launch: launchFacts\(s\)/.test(dash));
+    ok('‼️ …and NULL rather than a default when no manifest was recorded',
+        /if \(!m\) \{ return null; \}/.test(dash));
+    // ‼️ ALL THREE TABLES, NOT ONE. The same table component is embedded on the
+    // Dashboard, the agent page and the Sessions page; a fact visible on one and
+    // missing from the next is the gap a reader notices first.
+    const wired = ['panels/dashboard.ts', 'panels/agentDetail.ts', 'panels/sessionsPanel.ts']
+        .filter(p => /deps\.launchManifests\?\.\(\)/
+            .test(fs.readFileSync(path.join(ROOT, 'src', p), 'utf8')));
+    eq('every surface that embeds the sessions table gets the same store',
+        wired.length, 3);
+    ok('…and the host actually hands it over',
+        (ext.match(/launchManifests: \(\) => launchManifests\(\)/g) || []).length === 3);
 }
 
 console.log(`test_turn_runtime: ${pass} passed, ${fail} failed`);

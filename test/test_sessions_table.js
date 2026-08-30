@@ -1262,5 +1262,73 @@ const mkRow = (i, extra) => Object.assign({
         /cleared \$\{cleared\} of \$\{list\.length\}/.test(dismissCmd));
 }
 
+// ---------- X-102: the requested half of a run, on the row that shows the answered one ----------
+//
+// The manifest has been written on every spawn since v11.183 and no human could
+// see one: it was readable from the bridge and nowhere else. The Engine cell is
+// the ONE SUBJECT it belongs to - that cell already answers "what ran this".
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'x102',
+        columns: ['agent', 'engine', 'title', 'when', 'cost'], stateKey: 'x102'
+    });
+    t.setRows([
+        mkRow(1, {
+            engine: '', models: ['claude-opus-5'],
+            launch: {
+                route: 'Kimi (work)', revision: 3, requested: 'tier opus - kimi-k2-thinking',
+                surface: 'terminal', at: NOW - 1000, agreement: 'matched', note: ''
+            }
+        }),
+        mkRow(2, {
+            engine: 'codex', models: ['gpt-5.6-sol'],
+            launch: {
+                route: 'inherited route', revision: null, requested: 'gpt-5.6-thinking',
+                surface: 'console', at: NOW - 2000, agreement: 'unproven',
+                note: 'the model that answered is not one of the names the launch asked for'
+            }
+        }),
+        // The common case for a while: a session whose launch was never recorded.
+        mkRow(3, { engine: 'gemini', models: ['gemini-2.5-pro'] })
+    ], 10);
+    const html = () => containers.x102.innerHTML;
+
+    ok('the route the launch declared is on the row',
+        html().includes('Route: Kimi (work) · profile revision 3'));
+    ok('...and what was REQUESTED, kept apart from what answered',
+        html().includes('Requested: tier opus - kimi-k2-thinking')
+        && html().includes('Models: opus-5'));
+    ok('...and which surface it was started from',
+        html().includes('Started as: terminal'));
+    ok('the two halves agreeing is stated as a value, not a sentence',
+        html().includes('Asked vs answered: matched'));
+    // !! NOT "wrong". An alias asked for and an id answered is the same run, and
+    // a word that accused would fire on almost every honest session.
+    ok('!! a disagreement reads as NOT PROVEN, never as wrong',
+        html().includes('Asked vs answered: not proven')
+        && !/Asked vs answered: (wrong|mismatch)/.test(html()));
+    ok('...and only then does a note appear',
+        (html().match(/Note: the model that answered/g) || []).length === 1);
+
+    // !! A SESSION WITH NO MANIFEST SAYS NOTHING RATHER THAN GUESSING. Filling
+    // the gap in is the one move this whole family exists to refuse.
+    const geminiCell = (html().match(/<td[^>]*title="([^"]*)"/g) || [])
+        .filter(s => s.indexOf('Engine: Gemini') >= 0).join(' ');
+    ok('!! a run with no recorded launch shows no launch lines at all',
+        geminiCell.length > 0 && geminiCell.indexOf('Route:') < 0
+        && geminiCell.indexOf('Asked vs answered:') < 0);
+
+    // The column is defined ONCE, on its own <th> - which is where the four
+    // states are explained, so no cell has to carry the explanation.
+    ok('the column explains its own states on the <th>, not in the cells',
+        /<th[^>]*title="[^"]*not proven = neither side matches/.test(html()));
+    const cells = (html().match(/<td[^>]*title="[^"]*"/g) || []).join(' ');
+    ok('...and no cell repeats the explanation',
+        cells.indexOf('is a reason to look') < 0 && cells.indexOf('an alias') < 0);
+    ok('...and the engine cell is still well under the paragraph ceiling',
+        (html().match(/<td[^>]*title="([^"]*)"/g) || []).every(s => s.length < 800));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
