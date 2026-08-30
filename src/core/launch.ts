@@ -325,6 +325,48 @@ export function buildLaunchCommand(exe: string, o: LaunchOptions = {}): string {
     return parts.join(' ');
 }
 
+/**
+ * ‼️ S-34 — WHAT IS ABOUT TO START, ON THE ROW THAT STARTS IT.
+ *
+ * `describeLaunch` below names what was CHANGED — it drops the engine when it
+ * is Claude and the model when nothing was typed, because it was written for a
+ * toast that says what a launch is unusual about. On the Start row that rule is
+ * exactly backwards: the reader is not comparing this launch against a default,
+ * they are checking the one they are about to press, and the two facts that
+ * decide what a session IS — which program and which model — were the two the
+ * line left out. It read `effort high · auto · superpowers on`.
+ *
+ * So this one is a SETUP line and it always answers, in the order a person
+ * reads it: **engine · model · effort · permissions · discipline · project.**
+ *
+ * ‼️ IT SAYS THE RESOLVED ANSWER, NOT THE WORD "DEFAULT". `superpowers` is a
+ * tri-state on the options and a plain yes/no in the session that runs, so the
+ * caller passes what it resolved to — a row reading "agent default" makes the
+ * reader open a second screen to find out what will happen, which is the thing
+ * a summary exists to prevent.
+ *
+ * ‼️ AND IT IS SHORT ON PURPOSE. A quickpick row truncates: the effort is the
+ * bare word (it is unmistakable after a model), the discipline is `⚡on`/`⚡off`
+ * rather than the sentence, and a field nobody stated is left out rather than
+ * spending a column on "default" — except the model, which is named either way
+ * because "which model" is never a detail.
+ */
+export function launchSummary(o: LaunchOptions, facts: {
+    /** The discipline as it will actually be, agent default already resolved. */
+    superpowers?: boolean;
+    /** The project's display name (icon included), '' / absent for none. */
+    project?: string;
+} = {}): string {
+    const bits: string[] = [engineOf(o.engine).label];
+    bits.push(o.model?.trim() || 'default model');
+    if (o.effort?.trim()) { bits.push(o.effort.trim()); }
+    if (o.permissionMode?.trim()) { bits.push(o.permissionMode.trim()); }
+    const sp = facts.superpowers ?? o.superpowers;
+    if (sp !== undefined) { bits.push(sp ? '⚡on' : '⚡off'); }
+    bits.push(facts.project?.trim() ? facts.project.trim() : 'no project');
+    return bits.join(' · ');
+}
+
 /** One-line summary of what is set, for a picker row / a toast. */
 export function describeLaunch(o: LaunchOptions): string {
     const bits: string[] = [];

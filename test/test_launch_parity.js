@@ -274,8 +274,20 @@ const launchTs = read('src', 'core', 'launch.ts');
         /const o = seedLastLaunch\(agent\.id\);\s*\n\s*ConsolePanel\.show\(consoleDeps, \{\s*\n\s*agentId: agent\.id, pinAgent: true,/.test(extTs));
     // The Projects page: a different reason to start a session, not a different
     // session — only the project is new.
-    ok('the Projects page starts the agent as it last ran',
-        /const o = seedLastLaunch\(agent\.id, \{\s*\n\s*engine: \(launchDefaults\(\)\.engine \|\| 'claude'\) as EngineId\s*\n\s*\}\);/.test(extTs));
+    //
+    // ‼️ S-34 (reopened) — AND THAT INCLUDES THE ENGINE. This assertion used to
+    // pin the opposite, and the opposite was the bug: the door stated the FLEET
+    // default engine as its own answer, which beats the memory (`withLastLaunch`
+    // takes what the caller said first) — and then RECORDED it. So starting an
+    // agent from a project page silently reset that agent's remembered engine,
+    // and the ▶ beside it opened on a different one afterwards. That is the
+    // whole of "sometimes it insists on Antigravity and then suddenly it is
+    // Claude again": two doors writing one record, one of them with an answer
+    // nobody gave.
+    ok('the Projects page starts the agent as it last ran, engine included',
+        /is a different reason to start a session[\s\S]{0,1200}?const o = seedLastLaunch\(agent\.id\);/.test(extTs));
+    ok('…and states no engine of its own, so the record is not overwritten',
+        !/seedLastLaunch\(agent\.id, \{\s*\n\s*engine: \(launchDefaults\(\)\.engine \|\| 'claude'\) as EngineId/.test(extTs));
     // The launcher, which always did — through the shared recorder now.
     ok('the launcher records through the same recorder',
         /await rememberLaunch\(agent\.id, o, where\);/.test(extTs));
@@ -325,6 +337,94 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('…engine and discipline through the host, which owns them',
         /vscode\.postMessage\(\{ type: 'setEngine', id: eng \}\)/.test(consoleJs)
         && /type: 'setSuperpowers', on: want === '' \? null : want === 'on'/.test(consoleJs));
+}
+
+/* =========================================================================
+ * S-34 (reopened) — "IT REMEMBERS, BUT NOT ALL OF IT"
+ *
+ * ‼️ THE DEFECT, AND IT WAS ONE LINE IN THE PAGE. Every door seeds the boxes
+ * from the record; the composer then RECONCILED them against the engine's
+ * published catalog and cleared anything the catalog does not list. A catalog
+ * is what an engine is OFFERING, not what it can run — an alias typed into the
+ * launcher's "Other…" box, a model added to `agentFarm.modelAliases` and later
+ * removed, a level a catalog stopped advertising. So the model vanished; and
+ * because the effort list is looked up BY model, an emptied model then landed
+ * on a different list and took the effort with it. Which is exactly how it was
+ * reported: "sometimes it forgets the effort, sometimes the model".
+ *
+ * THE RULE: a value a real launch on THIS engine used survives the check. An
+ * engine CHANGE still drops both — those values belong to a different program,
+ * which is the case the reconcile exists for.
+ * ========================================================================= */
+{
+    const consoleJs = read('media', 'console.js');
+    ok('the reconcile takes what a real launch on this engine used',
+        /function reconcileComposer\(engineId, preferModelDefault, keep\) \{/.test(consoleJs));
+    ok('‼️ …and a kept model is not cleared by a catalog that does not list it',
+        /const keepModel = !!st\.model && kept\.model === st\.model;/.test(consoleJs)
+        && /if \(!keepModel && !models\.some/.test(consoleJs));
+    ok('‼️ …nor a kept effort, which used to go with the model',
+        /const keepEffort = !preferModelDefault && !!st\.effort && kept\.effort === st\.effort;/.test(consoleJs));
+    ok('a handed-over setup is kept', /reconcileComposer\(engineNow\(\), false, seeded \?/.test(consoleJs));
+    ok('…and so is the agent picker\'s own record',
+        /reconcileComposer\(nextEngine, false,\s*\n\s*last \?/.test(consoleJs));
+    // ‼️ AND THE BOX HAS TO DRAW WHAT SURVIVED, or the select shows its first
+    // row while the state says something else — a control that lies.
+    ok('the select carries the current value even when the catalog does not',
+        /function withCurrent\(list, current\) \{/.test(consoleJs)
+        && /opts\(withCurrent\(modelsFor\(engineNow\(\)\), st\.model\), st\.model\)/.test(consoleJs)
+        && /opts\(withCurrent\(effortsForModel\(engineNow\(\), st\.model\), st\.effort\), st\.effort\)/.test(consoleJs));
+    // ‼️ AN ENGINE CHANGE IS STILL A RESET. The keep is per-engine by
+    // construction (the caller passes a record that names this engine), and the
+    // engine-change handler passes none.
+    ok('changing the engine still clears what that engine cannot run',
+        /reconcileComposer\(next, false\);/.test(consoleJs));
+}
+
+/* ---------- the setup line: what is about to start, on the row that starts it */
+//
+// ‼️ `describeLaunch` names what was CHANGED — it drops the engine when it is
+// Claude and the model when nothing was typed. On the Start row that rule is
+// backwards: the reader is checking the launch they are about to press, and the
+// two facts that decide what a session IS were the two it left out. It read
+// `effort high · auto · superpowers on`.
+{
+    eq('the setup line answers with the engine and the model first, always',
+        L.launchSummary({}), 'Claude Code · default model · no project');
+    eq('…then effort, permissions, discipline and the project',
+        L.launchSummary(
+            { engine: 'codex', model: 'gpt-5', effort: 'high', permissionMode: 'auto' },
+            { superpowers: true, project: '◧ Agent Farm' }),
+        'Codex · gpt-5 · high · auto · ⚡on · ◧ Agent Farm');
+    ok('the engine is named even when it is the default one',
+        L.launchSummary({ model: 'opus' }).startsWith('Claude Code · opus'));
+    // ‼️ IT SAYS THE RESOLVED ANSWER, NOT THE WORD "DEFAULT". The discipline is
+    // a tri-state on the options and a plain yes/no in the session that runs; a
+    // row reading "agent default" makes the reader open a second screen to find
+    // out what will happen, which is what a summary exists to prevent.
+    eq('the discipline is the resolved answer, short',
+        L.launchSummary({ model: 'opus' }, { superpowers: false }),
+        'Claude Code · opus · ⚡off · no project');
+    ok('…and a field nobody stated does not spend a column on "default"',
+        !/effort|permission/.test(L.launchSummary({ model: 'opus' })));
+    eq('no project is an answer, not a blank', L.launchSummary({}).endsWith('no project'), true);
+
+    // The launcher and the ▶ picker both print it, off the same memory.
+    ok('the launcher Start row shows the setup rather than the changes',
+        /const summary = launchSummary\(merged, \{/.test(extTs)
+        && /description: where === 'console' \? summary : command,/.test(extTs));
+    ok('…and the terminal row gets it too, beside the command line it must print',
+        /\+ \(where === 'console' \? '' : summary \+ ' · '\)/.test(extTs));
+    ok('‼️ the ▶ picker says what it will start, not only where',
+        /placeHolder: `\$\{what\} — where should it run\?\$\{setup\}`/.test(extTs));
+    // ‼️ AND WHERE THE ENGINE CAME FROM. It has always been "this agent's last,
+    // else the fleet default" — a fixed rule, and unreadable, because the row
+    // named an engine and nothing else. Two agents, two engines, nothing on
+    // screen saying why, which is indistinguishable from a picker that opens on
+    // whatever it feels like.
+    ok('…and says where the engine it opened on came from',
+        /const engineFrom = opts\.last\?\.engine/.test(extTs)
+        && /' • your default'/.test(extTs));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

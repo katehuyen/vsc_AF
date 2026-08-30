@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.339.0 - S-34: it remembered, but not all of it — and the row never said what it would start (2026-08-30)
+
+Three defects with one shape: a launch setup that is known and not shown, or
+shown and not kept.
+
+**‼️ "Sometimes it forgets the model, sometimes the effort" — and it was one line
+in the page.** Every door seeds the composer's boxes from the agent's record; the
+composer then reconciled them against the engine's published catalog and
+**cleared anything the catalog does not list**. A catalog is what an engine is
+OFFERING, not what it can run — an alias typed into the launcher's "Other…" box,
+a model added to `agentFarm.modelAliases` and later removed, a level a catalog
+stopped advertising. So the model vanished; and because the effort list is looked
+up BY model, an emptied model then landed on a different list and took the effort
+with it. A value a real launch on **this** engine used now survives the check,
+and the select draws it. An engine CHANGE still clears both — those values belong
+to a different program, which is the case the reconcile exists for.
+
+**‼️ Starting an agent from a Projects page silently reset that agent's
+remembered engine.** That door stated the fleet default engine as its own answer
+— which beats the memory, because what a caller says wins — and then recorded it.
+Two doors writing one record, one of them with an answer nobody gave: which is
+the whole of "sometimes it insists on Antigravity and then suddenly it is Claude
+again". It now inherits like every other door.
+
+**‼️ The Start row said what was CHANGED, not what will run.** `describeLaunch`
+drops the engine when it is Claude and the model when nothing was typed — right
+for a toast, backwards on the row you press: the two facts that decide what a
+session IS were the two it left out, and the line read `effort high · auto ·
+superpowers on`. There is now a SETUP line, always in the same order —
+**engine · model · effort · permissions · ⚡ · project** — and it prints the
+resolved answer rather than the word "default", because a row saying "agent
+default" makes you open a second screen to find out what will happen. Short on
+purpose: the effort is the bare word, the discipline is `⚡on`/`⚡off`, and a field
+nobody stated is left out rather than spending a column on "default". The model
+is named either way, because "which model" is never a detail.
+
+**‼️ And the ▶ picker now says what it will start, not only where.** It asks
+three questions (engine · project · where) and inherits four more without showing
+any of them, so "▶ then Enter" ran on a model and an effort that were nowhere on
+screen. It carries the same setup line — and the engine row says where its answer
+came from (`• last used for dev` / `• your default`), because the rule was always
+fixed and always unreadable: two agents, two engines, nothing saying why.
+
 ## 3.338.0 - K-36 · M-32: the list the install actually has, and the form that gives it back (2026-08-30)
 
 Two losses of information, both silent, both now measured.

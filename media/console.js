@@ -2783,17 +2783,49 @@
         if (!em || !em.efforts) { return DATA.efforts || []; }
         return em.efforts[String(model || '')] || em.efforts[''] || DATA.efforts || [];
     }
-    /** Keep all three launch boxes inside the vocabulary of the engine/model
-     *  currently in front of them. `preferModelDefault` is used after a model
-     *  is picked by hand; an engine change otherwise preserves an effort when
-     *  the new model genuinely offers the same value. */
-    function reconcileComposer(engineId, preferModelDefault) {
+    /**
+     * S-34 — A VALUE THIS AGENT ACTUALLY RAN ON IS ON THE LIST.
+     *
+     * A catalog is what an engine is OFFERING, and that is not the same set as
+     * what it can run: an alias typed into the launcher's "Other..." box, a
+     * model added to agentFarm.modelAliases and later removed, a level a
+     * catalog stopped advertising. Drawing a select off the catalog alone
+     * silently loses whatever is set - the box shows the first row while the
+     * state says something else, which is a control that lies.
+     */
+    function withCurrent(list, current) {
+        const v = String(current || '');
+        if (!v || list.some(x => x.id === v)) { return list; }
+        return list.concat([{ id: v, label: v }]);
+    }
+    /**
+     * Keep all three launch boxes inside the vocabulary of the engine/model
+     * currently in front of them. preferModelDefault is used after a model is
+     * picked by hand; an engine change otherwise preserves an effort when the
+     * new model genuinely offers the same value.
+     *
+     * S-34 - keep IS A REMEMBERED SETUP FOR **THIS** ENGINE, AND IT WINS.
+     *
+     * This is where "it forgets the model" and "it forgets the effort" came
+     * from, and it was one line each: a seeded value absent from the engine's
+     * published catalog was cleared, and clearing the model then cascaded into
+     * the effort (the effort list is looked up BY model, so an emptied model
+     * lands on a different list and the level goes with it). A value a real
+     * launch on this same engine used is by definition runnable on it - the
+     * catalog simply does not advertise every alias. An ENGINE CHANGE still
+     * drops both, which is the case this function exists for: those values
+     * belong to a different program.
+     */
+    function reconcileComposer(engineId, preferModelDefault, keep) {
+        const kept = keep || {};
         const models = modelsFor(engineId);
-        if (!models.some(m => m.id === (st.model || ''))) { st.model = ''; }
+        const keepModel = !!st.model && kept.model === st.model;
+        if (!keepModel && !models.some(m => m.id === (st.model || ''))) { st.model = ''; }
         const efforts = effortsForModel(engineId, st.model);
         const em = (DATA.engineModels || {})[engineId || 'claude'] || {};
         const modelDefault = (em.defaultEffort || {})[st.model || ''] || '';
-        if (preferModelDefault || !efforts.some(e => e.id === (st.effort || ''))) {
+        const keepEffort = !preferModelDefault && !!st.effort && kept.effort === st.effort;
+        if (!keepEffort && (preferModelDefault || !efforts.some(e => e.id === (st.effort || '')))) {
             st.effort = efforts.some(e => e.id === modelDefault) ? modelDefault : '';
         }
     }
@@ -2827,7 +2859,12 @@
             const box = document.getElementById('c-text');
             if (box) { box.value = seeded.prompt; }
         }
-        reconcileComposer(engineNow(), false);
+        // S-34 - the handed-over setup is a real launch's answer for the engine
+        // this composer is showing (the door set both together), so it survives
+        // the catalog check. Without this the launcher could open the composer
+        // on a model the catalog does not advertise and the box would quietly
+        // show something else.
+        reconcileComposer(engineNow(), false, seeded ? { model: st.model, effort: st.effort } : null);
         save();
     }
 
@@ -2861,7 +2898,13 @@
         // the box and the spawn disagree about which CLI was chosen.
         const eng = (last && last.engine) || '';
         const nextEngine = eng || engineNow();
-        reconcileComposer(nextEngine, false);
+        // S-34 - the record IS a launch that happened, on the engine it names,
+        // so its model and effort survive the catalog check for that engine. A
+        // record with no engine belongs to the box that is showing, which is the
+        // same statement. This is what stopped the picker from dropping an agent
+        // that runs on an alias the catalog does not list.
+        reconcileComposer(nextEngine, false,
+            last ? { model: last.model || '', effort: last.effort || '' } : null);
         if (eng && eng !== engineNow()) { vscode.postMessage({ type: 'setEngine', id: eng }); }
         // …and the discipline switch, which also lives host-side. '' means "this
         // agent's own default", which is exactly what a never-started agent
@@ -3060,9 +3103,9 @@
                 </select>`}
                 <select id="c-engine" title="${C.esc(boxTip((DATA.engines || []), engineNow(), 'Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.'))}">${engineOptionsHtml(engineNow())}</select>
                 ${engineHintHtml(engineNow())}
-                <select id="c-model" title="${C.esc(boxTip(modelsFor(engineNow()), st.model, 'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow())))}">${opts(modelsFor(engineNow()), st.model)}</select>
+                <select id="c-model" title="${C.esc(boxTip(withCurrent(modelsFor(engineNow()), st.model), st.model, 'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow())))}">${opts(withCurrent(modelsFor(engineNow()), st.model), st.model)}</select>
                 ${drawsEffort(engineNow())
-                    ? `<select id="c-effort" title="${C.esc(boxTip(effortsForModel(engineNow(), st.model), st.effort, 'Reasoning effort' + flagOf(engineNow(), 'effort')))}">${opts(effortsForModel(engineNow(), st.model), st.effort)}</select>`
+                    ? `<select id="c-effort" title="${C.esc(boxTip(withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort, 'Reasoning effort' + flagOf(engineNow(), 'effort')))}">${opts(withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort)}</select>`
                     : ''}
                 <select id="c-perm" title="${C.esc(boxTip(DATA.permissions, st.permissionMode, startPermTip))}">${opts(DATA.permissions, st.permissionMode)}</select>
                 <select id="c-proj" title="${C.esc(boxTip([{ id: '', label: '◧ No project' }, ...(DATA.projects || []).map(p => ({ id: p.id, label: (p.icon || '◧') + ' ' + p.name }))], DATA.activeProjectId || '', 'Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar\'s active project is the window\'s answer, not this session\'s, and neither writes the other.'))}">

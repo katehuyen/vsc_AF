@@ -135,7 +135,8 @@ import {
 import { SessionStore } from './core/sessionStore';
 import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
-    LastLaunch, launchToRemember, LaunchOptions, LaunchProfile, MODEL_ID_REFUSAL, modelChoices,
+    LastLaunch, launchSummary, launchToRemember, LaunchOptions, LaunchProfile, MODEL_ID_REFUSAL,
+    modelChoices,
     modelIdOk, ONE_EXECUTOR, PERMISSION_CHOICES, RunSurface, SUPERPOWERS_CHOICES,
     normSuperpowers, superpowersWord, twoExecutors, validateLaunch, withDefaults, withLastLaunch
 } from './core/launch';
@@ -17378,14 +17379,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // and until it said so out loud the only way to know whether it had
             // remembered was to open the profile list and compare by eye.
             const isProfile = matchProfile(launchProfiles(), o, where);
+            /**
+             * ‼️ S-34 — THE SETUP, IN THE ORDER SOMEBODY CHECKING IT READS IT.
+             * The row used to describe what was CHANGED (`describeLaunch`), so
+             * the two facts that decide what a session IS — the engine and the
+             * model — were the two it dropped whenever they were the defaults.
+             * The discipline is resolved here because this is where the agent
+             * is known, and the project's name comes off the row that sets it.
+             */
+            const summary = launchSummary(merged, {
+                superpowers: merged.superpowers ?? superpowersOnFor(agent.name),
+                project: launchProjectName(project)
+            });
             const rows: Row[] = [
                 {
                     label: '$(rocket) Start',
                     // In the Console the command line is not what runs (the panel
                     // spawns its own streaming session), so printing it would be
                     // a lie about the exact thing this row exists to be honest about.
-                    description: where === 'console' ? describeLaunch(merged) : command,
+                    description: where === 'console' ? summary : command,
                     detail: (isProfile ? `profile “${isProfile.name}” · ` : '')
+                        // ‼️ …and on a terminal the description IS the command
+                        // line, which is the honest thing to print there and far
+                        // too long to read at a glance — so the setup line goes
+                        // here, where both surfaces get it.
+                        + (where === 'console' ? '' : summary + ' · ')
                         + (where === 'console'
                             ? `runs in ${agent.dir}, hosted in the Console panel`
                             : `runs in ${agent.dir}`),
@@ -17476,7 +17494,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
             ];
             const pick = await vscode.window.showQuickPick(rows, {
-                placeHolder: `Start a session for ${agent.name} — ${describeLaunch(merged)}`,
+                placeHolder: `Start a session for ${agent.name} — ${summary}`,
                 ignoreFocusOut: true, matchOnDescription: true
             });
             if (!pick?.act) { return; } // Esc anywhere = launch nothing
@@ -19205,6 +19223,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return p && !CLOSED_PROJECT_STATUSES.includes(p.status) ? id : '';
     };
 
+    /** ‼️ S-34 — the project as the SETUP line names it (icon + name, '' for
+     *  none). One reading, so the row and the summary above it cannot disagree
+     *  about which project a launch is filed under. */
+    const launchProjectName = (projectId: string): string => {
+        const p = projectId ? projectStore.all().find(x => x.id === projectId) : undefined;
+        return p ? `${p.icon ? p.icon + ' ' : '◧ '}${p.name}` : '';
+    };
+
     const launchProjectRow = (
         projectId: string, fromStatusBar = false
     ): vscode.QuickPickItem & { act: string } => {
@@ -19372,9 +19398,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // different program, a permission mode becomes a sandbox, a turn
             // stops being steerable). One row naming the current answer; the
             // list itself is one step in, exactly like the project row.
+            /**
+             * ‼️ S-34 — AND THE ROW SAYS WHERE THAT ANSWER CAME FROM.
+             *
+             * The engine here is the agent's own last one, falling back to the
+             * fleet default — a fixed rule the whole time, and unreadable,
+             * because the row named an engine and nothing else. Pressing ▶ on
+             * two agents gave two different engines with nothing on screen
+             * saying why, which is indistinguishable from a picker that opens
+             * on whatever it feels like. The surface row below has said "• last
+             * used for X" since S-34; this is the same sentence for the
+             * dimension people actually noticed changing.
+             */
+            const engineFrom = opts.last?.engine
+                ? (opts.agentName ? ` • last used for ${opts.agentName}` : ' • last used')
+                : (launchDefaults().engine ? ' • your default' : '');
             const engineRow: Item = {
                 label: '$(server-process) Engine',
-                description: spec.label + (spec.id === 'claude' ? '' : ' • one process per turn, no per-turn price'),
+                description: spec.label + engineFrom
+                    + (spec.id === 'claude' ? '' : ' • one process per turn, no per-turn price'),
                 detail: engineNote(spec.id),
                 act: 'engine'
             };
@@ -19407,8 +19449,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ...where
                     ]
                     : where;
+            /**
+             * ‼️ S-34 — WHAT THIS WILL ACTUALLY START, ON THE PICKER THAT
+             * STARTS IT. This door asks three questions (engine · project ·
+             * where) and inherits four more from the agent's record without
+             * showing any of them — so "▶ then Enter" ran on a model and an
+             * effort the person could not see anywhere. It is the same setup
+             * line the launcher's Start row carries, off the same memory.
+             */
+            const setup = opts.last
+                ? ' — ' + launchSummary(
+                    withLastLaunch({ engine: engine as EngineId }, opts.last),
+                    {
+                        superpowers: opts.last.superpowers
+                            ?? (opts.agentName ? superpowersOnFor(opts.agentName) : undefined),
+                        project: launchProjectName(projectId)
+                    })
+                : '';
             const pick = await vscode.window.showQuickPick(items, {
-                placeHolder: `${what} — where should it run?`, ignoreFocusOut: true
+                placeHolder: `${what} — where should it run?${setup}`, ignoreFocusOut: true
             });
             if (!pick) { return undefined; }
             if (pick.act === 'engine') {
@@ -23039,13 +23098,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ S-34 — the same setup the other doors start on. A project page
             // is a different reason to start a session, not a different session:
             // the agent still runs as it last ran, and only the project is new.
-            const o = seedLastLaunch(agent.id, {
-                engine: (launchDefaults().engine || 'claude') as EngineId
-            });
+            //
+            // ‼️ S-34 (reopened) — AND THE ENGINE IS PART OF "AS IT LAST RAN".
+            // This door used to state the FLEET default engine as its own
+            // answer, which beats the memory (`withLastLaunch` takes what the
+            // caller said first) — and then RECORDED it. So starting an agent
+            // from a project page silently reset that agent's remembered
+            // engine, and the ▶ beside it opened on a different one afterwards.
+            // That is the whole of "sometimes it insists on Antigravity and
+            // then suddenly it is Claude again": two doors writing the same
+            // record, one of them with an answer nobody gave.
+            const o = seedLastLaunch(agent.id);
             if (how === 'console') {
                 ConsolePanel.show(consoleDeps, {
                     agentId: agent.id, pinAgent: true, projectId: id,
-                    engine: o.engine || 'claude',
+                    engine: o.engine || launchDefaults().engine || 'claude',
                     launch: {
                         model: o.model, effort: o.effort,
                         permissionMode: o.permissionMode, superpowers: o.superpowers
