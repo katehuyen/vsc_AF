@@ -182,6 +182,14 @@
             render();
             return;
         }
+        // U-86 — what the host did about the hooks, said IN THE CARD. A write
+        // that reports itself in a notification is a write the reader has to
+        // remember while looking at a card that has not changed yet.
+        if (m.type === 'hooks-said') {
+            hooksMsg = { ok: m.ok, text: m.text };
+            render();
+            return;
+        }
         if (m.type === 'mcp-def' && toolForm && toolForm.name === m.name) {
             Object.assign(toolForm, m.def || {});
             render();
@@ -362,6 +370,9 @@
     let toolMsgOk = false;
     /** U-84 — the last verify answer, kept until the next one replaces it. */
     let svcMsg = null;
+    // U-86 — what the host last did about the hooks. Page state, not DATA: it
+    // is an answer to a button this reader pressed.
+    let hooksMsg = null;
 
     const KIND_LABEL = { skill: 'skill', subagent: 'subagent', command: 'command', mcp: 'MCP server' };
     const KIND_LEDE = {
@@ -699,13 +710,110 @@
     function svcOverviewIcon() { return window.AFTelegram.dot(tg()); }
     function svcOverviewLine() { return window.AFTelegram.line(tg()); }
 
+    // ------------------------------------------------------------- U-86
+    /**
+     * ‼️ THE LIVE HOOKS CARD ANSWERS THE ONE QUESTION THE FARM CANNOT ANSWER
+     * FOR ITSELF: is anybody actually reporting?
+     *
+     * Without the hooks the extension is BLIND — no timeline, no live turn, no
+     * permission-wait notice — and the commonest cause of "nothing shows up"
+     * has never been a bug. It was on the bridge (`hooks.status`) and on no
+     * surface at all, so the only person who could find out was an agent.
+     *
+     * ‼️ AND LIKE THE CARD ABOVE IT, THIS ONE DECIDES NOTHING. `status`, the
+     * tone and the holder sentence all arrive from `core/hooksCockpit.ts`,
+     * which is tested against the bytes `netstat` really printed on this
+     * machine — including the ten TIME_WAIT rows that mention the port and
+     * carry pid 0.
+     */
+    const hk = () => (DATA.services || {}).hooks;
+
+    function hooksCard() {
+        const h = hk();
+        if (!h) { return ''; }
+        const s = h.status;
+        const badge = window.AFTip.wrap(
+            `<span class="svc-badge t-${esc(s.tone)}">● ${esc(window.AFTelegram.words(s.state))}</span>`,
+            'Live hooks — ' + window.AFTelegram.words(s.state),
+            s.detail + (s.next ? '\n\n' + s.next : '')
+            + '\n\nListener: ' + h.listener
+            + '\nPort: ' + h.port
+            + '\n\nThe hook command every file runs:\n' + h.command,
+            'svc-tip');
+
+        // DENSITY — one row per file, with the fact that decides everything
+        // (user scope) first and named as such.
+        const fileRow = t => `<div class="hkfile">
+            <span class="hkmark ${t.installed ? 'ok' : 'no'}">${t.installed ? '✓' : '✗'}</span>
+            <span class="hkscope">${t.scope === 'user' ? 'user' : esc(t.agent || 'agent')}</span>
+            <span class="hkpath" title="${esc(t.file)}">${esc(t.file)}</span>
+        </div>`;
+
+        // ‼️ THE HOLDER SENTENCE IS NOT REPEATED HERE. `hooksStatus` already
+        // makes it the card's detail line when the port is taken — drawn again
+        // as its own strip, the same sentence stood twice, two lines apart.
+        // Seen in the PNG; no string test would have caught it.
+
+        return `<div class="card svc-card">
+            <div class="svc-head">
+                <b>Live Hooks &amp; System Services</b> ${badge}
+                <span class="muted small">port ${esc(h.port)}</span>
+                <span class="svc-sp"></span>
+                <button class="mini" data-hk="restart">restart listener</button>
+                ${h.holder && h.holder.canStop
+                ? '<button class="mini" data-hk="clear-port">free the port</button>' : ''}
+            </div>
+            <div class="muted small svc-detail">${esc(s.detail)}${s.next ? ' <b>' + esc(s.next) + '</b>' : ''}</div>
+            ${hooksMsg ? `<div class="svc-msg ${hooksMsg.ok ? 'ok' : 'bad'}">${esc(hooksMsg.text)}</div>` : ''}
+            <div class="svc-facts">
+                <span class="svc-fact">User scope <b class="${s.userInstalled ? 'svc-y' : 'svc-n'}">${s.userInstalled ? 'installed' : 'NOT installed'}</b></span>
+                <span class="svc-fact">Files <b class="${s.installed ? 'svc-y' : 'svc-n'}">${esc(s.installed)} of ${esc(s.total)}</b></span>
+                <span class="svc-fact">Listener <b class="${h.listener === 'listening' ? 'svc-y' : 'svc-n'}">${esc(h.listener)}</b></span>
+            </div>
+            <div class="svc-row">
+                <label class="svc-lbl">Hook files</label>
+                <div class="svc-val col"><div class="hkfiles">${(h.targets || []).map(fileRow).join('')}</div></div>
+            </div>
+            <div class="svc-row">
+                <label class="svc-lbl">Install</label>
+                <div class="svc-val">
+                    <button class="mini" data-hk="install" data-scope="user">user scope</button>
+                    <button class="mini" data-hk="install" data-scope="agents">every agent</button>
+                    <button class="mini" data-hk="install" data-scope="both">both</button>
+                    <span class="muted small">user scope is one file and covers every session on this machine</span>
+                </div>
+            </div>
+            <div class="svc-row">
+                <label class="svc-lbl">Remove</label>
+                <div class="svc-val">
+                    <button class="mini" data-hk="remove" data-scope="both">take ours back out</button>
+                    <span class="muted small">every hook that is not ours is left where it is</span>
+                </div>
+            </div>
+        </div>`;
+    }
+
     function serviceTab() {
         return window.AFTelegram.card(tg(), {
             controls: true, agents: DATA.agents || [], msg: svcMsg
-        });
+        }) + hooksCard();
     }
 
-    function wireServices() { window.AFTelegram.wire(post); }
+    function wireServices() {
+        window.AFTelegram.wire(post);
+        // ‼️ THE FOUR TYPES ARE WRITTEN OUT, not built from a data attribute.
+        // A message type assembled at runtime is a door the parity gate and the
+        // page-message gate cannot see — and an unanswered message is silence,
+        // which is exactly what this card exists to cure.
+        document.querySelectorAll('[data-hk]').forEach(b => b.addEventListener('click', () => {
+            const scope = b.dataset.scope;
+            const act = b.dataset.hk;
+            if (act === 'install') { post({ type: 'hooks-install', scope: scope }); }
+            else if (act === 'remove') { post({ type: 'hooks-remove', scope: scope }); }
+            else if (act === 'restart') { post({ type: 'hooks-restart' }); }
+            else if (act === 'clear-port') { post({ type: 'hooks-clear-port' }); }
+        }));
+    }
 
     function settingsTab() {
         return mdTable('settings', ['File', 'Scope', 'Contents', ''], x => {
@@ -772,6 +880,16 @@
                 .tb-card { cursor: pointer; }
                 .tb-card:hover { outline: 1px solid var(--vscode-charts-blue, #3794ff); }
                 ${window.AFTelegram.css()}
+                /* U-86 — the hook files, one row each. The mark, whose file it
+                   is, and the path — in that order, because "is it in?" is the
+                   question and the path is the evidence. */
+                .hkfiles { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+                .hkfile { align-items: baseline; display: flex; font-size: 11px; gap: 7px; }
+                .hkmark.ok { color: var(--vscode-charts-green, #4caf50); }
+                .hkmark.no { color: var(--vscode-charts-orange, #d18616); }
+                .hkscope { flex: 0 0 92px; opacity: .8; }
+                .hkpath { font-family: var(--vscode-editor-font-family); opacity: .6;
+                          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
                 .tb-num { font-size: 26px; font-weight: 700; }
                 .tb-cat { font-weight: 600; margin: 2px 0; }
                 .tb-exp { margin-top: 6px; line-height: 1.35; }

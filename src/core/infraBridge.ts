@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AgentInfo } from './agents';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
+import { clearPort, portHolder } from './portScan';
 import {
     hasOurHooks, hookCommand, installHooksInto, InstallResult, removeHooksFrom
 } from './hooksInstaller';
@@ -36,6 +37,12 @@ export interface InfraBridgeDeps {
     userSettingsFile(): string;
     /** the port the hooks POST to (agentFarm.livePort) */
     livePort(): number;
+    /**
+     * U-86 — bind the live listener again. `LiveMonitor.start()` stops first, so
+     * this IS the reset; optional because a host that has no monitor (a test)
+     * still registers every other op.
+     */
+    restartListener?(): void;
     /** globalStorage — where the service script, cmd, config and log live */
     storageDir(): string;
     /** the built service script inside the extension (out/service/farmService.js) */
@@ -193,6 +200,36 @@ export function registerInfraOps(bridge: BridgeRegistry, deps: InfraBridgeDeps):
                         ? 'User scope is installed — every session on this machine is covered.'
                         : 'User scope is NOT installed; only the agent files listed as installed report events.'
                 };
+            }
+        },
+        {
+            op: 'hooks.port',
+            describe: '‼️ WHO HOLDS THE LIVE PORT — the answer "the hooks are installed but nothing arrives" usually needs. Returns the process listening on agentFarm.livePort, CLASSIFIED: `ours` (this window, which is not a conflict), `other-window` (a second VS Code — the hooks are reaching that one), `stranger` (the only case stopping it is offered for), `none`, or `unknown` when the scan could not answer. Never guesses: a scan that fails says so rather than reporting a free port. args: none',
+            handler: () => portHolder(deps.livePort())
+        },
+        {
+            op: 'hooks.port.clear',
+            describe: '‼️ STOP WHATEVER HOLDS THE LIVE PORT, then bind again. REFUSED unless hooks.port classified the holder as `stranger` — this extension will not stop its own window, and it will not kill a second VS Code somebody is working in. `dryRun:true` answers with who would be stopped and stops nothing. args: dryRun?',
+            handler: (args) => {
+                const holder = portHolder(deps.livePort());
+                if (args.dryRun === true) {
+                    return { dryRun: true, holder, wouldStop: holder.canStop ? holder.pid : null };
+                }
+                need(holder.canStop,
+                    `Refused — ${holder.detail} Nothing was stopped.`);
+                const r = clearPort(deps.livePort());
+                need(r.ok, r.error ?? 'the process could not be stopped');
+                deps.restartListener?.();
+                return { stopped: r.stopped, holder, note: 'The listener was asked to bind again.' };
+            }
+        },
+        {
+            op: 'hooks.listener.restart',
+            describe: 'Bind the live listener again — the safe half of a port repair, and the one to try first after freeing a port or changing agentFarm.livePort. Stops the current listener and starts it, so it is idempotent. args: none',
+            handler: () => {
+                need(!!deps.restartListener, 'This window has no live monitor to restart.');
+                deps.restartListener?.();
+                return { port: deps.livePort(), note: 'The listener was asked to bind again.' };
             }
         },
         {

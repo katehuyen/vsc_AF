@@ -79,7 +79,7 @@ import {
     buildAgentTaskStats, buildTaskFamilies, mergeTaskRecords, readTaskHistory, taskAlerts
 } from './core/taskstats';
 import {
-    hasOurHooks, installHooksInto, removeHooksFrom, userSettingsPath
+    hasOurHooks, hookCommand, installHooksInto, removeHooksFrom, userSettingsPath
 } from './core/hooksInstaller';
 import { LiveMonitor, LiveSession } from './core/live';
 import { OwnerLease } from './core/owner';
@@ -356,8 +356,9 @@ import { AgentDetailPanel } from './panels/agentDetail';
 import { CapabilitiesPanel } from './panels/capabilities';
 import { buildToolboxInventory, ToolboxInventory } from './core/toolbox';
 import {
-    InfraBridgeDeps, installService, registerInfraOps, removeService, serviceState
+    hookTargets, InfraBridgeDeps, installService, registerInfraOps, removeService, serviceState
 } from './core/infraBridge';
+import { clearPort, portHolder } from './core/portScan';
 import { registerReportOps } from './core/reportBridge';
 import { registerStudioOps } from './core/studioBridge';
 import { registerToolboxOps } from './core/toolboxBridge';
@@ -16164,6 +16165,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return { ok: false, error: String((e as Error).message ?? e) };
                 }
             }
+        },
+        /**
+         * U-86 — the live hooks, and the port they report to.
+         *
+         * ‼️ THE TWO WRITES GO THROUGH THE BRIDGE OPS RATHER THAN AROUND THEM.
+         * `hooks.install` / `hooks.remove` already own the target resolution,
+         * the merge that keeps foreign hooks, and the one-time `.agentfarm-bak`
+         * copy. A panel that called the installer directly would be a second
+         * caller of a three-step procedure, and the step it forgot would be the
+         * backup.
+         *
+         * ‼️ AND THE LISTENER STATE IS THE MONITOR'S OWN. It watched its
+         * `server.on('error')`; a port scan can say who is there but never why
+         * WE failed, so the scan is asked for only when the state is already
+         * `port-in-use`.
+         */
+        hooks: {
+            snapshot: () => ({
+                listener: live.listenerState,
+                port: cfg().get<number>('livePort', 8377),
+                command: hookCommand(cfg().get<number>('livePort', 8377)),
+                targets: hookTargets(infraDeps)
+            }),
+            holder: () => portHolder(cfg().get<number>('livePort', 8377)),
+            install: async (scope: 'user' | 'agents' | 'both') => {
+                const r = await bridge.dispatch('hooks.install', { scope });
+                const v = (r.ok ? r.result : {}) as { installed?: number; failed?: number; note?: string };
+                return {
+                    installed: v.installed ?? 0,
+                    failed: v.failed ?? (r.ok ? 0 : 1),
+                    note: r.ok ? (v.note ?? '') : String(r.error ?? 'the install was refused')
+                };
+            },
+            remove: async (scope: 'user' | 'agents' | 'both') => {
+                const r = await bridge.dispatch('hooks.remove', { scope });
+                const v = (r.ok ? r.result : {}) as { removed?: number; note?: string };
+                return {
+                    removed: v.removed ?? 0,
+                    note: r.ok ? (v.note ?? '') : String(r.error ?? 'the removal was refused')
+                };
+            },
+            clearPort: () => clearPort(cfg().get<number>('livePort', 8377)),
+            restart: () => live.start()
         }
     };
     const viewerDeps = {
@@ -18352,6 +18396,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         getAgents: () => agents,
         userSettingsFile: () => userSettingsPath(claudeDir()),
         livePort: () => cfg().get<number>('livePort', 8377),
+        // U-86 — the safe half of a port repair, and the same act the card's
+        // "restart listener" button is. `start()` stops first.
+        restartListener: () => live.start(),
         storageDir: () => context.globalStorageUri.fsPath,
         serviceSource: () => path.join(context.extensionPath, 'out', 'service', 'farmService.js'),
         writeServiceConfig,

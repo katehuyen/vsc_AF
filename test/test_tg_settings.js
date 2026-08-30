@@ -146,11 +146,14 @@ const of = (id) => V.find(v => v.id === id).data;
     for (const [name, src] of [['settings.js', settings], ['toolbox.js', toolbox]]) {
         ok(`media/${name} draws the card with the shared component`,
             /window\.AFTelegram\.card\(/.test(src));
-        // The tone vocabulary and the badge markup live in the component and
-        // nowhere else — a page that grew its own copy is exactly how the two
-        // surfaces start disagreeing about what colour a bridge is.
-        ok(`media/${name} keeps no tone vocabulary of its own`,
-            !/TONE_DOT/.test(src) && !/svc-badge t-/.test(src));
+        // ‼️ WHAT MUST NOT BE COPIED IS THE VOCABULARY, not the classes. A
+        // second card on the Toolbox (U-86's hooks card) paints itself with the
+        // SAME `.svc-*` tones on purpose — that is the reuse this is for. What
+        // would be wrong is a page keeping its own tone→symbol map, or drawing
+        // the bridge's own head a second time.
+        ok(`media/${name} keeps no tone map of its own`, !/TONE_DOT/.test(src));
+        ok(`media/${name} does not draw a second Telegram head`,
+            (src.match(/>Telegram Bridge</g) || []).length === 0);
     }
     // The component is shipped to every page, so a surface that grows a card
     // tomorrow does not have to remember a script tag (base.ts, and the test

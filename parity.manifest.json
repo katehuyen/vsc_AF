@@ -7064,6 +7064,42 @@
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
+    },
+    {
+      "capability": "toolboxPanel.ts#hooks-install",
+      "ui": [
+        "page:toolboxPanel.ts#hooks-install"
+      ],
+      "ops": [
+        "hooks.install"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#hooks-remove",
+      "ui": [
+        "page:toolboxPanel.ts#hooks-remove"
+      ],
+      "ops": [
+        "hooks.remove"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#hooks-restart",
+      "ui": [
+        "page:toolboxPanel.ts#hooks-restart"
+      ],
+      "ops": [
+        "hooks.listener.restart"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#hooks-clear-port",
+      "ui": [
+        "page:toolboxPanel.ts#hooks-clear-port"
+      ],
+      "ops": [
+        "hooks.port.clear"
+      ]
     }
   ]
 }

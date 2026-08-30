@@ -12,6 +12,7 @@ import {
     formatToolPairs, probeCacheKey, removeToolboxItem, resolveServerConfig, saveToolboxItem
 } from '../core/toolboxBridge';
 import { afConfig } from '../core/settingsDoor';
+import { HookFile, hooksStatus, ListenerState, PortHolder } from '../core/hooksCockpit';
 import { TelegramSnapshot } from '../core/telegramCockpit';
 import { handleAfNav, htmlShell, telegramCardData, telegramCardMessage } from './base';
 
@@ -42,6 +43,36 @@ export interface ToolboxPanelDeps {
         /** A live `getMe` against the stored token. Returns the bot's name or
          *  the reason it could not be had — never the token. */
         verify(): Promise<{ ok: boolean; username?: string; error?: string }>;
+    };
+    /**
+     * ‼️ U-86 — THE LIVE HOOKS, which the extension is BLIND without and which
+     * had no surface at all: `hooks.status` answered the question perfectly on
+     * the bridge, and "nothing shows up in the timeline" stayed a mystery to
+     * anybody who was not an agent calling it.
+     *
+     * Optional for the reason the Telegram host is: a window that supplies
+     * nothing simply does not draw the card.
+     */
+    hooks?: {
+        /** Everything the card reads. The listener state is the MONITOR'S OWN —
+         *  it watched its `server.on('error')`, so it knows why it did not bind
+         *  and a port scan does not. */
+        snapshot(): {
+            listener: ListenerState;
+            port: number;
+            command: string;
+            targets: HookFile[];
+        };
+        /** WHO holds the port. Asked for only in the one state where the answer
+         *  adds something, because it costs a process scan. */
+        holder(): PortHolder;
+        /** The same two acts `hooks.install` / `hooks.remove` are on the bridge. */
+        install(scope: 'user' | 'agents' | 'both'): Promise<{ installed: number; failed: number; note: string }>;
+        remove(scope: 'user' | 'agents' | 'both'): Promise<{ removed: number; note: string }>;
+        /** Stop whatever holds the port — refused unless the classifier said so. */
+        clearPort(): { ok: boolean; stopped?: number; error?: string };
+        /** Bind again. `LiveMonitor.start()` stops first, so this IS the reset. */
+        restart(): void;
     };
 }
 
@@ -120,7 +151,45 @@ function buildData(deps: ToolboxPanelDeps): Record<string, unknown> {
  */
 function buildServices(deps: ToolboxPanelDeps): Record<string, unknown> | undefined {
     const telegram = telegramCardData(deps.telegram);
-    return telegram ? { telegram } : undefined;
+    const hooks = buildHooks(deps);
+    return telegram || hooks ? { ...(telegram ? { telegram } : {}), ...(hooks ? { hooks } : {}) } : undefined;
+}
+
+/**
+ * U-86 — the Live Hooks card's data, ALREADY DECIDED, and the ONE place the
+ * decision about whether to run a process scan is made.
+ *
+ * ‼️ THE SCAN IS NOT FREE AND IT IS NOT ALWAYS TRUE. `netstat` plus a process
+ * table on every draw of a page somebody leaves open is a cost paid for nothing
+ * in the state that holds 99% of the time. And in that state the scan would
+ * answer a question the monitor already answered better: it can say WHICH ERROR
+ * stopped the bind, and a port scan cannot. So the scan runs in exactly one
+ * state — `port-in-use` — where the missing fact is *who*.
+ */
+/** ‼️ THE SCOPE COMES OFF A MESSAGE, so it is named rather than trusted — a
+ *  webview that posted `scope: "../.."` must not reach the installer. */
+function hookScope(v: unknown, fallback: 'user' | 'agents' | 'both' = 'user'): 'user' | 'agents' | 'both' {
+    const s = String(v ?? '');
+    return s === 'user' || s === 'agents' || s === 'both' ? s : fallback;
+}
+
+function buildHooks(deps: ToolboxPanelDeps): Record<string, unknown> | undefined {
+    if (!deps.hooks) { return undefined; }
+    const snap = deps.hooks.snapshot();
+    const holder = snap.listener === 'port-in-use' ? deps.hooks.holder() : undefined;
+    return {
+        port: snap.port,
+        command: snap.command,
+        listener: snap.listener,
+        targets: snap.targets,
+        ...(holder ? { holder } : {}),
+        status: hooksStatus({
+            listener: snap.listener,
+            port: snap.port,
+            targets: snap.targets,
+            ...(holder ? { holder } : {})
+        })
+    };
 }
 
 export class ToolboxPanel {
@@ -277,7 +346,67 @@ export class ToolboxPanel {
                 this.changed();
                 break;
             }
+            // ------------------------------------ U-86 · Live hooks card
+            //
+            // ‼️ THE TWO WRITES ARE CONFIRMED, and the confirmation names the
+            // FILES. Both of these edit Claude settings files that are not ours
+            // — a button that rewrites somebody's `settings.json` on one click
+            // is the wrong shape for a status card, however good the merge is.
+            case 'hooks-install': {
+                const scope = hookScope(msg.scope);
+                const yes = await vscode.window.showWarningMessage(
+                    scope === 'user'
+                        ? 'Merge Agent Farm\'s live hooks into your user settings.json? A one-time .agentfarm-bak copy is made beside it, and every other hook you have is kept.'
+                        : `Merge Agent Farm's live hooks into the ${scope} settings file(s)? A one-time .agentfarm-bak copy is made beside each, and every other hook is kept.`,
+                    { modal: true }, 'Install');
+                if (yes !== 'Install') { break; }
+                const r = await this.deps.hooks?.install(scope);
+                this.hooksMsg(r ? (r.failed
+                    ? { ok: false, text: r.note }
+                    : { ok: true, text: `${r.installed} file(s) written. ${r.note}` }) : undefined);
+                break;
+            }
+            case 'hooks-remove': {
+                const scope = hookScope(msg.scope, 'both');
+                const yes = await vscode.window.showWarningMessage(
+                    'Take Agent Farm\'s hook entries back out? Every hook that is not ours is left exactly where it is — and until they are put back, the timeline, the live turn and the permission-wait notice all stop.',
+                    { modal: true }, 'Remove');
+                if (yes !== 'Remove') { break; }
+                const r = await this.deps.hooks?.remove(scope);
+                this.hooksMsg(r ? { ok: true, text: r.note } : undefined);
+                break;
+            }
+            // ‼️ RESTART IS SAFE AND STOPPING SOMEBODY ELSE'S PROCESS IS NOT, so
+            // they are two messages rather than one "repair" that decides.
+            case 'hooks-restart':
+                this.deps.hooks?.restart();
+                this.hooksMsg({ ok: true, text: 'The listener was asked to bind again.' });
+                break;
+            case 'hooks-clear-port': {
+                const holder = this.deps.hooks?.holder();
+                if (!holder?.canStop) {
+                    this.hooksMsg({ ok: false, text: holder?.detail ?? 'nothing to stop.' });
+                    break;
+                }
+                const yes = await vscode.window.showWarningMessage(
+                    `Stop ${holder.name || 'the process'} (pid ${holder.pid})? Anything it is doing ends immediately.`,
+                    { modal: true }, 'Stop it');
+                if (yes !== 'Stop it') { break; }
+                const r = this.deps.hooks?.clearPort();
+                if (r?.ok) { this.deps.hooks?.restart(); }
+                this.hooksMsg(r?.ok
+                    ? { ok: true, text: `Stopped pid ${r.stopped}; the listener was asked to bind again.` }
+                    : { ok: false, text: r?.error ?? 'the process could not be stopped.' });
+                break;
+            }
         }
+    }
+
+    /** One answer line on the hooks card, then a redraw — the card never paints
+     *  the result of a write before the write has happened. */
+    private hooksMsg(m: { ok: boolean; text: string } | undefined): void {
+        if (m) { void this.panel.webview.postMessage({ type: 'hooks-said', ...m }); }
+        this.refresh();
     }
 
     /** The tree node `agentfarm.duplicateSkill` / `shareSkill` take. */
