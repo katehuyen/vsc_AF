@@ -1,0 +1,282 @@
+/**
+ * X-102 — WHAT WAS ASKED FOR, BESIDE WHAT CAME BACK, ONE TURN AT A TIME.
+ *
+ * The manifest is written a line before the spawn and never rewritten: it is the
+ * DECLARED half of a run. `reportedIdentity.ts` reads the other half out of the
+ * engine's own events. This file is the join — and the join is the item, because
+ * either half alone answers a question nobody is actually asking. "Which model
+ * did that session run on" has two answers and they are allowed to differ; a
+ * system that stored one of them has quietly decided which of the two questions
+ * it will never be able to answer again.
+ *
+ * ‼️ WHY PER TURN AND NOT PER SESSION. Both halves genuinely move inside one
+ * session. On OpenCode the provider may change at a turn boundary because the
+ * engine documents that (`session/set_config_option`). On Claude the model
+ * changes routinely — a compaction and a sub-agent are served by a smaller model
+ * than the turn that spawned them — so a session-level "the model was X" is
+ * false on nearly every long run. A per-turn record is the only shape in which
+ * both of those are ordinary facts rather than contradictions.
+ *
+ * ‼️ AND THE ONE MISTAKE THIS FILE EXISTS TO NOT MAKE: calling a difference a
+ * DEFECT. A launch asks for `opus`; the transcript reports `claude-opus-5`. Those
+ * are the same run — an alias and an id — and a comparison that called it a
+ * mismatch would paint almost every honest session red, which is the fastest way
+ * to make a correctness signal ignored. So the model question is answered in
+ * four states and the interesting one is named `unproven`, not `wrong`: the two
+ * spellings are not known to be the same thing, and this file is not the place
+ * that can resolve an alias (the catalog is, and it may not have been read).
+ *
+ * Pure — no vscode, no I/O, no clock.
+ */
+
+import { LaunchManifest } from './launchManifest';
+import {
+    hasProviderConflict, ProviderIdentity, TurnRuntimeIdentity, turnIdentity, unknownIdentity
+} from './providerIdentity';
+
+/**
+ * One turn as the INDEX already holds it. Deliberately structural rather than
+ * `SessionTurn`: the transcript parser has recorded `models` per turn for a long
+ * time, so the reported half needs no second reading of anything, and a core
+ * module that named the session type would drag half the index in behind it.
+ */
+export interface TurnReport {
+    /** 1-based within its session, as `SessionTurn.n` counts. */
+    n: number;
+    /** Model(s) that served this turn — the engine's own word for it. */
+    models?: readonly string[];
+    /** Provider(s) the engine NAMED. Empty on Claude for ever (measured). */
+    providerIds?: readonly string[];
+}
+
+/**
+ * ‼️ WHETHER THE RUN GOT THE MODEL IT ASKED FOR — in four states, because two
+ * would force three different facts to share one word.
+ */
+export type ModelAgreement =
+    /** The launch named no model: it took whatever the engine defaults to. There
+     *  is nothing to compare, and that is not a fault. */
+    | 'nothing-requested'
+    /** The turn named no model — an engine that writes none, or a turn that
+     *  never reached the model at all. */
+    | 'nothing-reported'
+    /**
+     * ‼️ ONE of the reported models is spelled like ONE of the requested names —
+     * not all of them, and the difference is load-bearing. A Claude turn is
+     * routinely served by a second, smaller model the launch never named: a
+     * compaction, a sub-agent, the engine's own machinery riding inside the
+     * turn. Demanding that every reported model be a requested one would fire on
+     * every long session there has ever been, which is how a correctness signal
+     * turns into wallpaper. The run got what it asked for; it also did some
+     * housekeeping, and `RunDrift.reportedModels` still names every model so
+     * nothing is hidden.
+     */
+    | 'matched'
+    /** ‼️ BOTH SIDES NAMED SOMETHING AND NOTHING THAT SERVED THE TURN IS A NAME
+     *  THE LAUNCH ASKED FOR — which is still NOT the same as wrong. `opus`
+     *  against `claude-opus-5` lands here, and so does a genuine substitution by
+     *  an endpoint. Telling those two apart needs the catalog that resolved the
+     *  alias, and this file does not have it; `unproven` is the true statement
+     *  it can make, and a person can then go and look. */
+    | 'unproven';
+
+/** One turn, with both halves of its identity and the facts that only exist
+ *  because the two are held side by side. */
+export interface TurnRuntime {
+    n: number;
+    identity: TurnRuntimeIdentity;
+    /**
+     * ‼️ THE ENGINE NAMED A PROVIDER THE LAUNCH DID NOT DECLARE. On Claude this
+     * cannot fire — the transcript names no route — so a `true` here always
+     * comes from an engine that publishes its provider, and it is a real
+     * disagreement rather than a spelling one.
+     */
+    providerConflict: boolean;
+    /**
+     * ‼️ THE REPORTED HALF CHANGED FROM THE TURN BEFORE — which is a DIFFERENT
+     * field from `identity.changedFromPrevious`, and the difference is the point.
+     * That one watches what was ASKED FOR, and across a session with one
+     * manifest it is false on every turn by construction. This one watches what
+     * CAME BACK, which is the half that actually moves.
+     */
+    reportedChanged: boolean;
+    agreement: ModelAgreement;
+}
+
+const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+const list = (v: readonly string[] | undefined): string[] =>
+    (v || []).map(str).filter(Boolean);
+
+/**
+ * ‼️ THE DECLARED HALF OF A RUN WITH NO MANIFEST IS `legacy-inherit`, NOT
+ * `unknown`. Every session recorded before v11.183 is in this state, and the two
+ * words mean opposite things: `unknown` says "asked, and there was no answer",
+ * `legacy-inherit` says "nobody was asked" — which is true, and which is what
+ * makes it backfillable from real evidence later (X-116) rather than a permanent
+ * hole. Filling it in from the model name is the one move forbidden everywhere
+ * in this family.
+ */
+function declaredOf(manifest: LaunchManifest | undefined, engine: string): ProviderIdentity {
+    if (manifest) { return manifest.identity; }
+    return { ...unknownIdentity(str(engine) || 'claude'), origin: 'legacy-inherit' };
+}
+
+/**
+ * ‼️ EVERY NAME THE LAUNCH ASKED FOR, not just the one field somebody looks at
+ * first. A Claude launch may name a TIER (`opus`) and the route resolves it to a
+ * model; an OpenCode one names a qualified ref. The manifest keeps all of them
+ * apart on purpose, so the agreement test asks all of them rather than picking
+ * one and being wrong about the other two thirds of the launches.
+ */
+function requestedNames(manifest: LaunchManifest | undefined): string[] {
+    if (!manifest) { return []; }
+    const out = [
+        str(manifest.requested.model),
+        str(manifest.identity.requestedModelRef),
+        str(manifest.requested.tier)
+    ].filter(Boolean);
+    return [...new Set(out)];
+}
+
+export function modelAgreement(
+    requested: readonly string[], reported: readonly string[]
+): ModelAgreement {
+    const want = list(requested);
+    const got = list(reported);
+    if (!want.length) { return 'nothing-requested'; }
+    if (!got.length) { return 'nothing-reported'; }
+    // Case-insensitive, because a model id is a wire name and the two sides of
+    // this comparison have travelled through different code. Nothing else is
+    // normalised: trimming a suffix or splitting on a dash to make two names
+    // "the same" is the guess this family refuses, wearing a helpful face.
+    const lower = new Set(want.map(w => w.toLowerCase()));
+    return got.some(g => lower.has(g.toLowerCase())) ? 'matched' : 'unproven';
+}
+
+/**
+ * THE JOIN, ONE ROW PER TURN.
+ *
+ * `manifest` may be `undefined` and that is the common case for a while — every
+ * session that ran before the manifest existed. The reported half is still read
+ * and still recorded; what is missing is anything to compare it against, and the
+ * row says so through `origin: 'legacy-inherit'` rather than by being absent.
+ */
+export function turnRuntimes(
+    manifest: LaunchManifest | undefined,
+    engine: string,
+    turns: readonly TurnReport[]
+): TurnRuntime[] {
+    const declared = declaredOf(manifest, engine);
+    const wanted = requestedNames(manifest);
+    const out: TurnRuntime[] = [];
+    let previousReported = '';
+    let previousIdentity: TurnRuntimeIdentity | undefined;
+    for (const t of turns || []) {
+        const models = list(t.models);
+        const providerIds = list(t.providerIds);
+        const identity = turnIdentity(
+            { ...declared, engine: declared.engine || str(engine) || 'claude' },
+            { providerIds, models },
+            previousIdentity
+        );
+        // ‼️ THE FINGERPRINT IS THE WHOLE REPORTED PAIR, ORDER INCLUDED. A turn
+        // served by two models is a different answer from a turn served by the
+        // same two the other way round, and comparing only the last one would
+        // miss the change this field exists to notice.
+        const fingerprint = JSON.stringify([providerIds, models]);
+        out.push({
+            n: t.n,
+            identity,
+            providerConflict: hasProviderConflict(identity),
+            // Nothing to have changed from on the first turn — the same rule
+            // `turnIdentity` follows for its own half, kept identical so the two
+            // fields are read the same way.
+            reportedChanged: !!previousIdentity && fingerprint !== previousReported,
+            agreement: modelAgreement(wanted, models)
+        });
+        previousReported = fingerprint;
+        previousIdentity = identity;
+    }
+    return out;
+}
+
+/** What a whole run looks like once its turns are joined — the shape a row or a
+ *  notice can say in one line without re-deriving it. */
+export interface RunDrift {
+    turns: number;
+    /** Every model reported across the run, first-seen order. */
+    reportedModels: string[];
+    /** Every provider the engine named. Empty on Claude for ever. */
+    reportedProviderIds: string[];
+    /** Turn numbers where the reported half changed. Empty on a steady run. */
+    changedAt: number[];
+    /** ‼️ A provider was named that the launch did not declare. A real
+     *  disagreement, and on Claude an impossibility rather than a rarity. */
+    providerConflict: boolean;
+    /**
+     * ‼️ THE RUN'S AGREEMENT IS ITS WEAKEST TURN, not its first and not its
+     * commonest. One turn served by something nobody asked for is the fact worth
+     * surfacing; averaging it away is how a single odd turn stays invisible for
+     * a month.
+     */
+    agreement: ModelAgreement;
+}
+
+const AGREEMENT_RANK: Record<ModelAgreement, number> = {
+    // Worst first: `unproven` is the one a person needs to look at, and
+    // `matched` is the only one that is genuinely nothing to see.
+    'unproven': 0, 'nothing-reported': 1, 'nothing-requested': 2, 'matched': 3
+};
+
+export function runDrift(runtimes: readonly TurnRuntime[]): RunDrift {
+    const rows = runtimes || [];
+    const models: string[] = [];
+    const providers: string[] = [];
+    const changedAt: number[] = [];
+    let conflict = false;
+    let worst: ModelAgreement | undefined;
+    for (const r of rows) {
+        for (const m of r.identity.reportedModels || []) { if (!models.includes(m)) { models.push(m); } }
+        for (const p of r.identity.reportedProviderIds || []) {
+            if (!providers.includes(p)) { providers.push(p); }
+        }
+        if (r.reportedChanged) { changedAt.push(r.n); }
+        if (r.providerConflict) { conflict = true; }
+        if (worst === undefined || AGREEMENT_RANK[r.agreement] < AGREEMENT_RANK[worst]) {
+            worst = r.agreement;
+        }
+    }
+    return {
+        turns: rows.length,
+        reportedModels: models,
+        reportedProviderIds: providers,
+        changedAt,
+        providerConflict: conflict,
+        // A run with no turns has nothing to report — which is `nothing-reported`
+        // and not `matched`: an empty session must never read as a verified one.
+        agreement: worst ?? 'nothing-reported'
+    };
+}
+
+/**
+ * One line a person can read, for a row's tip or a notice.
+ *
+ * ‼️ IT SAYS NOTHING WHEN THERE IS NOTHING TO SAY. A run whose reported half
+ * matches what was asked for, on one model, with no provider disagreement, is
+ * the ordinary case; a line stating that on every row would be a column of
+ * identical text that teaches the reader to stop looking at the column.
+ */
+export function describeDrift(d: RunDrift): string {
+    const bits: string[] = [];
+    if (d.providerConflict) {
+        bits.push(`served by ${d.reportedProviderIds.join(', ')}, which the launch did not declare`);
+    }
+    if (d.reportedModels.length > 1) {
+        bits.push(`${d.reportedModels.length} models across ${d.turns} turns`
+            + (d.changedAt.length ? ` (changed at turn ${d.changedAt.join(', ')})` : ''));
+    }
+    if (d.agreement === 'unproven') {
+        bits.push('the model that answered is not one of the names the launch asked for');
+    }
+    return bits.join(' · ');
+}

@@ -300,6 +300,23 @@ export interface SessionInfo {
      */
     launchedBy?: SessionLauncher;
     /**
+     * ‼️ X-102 — WHICH SPAWN PRODUCED THIS TRANSCRIPT, and therefore which
+     * MANIFEST describes what it was set up to be.
+     *
+     * Never read off the transcript, because no engine writes it: measured on a
+     * real Claude JSONL (2.1.251, 1373 records) the file carries `sessionId`,
+     * `cwd`, `version`, `gitBranch`, `userType`, `entrypoint`, `permissionMode`
+     * and `promptSource` — and nothing about the route, the profile revision or
+     * the catalog the model came out of. This arrives from the BINDING, which is
+     * the record that is allowed to learn, and it is the one field that lets a
+     * session row reach its manifest at all.
+     *
+     * Absent on every session that predates the manifest and on every one a
+     * person started by hand outside a bound mechanism — an absence, never a
+     * default, and `manifestOf` returning `undefined` is what it means.
+     */
+    launchId?: string;
+    /**
      * ‼️ S-32 — THE SCAN COULD NOT READ THIS TRANSCRIPT IN FULL.
      *
      * Present only on a session whose file is over the read ceiling

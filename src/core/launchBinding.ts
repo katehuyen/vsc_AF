@@ -236,9 +236,17 @@ export function isBindingHit(r: BindingHit | BindingAmbiguity | undefined): r is
  * has.
  */
 export function applyBinding<T extends {
-    agentId?: string; agentName?: string; projectId?: string; cwd?: string;
+    agentId?: string; agentName?: string; projectId?: string; cwd?: string; launchId?: string;
     launchedBy?: { kind: string; label: string; mode?: string; missionId?: string; missionTitle?: string };
 }>(info: T, hit: BindingHit): T {
+    // ‼️ X-102 — AND WHICH SPAWN, which is the field that lets the session reach
+    // its MANIFEST. The transcript cannot supply this on any engine (measured),
+    // so unlike every other field here there is no "what the transcript says" to
+    // defer to — the binding is the only witness there will ever be. Copied
+    // under the same rule anyway: filled where the session says nothing, never
+    // over the top of an id it already carries, because a fresher record and a
+    // persisted snapshot must not be able to disagree about which run this was.
+    if (!info.launchId && hit.binding.launchId) { info.launchId = hit.binding.launchId; }
     if (!info.agentId) {
         info.agentId = hit.binding.agentId;
         info.agentName = hit.binding.agentName;

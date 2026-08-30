@@ -152,6 +152,7 @@ import {
     LaunchManifest, ManifestInput, manifestFor, manifestLeaks, manifestOf, newLaunchId,
     rememberManifest
 } from './core/launchManifest';
+import { describeDrift, runDrift, turnRuntimes } from './core/turnRuntime';
 import { terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
@@ -29819,6 +29820,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     (!who || m.agentId.toLowerCase() === who || m.agentName.toLowerCase() === who)
                     && (!engine || (m.engine || 'claude').toLowerCase() === engine));
                 return rows.slice(Math.max(0, rows.length - limit));
+            }
+        },
+        {
+            op: 'launch.runtime',
+            describe: 'X-102 — WHAT A SESSION WAS ASKED TO RUN ON, BESIDE WHAT ACTUALLY SERVED IT, '
+                + 'TURN BY TURN. launch.manifests gives the first half only; this joins it to the '
+                + 'models the transcript reports, which is the pair that answers "did the run get '
+                + 'what it asked for". args: sessionId (required). '
+                + 'Returns {sessionId, engine, launchId (null when the session predates the manifest '
+                + 'or was started by hand outside a bound mechanism — an absence, not a default), '
+                + 'manifest (the whole record, or null), drift{turns, reportedModels, '
+                + 'reportedProviderIds, changedAt (turn numbers where what came back changed), '
+                + 'providerConflict, agreement}, note (one line, EMPTY on an ordinary run), '
+                + 'turns[{n, providerId, origin, reportedModels, reportedProviderIds, proof, '
+                + 'providerConflict, reportedChanged, agreement}]}. '
+                + '‼️ READ `agreement` CAREFULLY — it has four states and only one of them is a '
+                + 'complaint. "matched" = something that served the turn is a name the launch asked '
+                + 'for (a second internal model — a compaction, a sub-agent — is normal and does not '
+                + 'spoil it). "nothing-requested" = the launch named no model and took the default. '
+                + '"nothing-reported" = the turn named none. "unproven" = both named something and '
+                + 'nothing that served it was asked for — which is NOT proof of a fault: `opus` '
+                + 'against `claude-opus-5` is an alias, not a substitution, and resolving that needs '
+                + 'the catalog. It means go and look, never "this ran on the wrong thing". '
+                + '‼️ `reportedProviderIds` is EMPTY on Claude for ever: measured 23 Aug 2026, two '
+                + 'processes on two routes under one model name and the transcript preserved '
+                + 'neither. So `providerConflict` can only fire on an engine that publishes its '
+                + 'provider, and the model name is never evidence of a route.',
+            handler: (args) => {
+                const sessionId = (optStr(args, 'sessionId') ?? '').trim();
+                if (!sessionId) { throw new Error('sessionId is required'); }
+                const s = index.allWithExternal().find(x => x.sessionId === sessionId);
+                if (!s) { throw new Error(`no session with id "${sessionId}"`); }
+                const engine = s.source || 'claude';
+                // The manifest is reached through the launchId the BINDING wrote
+                // onto the session; nothing here reads a route off the
+                // transcript, because no transcript carries one.
+                const manifest = manifestOf(launchManifests(), s);
+                const rows = turnRuntimes(manifest, engine,
+                    (s.turns ?? []).map(t => ({ n: t.n, models: t.models })));
+                const drift = runDrift(rows);
+                return {
+                    sessionId,
+                    engine,
+                    launchId: s.launchId ?? null,
+                    manifest: manifest ?? null,
+                    drift,
+                    note: describeDrift(drift),
+                    turns: rows.map(r => ({
+                        n: r.n,
+                        providerId: r.identity.providerId,
+                        origin: r.identity.origin,
+                        reportedModels: r.identity.reportedModels ?? [],
+                        reportedProviderIds: r.identity.reportedProviderIds ?? [],
+                        proof: r.identity.proof,
+                        providerConflict: r.providerConflict,
+                        reportedChanged: r.reportedChanged,
+                        agreement: r.agreement
+                    }))
+                };
             }
         },
         {

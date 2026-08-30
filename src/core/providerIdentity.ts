@@ -248,11 +248,31 @@ export function scopeAllowsTurnChange(scope: ProviderScope | undefined): boolean
  */
 export function turnIdentity(
     requested: Partial<ProviderIdentity> & { engine: string },
-    reported?: { providerId?: string; model?: string },
+    /**
+     * ‼️ ONE OR MANY, BECAUSE A TURN GENUINELY HAS BOTH SHAPES. A live event
+     * names one model; an indexed turn already records `models: string[]`,
+     * because a compaction or a sub-agent inside the turn is served by a
+     * different model than the turn that spawned it. Collapsing that to the
+     * last one would make a turn that used two look like a turn that used one,
+     * and the singular fields are kept so every existing caller reads the same.
+     */
+    reported?: {
+        providerId?: string; model?: string;
+        providerIds?: readonly string[]; models?: readonly string[];
+    },
     previous?: Pick<ProviderIdentity, 'providerId' | 'requestedModelRef'>
 ): TurnRuntimeIdentity {
-    const reportedProviderIds = reported?.providerId?.trim() ? [reported.providerId.trim()] : [];
-    const reportedModels = reported?.model?.trim() ? [reported.model.trim()] : [];
+    const many = (one: string | undefined, all: readonly string[] | undefined): string[] => {
+        const seen = new Set<string>();
+        const out: string[] = [];
+        for (const v of [one, ...(all || [])]) {
+            const s = (v || '').trim();
+            if (s && !seen.has(s)) { seen.add(s); out.push(s); }
+        }
+        return out;
+    };
+    const reportedProviderIds = many(reported?.providerId, reported?.providerIds);
+    const reportedModels = many(reported?.model, reported?.models);
     const providerId = (requested.providerId || '').trim();
     return {
         engine: requested.engine,
