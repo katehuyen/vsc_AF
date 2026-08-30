@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
 import { ConsoleHost, describeAttachment, looksLikeUri, safeAttachmentName } from '../core/consolehost';
 import {
-    Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, OlderHistory,
+    Attachment, ATTACH_LIMITS, carriedTotals, ConsoleMessage, ConsoleSessionState, OlderHistory,
     PERMISSION_GRANTS, PERMISSION_MODES_LIVE, sessionAllowRule, transcriptPos
 } from '../core/consoleproto';
 import {
@@ -24,7 +24,7 @@ import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
 import { SESSION_COLORS } from '../core/sessionmarks';
 // K-30 — the same two functions the bridge's toolbox.slashCommands op uses.
-import { getSlashCommands } from '../core/slashCommands';
+import { getSlashCommands, reportToSources, SlashReport } from '../core/slashCommands';
 import { scanSlashSources } from '../core/toolbox';
 import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMessage } from './base';
 import { afConfig } from '../core/settingsDoor';
@@ -133,6 +133,17 @@ export interface ConsoleDeps {
     lastLaunch(agentId: string): LastLaunch | undefined;
     /** …and the write-back, made by `start` because `start` is the launch. */
     rememberLaunch(agentId: string, o: LaunchOptions, surface: RunSurface): void;
+    /**
+     * ‼️ K-36 — THE SLASH CATALOG, WHICH IS THE SAME KIND OF MEMORY AS ABOVE.
+     *
+     * One live session's `system:init` answer, what this install last proved it
+     * has, and the write-back. Three functions rather than a store handed over,
+     * for the reason `lastLaunch` is three: the panel does not own where it is
+     * kept, and a second reader of `globalState` is a second answer.
+     */
+    slashReport?(s: ConsoleSessionState): SlashReport | undefined;
+    recallSlash?(engine: string, agentId?: string): SlashReport | undefined;
+    learnSlash?(engine: string, agentId: string | undefined, report: SlashReport): void;
     /**
      * Which sessions a live process already owns (the CLI's own registry).
      *
@@ -1028,19 +1039,50 @@ export class ConsolePanel {
                     ? host.list().find(x => x.id === sessionRef || x.sessionId === sessionRef)
                     : undefined;
                 const disk = scanSlashSources(agent?.dir, os.homedir());
-                const reported = live?.slashCommands;
+                /**
+                 * ‼️ K-36 — THE ANSWER IS THE INSTALL'S, NOT THE BUILD'S, EVEN
+                 * WITH NOTHING RUNNING.
+                 *
+                 * The composer's `/` is pressed BEFORE a session exists, so the
+                 * one authoritative source was never there when it was needed
+                 * and the picker fell back to 18 shipped rows — against 49 in
+                 * the same machine's terminal. Two thirds of that list is
+                 * skills and plugins, so no shipped table could ever close it.
+                 *
+                 * Three tries, in the order of how much each one knows:
+                 *  1. the session this card IS, if it reported;
+                 *  2. any other live session on the same engine — the same CLI
+                 *     on the same machine gives the same answer, and this is
+                 *     what makes the composer right while a session runs beside
+                 *     it;
+                 *  3. what was remembered from the last one that did.
+                 * A report seen here is LEARNED, so the next composer — and any
+                 * agent asking through the bridge — opens on a measured fact.
+                 */
+                const owner = live?.slashCommands?.length
+                    ? live
+                    : host.list()
+                        .filter(s => (s.engine || 'claude') === engine && s.slashCommands?.length)
+                        .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))[0];
+                let report = owner ? this.deps.slashReport?.(owner) : undefined;
+                if (report) { this.deps.learnSlash?.(engine, owner?.agentId, report); }
+                else { report = this.deps.recallSlash?.(engine, agent?.id); }
                 void this.panel.webview.postMessage({
                     type: 'slashCommands',
                     engine, agent: agentRef, session: sessionRef,
                     sources: {
-                        reported: reported?.length ?? 0,
+                        reported: report?.names.length ?? 0,
+                        // ‼️ WHERE THE REPORT CAME FROM, because "49 commands on
+                        // a composer that has started nothing" is a surprising
+                        // list and a reader has to be able to explain it.
+                        reportedFrom: owner ? (owner === live ? 'session' : 'live') : (report ? 'remembered' : 'none'),
                         commands: disk.commands.length,
                         skills: disk.skills.length,
                         workflows: disk.workflows.length
                     },
                     commands: getSlashCommands({
                         engine,
-                        sources: { ...disk, ...(reported ? { reported } : {}) }
+                        sources: { ...disk, ...reportToSources(report) }
                     })
                 });
                 break;

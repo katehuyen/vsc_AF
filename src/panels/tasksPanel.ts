@@ -1065,7 +1065,7 @@ export function stepFromDraft(
 
 /** A run, in the New-task form's own vocabulary. Both "one like this" and
  *  "run it again with changes" start from exactly the same reading of it. */
-function taskSeed(t: FarmTask): Record<string, unknown> {
+export function taskSeed(t: FarmTask): Record<string, unknown> {
     return {
         agent: t.agentName, title: t.title, prompt: t.prompt, mode: t.mode,
         engine: t.engine ?? '', model: t.model ?? '', effort: t.effort ?? '',
@@ -1082,6 +1082,26 @@ function taskSeed(t: FarmTask): Record<string, unknown> {
         project: t.projectId ?? '', workDir: t.workDir ?? '',
         priority: t.priority ?? 0,
         ignoreBudget: !!t.ignoreBudget,
+        /**
+         * ‼️ M-32 — THE CHAIN IS PART OF THE TASK, AND THE FORM HAD NO WAY TO
+         * KNOW IT.
+         *
+         * `scheduleSeed` and `triggerSeed` have carried `rounds` since M-27; a
+         * TASK's reading of itself did not, so opening a saved run with "like
+         * this one, but…" or a retry drew an empty rounds editor over a run
+         * that had four prompts — and saving the form then wrote the emptiness
+         * back. Every dimension of `RunDimensions` is a box on this form, so
+         * every one of them has to come back out of the stored object; the
+         * sweep in test_task_seed.js is that rule, measured.
+         */
+        rounds: normalizeRounds(t.rounds),
+        /**
+         * ‼️ M-32 — AND SO IS THE CONVERSATION IT WAS SET TO CONTINUE (S-19).
+         * A task that resumes a session is not the same task as one that opens
+         * a new one, and the form drew "New session" over both.
+         */
+        conversation: t.resumeSessionId ? 'resume' : 'new',
+        resumeSessionId: t.resumeSessionId ?? '',
         ...retrySeed(t.retry)
     };
 }
@@ -1111,7 +1131,7 @@ function cloneSeed(
  * ABSENT policy is "follow my default"; collapsing them here would turn every
  * edit of an unconfigured schedule into a decision the user never made.
  */
-function retrySeed(r: RetryPolicy | undefined): Record<string, unknown> {
+export function retrySeed(r: RetryPolicy | undefined): Record<string, unknown> {
     if (!r) { return { retryMode: 'default' }; }
     if (!r.max) { return { retryMode: 'off' }; }
     return {
@@ -2081,7 +2101,19 @@ export class TasksPanel {
                         superpowers: superpowersChoice(str('superpowers')),
                         workDir: str('workDir') || undefined,
                         priority: Number(t.priority) ? Math.trunc(Number(t.priority)) : undefined,
-                        ignoreBudget: t.ignoreBudget === true ? true : undefined
+                        ignoreBudget: t.ignoreBudget === true ? true : undefined,
+                        // ‼️ M-32 — AND THE THREE THE FORM DRAWS AND THE RETRY
+                        // USED TO THROW AWAY. The boxes are on screen with the
+                        // original's answers in them (taskSeed); a save that
+                        // ignored them made the form a display, not a form.
+                        retry: normalizeRetry(t.retry) as RetryPolicy | undefined,
+                        rounds: normalizeRounds(t.rounds).length
+                            ? normalizeRounds(t.rounds) : undefined,
+                        // ‼️ Stated either way, so switching the picker back to
+                        // "New session" really drops the conversation instead of
+                        // falling through to the original's (see retryTask).
+                        resumeSessionId: str('conversation') === 'resume'
+                            ? (str('resumeSessionId') || undefined) : undefined
                     });
                     if (copy) {
                         void this.panel.webview.postMessage({

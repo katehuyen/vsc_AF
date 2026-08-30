@@ -383,6 +383,17 @@ export interface ConsoleSessionState {
      * which is also where the disk's own files get to replace them.
      */
     slashCommands?: string[];
+    /**
+     * ‼️ K-36 — WHICH OF THEM ARE SKILLS (`system:init.skills`), and which only
+     * work in a real terminal (`system:init.terminal_slash_commands`).
+     *
+     * Both are the CLI answering questions this build used to guess: the shipped
+     * table filed `/dataviz` as the engine's own, and marked five commands
+     * `tui` by hand where the process names two. Kept beside the names because
+     * they are the same event's answer about the same install.
+     */
+    slashSkills?: string[];
+    slashTerminalOnly?: string[];
     /** The active project this session was STARTED under, if there was one. Kept
      *  on the state because the stamp can only be written once `sessionId`
      *  arrives, and by then the status bar may already say something else — the
@@ -1096,6 +1107,20 @@ export function reduceEvent(
                     // because the second report was shorter would be worse than
                     // one that never had them (see mergeReported).
                     slashCommands: mergeReported(state.slashCommands, o.slash_commands),
+                    // ‼️ K-36 — AND THE TWO FACTS THAT MAKE THE NAMES USABLE,
+                    // out of the same event. Written ONLY when the CLI actually
+                    // sent the field: an older one that says nothing must not be
+                    // read as "none of them are skills" / "none of them need a
+                    // terminal", which would re-label the whole list off silence.
+                    ...(Array.isArray(o.skills)
+                        ? { slashSkills: mergeReported(state.slashSkills, o.skills) }
+                        : {}),
+                    ...(Array.isArray(o.terminal_slash_commands)
+                        ? {
+                            slashTerminalOnly: mergeReported(
+                                state.slashTerminalOnly, o.terminal_slash_commands)
+                        }
+                        : {}),
                     status: state.status === 'starting' ? 'idle' : state.status,
                     lastTs: now
                 },

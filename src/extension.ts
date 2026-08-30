@@ -327,9 +327,13 @@ import { CliViewMessage, parseCliViewer } from './core/cliViewer';
 import { TextSearchService, resolveRipgrep } from './core/textSearchCorpus';
 import { ConsoleHost, describeAttachment, killPid, nodeOpencodeIo } from './core/consolehost';
 import {
-    carriedTotals, ConsoleMessage, contextPercent, contextSample, ConsoleStatus, OlderHistory,
-    PERMISSION_MODES_LIVE, transcriptPos
+    carriedTotals, ConsoleMessage, ConsoleSessionState, contextPercent, contextSample, ConsoleStatus,
+    OlderHistory, PERMISSION_MODES_LIVE, transcriptPos
 } from './core/consoleproto';
+// K-36 — the slash catalog this install has already proved it has (see below).
+import {
+    recallSlashReport, rememberSlashReport, SlashReport, SlashReports
+} from './core/slashCommands';
 import { CodexContextProbe, isStale } from './core/codexctx';
 import { corpusAt, CorpusStep } from './core/corpus';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
@@ -13492,6 +13496,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     ]);
 
+    /**
+     * ‼️ K-36 — THE SLASH CATALOG THIS MACHINE HAS ALREADY PROVED IT HAS.
+     *
+     * The composer's `/` picker is pressed before a session exists, which is
+     * precisely when the one authoritative source — a running process's
+     * `system:init` — is not there to ask. The result was a picker offering 18
+     * shipped rows where the same machine's terminal offers 49, and no shipped
+     * table can ever close that gap: two thirds of the list is skills and
+     * plugins, i.e. facts about THIS install.
+     *
+     * So the report is kept. It is written by the doors that see one and read
+     * by the ones that cannot, and nothing is spawned to learn it — a session
+     * the user started for their own reasons pays for it once and every later
+     * composer is right. The store lives here beside `lastLaunch` because it is
+     * the same kind of thing: a measured fact about this machine that a picker
+     * opens on instead of guessing.
+     */
+    const SLASH_CATALOG_KEY = 'agentfarm.slashCatalog';
+    const slashCatalog = (): SlashReports =>
+        context.globalState.get<SlashReports>(SLASH_CATALOG_KEY, {});
+    const recallSlash = (engine: string, agentId?: string): SlashReport | undefined =>
+        recallSlashReport(slashCatalog(), engine, agentId);
+    const learnSlash = (engine: string, agentId: string | undefined, r: SlashReport): void => {
+        const all = slashCatalog();
+        const next = rememberSlashReport(all, engine, agentId, r);
+        // Unchanged means the report was empty — an older CLI's silence, which
+        // must not overwrite a real answer with nothing.
+        if (next !== all) { void context.globalState.update(SLASH_CATALOG_KEY, next); }
+    };
+    /** One live session's report, in the shape the store and the merge read. */
+    const liveSlashReport = (s: ConsoleSessionState): SlashReport => ({
+        names: s.slashCommands ?? [],
+        ...(s.slashSkills ? { skills: s.slashSkills } : {}),
+        ...(s.slashTerminalOnly ? { terminalOnly: s.slashTerminalOnly } : {}),
+        at: s.lastTs || Date.now()
+    });
+
     // Toolbox ops (constitution §19.C): the extension inventory, one item in
     // detail, and the live MCP tools/list probe — same code paths as the page.
     registerToolboxOps(bridge, {
@@ -13504,7 +13545,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         reportedSlash: (sessionId: string) => {
             const s = consoleHost.list().find(x => x.id === sessionId || x.sessionId === sessionId);
             return s ? (s.slashCommands ?? []) : undefined;
-        }
+        },
+        // ‼️ K-36 — the same event's other two answers, and the REMEMBERED one
+        // for a call that names no session: an agent asking "what could I type"
+        // gets what this install proved it has, not the shipped fallback.
+        slashReportOf: (sessionId: string) => {
+            const s = consoleHost.list().find(x => x.id === sessionId || x.sessionId === sessionId);
+            return s ? liveSlashReport(s) : undefined;
+        },
+        recallSlash: (engine: string, agentId?: string) => recallSlash(engine, agentId)
     });
     // Turns ops (§19.C): the Turns page's rows as data.
     // ‼️ …which means the PAGE's pool (X-35). The op takes an `engine` filter
@@ -18887,6 +18936,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         lastLaunch: (agentId: string) => lastLaunchOf(agentId),
         rememberLaunch: (agentId: string, o: LaunchOptions, surface: RunSurface) =>
             void rememberLaunch(agentId, o, surface),
+        // ‼️ K-36 — the slash catalog's three, through the same store the bridge
+        // reads, so the picker and `toolbox.slashCommands` cannot disagree about
+        // what this install can type.
+        slashReport: (s: ConsoleSessionState) => liveSlashReport(s),
+        recallSlash: (engine: string, agentId?: string) => recallSlash(engine, agentId),
+        learnSlash: (engine: string, agentId: string | undefined, r: SlashReport) =>
+            learnSlash(engine, agentId, r),
         liveOwners: () => readCliSessions(claudeDir()),
         history: consoleHistory,
         olderHistory: consoleOlderHistory,

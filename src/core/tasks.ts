@@ -4107,7 +4107,10 @@ export class TaskManager implements vscode.Disposable {
             & Partial<Pick<FarmTask,
                 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
                 | 'interactiveTarget' | 'interactiveClose' | 'finishSound' | 'superpowers'
-                | 'priority' | 'projectId' | 'ignoreBudget'>>
+                | 'priority' | 'projectId' | 'ignoreBudget'
+                // ‼️ M-32 — …and the three the AUTOMATIC retry has always
+                // carried and this one dropped (see maybeScheduleRetry).
+                | 'retry' | 'rounds' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'>>
     ): FarmTask | undefined {
         if (task.workflowId !== undefined && task.stepIndex !== undefined && newPrompt === undefined) {
             this.resumeWorkflowFromTask(task);
@@ -4160,6 +4163,41 @@ export class TaskManager implements vscode.Disposable {
         copy.superpowers = over?.superpowers ?? task.superpowers;
         copy.missionId = task.missionId;
         copy.ignoreBudget = over?.ignoreBudget ?? task.ignoreBudget;
+        /**
+         * ‼️ M-32 — AND THE THREE THE AUTOMATIC RETRY ALREADY CARRIED.
+         *
+         * `maybeScheduleRetry` copies the policy, the round chain and the
+         * conversation being continued; this one — the button and the retry
+         * form — copied none of them. So the same run retried by the machine
+         * and retried by hand were two different runs: one kept "ask it these
+         * three things next" and its own retry ceiling, the other silently fell
+         * back to the fleet default and one prompt. Same principle as the
+         * engine and the model above, and it is the defect M-32 is named for.
+         *
+         * ‼️ AND FOR THESE THREE, `undefined` MEANS "CLEAR IT" — the key being
+         * PRESENT is what decides, not its value (the rule `applyForm` states
+         * in tasksPanel.ts). A form that draws the boxes has an answer for all
+         * of them including "none", so `??` would make emptying the chain or
+         * putting the policy back to the default impossible: the original's
+         * would come back over the top of what was just cleared. A caller with
+         * nothing to say — the rerun button, the bridge — omits the key and
+         * inherits, which is every other field's rule above.
+         */
+        const said = (k: string): boolean => !!over && k in over;
+        copy.retry = said('retry') ? over?.retry : task.retry;
+        const rounds = said('rounds') ? over?.rounds : task.rounds;
+        if (rounds?.length) { copy.rounds = rounds; } else { delete copy.rounds; }
+        // ‼️ S-19 — a retry of a run that was continuing a conversation continues
+        // the SAME conversation: the words being sent again were written for that
+        // context, and opening a new session would answer them without it.
+        const resume = said('resumeSessionId') ? over?.resumeSessionId : task.resumeSessionId;
+        if (resume) {
+            copy.resumeSessionId = resume;
+            const engine = over?.resumedEngine ?? task.resumedEngine;
+            const from = over?.resumedFrom ?? task.resumedFrom;
+            if (engine) { copy.resumedEngine = engine; }
+            if (from) { copy.resumedFrom = from; }
+        }
         noteTaskEvent(copy, 'retried', `attempt ${attempt} of "${task.title}"`);
         // A retry started by hand from a form can be queued rather than run —
         // the same "start it now" bargain every other route offers.

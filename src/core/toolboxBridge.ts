@@ -13,7 +13,7 @@ import {
     removeWithBackup, scaffoldItem, scanSlashSources, setPluginEnabled, ToolboxItem, ToolboxKind,
     TOOLBOX_KINDS, userClaudeDir
 } from './toolbox';
-import { BUILTIN_SLASH, getSlashCommands } from './slashCommands';
+import { BUILTIN_SLASH, getSlashCommands, reportToSources, SlashReport } from './slashCommands';
 
 /**
  * Toolbox bridge ops (§ constitution 19.C) — everything the Toolbox page can
@@ -37,6 +37,10 @@ export interface ToolboxBridgeDeps {
      * different questions and only the second needs a live process.
      */
     reportedSlash?(sessionId: string): string[] | undefined;
+    /** ‼️ K-36 — the same session's WHOLE init answer (skills, terminal-only),
+     *  and what this install last proved it has when no session is named. */
+    slashReportOf?(sessionId: string): SlashReport | undefined;
+    recallSlash?(engine: string, agentId?: string): SlashReport | undefined;
 }
 
 export function probeCacheKey(scope: string, agentId: string | undefined, server: string): string {
@@ -360,23 +364,40 @@ export function registerToolboxOps(bridge: BridgeRegistry, deps: ToolboxBridgeDe
                 const reported = sessionId ? deps.reportedSlash?.(sessionId) : undefined;
                 need(!sessionId || reported !== undefined,
                     `No hosted session "${sessionId}" — sessions.list shows what is running here.`);
+                /**
+                 * ‼️ K-36 — AND WITHOUT A SESSION, WHAT THIS INSTALL LAST PROVED
+                 * IT HAS. An agent asking "what could I type here" was answered
+                 * with the shipped table unless it happened to know a running
+                 * session's id — 18 rows against the 49 the same CLI names. The
+                 * remembered report is the same fact, minus the process.
+                 */
+                const report = sessionId
+                    ? deps.slashReportOf?.(sessionId)
+                    : deps.recallSlash?.(engine, agent?.id);
                 const disk = scanSlashSources(agent?.dir, deps.home);
                 const list = getSlashCommands({
                     engine,
                     ...(optStr(args, 'provider') ? { provider: optStr(args, 'provider') } : {}),
-                    sources: { ...disk, ...(reported ? { reported } : {}) },
+                    sources: {
+                        ...disk,
+                        ...(report ? reportToSources(report) : (reported ? { reported } : {}))
+                    },
                     q: optStr(args, 'q')
                 });
                 return {
                     engine,
                     agent: agent?.name ?? null,
                     session: sessionId || null,
+                    // Where the report came from: a live process, or the record
+                    // one left behind. A list of 49 on a machine with nothing
+                    // running is explained by this field and nothing else.
+                    reportFrom: sessionId ? 'session' : (report ? 'remembered' : 'none'),
                     // What each layer contributed, so a surprising list can be
                     // explained without reading the merge: an empty `reported`
                     // on a live session means that engine names none.
                     sources: {
                         builtin: (BUILTIN_SLASH[engine] ?? []).length,
-                        reported: reported?.length ?? 0,
+                        reported: report?.names.length ?? reported?.length ?? 0,
                         commands: disk.commands.length,
                         skills: disk.skills.length,
                         workflows: disk.workflows.length

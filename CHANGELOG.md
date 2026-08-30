@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.338.0 - K-36 · M-32: the list the install actually has, and the form that gives it back (2026-08-30)
+
+Two losses of information, both silent, both now measured.
+
+**‼️ K-36 — the `/` picker offered 18 commands where the same machine's terminal
+offers 49.** The catalog's one authoritative source is a running session's
+`system:init`, and the composer's `/` is pressed exactly when there is not one
+yet — so the picker fell back to the shipped table, and no shipped table can ever
+close that gap: two thirds of the real list is skills and plugins, i.e. facts
+about THIS install. So the report is now **remembered** (per engine, and per
+agent where an agent has folders of its own), written by every door that sees one
+and read by the ones that cannot. Nothing is spawned to learn it — a session
+started for its own reasons pays for it once and every later composer is right.
+`toolbox.slashCommands` reads the same record, so an agent asking "what could I
+type here" is told what the picker offers.
+
+**‼️ And a report is a COMPLETE answer, not an addition.** Measured against a
+real Claude: 49 names, and `/cost` — which is in the shipped table — is not among
+them. Offering it anyway teaches a command that answers "unknown", so once a
+process has named its commands, a shipped row it did not name is dropped. The
+disk is untouched by this: a file that exists is a command whether or not a
+running session listed it.
+
+**‼️ Two more answers out of the same event, replacing two guesses.**
+`system:init.skills` names which of the reported commands are SKILLS — filing
+them as the engine's own printed a claim about a machine as a claim about a
+program — and `system:init.terminal_slash_commands` is the `tui` flag measured
+rather than marked by hand (the CLI names `doctor` and `color`; the table guessed
+five). Where the CLI says nothing, the shipped guess stands.
+
+**‼️ M-32 — a saved task reopened in the form was not the same task.** Every door
+that reopens a run ("like this one, but…", the retry form, a clone) draws the
+form off ONE reading of the stored object, and that reading carried neither the
+**round chain** nor the **conversation the run was set to continue** — so the
+boxes drew their defaults over a run that had four prompts, and saving wrote the
+emptiness back. Both are seeded now, and the rule is swept: every field of
+`RunDimensions` is a box on that form, so every one of them has to come back out
+of the stored task. The next dimension somebody adds fails the test until it is.
+
+**‼️ …and a retry by hand now runs the way the original ran, like an automatic
+one always has.** `maybeScheduleRetry` has carried the retry policy, the rounds
+and the resumed conversation for releases; `retryTask` — the rerun button and the
+retry form — carried none of them, so the same failed run retried by the machine
+and retried by a person were two different runs. The form can still change any of
+them: for these three a key that is PRESENT decides, so clearing the chain or
+putting the policy back to the default really takes.
+
 ## 3.337.0 - K-32: the parity that matters is not "both exist" (2026-08-30)
 
 The acceptance half of K-14. The bridge op, the merge and the picker were built
