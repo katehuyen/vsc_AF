@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { sendToTerminalWhenReady } from './shellReady';
-import { spawnEnvironment } from './providerRuntime';
+import { spawnEnvironment, terminalEnvOverlay } from './providerRuntime';
 import { AgentInfo } from './agents';
 import { normalizeFinishSound } from './alertVoices';
 import {
@@ -2852,7 +2852,13 @@ export class TaskManager implements vscode.Disposable {
         const terminal = vscode.window.createTerminal({
             name: `AF: ${task.title.slice(0, 30)}`,
             cwd,
-            env: this.opts.getEnv?.(agent.id)
+            // ‼️ X-101 — AN OVERLAY, SO ABSENCE IS NOT AN INSTRUCTION HERE. VS
+            // Code merges this onto the window's own environment, which means a
+            // route name simply left out survives inherited and untouched. The
+            // clearing has to be said out loud, as `null`.
+            env: terminalEnvOverlay(
+                [this.opts.getEnv?.(agent.id)],
+                this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude'))
         });
         terminal.show();
         // ‼️ THE EXIT IS A SECOND LINE, NOT `&& exit`. The shell here is

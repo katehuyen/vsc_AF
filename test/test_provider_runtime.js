@@ -254,5 +254,45 @@ const R = require(path.join(ROOT, 'out', 'core', 'providerRuntime.js'));
     eq('cleared then set leaves the chosen value', order.X, 'chosen');
 }
 
+// ---------- THE SAME ISOLATION, THROUGH A VS CODE TERMINAL ----------
+//
+// ‼️ A TERMINAL IS NOT A SPAWN, AND THE DIFFERENCE IS THE WHOLE OF THIS PIECE.
+// `cp.spawn` is handed a COMPLETE environment, so removing a name means not
+// putting it in. `vscode.window.createTerminal({ env })` is handed an OVERLAY
+// merged onto the window's environment, so leaving a name out changes nothing —
+// the inherited one survives untouched, which is precisely the failure.
+//
+// Measured in the API's own types rather than assumed:
+//   env?: { [key: string]: string | null | undefined }
+//   …and `null` is the documented way to REMOVE a variable.
+// Without that, an isolated route would be impossible on this surface and the
+// honest thing would have been to refuse the launch rather than run it wrong.
+{
+    const overlay = R.terminalEnvOverlay(
+        [{ GITHUB_TOKEN: 'gh' }],
+        {
+            clearEnv: ['ANTHROPIC_BASE_URL', 'CLAUDE_CODE_USE_BEDROCK'],
+            spawnEnv: { ANTHROPIC_BASE_URL: 'https://chosen.example', ANTHROPIC_API_KEY: 'k' }
+        });
+
+    // ‼️ `null`, NOT `''`. An empty string is a variable the CLI still finds and
+    // still signs in with; only the removal makes it fall through.
+    eq('an inherited name with no replacement is REMOVED, not blanked',
+        overlay.CLAUDE_CODE_USE_BEDROCK, null);
+    eq('a cleared name that IS replaced carries the chosen value',
+        overlay.ANTHROPIC_BASE_URL, 'https://chosen.example');
+    eq('…and an injected name that was never inherited is simply set',
+        overlay.ANTHROPIC_API_KEY, 'k');
+    eq('other layers pass through untouched', overlay.GITHUB_TOKEN, 'gh');
+
+    // Nothing resolved must leave this surface exactly as it was.
+    eq('with no route resolved the overlay is just the layers',
+        R.terminalEnvOverlay([{ GITHUB_TOKEN: 'gh' }], undefined), { GITHUB_TOKEN: 'gh' });
+    eq('…and no layers either is an empty overlay, not a crash',
+        R.terminalEnvOverlay([], undefined), {});
+    eq('an undefined layer is skipped rather than spread',
+        R.terminalEnvOverlay([undefined, { A: '1' }], undefined), { A: '1' });
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

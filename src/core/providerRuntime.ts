@@ -239,3 +239,42 @@ export function spawnEnvironment(
     for (const [k, v] of Object.entries(runtime?.spawnEnv || {})) { out[k] = v; }
     return out;
 }
+
+/**
+ * ‼️ THE SAME ISOLATION FOR A VS CODE TERMINAL, WHICH IS A DIFFERENT SHAPE OF
+ * PROBLEM AND NOT A DUPLICATE OF THE ABOVE.
+ *
+ * `cp.spawn` is handed a COMPLETE environment, so removing a name means simply
+ * not putting it in. `vscode.window.createTerminal({ env })` is handed an
+ * OVERLAY that VS Code merges onto the window's own environment — so leaving a
+ * name out changes nothing at all and the inherited route survives untouched.
+ * On that surface the absence of an instruction is not an instruction.
+ *
+ * Measured in the API's own declaration rather than assumed:
+ *
+ *     env?: { [key: string]: string | null | undefined }
+ *
+ * where `null` is the documented way to REMOVE a variable. Had it not been,
+ * an isolated route would be impossible here and the honest thing would have
+ * been to refuse the launch rather than run it on a route nobody chose.
+ *
+ * ‼️ `null` AND NOT `''`: an empty string is a variable the CLI still finds and
+ * still tries to sign in with. Only the removal makes it fall through to the
+ * credentials file.
+ */
+export function terminalEnvOverlay(
+    layers: Array<Record<string, string> | undefined>,
+    runtime: { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined
+): Record<string, string | null> {
+    const out: Record<string, string | null> = {};
+    for (const source of layers || []) {
+        if (!source) { continue; }
+        for (const [k, v] of Object.entries(source)) {
+            if (v === undefined || v === null) { continue; }
+            out[k] = String(v);
+        }
+    }
+    for (const name of runtime?.clearEnv || []) { out[name] = null; }
+    for (const [k, v] of Object.entries(runtime?.spawnEnv || {})) { out[k] = v; }
+    return out;
+}

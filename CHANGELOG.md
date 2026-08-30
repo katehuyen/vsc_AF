@@ -2,6 +2,48 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.348.0 - X-101 (2/2): the terminal surfaces, where absence is not an instruction (2026-08-30)
+
+3.347.0 isolated the route for spawned runs. A terminal is a different shape of
+problem and not a duplicate of that one.
+
+`cp.spawn` is handed a COMPLETE environment, so removing a name means simply not
+putting it in. `vscode.window.createTerminal({ env })` is handed an OVERLAY that
+VS Code merges onto the window's own environment — so a route name left out
+changes nothing at all and the inherited one survives untouched. On that surface
+the absence of an instruction is not an instruction.
+
+Measured in the API's own declaration rather than assumed:
+
+    env?: { [key: string]: string | null | undefined }
+
+where `null` is the documented way to REMOVE a variable. Had it not been, an
+isolated route would have been impossible here, and the honest thing would have
+been to refuse the launch rather than run it on a route nobody chose. ‼️ `null`
+and not `''`: an empty string is a variable the CLI still finds and still tries
+to sign in with; only the removal makes it fall through to the credentials file.
+
+Both terminal call sites now go through it — the interactive task terminal
+(`core/tasks.ts`) and the session terminal (`launchClaudeTerminal`). The session
+one resolves its agent from the working directory through `resolveAgentByCwd`,
+the same reader every other surface uses to answer "whose folder is this", so a
+terminal and a task opened on the same agent get the same route rather than two
+readings of it.
+
+**‼️ And all of them through ONE symbol.** `engineRuntimeFor(agentId, engine)`
+in `extension.ts` is what the runner, the interactive terminal and the session
+terminal all call, and the suite fails the build if a second resolution appears
+beside it. That is the item's acceptance line stated as a symbol rather than as
+an intention: three surfaces resolving a launch three ways are three answers to
+"which route is this run on", and the transcript records none of them.
+
+Still open on this item: the Console/ACP host (`core/consolehost.ts`) spawns
+without an `env` of its own and therefore still inherits whatever the window
+carries. That is the third surface named in the acceptance line and it is the
+remaining work.
+
+Test: 251 files, 16706 assertions, 0 failures.
+
 ## 3.347.0 - X-101: one entrance, and a route a run cannot be lied to about (2026-08-30)
 
 X-98 wrote the adapter contract, X-99 the catalogs, X-100 the ownership and the

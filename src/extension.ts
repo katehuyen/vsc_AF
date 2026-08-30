@@ -142,6 +142,7 @@ import {
 } from './core/launch';
 import { bumpRevision, ownershipTable, secretKeyFor } from './core/providerOwnership';
 import { adapterFor, resolveRuntime } from './core/providerRegistry';
+import { terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
     StoredProviderProfile
@@ -2952,27 +2953,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * one nobody has used yet, and every one of those runs must keep the
              * environment it has always had, byte for byte.
              */
-            engineRuntime: (agentId, engine) => {
-                const agent = agents.find(a => a.id === agentId);
-                if (!agent) { return undefined; }
-                const chosen = storedRoute(
-                    cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
-                    agent.dir, engine as EngineId);
-                if (!chosen.providerId) { return undefined; }
-                const rt = resolveRuntime(engine, {
-                    engine, providerId: chosen.providerId, ...(chosen.tier ? { tier: chosen.tier } : {})
-                }, {
-                    profiles: providerProfiles(),
-                    // ‼️ Asked one id at a time, so exactly one credential is in
-                    // memory here and only when a spawn actually needs it.
-                    secretFor: (id) => vault.get(secretKeyFor(id)),
-                    inheritedEnv: process.env
-                });
-                return {
-                    ...(rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
-                    ...(rt.clearEnv ? { clearEnv: rt.clearEnv } : {})
-                };
-            },
+            engineRuntime: (agentId, engine) => engineRuntimeFor(agentId, engine),
             resolveTemplate: (s) => vault.substitute(s),
             forward: postForward,
             // J5: alternative CLI executors (gemini / codex / …).
@@ -15871,6 +15852,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     /** The list as every surface may see it — settings, bridge, page, notice. */
     const publicProviderProfiles = () => publicProfiles(providerProfiles(), providerSecretIds());
+    /**
+     * ‼️ X-101 — THE ONE PLACE A LAUNCH'S ROUTE IS RESOLVED, and the reason
+     * every surface is handed an answer rather than the ingredients.
+     *
+     * The profiles are a setting, the credential is in the OS keychain, and the
+     * environment to isolate against is this process's own. `core/tasks.ts` can
+     * reach none of those, and a version of it that could would be a second
+     * implementation of the resolution rules living in a file nobody thinks of
+     * as provider logic — the exact shape of the defect X-98 measured. So this
+     * function, which owns all three, is what the runner, the terminal and the
+     * Console all call. That is the item's acceptance line, as a symbol.
+     *
+     * ‼️ NOTHING CHOSEN RETURNS `undefined`, and that is load-bearing: four of
+     * the five engines have no provider axis at all and one has an axis nobody
+     * has used yet, and every one of those runs must keep the environment it has
+     * always had, byte for byte.
+     */
+    const engineRuntimeFor = (
+        agentId: string, engine: string
+    ): { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined => {
+        const agent = agents.find(a => a.id === agentId);
+        if (!agent) { return undefined; }
+        const chosen = storedRoute(
+            cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+            agent.dir, engine as EngineId);
+        if (!chosen.providerId) { return undefined; }
+        const rt = resolveRuntime(engine, {
+            engine, providerId: chosen.providerId, ...(chosen.tier ? { tier: chosen.tier } : {})
+        }, {
+            profiles: providerProfiles(),
+            // ‼️ Asked one id at a time, so exactly one credential is in memory
+            // here and only when a launch actually needs it.
+            secretFor: (id) => vault.get(secretKeyFor(id)),
+            inheritedEnv: process.env
+        });
+        return {
+            ...(rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
+            ...(rt.clearEnv ? { clearEnv: rt.clearEnv } : {})
+        };
+    };
     const setProviderSecret = async (id: string, value: string): Promise<void> => {
         const key = secretKeyFor(id);
         if (!key) { return; }
@@ -16745,7 +16766,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (laneId && projectId) { stampSessionProject(laneId, projectId); }
             return undefined;
         }
-        const terminal = vscode.window.createTerminal({ name: title, cwd, env });
+        /**
+         * ‼️ X-101 — THE TERMINAL SURFACE, WHICH THE ACCEPTANCE LINE NAMES
+         * ALONGSIDE CONSOLE AND HEADLESS.
+         *
+         * The agent is resolved from the working directory because that is what
+         * this function is given; `resolveAgentByCwd` is the same reader every
+         * other surface uses to answer "whose folder is this", so a terminal and
+         * a task opened on the same agent get the same route rather than two
+         * readings of it.
+         *
+         * ‼️ AN OVERLAY, NOT A COMPLETE ENVIRONMENT. VS Code merges this onto
+         * the window's own, so a route name left out survives inherited — the
+         * clearing has to be said out loud, which is what `null` does.
+         */
+        const termAgentId = resolveAgentByCwd(cwd).agentId;
+        const terminal = vscode.window.createTerminal({
+            name: title, cwd,
+            env: terminalEnvOverlay(
+                [env],
+                termAgentId ? engineRuntimeFor(termAgentId, engine || 'claude') : undefined)
+        });
         termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId: laneId, projectId });
         if (laneId && projectId) { stampSessionProject(laneId, projectId); }
         // The terminal closing is the only end-of-session signal these engines

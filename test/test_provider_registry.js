@@ -293,6 +293,26 @@ const deps = () => ({
     ok('the runner is handed an ANSWER, not the profiles and the keychain',
         /engineRuntime\?:/.test(tasks) && /providerProfiles/.test(tasks) === false);
 
+    // ---- the TERMINAL surfaces, which the acceptance line names too ----
+    //
+    // ‼️ A TERMINAL IS AN OVERLAY, NOT A COMPLETE ENVIRONMENT: leaving a route
+    // name out of it changes nothing and the inherited one survives. So these
+    // two call sites must go through `terminalEnvOverlay`, which says the
+    // clearing out loud as `null`, and NOT through the spawn builder.
+    ok('‼️ the interactive task terminal isolates through the overlay',
+        /env: terminalEnvOverlay\(/.test(tasks));
+    ok('‼️ the session terminal does too',
+        /env: terminalEnvOverlay\(/.test(ext));
+    // ‼️ AND ALL OF THEM THROUGH ONE SYMBOL. That is the acceptance line itself:
+    // three surfaces resolving a launch three ways are three answers to "which
+    // route is this run on", and the transcript records none of them.
+    ok('‼️ every surface resolves through the SAME named function',
+        /const engineRuntimeFor = \(/.test(ext)
+        && /engineRuntime: \(agentId, engine\) => engineRuntimeFor\(agentId, engine\)/.test(ext)
+        && /engineRuntimeFor\(termAgentId, engine \|\| 'claude'\)/.test(ext));
+    ok('…and the resolution is written once, not once per surface',
+        (ext.match(/resolveRuntime\(engine, \{/g) || []).length === 1);
+
     // ---- the extension supplies it ----
     ok('‼️ the extension really supplies the runtime dep',
         /engineRuntime: \(agentId, engine\)/.test(ext));
