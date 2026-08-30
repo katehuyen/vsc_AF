@@ -33,6 +33,36 @@ export interface LaunchOptions {
      * engine it then fails to start.
      */
     engine?: EngineId;
+    /**
+     * ‼️ X-103 — WHICH PROVIDER THIS RUN IS ON, and it sits here rather than
+     * beside the model because it decides what the model row MEANS.
+     *
+     * On Claude it is the id of a stored route profile: an environment isolation
+     * with a credential behind it, fixed for the session. On OpenCode it is the
+     * engine's own provider id, which the engine may legitimately change at a
+     * turn boundary. Absent is a real answer on both and the important one:
+     * NOTHING IS INJECTED AND NOTHING IS CLEARED, so the child inherits whatever
+     * this window carries — which is what every launch made before X-101 did.
+     *
+     * ‼️ NOT DERIVED FROM `model`. `opencode/big-pickle` looks like it names its
+     * own provider and splitting on the slash would agree most of the time,
+     * which is exactly what makes it the wrong rule — see `providerRegistry.ts`.
+     */
+    providerId?: string;
+    /**
+     * ‼️ CLAUDE ONLY — which tier of that route, and a different question from
+     * `model`. `opus` is `kimi-k2-thinking` on one route and `MiniMax-M2` on
+     * another, so folding it into the model would make one word mean different
+     * things depending on which route happened to be selected.
+     */
+    tier?: string;
+    /**
+     * The reasoning variant, only where the engine publishes one FOR THE CHOSEN
+     * MODEL — measured per model, not per engine: of the six models this
+     * machine's OpenCode offers, some carry `"variants": {}` and some carry
+     * low/medium/high.
+     */
+    variant?: string;
     /** --model (alias or full id); '' = the agent's / CLI's own default */
     model?: string;
     /** --effort: low | medium | high | xhigh | max; '' = default */
@@ -356,9 +386,25 @@ export function launchSummary(o: LaunchOptions, facts: {
     superpowers?: boolean;
     /** The project's display name (icon included), '' / absent for none. */
     project?: string;
+    /**
+     * ‼️ X-103 — THE ROUTE'S LABEL, resolved by the caller because only a
+     * surface holding the catalog can turn a profile id into the name a person
+     * recognises. Absent falls back to the id, which is still the truth; the one
+     * thing this must never do is print nothing while a route is set.
+     */
+    provider?: string;
 } = {}): string {
     const bits: string[] = [engineOf(o.engine).label];
+    // ‼️ IT SITS BESIDE THE ENGINE, NOT NEAR THE MODEL. Two sessions on "Claude
+    // Code · opus" that ran on different routes are two different programs, and
+    // a summary that made them read identically is exactly the confusion X-101
+    // was written to end. Named only when one is set: absent means nothing is
+    // injected, and spending a column on "no route" on every launch would be the
+    // answer nobody chose.
+    const route = facts.provider?.trim() || o.providerId?.trim();
+    if (route) { bits.push(o.tier?.trim() ? `${route} (${o.tier.trim()})` : route); }
     bits.push(o.model?.trim() || 'default model');
+    if (o.variant?.trim()) { bits.push(o.variant.trim()); }
     if (o.effort?.trim()) { bits.push(o.effort.trim()); }
     if (o.permissionMode?.trim()) { bits.push(o.permissionMode.trim()); }
     const sp = facts.superpowers ?? o.superpowers;
@@ -375,7 +421,14 @@ export function describeLaunch(o: LaunchOptions): string {
     // launch spends a column on the answer nobody asked for.
     const spec = engineOf(o.engine);
     if (spec.id !== 'claude') { bits.push(spec.label); }
+    // ‼️ X-103 — the route, by the same rule as the engine: named only when it
+    // is an answer. A setup line that dropped it would describe two launches on
+    // two different endpoints with one identical sentence.
+    if (o.providerId?.trim()) {
+        bits.push(o.tier?.trim() ? `${o.providerId.trim()} (${o.tier.trim()})` : o.providerId.trim());
+    }
     if (o.model?.trim()) { bits.push(o.model.trim()); }
+    if (o.variant?.trim()) { bits.push('variant ' + o.variant.trim()); }
     if (o.effort?.trim()) { bits.push('effort ' + o.effort.trim()); }
     if (o.permissionMode?.trim()) { bits.push(o.permissionMode.trim()); }
     // ‼️ K-34 — NAMED ONLY WHEN IT IS AN ANSWER. Absent means "the agent's own
@@ -589,7 +642,27 @@ export interface EngineLaunchMemory {
     model?: string;
     effort?: string;
     permissionMode?: string;
+    /**
+     * ‼️ X-103 — AND THE ROUTE IS PER ENGINE MORE PLAINLY THAN ANY OF THE THREE
+     * ABOVE. A Claude route profile id means nothing to OpenCode and an OpenCode
+     * provider id means nothing to Claude, so a flat record would carry one onto
+     * the other on the first engine switch — the exact defect X-145 fixed for
+     * the model, arriving again through a newer field.
+     */
+    providerId?: string;
+    tier?: string;
+    variant?: string;
 }
+
+/**
+ * ‼️ THE ENGINE-OWNED DIMENSIONS, IN ONE PLACE. `rememberedOn` merges over this
+ * rather than over field names written out twice — which is how the three that
+ * existed first stayed right for a year and the three added after them leaked
+ * onto the wrong engine on their first day.
+ */
+export const ENGINE_MEMORY_FIELDS = [
+    'model', 'effort', 'permissionMode', 'providerId', 'tier', 'variant'
+] as const;
 
 /**
  * ‼️ S-34 — THE MEMORY AS A LAYER, BETWEEN WHAT THE CALLER SAID AND THE FLEET
@@ -626,6 +699,12 @@ export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): 
         // the other two: reading it off the flat record was how a mode chosen
         // for one engine arrived on the next one as a flag nobody typed.
         permissionMode: pick(o.permissionMode, prev.permissionMode),
+        // ‼️ X-103 — read off `prev` for the same reason: the row belongs to the
+        // engine this launch is on. A route re-applied here is why the second
+        // session on Kimi is one Enter rather than three rows.
+        providerId: pick(o.providerId, prev.providerId),
+        tier: pick(o.tier, prev.tier),
+        variant: pick(o.variant, prev.variant),
         ...(sp === undefined ? {} : { superpowers: sp })
     };
 }
@@ -669,15 +748,23 @@ export function rememberedOn(engine: string | undefined, last: LastLaunch): Last
     const was = (last.engine || '').trim();
     const now = (engine || '').trim();
     const own = now ? last.byEngine?.[now] : undefined;
+    /**
+     * ‼️ X-103 — MERGED OVER THE FIELD LIST, NOT OVER NAMES TYPED IN TWICE.
+     *
+     * Both branches below used to name `model`, `effort` and `permissionMode`
+     * one by one, so the moment the route joined `EngineLaunchMemory` it leaked:
+     * a Claude profile id survived a switch to OpenCode and arrived on an engine
+     * that has never heard of it. The list is the shape's, so the next field
+     * added to the memory is carried and cleared without this function being
+     * touched at all.
+     */
+    const blank = Object.fromEntries(ENGINE_MEMORY_FIELDS.map(f => [f, ''])) as EngineLaunchMemory;
     if (own) {
-        return {
-            ...last,
-            model: own.model ?? '', effort: own.effort ?? '',
-            permissionMode: own.permissionMode ?? ''
-        };
+        return { ...last, ...blank, ...Object.fromEntries(
+            ENGINE_MEMORY_FIELDS.map(f => [f, own[f] ?? ''])) };
     }
     if (!was || !now || was === now) { return last; }
-    return { ...last, model: '', effort: '', permissionMode: '' };
+    return { ...last, ...blank };
 }
 
 /**
@@ -697,7 +784,10 @@ export function launchToRemember(
     const mem: EngineLaunchMemory = {
         model: o.model ?? '',
         effort: o.effort ?? '',
-        permissionMode: o.permissionMode ?? ''
+        permissionMode: o.permissionMode ?? '',
+        providerId: o.providerId ?? '',
+        tier: o.tier ?? '',
+        variant: o.variant ?? ''
     };
     const engine = (o.engine || '').trim();
     /**
@@ -748,6 +838,29 @@ export function validateLaunch(o: LaunchOptions): string[] {
     }
     if (o.resume && o.continueLast) {
         errors.push('resume and continue are mutually exclusive');
+    }
+    /**
+     * ‼️ X-103 — THE PROVIDER AXIS, CHECKED FOR SHAPE HERE AND FOR TRUTH BY THE
+     * ADAPTER. What belongs here is only what is true without asking an engine:
+     * a charset (these reach a command line — `--variant` — and an environment
+     * resolution), and the one contradiction that is a contradiction on any
+     * catalog. Whether a route EXISTS is `preflight`'s answer, and restating it
+     * here would be a second list to keep in step.
+     */
+    for (const [field, value] of [
+        ['provider', o.providerId], ['tier', o.tier], ['variant', o.variant]
+    ] as const) {
+        const v = value?.trim();
+        if (v && !modelIdOk(v)) {
+            errors.push(`${field} "${v}" is not a valid id — letters, digits, dot, colon, slash and hyphen only`);
+        }
+    }
+    // A tier with no route is not a narrow choice, it is an unanswerable one:
+    // the ROUTE is what decides which model `opus` means, so the word has no
+    // referent until one is picked and it would be silently ignored at spawn.
+    if (o.tier?.trim() && !o.providerId?.trim()) {
+        errors.push(`tier "${o.tier.trim()}" needs a route — a tier is a question the route answers `
+            + '(`opus` is one model on one route and another on the next), so with no route it names nothing');
     }
     // ‼️ K-22 — A SESSION THAT CANNOT KEEP ITS LABEL DOES NOT START. The
     // tempting alternative is to open the terminal in the ordinary asking mode

@@ -28,7 +28,7 @@ import {
 } from './core/opencodeharvest';
 import {
     OPENCODE_EXE, OPENCODE_NEEDS_SHELL, OPENCODE_SESSION_ID,
-    opencodeModelsListArgs, readOpencodeModelList
+    opencodeModelsCatalogArgs, opencodeModelsListArgs, readOpencodeModelList
 } from './core/opencode';
 import { opencodeExport, opencodeSessionIsEmpty } from './core/opencodehistory';
 import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
@@ -141,7 +141,7 @@ import {
     normSuperpowers, superpowersWord, twoExecutors, validateLaunch, withDefaults, withLastLaunch
 } from './core/launch';
 import { bumpRevision, ownershipTable, secretKeyFor } from './core/providerOwnership';
-import { adapterFor, resolveRuntime } from './core/providerRegistry';
+import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
 import { terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
@@ -15678,6 +15678,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     type OpencodeCatalog = {
         models?: { id: string; label: string }[]; fetchedAt?: number;
         via?: 'handshake' | 'cli'; fetching?: boolean;
+        /**
+         * ‼️ X-103 — THE SAME SPAWN, READ TWICE. `opencode models --verbose`
+         * prints one bare `provider/model` line per model and then that model's
+         * JSON, so the plain reader (`readOpencodeModelList`, whose regex takes
+         * a line and nothing else) finds exactly the ids it always found, while
+         * `readOpenCodeCatalog` reads the blocks for providers, variants, limits
+         * and cost. Measured against the installed CLI: 355 lines, 6 bare ids,
+         * the same six the plain command prints. A second `--verbose` spawn
+         * beside the first would be a second catalog with its own age and its
+         * own answer to which models exist.
+         *
+         * Absent means NOT FETCHED, which the catalog readers already treat as
+         * a distinct state from "the engine offers none" — never filled in.
+         */
+        text?: string;
     };
     let opencodeCatalog: OpencodeCatalog = {
         ...(context.globalState.get<OpencodeCatalog>(OPENCODE_CATALOG_KEY) ?? {}), fetching: false
@@ -15690,7 +15705,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * its age. A changed list ends in a redraw, an identical one does not.
      */
     const rememberOpencodeCatalog = (
-        models: { id: string; label: string }[], via: 'handshake' | 'cli'
+        models: { id: string; label: string }[], via: 'handshake' | 'cli',
+        /** ‼️ The verbose text, from the CLI path only. The HANDSHAKE has none —
+         *  it answers with ids and display names — so it passes nothing and the
+         *  text already stored survives, rather than a card opening and emptying
+         *  the provider list behind it. */
+        text?: string
     ): void => {
         if (!models.length) { return; }
         const before = (opencodeCatalog.models ?? []).map(m => `${m.id}\t${m.label}`).join('\n');
@@ -15700,14 +15720,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The CLI knows no display names, so letting it flatten a handshake list
         // that names the same models would lose labels for nothing.
         const keep = via === 'cli' && opencodeCatalog.via === 'handshake' && sameIds;
+        const beforeText = opencodeCatalog.text;
+        const nextText = String(text ?? '').trim() || opencodeCatalog.text;
         opencodeCatalog = {
             models: keep ? opencodeCatalog.models : models,
-            fetchedAt: Date.now(), via: keep ? 'handshake' : via, fetching: false
+            fetchedAt: Date.now(), via: keep ? 'handshake' : via, fetching: false,
+            ...(nextText ? { text: nextText } : {})
         };
         void context.globalState.update(OPENCODE_CATALOG_KEY, {
-            models: opencodeCatalog.models, fetchedAt: opencodeCatalog.fetchedAt, via: opencodeCatalog.via
+            models: opencodeCatalog.models, fetchedAt: opencodeCatalog.fetchedAt,
+            via: opencodeCatalog.via, ...(nextText ? { text: nextText } : {})
         });
-        if (!keep && now !== before) { modelPickersChanged(); }
+        // ‼️ A CHANGED CATALOG TEXT IS A CHANGED PICKER TOO, even when the ids
+        // are identical: the providers, variants and limits X-103 draws its rows
+        // from all live in the text, and a redraw gated on ids alone would leave
+        // a stale variant list on screen after the engine changed one.
+        if ((!keep && now !== before) || nextText !== beforeText) { modelPickersChanged(); }
     };
     const refreshOpencodeCatalog = (force = false): Promise<void> => {
         if (opencodeCatalog.fetching) { return opencodeInFlight ?? Promise.resolve(); }
@@ -15719,27 +15747,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         opencodeCatalog = { ...opencodeCatalog, fetching: true };
         let settle = (): void => { /* replaced below */ };
         opencodeInFlight = new Promise<void>(res => { settle = res; });
-        const child = cp.execFile(OPENCODE_EXE, opencodeModelsListArgs(), {
-            timeout: 30000, windowsHide: true, shell: OPENCODE_NEEDS_SHELL, maxBuffer: 1024 * 1024
-        }, (err, stdout) => {
-            // Parsed even on a non-zero exit — the rows are the answer, not the
-            // code. An empty read after an error keeps whatever was remembered
-            // rather than emptying a picker over one failed spawn; an empty read
-            // with no error is the engine's real answer and is dated so the next
-            // draw does not spawn again.
-            const models = readOpencodeModelList(String(stdout ?? ''));
-            if (models.length) { rememberOpencodeCatalog(models, 'cli'); }
-            else {
+        /**
+         * ‼️ X-103 — ONE SPAWN THAT ANSWERS BOTH QUESTIONS, AND A SECOND ONLY
+         * WHEN THE FIRST ONE IS NOT UNDERSTOOD.
+         *
+         * `--verbose` is what carries the providers, variants and limits the
+         * launcher's rows are drawn from; the bare ids the model box has always
+         * used come out of the same text. An older CLI that does not know the
+         * flag prints nothing usable, and THAT is the only case that costs a
+         * second spawn — measured on the installed CLI, the first form works and
+         * the fallback never runs.
+         */
+        const attempt = (args: string[], verbose: boolean, onEmpty: (failed: boolean) => void): void => {
+            const child = cp.execFile(OPENCODE_EXE, args, {
+                // Verbose prints a JSON block per model; 1 MB was sized for a
+                // list of bare names and a large fleet would truncate mid-object.
+                timeout: 30000, windowsHide: true, shell: OPENCODE_NEEDS_SHELL, maxBuffer: 8 * 1024 * 1024
+            }, (err, stdout) => {
+                // Parsed even on a non-zero exit — the rows are the answer, not
+                // the code. An empty read after an error keeps whatever was
+                // remembered rather than emptying a picker over one failed spawn;
+                // an empty read with no error is the engine's real answer and is
+                // dated so the next draw does not spawn again.
+                const text = String(stdout ?? '');
+                const models = readOpencodeModelList(text);
+                if (models.length) {
+                    rememberOpencodeCatalog(models, 'cli', verbose ? text : undefined);
+                    opencodeInFlight = undefined;
+                    settle();
+                    return;
+                }
+                onEmpty(!!err);
+            });
+            // Same handshake trap as `agy models` — a CLI that drains stdin never
+            // exits while the pipe is open, and the timeout is not a diagnosis.
+            child.stdin?.end();
+        };
+        attempt(opencodeModelsCatalogArgs(), true, () => {
+            attempt(opencodeModelsListArgs(), false, (failed) => {
+                // ‼️ DATED ONLY WHEN THE ENGINE REALLY ANSWERED NOTHING. A spawn
+                // that FAILED is not an answer, and stamping it would make the
+                // TTL hold a broken read for six hours — the picker would then
+                // stay empty long after whatever broke was fixed.
                 opencodeCatalog = {
-                    ...opencodeCatalog, fetching: false, ...(err ? {} : { fetchedAt: Date.now() })
+                    ...opencodeCatalog, fetching: false, ...(failed ? {} : { fetchedAt: Date.now() })
                 };
-            }
-            opencodeInFlight = undefined;
-            settle();
+                opencodeInFlight = undefined;
+                settle();
+            });
         });
-        // Same handshake trap as `agy models` — a CLI that drains stdin never
-        // exits while the pipe is open, and the timeout is not a diagnosis.
-        child.stdin?.end();
         return opencodeInFlight;
     };
 
@@ -15869,6 +15925,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * has used yet, and every one of those runs must keep the environment it has
      * always had, byte for byte.
      */
+    /**
+     * ‼️ X-103 — WHAT THE REGISTRY IS HANDED, BUILT IN ONE PLACE.
+     *
+     * There were two hand-written copies of this object (the launch resolver and
+     * the `providers.runtime` op) and they had already begun to differ: neither
+     * passed the OpenCode catalog, so `adapterFor('opencode', …)` answered every
+     * question with an empty list and the op reported "no providers" on a
+     * machine whose engine publishes six. A dependency added here now reaches
+     * every caller instead of the one whose author remembered it.
+     *
+     * ‼️ `secretFor` STAYS A FUNCTION. A map would put every credential the user
+     * owns into an argument on every call, including the calls that resolve a
+     * route with no key at all.
+     */
+    const registryDeps = (): RegistryDeps => ({
+        profiles: providerProfiles(),
+        // Asked one id at a time, so exactly one credential is in memory here
+        // and only when a launch actually needs it.
+        secretFor: (id: string) => vault.get(secretKeyFor(id)),
+        inheritedEnv: process.env,
+        // Absent means NOT FETCHED, which the catalog reader treats as a
+        // distinct state from "the engine offers none" — so an unread catalog
+        // refuses nothing rather than refusing everything.
+        ...(opencodeCatalog.text ? { openCodeCatalogText: opencodeCatalog.text } : {})
+    });
+
     const engineRuntimeFor = (
         agentId: string, engine: string
     ): { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined => {
@@ -15880,13 +15962,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!chosen.providerId) { return undefined; }
         const rt = resolveRuntime(engine, {
             engine, providerId: chosen.providerId, ...(chosen.tier ? { tier: chosen.tier } : {})
-        }, {
-            profiles: providerProfiles(),
-            // ‼️ Asked one id at a time, so exactly one credential is in memory
-            // here and only when a launch actually needs it.
-            secretFor: (id) => vault.get(secretKeyFor(id)),
-            inheritedEnv: process.env
-        });
+        }, registryDeps());
         return {
             ...(rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
             ...(rt.clearEnv ? { clearEnv: rt.clearEnv } : {})
@@ -29349,11 +29425,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const chosen = storedRoute(
                     cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
                     agent.dir, engine as EngineId);
-                const rdeps = {
-                    profiles: providerProfiles(),
-                    secretFor: (id: string) => vault.get(secretKeyFor(id)),
-                    inheritedEnv: process.env
-                };
+                // ‼️ The engine is asked before the adapter is: on OpenCode the
+                // whole answer lives in a catalog nothing had read here.
+                if (engine === 'opencode') { await refreshOpencodeCatalog(); }
+                const rdeps = registryDeps();
                 const sel = {
                     engine, providerId: chosen.providerId,
                     ...(chosen.tier ? { tier: chosen.tier } : {})

@@ -334,6 +334,26 @@ export const OPENCODE_HAS_NO_SYSTEM_PROMPT_FLAG = true;
 export function opencodeModelsListArgs(): string[] { return ['models']; }
 
 /**
+ * ‼️ X-103 — THE SAME QUESTION, ASKED SO THE ANSWER CARRIES ITS OWN DETAIL.
+ *
+ * `--verbose` prints one bare `provider/model` line per model and THEN that
+ * model's JSON — measured against the installed CLI (1.18.19): 355 lines, 6 bare
+ * ids, the same six ids the plain form prints. So one spawn serves both readers:
+ * `readOpencodeModelList`, whose regex takes a line and nothing else, finds
+ * exactly the ids it always found, and `readOpenCodeCatalog` reads the blocks
+ * for providers, variants, limits and cost. A second spawn beside the first
+ * would be a second catalog with its own age and its own answer to which models
+ * exist.
+ *
+ * ‼️ THE PLAIN FORM IS NOT DEAD. A health check needs a free model NAME and
+ * nothing else (`engineTest.ts`), so it keeps asking the cheap question; and the
+ * catalog fetch falls back to it when a CLI that predates the flag answers with
+ * nothing usable — this repo cannot measure a version it does not have
+ * installed, and a model box that silently never fills is the worse failure.
+ */
+export function opencodeModelsCatalogArgs(): string[] { return ['models', '--verbose']; }
+
+/**
  * ‼️ X-52 — THE SAME CATALOGUE, WITHOUT A SESSION TO GET IT FROM.
  *
  * `session/new` hands the list over with display names and costs no spawn, and

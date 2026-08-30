@@ -56,6 +56,13 @@ export interface AgentEngineDefault {
     tier?: string;
 }
 
+/**
+ * ‼️ THE RECORD'S FIELDS, IN ONE PLACE. `withAgentDefault` merges over this list
+ * rather than over field names typed into it, which is what stops a field added
+ * to the interface above from being silently dropped by the writer.
+ */
+export const AGENT_DEFAULT_FIELDS = ['model', 'effort', 'providerId', 'tier'] as const;
+
 /** `<normalised agent dir>` → engine id → the choice. */
 export type AgentEngineDefaults = Record<string, Partial<Record<EngineId, AgentEngineDefault>>>;
 
@@ -132,13 +139,24 @@ export function withAgentDefault(
     const next: AgentEngineDefaults = { ...(store ?? {}) };
     const row: Partial<Record<EngineId, AgentEngineDefault>> = { ...(next[key] ?? {}) };
     const cur = row[engine] ?? {};
-    const merged: AgentEngineDefault = {
-        model: (patch.model !== undefined ? patch.model : cur.model ?? '').trim(),
-        effort: (patch.effort !== undefined ? patch.effort : cur.effort ?? '').trim()
-    };
-    if (!merged.model) { delete merged.model; }
-    if (!merged.effort) { delete merged.effort; }
-    if (!merged.model && !merged.effort) { delete row[engine]; } else { row[engine] = merged; }
+    /**
+     * ‼️ X-103 — EVERY FIELD OF THE RECORD, NOT THE TWO THIS FUNCTION WAS BORN
+     * WITH. It merged `model` and `effort` and rebuilt the record from those
+     * two, so writing a model through Farm Settings DELETED the route the same
+     * record held — a person who hand-wrote `providerId` into settings.json (the
+     * only way to set one before this item) lost it the next time they touched
+     * the model box, and nothing said so. Listing the fields once, and merging
+     * over that list, is what stops the next field added here from being dropped
+     * by a writer nobody remembered to update.
+     */
+    const merged: AgentEngineDefault = {};
+    for (const f of AGENT_DEFAULT_FIELDS) {
+        const v = (patch[f] !== undefined ? patch[f] : cur[f] ?? '').trim();
+        // An empty value CLEARS: an absent record is what makes the next layer
+        // apply, and a stored '' would pin the answer to "nothing" for ever.
+        if (v) { merged[f] = v; }
+    }
+    if (!Object.keys(merged).length) { delete row[engine]; } else { row[engine] = merged; }
     if (!Object.keys(row).length) { delete next[key]; } else { next[key] = row; }
     return next;
 }

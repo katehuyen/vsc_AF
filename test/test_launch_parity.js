@@ -317,9 +317,16 @@ const launchTs = read('src', 'core', 'launch.ts');
     eq('the five dimensions and the surface are kept',
         [kept.engine, kept.model, kept.effort, kept.permissionMode, kept.superpowers, kept.surface].join(),
         'claude,opus,high,plan,true,console');
-    eq('…and the same three are filed under the engine that ran them',
+    // ‼️ X-103 — SIX, NOT THREE: the route, the tier and the variant joined the
+    // row because they belong to the engine more plainly than the model does (a
+    // Claude profile id means nothing to OpenCode). They are written as '' when
+    // this launch chose none, exactly like the three before them — the empty
+    // string IS the record that this launch picked no route, which is what stops
+    // the next one inheriting yesterday's.
+    eq('…and the same six are filed under the engine that ran them',
         JSON.stringify(kept.byEngine),
-        '{"claude":{"model":"opus","effort":"high","permissionMode":"plan"}}');
+        '{"claude":{"model":"opus","effort":"high","permissionMode":"plan",'
+        + '"providerId":"","tier":"","variant":""}}');
     // ‼️ X-145 — AND THE OTHER ENGINES' ROWS SURVIVE THE LAUNCH. Writing the map
     // from scratch would make every start erase what the agent runs as on the
     // engines it was not started on — a memory that only remembers the last
