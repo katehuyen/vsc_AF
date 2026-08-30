@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.342.0 - X-99: what is on offer, from the two places that actually know (2026-08-30)
+
+**Two engines, two owners, and the ownership is the design.** OpenCode owns its
+provider list, its credentials and its config; Agent Farm reads the public half
+and records what was chosen rather than keeping a second copy — two vaults, two
+revisions and two contradicting truths being the alternative. So that catalog is
+**measured**. Claude Code has no provider list at all: a provider there is a
+ROUTE Agent Farm assembles (base URL, auth kind, tier→model mapping), so that
+catalog is **declared** — and because living provider names must not require a
+code change, the templates are DATA and a route the user describes in settings is
+read by the same function into the same shape, replacing a shipped row of the
+same name rather than appearing twice beside it.
+
+`core/providerCatalog.ts` reads `opencode models --verbose` by brace depth (the
+objects are multi-line and hold braces of their own, so a line-based split joins
+two models the first time one gains a field), and takes the provider from the
+`providerID` **field** — never from splitting the printed `provider/model` line.
+That is X-98's rule one layer up, and it is one line of code.
+
+**Measured on OpenCode 1.18.19 here, 30 Aug 2026 — three things the shape had to
+be honest about:**
+
+- **Reasoning is not the same question as variants.** All six models this machine
+  reaches report `capabilities.reasoning: true`; exactly two publish a `variants`
+  map. A level box drawn off the capability would offer the engine words it will
+  not take, so only published variants are offered.
+- **Zero is a figure; nothing is not.** The free provider really does cost zero,
+  and calling that "unknown" makes an honest catalog unreadable. The other half:
+  one model states no input limit at all, and reporting 0 there would be
+  inventing a ceiling.
+- **`ref === providerID + "/" + id` on every row** — so the printed line is a
+  cross-check and the field is the source, which is exactly the right way round.
+
+**A selection that cannot run is refused before the spawn** — a tier the route
+does not map, a model the engine stopped offering, a variant it never published —
+each named with what IS available. ‼️ **But silence refuses nothing**: a catalog
+nobody has read yet is `not-fetched`, a different value from an empty one,
+because absence of a list is not proof of absence of a model and refusing on it
+would block every launch made in the first seconds of a window.
+
+**And the X-98 gate earned its keep on its first day.** Run against this new
+file it raised two findings, both false: it read across a comma into a separate
+object property, and across `&&` into a separate condition — and it counted a
+`===` comparison as a derivation. Sharpened to cross neither, it is still caught
+both planted violations. A detector that cries wolf gets relaxed rather than
+fixed, and then it is not a detector.
+
 ## 3.341.0 - X-98: who actually served this session, as one shape for every engine (2026-08-30)
 
 The first item of the X-97 family. Nothing on screen changes — this is the

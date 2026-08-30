@@ -43,6 +43,13 @@ export type CatalogSource =
     | 'agent-farm-profile'
     /** This build's own table, which is the answer before anything has run. */
     | 'shipped'
+    /**
+     * ‼️ NOBODY HAS ASKED THE ENGINE YET — and this is NOT "the engine offers
+     * nothing". The two lead to opposite behaviour one layer down: an empty
+     * catalog refuses a selection by name, and an unread one refuses nothing,
+     * because absence of a list is not proof of absence of a model.
+     */
+    | 'not-fetched'
     /** The engine has no provider axis. */
     | 'not-applicable';
 

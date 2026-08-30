@@ -205,9 +205,22 @@ const A = require(path.join(ROOT, 'out', 'core', 'providerAdapter.js'));
         }
         return out;
     };
-    // A `provider…` field or variable taking its value out of something that
+    // A `provider…` field or variable taking its VALUE out of something that
     // mentions a model.
-    const GUESS_FIELD = /provider\w*\s*[:=][^;\n]*\bmodel/i;
+    //
+    // ‼️ THREE THINGS THIS DELIBERATELY DOES NOT CROSS, each one learned from a
+    // false positive on real code the first time this ran against a new file:
+    //   · a comma — `{ providerId: r.providerId, models: [] }` is two separate
+    //     properties, and a detector that reads across the comma reports every
+    //     object that happens to hold both words;
+    //   · `&&` / `||` — `r.providerId === p && r.modelId === m` is two separate
+    //     conditions;
+    //   · `===` — a COMPARISON is not a derivation. `=(?!=)` is the whole of
+    //     that distinction, and dropping it turns every lookup into a finding.
+    // A detector that cries wolf gets relaxed rather than fixed, and then it is
+    // not a detector. The planted-violation checks below are what keep this
+    // sharpening honest.
+    const GUESS_FIELD = /provider\w*\s*(?:=(?!=)|:)[^;,\n&|]*\bmodel/i;
     // A model string split on a slash — `provider/model` taken apart by hand.
     const GUESS_SPLIT = /\bmodel\w*\s*\.\s*split\s*\(\s*['"`]\//;
 
