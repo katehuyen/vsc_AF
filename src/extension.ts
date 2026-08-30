@@ -18275,7 +18275,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // lifecycle whose interesting states are a crash and a reload. It is
         // created on the first OpenCode card and stopped when the last one goes
         // — the 383 MB measurement is the whole argument for the shape.
-        nodeOpencodeIo(() => ENGINES.opencode.exe));
+        nodeOpencodeIo(() => ENGINES.opencode.exe),
+        // ‼️ X-101 — the SAME symbol the runner and both terminals resolve
+        // through. Three surfaces reading a launch three ways would be three
+        // answers to "which route is this run on", and the transcript records
+        // none of them.
+        (agentId, engine) => engineRuntimeFor(agentId, engine));
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).
     consoleHostRef = consoleHost;

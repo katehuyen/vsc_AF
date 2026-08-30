@@ -22,6 +22,7 @@ import { StringDecoder } from 'string_decoder';
 import { AgyState, newAgyState, translateAgy } from './agyproto';
 import { CodexState, codexTotalsFromUsage, newCodexState, translateCodex } from './codexproto';
 import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
+import { spawnEnvironment } from './providerRuntime';
 import {
     EngineId, EngineTransport, engineContextPrefix, engineOf, enginePromptText, turnArgs
 } from './consoleEngine';
@@ -498,7 +499,22 @@ export class ConsoleHost {
          * card and stopped when the last one goes — the 383 MB measurement is the
          * whole argument, and a factory called twice would quietly undo it.
          */
-        private opencodeIo?: OpencodeRuntimeIo
+        private opencodeIo?: OpencodeRuntimeIo,
+        /**
+         * X-101 — the provider runtime this card's launch resolved to, asked of
+         * the shared registry by whoever owns the profiles and the keychain.
+         *
+         * ‼️ THIS HOST SPAWNED WITH NO `env` AT ALL, which means it inherited
+         * whatever the VS Code window was carrying. On four engines that is
+         * correct and on Claude it is a second answer to the question a route
+         * profile was chosen to answer — the same defect the runner had, on the
+         * surface people actually watch.
+         *
+         * Absent, or returning `undefined`, leaves the environment exactly as it
+         * has always been.
+         */
+        private engineRuntime?: (agentId: string, engine: string)
+            => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined
     ) {}
 
     /** The shared OpenCode runtime, made on demand. `undefined` when this build
@@ -1455,7 +1471,15 @@ export class ConsoleHost {
             // arrives byte-for-byte.
             child = cp.spawn(h.engine.exe, spawnArgs, {
                 cwd: h.state.cwd, shell: h.engine.spawnShell, windowsHide: true,
-                stdio: ['pipe', 'pipe', 'pipe']
+                stdio: ['pipe', 'pipe', 'pipe'],
+                // ‼️ X-101 — THIS SPAWN USED TO PASS NO `env` AND SO INHERITED
+                // WHATEVER THE WINDOW CARRIED. A complete environment is built
+                // here for the same reason the runner builds one: an inherited
+                // `ANTHROPIC_BASE_URL` answers the question the chosen route was
+                // picked to answer, and the transcript records neither.
+                env: spawnEnvironment(
+                    process.env, [],
+                    this.engineRuntime?.(h.state.agentId, h.engine.id))
             });
         } catch (e) {
             this.mutate(id, s => ({

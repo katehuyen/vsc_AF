@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.349.0 - X-101 (3/3): the Console, and the acceptance line closed (2026-08-30)
+
+The ACP host spawned with **no `env` at all**, which means it inherited whatever
+the VS Code window happened to be carrying. On four engines that is correct; on
+Claude it is a second answer to the question a route profile was chosen to
+answer — the runner's defect, on the surface people actually sit and watch.
+
+It now builds a complete environment through the same `spawnEnvironment` the
+runner uses, from the same resolved runtime, handed in as a dependency: the host
+reads no profiles and touches no keychain, and the suite fails the build if it
+starts to.
+
+**‼️ The item's acceptance line, closed and measured.** All four launch surfaces
+— headless runs, interactive task terminals, session terminals and Console cards
+— resolve through one symbol, `engineRuntimeFor(agentId, engine)`. The suite
+reads the real source and fails if a second resolution appears beside it, or if
+any spawn site returns to spreading `process.env` with the route still in it.
+
+Three routes side by side (Anthropic, Kimi, MiniMax) and an OpenCode native
+selection are measured not to contaminate one another: their keys never cross,
+their endpoints never cross, and the first-party route — the one most easily got
+wrong, since it has no base url and no key of its own — still clears an inherited
+one rather than quietly running on it while the manifest says Anthropic.
+
+Test: 251 files, 16709 assertions, 0 failures.
+
 ## 3.348.0 - X-101 (2/2): the terminal surfaces, where absence is not an instruction (2026-08-30)
 
 3.347.0 isolated the route for spawned runs. A terminal is a different shape of

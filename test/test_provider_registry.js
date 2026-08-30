@@ -313,6 +313,20 @@ const deps = () => ({
     ok('…and the resolution is written once, not once per surface',
         (ext.match(/resolveRuntime\(engine, \{/g) || []).length === 1);
 
+    // ---- the CONSOLE, the third surface the acceptance line names ----
+    //
+    // ‼️ THIS HOST SPAWNED WITH NO `env` AT ALL, so it inherited whatever the
+    // VS Code window carried — the runner's defect, on the surface people
+    // actually sit and watch.
+    const con = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consolehost.ts'), 'utf8');
+    ok('‼️ the console builds its spawn environment rather than inheriting the window\'s',
+        /env: spawnEnvironment\(/.test(con));
+    ok('…through the dep it is handed, not by reading profiles itself',
+        /this\.engineRuntime\?\.\(h\.state\.agentId, h\.engine\.id\)/.test(con)
+        && /providerProfiles|secretKeyFor/.test(con) === false);
+    ok('‼️ and the extension gives it the same function the other three use',
+        /\(agentId, engine\) => engineRuntimeFor\(agentId, engine\)\)/.test(ext));
+
     // ---- the extension supplies it ----
     ok('‼️ the extension really supplies the runtime dep',
         /engineRuntime: \(agentId, engine\)/.test(ext));
