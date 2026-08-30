@@ -251,9 +251,23 @@ const claude = {
     // The bridge: every read answers with the public shape, and there is no op
     // that takes or returns a value.
     const provOps = extTs.split(/\n\s*\{\s*\n\s*op: '/).filter(s => /^providers\./.test(s));
-    eq('the bridge exposes the six provider ops', provOps.length, 6);
-    ok('‼️ every provider op answers with the PUBLIC shape or with no profile at all',
-        provOps.every(s => /publicProfiles\(|publicProviderProfiles\(|ownershipTable\(|removed: id/.test(s)));
+    // ‼️ PINNED ON PURPOSE. A seventh op is a DECISION and it should cost a
+    // failing test: this family is the one that stands between a stored
+    // credential and five surfaces, and an op added without anybody rereading
+    // that boundary is exactly how the boundary stops holding.
+    eq('the bridge exposes the seven provider ops', provOps.length, 7);
+    // X-101 added the seventh, and it is the only one that answers about a
+    // RUNTIME rather than about a profile. Named here rather than folded into
+    // the pattern below, because adding its shape to that list would loosen the
+    // gate for the six that really do carry rows.
+    const runtimeOp = provOps.filter(s => /^providers\.runtime'/.test(s));
+    eq('…and exactly one of them is the runtime answer', runtimeOp.length, 1);
+    ok('‼️ it returns the NAMES of what a launch would inject, never the values',
+        /injects: Object\.keys\(rt\.spawnEnv/.test(runtimeOp[0] || '')
+        && !/spawnEnv: rt\.spawnEnv/.test(runtimeOp[0] || ''));
+    ok('‼️ every provider op that carries a profile answers with the PUBLIC shape',
+        provOps.filter(s => !/^providers\.runtime'/.test(s))
+            .every(s => /publicProfiles\(|publicProviderProfiles\(|ownershipTable\(|removed: id/.test(s)));
     ok('…and none of them touches the keychain for a value',
         !provOps.some(s => /context\.secrets\.get|setProviderSecret|askProviderSecret/.test(s)));
     // ‼️ THE ONE DELIBERATE ASYMMETRY, STATED RATHER THAN LEFT TO BE NOTICED:

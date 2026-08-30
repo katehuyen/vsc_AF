@@ -79,6 +79,13 @@ export interface ProviderSelection {
     modelId?: string;
     variant?: string;
     effort?: string;
+    /** ‼️ CLAUDE ONLY, and a separate field from `modelId` on purpose (X-101).
+     *  A tier is a question the ROUTE answers — `opus` is `kimi-k2-thinking` on
+     *  one route and `MiniMax-M2` on another — so folding it into `modelId`
+     *  would make a person's pick mean different things depending on which
+     *  route happened to be selected when they made it. `CatalogSelection`
+     *  (X-99) already draws the same distinction, for the same reason. */
+    tier?: string;
 }
 
 /**
@@ -159,7 +166,12 @@ export interface ProviderAdapter {
     /** What the engine actually reported, read out of its own events. */
     identityFromEvents(events: unknown): Partial<ProviderIdentity>;
     resumePolicy(previous: ProviderIdentity | undefined, requested: ProviderSelection): ResumeVerdict;
-    billingPolicy(): BillingSourcePolicy;
+    /** ‼️ ASKED ABOUT A SELECTION, not about the engine (X-101). On Claude the
+     *  answer differs per ROUTE: the first-party one's cost figure is a real
+     *  bill and a third-party endpoint's is Anthropic-priced fiction — measured.
+     *  An engine-wide answer would have to pick one of those and be wrong for
+     *  the other half of the routes. */
+    billingPolicy(selection?: ProviderSelection): BillingSourcePolicy;
     /** This adapter's own identity answer with nothing selected — the shape a
      *  run carries when the axis does not apply. */
     identity(): ProviderIdentity;

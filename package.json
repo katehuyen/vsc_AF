@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.346.0",
+  "version": "3.347.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8914,7 +8914,7 @@
           "type": "object",
           "default": {},
           "x-af-keys": "agentDir",
-          "description": "Per-agent default model and effort, PER ENGINE — `{ \"d:/zone/agent/ajanlar/developer\": { \"codex\": { \"model\": \"gpt-5.6-terra\", \"effort\": \"high\" } } }`. Claude's own default is not here: it goes in that agent's .claude/settings.local.json, which Claude Code reads itself, so it applies to a terminal session too. The other engines have no per-folder settings file, so Agent Farm keeps their defaults here and passes them as --model / --effort when it starts the session. Edited from Farm Settings → Agent folders, where each box also says what \"Default\" resolves to on the selected engine."
+          "description": "Per-agent default model and effort, PER ENGINE — `{ \"d:/zone/agent/ajanlar/developer\": { \"codex\": { \"model\": \"gpt-5.6-terra\", \"effort\": \"high\" } } }`. Claude's own default is not here: it goes in that agent's .claude/settings.local.json, which Claude Code reads itself, so it applies to a terminal session too. The other engines have no per-folder settings file, so Agent Farm keeps their defaults here and passes them as --model / --effort when it starts the session. Edited from Farm Settings → Agent folders, where each box also says what \"Default\" resolves to on the selected engine. ‼️ X-101 — a Claude row may also carry `providerId` (the id of a route in agentFarm.providerProfiles) and `tier` (opus / sonnet / …). That pair is a different kind of answer from model and effort: it is not a flag but an environment ISOLATION — the chosen route's base url, key and tier model are injected and every inherited ANTHROPIC_* / route-bearing CLAUDE_* variable is cleared first, so a base url left in the user's shell cannot answer the same question twice. With no providerId set nothing is cleared and nothing is injected, which is what every engine without a provider axis does permanently. Ask `providers.runtime` on the bridge to see exactly what a launch would run on."
         },
         "agentFarm.agyHome": {
           "type": "string",

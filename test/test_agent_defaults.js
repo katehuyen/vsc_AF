@@ -110,5 +110,37 @@ const { agentKey, storedDefault, withAgentDefault, resolveDefault, defaultLabel 
         defaultLabel(none) === 'Default (the CLI decides)');
 }
 
+// ---------- X-101 · WHICH ROUTE THIS AGENT RUNS CLAUDE ON ----------
+//
+// ‼️ A SEPARATE READER FROM `storedDefault`, ON PURPOSE. A model and an effort
+// are command-line flags; a route is an environment isolation with a credential
+// behind it. Folding them into one record would put "which key signs this in"
+// into the same answer as "which model name to type", and the first caller that
+// spread that record somewhere would carry the route with it.
+{
+    const { storedRoute } = require(path.join(__dirname, '..', 'out', 'core', 'agentDefaults.js'));
+    const eq = (n, got, want) => ok(n + ` (got ${JSON.stringify(got)})`,
+        JSON.stringify(got) === JSON.stringify(want));
+    const store = {
+        'd:/zone/agent/ajanlar/developer': {
+            claude: { model: '', effort: 'high', providerId: 'kimi-work', tier: 'opus' },
+            codex: { model: 'gpt-5.6-terra', effort: 'high' }
+        }
+    };
+
+    eq('the route this agent runs claude on',
+        storedRoute(store, 'D:\\zone\\agent\\ajanlar\\developer\\', 'claude'),
+        { providerId: 'kimi-work', tier: 'opus' });
+    // The same normalisation `storedDefault` uses — a path typed with
+    // backslashes, a trailing slash or a different case is the same agent.
+    eq('an engine with no route chosen says so with empty strings',
+        storedRoute(store, 'd:/zone/agent/ajanlar/developer', 'codex'),
+        { providerId: '', tier: '' });
+    eq('an agent nobody has configured is not an exception',
+        storedRoute(store, 'd:/somewhere/else', 'claude'), { providerId: '', tier: '' });
+    eq('no store at all is not an exception',
+        storedRoute(undefined, 'd:/x', 'claude'), { providerId: '', tier: '' });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { sendToTerminalWhenReady } from './shellReady';
+import { spawnEnvironment } from './providerRuntime';
 import { AgentInfo } from './agents';
 import { normalizeFinishSound } from './alertVoices';
 import {
@@ -1221,6 +1222,21 @@ export interface TaskManagerOptions {
     /** Secrets injected as environment variables into spawned tasks. The
      *  agent id lets the vault withhold secrets scoped to other agents. */
     getEnv?: (agentId?: string) => Record<string, string>;
+    /**
+     * X-101 — the provider runtime this launch resolved to, asked of the shared
+     * registry (`core/providerRegistry.ts`) by whoever owns the profiles and the
+     * keychain.
+     *
+     * ‼️ IT ARRIVES AS AN ANSWER, NOT AS INGREDIENTS. A runner that read the
+     * profiles and the vault itself would be a second implementation of the
+     * resolution rules living in a file nobody thinks of as provider logic —
+     * which is the exact shape of the bug X-98 measured. Absent means "no route
+     * chosen", and then nothing is cleared and nothing is injected: four of the
+     * five engines are in that state permanently and must stay byte-for-byte
+     * what they were.
+     */
+    engineRuntime?: (agentId: string, engine: string)
+        => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined;
     /** {secret:NAME} substitution for webhook templates. */
     resolveTemplate?: (s: string) => string;
     /** Outbound notification forwarding (B4). */
@@ -3184,13 +3200,33 @@ export class TaskManager implements vscode.Disposable {
         const engineEnv = engine.id === 'opencode'
             ? opencodeSpawnEnv(agent.dir, agent.constitutionPath)
             : {};
+        /**
+         * ‼️ X-101 — WHERE THE INHERITED ROUTE STOPS BEING A SECOND ANSWER.
+         *
+         * `{ ...process.env, … }` is the right default for four engines and a
+         * silent defect for the fifth once Agent Farm owns the route: an
+         * `ANTHROPIC_BASE_URL` in the user's shell answers the same question the
+         * chosen profile answers, and the child obeys the inherited one for
+         * everything the profile did not name. Two routes in one session — and
+         * the transcript does not record which served it (measured, X-98), so
+         * nothing would ever say so.
+         *
+         * Built ONCE and used by both spawn shapes below: written out twice,
+         * the second is where somebody forgets, and a run that quietly kept the
+         * inherited route looks exactly like one that did not.
+         */
+        const spawnEnv = spawnEnvironment(
+            process.env,
+            [engineEnv, this.opts.getEnv?.(agent.id)],
+            this.opts.engineRuntime?.(agent.id, engine.id)
+        );
         const child = argv
             ? cp.spawn(engine.exe, argv, {
                 cwd: task.workDir ?? agent.dir,
                 shell: false,
                 windowsHide: true,
                 stdio: ['ignore', 'pipe', 'pipe'],
-                env: { ...process.env, ...engineEnv, ...this.opts.getEnv?.(agent.id) }
+                env: spawnEnv
             })
             : cp.spawn(command, {
                 cwd: task.workDir ?? agent.dir,
@@ -3201,7 +3237,7 @@ export class TaskManager implements vscode.Disposable {
                 // pipe, and it is closed immediately after (measured: the CLI waits
                 // for EOF, and an open pipe is a run that never starts).
                 stdio: [pipePrompt ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-                env: { ...process.env, ...engineEnv, ...this.opts.getEnv?.(agent.id) }
+                env: spawnEnv
             });
         if (pipePrompt) {
             try {

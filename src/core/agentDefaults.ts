@@ -38,6 +38,22 @@ export interface AgentEngineDefault {
     /** '' / absent = nothing chosen at this level */
     model?: string;
     effort?: string;
+    /**
+     * X-101 — WHICH ROUTE this agent runs the engine on: the id of a stored
+     * provider profile (`agentFarm.providerProfiles`), Claude only for now.
+     *
+     * ‼️ A DIFFERENT KIND OF ANSWER FROM THE TWO ABOVE, and that is why it is
+     * read by its own function rather than through `storedDefault`. A model and
+     * an effort are command-line flags; a route is an environment isolation with
+     * a credential behind it. Kept in the same record because it is the same
+     * question — "how does this agent run this engine" — and a second store
+     * keyed the same way would be a second thing to migrate and a second thing
+     * to forget.
+     */
+    providerId?: string;
+    /** Which tier of that route (`opus`, `sonnet`, …). The route decides what
+     *  model each tier means, which is why this is not `model`. */
+    tier?: string;
 }
 
 /** `<normalised agent dir>` → engine id → the choice. */
@@ -80,6 +96,24 @@ export function storedDefault(
     const row = store?.[agentKey(dir)];
     const one = row?.[engine];
     return { model: (one?.model ?? '').trim(), effort: (one?.effort ?? '').trim() };
+}
+
+/**
+ * X-101 — the ROUTE one agent runs one engine on, read out of the same store.
+ *
+ * ‼️ SEPARATE FROM `storedDefault` DELIBERATELY. That one answers "what do I put
+ * on the command line"; this one answers "which endpoint and whose key". A
+ * single reader returning both would put a credential's identity into every
+ * caller that only wanted a model name, and the first one to spread the record
+ * onward would carry the route with it into somewhere it does not belong.
+ *
+ * Never undefined, so a caller never has to decide what an absent record means.
+ */
+export function storedRoute(
+    store: AgentEngineDefaults | undefined, dir: string, engine: EngineId
+): { providerId: string; tier: string } {
+    const one = store?.[agentKey(dir)]?.[engine];
+    return { providerId: (one?.providerId ?? '').trim(), tier: (one?.tier ?? '').trim() };
 }
 
 /**

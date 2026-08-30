@@ -87,7 +87,7 @@ import { buildFarmStatus } from './core/farmstatus';
 import { PlanUsageService, refreshMs } from './core/planusage';
 import { EngineUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
 import {
-    AgentEngineDefaults, resolveDefault, storedDefault, withAgentDefault
+    AgentEngineDefaults, resolveDefault, storedDefault, storedRoute, withAgentDefault
 } from './core/agentDefaults';
 import {
     CC_CATALOG, coerceClaudeValue, patchClaudeSettings, readPath, validateRawClaudeSettings
@@ -141,6 +141,7 @@ import {
     normSuperpowers, superpowersWord, twoExecutors, validateLaunch, withDefaults, withLastLaunch
 } from './core/launch';
 import { bumpRevision, ownershipTable, secretKeyFor } from './core/providerOwnership';
+import { adapterFor, resolveRuntime } from './core/providerRegistry';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
     StoredProviderProfile
@@ -2934,6 +2935,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             queueWorkCount: () => workQueueStore.list({ limit: 0 })
                 .filter(i => i.status === 'captured' || i.status === 'grouped' || i.status === 'blocked').length,
             getEnv: (agentId) => vault.env(agentId),
+            /**
+             * ‼️ X-101 — THE ONE PLACE A LAUNCH'S ROUTE IS RESOLVED, and the
+             * reason the runner is handed an answer instead of the ingredients.
+             *
+             * The profiles are a setting, the credential is in the OS keychain
+             * and the environment to isolate against is this process's own.
+             * `core/tasks.ts` can reach none of those, and a version of it that
+             * could would be a second implementation of the resolution rules
+             * living in a file nobody thinks of as provider logic — which is the
+             * exact shape of the defect X-98 measured. So the extension, which
+             * owns all three, asks `resolveRuntime` and passes the result.
+             *
+             * ‼️ NOTHING CHOSEN RETURNS `undefined`, and that is load-bearing:
+             * four of the five engines have no provider axis at all and one has
+             * one nobody has used yet, and every one of those runs must keep the
+             * environment it has always had, byte for byte.
+             */
+            engineRuntime: (agentId, engine) => {
+                const agent = agents.find(a => a.id === agentId);
+                if (!agent) { return undefined; }
+                const chosen = storedRoute(
+                    cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+                    agent.dir, engine as EngineId);
+                if (!chosen.providerId) { return undefined; }
+                const rt = resolveRuntime(engine, {
+                    engine, providerId: chosen.providerId, ...(chosen.tier ? { tier: chosen.tier } : {})
+                }, {
+                    profiles: providerProfiles(),
+                    // ‼️ Asked one id at a time, so exactly one credential is in
+                    // memory here and only when a spawn actually needs it.
+                    secretFor: (id) => vault.get(secretKeyFor(id)),
+                    inheritedEnv: process.env
+                });
+                return {
+                    ...(rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
+                    ...(rt.clearEnv ? { clearEnv: rt.clearEnv } : {})
+                };
+            },
             resolveTemplate: (s) => vault.substitute(s),
             forward: postForward,
             // J5: alternative CLI executors (gemini / codex / …).
@@ -29242,6 +29281,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await clearProviderSecret(id);
                 EnginesPanel.refreshIfOpen();
                 return { removed: id, credentialCollected: hadSecret };
+            }
+        },
+        {
+            op: 'providers.runtime',
+            describe: 'X-101 — WHAT A LAUNCH OF THIS AGENT ON THIS ENGINE WOULD ACTUALLY RUN ON. '
+                + 'Returns the route chosen for it (agentEngineDefaults[<agent>][<engine>].providerId '
+                + 'and .tier), the redacted identity that would be written to the launch manifest, the '
+                + 'inherited environment names that would be CLEARED so the route cannot be answered '
+                + 'twice, the names that would be injected, any command-line arguments the choice '
+                + 'implies, and what preflight refuses before anything is spawned. ‼️ NAMES, NEVER '
+                + 'VALUES — no credential is returned and none is taken; what stands behind '
+                + 'ANTHROPIC_API_KEY and its family goes to the child process and nowhere else, the '
+                + 'same boundary X-100 draws with hasSecret. ‼️ AND AN EMPTY ANSWER IS AN ANSWER: with '
+                + 'no route chosen nothing is cleared and nothing is injected, which is the permanent '
+                + 'state of the four engines that have no provider axis. Reads only — nothing is '
+                + 'started and nothing is written. args: agent (name|id), engine? (default claude)',
+            handler: async (args) => {
+                const agent = findAgent(optStr(args, 'agent'));
+                const engine = optStr(args, 'engine') || 'claude';
+                const chosen = storedRoute(
+                    cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+                    agent.dir, engine as EngineId);
+                const rdeps = {
+                    profiles: providerProfiles(),
+                    secretFor: (id: string) => vault.get(secretKeyFor(id)),
+                    inheritedEnv: process.env
+                };
+                const sel = {
+                    engine, providerId: chosen.providerId,
+                    ...(chosen.tier ? { tier: chosen.tier } : {})
+                };
+                const adapter = adapterFor(engine, rdeps);
+                const rt = adapter.resolveRuntime(sel);
+                return {
+                    agent: agent.name,
+                    engine,
+                    axis: adapter.axis,
+                    providerScope: adapter.providerScope,
+                    chosen,
+                    identity: rt.identity,
+                    args: rt.args,
+                    clearEnv: rt.clearEnv ?? [],
+                    // ‼️ THE NAMES OF WHAT WOULD BE SET, NOT WHAT IT WOULD BE SET
+                    // TO. `Object.keys` rather than the object is the whole
+                    // boundary: a reader can confirm the isolation happened
+                    // without the key ever reaching a bridge response, a log or
+                    // whatever wrote the answer to a file.
+                    injects: Object.keys(rt.spawnEnv ?? {}),
+                    preflight: adapter.preflight(sel)
+                };
             }
         },
         {

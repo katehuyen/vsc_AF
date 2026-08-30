@@ -2,6 +2,87 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.347.0 - X-101: one entrance, and a route a run cannot be lied to about (2026-08-30)
+
+X-98 wrote the adapter contract, X-99 the catalogs, X-100 the ownership and the
+vault boundary. **None of them ran.** `readClaudeRouteCatalog` and
+`readOpenCodeCatalog` were called from nowhere — measured with grep — and the
+adapter interface had no implementations at all. This release is where the four
+become one call: `resolveRuntime(engine, selection)` in
+`core/providerRegistry.ts`, with the two real adapters behind it.
+
+**‼️ The environment names were MEASURED, not remembered.** Read out of the real
+`claude` binary on this machine, a 217 MB bundle:
+
+    grep -ao 'ANTHROPIC_[A-Z0-9_]*' claude | sort -u    ->  75 names
+    grep -ao 'CLAUDE_[A-Z0-9_]*'    claude | sort -u    -> ~200 names
+
+The documentation lists a fraction of them. A list written from the docs would
+have missed `ANTHROPIC_PROFILE`, `ANTHROPIC_CONFIG_DIR`,
+`ANTHROPIC_CUSTOM_HEADERS`, `ANTHROPIC_UNIX_SOCKET`, the Bedrock / Vertex /
+Foundry / Mantle families, `CLAUDE_CODE_HTTP_PROXY` and
+`CLAUDE_CODE_CLIENT_CERT` — every one of which moves the route somewhere else.
+
+**‼️ And the two families get different treatment, which is the measurement
+worth writing down.** All 75 `ANTHROPIC_*` names are route, credential,
+model-mapping, alternate-backbone or organisation identity: there is not one a
+run legitimately keeps while being told to use a different route. So that family
+is a PREFIX rule, and a name shipped next year is covered before anybody hears
+about it. The `CLAUDE_*` family is not like that at all — it holds the alternate
+backbones and the plan credential AND the working context Agent Farm itself
+depends on (`CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`,
+`CLAUDE_CODE_ENTRYPOINT`). Clearing that family wholesale would break the user's
+own hooks in the name of isolating a route they never changed, so there it is
+what a name MEANS that decides.
+
+**‼️ Nothing chosen means nothing touched.** A user who has never opened this
+feature is running on their own shell's setup deliberately, and sanitising it
+because Agent Farm now *could* would break a working machine to enforce a choice
+nobody made. The moment a route IS chosen the inherited ones all go — including
+when the choice is Anthropic's own endpoint, because an inherited
+`ANTHROPIC_BASE_URL` would otherwise send that run to a third party while the
+manifest recorded first-party. That is the exact lie measured in August.
+
+**The two engines are opposite in the place that matters.** On Claude the route
+is Agent Farm's: injected as environment, fixed for the session, and a resume
+across a route change FORKS rather than pretending — measured in August, that
+resume mixed two routes' models into a single transcript. On OpenCode the
+provider is the ENGINE's: the choice travels as `-m provider/model`, it may
+change at a turn boundary because the engine documents that, and Agent Farm
+contributes no environment and clears none. A second copy of that credential
+here would be a second vault, a second revision, and two truths that eventually
+disagree.
+
+Also:
+
+- The provider is asked of the CATALOG, never taken off the front of a model
+  name. `opencode/big-pickle` looks like it carries its own provider, and
+  splitting on the slash would be right most of the time — which is exactly what
+  makes it the wrong rule: a guess that happens to agree goes on agreeing
+  confidently after the day it stops being true. With nothing read yet the
+  answer is `unknown`, which this system is required to be able to give.
+- The profiles ARE the catalog's user routes. Left apart they would be two lists
+  of one thing with two revisions — the "two vaults" mistake one level up — so
+  there is no second `agentFarm.claudeRoutes` setting.
+- A Claude row in `agentFarm.agentEngineDefaults` may now carry `providerId` and
+  `tier`, read by its own function rather than through `storedDefault`: a model
+  and an effort are command-line flags, a route is an environment isolation with
+  a credential behind it.
+- New bridge op `providers.runtime` — what a launch of this agent on this engine
+  would actually run on. ‼️ NAMES, NEVER VALUES: it reports which variables
+  would be cleared and which would be injected, and no credential is returned or
+  taken.
+- A third-party route with no stored key is refused BEFORE the spawn, where
+  somebody is looking, rather than reaching a stranger's endpoint
+  unauthenticated and then reporting an auth error about the wrong thing.
+
+Test: 251 files, 16695 assertions, 0 failures. Eight sabotages were planted and
+all eight were caught by name — including the two that matter most: a spawn site
+quietly returning to `{ ...process.env }`, and a credential reaching the public
+identity. X-100 shipped a correct core that nothing called, so this suite reads
+the real source and fails the build if the registry goes back to being a library
+nobody invokes.
+
 ## 3.346.0 - U-84: the Telegram bridge, on a card that cannot lie about it (2026-08-30)
 
 The bridge that lets a chat talk to your agents has been in the extension for a
