@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.354.0 - M-33: the caret stops getting thrown out of the box (2026-08-31)
+
+"I start typing, I press space, and it is as if I pressed Page Down — the caret
+leaves the box and the page scrolls. Not every time. Mostly right at the start.
+And it is not only there: when another agent is running I cannot even pick from
+a dropdown, it shuts as I press."
+
+Space did nothing. Focus had already gone. When something changes elsewhere in
+the farm the extension pushes fresh data at every open page, and a page answers
+by redrawing itself completely — which detaches the box you were typing in, and
+a detached box cannot hold the caret. The browser hands focus back to the page
+body, and on the body space IS Page Down.
+
+Every detail of the report follows from that one line. It is intermittent
+because it depends on a push landing while you type; it bites when another agent
+is running because that is what produces the pushes; it bites hardest right
+after opening a page because that is when the first ones arrive; and it never
+happened on the Backlog page because nothing pushes at it.
+
+The rule against it had already been written — for the Tasks page's own
+30-second refresh, with the comment "never re-render under the user's fingers".
+The push simply did not go through it.
+
+Now there is one guard, and it ships to every page rather than being something a
+page has to remember. It knows three things the old check did not:
+
+- **It defers rather than skips.** The timer's answer was to not repaint at all,
+  which trades a stolen caret for a screen that never catches up on its own. A
+  held-back repaint is owed, and it is paid the moment your hands are free.
+- **Tabbing between two fields is not "hands free".** The browser announces the
+  caret leaving the first box before it has landed in the second; answered on
+  the spot, the page would repaint mid-journey.
+- **A repaint YOU asked for still happens at once** — a tab pressed, a filter
+  typed — because the field you are in is the thing that asked. Only the pushes
+  that arrive from elsewhere wait.
+
+A dropdown counts as hands-on for the same reason a text box does, which is the
+other half of the report.
+
+Wired on the Tasks page, where it was reported. The other pages have the
+component and are the next sweep.
+
+259 files · 17 121 checks · 0 failures.
+
 ## 3.353.0 - X-102: what a run was asked to be, beside what actually answered (2026-08-31)
 
 Agent Farm has always recorded which MODEL a session ran. It recorded nothing
