@@ -126,6 +126,7 @@ import {
 } from './core/report';
 import { buildForecast, renderForecastMarkdown } from './core/forecast';
 import { LaunchBinding } from './core/launchBinding';
+import { resolveAgentArg } from './core/agentArg';
 import { mergeConsoleIds, readConsoleIds, recordConsoleIds } from './core/consoleRegistry';
 import { sendToTerminalWhenReady } from './core/shellReady';
 import {
@@ -3523,14 +3524,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const toolboxTree = new ToolboxTreeProvider({ inventory: toolboxInventory });
     const toolboxProbeCacheFile = path.join(context.globalStorageUri.fsPath, 'toolbox-mcp-cache.json');
 
+    /**
+     * ‼️ S-48 — THE AGENTS VIEW IS CREATED, NOT MERELY FED.
+     *
+     * A `TreeDataProvider` registration draws rows and answers nothing about
+     * them; a `TreeView` also says which row the view is standing on. That is
+     * the one fact that survives when VS Code hands a row's own command no
+     * argument at all — see `agentsViewRow` and `withAgentsRow` below. Nothing
+     * else changes: the same provider draws the same tree.
+     */
+    const agentsView = vscode.window.createTreeView('agentfarm.agents', {
+        treeDataProvider: agentsTree
+    });
     context.subscriptions.push(
-        vscode.window.registerTreeDataProvider('agentfarm.agents', agentsTree),
+        agentsView,
         vscode.window.registerTreeDataProvider('agentfarm.sessions', sessionsTree),
         vscode.window.registerTreeDataProvider('agentfarm.insights', insightsTree),
         vscode.window.registerTreeDataProvider('agentfarm.feed', feedTree),
         vscode.window.registerTreeDataProvider('agentfarm.tasks', tasksTree),
         vscode.window.registerTreeDataProvider('agentfarm.toolbox', toolboxTree)
     );
+
+    /**
+     * ‼️ S-48 — THE AGENTS TREE IS REDRAWN ON A TIMER, NOT ONCE PER EVENT.
+     *
+     * `live` fires once per hook — a tool call, a turn boundary, a permission
+     * question — and with four engines and several sessions running that is a
+     * steady stream. Every one of them asked VS Code to rebuild every row in
+     * the view, INCLUDING the inline action bar the pointer is resting on. A ▶
+     * pressed while its own row is being replaced is delivered to an action
+     * that no longer has a row behind it: the command arrives with NO argument,
+     * and a start the person aimed at one agent falls through to "Select an
+     * agent" — where picking a different name really does start a different
+     * agent. It was intermittent because it is a race, and it started biting
+     * when the engine work multiplied the events.
+     *
+     * One redraw per 250 ms at most: far below the eye's threshold for a status
+     * column, far above the width of a click. The first event schedules; the
+     * ones behind it are absorbed, so a burst costs one redraw rather than
+     * being starved by a timer that keeps resetting.
+     */
+    let agentsTreePulse: NodeJS.Timeout | undefined;
+    const refreshAgentsTree = () => {
+        if (agentsTreePulse) { return; }
+        agentsTreePulse = setTimeout(() => {
+            agentsTreePulse = undefined;
+            agentsTree.refresh();
+        }, 250);
+    };
+    context.subscriptions.push({
+        dispose: () => { if (agentsTreePulse) { clearTimeout(agentsTreePulse); } }
+    });
+
+    /**
+     * The agent row the Agents view is standing on, when it is standing on
+     * exactly one. `undefined` for anything else — a section row, a session
+     * row, several rows, a hidden view — because "roughly an agent" is the
+     * answer this whole path exists to refuse.
+     */
+    const agentsViewRow = (): AgentInfo | undefined => {
+        if (!agentsView.visible) { return undefined; }
+        const rows = agentsView.selection.filter(n => n.kind === 'agent');
+        return rows.length === 1 ? (rows[0] as { agent: AgentInfo }).agent : undefined;
+    };
 
     const refreshAll = () => {
         refreshAgents();
@@ -3596,7 +3652,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     index.onDidUpdate(() => {
         insights = applyInsightDismiss(buildInsights(agents, index, healthConfig()));
         postFarmNews();
-        agentsTree.refresh();
+        refreshAgentsTree();
         sessionsTree.refresh();
         insightsTree.refresh();
         feedTree.refresh();
@@ -4311,7 +4367,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     live.onDidUpdate(() => {
-        agentsTree.refresh();
+        refreshAgentsTree();
         feedTree.refresh();
         needsEmitter.fire();
     }, null, context.subscriptions);
@@ -17290,20 +17346,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
     }, null, context.subscriptions);
 
+    /**
+     * ‼️ S-48 — THE ARGUMENT NAMES AN AGENT; THE FLEET ANSWERS (core/agentArg).
+     *
+     * A tree row used to be believed on sight: `arg.agent` was handed straight
+     * back, and it is a SNAPSHOT of the fleet as of the last time that row was
+     * drawn. An agent renamed, moved or removed since then started a session in
+     * a folder that is not there any more, in silence. The keys are read from
+     * whatever shape the caller published; the answer comes from `agents`.
+     *
+     * A caller that named somebody the fleet does not have is REFUSED BY NAME.
+     * It is not "nobody said anything" — falling through to the picker there
+     * would turn a stale row into a menu, and the person's next keystroke into
+     * a different agent's session.
+     */
     const resolveAgent = async (arg: AgentArg): Promise<AgentInfo | undefined> => {
-        if (arg?.agent) { return arg.agent; }
-        const id = arg?.agentId;
-        if (id) { return agents.find(a => a.id === id); }
-        const name = arg?.agentName;
-        if (name) {
-            const byName = agents.find(a => a.name === name);
-            if (byName) { return byName; }
+        const named = resolveAgentArg(arg, agents);
+        if (named.agent) { return named.agent; }
+        if (named.stale) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: "${named.stale}" is not in the fleet any more — the row this was started `
+                + 'from is out of date. Refresh the Agents view and try again.');
+            return undefined;
         }
         const pick = await vscode.window.showQuickPick(
             agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
             { placeHolder: 'Select an agent', ignoreFocusOut: true }
         );
         return pick?.agent;
+    };
+
+    /**
+     * ‼️ S-48 — AND WHEN VS CODE HANDS THE ROW'S OWN COMMAND NOTHING AT ALL.
+     *
+     * Inline tree actions cannot carry arguments of their own: the element IS
+     * the argument, and a redraw landing under the press takes it away (see
+     * `refreshAgentsTree`, which is the reason it stopped happening). This is
+     * the second layer, for the press that still loses it — the view is asked
+     * which agent row it is standing on, and only that: one row, an agent row,
+     * a visible view. Anything less falls through to the picker exactly as
+     * before.
+     *
+     * It is not a silent substitution: every door that uses this asks the
+     * surface question next, and that dialog is titled with the agent's name,
+     * so what was recovered is read out before anything is started.
+     */
+    const withAgentsRow = (arg: AgentArg): AgentArg => {
+        if (arg?.agent || arg?.agentId || arg?.agentName) { return arg; }
+        const row = agentsViewRow();
+        return row ? { agent: row } : arg;
     };
 
     /**
@@ -26734,7 +26825,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // into every terminal. Empty defaults = the bare `claude` of before.
         vscode.commands.registerCommand('agentfarm.startSession',
             async (arg: AgentArg & { surface?: RunSurface }) => {
-                const agent = await resolveAgent(arg);
+                // ‼️ S-48 — ▶ IS PRESSED ON A ROW, AND THAT ROW IS THE ANSWER.
+                // This is the one door reached by an inline tree action, so it
+                // is the one that asks the view when the action arrived empty.
+                const agent = await resolveAgent(withAgentsRow(arg));
                 if (!agent) { return; }
                 /**
                  * ‼️ S-34 — ▶ IS THE DOOR THAT REMEMBERED NOTHING, AND IT IS THE

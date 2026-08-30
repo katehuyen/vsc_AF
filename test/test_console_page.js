@@ -609,14 +609,16 @@ const html = allHtml;
         && /value="claude" selected/.test(allHtml())
         && /value="sonnet" selected/.test(allHtml()));
 
-    // ---- ‼️ S-34 — AND THE ONE DOOR THE HOST NEVER HEARS ABOUT ----
+    // ---- ‼️ S-49 — AND THE PICKER IS NOT ONE OF THOSE DOORS ----
     //
-    // Every host-side door now hands this composer the setup its agent last ran
-    // as. The AGENT PICKER is not one of them: it changes page-side and
-    // repaints, so choosing another agent here left the model, the effort and
-    // the permission mode describing the PREVIOUS one — the same defect X-133
-    // fixed for the Superpowers chip, one row along. The record therefore rides
-    // on the agent row, and the picker resolves it the same way.
+    // A door decides what this composer OPENS on. The agent picker is not a
+    // door: it stands in front of boxes that are already drawn and already
+    // answered. It used to reseed the model, the effort and the permission mode
+    // from the newly chosen agent's record, so a setup typed by hand was thrown
+    // away by the LAST decision of a launch — choosing who runs it. An agent
+    // change repaints, and that is the whole of it: the Superpowers chip
+    // resolves an untouched choice against the agent the picker is showing, so
+    // it follows the new agent without a value being written anywhere.
     const twoAgents = Object.assign({}, again, {
         composerSeed: 3,
         agents: [
@@ -634,34 +636,31 @@ const html = allHtml;
     posted.length = 0;
     els['c-agent'].value = 'ops';
     els['c-agent'].listeners.change({ target: els['c-agent'] });
-    ok('‼️ choosing another agent reseeds the launch boxes from ITS record',
-        state.afConsole.model === 'gpt-5.6-terra'
-        && state.afConsole.effort === 'high'
-        && state.afConsole.permissionMode === 'acceptEdits');
-    // The engine and the discipline live host-side, so they are asked for
-    // rather than written here — a second path would let the box and the spawn
-    // disagree about which CLI was chosen.
-    ok('…the engine through the host, which owns it',
-        posted.some(m => m.type === 'setEngine' && m.id === 'codex'));
-    ok('…and the discipline the same way, as a real ON rather than a cleared box',
-        posted.some(m => m.type === 'setSuperpowers' && m.on === true));
+    ok('‼️ choosing another agent changes the agent, and only the agent',
+        state.afConsole.agentId === 'ops');
+    ok('‼️ …the launch boxes are left exactly as the hand that set them left them',
+        state.afConsole.model === 'sonnet' && state.afConsole.effort === 'high'
+        && state.afConsole.permissionMode === 'default');
+    // The engine and the discipline live host-side, and nothing is asked of it
+    // either: a picker that moved the engine under the boxes would leave a
+    // model belonging to a different program sitting in front of the user.
+    ok('…the engine is not moved under them',
+        !posted.some(m => m.type === 'setEngine'));
+    ok('…nor the discipline, which the repaint answers on its own',
+        !posted.some(m => m.type === 'setSuperpowers'));
 
-    // …and back to an agent that has never been started: the fleet defaults,
-    // not the last agent's setup. `null` is a real answer.
-    //
-    // The host's side of the exchange, played out: it took the `setSuperpowers`
-    // above and repainted with the switch ON. Without this the page would be
-    // asked to change something it already believes, and the guard that keeps
-    // this from costing a repaint per keystroke would (correctly) say nothing.
+    // …and back again, with the host believing the switch is ON. The rule holds
+    // in the other direction too: an agent that has never been started does not
+    // drag the boxes down to the fleet defaults.
     push(Object.assign({}, twoAgents, { composerSeed: 3, superpowersChoice: 'on' }));
     posted.length = 0;
     els['c-agent'].value = 'dev';
     els['c-agent'].listeners.change({ target: els['c-agent'] });
-    ok('‼️ an agent with no record falls through to the defaults, not to the last agent',
+    ok('‼️ an agent with no record does not empty the boxes either',
         state.afConsole.model === 'sonnet' && state.afConsole.effort === 'high'
         && state.afConsole.permissionMode === 'default');
-    ok('…and the discipline question is handed back to that agent\'s own default',
-        posted.some(m => m.type === 'setSuperpowers' && m.on === null));
+    ok('…and the chip is left to the repaint, never to a message',
+        !posted.some(m => m.type === 'setSuperpowers'));
 }
 
 // ---------- whose turn is it ----------

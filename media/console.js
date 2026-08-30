@@ -2880,22 +2880,27 @@
     }
 
     /**
-     * ‼️ S-34 — CHANGING THE AGENT IN THE PICKER IS A FRESH LAUNCH DECISION,
-     * AND THE BOXES HAVE TO FOLLOW IT.
+     * ‼️ S-49 — A DOOR SEEDS THE COMPOSER. THE COMPOSER ITSELF NEVER RESEEDS
+     * ITSELF.
      *
-     * Every host-side door now opens this composer on what its agent last ran
-     * as (ConsolePanel.show → composerLaunch). The picker is the one door the
-     * host never hears about: `c-agent` changes page-side and repaints, so an
-     * agent chosen here kept the PREVIOUS agent's model, effort and permission
-     * mode — the same defect X-133 fixed for the Superpowers chip on the same
-     * control, one row along.
+     * Where the launch boxes OPEN on is a question about arriving here, and it
+     * is answered once, host-side, by whichever door opened the panel
+     * (`ConsolePanel.show` → `composerLaunch`, applied by `applyComposerSeed`).
+     * Once they are drawn they are the user's own controls, and the only thing
+     * that writes them is a hand on them.
      *
-     * The record rides on the agent row (`agents[].lastLaunch`) rather than as
-     * a map beside it, for the reason the discipline default does: the page
-     * resolves both against whichever agent the picker is showing, and a second
-     * list keyed by id would have to be kept in step for no gain. `null` there
-     * is "never started" and falls through to the fleet defaults — a different
-     * answer from a record that says nothing.
+     * The picker used to reseed model, effort and permission mode from the
+     * newly chosen agent's record — the same rule as the doors, applied one
+     * step too late. Set a model, set an effort, set a permission mode, then
+     * change your mind about WHO runs it, and the three answers you had just
+     * typed were replaced by a stranger's. A person standing at a control is
+     * not asking to be helped; they are already deciding.
+     *
+     * The repaint stays, and is the whole of what an agent change does here:
+     * the Superpowers chip resolves `''` (nobody has touched it) against the
+     * agent the picker is showing, so it follows the new agent's own default
+     * without anything being written — while a chip the user HAS pressed keeps
+     * their answer, for exactly the same reason the boxes do (X-133).
      */
     /**
      * ‼️ X-145 — ONE AGENT'S RECORD, READ FOR ONE ENGINE.
@@ -2918,44 +2923,6 @@
         return null;
     }
 
-    function seedFromAgent(agentId) {
-        const a = (DATA.agents || []).find(x => x.id === agentId);
-        const rec = (a && a.lastLaunch) || null;
-        const d = DATA.defaults || {};
-        // The engine this record lands on is decided below; the values have to
-        // be that engine's, or the boxes describe a setup that never ran.
-        const last = memoryOn(rec, (rec && rec.engine) || engineNow());
-        st.model = (last && last.model) || d.model || '';
-        st.effort = (last && last.effort) || d.effort || '';
-        st.permissionMode = (last && last.permissionMode) || d.permissionMode || '';
-        // The engine is the host's answer, not a page value: `setEngine` is how
-        // it is changed anywhere else in this panel, and a second path would let
-        // the box and the spawn disagree about which CLI was chosen.
-        // ‼️ …off the RECORD, not off `last`: a per-engine row holds the three
-        // values and nothing else, so asking it which engine it is would return
-        // undefined and silently move the composer to whatever is showing.
-        const eng = (rec && rec.engine) || '';
-        const nextEngine = eng || engineNow();
-        // S-34 - the record IS a launch that happened, on the engine it names,
-        // so its model and effort survive the catalog check for that engine. A
-        // record with no engine belongs to the box that is showing, which is the
-        // same statement. This is what stopped the picker from dropping an agent
-        // that runs on an alias the catalog does not list.
-        reconcileComposer(nextEngine, false,
-            last ? { model: last.model || '', effort: last.effort || '' } : null);
-        if (eng && eng !== engineNow()) { vscode.postMessage({ type: 'setEngine', id: eng }); }
-        // …and the discipline switch, which also lives host-side. '' means "this
-        // agent's own default", which is exactly what a never-started agent
-        // should land on. Only posted when it would actually change something —
-        // every message here costs a repaint. It is the AGENT's answer and not
-        // an engine's, so it is read off the record rather than a per-engine row.
-        const want = rec && typeof rec.superpowers === 'boolean'
-            ? (rec.superpowers ? 'on' : 'off') : '';
-        if (want !== (DATA.superpowersChoice || '')) {
-            vscode.postMessage({ type: 'setSuperpowers', on: want === '' ? null : want === 'on' });
-        }
-        save();
-    }
     /**
      * ‼️ U-59 — THE FLAG IN THE PARENTHESIS IS THE ENGINE'S OWN, OR THERE IS NO
      * PARENTHESIS.
@@ -3350,11 +3317,11 @@
             // agent's own default until the user presses it, so an agent chosen
             // after the strip was drawn left the strip describing the previous
             // one — a switch reading "on" for an agent that starts plain.
-            // ‼️ S-34 — …and the launch boxes are reseeded from the new agent's
-            // own record for the same reason (see seedFromAgent).
+            // ‼️ S-49 — …AND THE REPAINT IS ALL OF IT. The picker does not touch
+            // the model, the effort or the permission mode: those are on screen
+            // and they are the user's (see the S-49 note above memoryOn).
             byId('c-agent', 'change', e => {
                 st.agentId = e.target.value;
-                seedFromAgent(st.agentId);
                 save();
                 paint();
             });

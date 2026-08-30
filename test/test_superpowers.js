@@ -247,12 +247,16 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
         /pchip sw fixed/.test(page) && /written once, at spawn/.test(page));
     ok('‼️ pressing it back onto the agent\'s own answer CLEARS the choice',
         /on: next === sp\.def \? null : next/.test(page));
-    // ‼️ S-34 — the same handler now reseeds the launch boxes from the agent
-    // being chosen, so the repaint and the seeding are one gesture: the chip
-    // and the model/effort/permission row can never end up describing two
-    // different agents.
+    // ‼️ S-49 — the handler REPAINTS and does nothing else. That is enough for
+    // the chip, and it is the whole point: `choice === ''` is resolved against
+    // the agent the picker is showing, so an untouched chip follows the new
+    // agent's own default without a value being written anywhere — while a chip
+    // the user has pressed keeps their answer, exactly as the model, effort and
+    // permission boxes beside it now do.
     ok('…and the agent picker repaints, or the strip describes the previous agent',
-        /byId\('c-agent', 'change', e => \{\s*\n\s*st\.agentId = e\.target\.value;\s*\n\s*seedFromAgent\(st\.agentId\);\s*\n\s*save\(\);\s*\n\s*paint\(\);\s*\n\s*\}\)/.test(page));
+        /byId\('c-agent', 'change', e => \{\s*\n\s*st\.agentId = e\.target\.value;\s*\n\s*save\(\);\s*\n\s*paint\(\);\s*\n\s*\}\)/.test(page));
+    ok('‼️ S-49 — …and repaints WITHOUT reseeding the launch boxes under the user',
+        !/seedFromAgent/.test(page));
     ok('the answer the page resolves is what start carries',
         /superpowers: superpowersState\(\)\.on,/.test(page));
 

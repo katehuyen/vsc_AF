@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.352.0 - S-49 + S-48: the composer stops arguing with the hand on it, and the row you pressed is the agent you get (2026-08-31)
+
+Two halves of the same complaint — the agent · engine · model · effort ·
+permission matrix, where fixing one dimension has kept breaking another.
+
+**S-49 — a DOOR seeds the composer; the composer never reseeds itself.** Set a
+model, set an effort, set a permission mode in the Console composer, then change
+your mind about WHO runs it — and all three answers were replaced by the newly
+chosen agent's last-launch record. That rule (S-34) is right for a door that
+OPENS the panel and wrong for a box the person is standing in: the last decision
+of a launch was silently undoing the first three. The agent picker now REPAINTS
+and does nothing else. Where the boxes open from is still decided once,
+host-side, by the door that opened the panel (`ConsolePanel.show` →
+`composerLaunch`); once they are drawn, the only thing that writes them is a
+hand on them. The Superpowers chip follows the new agent exactly as before,
+because an untouched choice is resolved against the agent the picker is showing
+rather than written anywhere — and a chip the user HAS pressed now keeps their
+answer for the same reason the boxes do.
+
+**S-48 — the row you pressed is the agent you get.** Pressing the play triangle
+on an agent row sometimes asked "Select an agent" anyway, and picking a
+different name there really did start a different agent, so aiming at the row
+meant nothing. It was a RACE, and it began when the engine work multiplied the
+live events: `live` fires once per hook, every one of them rebuilt every row in
+the Agents view including the inline action bar under the pointer, and a press
+landing inside that rebuild reaches an action with no row behind it — so the
+command arrives with no argument at all.
+
+- **The cure:** the Agents tree is redrawn at most once per 250 ms instead of
+  once per event. Below the eye's threshold for a status column, far above the
+  width of a click — and cheaper on an old machine besides.
+- **The belt:** the Agents view is now a real `TreeView`, so play can ask which
+  row it is standing on before it asks the person. One row, an agent row, a
+  visible view — anything less still falls through to the picker. It is not a
+  silent substitution: the surface dialog that follows is titled with the
+  agent's name.
+- **And the argument NAMES an agent; the fleet ANSWERS** (`core/agentArg.ts`).
+  A tree row's own `AgentInfo` is a snapshot of the fleet as of the last redraw,
+  and it used to be believed on sight — an agent renamed or moved since then
+  started a session in a folder that is not there any more. A caller naming
+  somebody the fleet no longer has is now refused BY NAME instead of being
+  turned into a menu, and a name two agents answer to is refused rather than
+  resolved to whichever came first.
+
+The other doors on that menu — Start Session…, Continue Latest, Start Session
+With…, Talk to Agent — were measured and deliberately left alone: they take what
+their caller published and ask when there is nothing, which is what the view's
+own title-bar button is supposed to do.
+
 ## 3.351.0 - U-84: the Telegram bridge card, on the page that is made of its settings (2026-08-30)
 
 U-84's first half put a live management card on the Toolbox. Its item asked for

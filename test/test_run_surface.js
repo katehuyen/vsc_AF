@@ -39,9 +39,12 @@ const base = read('src/panels/base.ts');
 // ---------- every start command asks (or is told) ----------
 {
     const body = cmd => {
-        // the handler runs from the command registration to the next one
+        // the handler runs from the command registration to the next one. The
+        // window is a character count rather than a parse, so it has to be wide
+        // enough for the prose these handlers carry — a comment added above the
+        // line being measured must not read as the line having been removed.
         const i = ext.indexOf(`registerCommand('agentfarm.${cmd}'`);
-        return i < 0 ? '' : ext.slice(i, i + 2200);
+        return i < 0 ? '' : ext.slice(i, i + 2800);
     };
     ok('agentfarm.startSession asks where it should run',
         /\? \{\s*\n\s*surface: arg\.surface, projectId: '',\s*\n\s*engine: [^\n]+\n\s*\}\s*\n\s*: await pickRunSurface\(/.test(body('startSession')));

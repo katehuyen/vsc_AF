@@ -497,12 +497,17 @@ const launchTs = read('src', 'core', 'launch.ts');
     // describe the PREVIOUS agent, which is the X-133 defect one row along.
     ok('the record rides on the agent row, for the picker to resolve',
         /lastLaunch: this\.deps\.lastLaunch\(a\.id\) \?\? null/.test(panelTs));
-    ok('…and changing the agent reseeds the boxes from it',
-        /function seedFromAgent\(agentId\) \{/.test(consoleJs)
-        && /st\.model = \(last && last\.model\) \|\| d\.model \|\| '';/.test(consoleJs));
-    ok('…engine and discipline through the host, which owns them',
-        /vscode\.postMessage\(\{ type: 'setEngine', id: eng \}\)/.test(consoleJs)
-        && /type: 'setSuperpowers', on: want === '' \? null : want === 'on'/.test(consoleJs));
+    // ‼️ S-49 — AND THE PICKER DOES NOT SPEND IT. A DOOR seeds this composer;
+    // the picker sitting in front of the boxes is not a door. Changing the
+    // agent after the model, the effort and the permission mode have been set
+    // by hand used to replace all three with a stranger's record — the last
+    // decision of a launch silently undoing the first three.
+    ok('…and changing the agent reseeds NOTHING: the boxes are the user\'s',
+        !/seedFromAgent/.test(consoleJs)
+        && /byId\('c-agent', 'change', e => \{\s*\n\s*st\.agentId = e\.target\.value;\s*\n\s*save\(\);\s*\n\s*paint\(\);\s*\n\s*\}\)/.test(consoleJs));
+    ok('…and the seeding that remains belongs to the door, host-side',
+        /composerLaunch: this\.composerLaunch \?\? null/.test(panelTs)
+        && /const seeded = DATA\.composerLaunch \|\| null;/.test(consoleJs));
 
     // ‼️ S-34 (reopened) — AND THE PANEL SCOPES THE RECORD BY THE ENGINE IT IS
     // ABOUT TO SHOW. This door reads `lastLaunch` directly instead of going
@@ -554,8 +559,11 @@ const launchTs = read('src', 'core', 'launch.ts');
         /const keepEffort = !preferModelDefault && !!st\.effort && kept\.effort === st\.effort;/.test(consoleJs));
     ok('a handed-over setup is kept',
         /reconcileComposer\(engineNow\(\), false,\s*\n\s*forThisEngine \?/.test(consoleJs));
-    ok('…and so is the agent picker\'s own record',
-        /reconcileComposer\(nextEngine, false,\s*\n\s*last \?/.test(consoleJs));
+    // ‼️ S-49 — the agent picker reconciles nothing, because it writes nothing.
+    // The ENGINE switch still does, and it is the one that has to: a model
+    // belongs to one engine, so moving between them is the case this exists for.
+    ok('…and so is the engine switch\'s own record',
+        /reconcileComposer\(next, false,\s*\n\s*mem \? \{ model: st\.model, effort: st\.effort \} : null\)/.test(consoleJs));
     // ‼️ AND THE BOX HAS TO DRAW WHAT SURVIVED, or the select shows its first
     // row while the state says something else — a control that lies.
     ok('the select carries the current value even when the catalog does not',

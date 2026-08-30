@@ -163,9 +163,9 @@ const data = () => ({
         // resolves the switch against whichever agent the picker is showing.
         {
             id: 'a-dev', name: 'developer', dir: 'D:\\zone\\agent\\ajanlar\\developer', superpowers: true,
-            // ‼️ S-34 — what this one was last started with. It rides on the
-            // agent row so the picker can resolve it without a round trip; see
-            // seedFromAgent in media/console.js.
+            // ‼️ X-145 — what this one was last started with. It rides on the
+            // agent row so the page can resolve it without a round trip: the
+            // engine switch reads it through memoryOn in media/console.js.
             lastLaunch: {
                 engine: 'claude', model: 'opus', effort: 'high',
                 permissionMode: 'plan', superpowers: true, surface: 'console'
