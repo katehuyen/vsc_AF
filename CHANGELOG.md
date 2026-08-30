@@ -2,6 +2,48 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.341.0 - X-98: who actually served this session, as one shape for every engine (2026-08-30)
+
+The first item of the X-97 family. Nothing on screen changes — this is the
+sentence the next twenty items are written against.
+
+Agent Farm starts sessions on five engines and records, for each, which MODEL
+ran. It records **no provider at all** — and the two engines that have a provider
+axis do not mean the same thing by the word. On **Claude Code** a provider is a
+ROUTE (base URL, auth, tier) that Agent Farm owns and injects, fixed for the
+whole session: changing it is a different program, not a resume. On **OpenCode**
+the provider is the engine's own identity and the first half of the wire name
+(`opencode/big-pickle`), and the engine legitimately allows it to change at a
+turn boundary. Written down as one shape that difference is a single field —
+`scope`. Written down per surface it becomes an `if (engine === 'claude')` in
+twenty places, and the first one somebody forgets is a session claiming a route
+it did not run on.
+
+`core/providerIdentity.ts` carries `ProviderIdentity`, `TurnRuntimeIdentity` and
+the axes they turn on: `origin` (agent-farm-profile · engine-native · external ·
+legacy-inherit · unknown · not-applicable), `scope`, and `proof` (launch-declared
+· engine-reported · matched · unknown). `core/providerAdapter.ts` carries the
+contract the engines answer — catalog, runtime, preflight, identity, resume,
+billing — plus the complete answer for an engine that has no provider axis at
+all, which three of the five do not.
+
+**‼️ NOTHING GUESSES THE PROVIDER FROM THE MODEL NAME, and that is now measured
+rather than asked for.** `claude-opus-5` does not prove Anthropic served it:
+measured in August against a local fake endpoint, two routes answered under the
+same model name and the transcript preserved neither. So a provider is DECLARED,
+or REPORTED, or unknown — and `unknown` is an answer this system has to be able
+to give rather than an absence it fills in. A record from before any of this
+stays `legacy-inherit`, which says "nobody was asked" and can be backfilled from
+real evidence later, rather than `unknown`, which would say "asked, no answer".
+
+The rule is a rule about code nobody has written yet, so it is measured from
+today while the count is still zero: the suite refuses a `provider…` field taking
+its value from an expression that mentions a model, and a model string split on a
+slash. Both shapes were planted and watched to fail. One exemption, named with
+its reason — `tasks.ts` asks which IMAGE-generation service serves a model, a
+different domain entirely — and the exemption itself is checked, so a line kept
+for a site that has since been fixed is caught too.
+
 ## 3.340.0 - S-34 reopened: a remembered model belongs to the engine it ran on (2026-08-30)
 
 **‼️ Switch the launcher from Antigravity to Claude, press Start, and the Console
