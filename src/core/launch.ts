@@ -553,7 +553,7 @@ export function withDefaults(o: LaunchOptions, d: LaunchDefaults | undefined): L
 export interface LastLaunch extends LaunchOptions {
     surface?: RunSurface;
     /**
-     * ‼️ X-134 — AND THE ENGINE'S OWN WORDS, KEPT PER ENGINE.
+     * ‼️ X-145 — AND THE ENGINE'S OWN WORDS, KEPT PER ENGINE.
      *
      * The record used to hold ONE model, ONE effort and ONE permission mode for
      * the whole agent, so the three engines an agent is used on shared a single
@@ -575,7 +575,7 @@ export interface LastLaunch extends LaunchOptions {
 }
 
 /**
- * ‼️ X-134 — THE THREE DIMENSIONS THAT BELONG TO AN ENGINE.
+ * ‼️ X-145 — THE THREE DIMENSIONS THAT BELONG TO AN ENGINE.
  *
  * The model and the effort are the engine's own vocabulary (`opus` means
  * nothing to Codex). The permission mode is Agent Farm's word, spelled the same
@@ -622,7 +622,7 @@ export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): 
         ...(engine ? { engine: engine as EngineId } : {}),
         model: pick(o.model, prev.model),
         effort: pick(o.effort, prev.effort),
-        // ‼️ X-134 — `prev`, NOT `last`. The permission mode is per engine like
+        // ‼️ X-145 — `prev`, NOT `last`. The permission mode is per engine like
         // the other two: reading it off the flat record was how a mode chosen
         // for one engine arrived on the next one as a flag nobody typed.
         permissionMode: pick(o.permissionMode, prev.permissionMode),
@@ -643,7 +643,7 @@ export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): 
  * of levels is looked up BY model, and several engines draw no effort box at
  * all), so it is dropped with it.
  *
- * ‼️ X-134 — AND THE ANSWER IS NO LONGER "NOTHING": THE ENGINE HAS ITS OWN ROW.
+ * ‼️ X-145 — AND THE ANSWER IS NO LONGER "NOTHING": THE ENGINE HAS ITS OWN ROW.
  *
  * Dropping was only ever half the fix. An agent used on two engines has two
  * setups, and emptying the boxes on every switch made the user retype the one
@@ -701,7 +701,7 @@ export function launchToRemember(
     };
     const engine = (o.engine || '').trim();
     /**
-     * ‼️ X-134 — THE OTHER ENGINES' ROWS SURVIVE THIS LAUNCH.
+     * ‼️ X-145 — THE OTHER ENGINES' ROWS SURVIVE THIS LAUNCH.
      *
      * `prev` is the record being replaced, and its `byEngine` is carried
      * forward with only THIS engine's row rewritten. Writing the map from

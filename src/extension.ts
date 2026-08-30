@@ -9215,7 +9215,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.lastLaunch',
-            describe: 'What an agent was LAST started with — engine, model, effort, permissionMode, superpowers and the surface it ran on, PLUS `byEngine`: the same model/effort/permissionMode kept separately for every engine that agent has been started on. ‼️ X-134 — those three are the ENGINE\'s answer and are read out of `byEngine[<engine>]` first; the flat fields are the last launch whatever engine it was on, and only answer for an engine that has no row of its own (and then only if they do not name a different engine). That is why a `manual` chosen for OpenCode no longer arrives at Claude as a flag overriding its settings file. `superpowers` and `surface` are the agent\'s own answer and stay flat. ‼️ S-34 — the multi-dimension launcher, the Console composer, "Talk to agent" and the Projects page seed from this record, and every launch that actually happens (including sessions.start) writes it back. ‼️ THE ▶ ON AN AGENT\'S ROW DELIBERATELY DOES NOT: it knows the agent and its dialog settles the engine, so it resolves model/effort/permission from Farm Settings instead (agentFarm.agentEngineDefaults for that agent+engine → agentFarm.launchDefaults → the engine\'s own settings file). It still reads the record for the two answers its dialog draws as rows — which engine and which surface to open on. Read this to answer "how does this agent normally run" without guessing. An agent that has never been started answers null; a field left at "default" when it ran is stored empty and still falls through. Reads only — nothing is started and nothing is written. args: agent? (name|id — omit for every agent that has a record)',
+            describe: 'What an agent was LAST started with — engine, model, effort, permissionMode, superpowers and the surface it ran on, PLUS `byEngine`: the same model/effort/permissionMode kept separately for every engine that agent has been started on. ‼️ X-145 — those three are the ENGINE\'s answer and are read out of `byEngine[<engine>]` first; the flat fields are the last launch whatever engine it was on, and only answer for an engine that has no row of its own (and then only if they do not name a different engine). That is why a `manual` chosen for OpenCode no longer arrives at Claude as a flag overriding its settings file. `superpowers` and `surface` are the agent\'s own answer and stay flat. ‼️ S-34 — the multi-dimension launcher, the Console composer, "Talk to agent" and the Projects page seed from this record, and every launch that actually happens (including sessions.start) writes it back. ‼️ THE ▶ ON AN AGENT\'S ROW DELIBERATELY DOES NOT: it knows the agent and its dialog settles the engine, so it resolves model/effort/permission from Farm Settings instead (agentFarm.agentEngineDefaults for that agent+engine → agentFarm.launchDefaults → the engine\'s own settings file). It still reads the record for the two answers its dialog draws as rows — which engine and which surface to open on. Read this to answer "how does this agent normally run" without guessing. An agent that has never been started answers null; a field left at "default" when it ran is stored empty and still falls through. Reads only — nothing is started and nothing is written. args: agent? (name|id — omit for every agent that has a record)',
             handler: (args) => {
                 const who = optStr(args, 'agent');
                 if (who) {
@@ -16690,7 +16690,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return {
             ...o,
             /**
-             * ‼️ X-134 — THE MODEL IS CLAUDE'S FILE'S, THE EFFORT IS NOT.
+             * ‼️ X-145 — THE MODEL IS CLAUDE'S FILE'S, THE EFFORT IS NOT.
              *
              * This whole function used to return early for Claude, on the
              * correct ground that its CLI reads `<agent>/.claude/settings.json`
@@ -16713,7 +16713,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
-     * ‼️ X-134 — WHAT THE SETTINGS SAY THIS AGENT RUNS AS ON THIS ENGINE, with
+     * ‼️ X-145 — WHAT THE SETTINGS SAY THIS AGENT RUNS AS ON THIS ENGINE, with
      * no memory in it at all.
      *
      * The resolution the Farm Settings page draws, as a value a door can hand
@@ -17020,7 +17020,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agentId: string, o: LaunchOptions, surface?: RunSurface
     ): Promise<void> => {
         /**
-         * ‼️ X-134 — THE ENGINE IS RESOLVED HERE, because the record is keyed by
+         * ‼️ X-145 — THE ENGINE IS RESOLVED HERE, because the record is keyed by
          * it and `core/launch.ts` cannot read a VS Code setting.
          *
          * A door that left `engine` empty meant "the fleet default", which is
@@ -19392,7 +19392,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              *  claiming the window's answer for an agent that never had it. */
             agentName?: string;
             /**
-             * ‼️ X-134 — WHAT THIS DOOR WILL ACTUALLY START, for the header line.
+             * ‼️ X-145 — WHAT THIS DOOR WILL ACTUALLY START, for the header line.
              *
              * The header used to build the setup out of `last` alone, which was
              * right while every door inherited the memory and wrong the moment
@@ -26113,7 +26113,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // composer, and it opens on the window's active project when
                 // there is one (see launchProjectRow).
                 //
-                // ‼️ X-134 — THE RECORD IS STILL READ, FOR THE TWO ANSWERS THE
+                // ‼️ X-145 — THE RECORD IS STILL READ, FOR THE TWO ANSWERS THE
                 // PICKER SHOWS AND ASKS ABOUT: which engine it opens on and
                 // which surface. Both are rows in the dialog, both are labelled
                 // "• last used for <agent>", and both are the user's to change
@@ -26130,7 +26130,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     });
                 if (!chosen) { return; }
                 /**
-                 * ‼️ X-134 — AND THE REST COMES FROM FARM SETTINGS, NOT FROM THE
+                 * ‼️ X-145 — AND THE REST COMES FROM FARM SETTINGS, NOT FROM THE
                  * MEMORY. THE USER'S OWN WORDING, AND IT IS EXACT: "when you
                  * start from there the agent is known, the dialog makes you pick
                  * the engine so the engine is known too — and if those two are

@@ -255,7 +255,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     eq('…and the effort goes with it, being read off the model',
         L.withLastLaunch({ engine: 'claude' }, last).effort, '');
     /**
-     * ‼️ X-134 — AND THE PERMISSION MODE FALLS WITH THEM.
+     * ‼️ X-145 — AND THE PERMISSION MODE FALLS WITH THEM.
      *
      * S-34 kept it across the switch on the grounds that `plan` is Agent Farm's
      * word rather than any CLI's. True about the spelling, false about the
@@ -281,7 +281,7 @@ const launchTs = read('src', 'core', 'launch.ts');
         L.withLastLaunch({ engine: 'claude', model: 'sonnet' }, last).model, 'sonnet');
 
     /**
-     * ‼️ X-134 — AND THE ANSWER IS NO LONGER "NOTHING": THE ENGINE HAS A ROW.
+     * ‼️ X-145 — AND THE ANSWER IS NO LONGER "NOTHING": THE ENGINE HAS A ROW.
      *
      * Dropping was half the fix. An agent used on two engines has two setups,
      * and emptying the boxes on every switch made the user retype the one they
@@ -320,7 +320,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     eq('…and the same three are filed under the engine that ran them',
         JSON.stringify(kept.byEngine),
         '{"claude":{"model":"opus","effort":"high","permissionMode":"plan"}}');
-    // ‼️ X-134 — AND THE OTHER ENGINES' ROWS SURVIVE THE LAUNCH. Writing the map
+    // ‼️ X-145 — AND THE OTHER ENGINES' ROWS SURVIVE THE LAUNCH. Writing the map
     // from scratch would make every start erase what the agent runs as on the
     // engines it was not started on — a memory that only remembers the last
     // engine, which is the one it already had.
@@ -342,7 +342,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('…and does not destroy the rows already there',
         L.launchToRemember({ model: 'x' }, 'terminal', twoEngines).byEngine?.claude?.model === 'opus');
     /**
-     * ‼️ X-134 — THE REPORTED FAULT, WALKED END TO END THROUGH THE TWO REAL
+     * ‼️ X-145 — THE REPORTED FAULT, WALKED END TO END THROUGH THE TWO REAL
      * FUNCTIONS RATHER THAN ASSERTED ABOUT.
      *
      * The user's own sequence: start OpenCode from the launcher without
@@ -393,7 +393,7 @@ const launchTs = read('src', 'core', 'launch.ts');
 
     // ---- the doors ----
     /**
-     * ‼️ X-134 — ▶ IS THE ONE DOOR THAT DOES **NOT** SEED FROM THE RECORD, AND
+     * ‼️ X-145 — ▶ IS THE ONE DOOR THAT DOES **NOT** SEED FROM THE RECORD, AND
      * SAYING SO IS PART OF THE RULE.
      *
      * S-34 made every door inherit, which was right for the doors that SHOW the
@@ -550,7 +550,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     // engine it was built for and the seeder tests it — and the engine-change
     // handler, which is the plain case, passes no keep at all.
     /**
-     * ‼️ X-134 — AND THE ENGINE YOU MOVE TO BRINGS ITS OWN SETUP BACK.
+     * ‼️ X-145 — AND THE ENGINE YOU MOVE TO BRINGS ITS OWN SETUP BACK.
      *
      * Clearing was right and was only half the answer. The page is now the
      * mirror of `rememberedOn`: the engine's own row, else the flat record when

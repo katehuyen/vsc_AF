@@ -134,7 +134,7 @@ const base = read('src/panels/base.ts');
     ok('‼️ one-click Start asks for the project as well as the place',
         /pickRunSurface\(`New session for \$\{agent\.name\}`, \{\s*\n\s*project: true, last, agentName: agent\.name,/.test(startBody));
     /**
-     * ‼️ X-134 — AND WHAT IT HANDS OVER IS FARM SETTINGS' ANSWER, NOT THE MEMORY'S.
+     * ‼️ X-145 — AND WHAT IT HANDS OVER IS FARM SETTINGS' ANSWER, NOT THE MEMORY'S.
      *
      * S-34 made this door inherit the record, which fixed "▶ ignores everything"
      * and created a worse one: the door asks three questions (engine · project ·

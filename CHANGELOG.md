@@ -2,7 +2,7 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## 3.344.0 - X-134: a remembered setup belongs to ONE engine, and ▶ answers from Settings (2026-08-30)
+## 3.344.0 - X-145: a remembered setup belongs to ONE engine, and ▶ answers from Settings (2026-08-30)
 
 **The reported fault, in the user's own sequence.** Start OpenCode from the
 launcher without permissions (`manual`). Then press ▶ on the same agent's row and
@@ -1597,7 +1597,7 @@ as open, and every default view hides the archive — the page folds it away and
 `backlog.next` reads the file from the top — so the work was neither shown nor
 finished, and nothing anywhere said why it had vanished.
 
-X-134 already diagnosed exactly this shape and built the carry-home. It only
+X-145 already diagnosed exactly this shape and built the carry-home. It only
 ever ran on a deliberate `projects.backlog.tidy`, so the file stayed wrong until
 somebody happened to run one. **The reopen is the moment the line becomes live
 work, so it is the moment it goes home** — same machinery, called at the moment
@@ -2218,7 +2218,7 @@ that opens must compare against what the file said when the last one closed.
 The 454 KB snapshot cache is also no longer rewritten by a pass in which no
 item's wording changed.
 
-## 3.290.0 - X-134 / X-135: new items stop landing in the archive, and stop being born undated (2026-08-27)
+## 3.290.0 - X-145 / X-135: new items stop landing in the archive, and stop being born undated (2026-08-27)
 
 **A new item was being written into the history section, and nobody could see
 it.** An item is seated "after this area's last item". Once an area's items have
