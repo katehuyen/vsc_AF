@@ -2,6 +2,70 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.350.0 - X-103: the route is something you can PICK (2026-08-30)
+
+X-101 built one entrance for resolving which route a launch runs on, and then
+left the choice unreachable: it was read from
+`agentFarm.agentEngineDefaults[<agent>]["claude"].providerId` and nothing wrote
+it, so the only way to run a session on Kimi or MiniMax was to hand-edit
+`settings.json`. The Start Session launcher now draws the whole axis —
+**engine → route/provider → tier/model → variant** — from the adapter's own
+catalog, and a saved profile stores it.
+
+**The rows come from the adapter, never from the engine's name.** A form with
+`if (engine === 'claude')` in it is a second statement of what each engine
+offers, and the day an adapter changes its mind the form goes on drawing the old
+answer confidently. The filter for what may be offered is the engine's own word
+— `normalizeSelection`.
+
+**‼️ Only what can actually run is offered.** The Claude catalog carries the
+shipped route *templates* (Anthropic, Kimi, MiniMax) beside your own profiles.
+A template is a SHAPE: no id to hold a credential under, nothing behind it.
+Picked, it resolves to `unknown` identity and injects **nothing** — the session
+would run on whatever the shell was already carrying while the row said "Kimi".
+That is exactly the lie X-101 exists to prevent, so the launcher offers profiles
+and the template list stays where you create one.
+
+**Changing a row drops what is below it, and says so.** Pick MiniMax after
+choosing a Kimi tier and the tier goes, named, with the tiers that route really
+maps. Pick a different OpenCode provider and a model it does not serve goes.
+Silence there is how a person stops trusting a form.
+
+**"Default" is a word with a referent.** The route row says which of three
+things is true: a route picked for this session, this agent's standing route
+(and the setting it lives in), or nothing at all — which is **not "Anthropic"**.
+It is inheritance, and this window may already name somebody else's endpoint.
+
+**Two defects found by writing it**, both the same shape — a writer naming its
+fields one by one instead of merging over the shape's own list:
+
+- `withAgentDefault` rebuilt the record from `model` and `effort`, so **writing
+  a model DELETED the route in the same record**. Every route hand-written into
+  `settings.json` — the only way to set one before this release — was lost the
+  moment somebody touched the model box in Farm Settings, silently.
+- `rememberedOn` named the same three, so a Claude profile id **leaked across an
+  engine switch** onto OpenCode, which has never heard of it.
+
+**Measured against the installed CLI, not assumed.** `opencode models
+--verbose` prints a bare `provider/model` line per model and then its JSON, so
+one spawn now serves both readers — the id list the model box has always used
+and the providers/variants/limits the new rows are drawn from. And
+`opencode run --variant` exists while the bare TUI's `--help` has no such flag
+and ACP declares only `model` and `mode`: the variant row is therefore a
+question about the **transport**, not the engine. The same model publishes
+`low/medium/high` and the honest answer is yes on a headless run, no in a
+terminal, no on a hosted card — and the form says *which*, rather than looking
+like the model has no variants.
+
+Also: a saved launch profile now stores the route and the variant (two setups
+differing only in endpoint used to be indistinguishable); `sessions.start` and
+`launch.profile.set` take `provider`, `tier` and `variant`; a Console card keeps
+the route it was started on in its own state, so a window reload cannot move a
+live conversation to a different endpoint; and the registry's dependencies are
+built in one place — the two hand-written copies had already begun to differ,
+neither passing the OpenCode catalog, so `providers.runtime` reported "no
+providers" on a machine whose engine publishes six.
+
 ## 3.349.0 - X-101 (3/3): the Console, and the acceptance line closed (2026-08-30)
 
 The ACP host spawned with **no `env` at all**, which means it inherited whatever

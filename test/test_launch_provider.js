@@ -306,5 +306,54 @@ console.log('\n== and the writer stops eating the route ==');
     eq('…and the last field going takes the whole row with it', gone, {});
 }
 
+console.log('\n== and the doors really offer it ==');
+{
+    // ‼️ SOURCE-SCANNED, like the rest of this family. The form above is pure
+    // and provable; whether the LAUNCHER draws it is a fact about a file, and it
+    // is exactly the half that was missing after X-101 — a resolver nothing
+    // could reach.
+    const fs = require('fs');
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('‼️ the launcher asks the ADAPTER for its rows, on every redraw — every row '
+        + 'below the provider depends on the one above it',
+        /const providerFormFor = \(/.test(ext)
+        && /const form = providerFormFor\(engineOf\(merged\.engine\)\.id, \{/.test(ext));
+    ok('…and the route row is drawn only where the engine HAS the axis',
+        /\.\.\.\(form\.applies \? \[\{/.test(ext) && /act: 'provider'/.test(ext));
+    ok('…the tier row only where the route maps tiers',
+        /\.\.\.\(form\.sub\.kind === 'tier' \? \[\{/.test(ext));
+    ok('‼️ …and the variant row only where the TRANSPORT can carry one, with the '
+        + 'reason shown when it cannot',
+        /\.\.\.\(form\.variants\.length \? \[\{/.test(ext)
+        && /\.\.\.\(form\.variantsWhy \? \[\{/.test(ext));
+    ok('‼️ the transport is WHERE the session opens, not the engine — a terminal is '
+        + 'a TUI and the Console is ACP, and neither takes --variant',
+        /const transport: ProviderTransport = where === 'console' \? 'acp' : 'tui';/.test(ext));
+    // ‼️ THREE CHANGE POINTS, and they are the three rows that decide something
+    // below them: the engine (the axis itself), the route (the tiers and the
+    // models under it) and the model (the variants it publishes). A fourth row
+    // gaining a dependent one and not appearing here is what this count catches.
+    ok('‼️ changing the engine, the route or the model PRUNES what is below it, out loud',
+        (ext.match(/prunedPick\(/g) || []).length === 3
+        && /showInformationMessage\(`Agent Farm: \$\{describeDropped\(r\.dropped\)\}`\)/.test(ext));
+    ok('the model list becomes the PROVIDER\'s once the engine publishes one',
+        /const catalogued = form\.sub\.kind === 'model' && form\.sub\.choices\.length;/.test(ext));
+    ok('‼️ "Default" on the route row names its real value AND where it came from',
+        /const routeSaid = describeProviderChoice\(/.test(ext));
+    // ‼️ AND THE LAYER, so a launch that says nothing still lands on the agent's
+    // standing route rather than on nothing at all.
+    ok('the agent\'s stored route is a layer under the launch, like the model is',
+        /const route = storedRoute\(store, agent\.dir, engine\);/.test(ext)
+        && /providerId: \(o\.providerId \?\? ''\)\.trim\(\) \|\| route\.providerId \|\| '',/.test(ext));
+    // ‼️ THE ONE ARG NAME THAT DIFFERS FROM ITS FIELD, and it differs on purpose.
+    ok('the bridge takes `provider` and stores `providerId`, translated once',
+        /providerId: optStr\(args, 'provider'\)/.test(ext));
+
+    const prof = fs.readFileSync(path.join(ROOT, 'src', 'core', 'launchProfiles.ts'), 'utf8');
+    ok('‼️ a saved profile stores the whole form, route included — two setups that '
+        + 'differ only in endpoint must not be indistinguishable',
+        /'providerId', 'tier',/.test(prof));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

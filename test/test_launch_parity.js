@@ -168,7 +168,20 @@ const launchTs = read('src', 'core', 'launch.ts');
     // edge-driven, so a setup delivered without a bumped seed is ignored by an
     // already-open Console — which is the case this whole path exists for.
     ok('handing a setup over bumps the seed the page reads',
-        /if \(opts\?\.launch\) \{[\s\S]{0,800}?c\.composerSeed\+\+;/.test(panelTs));
+        // ‼️ X-103 widened the window: the block now also carries the route the
+        // calling door picked (composerRoute), which has no box on the page yet.
+        /if \(opts\?\.launch\) \{[\s\S]{0,1400}?c\.composerSeed\+\+;/.test(panelTs));
+    // ‼️ X-103 — AND THE ROUTE IS CARRIED RATHER THAN DROPPED. Dropped, the
+    // launcher would draw a route row, take the pick, and start a card on a
+    // completely different endpoint without a word. There is no control for it
+    // on the page (X-105 draws one), so the start must read the carried value
+    // and NOT an empty box.
+    ok('‼️ a handed-over route survives into the card that starts',
+        /c\.composerRoute = /.test(panelTs)
+        && /\.\.\.\(this\.composerRoute \?\? \{\}\)/.test(panelTs)
+        && /providerId: started\.providerId, tier: started\.tier/.test(panelTs));
+    ok('…and is cleared on start, so the NEXT session inherits no endpoint nobody chose',
+        /this\.composerRoute = undefined;/.test(panelTs));
     ok('…and the page prefers a handed-over setup to the user\'s defaults',
         /const seeded = DATA\.composerLaunch \|\| null;/.test(consoleJs)
         && /const d = seeded \|\| DATA\.defaults \|\| \{\};/.test(consoleJs));

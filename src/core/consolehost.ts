@@ -279,6 +279,14 @@ export interface HostedSessionInit {
     model?: string;
     effort?: string;
     permissionMode?: string;
+    /**
+     * ‼️ X-103 — WHICH ROUTE THIS CARD RUNS ON. Absent means the agent's stored
+     * record decides, which is what every card started before a picker existed
+     * did. Named here so a launcher's choice reaches the spawn rather than being
+     * re-derived from settings behind the person who made it.
+     */
+    providerId?: string;
+    tier?: string;
     /** resume an existing claude session instead of starting a new one */
     resume?: string;
     /** the window's active project — recorded on the session so the stamp can be
@@ -513,8 +521,13 @@ export class ConsoleHost {
          * Absent, or returning `undefined`, leaves the environment exactly as it
          * has always been.
          */
-        private engineRuntime?: (agentId: string, engine: string)
-            => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined
+        private engineRuntime?: (
+            agentId: string, engine: string,
+            /** X-103 — the route this CARD was started on; absent asks the
+             *  agent's stored record, which is what every caller written before
+             *  a picker existed meant. */
+            route?: { providerId?: string; tier?: string }
+        ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined
     ) {}
 
     /** The shared OpenCode runtime, made on demand. `undefined` when this build
@@ -658,6 +671,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            providerId: init.providerId, tier: init.tier,
             now, sessionId: init.resume, projectId, resumed: !!init.resume,
             carried: init.resume ? init.carried : undefined
         });
@@ -739,6 +753,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            providerId: init.providerId, tier: init.tier,
             now: Date.now(),
             // a resumed session already HAS an id — see newSessionState
             sessionId: init.resume,
@@ -828,6 +843,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            providerId: init.providerId, tier: init.tier,
             now: Date.now(),
             sessionId: init.resume,
             projectId, superpowers,
@@ -919,6 +935,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
+            providerId: init.providerId, tier: init.tier,
             now: Date.now(),
             sessionId: init.resume,
             projectId, superpowers,
@@ -1479,7 +1496,16 @@ export class ConsoleHost {
                 // picked to answer, and the transcript records neither.
                 env: spawnEnvironment(
                     process.env, [],
-                    this.engineRuntime?.(h.state.agentId, h.engine.id))
+                    // ‼️ X-103 — THIS CARD'S OWN ROUTE, not the agent's standing
+                    // one, when the card was started on one. Every re-spawn of a
+                    // persistent engine comes through here, so reading it off
+                    // the state is what keeps a long conversation on the
+                    // endpoint it began on even after the setting changes under
+                    // it — a route change is a different program (X-101), and a
+                    // card that quietly moved would be the transcript lying.
+                    this.engineRuntime?.(h.state.agentId, h.engine.id, {
+                        providerId: h.state.providerId, tier: h.state.tier
+                    }))
             });
         } catch (e) {
             this.mutate(id, s => ({

@@ -46,8 +46,14 @@ const names = list => list.map(p => p.name).join(',');
         p.cwd === undefined && p.resume === undefined);
     ok('a dimension left empty is stored as absent, not as an empty flag',
         profileFrom({ model: '  ', effort: 'high' }, 'x').model === undefined);
-    ok('the five dimensions are exactly the setup', PROFILE_KEYS.join(',')
-        === 'engine,model,effort,permissionMode,prompt');
+    // ‼️ X-103 — EIGHT NOW, and the three that joined are the provider axis:
+    // route, tier and variant. A setup that could not say which endpoint it ran
+    // against reproduced everything about a launch except what it costs, who
+    // serves it and whose key pays — and two profiles differing only in route
+    // were indistinguishable to `matchProfile`, whose whole job is telling
+    // setups apart. Ordered the way the answers depend on each other.
+    ok('the eight dimensions are exactly the setup', PROFILE_KEYS.join(',')
+        === 'engine,providerId,tier,model,variant,effort,permissionMode,prompt');
 }
 
 // ---------- loading one ----------

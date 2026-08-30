@@ -324,6 +324,23 @@ export class ConsolePanel {
     private composerSuperpowers: boolean | undefined = undefined;
 
     /**
+     * ‼️ X-103 — THE ROUTE THE DOOR THAT OPENED THIS COMPOSER PICKED.
+     *
+     * The launcher's "Where: the Console panel" hands its whole setup over and
+     * lets the person keep editing it; every OTHER dimension of that setup has a
+     * box on the page, and this one does not yet — a provider control in the
+     * composer is X-105's item, together with the identity the card then shows.
+     *
+     * ‼️ SO IT IS CARRIED RATHER THAN DROPPED, and the difference is not a
+     * detail: dropped, the launcher would show a route row, take the person's
+     * pick, and start a card on a completely different endpoint without a word.
+     * Carried, the pick they made is the pick that runs. It is per composer for
+     * the same reason the project and the discipline are, and cleared on `start`
+     * so the NEXT session does not inherit a route nobody chose for it.
+     */
+    private composerRoute: { providerId?: string; tier?: string } | undefined = undefined;
+
+    /**
      * ‼️ K-34 — A SETUP THE COMPOSER OPENS ON, rather than a session spawned
      * behind the user's back.
      *
@@ -409,6 +426,9 @@ export class ConsolePanel {
         launch?: {
             model?: string; effort?: string; permissionMode?: string;
             prompt?: string; superpowers?: boolean;
+            /** X-103 — the route the calling door picked; carried to the start
+             *  because the composer has no control for it yet (X-105). */
+            providerId?: string; tier?: string;
         };
     }): void {
         const apply = (c: ConsolePanel): void => {
@@ -466,6 +486,11 @@ export class ConsolePanel {
                     engine: c.composerEngine
                 };
                 c.composerSuperpowers = l.superpowers;
+                // ‼️ X-103 — the one dimension of the handed-over setup with no
+                // box on the page (X-105). Kept, not dropped: see composerRoute.
+                c.composerRoute = (l.providerId ?? '').trim()
+                    ? { providerId: l.providerId, tier: l.tier }
+                    : undefined;
                 c.composerSeed++;
             }
             // undefined = "I have no opinion"; '' = "explicitly no project"
@@ -1178,7 +1203,12 @@ export class ConsolePanel {
                     model: str('model') || d.model,
                     effort: str('effort') || d.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
-                    superpowers: msg.superpowers === true
+                    superpowers: msg.superpowers === true,
+                    // ‼️ X-103 — from the composer's carried value, NOT from the
+                    // page: there is no route control on it yet (X-105), so a
+                    // `str('providerId')` here would read an empty box and erase
+                    // the very pick the launcher handed over.
+                    ...(this.composerRoute ?? {})
                 };
                 this.selected = host.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
@@ -1186,6 +1216,10 @@ export class ConsolePanel {
                     model: started.model,
                     effort: started.effort,
                     permissionMode: started.permissionMode,
+                    // ‼️ X-103 — the card is started ON the route, and keeps it:
+                    // ConsoleSessionState holds it so a window reload cannot move
+                    // a live conversation to a different endpoint.
+                    providerId: started.providerId, tier: started.tier,
                     // ‼️ ALWAYS EXPLICIT, including the empty string. Leaving it
                     // out means "inherit the window's active project" one layer
                     // down (ConsoleHost.start), which is the inheritance the box
@@ -1211,6 +1245,9 @@ export class ConsolePanel {
                 // …and its own agent's answer for the discipline, rather than
                 // the last session's — see composerSuperpowers.
                 this.composerSuperpowers = undefined;
+                // …and its own route: a card started from the launcher must not
+                // hand its endpoint to the next session nobody launched from it.
+                this.composerRoute = undefined;
                 // ‼️ K-34 — one-shot. A setup left standing would reapply itself
                 // to the NEXT session, which nobody launched from it.
                 this.composerLaunch = undefined;

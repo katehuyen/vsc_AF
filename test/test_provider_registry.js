@@ -306,10 +306,17 @@ const deps = () => ({
     // ‼️ AND ALL OF THEM THROUGH ONE SYMBOL. That is the acceptance line itself:
     // three surfaces resolving a launch three ways are three answers to "which
     // route is this run on", and the transcript records none of them.
+    // ‼️ X-103 — …AND THE SIGNATURE NOW CARRIES WHAT THIS LAUNCH PICKED. The
+    // route used to be readable only out of the settings file, so asking "this
+    // agent on this engine" was the whole question. A per-launch route makes the
+    // third argument part of the guarantee: a call site that dropped it would
+    // run the session on the agent's standing route while the row the person
+    // pressed said otherwise — a lie of exactly the kind X-101 exists to end,
+    // arriving through a picker instead of through an inherited variable.
     ok('‼️ every surface resolves through the SAME named function',
         /const engineRuntimeFor = \(/.test(ext)
-        && /engineRuntime: \(agentId, engine\) => engineRuntimeFor\(agentId, engine\)/.test(ext)
-        && /engineRuntimeFor\(termAgentId, engine \|\| 'claude'\)/.test(ext));
+        && /engineRuntime: \(agentId, engine, route\) => engineRuntimeFor\(agentId, engine, route\)/.test(ext)
+        && /engineRuntimeFor\(termAgentId, engine \|\| 'claude', route\)/.test(ext));
     ok('…and the resolution is written once, not once per surface',
         (ext.match(/resolveRuntime\(engine, \{/g) || []).length === 1);
 
@@ -322,14 +329,21 @@ const deps = () => ({
     ok('‼️ the console builds its spawn environment rather than inheriting the window\'s',
         /env: spawnEnvironment\(/.test(con));
     ok('…through the dep it is handed, not by reading profiles itself',
-        /this\.engineRuntime\?\.\(h\.state\.agentId, h\.engine\.id\)/.test(con)
+        /this\.engineRuntime\?\.\(h\.state\.agentId, h\.engine\.id, \{/.test(con)
         && /providerProfiles|secretKeyFor/.test(con) === false);
+    // ‼️ X-103 — AND THE CARD'S OWN ROUTE, NOT THE AGENT'S CURRENT ONE. Every
+    // re-spawn of a persistent engine comes through that call, so reading the
+    // route off the SESSION STATE is what keeps a long conversation on the
+    // endpoint it began on — including across a window reload, which is exactly
+    // why it is on the state and not on the per-window host record.
+    ok('‼️ …and the console asks for the route the CARD was started on',
+        /providerId: h\.state\.providerId, tier: h\.state\.tier/.test(con));
     ok('‼️ and the extension gives it the same function the other three use',
-        /\(agentId, engine\) => engineRuntimeFor\(agentId, engine\)\)/.test(ext));
+        /\(agentId, engine, route\) => engineRuntimeFor\(agentId, engine, route\)\)/.test(ext));
 
     // ---- the extension supplies it ----
     ok('‼️ the extension really supplies the runtime dep',
-        /engineRuntime: \(agentId, engine\)/.test(ext));
+        /engineRuntime: \(agentId, engine, route\)/.test(ext));
     ok('…resolving through the shared entrance rather than its own reading',
         /resolveRuntime\(engine, \{/.test(ext));
     ok('…and reads the choice from the per-agent store',

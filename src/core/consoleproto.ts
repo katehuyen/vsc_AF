@@ -416,6 +416,22 @@ export interface ConsoleSessionState {
     superpowers?: boolean;
     model?: string;
     effort?: string;
+    /**
+     * ‼️ X-103 — WHICH ROUTE THIS CARD IS RUNNING ON, and it lives on the STATE
+     * rather than on the per-window host record for one reason: the state is
+     * what survives a reload. A route held only in memory would be lost when the
+     * window came back and the next spawn would fall to the agent's standing
+     * route — the same conversation continuing on a different endpoint, which is
+     * exactly the route mixing X-101 exists to prevent, arriving through a
+     * window reload instead of a resume.
+     *
+     * Absent means no route was chosen and the agent's record decides, which is
+     * what every card started before this item did.
+     */
+    providerId?: string;
+    /** Claude only — which tier of that route. Travels WITH `providerId`: a tier
+     *  read against a different route maps the word through the wrong endpoint. */
+    tier?: string;
     permissionMode: string;
     status: ConsoleStatus;
     messages: ConsoleMessage[];
@@ -1618,6 +1634,9 @@ export function reduceEvent(
 export function newSessionState(o: {
     id: string; agentId: string; agentName: string; cwd: string;
     model?: string; effort?: string; permissionMode?: string; now: number;
+    /** X-103 — the route this card runs on; kept on the state so a window reload
+     *  cannot quietly move a live conversation to a different endpoint. */
+    providerId?: string; tier?: string;
     sessionId?: string;
     /** the window's active project at the moment this session was started */
     projectId?: string;
@@ -1638,6 +1657,11 @@ export function newSessionState(o: {
         // a resume is the one case that arrives with an id already — see `resumed`
         ...(o.resumed ? { resumed: true } : {}),
         model: o.model, effort: o.effort,
+        // Absent rather than '' — an unset route is what makes the agent's own
+        // record apply, and a stored empty string would pin the answer to
+        // "nothing" for a card that outlives the setting.
+        ...(o.providerId?.trim() ? { providerId: o.providerId.trim() } : {}),
+        ...(o.tier?.trim() ? { tier: o.tier.trim() } : {}),
         permissionMode: o.permissionMode?.trim() || 'default',
         status: 'starting', messages: [], queued: [],
         costUSD: c?.costUSD ?? 0, turns: c?.turns ?? 0, tokens: c?.tokens ?? 0,

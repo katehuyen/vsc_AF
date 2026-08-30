@@ -124,7 +124,12 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         // also names the ENGINE, because a terminal on Codex/Gemini/Antigravity
         // needs a live lane opened for it and only the launcher knows one is
         // being made.
-        && /sessionId, projectId, spec\.id\);/.test(startClaude)
+        // ‼️ X-103 put the ROUTE on the end of that same call, for the same
+        // reason the engine is on it: only the launcher knows what this launch
+        // picked, and a terminal that re-derived it from settings would open on
+        // a different endpoint from the one the row said.
+        && /sessionId, projectId, spec\.id,\s*\{ providerId: merged\.providerId, tier: merged\.tier \}\);/
+            .test(startClaude)
         // …and only ONE read of the window: the context file and the stamp both
         // come off `projectId`, so a second `activeProjectId()` CALL here would
         // be the bug this rule exists to prevent. (The prose above it names the

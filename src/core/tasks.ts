@@ -1235,8 +1235,19 @@ export interface TaskManagerOptions {
      * five engines are in that state permanently and must stay byte-for-byte
      * what they were.
      */
-    engineRuntime?: (agentId: string, engine: string)
-        => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined;
+    engineRuntime?: (
+        agentId: string, engine: string,
+        /**
+         * ‼️ X-103 — THE ROUTE THIS RUN CHOSE, when one was chosen. A headless
+         * task has no picker of its own yet — carrying a provider selection on a
+         * stored automation object is X-106's item — so the runner passes
+         * nothing and the agent's standing route applies, which is what every
+         * task written before this said. The parameter exists so the day that
+         * item lands there is one resolver rather than a second one built beside
+         * this signature.
+         */
+        route?: { providerId?: string; tier?: string }
+    ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined;
     /** {secret:NAME} substitution for webhook templates. */
     resolveTemplate?: (s: string) => string;
     /** Outbound notification forwarding (B4). */

@@ -41,7 +41,25 @@ import { describeLaunch, LaunchOptions, LaunchProfile, RunSurface } from './laun
 
 /** The dimensions a SETUP has. Deliberately not: the session's own name, which
  *  is per-launch, and not `resume`/`continueLast`, which are not setups. */
-export const PROFILE_KEYS = ['engine', 'model', 'effort', 'permissionMode', 'prompt'] as const;
+export const PROFILE_KEYS = [
+    'engine',
+    /**
+     * ‼️ X-103 — THE ROUTE IS PART OF THE SETUP, not a detail beside it. A
+     * profile called "gece taraması" that stored the engine, the model and the
+     * permissions but not WHICH ENDPOINT they ran against reproduced everything
+     * about a launch except the one thing that decides what it costs, who serves
+     * it and whose key pays — and two profiles differing only in route would
+     * have been indistinguishable, which is precisely `matchProfile`'s job to
+     * tell apart.
+     *
+     * Listed here rather than handled beside the list on purpose: `profileFrom`,
+     * `applyProfile` and `matchProfile` all iterate this, so a dimension named
+     * once is saved, loaded and compared without three functions being edited —
+     * which is how `surface` came to be stored on save and dropped on load.
+     */
+    'providerId', 'tier',
+    'model', 'variant', 'effort', 'permissionMode', 'prompt'
+] as const;
 
 type ProfileKey = typeof PROFILE_KEYS[number];
 

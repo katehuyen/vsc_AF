@@ -141,6 +141,10 @@ import {
     normSuperpowers, superpowersWord, twoExecutors, validateLaunch, withDefaults, withLastLaunch
 } from './core/launch';
 import { bumpRevision, ownershipTable, secretKeyFor } from './core/providerOwnership';
+import {
+    describeDropped, describeProviderChoice, launchProviderForm, ProviderForm, ProviderPick,
+    ProviderTransport, pruneProviderPick
+} from './core/launchProvider';
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
 import { terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -2953,7 +2957,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * one nobody has used yet, and every one of those runs must keep the
              * environment it has always had, byte for byte.
              */
-            engineRuntime: (agentId, engine) => engineRuntimeFor(agentId, engine),
+            engineRuntime: (agentId, engine, route) => engineRuntimeFor(agentId, engine, route),
             resolveTemplate: (s) => vault.substitute(s),
             forward: postForward,
             // J5: alternative CLI executors (gemini / codex / …).
@@ -9161,13 +9165,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'sessions.start',
             describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? ('
                 + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), model? (alias or id), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults — this op is deliberately NOT seeded from what the agent was last started with, because an unattended call that says nothing means the documented defaults and not whatever a person last clicked. ‼️ S-34 — but what it DOES start IS recorded as this agent\'s last setup (engine, model, effort, permissionMode, superpowers, surface), so the UI doors that DO inherit are offering a fact rather than a stale one; ask sessions.lastLaunch to read it. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), provider? (‼️ X-103 — WHICH ROUTE THIS SESSION RUNS ON. On Claude it is the id of a stored route profile (providers.list) and it is injected as environment, in isolation from whatever this window carries; on OpenCode it is the engine\'s own provider id and travels in its `-m`. UNSET IS A REAL ANSWER AND THE DEFAULT ONE: the agent\'s stored route applies, and if it has none then NOTHING is injected and NOTHING is cleared — which is not "Anthropic", it is inheritance, and the window may already name somebody else\'s endpoint. Ask providers.runtime to see exactly what a launch of this agent would clear and inject), tier? (Claude only, and only alongside a provider — which tier of that route. It is not a model: `opus` is kimi-k2-thinking on one route and MiniMax-M2 on another, so the route has to be chosen before the word means anything. A tier with no provider is REFUSED rather than dropped), model? (alias or id), variant? (the reasoning variant, only where the engine publishes one FOR THAT MODEL — measured per model, not per engine. ‼️ A terminal cannot carry it: the bare TUI takes no --variant and ACP declares only model and mode, so it belongs to a headless run), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults — this op is deliberately NOT seeded from what the agent was last started with, because an unattended call that says nothing means the documented defaults and not whatever a person last clicked. ‼️ S-34 — but what it DOES start IS recorded as this agent\'s last setup (engine, model, effort, permissionMode, superpowers, surface), so the UI doors that DO inherit are offering a fact rather than a stale one; ask sessions.lastLaunch to read it. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
                 const o: LaunchOptions = {
                     ...(engine ? { engine: engine as EngineId } : {}),
+                    // ‼️ X-103 — WHICH ROUTE. Unset falls through to the agent's
+                    // own record (`withAgentEngineDefaults`), which is what every
+                    // call written before this item meant and must keep meaning.
+                    providerId: optStr(args, 'provider'),
+                    tier: optStr(args, 'tier'),
                     model: optStr(args, 'model'),
+                    variant: optStr(args, 'variant'),
                     effort: optStr(args, 'effort'),
                     permissionMode: optStr(args, 'permissionMode'),
                     name: optStr(args, 'name'),
@@ -15952,13 +15962,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
 
     const engineRuntimeFor = (
-        agentId: string, engine: string
+        agentId: string, engine: string,
+        /**
+         * ‼️ X-103 — WHAT THIS LAUNCH CHOSE, when a launch chose something.
+         *
+         * Until this item the agent's stored record was the only statement of a
+         * route in the whole system, so reading it here was reading everything.
+         * Now a launcher row, a saved profile and a bridge argument can each
+         * name one for a single session, and a resolver that went on consulting
+         * only the settings file would run the session on a route the person
+         * starting it did not pick — while every surface above it said otherwise.
+         *
+         * Absent (or naming no provider) still means "ask the agent's record",
+         * which is what every caller written before this said.
+         */
+        route?: { providerId?: string; tier?: string }
     ): { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined => {
         const agent = agents.find(a => a.id === agentId);
         if (!agent) { return undefined; }
-        const chosen = storedRoute(
-            cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
-            agent.dir, engine as EngineId);
+        const chosen = (route?.providerId ?? '').trim()
+            // The tier travels with the route that was named: a stored tier read
+            // against a launch's different route maps the word through the wrong
+            // endpoint.
+            ? { providerId: route!.providerId!.trim(), tier: (route!.tier ?? '').trim() }
+            : storedRoute(
+                cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+                agent.dir, engine as EngineId);
         if (!chosen.providerId) { return undefined; }
         const rt = resolveRuntime(engine, {
             engine, providerId: chosen.providerId, ...(chosen.tier ? { tier: chosen.tier } : {})
@@ -15968,6 +15997,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...(rt.clearEnv ? { clearEnv: rt.clearEnv } : {})
         };
     };
+    /**
+     * ‼️ X-103 — THE FORM A LAUNCH PICKER DRAWS, for one engine and the pick so
+     * far. One reader, so a door that SHOWS the choices and the resolver that
+     * RUNS them cannot offer different answers.
+     *
+     * The OpenCode refresh is fired rather than awaited: this is called on every
+     * redraw of a quickpick, and a picker that blocked on a spawn would stall
+     * under the pointer. It is a no-op inside the TTL and the redraw that lands
+     * when it returns is what `modelPickersChanged` is for.
+     */
+    const providerFormFor = (
+        engine: string, pick: ProviderPick, transport: ProviderTransport
+    ): ProviderForm => {
+        if (engine === 'opencode') { void refreshOpencodeCatalog(); }
+        return launchProviderForm(adapterFor(engine, registryDeps()), pick, transport);
+    };
+
+    /**
+     * A pick, narrowed to what the engine and route currently chosen can really
+     * carry — and the dropped values SAID OUT LOUD rather than vanishing.
+     */
+    const prunedPick = (
+        engine: string, pick: ProviderPick, transport: ProviderTransport
+    ): ProviderPick => {
+        const r = pruneProviderPick(adapterFor(engine, registryDeps()), pick, transport);
+        if (r.dropped.length) {
+            void vscode.window.showInformationMessage(`Agent Farm: ${describeDropped(r.dropped)}`);
+        }
+        return r.pick;
+    };
+
     const setProviderSecret = async (id: string, value: string): Promise<void> => {
         const key = secretKeyFor(id);
         if (!key) { return; }
@@ -16810,7 +16870,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * synthetic live lane here, because there is no other way it can reach
          * the Live Timeline — see `openExternalLane`.
          */
-        engine?: string
+        engine?: string,
+        /**
+         * ‼️ X-103 — THE ROUTE THIS LAUNCH CHOSE, when one was chosen.
+         *
+         * Absent means "ask the agent's stored record", which is what this
+         * terminal did before a picker existed. Passed in rather than read here
+         * because only the caller knows what the person in front of the launcher
+         * actually picked, and a terminal that re-derived it from settings would
+         * open on a different route from the one the row said.
+         */
+        route?: { providerId?: string; tier?: string }
     ): vscode.Terminal | undefined => {
         launchSeq += 1;
         void context.globalState.update('agentfarm.termLaunchSeq', launchSeq);
@@ -16861,7 +16931,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             name: title, cwd,
             env: terminalEnvOverlay(
                 [env],
-                termAgentId ? engineRuntimeFor(termAgentId, engine || 'claude') : undefined)
+                termAgentId ? engineRuntimeFor(termAgentId, engine || 'claude', route) : undefined)
         });
         termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId: laneId, projectId });
         if (laneId && projectId) { stampSessionProject(laneId, projectId); }
@@ -16999,8 +17069,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const engine = ((o.engine ?? launchDefaults().engine ?? '') || 'claude') as EngineId;
         const store = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
         const own = storedDefault(store, agent.dir, engine);
+        /**
+         * ‼️ X-103 — AND WHICH ROUTE IT RUNS ON, THROUGH THE SAME LAYER.
+         *
+         * Read by its own function (`storedRoute`) rather than out of `own`,
+         * deliberately: that one answers "what do I put on the command line" and
+         * this one answers "which endpoint and whose key", and a single reader
+         * returning both would carry a credential's identity into every caller
+         * that only wanted a model name.
+         *
+         * ‼️ WHAT THIS LAUNCH SAYS WINS, and it must: until this item the ONLY
+         * way to state a route was this stored record, so a launcher row that
+         * lost to it would be a picker that cannot pick.
+         */
+        const route = storedRoute(store, agent.dir, engine);
         return {
             ...o,
+            providerId: (o.providerId ?? '').trim() || route.providerId || '',
+            // The tier travels WITH the route it belongs to. Taking a stored
+            // tier while this launch names a different route would map a word
+            // through the wrong endpoint — `opus` is a different model on each.
+            tier: (o.providerId ?? '').trim()
+                ? (o.tier ?? '').trim()
+                : (o.tier ?? '').trim() || route.tier || '',
             /**
              * ‼️ X-145 — THE MODEL IS CLAUDE'S FILE'S, THE EFFORT IS NOT.
              *
@@ -17113,7 +17204,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // and the interrupt resolver both find windows by that exact shape, and
         // "claude" is still the name for the engine everything else assumes.
         launchClaudeTerminal(`${spec.exe}: ${agent.name}`, cwd ?? agent.dir, command,
-            undefined, sessionId, projectId, spec.id);
+            // ‼️ X-103 — the route this launch resolved to, not the one the
+            // settings file happens to hold. `merged` has already had the
+            // agent's record applied under it, so an unset launch still lands on
+            // the standing route and a set one wins — the whole layer, once.
+            undefined, sessionId, projectId, spec.id,
+            { providerId: merged.providerId, tier: merged.tier });
         // A named launch should show its name in the panel within seconds, not
         // at the next quiet scan: the CLI writes its session file a moment
         // after boot, so look twice while the user is still watching. The name
@@ -17746,9 +17842,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * The discipline is resolved here because this is where the agent
              * is known, and the project's name comes off the row that sets it.
              */
+            /**
+             * ‼️ X-103 — THE PROVIDER AXIS, ASKED OF THE ADAPTER ON EVERY REDRAW.
+             *
+             * Rebuilt each time round the loop rather than once, because every
+             * row it produces depends on the row above it: change the engine and
+             * the whole axis changes, change the route and the tiers or the
+             * models under it do. `where` becomes the TRANSPORT, which is what
+             * decides whether a variant may be offered at all — measured, the
+             * bare TUI takes no `--variant` and ACP declares none.
+             */
+            const transport: ProviderTransport = where === 'console' ? 'acp' : 'tui';
+            const form = providerFormFor(engineOf(merged.engine).id, {
+                providerId: merged.providerId, tier: merged.tier,
+                model: merged.model, variant: merged.variant
+            }, transport);
+            const routeSaid = describeProviderChoice(
+                form, o.providerId,
+                // What the AGENT's record says, which is what runs when this
+                // launch names nothing — `merged` has it applied already, so the
+                // stored answer is read off there rather than from settings twice.
+                merged.providerId);
             const summary = launchSummary(merged, {
                 superpowers: merged.superpowers ?? superpowersOnFor(agent.name),
-                project: launchProjectName(project)
+                project: launchProjectName(project),
+                provider: form.applies && merged.providerId
+                    ? form.providers.find(c => c.id === merged.providerId)?.label
+                    : undefined
             });
             const rows: Row[] = [
                 {
@@ -17795,10 +17915,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // WHICH PROJECT is a dimension too, and the launcher was the one
                 // start path that did not show it — see pickRunSurface.
                 launchProjectRow(project, projectSeeded),
+                /**
+                 * ‼️ X-103 — WHICH ROUTE / PROVIDER, and it sits between the
+                 * engine and the model because that is the order the answers
+                 * depend on each other in: the engine decides whether this row
+                 * exists at all, and the row decides what the model or tier
+                 * under it MEANS.
+                 *
+                 * Drawn only where the engine has the axis — four of the five
+                 * have none, and a disabled row on them would spend a line
+                 * asking a question with no answers.
+                 */
+                ...(form.applies ? [{
+                    label: `$(globe) ${form.noun}`,
+                    description: routeSaid.value + (routeSaid.origin === 'agent' ? ' (this agent’s)' : ''),
+                    // ‼️ THE NOTE SAYS WHAT "none" REALLY MEANS. It is not
+                    // "Anthropic" — it is inheritance, and the window may
+                    // already carry somebody else's endpoint.
+                    detail: form.empty || routeSaid.note,
+                    act: 'provider'
+                } as Row] : []),
+                ...(form.sub.kind === 'tier' ? [{
+                    label: '$(list-tree) ' + form.sub.label,
+                    description: show(merged.tier),
+                    detail: form.sub.note, act: 'tier'
+                } as Row] : []),
                 {
                     label: '$(star-full) Model', description: show(merged.model) + inherited(o.model, d.model),
-                    detail: 'from your agentFarm.modelAliases list — --model', act: 'model'
+                    // ‼️ THE LIST IS THE PROVIDER'S WHEN THE ENGINE PUBLISHES ONE
+                    // — that is what "capability-driven" buys: choosing a
+                    // provider narrows the models to the ones it really serves,
+                    // rather than offering a name the engine would reject.
+                    detail: form.sub.kind === 'model'
+                        ? form.sub.note
+                        : 'from your agentFarm.modelAliases list — --model',
+                    act: 'model'
                 },
+                ...(form.variants.length ? [{
+                    label: '$(symbol-enum) Variant', description: show(merged.variant),
+                    detail: 'the reasoning variant this model publishes — --variant', act: 'variant'
+                } as Row] : []),
+                // ‼️ AND WHEN A MODEL PUBLISHES VARIANTS THE DOOR CANNOT CARRY,
+                // THE FORM SAYS SO instead of looking like the model has none.
+                ...(form.variantsWhy ? [{
+                    label: '$(symbol-enum) Variant', description: 'not here',
+                    detail: form.variantsWhy, act: 'variant-why'
+                } as Row] : []),
                 {
                     label: '$(zap) Effort', description: show(merged.effort) + inherited(o.effort, d.effort),
                     detail: 'how much reasoning per turn — --effort', act: 'effort'
@@ -17884,7 +18046,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             model: merged.model, effort: merged.effort,
                             permissionMode: merged.permissionMode,
                             prompt: o.prompt,
-                            superpowers: merged.superpowers
+                            superpowers: merged.superpowers,
+                            // ‼️ X-103 — the route travels into the composer with
+                            // the rest of the setup. It has no box there yet
+                            // (X-105 draws one); carried rather than dropped,
+                            // because a launcher that showed a route row and then
+                            // started the card on a different endpoint would be
+                            // lying about the one thing this item exists to make
+                            // sayable. See ConsolePanel.composerRoute.
+                            providerId: merged.providerId, tier: merged.tier
                         }
                     });
                 } else {
@@ -17904,7 +18074,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             if (pick.act === 'engine') {
                 const v = await pickEngine(spec.id, `Session for ${agent.name}`);
-                if (v !== undefined) { o.engine = v as EngineId; }
+                if (v !== undefined) {
+                    o.engine = v as EngineId;
+                    /**
+                     * ‼️ X-103 — CHANGING THE ENGINE DROPS WHAT THE NEW ONE
+                     * CANNOT MEAN. A Claude route profile id on OpenCode names
+                     * nothing, and a tier on an engine with no tier axis would
+                     * ride along to the spawn as a value nothing reads. Said out
+                     * loud rather than silently: a value disappearing out of a
+                     * form with no word is how a person stops trusting the form.
+                     */
+                    const kept = prunedPick(v, {
+                        providerId: o.providerId, tier: o.tier,
+                        model: o.model, variant: o.variant
+                    }, where === 'console' ? 'acp' : 'tui');
+                    o.providerId = kept.providerId ?? '';
+                    o.tier = kept.tier ?? '';
+                    o.variant = kept.variant ?? '';
+                }
+                continue;
+            }
+            if (pick.act === 'provider') {
+                if (!form.providers.some(c => c.id)) {
+                    // Nothing to pick, and the reason is the thing worth showing.
+                    void vscode.window.showInformationMessage(`Agent Farm: ${form.empty}`);
+                    continue;
+                }
+                const v = await pickChoice(
+                    `Which ${form.noun.toLowerCase()} for this session? — ${form.scopeNote}`,
+                    form.providers, merged.providerId ?? '', false);
+                if (v !== undefined) {
+                    o.providerId = v;
+                    // The tier belongs to the route above it; a new route means a
+                    // tier that may map to nothing, so it is narrowed here rather
+                    // than refused at the spawn.
+                    const kept = prunedPick(engineOf(merged.engine).id, {
+                        providerId: v, tier: o.tier ?? merged.tier,
+                        model: o.model, variant: o.variant
+                    }, transport);
+                    o.tier = kept.tier ?? '';
+                    o.model = kept.model ?? '';
+                    o.variant = kept.variant ?? '';
+                }
+                continue;
+            }
+            if (pick.act === 'tier') {
+                const v = await pickChoice(form.sub.note, form.sub.choices, merged.tier ?? '', false);
+                if (v !== undefined) { o.tier = v; }
+                continue;
+            }
+            if (pick.act === 'variant') {
+                const v = await pickChoice('Which variant of this model?',
+                    form.variants, merged.variant ?? '', false);
+                if (v !== undefined) { o.variant = v; }
+                continue;
+            }
+            if (pick.act === 'variant-why') {
+                // A row that exists to be READ. Pressing it repeats the sentence
+                // where a truncated detail line cannot hide it.
+                void vscode.window.showInformationMessage(`Agent Farm: ${form.variantsWhy}`);
                 continue;
             }
             if (pick.act === 'where') {
@@ -17933,9 +18161,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const em = () => engineModelMatrix()[(o.engine || merged.engine || 'claude') as EngineId];
             if (pick.act === 'model') {
                 const cur = em();
-                const v = await pickChoice(`Model for this session — ${cur.note}`,
-                    cur.models, merged.model ?? '', true);
-                if (v !== undefined) { o.model = v; }
+                /**
+                 * ‼️ X-103 — THE PROVIDER'S OWN MODELS WHEN THERE ARE SOME.
+                 *
+                 * `engineModelMatrix` answers per ENGINE; once a provider is
+                 * chosen the honest list is that provider's, because a model
+                 * another provider serves is one this run would be refused for.
+                 * The engine list stays the answer where no catalog has been
+                 * read — an unfetched catalog states nothing, and narrowing
+                 * against it would empty the box.
+                 */
+                const catalogued = form.sub.kind === 'model' && form.sub.choices.length;
+                const v = await pickChoice(
+                    catalogued ? `Model for this session — ${form.sub.note}` : `Model for this session — ${cur.note}`,
+                    catalogued ? form.sub.choices : cur.models, merged.model ?? '', true);
+                if (v !== undefined) {
+                    o.model = v;
+                    // A new model publishes its own variants — or none, and then
+                    // the one still selected is not a narrower choice, it is a
+                    // flag this model does not take.
+                    const kept = prunedPick(engineOf(merged.engine).id, {
+                        providerId: merged.providerId, tier: merged.tier,
+                        model: v, variant: o.variant
+                    }, transport);
+                    o.variant = kept.variant ?? '';
+                }
                 continue;
             }
             if (pick.act === 'effort') {
@@ -18356,7 +18606,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // through. Three surfaces reading a launch three ways would be three
         // answers to "which route is this run on", and the transcript records
         // none of them.
-        (agentId, engine) => engineRuntimeFor(agentId, engine));
+        (agentId, engine, route) => engineRuntimeFor(agentId, engine, route));
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).
     consoleHostRef = consoleHost;
@@ -19889,6 +20139,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             agentId: agent.id, agentName: agent.name, cwd: agent.dir,
             engine: engineOf(merged.engine).id,
             model: merged.model, effort: merged.effort, permissionMode: merged.permissionMode,
+            // ‼️ X-103 — AND WHICH ROUTE. `merged` has the agent's stored record
+            // under it already, so a card started with nothing chosen lands on
+            // the standing route exactly as it always did, and one started from
+            // the launcher or a profile lands on what the person picked. It is
+            // kept ON THE CARD (ConsoleSessionState) rather than re-read at each
+            // spawn, so a long conversation stays on the endpoint it began on.
+            providerId: merged.providerId, tier: merged.tier,
             // undefined = inherit the window's active project (ConsoleHost does
             // the read); '' = explicitly none. See launchClaudeTerminal.
             ...(project !== undefined ? { projectId: project } : {}),
@@ -29119,14 +29376,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'launch.profiles',
-            describe: 'The saved launch setups (agentFarm.launchProfiles) — a named ENGINE + model + '
-                + 'effort + permission mode + WHERE it opens (+ an optional first prompt) the session '
+            describe: 'The saved launch setups (agentFarm.launchProfiles) — a named ENGINE + ROUTE + '
+                + 'model + effort + permission mode + WHERE it opens (+ an optional first prompt) the '
+                + 'session '
                 + 'launcher can load in one press. Read them before offering the user "the usual": a '
                 + 'profile is what they have already decided, so proposing the same combination as if '
                 + 'it were new is noise. '
                 + '‼️ `name` here is the PROFILE\'s name and never a session name — a profile carries no '
                 + '-n, or every session started from it would be called the same thing. '
-                + 'Returns [{name, engine?, model, effort, permissionMode, prompt?, surface?}] — '
+                + 'Returns [{name, engine?, providerId?, tier?, model, variant?, effort, '
+                + 'permissionMode, prompt?, surface?}] — `providerId` is X-103\'s route (a stored '
+                + 'route profile id on Claude, the engine\'s own provider id on OpenCode) and ABSENT '
+                + 'means the profile says nothing about it, so the agent\'s own record decides; '
                 + '`surface` is "console" or "terminal", and ABSENT means the profile says nothing '
                 + 'about where, so the launcher keeps whatever surface it is already on.',
             handler: () => launchProfiles()
@@ -29136,11 +29397,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Create a launch profile, or REPLACE what the one with that name stores — which '
                 + 'is also how a profile is EDITED: pass the whole setup you want it to have, because '
                 + 'what you leave out is cleared rather than kept. args: name (required), engine? '
-                + '(' + ENGINE_ENUM + ' — empty means the default engine), model?, effort?, '
+                + '(' + ENGINE_ENUM + ' — empty means the default engine), provider? (X-103 — WHICH '
+                + 'ROUTE the setup runs on: on Claude the id of a stored route profile '
+                + '(providers.list), on OpenCode the engine\'s own provider id. Empty means no route, '
+                + 'which is NOT "Anthropic" — it means nothing is injected and the session inherits '
+                + 'whatever environment the window carries), tier? (Claude only, and only with a '
+                + 'provider: which tier of that route, because "opus" is a different model on each), '
+                + 'model?, variant? (only where the engine publishes one for that model, and only a '
+                + 'headless run can carry it — the TUI takes no --variant and ACP declares none), '
+                + 'effort?, '
                 + 'permissionMode?, prompt?, surface? (console|terminal — omit it and the profile says '
                 + 'nothing about where, so the launcher keeps the surface it is on) — each empty means '
                 + '"no flag", exactly as it does in the launcher. Replacing keeps the row\'s place in '
-                + 'the list. ‼️ Check engines.models '
+                + 'the list. ‼️ Check providers.runtime and engines.models '
                 + 'first: a model or an effort the engine does not offer is stored happily here and '
                 + 'refused later, by a CLI, in a session the user is sitting in front of. Rename with '
                 + 'launch.profile.rename — the two together are the whole edit.',
@@ -29150,13 +29419,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const surface = optStr(args, 'surface') ?? '';
                 need(!surface || surface === 'console' || surface === 'terminal',
                     `surface is "console" or "terminal" — "${surface}" is neither (leave it out to say nothing)`);
-                const p = profileFrom({
+                const setup: LaunchOptions = {
                     ...(optStr(args, 'engine') ? { engine: optStr(args, 'engine') as EngineId } : {}),
+                    // ‼️ X-103 — `provider` on the wire, `providerId` on the
+                    // options. The arg is named for the reader (they are picking
+                    // a provider, not an id shape) and the field for the type it
+                    // actually holds; the translation happens once, here.
+                    providerId: optStr(args, 'provider') ?? '',
+                    tier: optStr(args, 'tier') ?? '',
                     model: optStr(args, 'model') ?? '',
+                    variant: optStr(args, 'variant') ?? '',
                     effort: optStr(args, 'effort') ?? '',
                     permissionMode: optStr(args, 'permissionMode') ?? '',
                     ...(optStr(args, 'prompt') ? { prompt: optStr(args, 'prompt') } : {})
-                }, name, (surface || undefined) as RunSurface | undefined);
+                };
+                // ‼️ REFUSED HERE, not stored and refused at a spawn. A profile is
+                // a setup somebody will start from tomorrow morning; a tier with
+                // no route in it names nothing, and finding that out in a
+                // terminal is finding it out in the worst possible place.
+                const bad = validateLaunch(setup);
+                need(!bad.length, bad.join(' · '));
+                const p = profileFrom(setup, name, (surface || undefined) as RunSurface | undefined);
                 need(await writeLaunchProfiles(
                     saveProfile(launchProfiles(), p), `profile "${name}" saved`),
                     'agentFarm.launchProfiles could not be written');
