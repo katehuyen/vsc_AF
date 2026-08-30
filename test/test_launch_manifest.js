@@ -195,5 +195,38 @@ console.log('\n== the join to the run that was identified ==');
         /launchId\?: string;/.test(bind) && /NOT A SECOND `taskId`/.test(bind));
 }
 
+console.log('\n== the store is bounded before the first row is written ==');
+{
+    // ‼️ A manifest is written on EVERY spawn, and this farm spawns on schedules,
+    // triggers, workflow steps and mission members. Unbounded, that is a file
+    // that grows for as long as the install lives — X-127's whole subject, and
+    // the cheapest moment not to have it is before the first one exists.
+    let list = [];
+    for (let i = 0; i < 12; i++) { list = M.rememberManifest(list, base({ launchId: 'lch_' + i }), 5); }
+    eq('the cap holds', list.length, 5);
+    eq('‼️ …and it is the OLDEST that go: a manifest matters while its run is still '
+        + 'being asked about',
+        list.map(m => m.launchId), ['lch_7', 'lch_8', 'lch_9', 'lch_10', 'lch_11']);
+    // ‼️ TEN AT ONCE ALL SURVIVE THEIR OWN TURN — the acceptance line's case, and
+    // they do because they are the newest.
+    let ten = [];
+    const ids = [];
+    for (let i = 0; i < 10; i++) {
+        const id = M.newLaunchId(1700000000000);
+        ids.push(id);
+        ten = M.rememberManifest(ten, base({ launchId: id }));
+    }
+    eq('ten spawns in one millisecond are ten rows', ten.length, 10);
+    ok('…and each one finds its own manifest back',
+        ids.every(id => M.manifestOf(ten, { launchId: id })));
+
+    const twice = M.rememberManifest(
+        M.rememberManifest([], base({ launchId: 'lch_same', cwd: 'D:/first' })),
+        base({ launchId: 'lch_same', cwd: 'D:/second' }));
+    eq('‼️ writing the same launchId twice REPLACES rather than adding a second row — '
+        + 'two rows under one id would make the lookup depend on array order',
+        [twice.length, twice[0].cwd], [1, 'D:/second']);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

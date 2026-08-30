@@ -236,6 +236,36 @@ export function manifestLeaks(m: unknown, path = ''): string[] {
 }
 
 /**
+ * ‼️ X-102 — BOUNDED FROM THE FIRST LINE, not when somebody notices.
+ *
+ * A manifest is written on EVERY spawn, and this farm spawns on schedules, on
+ * triggers, on workflow steps and on mission members. An unbounded list of them
+ * is a file that grows for as long as the install lives — the exact class of
+ * defect X-127 exists to sweep up, and the cheapest moment to not have it is
+ * before the first one is written.
+ *
+ * ‼️ AND THE OLDEST GO, NOT THE NEWEST. A manifest matters most while its run is
+ * still being asked about; a two-year-old one whose transcript was cleaned up
+ * long ago answers nothing. Dropping from the front is also what makes the cap
+ * honest under the acceptance line's ten-at-once case: ten spawns in one
+ * millisecond must all survive their own turn, and they do — they are the
+ * newest.
+ */
+export const MANIFEST_CAP = 2000;
+
+export function rememberManifest(
+    list: readonly LaunchManifest[], m: LaunchManifest, cap = MANIFEST_CAP
+): LaunchManifest[] {
+    // ‼️ A REPLACE, NOT A SECOND ROW, when the same launch is written twice. A
+    // spawn that is retried through the same launchId is the same spawn being
+    // described again; two rows under one id would make `manifestOf` answer
+    // whichever the array order happened to put first.
+    const out = (list || []).filter(x => x && x.launchId !== m.launchId);
+    out.push(m);
+    return out.length > cap ? out.slice(out.length - cap) : out;
+}
+
+/**
  * ‼️ X-102 — THE MANIFEST FOR A RUN SOMETHING ELSE ALREADY IDENTIFIED.
  *
  * The join between the two records, written once so no surface invents its own.
