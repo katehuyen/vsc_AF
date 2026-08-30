@@ -154,8 +154,22 @@ ok('`typeAhead` still writes the draft — it is the wire for two boxes',
 {
     // If the page ever stops repainting on a host push, this whole gate is
     // measuring a rule that no longer has a reason — which is worth knowing.
-    ok('the page still repaints on every host push, which is why any of this matters',
-        /ev\.data\.type === 'data'\) \{ DATA = ev\.data\.data;[^}]*render\(\);/.test(src));
+    //
+    // ‼️ M-33 CHANGED WHEN, NOT WHETHER. The push used to repaint on arrival,
+    // including while somebody was typing — which is what threw the caret out
+    // of the box. It now goes through the repaint guard, so it waits for the
+    // hands and then paints. The form is still rebuilt from scratch afterwards
+    // and every box's answer still has to survive that, so this gate stands
+    // exactly as it did; what it may no longer assume is the WORD `render` on
+    // that line.
+    ok('the page still repaints on a host push, which is why any of this matters',
+        /ev\.data\.type === 'data'\) \{ DATA = ev\.data\.data;[^}]*repaint\(\);/.test(src)
+        && /window\.AFRepaint\.guard\(render,/.test(src));
+    // …and the guard defers rather than drops, or the page would be showing
+    // yesterday's figures to somebody who simply never left a field.
+    ok('…and a deferred repaint is owed and paid, never dropped',
+        /guarded\.flush = flush;/.test(
+            fs.readFileSync(path.join(__dirname, '..', 'media', 'afRepaint.js'), 'utf8')));
     ok('…and what is submitted is read out of the boxes, so a wired field is not the only path',
         /function submitComposer\(force\) \{\s*\r?\n\s*readComposer\(\);/.test(src));
 }

@@ -32,6 +32,9 @@ const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js')
     // that actually opens
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTextTools.js'), 'utf8')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afSnippets.js'), 'utf8')
+    // M-33 - the page routes the HOST push through the repaint guard now, so a
+    // stub would be testing a page that still throws the caret out of the box.
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afRepaint.js'), 'utf8')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 

@@ -50,6 +50,12 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // Shared the moment the item asked for it in two places: the fact it draws
     // is "can your phone reach the farm", and a card invented per page is a
     // card that answers that differently per page, in green.
+    // afRepaint.js was the seventeenth - never repaint under the user's hands
+    // (M-33). Shared from its first line, for the strongest form of the reason
+    // the others are: the failure it prevents is not one page's, it is the one
+    // line EVERY page has - a host push answered with a whole-page repaint,
+    // which detaches whatever the caret was in.
+    'afRepaint.js',
     'afTelegram.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */

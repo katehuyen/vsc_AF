@@ -318,6 +318,12 @@ export function htmlShell(
     // The rich hover panel. Ships everywhere for the same reason the others do:
     // the rule is "any hover carrying TEXT uses this", and a rule that needs a
     // script tag added first is a rule that gets skipped.
+    // M-33 - NEVER REPAINT UNDER THE USER'S HANDS. Ships everywhere for the
+    // strongest form of the reason the others do: the failure it prevents is not
+    // one page's, it is the one line every page has - a host push answered with
+    // a whole-page repaint, which detaches whatever the caret was in. A guard a
+    // page had to opt into is the page where the caret still gets thrown out.
+    const repaint = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRepaint.js'));
     const tip = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTip.js'));
     // The page's own form. Ships everywhere for the reason the rule exists:
     // "an object is made by a form on the page, a chain of VS Code boxes is a
@@ -399,6 +405,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${textTools}"></script>
 <script nonce="${nonce}" src="${snippets}"></script>
 <script nonce="${nonce}" src="${slash}"></script>
+<script nonce="${nonce}" src="${repaint}"></script>
 <script nonce="${nonce}" src="${tip}"></script>
 <script nonce="${nonce}" src="${combo}"></script>
 <script nonce="${nonce}" src="${wiki}"></script>

@@ -1252,6 +1252,11 @@
         kindMoved = '';
         composerMsg = msg || '';
         render();
+        // M-33 — this paint made the screen current, so a repaint the guard was
+        // holding back while the form was open is settled rather than owed. It
+        // would otherwise fire on the next focus change and cost a whole repaint
+        // to draw what is already on the screen.
+        repaint.clear();
     }
 
     /**
@@ -4021,12 +4026,43 @@
     // times.
     window.AFCtx.listen(ctxDo);
 
+    /**
+     * ‼️ M-33 — THE HOST'S OWN REPAINTS, AND NOTHING ELSE, GO THROUGH HERE.
+     *
+     * A render the USER asked for — a tab pressed, a filter typed, a row
+     * expanded — must happen at once even though a field is focused, because
+     * the field is the thing that asked. Routing every `render()` through the
+     * guard would feel broken in the opposite direction. So this wraps the one
+     * road the user is not standing on: the push that arrives because something
+     * changed elsewhere in the farm, which is exactly the one that used to
+     * arrive while they were typing.
+     *
+     * The two page-specific answers are the same two the 30-second timer at the
+     * bottom of this file already knew about: a half-written composer and an
+     * open guide are hands-on even when the caret is nowhere.
+     */
+    const repaint = window.AFRepaint.guard(render, {
+        busy: () => !!composer || taskGuideOpen
+    });
+
     window.addEventListener('message', ev => {
         // The saved-prompt picker owns its own answer, and must be offered it
         // BEFORE the page acts — a `data` push repaints the form under an open
         // window (media/afSnippets.js).
         if (window.AFSnippets.receive(ev.data)) { return; }
-        if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; render(); }
+        // ‼️ M-33 — THE DATA IS TAKEN AT ONCE; ONLY THE PAINT WAITS.
+        //
+        // `DATA` and `pendingCommand` are the page's state and must be current
+        // the instant the host says so — the very next thing the user does will
+        // draw from them. What is deferred is the REPAINT, and only while their
+        // hands are on the page: `render()` replaces the whole of `#app`, which
+        // detaches whatever the caret is in, and a detached node cannot hold it.
+        // That is what threw people out of the new-task box mid-sentence, and
+        // why the next space read as Page Down — on the body, space IS Page
+        // Down. The rule was already written for the 30-second timer at the
+        // bottom of this file ("never re-render under the user's fingers") and
+        // the host push simply did not go through it.
+        if (ev.data.type === 'data') { DATA = ev.data.data; pendingCommand = false; repaint(); }
         if (ev.data.type === 'focus' && ev.data.tab) { tab = ev.data.tab; persist(); render(); }
         // ‼️ "OPEN THIS TASK" HAS TO LAND ON THE TASK. A project's Work tab and
         // a timeline row both say Open about one run; opening the page at the
