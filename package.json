@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.344.0",
+  "version": "3.345.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8165,6 +8165,55 @@
           "type": "string",
           "default": "",
           "description": "Agent a new chat talks to before it picks one with /agent. Empty = a chat must bind an agent first."
+        },
+        "agentFarm.providerProfiles": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "X-100 — the Anthropic-compatible ROUTES Agent Farm holds for Claude Code: which provider, which endpoint, and which model each tier resolves to. Managed on the Engines page (`Agent Farm: Open Engines` → Providers); this key is the same list in its raw form.\n\n‼️ **No credential is ever written here.** A route's key lives in the OS keychain (SecretStorage), filed under the profile's `id` — which is why the id is permanent and a copy deliberately starts with no key. Anything you type into this array that is not one of the fields below is DROPPED on the way in, so a key pasted here does not become a stored one; it just does not work.\n\n‼️ **This list is Claude's alone.** OpenCode owns its own providers, `auth.json` and `opencode.json` (`opencode auth login`, `/connect`), and a second copy here would make two vaults where the stale one wins silently — so a profile naming another engine is refused rather than ignored.\n\n`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, tier mapping) or its key is replaced — never on a rename. A launch records the revision it ran on, so a route edited afterwards cannot silently rewrite what a past session was served by.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Permanent handle, 2–40 characters of lowercase letters, digits and hyphens. It is also the key the credential is stored under, so it cannot contain a dot, a space or a slash — and it cannot be changed. Copy the profile to a new id instead (the copy starts with no key)."
+              },
+              "label": {
+                "type": "string",
+                "description": "What a picker shows. Free to change at any time; renaming does not bump the revision, because the revision is a statement about the route rather than a count of edits."
+              },
+              "engine": {
+                "type": "string",
+                "enum": [
+                  "claude"
+                ],
+                "default": "claude",
+                "description": "Only Claude Code. The other engines either have no provider axis at all or own it themselves."
+              },
+              "providerId": {
+                "type": "string",
+                "description": "Which provider this routes to — anthropic, anthropic-api, kimi, minimax, or one you describe yourself."
+              },
+              "baseUrl": {
+                "type": "string",
+                "description": "The Anthropic-compatible endpoint. Empty = first-party. Must be https, or http on this machine (localhost / 127.0.0.1): a key sent over plain http to another host travels in clear."
+              },
+              "authKind": {
+                "type": "string",
+                "description": "How it is paid for — subscription, api-key, oauth. Descriptive: it decides what the page says, not what is injected."
+              },
+              "tiers": {
+                "type": "object",
+                "description": "tier → model id: which model this route serves for opus / sonnet / haiku. Empty = the route's own defaults.",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "revision": {
+                "type": "number",
+                "description": "Managed by Agent Farm. Starts at 1 and only ever counts up."
+              }
+            }
+          }
         },
         "agentFarm.launchDefaults": {
           "type": "object",

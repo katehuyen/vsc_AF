@@ -20,11 +20,15 @@
     const testing = new Set();
     /** a refusal that belongs to one card, shown in that card */
     const notes = {};
+    /** X-100 — every reason a route was refused, together and where it happened.
+     *  A toast would outlive the form and be read against the next attempt. */
+    let provMsg = '';
 
     window.addEventListener('message', ev => {
         const m = ev.data;
         if (m.type === 'data') { DATA = m.data; testing.clear(); render(); return; }
         if (m.type === 'eng-testing') { testing.add(m.id); render(); return; }
+        if (m.type === 'prov-msg') { provMsg = String(m.text || ''); render(); return; }
         if (m.type === 'eng-msg') { notes[m.id] = String(m.text || ''); render(); }
     });
 
@@ -175,6 +179,164 @@
             + '</div>';
     }
 
+    /* ================ X-100 — PROVIDERS: WHO OWNS WHAT, AND THE ROUTES ========
+     *
+     * ‼️ THE TABLE IS NOT DECORATION. The item's first acceptance line is that
+     * it must be VISIBLE which engine is the authority for which data — because
+     * the failure this whole feature exists to prevent is TWO VAULTS, and a rule
+     * that lives only in the heads of the people who wrote the adapters is a
+     * rule the next adapter breaks. So the table is drawn, each row carries the
+     * reason in words a person can check, and the form below it is refused by
+     * the same table rather than merely styled by it.
+     *
+     * ‼️ AND NOTHING HERE HOLDS A CREDENTIAL — the same promise the rest of this
+     * page makes, kept the same way. The rows are `PublicProviderProfile`, built
+     * by naming what is public; `hasSecret` is the whole of what they say about
+     * a key. Typing one opens the HOST's password box, so the value never
+     * crosses into this webview in either direction.
+     */
+    function ownershipHtml() {
+        const rows = DATA.ownership || [];
+        if (!rows.length) { return ''; }
+        const T = window.AFTip;
+        const engines = [...new Set(rows.map(r => r.engine))];
+        const kinds = [...new Set(rows.map(r => r.kind))];
+        const cell = (engine, kind) => {
+            const r = rows.find(x => x.engine === engine && x.kind === kind);
+            if (!r) { return '<td class="powhy">—</td>'; }
+            const mine = r.owner === 'agent-farm';
+            const who = mine ? 'Agent Farm' : r.engine;
+            // SHORTHAND — the cell says which side in one word and the AFTip
+            // carries the reason, which is a paragraph and does not fit a grid.
+            return '<td>' + T.wrap(
+                '<span class="poown ' + (mine ? 'o-af' : 'o-eng') + '">' + esc(who) + '</span>',
+                who + ' owns the ' + kind, r.why) + '</td>';
+        };
+        return '<table class="potab"><thead><tr><th>Engine</th>'
+            + kinds.map(k => '<th>' + T.wrap(esc(k), k, kindNote(k)) + '</th>').join('')
+            + '</tr></thead><tbody>'
+            + engines.map(e => '<tr><td class="poeng">' + esc(e) + '</td>'
+                + kinds.map(k => cell(e, k)).join('') + '</tr>').join('')
+            + '</tbody></table>';
+    }
+
+    /** A column is defined ONCE, on its `<th>` — a cell hover carries figures,
+     *  never an explanation (docs/CONVENTIONS.md → Hover). */
+    function kindNote(kind) {
+        return kind === 'catalog' ? 'Which providers and models exist at all.'
+            : kind === 'credential' ? 'What unlocks them. Agent Farm stores one only where it is the authority; where the engine owns it, sign in with the engine and Agent Farm reads nothing but whether a credential exists.'
+                : kind === 'config' ? 'The engine\'s own configuration file. Agent Farm never rewrites a hand-kept one.'
+                    : 'Which provider a run was actually started with — history, not configuration, and Agent Farm\'s on every engine because no engine keeps it.';
+    }
+
+    function profileHtml(p) {
+        const T = window.AFTip;
+        // ‼️ MIRROR — a control narrow enough to cut its own text puts its
+        // CURRENT value on the first line of its tooltip.
+        const tiers = Object.keys(p.tiers || {});
+        const key = p.hasSecret
+            ? T.wrap('<span class="pokey k-yes">key stored</span>', 'A credential is stored',
+                'It lives in the OS keychain under this profile\'s id — never in settings, never on the '
+                + 'bridge, and it is never read back out to draw anything. The only public fact about it '
+                + 'is that it is there.')
+            : T.wrap('<span class="pokey k-no">no key</span>', 'No credential yet',
+                'This route cannot be used until one is stored. Press Add key — the value is typed into a '
+                + 'password box outside this page and goes straight to the keychain.');
+        return '<div class="pocard">'
+            + '<div class="pohead">'
+            + '<span class="poname">' + esc(p.label) + '</span>'
+            + T.wrap('<span class="poid">' + esc(p.id) + '</span>', 'id: ' + p.id,
+                'Permanent — the credential is filed under it. Copy the profile to get a new id; the copy '
+                + 'deliberately starts with no key.')
+            + key
+            + T.wrap('<span class="porev">r' + esc(p.revision) + '</span>', 'revision ' + p.revision,
+                'Counts up whenever the ROUTE changes — provider, endpoint, auth kind, tier mapping — or '
+                + 'its key is replaced. Never on a rename. A launch records the revision it ran on, so a '
+                + 'route edited afterwards cannot silently rewrite what a past session was served by.')
+            + '<span class="grow"></span>'
+            + '<button class="secondary small" data-pokey="' + esc(p.id) + '" data-polabel="' + esc(p.label) + '">'
+            + (p.hasSecret ? 'Replace key' : 'Add key') + '</button>'
+            + '<button class="secondary small" data-pocopy="' + esc(p.id) + '" title="'
+            + esc('A copy is a NEW route: its own id, its own history from revision 1, and no credential — '
+                + 'duplicating a key would put one secret behind two names.') + '">Copy</button>'
+            + '<button class="secondary small" data-porm="' + esc(p.id) + '" title="'
+            + esc('Removes the route AND collects its credential from the keychain. A row dropped with the '
+                + 'entry left behind is a working key nobody can see.') + '">Remove</button>'
+            + '</div>'
+            + '<div class="pobody muted small">'
+            + esc(p.providerId) + (p.baseUrl ? ' · ' + esc(p.baseUrl) : ' · first-party endpoint')
+            + (p.authKind ? ' · ' + esc(p.authKind) : '')
+            + (tiers.length
+                ? ' · ' + tiers.map(t => esc(t) + ' → ' + esc(p.tiers[t])).join(', ')
+                : ' · the route\'s own defaults')
+            + '</div></div>';
+    }
+
+    function providersHtml() {
+        const profiles = DATA.profiles || [];
+        return '<div class="posec">'
+            + '<h3 class="potitle">Providers</h3>'
+            + '<p class="englede">Which engine is the authority for which piece of provider data — and '
+                + 'the routes Agent Farm holds itself. <b>The split is the design, not an omission:</b> a '
+                + 'Claude route is something Agent Farm assembles and nobody else on this machine knows '
+                + 'about, so if Agent Farm does not hold it nobody does; OpenCode already owns '
+                + '<code>/connect</code>, <code>opencode auth login</code> and <code>opencode.json</code>, '
+                + 'and a second copy here would make two vaults where the stale one wins silently. '
+                + '<b>No credential is on this page in either direction</b> — a route says only whether it '
+                + 'has one, and typing a key happens outside the page.</p>'
+            + ownershipHtml()
+            + '<div class="poform">'
+            + field('po-id', 'id (kimi)', 'The permanent handle',
+                '2–40 lowercase letters, digits and hyphens. It is also the key the credential is stored '
+                + 'under, so no dot, no space, no slash — and it cannot be changed afterwards.')
+            + field('po-label', 'label (Kimi)', 'What a picker shows',
+                'Free to change at any time. Renaming does not bump the revision, because the revision is '
+                + 'a statement about the route rather than a count of edits.')
+            + field('po-provider', 'providerId (kimi)', 'Which provider this routes to',
+                'anthropic · anthropic-api · kimi · minimax, or one you name yourself.')
+            + field('po-url', 'https://api.moonshot.ai/anthropic', 'The Anthropic-compatible endpoint',
+                'Empty = first-party. Must be https, or http on this machine (localhost / 127.0.0.1): a '
+                + 'key sent over plain http to another host travels in clear, and that is refused rather '
+                + 'than warned about.')
+            + field('po-tiers', 'opus=kimi-k2-thinking, sonnet=kimi-k2',
+                'Which model each tier resolves to',
+                'Comma-separated tier=model pairs. Empty = the route\'s own defaults. Changing one bumps '
+                + 'the revision, because it changes what a session is actually served by.')
+            + '<button class="small" id="po-add">Add route</button>'
+            + '</div>'
+            + '<div class="pomsg" id="po-msg">' + esc(provMsg) + '</div>'
+            + (profiles.length
+                ? profiles.map(profileHtml).join('')
+                : '<div class="muted small">No routes yet. Claude Code runs first-party without one; '
+                + 'a route is how you point it at an Anthropic-compatible endpoint instead.</div>')
+            + '</div>';
+    }
+
+    /**
+     * One box of the form, with its explanation on an AFTip rather than in a
+     * label beside it. A placeholder is a shape, not a rule — "id (kimi)" cannot
+     * say that the id is permanent because a credential is filed under it, and
+     * that is exactly the sentence somebody needs BEFORE they type, not in the
+     * refusal afterwards.
+     */
+    function field(id, placeholder, head, body) {
+        return window.AFTip.wrap(
+            '<input id="' + esc(id) + '" placeholder="' + esc(placeholder) + '">', head, body, 'pofield');
+    }
+
+    /** `opus=a, sonnet=b` → an object. A pair with no `=` is dropped rather than
+     *  guessed at: a tier nobody named is not a tier. */
+    function parseTiers(text) {
+        const out = {};
+        for (const part of String(text || '').split(',')) {
+            const at = part.indexOf('=');
+            if (at < 1) { continue; }
+            const tier = part.slice(0, at).trim(), model = part.slice(at + 1).trim();
+            if (tier && model) { out[tier] = model; }
+        }
+        return out;
+    }
+
     function render() {
         const list = DATA.engines || [];
         document.getElementById('app').innerHTML = `
@@ -217,6 +379,48 @@
                     background:var(--vscode-inputValidation-warningBackground,#663);
                     padding:5px 8px; border-radius:5px; }
                 .englede { max-width:820px; margin:0 0 14px; font-size:12px; opacity:.8; }
+                /* X-100 — providers */
+                .posec { margin-top:22px; border-top:1px solid var(--vscode-widget-border,#4443); padding-top:14px; }
+                .potitle { font-size:14px; margin:0 0 8px; }
+                /* ‼️ NOT full width. Four short columns stretched across a
+                   1400px page put the reader's eye on a journey between the
+                   engine and its answer — DENSITY is the fact per pixel, not
+                   the pixel per fact. */
+                .potab { border-collapse:collapse; font-size:12px; margin:0 0 12px; width:auto; }
+                .potab th, .potab td { padding:3px 16px 3px 0; text-align:left; white-space:nowrap; }
+                .potab th { font-weight:600; opacity:.75; cursor:help; }
+                .poeng { font-weight:600; }
+                .poown { cursor:help; font-size:11px; padding:1px 7px; border-radius:9px;
+                    border:1px solid var(--vscode-widget-border,#4446); white-space:nowrap; }
+                /* ‼️ THE TWO SIDES ARE NOT GOOD AND BAD. Neither owner is the
+                   error state — the whole point is that each is right for its
+                   own engine — so they read as two categories, not a verdict. */
+                .poown.o-af { background:var(--vscode-charts-blue,#3794ff); color:#fff; border-color:transparent; }
+                .poown.o-eng { background:var(--vscode-charts-purple,#b180d7); color:#fff; border-color:transparent; }
+                .powhy { opacity:.5; }
+                .poform { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+                .poform input { font-size:12px; padding:3px 6px; width:150px;
+                    background:var(--vscode-input-background); color:var(--vscode-input-foreground);
+                    border:1px solid var(--vscode-input-border,#4446); border-radius:4px; }
+                /* the two that hold a URL and a tier map need to show what was
+                   typed, or the box is a place to lose your own text in */
+                #po-url { width:260px; }
+                #po-tiers { width:280px; }
+                .pomsg:empty { display:none; }
+                .pomsg { font-size:12px; margin-bottom:8px; padding:5px 8px; border-radius:5px;
+                    background:var(--vscode-inputValidation-errorBackground,#5a1d1d); }
+                .pocard { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px;
+                    padding:8px 11px; margin-bottom:8px; }
+                .pohead { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+                .poname { font-weight:600; font-size:13px; }
+                .poid, .porev { font-size:11px; opacity:.7; cursor:help; font-family:var(--vscode-editor-font-family,monospace); }
+                .pokey { font-size:10px; padding:1px 8px; border-radius:9px; cursor:help; white-space:nowrap;
+                    border:1px solid var(--vscode-widget-border,#4446); }
+                .pokey.k-yes { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
+                /* "no key" is the step you are ON, not a failure — the same
+                   reading the ⊘ verdict row above gets. */
+                .pokey.k-no { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
+                .pobody { margin-top:5px; }
             </style>
             ${window.AFHeader.html({
             page: 'engines',
@@ -236,7 +440,8 @@
                 Everything above a card's verdict line was read off disk — <b>only ⚡ Test proves a call gets through</b>,
                 and it costs one real turn. ⊘ means the check declined to run: nothing was called, and the row
                 says what you can do about it.</p>
-            ${list.map(cardHtml).join('')}`;
+            ${list.map(cardHtml).join('')}
+            ${providersHtml()}`;
         wire();
     }
 
@@ -252,6 +457,30 @@
             b.addEventListener('click', () => post({ type: 'engineKey', name: b.dataset.engkey })));
         document.querySelectorAll('[data-engdocs]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'engineDocs', url: b.dataset.engdocs })));
+        /* ---- X-100 — the routes. Every button hands over an ID, never a value. */
+        const val = (id) => (document.getElementById(id) || {}).value || '';
+        const add = document.getElementById('po-add');
+        if (add) {
+            add.addEventListener('click', () => post({
+                type: 'providerSave',
+                // ‼️ A FORM, NOT A RECORD. What the host stores goes through
+                // `storedProfile`'s allow-list, so nothing this page can put in
+                // the message survives except the fields named there — which is
+                // why the page is allowed to be the naive side of this wall.
+                profile: {
+                    id: val('po-id'), label: val('po-label'), engine: 'claude',
+                    providerId: val('po-provider'), baseUrl: val('po-url'),
+                    tiers: parseTiers(val('po-tiers'))
+                }
+            }));
+        }
+        document.querySelectorAll('[data-pokey]').forEach(b =>
+            b.addEventListener('click', () => post({
+                type: 'providerKey', id: b.dataset.pokey, label: b.dataset.polabel })));
+        document.querySelectorAll('[data-pocopy]').forEach(b =>
+            b.addEventListener('click', () => post({ type: 'providerCopy', id: b.dataset.pocopy })));
+        document.querySelectorAll('[data-porm]').forEach(b =>
+            b.addEventListener('click', () => post({ type: 'providerRemove', id: b.dataset.porm })));
     }
 
     render();

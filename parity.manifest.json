@@ -976,15 +976,6 @@
       }
     },
     {
-      "capability": "consolePanel.ts#setSessionColor",
-      "ui": [
-        "page:consolePanel.ts#setSessionColor"
-      ],
-      "ops": [
-        "sessions.color"
-      ]
-    },
-    {
       "capability": "consolePanel.ts#interrupt",
       "ui": [
         "page:consolePanel.ts#interrupt"
@@ -1145,6 +1136,15 @@
         "kind": "visual",
         "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
       }
+    },
+    {
+      "capability": "consolePanel.ts#setSessionColor",
+      "ui": [
+        "page:consolePanel.ts#setSessionColor"
+      ],
+      "ops": [
+        "sessions.color"
+      ]
     },
     {
       "capability": "consolePanel.ts#setSuperpowers",
@@ -1771,6 +1771,44 @@
       ]
     },
     {
+      "capability": "enginesPanel.ts#providerCopy",
+      "ui": [
+        "page:enginesPanel.ts#providerCopy"
+      ],
+      "ops": [
+        "providers.copy"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#providerKey",
+      "ui": [
+        "page:enginesPanel.ts#providerKey"
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "X-100 - a route credential is typed into the host password box and stored in the OS keychain. The bridge is a plaintext request/response FILE channel, so an op that carried the value would defeat the keychain it is on its way to - the same deliberate exception the secret vault has (`_REF/bridge.md`). Whether a credential EXISTS is public and providers.list returns it."
+      }
+    },
+    {
+      "capability": "enginesPanel.ts#providerRemove",
+      "ui": [
+        "page:enginesPanel.ts#providerRemove"
+      ],
+      "ops": [
+        "providers.remove"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#providerSave",
+      "ui": [
+        "page:enginesPanel.ts#providerSave"
+      ],
+      "ops": [
+        "providers.add",
+        "providers.set"
+      ]
+    },
+    {
       "capability": "enginesPanel.ts#refresh",
       "ui": [
         "page:enginesPanel.ts#refresh"
@@ -2357,6 +2395,16 @@
       ]
     },
     {
+      "capability": "missionStepOutput",
+      "ui": [
+        "cmd:agentfarm.missionStepOutput"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
       "capability": "missionsPanel.ts#afnav",
       "ui": [
         "page:missionsPanel.ts#afnav"
@@ -2536,16 +2584,6 @@
       "exempt": {
         "kind": "visual",
         "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
-    },
-    {
-      "capability": "missionStepOutput",
-      "ui": [
-        "cmd:agentfarm.missionStepOutput"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
       }
     },
     {
@@ -2919,34 +2957,6 @@
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
-    },
-    {
-      "capability": "opencodeDeleteSession",
-      "ui": [
-        "cmd:agentfarm.opencodeDeleteSession"
-      ],
-      "exempt": {
-        "kind": "human-only",
-        "why": "The only destructive action in the OpenCode integration: it removes the conversation from the engine's own store, not from Agent Farm. An agent that could delete the user's conversations over the bridge is not a capability this extension offers, and the modal says what is about to be lost. sessions.opencodeExport is the read side."
-      }
-    },
-    {
-      "capability": "opencodeExportSession",
-      "ui": [
-        "cmd:agentfarm.opencodeExportSession"
-      ],
-      "ops": [
-        "sessions.opencodeExport"
-      ]
-    },
-    {
-      "capability": "opencodeRefreshHistory",
-      "ui": [
-        "cmd:agentfarm.opencodeRefreshHistory"
-      ],
-      "ops": [
-        "sessions.opencodeSync"
-      ]
     },
     {
       "capability": "openConsole",
@@ -3360,6 +3370,34 @@
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
+    },
+    {
+      "capability": "opencodeDeleteSession",
+      "ui": [
+        "cmd:agentfarm.opencodeDeleteSession"
+      ],
+      "exempt": {
+        "kind": "human-only",
+        "why": "The only destructive action in the OpenCode integration: it removes the conversation from the engine's own store, not from Agent Farm. An agent that could delete the user's conversations over the bridge is not a capability this extension offers, and the modal says what is about to be lost. sessions.opencodeExport is the read side."
+      }
+    },
+    {
+      "capability": "opencodeExportSession",
+      "ui": [
+        "cmd:agentfarm.opencodeExportSession"
+      ],
+      "ops": [
+        "sessions.opencodeExport"
+      ]
+    },
+    {
+      "capability": "opencodeRefreshHistory",
+      "ui": [
+        "cmd:agentfarm.opencodeRefreshHistory"
+      ],
+      "ops": [
+        "sessions.opencodeSync"
+      ]
     },
     {
       "capability": "pauseAutomations",
@@ -4756,94 +4794,6 @@
       ]
     },
     {
-      "capability": "sessionsPanel.ts#afnav",
-      "ui": [
-        "page:sessionsPanel.ts#afnav"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Moves the selection or the focus inside a page that is already open."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#focusTerminal",
-      "ui": [
-        "page:sessionsPanel.ts#focusTerminal"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#interruptSession",
-      "ui": [
-        "page:sessionsPanel.ts#interruptSession"
-      ],
-      "ops": [
-        "sessions.interrupt"
-      ]
-    },
-    {
-      "capability": "sessionsPanel.ts#openGuide",
-      "ui": [
-        "page:sessionsPanel.ts#openGuide"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only openGuide — it moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#openSession",
-      "ui": [
-        "page:sessionsPanel.ts#openSession"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#pinSession",
-      "ui": [
-        "page:sessionsPanel.ts#pinSession"
-      ],
-      "ops": [
-        "sessions.pin"
-      ]
-    },
-    {
-      "capability": "sessionsPanel.ts#refresh",
-      "ui": [
-        "page:sessionsPanel.ts#refresh"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#sessionTurns",
-      "ui": [
-        "page:sessionsPanel.ts#sessionTurns"
-      ],
-      "exempt": {
-        "kind": "visual",
-        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#setTableN",
-      "ui": [
-        "page:sessionsPanel.ts#setTableN"
-      ],
-      "exempt": {
-        "kind": "visual",
-        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
-    },
-    {
       "capability": "sessionToQueue",
       "ui": [
         "cmd:agentfarm.sessionToQueue",
@@ -5046,6 +4996,94 @@
       ]
     },
     {
+      "capability": "sessionsPanel.ts#afnav",
+      "ui": [
+        "page:sessionsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#focusTerminal",
+      "ui": [
+        "page:sessionsPanel.ts#focusTerminal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#interruptSession",
+      "ui": [
+        "page:sessionsPanel.ts#interruptSession"
+      ],
+      "ops": [
+        "sessions.interrupt"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#openGuide",
+      "ui": [
+        "page:sessionsPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#openSession",
+      "ui": [
+        "page:sessionsPanel.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#pinSession",
+      "ui": [
+        "page:sessionsPanel.ts#pinSession"
+      ],
+      "ops": [
+        "sessions.pin"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#refresh",
+      "ui": [
+        "page:sessionsPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#sessionTurns",
+      "ui": [
+        "page:sessionsPanel.ts#sessionTurns"
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#setTableN",
+      "ui": [
+        "page:sessionsPanel.ts#setTableN"
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
       "capability": "setActiveProject",
       "ui": [
         "cmd:agentfarm.setActiveProject"
@@ -5084,6 +5122,15 @@
         "alerts.read",
         "alerts.speak",
         "alerts.voice.set"
+      ]
+    },
+    {
+      "capability": "setUsageEngine",
+      "ui": [
+        "cmd:agentfarm.setUsageEngine"
+      ],
+      "ops": [
+        "usage.engines"
       ]
     },
     {
@@ -5650,15 +5697,6 @@
       }
     },
     {
-      "capability": "setUsageEngine",
-      "ui": [
-        "cmd:agentfarm.setUsageEngine"
-      ],
-      "ops": [
-        "usage.engines"
-      ]
-    },
-    {
       "capability": "shareSkill",
       "ui": [
         "cmd:agentfarm.shareSkill"
@@ -5973,6 +6011,15 @@
       "capability": "taskDown",
       "ui": [
         "cmd:agentfarm.taskDown"
+      ],
+      "ops": [
+        "tasks.move"
+      ]
+    },
+    {
+      "capability": "taskUp",
+      "ui": [
+        "cmd:agentfarm.taskUp"
       ],
       "ops": [
         "tasks.move"
@@ -6399,15 +6446,6 @@
       ],
       "ops": [
         "workflows.run"
-      ]
-    },
-    {
-      "capability": "taskUp",
-      "ui": [
-        "cmd:agentfarm.taskUp"
-      ],
-      "ops": [
-        "tasks.move"
       ]
     },
     {
@@ -6943,16 +6981,6 @@
       }
     },
     {
-      "capability": "wikiPanel.ts#revealWikiPath",
-      "ui": [
-        "page:wikiPanel.ts#revealWikiPath"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
-      }
-    },
-    {
       "capability": "wikiPanel.ts#refresh",
       "ui": [
         "page:wikiPanel.ts#refresh"
@@ -6970,6 +6998,16 @@
       "ops": [
         "wiki.candidates.remove"
       ]
+    },
+    {
+      "capability": "wikiPanel.ts#revealWikiPath",
+      "ui": [
+        "page:wikiPanel.ts#revealWikiPath"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
     },
     {
       "capability": "wikiPanel.ts#wikiInit",

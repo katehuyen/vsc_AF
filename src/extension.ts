@@ -140,6 +140,11 @@ import {
     modelIdOk, ONE_EXECUTOR, PERMISSION_CHOICES, RunSurface, SUPERPOWERS_CHOICES,
     normSuperpowers, superpowersWord, twoExecutors, validateLaunch, withDefaults, withLastLaunch
 } from './core/launch';
+import { bumpRevision, ownershipTable, secretKeyFor } from './core/providerOwnership';
+import {
+    addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
+    StoredProviderProfile
+} from './core/providerProfiles';
 import {
     applyProfile, deleteProfile, describeProfile, editProfile, matchProfile, profileFrom,
     profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile
@@ -15797,12 +15802,128 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             `Agent Farm: "${command}" is typed into a terminal — press Enter to run it. `
             + 'Nothing is run for you, and no credential passes through Agent Farm.');
     };
+    /* ============ X-100 — THE PROVIDER PROFILE STORE AND THE VAULT BOUNDARY ====
+     *
+     * ‼️ TWO PLACES, AND THE SPLIT IS THE WHOLE POINT. The public half of a
+     * route lives in `agentFarm.providerProfiles` — an ordinary setting a person
+     * can read, diff and sync. What unlocks it lives in SecretStorage under
+     * `secretKeyFor(id)`, and nothing in this extension ever reads it back out
+     * to draw anything: the only public fact about a credential is WHETHER
+     * there is one.
+     *
+     * ‼️ AND `hasSecret` IS NOT STORED. It is derived from an index of ids that
+     * have an entry, kept beside the keychain writes, because a stored flag is a
+     * second copy of a fact that can go stale — a profile whose key was removed
+     * would go on claiming it had one.
+     *
+     * The vault is deliberately NOT `SecretsVault`: that one is the user's own
+     * named secrets, injected into task environments and listed on its own page.
+     * A route's key is owned by its profile, dies with it, and has no business
+     * appearing as a row somebody can hand to an agent.
+     */
+    const PROVIDER_SECRET_IDS = 'agentfarm.providerSecretIds';
+    const providerProfiles = (): StoredProviderProfile[] =>
+        readProfiles(cfg().get<unknown[]>('providerProfiles', []));
+    const providerSecretIds = (): string[] =>
+        context.globalState.get<string[]>(PROVIDER_SECRET_IDS, []);
+    const writeProviderProfiles = async (list: StoredProviderProfile[]): Promise<void> => {
+        await cfg().update('providerProfiles', list, vscode.ConfigurationTarget.Global);
+    };
+    /** The list as every surface may see it — settings, bridge, page, notice. */
+    const publicProviderProfiles = () => publicProfiles(providerProfiles(), providerSecretIds());
+    const setProviderSecret = async (id: string, value: string): Promise<void> => {
+        const key = secretKeyFor(id);
+        if (!key) { return; }
+        await context.secrets.store(key, value);
+        const ids = new Set(providerSecretIds());
+        ids.add(id);
+        await context.globalState.update(PROVIDER_SECRET_IDS, [...ids].sort());
+        /**
+         * ‼️ REPLACING THE KEY IS A NEW ROUTE. The same endpoint under a
+         * different credential is not the thing that served a past session, and
+         * X-102 records the revision a run happened on precisely so that cannot
+         * be rewritten silently. The credential is not a field, so `setProfile`
+         * cannot notice this one — the writer does.
+         */
+        const list = providerProfiles();
+        const at = list.findIndex(p => p.id === id);
+        if (at >= 0) {
+            const next = [...list];
+            next[at] = bumpRevision(list[at]);
+            await writeProviderProfiles(next);
+        }
+        EnginesPanel.refreshIfOpen();
+    };
+    /** Collecting the key is half of removing a profile — a list that dropped
+     *  the row while the entry stayed behind is an orphan credential nobody can
+     *  see and nobody can revoke. */
+    const clearProviderSecret = async (id: string): Promise<void> => {
+        const key = secretKeyFor(id);
+        if (!key) { return; }
+        await context.secrets.delete(key);
+        await context.globalState.update(PROVIDER_SECRET_IDS,
+            providerSecretIds().filter(x => x !== id));
+        EnginesPanel.refreshIfOpen();
+    };
+    /**
+     * ‼️ TYPING A KEY IS HUMAN-ONLY, like the Secrets vault it sits beside
+     * (`_REF/bridge.md` → the security exception). There is no bridge op for
+     * this and there is not going to be one: the bridge is a plaintext
+     * request/response file channel, and routing a credential through it would
+     * defeat the keychain it is on its way to.
+     */
+    const askProviderSecret = async (id: string, label: string): Promise<void> => {
+        const value = await vscode.window.showInputBox({
+            title: `Credential for ${label}`,
+            prompt: 'Stored in the OS keychain under this profile\'s id. Never written to settings, '
+                + 'never sent over the bridge, never read back out to draw anything.',
+            password: true, ignoreFocusOut: true
+        });
+        if (value === undefined) { return; }
+        if (!value.trim()) { await clearProviderSecret(id); return; }
+        await setProviderSecret(id, value.trim());
+    };
     const enginesPanelDeps = {
         extensionUri: context.extensionUri,
         engines: () => engineMatrix(),
         test: (id: EngineId) => testEngine(id, engineRunner),
         command: (command: string) => engineTerminal(command),
-        key: (name: string) => { SecretsPanel.compose(secretsDeps, name); }
+        key: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
+        // ‼️ X-100 — the page is handed the PUBLIC list and the ownership table,
+        // and there is no dep here that can return a credential. A surface
+        // cannot leak what it was never given.
+        profiles: () => publicProviderProfiles(),
+        ownership: () => ownershipTable(),
+        saveProfile: async (input: Record<string, unknown>): Promise<string[]> => {
+            const list = providerProfiles();
+            const id = String(input.id ?? '').trim().toLowerCase();
+            const engines = Object.keys(ENGINES);
+            const w = list.some(p => p.id === id)
+                ? setProfile(list, id, input, engines)
+                : addProfile(list, input, engines);
+            if (w.refusal.length) { return w.refusal; }
+            await writeProviderProfiles(w.list);
+            EnginesPanel.refreshIfOpen();
+            return [];
+        },
+        removeProfile: async (id: string): Promise<string[]> => {
+            const w = removeProfile(providerProfiles(), id);
+            if (w.refusal.length) { return w.refusal; }
+            await writeProviderProfiles(w.list);
+            // …and the credential goes with it, or it stays in the keychain
+            // with nothing left to collect it.
+            await clearProviderSecret(id);
+            EnginesPanel.refreshIfOpen();
+            return [];
+        },
+        copyProfile: async (id: string): Promise<string[]> => {
+            const w = duplicateProfile(providerProfiles(), id);
+            if (w.refusal.length) { return w.refusal; }
+            await writeProviderProfiles(w.list);
+            EnginesPanel.refreshIfOpen();
+            return [];
+        },
+        profileKey: (id: string, label: string) => { void askProviderSecret(id, label); }
     };
     // One dependency object for the Toolbox page, because the page is now
     // opened from six places (the nav, the palette, and the four tool commands
@@ -28943,6 +29064,129 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(engine!.cli.found,
                     `${engine!.label} is not installed — ${engine!.next}`);
                 return await testEngine(id as EngineId, engineRunner);
+            }
+        },
+        /* ================ X-100 — PROVIDER ROUTES AND THE VAULT BOUNDARY ======
+         *
+         * ‼️ THERE IS NO OP THAT TAKES OR RETURNS A CREDENTIAL, AND THERE IS NOT
+         * GOING TO BE ONE. The bridge is a plaintext request/response FILE
+         * channel; routing a key through it would defeat the OS keychain it is
+         * on its way to. This is the same deliberate exception the Secrets vault
+         * has (`_REF/bridge.md` → C), and it is why `providers.list` can be
+         * unrestricted: what it returns is `publicProfile`'s output, which was
+         * built by naming what is public rather than by deleting what is not.
+         */
+        {
+            op: 'providers.ownership',
+            describe: 'X-100 — WHO IS THE AUTHORITY FOR WHICH PIECE OF PROVIDER DATA, per engine per '
+                + 'kind, each row with the reason in words. ‼️ THE FAILURE THIS PREVENTS IS TWO '
+                + 'VAULTS: give every engine the same provider manager and OpenCode — which already '
+                + 'owns /connect, `opencode auth login`, auth.json and opencode.json — ends up with a '
+                + 'second copy of its credentials here, after which the copy that loses is always the '
+                + 'one the user did not edit last. Kinds: catalog (which providers and models exist), '
+                + 'credential (what unlocks them), config (the engine\'s own file), selection (which '
+                + 'provider a run was actually started with — history rather than configuration, and '
+                + 'Agent Farm\'s on EVERY engine because no engine keeps it). An engine with no row '
+                + 'defaults to owning its own, which is the cautious answer. Read this before '
+                + 'proposing that Agent Farm store something — the write ops refuse by this table. '
+                + 'No arguments.',
+            handler: () => ({ rows: ownershipTable() })
+        },
+        {
+            op: 'providers.list',
+            describe: 'X-100 — the Anthropic-compatible ROUTES Agent Farm holds for Claude Code: id, '
+                + 'label, engine, providerId, baseUrl, authKind, tiers (tier → model id), revision, '
+                + 'and `hasSecret`. ‼️ `hasSecret` IS THE WHOLE OF WHAT THIS SAYS ABOUT A CREDENTIAL '
+                + '— whether one exists is public, the value is not, and no op anywhere returns it. '
+                + '`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, '
+                + 'tier mapping) or its key is replaced, never on a rename: a launch records the '
+                + 'revision it ran on, so a route edited afterwards cannot silently rewrite what a '
+                + 'past session was served by. args: id? (one route by id)',
+            handler: (args) => {
+                const id = optStr(args, 'id').trim().toLowerCase();
+                const all = publicProviderProfiles();
+                if (!id) { return { profiles: all, count: all.length }; }
+                const one = all.find(p => p.id === id);
+                need(!!one, `no provider profile with the id "${id}"`);
+                return one!;
+            }
+        },
+        {
+            op: 'providers.add',
+            describe: 'X-100 — add a route. ‼️ NO CREDENTIAL IS TAKEN HERE and passing one does '
+                + 'nothing: everything is read through an allow-list, so a `key`/`apiKey`/`headers` '
+                + 'field is dropped on the way in rather than stored. Storing the key is human-only, '
+                + 'in the Engines page (Providers → Add key), for the reason the Secrets vault is. '
+                + '‼️ REFUSED, NOT WARNED: an engine that owns its own credentials (OpenCode) cannot '
+                + 'be given a profile — ask providers.ownership — and the refusal names that engine\'s '
+                + 'own way of signing in. A base URL must be https or http on loopback: a key sent '
+                + 'over plain http to another host travels in clear. The id is PERMANENT because the '
+                + 'credential is filed under it; it is 2-40 characters of lowercase letters, digits '
+                + 'and hyphens. args: id, label?, providerId, baseUrl?, authKind?, tiers? (object, '
+                + 'tier → model id), engine? (claude)',
+            handler: async (args) => {
+                const w = addProfile(providerProfiles(), args as Record<string, unknown>,
+                    Object.keys(ENGINES));
+                need(!w.refusal.length, w.refusal.join(' · '));
+                await writeProviderProfiles(w.list);
+                EnginesPanel.refreshIfOpen();
+                return { added: publicProfiles([w.profile!], providerSecretIds())[0] };
+            }
+        },
+        {
+            op: 'providers.set',
+            describe: 'X-100 — change a route. Same allow-list and the same refusals as providers.add. '
+                + '‼️ THE ID CANNOT BE CHANGED and passing a new one is ignored rather than obeyed: it '
+                + 'is the key the credential is filed under, and moving it would strand the old entry '
+                + 'in the OS keychain with nothing left to collect it — use providers.copy, whose copy '
+                + 'deliberately carries no key. The revision bumps only when the ROUTE changed; a '
+                + 'rename leaves it alone, because the number is a statement about the route rather '
+                + 'than a count of edits. args: id, label?, providerId?, baseUrl?, authKind?, tiers?',
+            handler: async (args) => {
+                const id = argStr(args, 'id').trim().toLowerCase();
+                const w = setProfile(providerProfiles(), id, args as Record<string, unknown>,
+                    Object.keys(ENGINES));
+                need(!w.refusal.length, w.refusal.join(' · '));
+                await writeProviderProfiles(w.list);
+                EnginesPanel.refreshIfOpen();
+                return { profile: publicProfiles([w.profile!], providerSecretIds())[0] };
+            }
+        },
+        {
+            op: 'providers.copy',
+            describe: 'X-100 — duplicate a route under a new id. ‼️ THE COPY HAS NO CREDENTIAL, '
+                + 'deliberately: duplicating a key by pressing copy would put one secret behind two '
+                + 'names, and revoking one of them would leave the other working with nothing anywhere '
+                + 'to say why. It also starts again at revision 1 — it is a new route, not a version '
+                + 'of the old one. An unnamed id counts up from the source (`kimi` → `kimi-2`) and '
+                + 'never reuses one, because a returning id would inherit a keychain entry. '
+                + 'args: id, newId?',
+            handler: async (args) => {
+                const w = duplicateProfile(providerProfiles(), argStr(args, 'id'), optStr(args, 'newId'));
+                need(!w.refusal.length, w.refusal.join(' · '));
+                await writeProviderProfiles(w.list);
+                EnginesPanel.refreshIfOpen();
+                return { copy: publicProfiles([w.profile!], providerSecretIds())[0] };
+            }
+        },
+        {
+            op: 'providers.remove',
+            describe: 'X-100 — remove a route AND collect its credential from the OS keychain. ‼️ THE '
+                + 'SECOND HALF IS THE POINT: a row dropped with the keychain entry left behind is a '
+                + 'working key nobody can see and nobody can revoke. Irreversible — the key is gone '
+                + 'and Agent Farm never had a copy of it to give back. args: id',
+            handler: async (args) => {
+                const id = argStr(args, 'id').trim().toLowerCase();
+                const w = removeProfile(providerProfiles(), id);
+                need(!w.refusal.length, w.refusal.join(' · '));
+                // ‼️ Read BEFORE the delete: afterwards the honest answer is
+                // always "no", and the caller's question is whether a key was
+                // actually collected — which is the half that cannot be undone.
+                const hadSecret = providerSecretIds().includes(id);
+                await writeProviderProfiles(w.list);
+                await clearProviderSecret(id);
+                EnginesPanel.refreshIfOpen();
+                return { removed: id, credentialCollected: hadSecret };
             }
         }
     ]);

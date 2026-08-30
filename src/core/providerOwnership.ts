@@ -111,9 +111,44 @@ export function ownerOf(engine: string, kind: ProviderDataKind): DataOwner {
     return row ? row.owner : 'engine';
 }
 
-/** The table, for a surface to draw. */
+/**
+ * The table, for a surface to draw — ‼️ INCLUDING THE ROW THAT IS NOT IN
+ * `OWNERSHIP`.
+ *
+ * `selection` is answered by rule rather than by row (it is Agent Farm's on
+ * every engine, present or future), and a table built by listing `OWNERSHIP`
+ * therefore drew three of the four kinds and silently dropped the fourth. The
+ * acceptance line is that it must be VISIBLE which engine is the authority for
+ * which data; a kind that exists in the type, is enforced by `ownerOf` and
+ * appears nowhere a person can look is the rule failing quietly — which is
+ * exactly what the whole table exists to prevent.
+ *
+ * So the drawn table is DERIVED from `ownerOf`, one call per cell, for every
+ * engine the table knows and every kind there is. One rule, one reader.
+ */
 export function ownershipTable(): OwnershipRow[] {
-    return OWNERSHIP.map(r => ({ ...r }));
+    const engines = [...new Set(OWNERSHIP.map(r => r.engine))];
+    const kinds: ProviderDataKind[] = ['catalog', 'credential', 'config', 'selection'];
+    const out: OwnershipRow[] = [];
+    for (const engine of engines) {
+        for (const kind of kinds) {
+            const row = OWNERSHIP.find(r => r.engine === engine && r.kind === kind);
+            if (row) { out.push({ ...row }); continue; }
+            out.push({
+                engine, kind, owner: ownerOf(engine, kind),
+                why: kind === 'selection'
+                    ? 'Which provider a run was actually started with is HISTORY, not configuration — '
+                    + 'and no engine keeps it. Claude\'s transcript demonstrably cannot (measured: two '
+                    + 'routes, one model name, nothing in the record to tell them apart) and OpenCode\'s '
+                    + 'export keeps it only while the export exists. So Agent Farm records it on every '
+                    + 'engine; that is what the launch manifest is for.'
+                    : `No row has been written for ${engine}'s ${kind}, so the cautious answer applies: `
+                    + 'an engine Agent Farm knows nothing about owns its own, and claiming otherwise '
+                    + 'would be the two-vault failure arriving by default rather than by decision.'
+            });
+        }
+    }
+    return out;
 }
 
 /**

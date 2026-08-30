@@ -200,6 +200,12 @@ const CATEGORY_OF: Record<string, string> = {
     // ‼️ NOT a path like the three above: OpenCode publishes no transcript file,
     // so what this switches is whether its CLI is RUN to read the history at all.
     opencodeHistory: 'cli', relayFeeds: 'cli',
+    // ‼️ X-100 — the Anthropic-compatible ROUTES, filed with the engines rather
+    // than with the launch defaults above: it answers "which providers can this
+    // machine reach", not "what does a new session start as". No credential is
+    // in it — a route's key is in the OS keychain and never in a settings file,
+    // which is why this key can sit in an ordinary category at all.
+    providerProfiles: 'cli',
     // reaching the farm from outside this VS Code window
     'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
     'telegram.enabled': 'access', 'telegram.allowedChats': 'access',

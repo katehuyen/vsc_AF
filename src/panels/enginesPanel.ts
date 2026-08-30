@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { EngineId, EngineStatus } from '../core/engines';
 import { EngineTestResult } from '../core/engineTest';
+import { OwnershipRow, PublicProviderProfile } from '../core/providerOwnership';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -33,6 +34,26 @@ export interface EnginesPanelDeps {
     command(command: string): void;
     /** hand the key route to the vault's own form, on that exact name */
     key(name: string): void;
+    /**
+     * ‼️ X-100 — THE PUBLIC HALF OF EVERY ROUTE, AND THERE IS NO DEP HERE THAT
+     * CAN RETURN A CREDENTIAL.
+     *
+     * The page draws a provider list, so the honest question is not "does it
+     * remember to redact" but "was it ever given anything to redact". It was
+     * not: `profiles()` returns `PublicProviderProfile[]`, whose only statement
+     * about a credential is whether one exists. Typing a key is `profileKey`,
+     * which opens the host's own password box — the value never crosses into
+     * the webview in either direction.
+     */
+    profiles(): PublicProviderProfile[];
+    /** who is the authority for which data — the item's first acceptance line,
+     *  and it is only met if a person can SEE it */
+    ownership(): OwnershipRow[];
+    /** every write answers with its refusals, or an empty list */
+    saveProfile(input: Record<string, unknown>): Promise<string[]>;
+    removeProfile(id: string): Promise<string[]>;
+    copyProfile(id: string): Promise<string[]>;
+    profileKey(id: string, label: string): void;
 }
 
 function buildData(deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestResult>): Record<string, unknown> {
@@ -44,7 +65,17 @@ function buildData(deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestRes
         verdicts: [...verdicts.values()],
         now: Date.now(),
         ready: engines.filter(e => e.ready).length,
-        onPlan: engines.filter(e => e.ready && e.auth.mode === 'subscription').length
+        onPlan: engines.filter(e => e.ready && e.auth.mode === 'subscription').length,
+        /**
+         * ‼️ X-100 — WHAT THE PAGE IS ALLOWED TO KNOW ABOUT A ROUTE.
+         *
+         * `publicProfile` built this list by NAMING its fields, so there is no
+         * credential in it to redact and no shape change can put one there.
+         * `hasSecret` is the whole of what it says about one — enough to draw
+         * "this route has no key yet", which is the only thing a reader needs.
+         */
+        profiles: deps.profiles(),
+        ownership: deps.ownership()
     };
 }
 
@@ -115,6 +146,28 @@ export class EnginesPanel {
                     this.deps.key(msg.name);
                 }
                 break;
+            /* ---- X-100 — the provider routes Agent Farm holds for Claude ---- */
+            case 'providerSave':
+                // ‼️ THE PAGE HANDS OVER A FORM, NOT A RECORD. Everything past
+                // here goes through `storedProfile`'s allow-list, so a field the
+                // webview invented — or one a compromised page appended — is
+                // dropped rather than stored.
+                await this.write(await this.deps.saveProfile(
+                    (msg.profile && typeof msg.profile === 'object'
+                        ? msg.profile : {}) as Record<string, unknown>));
+                break;
+            case 'providerRemove':
+                await this.write(await this.deps.removeProfile(String(msg.id ?? '')));
+                break;
+            case 'providerCopy':
+                await this.write(await this.deps.copyProfile(String(msg.id ?? '')));
+                break;
+            case 'providerKey':
+                // ‼️ The value is typed into the HOST's password box and stored
+                // in the keychain. It never enters this webview, so there is no
+                // moment at which the page holds a credential.
+                this.deps.profileKey(String(msg.id ?? ''), String(msg.label ?? msg.id ?? ''));
+                break;
             case 'engineDocs':
                 // https only — a docs button is not a way to open anything else.
                 if (typeof msg.url === 'string' && /^https:\/\//.test(msg.url)) {
@@ -122,6 +175,20 @@ export class EnginesPanel {
                 }
                 break;
         }
+    }
+
+    /**
+     * A refusal is shown WHERE IT HAPPENED, not as a toast that outlives the
+     * form. All of them together: a form that reports one fault per press makes
+     * the user find them serially.
+     */
+    private async write(refusal: string[]): Promise<void> {
+        if (refusal.length) {
+            await this.panel.webview.postMessage({ type: 'prov-msg', text: refusal.join(' · ') });
+            return;
+        }
+        await this.panel.webview.postMessage({ type: 'prov-msg', text: '' });
+        this.refresh();
     }
 
     /**

@@ -2,6 +2,68 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.345.0 - X-100 (surface): the routes Agent Farm holds, and the boundary drawn where it can be measured (2026-08-30)
+
+The other half of X-100. 3.343.0 shipped the core — who owns which fact, how a
+secret is keyed, what the public half of a profile is — and shipped it with
+nothing calling it. This is the surface, the bridge ops and the parity entry,
+in one commit because the item's acceptance requires all three together.
+
+**The failure this prevents is still two vaults**, and the surface is where that
+becomes a thing a person can act on. So the Engines page now draws the ownership
+table itself: engine × kind of data, each cell saying which side owns it and
+carrying the reason in words on its hover. ‼️ The `selection` column reads
+**Agent Farm on every engine** — which provider a run was actually started with
+is history, not configuration, and no engine keeps it.
+
+‼️ **That column was missing from the first drawing and it was found by looking
+at the page, not by a test.** `ownershipTable` listed the rows in `OWNERSHIP`,
+and `selection` is answered by rule rather than by row — so a kind that exists in
+the type and is enforced by `ownerOf` appeared nowhere a person could look. The
+table is now derived from `ownerOf`, one call per cell: one rule, one reader.
+
+**The routes themselves** get CRUD, copy, revision and credential status:
+
+- ‼️ **The stored record IS the public record.** There is no private half of a
+  profile — `StoredProviderProfile` is the public shape minus the one derived
+  field, built by NAMING its fields. A `key`, an `apiKey`, an `authorization`
+  header or a field invented next year cannot be stored at all. The acceptance
+  line says settings, bridge, CLI, notice and export contain no secret; a filter
+  applied at five surfaces is five chances to forget one, and a record that never
+  held a key cannot leak one at any of them.
+- ‼️ **And that promise is now MEASURED**, which the core release said it was not.
+  `test_provider_profiles.js` puts a hostile record through both builders and
+  then checks each surface really goes through them: the page is handed
+  `publicProfiles` output and the panel cannot reach the store or the keychain at
+  all; every bridge op answers with the public shape; the row renderer is checked
+  field by field against the nine the public shape has, so `p.apiKey` on that page
+  fails by name tomorrow.
+- **The credential is human-only** — typed into the host's password box, stored
+  in the OS keychain under the profile id, never in settings and never on the
+  bridge. Same deliberate exception the Secrets vault has, for the same reason:
+  the bridge is a plaintext request/response file channel.
+- ‼️ **Replacing a key bumps the revision.** The same endpoint under a different
+  credential is not what served a past session, and the credential is not a
+  field, so the writer does what `setProfile` cannot see. A rename bumps nothing:
+  the revision is a statement about the route, not a count of edits.
+- ‼️ **Removing a route collects its key.** A row dropped with the keychain entry
+  left behind is a working credential nobody can see and nobody can revoke.
+- ‼️ **A profile for an engine that owns its own credentials is REFUSED**, not
+  warned about, and the refusal names that engine's own way of signing in
+  (`opencode auth login`). The two-vault failure arriving through a form is still
+  the two-vault failure.
+- **A base URL must be https, or http on loopback.** A key sent over plain http
+  to another host travels in clear. Loopback is allowed by name because a local
+  gateway is an ordinary setup and refusing it would push people to disable the
+  check rather than obey it.
+
+**Also in this release, found while wiring it:** `agentFarm.providerProfiles` had
+no category in the settings model, which the settings gate caught by name.
+
+**Bridge:** `providers.ownership` · `providers.list` · `providers.add` ·
+`providers.set` · `providers.copy` · `providers.remove`. There is no op that
+takes or returns a credential and there is not going to be one.
+
 ## 3.344.0 - X-145: a remembered setup belongs to ONE engine, and ▶ answers from Settings (2026-08-30)
 
 **The reported fault, in the user's own sequence.** Start OpenCode from the
