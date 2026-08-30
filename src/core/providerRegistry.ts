@@ -38,6 +38,7 @@ import {
 } from './providerAdapter';
 import { catalogRefusal, ClaudeRouteInput, readClaudeRouteCatalog, readOpenCodeCatalog } from './providerCatalog';
 import { ProviderIdentity, unknownIdentity } from './providerIdentity';
+import { claudeReported, openCodeReported, reportedPartial } from './reportedIdentity';
 import { StoredProviderProfile } from './providerProfiles';
 import { claudeRouteRuntime } from './providerRuntime';
 
@@ -185,11 +186,17 @@ function claudeAdapter(deps: RegistryDeps): ProviderAdapter {
             }
             return errors;
         },
-        // ‼️ MEASURED: the Claude transcript does NOT name the route it ran on.
-        // Returning an empty answer is the honest one; anything else here would
-        // be guessing the provider from the model name, which is the single
-        // rule `providerIdentity.ts` exists to make unbreakable.
-        identityFromEvents: () => ({}),
+        // ‼️ MEASURED: the Claude transcript does NOT name the route it ran on,
+        // so `reportedProviderIds` comes back EMPTY from here for ever — reading
+        // `claude-opus-5` as "Anthropic" is the single defect
+        // `providerIdentity.ts` exists to make unbreakable, and a route is the
+        // one thing this engine's own events cannot witness.
+        //
+        // ‼️ THE MODEL IS A DIFFERENT FIELD AND IT IS NAMED. X-102's whole point
+        // is holding what was ASKED FOR beside what CAME BACK; with no reported
+        // half on the engine that runs almost everything here, the manifest
+        // would be comparing itself against nothing on every run that matters.
+        identityFromEvents: events => reportedPartial('claude', claudeReported(events)),
         resumePolicy: (previous, requested): ResumeVerdict => {
             const wantId = str(requested.providerId);
             if (!previous || !wantId) { return { act: 'resume' }; }
@@ -311,7 +318,16 @@ function openCodeAdapter(deps: RegistryDeps): ProviderAdapter {
             modelId: str(sel.modelId),
             ...(sel.variant ? { variant: sel.variant } : {})
         }),
-        identityFromEvents: () => ({}),
+        // ‼️ THE OPPOSITE OF CLAUDE, AND FOR A MEASURED REASON: this engine DOES
+        // name its provider — `providerID` on an export's assistant rows, and
+        // `provider/model` as the ACP `model` option's current value. Both are
+        // read; the second is cut only where the head is a name this same
+        // catalog published, which is the identical refusal `catalogProviderFor`
+        // makes above rather than a second, looser one living beside it.
+        identityFromEvents: events => reportedPartial(
+            'opencode',
+            openCodeReported(events, catalog().providers.map(p => p.providerId))
+        ),
         // A provider change here is the engine's documented feature, not the
         // defect it is on Claude.
         resumePolicy: () => ({ act: 'resume' }),
