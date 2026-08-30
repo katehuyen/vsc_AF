@@ -105,7 +105,10 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         // launcher opens a synthetic live lane and binds THAT — and the binding
         // is re-keyed in place when the transcript names the conversation. The
         // project is still stamped at LAUNCH time, which is what this asserts.
-        && /termBindings\.push\(\{ title, cwd, term: terminal, launchedAt: Date\.now\(\), sessionId: laneId, projectId \}\)/.test(extTs));
+        // ‼️ X-102 put `launchId` on the same push, and for the same reason the
+        // project is on it: the binding is the only record present both at the
+        // launch and at the moment the session id turns up.
+        && /termBindings\.push\(\{ title, cwd, term: terminal, launchedAt: Date\.now\(\), sessionId: laneId, projectId, launchId \}\)/.test(extTs));
     // ‼️ ONE read, used for both halves. Reading activeProjectId() again for the
     // stamp could land the other side of a change and file a session under a
     // project it was never told about.
@@ -128,8 +131,11 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         // reason the engine is on it: only the launcher knows what this launch
         // picked, and a terminal that re-derived it from settings would open on
         // a different endpoint from the one the row said.
-        && /sessionId, projectId, spec\.id,\s*\{ providerId: merged\.providerId, tier: merged\.tier \}\);/
-            .test(startClaude)
+        // ‼️ X-102 added the launch id to the end of it, for the same reason
+        // again: the manifest is written here and only this call can hand the
+        // id to the record that will learn the session id.
+        && /const route = \{ providerId: merged\.providerId, tier: merged\.tier \};/.test(startClaude)
+        && /sessionId, projectId, spec\.id, route, launchId \|\| undefined\);/.test(startClaude)
         // …and only ONE read of the window: the context file and the stamp both
         // come off `projectId`, so a second `activeProjectId()` CALL here would
         // be the bug this rule exists to prevent. (The prose above it names the

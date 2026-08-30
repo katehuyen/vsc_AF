@@ -228,5 +228,64 @@ console.log('\n== the store is bounded before the first row is written ==');
         [twice.length, twice[0].cwd], [1, 'D:/second']);
 }
 
+/* ===========================================================================
+ * X-102 (4/n) — THE STORE, AND THE FIRST SPAWN DOOR THAT WRITES TO IT.
+ *
+ * The core above is pure and was already proved. What could not be proved from
+ * it is the thing that makes it worth anything: that a real spawn writes one,
+ * that the record is born from the SAME route resolution the process will run
+ * on, and that the id reaches something which will later learn the session id.
+ * A manifest nothing can be joined to is a setup on file for a conversation
+ * nobody can find.
+ * ========================================================================= */
+{
+    const fs = require('fs');
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+
+    // ---- one resolution, two readers ----
+    ok('‼️ the route is resolved ONCE, and the identity comes out of it',
+        /const resolveLaunchRoute = \(/.test(ext)
+        && /identity: rt\.identity,\s*\n\s*routed: !!chosen\.providerId,/.test(ext));
+    ok('…and the environment half keeps the contract it always had',
+        /if \(!r\?\.routed\) \{ return undefined; \}/.test(ext));
+    ok('‼️ …so a routeless launch gets NO overlay but still HAS an identity',
+        /\.\.\.\(chosen\.providerId && rt\.spawnEnv \? \{ spawnEnv: rt\.spawnEnv \} : \{\}\)/.test(ext)
+        && /\.\.\.\(chosen\.providerId && rt\.clearEnv \? \{ clearEnv: rt\.clearEnv \} : \{\}\)/.test(ext));
+
+    // ---- the store ----
+    ok('the store is bounded by the core on every write, not swept later',
+        /rememberManifest\(launchManifests\(\), m\)/.test(ext));
+    ok('‼️ a manifest that would leak a credential is NOT written',
+        /const leaks = manifestLeaks\(m\);/.test(ext)
+        && /a launch manifest was NOT written/.test(ext));
+    ok('minting, assembling and keeping are one call, so no door does two of the three',
+        /const recordLaunch = \(input: Omit<ManifestInput, 'launchId' \| 'at'>\): string =>/.test(ext)
+        && /manifestFor\(\{ \.\.\.input, launchId: newLaunchId\(at\), at \}\)/.test(ext));
+
+    // ---- the terminal door ----
+    const door = ext.slice(ext.indexOf('const startClaudeSession = ('),
+        ext.indexOf('const startClaudeSession = (') + 9500);
+    ok('‼️ the terminal door writes its manifest from the same resolution',
+        /const resolved = resolveLaunchRoute\(agent\.id, spec\.id, route\);/.test(door)
+        && /const launchId = resolved && recordLaunch\(\{/.test(door));
+    ok('…as a session, in the folder the process is really spawned in',
+        /mechanism: 'session',/.test(door) && /cwd: launchCwd,/.test(door));
+    ok('‼️ …and the surface tells an external window apart from an integrated one',
+        /surface: cfg\(\)\.get<boolean>\('externalTerminal', false\)\s*\n\s*\? 'external-terminal' : 'terminal',/.test(door));
+    ok('…written a line BEFORE the spawn, so a launch that never ran still has a record',
+        door.indexOf('const launchId = resolved && recordLaunch({')
+        < door.indexOf('launchClaudeTerminal(`${spec.exe}'));
+
+    // ---- and the join ----
+    ok('‼️ the launch id lands on the record that will learn the session id',
+        /launchId\?: string;/.test(ext)
+        && (ext.match(/termBindings\.push\(\{[^}]*launchId \}\);/g) || []).length === 2);
+
+    // ---- the bridge can read it, which is what makes it evidence ----
+    ok('the manifests are readable over the bridge', /op: 'launch\.manifests',/.test(ext));
+    ok('‼️ …and an id with no record returns nothing rather than a nearest match',
+        /const hit = manifestOf\(launchManifests\(\), \{ launchId: one \}\);\s*\n\s*return hit \? \[hit\] : \[\];/.test(ext));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -147,6 +147,11 @@ import {
     ProviderTransport, pruneProviderPick
 } from './core/launchProvider';
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
+import { ProviderIdentity } from './core/providerIdentity';
+import {
+    LaunchManifest, ManifestInput, manifestFor, manifestLeaks, manifestOf, newLaunchId,
+    rememberManifest
+} from './core/launchManifest';
 import { terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
@@ -16035,6 +16040,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          */
         route?: { providerId?: string; tier?: string }
     ): { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined => {
+        const r = resolveLaunchRoute(agentId, engine, route);
+        /**
+         * ‼️ X-102 — NO ROUTE STILL MEANS NO OVERLAY, exactly as before this
+         * item. It does NOT mean "no identity": a launch with nothing chosen
+         * still has one (`external`/`not-applicable`), and that answer is the
+         * whole reason the manifest is worth writing for the common case. The
+         * two questions are separated here rather than at the resolver, so the
+         * environment side keeps the contract every caller was written against.
+         */
+        if (!r?.routed) { return undefined; }
+        return {
+            ...(r.spawnEnv ? { spawnEnv: r.spawnEnv } : {}),
+            ...(r.clearEnv ? { clearEnv: r.clearEnv } : {})
+        };
+    };
+
+    /**
+     * ‼️ X-102 — ONE RESOLUTION, TWO READERS.
+     *
+     * The route was resolved in exactly one place and its answer was thrown
+     * half away: `engineRuntimeFor` kept the environment and dropped the
+     * IDENTITY — the redacted statement of which endpoint, which profile at
+     * which revision, and what was really asked for on the wire. A manifest
+     * built from a second resolution would be a second answer to the same
+     * question, and the two would disagree the first time a profile was edited
+     * between them. So the resolution happens here, once, and the two readers
+     * take the half they are entitled to: the spawn takes the environment, the
+     * record takes the identity, and nothing takes both.
+     *
+     * `routed` is what "the agent or the launcher actually named a provider"
+     * looks like as a fact rather than as a null check — see `engineRuntimeFor`.
+     */
+    const resolveLaunchRoute = (
+        agentId: string, engine: string, route?: { providerId?: string; tier?: string }
+    ): {
+        identity: ProviderIdentity; routed: boolean;
+        spawnEnv?: Record<string, string>; clearEnv?: string[];
+    } | undefined => {
         const agent = agents.find(a => a.id === agentId);
         if (!agent) { return undefined; }
         const chosen = (route?.providerId ?? '').trim()
@@ -16045,13 +16088,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             : storedRoute(
                 cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
                 agent.dir, engine as EngineId);
-        if (!chosen.providerId) { return undefined; }
         const rt = resolveRuntime(engine, {
-            engine, providerId: chosen.providerId, ...(chosen.tier ? { tier: chosen.tier } : {})
+            engine,
+            ...(chosen.providerId ? { providerId: chosen.providerId } : {}),
+            ...(chosen.providerId && chosen.tier ? { tier: chosen.tier } : {})
         }, registryDeps());
+        // ‼️ THE ENVIRONMENT IS WITHHELD WHEN NOTHING WAS CHOSEN. An adapter is
+        // free to answer a routeless selection with a clearing list, and applying
+        // it here would silently change what an unrouted terminal inherits — a
+        // behaviour nobody asked for, arriving through a record-keeping item.
         return {
-            ...(rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
-            ...(rt.clearEnv ? { clearEnv: rt.clearEnv } : {})
+            identity: rt.identity,
+            routed: !!chosen.providerId,
+            ...(chosen.providerId && rt.spawnEnv ? { spawnEnv: rt.spawnEnv } : {}),
+            ...(chosen.providerId && rt.clearEnv ? { clearEnv: rt.clearEnv } : {})
         };
     };
     /**
@@ -16949,6 +16999,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         title: string; cwd?: string; term?: vscode.Terminal; launchedAt: number; sessionId?: string;
         /** the active project when this terminal was launched — see the stamp */
         projectId?: string;
+        /**
+         * ‼️ X-102 — WHICH SPAWN THIS WINDOW IS, and therefore which manifest.
+         *
+         * A terminal session's id arrives minutes later, from a hook, and this
+         * record is the only thing that was present at both moments. Without it
+         * the manifest would describe a launch that nothing could be joined to:
+         * the setup would be on file and unattachable to the conversation it
+         * produced. Absent on a window opened before this item, and on one whose
+         * agent could not be resolved — an honest gap rather than a guess.
+         */
+        launchId?: string;
     }
     const termBindings: TermBinding[] = [];
     // persisted so a fresh "#n" never collides with a window from the previous run
@@ -16980,7 +17041,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * actually picked, and a terminal that re-derived it from settings would
          * open on a different route from the one the row said.
          */
-        route?: { providerId?: string; tier?: string }
+        route?: { providerId?: string; tier?: string },
+        /** ‼️ X-102 — the spawn this window IS, so the manifest can be joined to
+         *  the session id that turns up later. See TermBinding.launchId. */
+        launchId?: string
     ): vscode.Terminal | undefined => {
         launchSeq += 1;
         void context.globalState.update('agentfarm.termLaunchSeq', launchSeq);
@@ -17008,7 +17072,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (cfg().get<boolean>('externalTerminal', false)) {
             // title pinned so agentfarm.focusSessionTerminal can find the window later
             openExternalTerminal(cwd, command, title);
-            termBindings.push({ title, cwd, launchedAt: Date.now(), sessionId: laneId, projectId });
+            termBindings.push({ title, cwd, launchedAt: Date.now(), sessionId: laneId, projectId, launchId });
             if (laneId && projectId) { stampSessionProject(laneId, projectId); }
             return undefined;
         }
@@ -17033,7 +17097,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 [env],
                 termAgentId ? engineRuntimeFor(termAgentId, engine || 'claude', route) : undefined)
         });
-        termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId: laneId, projectId });
+        termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId: laneId, projectId, launchId });
         if (laneId && projectId) { stampSessionProject(laneId, projectId); }
         // The terminal closing is the only end-of-session signal these engines
         // have, and it is a reliable one: the conversation lives in the CLI's
@@ -17235,6 +17299,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Build + launch one claude session. Defaults fill whatever the caller
      *  left open; an invalid value is reported here rather than in a terminal
      *  the user then has to read. Returns the command line that ran. */
+    /**
+     * ‼️ X-102 — THE MANIFEST STORE: every spawn's immutable record of itself.
+     *
+     * `globalState` and not a file: these are read by the panel and by the
+     * bridge in the same window that writes them, they are already bounded
+     * (`MANIFEST_CAP`), and a file would be a second copy of the truth with its
+     * own failure modes. The cap is applied by the core on every write rather
+     * than swept later, which is the difference between a bound and a hope.
+     */
+    const MANIFEST_KEY = 'agentfarm.launchManifests';
+    const launchManifests = (): LaunchManifest[] =>
+        context.globalState.get<LaunchManifest[]>(MANIFEST_KEY, []) ?? [];
+
+    /**
+     * ‼️ THE LEAK GUARD RUNS ON THE WAY IN, AND A LEAKING RECORD IS NOT WRITTEN.
+     *
+     * A manifest is read by agents over the bridge and lives in the extension's
+     * own storage, so a credential reaching it reaches both. `manifestLeaks`
+     * names the offending paths; refusing loudly is the only honest answer,
+     * because a record quietly stripped of a field is a record that lies about
+     * what the launch was.
+     */
+    const writeLaunchManifest = (m: LaunchManifest): void => {
+        const leaks = manifestLeaks(m);
+        if (leaks.length) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: a launch manifest was NOT written — it carries ${leaks.join(', ')}, `
+                + 'and this record is readable by agents. The launch itself is unaffected.');
+            return;
+        }
+        void context.globalState.update(MANIFEST_KEY, rememberManifest(launchManifests(), m));
+    };
+
+    /**
+     * Mint the id, assemble the record, keep it — and hand the id back so the
+     * caller can put it on whatever will later learn the session id.
+     *
+     * ‼️ CALLED IMMEDIATELY BEFORE THE SPAWN, never after it. A manifest with no
+     * run is a run that failed to start, which is itself an answer; a manifest
+     * written after a successful start would silently stop recording exactly the
+     * launches somebody would want to look into.
+     */
+    const recordLaunch = (input: Omit<ManifestInput, 'launchId' | 'at'>): string => {
+        const at = Date.now();
+        const m = manifestFor({ ...input, launchId: newLaunchId(at), at });
+        writeLaunchManifest(m);
+        return m.launchId;
+    };
+
     const startClaudeSession = (
         agent: AgentInfo, o: LaunchOptions = {}, sessionId?: string, cwd?: string,
         project?: string
@@ -17303,13 +17416,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Terminal name stays "<engine>: <agent>" — agentfarm.focusSessionTerminal
         // and the interrupt resolver both find windows by that exact shape, and
         // "claude" is still the name for the engine everything else assumes.
+        /**
+         * ‼️ X-102 — THE MANIFEST, WRITTEN A LINE BEFORE THE PROCESS EXISTS.
+         *
+         * Everything the record needs is settled by now and nothing of it
+         * survives anywhere else: the transcript carries no route, no profile
+         * revision and no statement of what was REQUESTED as opposed to served
+         * (measured on a real Claude JSONL). The identity comes out of the same
+         * resolution the terminal's own environment will be built from, so the
+         * record cannot describe a different endpoint from the one that runs.
+         *
+         * ‼️ THE SURFACE IS ASKED, NOT ASSUMED: `externalTerminal` makes this the
+         * same launch through a different window, and the two are worth telling
+         * apart later — an external window is exactly where Agent Farm cannot
+         * apply the route at all (X-104).
+         */
+        const route = { providerId: merged.providerId, tier: merged.tier };
+        const resolved = resolveLaunchRoute(agent.id, spec.id, route);
+        const launchId = resolved && recordLaunch({
+            engine: spec.id,
+            identity: resolved.identity,
+            options: merged,
+            agentId: agent.id,
+            agentName: agent.name,
+            ...(projectId ? { projectId } : {}),
+            mechanism: 'session',
+            cwd: launchCwd,
+            surface: cfg().get<boolean>('externalTerminal', false)
+                ? 'external-terminal' : 'terminal',
+            superpowers: merged.superpowers ?? superpowersOnFor(agent.name)
+        });
         launchClaudeTerminal(`${spec.exe}: ${agent.name}`, cwd ?? agent.dir, command,
             // ‼️ X-103 — the route this launch resolved to, not the one the
             // settings file happens to hold. `merged` has already had the
             // agent's record applied under it, so an unset launch still lands on
             // the standing route and a set one wins — the whole layer, once.
-            undefined, sessionId, projectId, spec.id,
-            { providerId: merged.providerId, tier: merged.tier });
+            undefined, sessionId, projectId, spec.id, route, launchId || undefined);
         // A named launch should show its name in the panel within seconds, not
         // at the next quiet scan: the CLI writes its session file a moment
         // after boot, so look twice while the user is still watching. The name
@@ -29544,6 +29686,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '`surface` is "console" or "terminal", and ABSENT means the profile says nothing '
                 + 'about where, so the launcher keeps whatever surface it is already on.',
             handler: () => launchProfiles()
+        },
+        {
+            op: 'launch.manifests',
+            describe: 'X-102 — WHAT EACH SPAWN WAS SET UP TO BE, written a line before the process '
+                + 'existed and never rewritten after. This is the only record of the things a '
+                + 'transcript does not carry: which ROUTE served the run, which stored profile at '
+                + 'which revision, and what was REQUESTED (model/tier/variant/effort/permission) as '
+                + 'opposed to what came back. Read it before answering "which model did that session '
+                + 'really run on" — the model NAME in a transcript answers a different question, and '
+                + 'guessing the provider from it is the one thing this family exists to refuse. '
+                + 'args: launchId? (one manifest, exactly — nothing is returned for an id that has no '
+                + 'record, because a nearest match would be an invented certainty), agent? '
+                + '(id or name), engine?, limit? (default 50, newest last). '
+                + 'Returns [{launchId, at, engine, identity{providerId, providerLabel?, origin, '
+                + 'scope, providerProfileId?, providerProfileRevision?, route?, requestedModelRef, '
+                + 'proof}, catalogRevision?, requested{model?, tier?, variant?, effort?, '
+                + 'permissionMode?}, agentId, agentName, projectId?, mechanism, mechanismId?, cwd, '
+                + 'surface, superpowers?}]. '
+                + '‼️ There is no sessionId here ON PURPOSE: no engine knows one before the spawn, so '
+                + 'it belongs to the binding — the record that is allowed to learn. A manifest with '
+                + 'no run attached is a launch that failed to start, which is itself an answer. '
+                + 'Credentials are refused by name on the way IN, so nothing here is secret.',
+            handler: (args) => {
+                const one = optStr(args, 'launchId') ?? '';
+                if (one) {
+                    const hit = manifestOf(launchManifests(), { launchId: one });
+                    return hit ? [hit] : [];
+                }
+                const who = (optStr(args, 'agent') ?? '').trim().toLowerCase();
+                const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
+                const limit = Math.max(1, Number(args.limit) || 50);
+                const rows = launchManifests().filter(m =>
+                    (!who || m.agentId.toLowerCase() === who || m.agentName.toLowerCase() === who)
+                    && (!engine || (m.engine || 'claude').toLowerCase() === engine));
+                return rows.slice(Math.max(0, rows.length - limit));
+            }
         },
         {
             op: 'launch.profile.set',
