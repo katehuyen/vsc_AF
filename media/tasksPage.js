@@ -1653,27 +1653,40 @@
         if (!row) { c.providerId = ''; c.tier = ''; return; }
         if (c.tier && !(row.tiers || []).some(t => t.id === c.tier)) { c.tier = ''; }
     }
+    /**
+     * ‼️ X-149 — WHAT THIS ENGINE OFFERS, IN THE ONE SHAPE THE ONE NARROWING
+     * RULE READS (`media/afLaunch.js`). The Tasks form used to carry its own
+     * half of that rule; the host, the Console and `media/afEngine.js` carried
+     * three more, and they did not agree.
+     *
+     * ‼️ AN ENGINE WITH NO EFFORT FLAG OFFERS NO EFFORTS (X-35), and THIS is
+     * where that gets answered — the rule takes the answer, it does not guess
+     * it. `gemini` has `-m` and nothing beside it (measured against its own
+     * option list) and passing an effort exits 42. A box with no referent is
+     * what docs/CONVENTIONS.md forbids, so the list is empty and the picker
+     * hides it rather than collecting a value the run cannot use.
+     *
+     * ‼️ U-59 — AND THE ENGINE IS ASKED, NOT NAMED. This was the word `gemini`,
+     * so the second engine with no effort setting (OpenCode: ACP declares only
+     * model and mode, and no reachable model publishes a variant) was covered
+     * only by its catalog's empty list — which is not there until a session has
+     * opened. `takesEffort` is the same answer the bridge refuses on, and it is
+     * true before anything has connected. The bare `gemini` fallback survives
+     * for the one case the row cannot cover: before ANY engine row has landed.
+     */
+    function ntCatalog(engine) {
+        const row = ((DATA.launch || {}).engines || []).find(e => e.id === (engine || 'claude'));
+        return window.AFLaunch.catalog({
+            known: true,
+            em: ntEngineModels(engine),
+            models: ntModels(engine),
+            efforts: (DATA.launch || {}).efforts || [],
+            takesEffort: row ? window.AFLaunch.takesEffort(row) : String(engine || '') !== 'gemini'
+        });
+    }
     /** The levels THAT model supports — Codex states them per model. */
     function ntEfforts(engine, model) {
-        // ‼️ AN ENGINE WITH NO EFFORT FLAG OFFERS NO EFFORTS (X-35). `gemini`
-        // has `-m` and nothing beside it — measured against its own option list
-        // — and passing an effort exits 42. A box with no referent is what
-        // docs/CONVENTIONS.md forbids, so it is empty here and the picker
-        // hides it rather than collecting a value the run cannot use.
-        //
-        // ‼️ U-59 — AND THE ENGINE IS ASKED, NOT NAMED. This was the word
-        // `gemini`, so the second engine with no effort setting (OpenCode: ACP
-        // declares only model and mode, and no reachable model publishes a
-        // variant) was covered only by its catalog's empty list — which is not
-        // there until a session has opened. `takesEffort` is the same answer the
-        // bridge refuses on, and it is true before anything has connected.
-        const row = ((DATA.launch || {}).engines || []).find(e => e.id === (engine || 'claude'));
-        if (row && row.takesEffort === false) { return []; }
-        if (!row && String(engine || '') === 'gemini') { return []; }
-        const em = ntEngineModels(engine);
-        const fallback = (DATA.launch || {}).efforts || [];
-        if (!em || !em.efforts) { return fallback; }
-        return em.efforts[String(model || '')] || em.efforts[''] || fallback;
+        return window.AFLaunch.effortsFor(ntCatalog(engine), model);
     }
     /** Where the list came from and how old it is, for the box's tooltip. */
     function ntModelNote(engine) {
@@ -1690,17 +1703,18 @@
      * --effort "medium"): gemini-3.1-pro has no "medium" effort` — a prompt that
      * dies before it starts, in a run nobody is sitting in front of.
      *
-     * Mirrors `narrowLaunch` in core/models.ts, which is what the host applies
-     * to the same pair. The model's own default is preferred over nothing: a
-     * model that REQUIRES an effort has no "no flag" state to fall back to
-     * (core/agy.ts, measurement 3's mirror).
+     * ‼️ X-149 — IT NO LONGER *MIRRORS* `narrowLaunch`, IT IS THE SAME CODE.
+     * Mirroring is what this was, and a mirror is a copy: `media/afLaunch.js` is
+     * loaded by this page and by `src/core/models.ts` alike, so the host and the
+     * form cannot answer one pair two ways.
+     *
+     * ‼️ AND IT NARROWS THE EFFORT AGAINST THE MODEL IT IS ASKED ABOUT, not
+     * against a narrowed one — the model box here is settled by its own handler
+     * a line earlier, and re-deciding it inside this call would measure the
+     * level against a different list.
      */
     function ntNarrowEffort(engine, model, effort) {
-        const rows = ntEfforts(engine, model);
-        if (rows.some(e => e.id === (effort || ''))) { return effort || ''; }
-        const em = ntEngineModels(engine);
-        const def = (em && em.defaultEffort && em.defaultEffort[String(model || '')]) || '';
-        return rows.some(e => e.id === def) ? def : '';
+        return window.AFLaunch.narrowEffort(ntCatalog(engine), model, effort);
     }
 
     /** A plain <select> over `{id,label}` rows — the kind-specific fields. */
@@ -3809,8 +3823,11 @@
                 // A model belongs to one engine: `sonnet` carried over to Codex
                 // is a --model its CLI can only reject, so it is dropped rather
                 // than left sitting in a box that now disagrees with the engine.
-                if (composer && !ntModels(composer.engine).some(m => m.id === (composer.model || ''))) {
-                    composer.model = ''; composer.effort = '';
+                // ‼️ X-149 — asked of the one rule (media/afLaunch.js) rather
+                // than written out here, which is what made it the fifth copy.
+                if (composer) {
+                    const kept = window.AFLaunch.narrowModel(ntCatalog(composer.engine), composer.model);
+                    if (kept !== (composer.model || '')) { composer.model = kept; composer.effort = ''; }
                 }
                 // ‼️ X-106 — and so does a route (see ntNarrowRoute).
                 ntNarrowRoute(composer);

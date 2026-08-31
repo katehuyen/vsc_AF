@@ -21,6 +21,10 @@ const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afQuery.js'), 'utf8')
     // …and every clock on the page goes through the one clock (media/afTime.js)
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTime.js'), 'utf8')
+    // …and the form narrows its model/effort boxes through the ONE rule
+    // (media/afLaunch.js, X-149) — the same file the extension host runs, so a
+    // stub here would be testing a form that answers the pair its own way
+    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afLaunch.js'), 'utf8')
     // …and which ENGINE ran a task is drawn with the shared badge (X-35), the
     // same component every other table uses — never a colour invented here
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afEngine.js'), 'utf8')
@@ -1785,9 +1789,22 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     // GEMINI. A second one arrived (OpenCode: ACP declares only model and mode,
     // and no reachable model publishes a variant), and both the sentence and the
     // guard had been written around the first one's name.
+    // ‼️ X-149 — THE MIDDLE CLAUSE IS NOW RUN, NOT READ. The `takesEffort` guard
+    // moved into `media/afLaunch.js`, the one narrowing rule this page, the
+    // Console and the extension host all load. Repointing the regex at the new
+    // file's source would have been the same measurement with the same blind
+    // spot, so the rule is CALLED: an engine that takes no effort answers with
+    // no levels EVEN WHEN a flat list was handed to it, which is the case the
+    // guard exists for (the flat list is what it used to fall through to).
+    const AFL = require(path.join(__dirname, '..', 'media', 'afLaunch.js'));
+    const noEffort = AFL.catalog({
+        known: true, efforts: [{ id: '' }, { id: 'low' }, { id: 'high' }],
+        takesEffort: AFL.takesEffort({ id: 'opencode', takesEffort: false })
+    });
     ok('‼️ …and that an engine with no effort setting is not given the box',
         /Gemini has none, OpenCode has none/.test(page)
-        && /if \(row && row\.takesEffort === false\) \{ return \[\]; \}/.test(page)
+        && AFL.effortsFor(noEffort, '').length === 0
+        && AFL.narrow(noEffort, { model: '', effort: 'high' }).effort === ''
         && /if \(!\(list \|\| \[\]\)\.length\) \{ return ''; \}/.test(page));
     ok('‼️ …and that answer is the engine\'s own, not the catalog\'s silence',
         /takesEffort: engineTakesEffort\(e\.id\)/.test(panel));

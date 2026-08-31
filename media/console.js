@@ -2956,67 +2956,70 @@
         // `withCurrent`: never show a control that cannot say what is set).
         return kept.some(m => m.id) ? kept : base;
     }
+    /**
+     * ‼️ X-149 — WHAT THIS ENGINE OFFERS, IN THE ONE SHAPE THE ONE NARROWING
+     * RULE READS (`media/afLaunch.js`). The Console used to carry its own copy
+     * of that rule and so did three other files; they answered the same
+     * question differently, which is the mechanical form of "one thing gets
+     * fixed and another breaks".
+     *
+     * ‼️ U-59 — AN ENGINE WITH NO EFFORT SETTING OFFERS NONE, WHATEVER ITS
+     * CATALOG HAS ANSWERED — and that answer is given HERE rather than inside
+     * the rule. Gemini has no such flag and OpenCode has none either (ACP
+     * declares only model and mode); the empty list in their catalogs said so,
+     * but only AFTER the catalog had landed — before that this fell through to
+     * the flat list and drew Claude's five levels on an engine that would
+     * reject every one of them. The engine ROW is true before anything has
+     * connected, so the row is what is asked.
+     */
+    function composerCatalog(engineId) {
+        return window.AFLaunch.catalog({
+            known: true,
+            em: (DATA.engineModels || {})[engineId || 'claude'] || null,
+            models: modelsFor(engineId),
+            efforts: DATA.efforts || [],
+            takesEffort: window.AFLaunch.takesEffort(engineRow(engineId || 'claude'))
+        });
+    }
     /** …and the effort vocabulary of THAT model: Codex states its levels per
      *  model (five for luna, four for 5.5), so one shared list was wrong for
      *  both. Falls back to the engine's shared list, then the page's. */
     function effortsForModel(engineId, model) {
-        // ‼️ U-59 — AN ENGINE WITH NO EFFORT SETTING OFFERS NONE, WHATEVER ITS
-        // CATALOG HAS ANSWERED. Gemini has no such flag and OpenCode has none
-        // either (ACP declares only model and mode); the empty list in their
-        // catalogs said so, but only AFTER the catalog had landed — before that
-        // this fell through to the flat list and drew Claude's five levels on an
-        // engine that would reject every one of them.
-        const row = engineRow(engineId || 'claude');
-        if (row && row.takesEffort === false) { return []; }
-        const em = (DATA.engineModels || {})[engineId || 'claude'];
-        if (!em || !em.efforts) { return DATA.efforts || []; }
-        return em.efforts[String(model || '')] || em.efforts[''] || DATA.efforts || [];
+        return window.AFLaunch.effortsFor(composerCatalog(engineId), model);
     }
-    /**
-     * S-34 — A VALUE THIS AGENT ACTUALLY RAN ON IS ON THE LIST.
-     *
-     * A catalog is what an engine is OFFERING, and that is not the same set as
-     * what it can run: an alias typed into the launcher's "Other..." box, a
-     * model added to agentFarm.modelAliases and later removed, a level a
-     * catalog stopped advertising. Drawing a select off the catalog alone
-     * silently loses whatever is set - the box shows the first row while the
-     * state says something else, which is a control that lies.
-     */
+    /** S-34 — a value this agent actually ran on is on the list; the reason is
+     *  in `media/afLaunch.js`, where the rule lives. */
     function withCurrent(list, current) {
-        const v = String(current || '');
-        if (!v || list.some(x => x.id === v)) { return list; }
-        return list.concat([{ id: v, label: v }]);
+        return window.AFLaunch.withCurrent(list, current);
     }
     /**
      * Keep all three launch boxes inside the vocabulary of the engine/model
-     * currently in front of them. preferModelDefault is used after a model is
-     * picked by hand; an engine change otherwise preserves an effort when the
-     * new model genuinely offers the same value.
+     * currently in front of them — ‼️ X-149: BY ASKING THE ONE RULE
+     * (`media/afLaunch.js`), which the host and the Tasks form ask too.
      *
-     * S-34 - keep IS A REMEMBERED SETUP FOR **THIS** ENGINE, AND IT WINS.
+     * The two things that are the Console's OWN answer, and are therefore named
+     * options rather than a second copy of the rule:
      *
-     * This is where "it forgets the model" and "it forgets the effort" came
-     * from, and it was one line each: a seeded value absent from the engine's
-     * published catalog was cleared, and clearing the model then cascaded into
-     * the effort (the effort list is looked up BY model, so an emptied model
-     * lands on a different list and the level goes with it). A value a real
-     * launch on this same engine used is by definition runnable on it - the
-     * catalog simply does not advertise every alias. An ENGINE CHANGE still
-     * drops both, which is the case this function exists for: those values
-     * belong to a different program.
+     * `preferModelDefault` — used after a model is picked by hand; an engine
+     * change otherwise preserves an effort when the new model genuinely offers
+     * the same value.
+     *
+     * `keep` — S-34: A REMEMBERED SETUP FOR **THIS** ENGINE WINS. This is where
+     * "it forgets the model" and "it forgets the effort" came from, and it was
+     * one line each: a seeded value absent from the engine's published catalog
+     * was cleared, and clearing the model then cascaded into the effort (the
+     * effort list is looked up BY model, so an emptied model lands on a
+     * different list and the level goes with it). A value a real launch on this
+     * same engine used is by definition runnable on it — the catalog simply does
+     * not advertise every alias. An ENGINE CHANGE still drops both, which is the
+     * case this function exists for: those values belong to a different program.
      */
     function reconcileComposer(engineId, preferModelDefault, keep) {
-        const kept = keep || {};
-        const models = modelsFor(engineId);
-        const keepModel = !!st.model && kept.model === st.model;
-        if (!keepModel && !models.some(m => m.id === (st.model || ''))) { st.model = ''; }
-        const efforts = effortsForModel(engineId, st.model);
-        const em = (DATA.engineModels || {})[engineId || 'claude'] || {};
-        const modelDefault = (em.defaultEffort || {})[st.model || ''] || '';
-        const keepEffort = !preferModelDefault && !!st.effort && kept.effort === st.effort;
-        if (!keepEffort && (preferModelDefault || !efforts.some(e => e.id === (st.effort || '')))) {
-            st.effort = efforts.some(e => e.id === modelDefault) ? modelDefault : '';
-        }
+        const out = window.AFLaunch.narrow(composerCatalog(engineId),
+            { model: st.model, effort: st.effort },
+            { keep: keep || null, preferModelDefault: !!preferModelDefault });
+        st.model = out.model;
+        st.effort = out.effort;
     }
 
     // Host-side fresh-composer edge (K-15). It is intentionally local to this

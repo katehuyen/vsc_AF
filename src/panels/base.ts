@@ -350,6 +350,13 @@ export function htmlShell(
     // host loads the SAME FILE (src/core/aftime.ts), and the rule "every time
     // carries UTC in its hover" cannot hold on a page that had to opt in.
     const time = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTime.js'));
+    // The one narrowing rule — "the engine moved, what happens to the boxes
+    // under it" (X-149). Ships everywhere for the same two reasons as the clock
+    // and the query language: the extension host loads the SAME FILE
+    // (src/core/aflaunch.ts), and four surfaces each carrying their own copy is
+    // exactly how the same model id came to be RECOGNISED on one side and
+    // FOREIGN on the other. Loaded before afEngine.js, which asks it.
+    const launch = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afLaunch.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     // Which engine a thing ran on, drawn the same way and in the same colour on
     // every surface. Ships everywhere for the reason U-26 was filed: a badge
@@ -412,6 +419,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${form}"></script>
 <script nonce="${nonce}" src="${query}"></script>
 <script nonce="${nonce}" src="${time}"></script>
+<script nonce="${nonce}" src="${launch}"></script>
 <script nonce="${nonce}" src="${engine}"></script>
 <script nonce="${nonce}" src="${project}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>

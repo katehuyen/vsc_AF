@@ -135,48 +135,46 @@
      * shape every panel already ships: `{ engines[], engineModels{}, efforts[] }`.
      *
      * This lives beside the engine badge because it is the same subject — what
-     * an engine IS — and because the alternative is what the repo already has:
-     * the Tasks form, the Console and Settings each carrying their own copy of
-     * these four functions, free to drift apart. Those three are not moved here
-     * in this commit (they are heavily-tested surfaces and that is its own
-     * job); anything NEW asks here.
+     * an engine IS.
+     *
+     * ‼️ X-149 — AND THE RULE UNDER IT IS NOT WRITTEN HERE ANY MORE. The line
+     * that used to stand in this comment said the Tasks form, the Console and
+     * Settings each carried their own copy of these functions and that moving
+     * them was "its own job". That job was X-149: the rule now lives ONCE, in
+     * `media/afLaunch.js`, which the extension host loads as the same file
+     * (`src/core/aflaunch.ts`). These three stay as the shape callers already
+     * ask in — `launch` is what every panel ships — and hand the question on.
      */
-    function launchModels(launch, engine) {
-        const map = (launch && launch.engineModels) || {};
-        const em = map[engine || 'claude'];
-        return (em && em.models) || (launch && launch.models) || [];
-    }
-    /** The effort rows for that engine+model — [] when the engine takes none. */
-    function launchEfforts(launch, engine, model) {
+    function launchCatalog(launch, engine) {
+        const l = launch || {};
         // ‼️ AN ENGINE WITH NO EFFORT FLAG OFFERS NO EFFORTS. Asked of the
         // engine row rather than named (`gemini`, then OpenCode), so the answer
         // holds before any catalog has been fetched. A control with no referent
         // is a bug, so the caller draws nothing rather than an empty box.
-        const row = ((launch && launch.engines) || []).find(function (e) { return e.id === (engine || 'claude'); });
-        if (row && row.takesEffort === false) { return []; }
-        const map = (launch && launch.engineModels) || {};
-        const em = map[engine || 'claude'];
-        const fallback = (launch && launch.efforts) || [];
-        if (!em || !em.efforts) { return fallback; }
-        return em.efforts[String(model || '')] || em.efforts[''] || fallback;
+        const row = (l.engines || []).find(function (e) { return e.id === (engine || 'claude'); });
+        return window.AFLaunch.catalog({
+            known: true,
+            em: (l.engineModels || {})[engine || 'claude'] || null,
+            models: l.models || [],
+            efforts: l.efforts || [],
+            takesEffort: window.AFLaunch.takesEffort(row)
+        });
+    }
+    function launchModels(launch, engine) {
+        return window.AFLaunch.modelsFor(launchCatalog(launch, engine));
+    }
+    /** The effort rows for that engine+model — [] when the engine takes none. */
+    function launchEfforts(launch, engine, model) {
+        return window.AFLaunch.effortsFor(launchCatalog(launch, engine), model);
     }
     /**
-     * The pair, made coherent — the page-side mirror of core/models.ts
-     * `narrowLaunch`. A model this engine does not offer is dropped, and an
-     * effort the resulting model does not offer becomes that model's own
+     * The pair, made coherent. A model this engine does not offer is dropped,
+     * and an effort the resulting model does not offer becomes that model's own
      * default, or nothing, which is the only value safe on every engine.
      */
     function launchNarrow(launch, engine, model, effort) {
-        const models = launchModels(launch, engine);
-        const keptModel = models.some(function (m) { return m.id === (model || ''); }) ? (model || '') : '';
-        const rows = launchEfforts(launch, engine, keptModel);
-        if (rows.some(function (e) { return e.id === (effort || ''); })) {
-            return { model: keptModel, effort: effort || '' };
-        }
-        const map = (launch && launch.engineModels) || {};
-        const em = map[engine || 'claude'];
-        const def = (em && em.defaultEffort && em.defaultEffort[String(keptModel)]) || '';
-        return { model: keptModel, effort: rows.some(function (e) { return e.id === def; }) ? def : '' };
+        return window.AFLaunch.narrow(launchCatalog(launch, engine),
+            { model: model, effort: effort });
     }
 
     window.AFEngine = {

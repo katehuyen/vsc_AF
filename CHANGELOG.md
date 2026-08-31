@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.366.0 - X-149: one narrowing rule, loaded by both sides (2026-08-31)
+
+"The engine moved — what happens to the boxes under it" was answered in four
+places: `narrowLaunch` on the host, `reconcileComposer` in the Console,
+`ntNarrowEffort` in the Tasks form, and a fourth in the shared engine component
+whose own comment admitted the other three "have not been moved here yet". They
+were written from the same intention and they still disagreed — the host counted
+`claude-opus-4-5-20251101` and the alias `opus` as ONE model while the pages
+pushed the unrecognised value onto the list as a stranger. Nothing measured the
+four against each other, which is the mechanical form of the complaint that
+opened this work: one thing gets fixed and another breaks.
+
+**There is now one rule and it lives in `media/afLaunch.js`**, the arrangement
+the clock and the query language already proved: the pages load it in the
+webview and the extension host loads the SAME FILE through
+`src/core/aflaunch.ts`. The four bodies are gone, not shadowed — a page that
+kept its own would have passed every test and stayed free to drift, so the
+absence is measured: `defaultEffort`, the one piece of arithmetic the rule owns,
+no longer appears in any of the three page scripts at all.
+
+**‼️ It did NOT make the four agree — that would have changed behaviour on
+surfaces that took months to get right.** The differences are real answers to
+real cases, so they are PARAMETERS now instead of divergences hidden in a copy:
+`keep` is S-34 (a setup a real launch on this engine used beats the catalogue),
+`preferModelDefault` is the Console's "a model was just picked by hand",
+`resolveAlias` is S-47/K-28 (`big-pickle` resolving to `opencode/big-pickle`),
+and `takesEffort` is X-35 (an engine with no effort flag offers none, answered
+at each call site because the two page surfaces resolve it differently before a
+catalogue has landed). Every one of them is now a word somebody can read, and
+converging them is a decision there is finally one place to take.
+
+**`test/test_launch_narrow.js` is one fixture table and every entry point
+answers all of it** — Node, a webview sandbox, and the host's own compiled
+`narrowLaunch`. A case added there is a case every surface has to pass, and the
+page's answer is asserted equal to the host's on all 23 of them, which is the
+assertion the four copies could never make. Two source-text regexes in
+`test_launch_parity.js` and one in `test_tasks_webview.js` were replaced by
+running the rule rather than reading it: their subject had moved, and
+re-pointing a regex at the new file would have been the same measurement with
+the same blind spot.
+
+First of the four moves in the launch-axis hardening (X-148).
+
 ## 3.365.0 - X-106: an unattended run can say which route serves it (2026-08-31)
 
 Every launch dimension on a stored automation is there because of one sentence:

@@ -552,11 +552,38 @@ const launchTs = read('src', 'core', 'launch.ts');
     const consoleJs = read('media', 'console.js');
     ok('the reconcile takes what a real launch on this engine used',
         /function reconcileComposer\(engineId, preferModelDefault, keep\) \{/.test(consoleJs));
+    // ‼️ X-149 — THIS GUARANTEE IS NOW RUN, NOT READ.
+    //
+    // These two used to be regexes over `reconcileComposer`'s body, and the
+    // body has moved: the narrowing rule lives in `media/afLaunch.js`, which
+    // the page and the extension host both load. A regex could only have been
+    // repointed at the new file's source — the same measurement with the same
+    // blind spot. The rule is a pure function of a catalogue and a pair, so it
+    // is CALLED here instead, which is what X-148 says a guard has to be.
+    const AFL = require(path.join(ROOT, 'media', 'afLaunch.js'));
+    const stale = AFL.catalog({
+        known: true,
+        // the catalog is OFFERING sonnet — it has never heard of the alias the
+        // launcher's "Other…" box put in, nor of the level that stopped being
+        // advertised, which is precisely S-34's shape
+        em: { models: [{ id: '' }, { id: 'sonnet' }], efforts: { '': [{ id: '' }, { id: 'low' }] }, defaultEffort: {} },
+        efforts: []
+    });
+    const keptPair = AFL.narrow(stale, { model: 'my-alias', effort: 'xhigh' },
+        { keep: { model: 'my-alias', effort: 'xhigh' } });
     ok('‼️ …and a kept model is not cleared by a catalog that does not list it',
-        /const keepModel = !!st\.model && kept\.model === st\.model;/.test(consoleJs)
-        && /if \(!keepModel && !models\.some/.test(consoleJs));
+        keptPair.model === 'my-alias');
     ok('‼️ …nor a kept effort, which used to go with the model',
-        /const keepEffort = !preferModelDefault && !!st\.effort && kept\.effort === st\.effort;/.test(consoleJs));
+        keptPair.effort === 'xhigh');
+    // ‼️ AND THE ENGINE CHANGE STILL DROPS BOTH — the case the reconcile exists
+    // for. Without this the assertions above would pass on a rule that keeps
+    // everything, which is the failure S-34 was the correction TO.
+    const moved = AFL.narrow(stale, { model: 'my-alias', effort: 'xhigh' }, { keep: null });
+    ok('…while an engine change drops what belonged to the other program',
+        moved.model === '' && moved.effort === '');
+    ok('…and the Console is what hands the keep in',
+        /window\.AFLaunch\.narrow\(composerCatalog\(engineId\),/.test(consoleJs)
+        && /\{ keep: keep \|\| null, preferModelDefault: !!preferModelDefault \}/.test(consoleJs));
     ok('a handed-over setup is kept',
         /reconcileComposer\(engineNow\(\), false,\s*\n\s*forThisEngine \?/.test(consoleJs));
     // ‼️ S-49 — the agent picker reconciles nothing, because it writes nothing.

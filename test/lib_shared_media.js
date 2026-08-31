@@ -41,6 +41,12 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // is the page where the turn goes unmarked.
     'afWiki.js',
     'afForm.js', 'afQuery.js', 'afTime.js',
+    // afLaunch.js was the eighteenth — the ONE narrowing rule, "the engine moved,
+    // what happens to the boxes under it" (X-149). Shared for the strongest form
+    // of the reason afQuery.js and afTime.js are: the extension host runs the
+    // SAME FILE (src/core/aflaunch.ts), and the four copies it replaced answered
+    // the same pair differently. Loaded before afEngine.js, which asks it.
+    'afLaunch.js',
     // afEngine.js was the tenth — which engine ran a thing, drawn one way (U-26)
     'afEngine.js',
     // afProject.js was the eleventh — which project a thing belongs to, drawn

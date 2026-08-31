@@ -46,6 +46,9 @@ import { agyDefaultEffort } from './agy';
 import { EngineId, EngineProbe } from './engines';
 import { engineFlagFor, engineOf, engineTakesEffort } from './consoleEngine';
 import { EFFORT_CHOICES, LaunchChoice } from './launch';
+// ‼️ X-149 — ONE narrowing rule, and it is `media/afLaunch.js`. Loaded, never
+// reimplemented: the pages run the same file (see src/core/aflaunch.ts).
+import { LaunchCatalog, catalog, effortsForModel, narrow } from './aflaunch';
 
 const CODEX_CATALOG = '.codex/models_cache.json';
 const CLAUDE_STATE = '.claude/.claude.json';
@@ -591,78 +594,43 @@ export function readEngineModels(
 
 /** The effort rows for one engine+model — the per-model vocabulary when the
  *  catalog states one, the engine's shared list otherwise. */
+/**
+ * This host's `EngineModels` as the catalogue view `media/afLaunch.js` reads
+ * (X-149). `takesEffort` is not asked here: an engine with no effort flag
+ * publishes an empty list, and the host only ever narrows against a catalogue it
+ * already holds — the two page surfaces need the engine ROW instead, because
+ * they narrow before one has landed (X-35), and each says so at its own call.
+ */
+function catalogOf(em: EngineModels | undefined): LaunchCatalog {
+    return catalog({ em: em ?? null, efforts: EFFORT_CHOICES });
+}
+
 export function effortsFor(em: EngineModels | undefined, model: string): LaunchChoice[] {
-    if (!em) { return EFFORT_CHOICES; }
-    return em.efforts[String(model ?? '').trim()] ?? em.efforts[''] ?? EFFORT_CHOICES;
+    return effortsForModel(catalogOf(em), model);
 }
 
 /**
- * ‼️ X-30 — A MODEL AND AN EFFORT ARE ONE ANSWER, NOT TWO.
+ * ‼️ X-30 — A MODEL AND AN EFFORT ARE ONE ANSWER, NOT TWO. Every surface that
+ * lets one of the pair change asks what the OTHER one becomes rather than
+ * re-deriving it, and `em` absent means nothing is known and therefore nothing
+ * is narrowed. The measurement behind both, and the rest of the reasoning, is
+ * in `media/afLaunch.js` — kept in ONE file so it cannot be half-updated.
  *
- * Reading the model list per engine (S-20) and the effort list per model was
- * only half the job: the two boxes are filled at different moments, and the
- * effort that was valid for the model you had a second ago is still sitting in
- * the state when you pick a model that has never heard of it. The CLI does not
- * shrug at that — measured:
+ * ‼️ X-149 — THE RULE ITSELF LIVES THERE TOO. This function is the host's door onto it, not a second copy: the
+ * Console, the Tasks form and `media/afEngine.js` each used to carry their own,
+ * and the same model id was RECOGNISED here and FOREIGN there.
  *
- *   invalid model selection (--model "gemini-3.1-pro" --effort "medium"):
- *   gemini-3.1-pro has no "medium" effort (available: low, high)
- *
- * which is a prompt that dies before it starts, hours later, in a task nobody
- * is watching. So every surface that lets one of the pair change asks this
- * function what the OTHER one becomes, rather than each re-deriving it:
- *
- *   · a model this engine does not offer is dropped (S-20's rule, kept here so
- *     there is one copy of it);
- *   · an effort the resulting model does not offer becomes the model's own
- *     default when the catalog states one, and otherwise nothing — "no flag"
- *     is the only value that is safe on every engine.
- *
- * `em` absent (an engine that publishes no catalog) means nothing is known and
- * therefore nothing is narrowed: inventing a refusal from ignorance would be
- * worse than the refusal this prevents.
+ * `resolveAlias` is the one thing the host asks for that a page does not
+ * (S-47/K-28 — `big-pickle` resolving to `opencode/big-pickle`); it is a named
+ * option rather than a difference in the rule, so it can be read at a glance
+ * and moved when somebody decides the pages should have it too.
  */
-/**
- * ‼️ S-47 / K-28 — THE ID AN ENGINE RECORDS IS NOT ALWAYS THE ID IT PUBLISHES.
- *
- * OpenCode names a model `provider/model` — `opencode/big-pickle` — and its own
- * export records only the tail, so a resumed session asks for a name its
- * catalogue has never published and the model is dropped: the session comes back
- * on the fleet default, silently, which is the failure S-45 exists to end.
- *
- * ‼️ AND THE RULE IS INERT WHERE IT DOES NOT APPLY, WHICH IS WHY IT MAY LIVE
- * HERE RATHER THAN IN AN ENGINE BRANCH. On a catalogue whose ids carry no `/`,
- * every id IS its own tail — so the only thing this could match is a model the
- * exact test above already kept. It can therefore never change the answer for
- * Claude, Codex or Antigravity, by construction rather than by promise.
- *
- * A tail claimed by SEVERAL ids resolves to nothing: two providers offering the
- * same model is a real shape, and picking one by luck would answer with a
- * different provider's model, which is worse than asking.
- */
-function tailOfExactlyOne(em: EngineModels, want: string): string {
-    if (!want) { return ''; }
-    const hit = em.models.filter(m => !!m.id && m.id.slice(m.id.lastIndexOf('/') + 1) === want);
-    return hit.length === 1 ? hit[0].id : '';
-}
-
 export function narrowLaunch(
     em: EngineModels | undefined,
     model: string | undefined,
     effort: string | undefined
 ): { model: string; effort: string } {
-    const wantModel = String(model ?? '').trim();
-    const wantEffort = String(effort ?? '').trim();
-    if (!em) { return { model: wantModel, effort: wantEffort }; }
-    const keptModel = em.models.some(m => m.id === wantModel)
-        ? wantModel : tailOfExactlyOne(em, wantModel);
-    const rows = effortsFor(em, keptModel);
-    if (rows.some(e => e.id === wantEffort)) { return { model: keptModel, effort: wantEffort }; }
-    const fallback = em.defaultEffort[keptModel] ?? '';
-    return {
-        model: keptModel,
-        effort: rows.some(e => e.id === fallback) ? fallback : ''
-    };
+    return narrow(catalogOf(em), { model, effort }, { resolveAlias: true });
 }
 
 /**
