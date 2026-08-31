@@ -21,17 +21,14 @@ const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'u
 // The capture box asks a SHARED component for its four text tools, and the
 // backlog tab asks another for its filter dropdowns; the real ones run here
 // rather than stubs, so the page and the components cannot drift.
-const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
-    // …and the right-click contract, because every row publishes itself through
-    // it. A stub here would let the rows and their menus drift apart in silence.
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afCtx.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afSessionCtx.js'), 'utf8')
-    // …and the one clock, which the timeline rows hover with (media/afTime.js)
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afTime.js'), 'utf8')
-    // …and the repaint guard (M-33), because the page WIRES it at load: a host
-    // push must not repaint the caret out of the box somebody is typing in.
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afRepaint.js'), 'utf8');
+// ‼️ THE SHARED COMPONENTS, FROM THE ONE LIST THAT KNOWS WHAT THEY ARE — the
+// real ones, not stubs, because the page asks them for their markup. This file
+// used to name its own subset (text tools, filters, the right-click contract,
+// the clock, the repaint guard), which is precisely the list
+// `lib_shared_media.js` holds and keeps checked against `src/panels/base.ts` in
+// BOTH directions. A hand-written copy is a reason not to share the next
+// component: X-105 left its route pill page-local rather than break this file.
+const shared = require(path.resolve(__dirname, 'lib_shared_media.js')).sharedMedia();
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 

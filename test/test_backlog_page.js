@@ -20,27 +20,25 @@ const path = require('path');
 const vm = require('vm');
 
 const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'utf8');
-// ‼️ The capture box's four text tools and the multi-pick filter dropdown are
-// SHARED components, and the REAL ones run here rather than stubs: the page asks
-// them for their markup, so a stub would let the two drift apart without a
-// single test noticing.
-const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afFilters.js'), 'utf8')
-    // …and the right-click contract, because every row publishes itself through
-    // it. A stub here would let the rows and their menus drift apart in silence.
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afCtx.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afSessionCtx.js'), 'utf8')
-    // …and the query language, because the search box is one (media/afQuery.js)
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afQuery.js'), 'utf8')
-    // …and the rich hover panel, because the Next up strip and the row's `more`
-    // BOTH open it: a stub would let the page and the panel drift apart, which
-    // is the drift that put a truncating native title on the strip in the first
-    // place (docs/CONVENTIONS.md → Hover).
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afTip.js'), 'utf8')
-    // …and the repaint guard (M-33), because the page WIRES it at load: a host
-    // push must not repaint the caret out of the box somebody is typing in.
-    // Not a stub — the guard's own decision is what the page's behaviour is.
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afRepaint.js'), 'utf8');
+// ‼️ THE SHARED COMPONENTS, FROM THE ONE LIST THAT KNOWS WHAT THEY ARE.
+//
+// The REAL ones run here rather than stubs — the page asks them for their
+// markup, so a stub would let the two drift apart without a single test
+// noticing. This file used to name them itself: the capture box's text tools,
+// the filter dropdown, the right-click contract, the query language, the hover
+// panel, the repaint guard. That is exactly the list `lib_shared_media.js`
+// exists to hold, and it holds it BOTH WAYS — it is checked against
+// `src/panels/base.ts`, so a component added to the shell and not here fails
+// loudly instead of producing a nameless "cannot read properties of undefined"
+// the first time the page reaches for it.
+//
+// ‼️ WHY IT MATTERED ENOUGH TO CHANGE: a hand-written list is a reason NOT to
+// share the next component. X-105 wanted one and left its route pill
+// page-local rather than break this file and `test_projects_tabs.js`; the same
+// answer would be given to the launch narrowing the moment somebody tries to
+// make it one rule for the host and the page. The list is not the place to
+// take a shortcut.
+const shared = require(path.resolve(__dirname, 'lib_shared_media.js')).sharedMedia();
 const createAfmsDom = require(path.resolve(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
