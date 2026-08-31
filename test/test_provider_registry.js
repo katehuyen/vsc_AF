@@ -299,10 +299,24 @@ const deps = () => ({
     // name out of it changes nothing and the inherited one survives. So these
     // two call sites must go through `terminalEnvOverlay`, which says the
     // clearing out loud as `null`, and NOT through the spawn builder.
+    //
+    // ‼️ X-104 — AND THE OVERLAY IS BUILT ONCE PER SURFACE, ABOVE THE BRANCH.
+    // It used to be written inline on the `createTerminal` call, which is how
+    // the OS-window branch beside it came to carry NO environment at all: not
+    // the agent's variables and not the route's endpoint and key, so a session
+    // picked as Kimi opened on the default route with every surface agreeing it
+    // had not. The guarantee is not loosened here, it is widened — the same map
+    // has to reach BOTH doors.
     ok('‼️ the interactive task terminal isolates through the overlay',
-        /env: terminalEnvOverlay\(/.test(tasks));
+        /const env = terminalEnvOverlay\(/.test(tasks));
+    ok('…and hands that same map to the OS window as well as the integrated one',
+        /openExternalTerminal\([\s\S]{0,400}?\n\s*env\n\s*\}\);/.test(tasks)
+        && /createTerminal\(\{[\s\S]{0,700}?\n\s*env\n\s*\}\)/.test(tasks));
     ok('‼️ the session terminal does too',
-        /env: terminalEnvOverlay\(/.test(ext));
+        /const termEnv = terminalEnvOverlay\(/.test(ext));
+    ok('…and both of its doors take it',
+        /openExternalTerminal\(cwd, command, title, \{ env: termEnv \}\)/.test(ext)
+        && /createTerminal\(\{ name: title, cwd, env: termEnv \}\)/.test(ext));
     // ‼️ AND ALL OF THEM THROUGH ONE SYMBOL. That is the acceptance line itself:
     // three surfaces resolving a launch three ways are three answers to "which
     // route is this run on", and the transcript records none of them.

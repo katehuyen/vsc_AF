@@ -2,6 +2,52 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.356.0 - X-104 (1/n): the OS terminal window runs on the route you picked (2026-08-31)
+
+Of every surface that starts a CLI, the external terminal was the only one that
+carried **no environment at all**.
+
+The integrated terminal has taken an overlay since 3.34x — the agent's own
+variables, plus the route's endpoint and key, plus the names to CLEAR so an
+inherited Anthropic route cannot answer the same question a second time. The
+external branch, three lines away, dropped every bit of it. So with
+`Agent Farm: External Terminal` switched on, a session you picked as Kimi (or
+MiniMax, or any custom route) opened on the **default** route — and the launcher
+row, the engine badge and the launch manifest all said Kimi, because every one of
+them reads what you SELECTED rather than what the process was given. Nothing
+anywhere contradicted it. The same hole swallowed a custom CLI's own variables,
+and it was there for both doors that open an OS window: a session terminal and an
+interactive task set to "OS terminal window".
+
+Both doors now hand the window exactly the map their integrated twin gets. Where
+you want to watch a run has never been a statement about what it should run on.
+
+**On Windows the values travel in a file the script eats, and they are not in
+the script.** There is no in-memory channel to an OS window here: when Windows
+Terminal is already running, `wt.exe` is a thin client and the window is opened
+by a process that started long before this one, so an environment set on the
+spawn reaches nothing. A route's value is an API key, so the design is about how
+briefly it exists: the launcher script's first act is to read the file and
+**delete** it, before it runs anything. A window closed later — with the CLI
+still running, or killed — leaves nothing behind. Writing the values into the
+script instead would have left them for as long as the session lasted, because
+the script only removes itself on its last line and a session is exactly the case
+that never reaches it.
+
+This is measured rather than reasoned about: the generated script is really run,
+and the test reads back what the process was actually given — a key with `+`, `/`
+and `=` in it, a value carrying `%`, `!`, `&` and `<`, and a name that had to end
+up genuinely unset.
+
+On macOS and Linux nothing reaches disk at all: the shell is our own child, so
+the `export` and `unset` statements travel in the command line, single-quoted so
+a `$` or a backtick inside a key is not read as anything.
+
+Partial on purpose — the other half of the item (an engine that takes its
+provider as a command-line argument rather than as environment) is still to come.
+
+261 files · 17 193 checks · 0 failures.
+
 ## 3.355.0 - M-33 closed: the Plan tab can delete, and no page repaints under your hands (2026-08-31)
 
 Two halves of one report. The first was fixed last release on the page it was

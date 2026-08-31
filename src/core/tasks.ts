@@ -2941,6 +2941,16 @@ export class TaskManager implements vscode.Disposable {
         const cwd = task.workDir ?? agent.dir;
         const target = normInteractiveTarget(task.interactiveTarget);
         const close = normInteractiveClose(task.interactiveClose);
+        /**
+         * ‼️ X-104 — BOTH TARGETS, ONE ENVIRONMENT. It used to be built inside
+         * the integrated branch only, so the SAME task run in an OS window went
+         * out with neither the agent's variables nor the route's endpoint and
+         * key — the target a person picks is about where they want to watch the
+         * run, and it has never been a statement about what it should run on.
+         */
+        const env = terminalEnvOverlay(
+            [this.opts.getEnv?.(agent.id)],
+            this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude'));
         if (target === 'external') {
             fs.mkdirSync(this.outputsDir, { recursive: true });
             const exitFile = path.join(this.outputsDir, `${task.id}.exit`);
@@ -2950,7 +2960,8 @@ export class TaskManager implements vscode.Disposable {
                 // `auto-close` is the whole reason `keepOpen` exists: the window
                 // is there to be watched, not to be dismissed afterwards.
                 keepOpen: close !== 'auto-close',
-                exitFile
+                exitFile,
+                env
             });
             this.externalWatch.add(task.id);
             this.startInteractiveWatch();
@@ -2966,9 +2977,7 @@ export class TaskManager implements vscode.Disposable {
             // Code merges this onto the window's own environment, which means a
             // route name simply left out survives inherited and untouched. The
             // clearing has to be said out loud, as `null`.
-            env: terminalEnvOverlay(
-                [this.opts.getEnv?.(agent.id)],
-                this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude'))
+            env
         });
         terminal.show();
         // ‼️ THE EXIT IS A SECOND LINE, NOT `&& exit`. The shell here is

@@ -17189,9 +17189,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ?? (engine && engine !== 'claude'
                 ? openExternalLane(engine, cwd, title, projectId)
                 : undefined);
+        const termAgentId = resolveAgentByCwd(cwd).agentId;
+        /**
+         * ‼️ X-104 — THE ENVIRONMENT IS THE SAME ON BOTH SURFACES, so it is
+         * built once, above the branch.
+         *
+         * It used to be built only inside the integrated branch, and the OS
+         * window therefore ran with NOTHING: not the custom CLI's variables and
+         * not the route's endpoint and key. A person with
+         * `agentFarm.externalTerminal` on ran every session on the default route
+         * while the launcher row, the engine badge and the launch manifest all
+         * said Kimi — the quietest possible form of "it ran on the wrong thing",
+         * because every surface that could have contradicted it agreed.
+         *
+         * The agent is resolved from the working directory because that is what
+         * this function is given; `resolveAgentByCwd` is the same reader every
+         * other surface uses to answer "whose folder is this", so a terminal and
+         * a task opened on the same agent get the same route rather than two
+         * readings of it.
+         */
+        const termEnv = terminalEnvOverlay(
+            [env],
+            termAgentId ? engineRuntimeFor(termAgentId, engine || 'claude', route) : undefined);
         if (cfg().get<boolean>('externalTerminal', false)) {
             // title pinned so agentfarm.focusSessionTerminal can find the window later
-            openExternalTerminal(cwd, command, title);
+            openExternalTerminal(cwd, command, title, { env: termEnv });
             termBindings.push({ title, cwd, launchedAt: Date.now(), sessionId: laneId, projectId, launchId });
             if (laneId && projectId) { stampSessionProject(laneId, projectId); }
             return undefined;
@@ -17200,23 +17222,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * ‼️ X-101 — THE TERMINAL SURFACE, WHICH THE ACCEPTANCE LINE NAMES
          * ALONGSIDE CONSOLE AND HEADLESS.
          *
-         * The agent is resolved from the working directory because that is what
-         * this function is given; `resolveAgentByCwd` is the same reader every
-         * other surface uses to answer "whose folder is this", so a terminal and
-         * a task opened on the same agent get the same route rather than two
-         * readings of it.
-         *
          * ‼️ AN OVERLAY, NOT A COMPLETE ENVIRONMENT. VS Code merges this onto
          * the window's own, so a route name left out survives inherited — the
-         * clearing has to be said out loud, which is what `null` does.
+         * clearing has to be said out loud, which is what `null` does. The OS
+         * window above is handed the same map and says the same two things in
+         * its own shell's words (X-104).
          */
-        const termAgentId = resolveAgentByCwd(cwd).agentId;
-        const terminal = vscode.window.createTerminal({
-            name: title, cwd,
-            env: terminalEnvOverlay(
-                [env],
-                termAgentId ? engineRuntimeFor(termAgentId, engine || 'claude', route) : undefined)
-        });
+        const terminal = vscode.window.createTerminal({ name: title, cwd, env: termEnv });
         termBindings.push({ title, cwd, term: terminal, launchedAt: Date.now(), sessionId: laneId, projectId, launchId });
         if (laneId && projectId) { stampSessionProject(laneId, projectId); }
         // The terminal closing is the only end-of-session signal these engines
