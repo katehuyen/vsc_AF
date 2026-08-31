@@ -136,6 +136,34 @@ process.env.ANTHROPIC_BASE_URL = 'https://inherited.example/anthropic';
         !!env && env.ANTHROPIC_BASE_URL === 'https://inherited.example/anthropic');
 }
 
+// ------------------------------------- 4. ONE READER, TWO SURFACES (X-105)
+//
+// The card draws the route and `console.sessions` hands it to an agent. If those
+// were two readings, the item's own acceptance line would be unmeetable by
+// construction: what a surface SAYS and what the process RUNS ON can only be
+// "the same statement" while there is one statement. Pinned in the source
+// because the two callers live 10 000 lines apart and the way this regresses is
+// somebody adding a third and writing their own.
+{
+    const fs = require('fs');
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const defs = (ext.match(/const consoleRouteOf = \(/g) || []).length;
+    ok('the route is described in exactly ONE place', defs === 1);
+    ok('…and the Console page delegates to it rather than holding a copy',
+        /routeOf: consoleRouteOf,/.test(ext));
+    ok('…and so does the bridge op an agent reads',
+        /route: consoleRouteOf\(s\.engine/.test(ext));
+    // The adapter is the fourth reader and the authority: the launcher's own
+    // route row is built from it, so the noun and the scope note a card shows
+    // are the engine's words, not the panel's.
+    ok('…and it asks the engine\'s own adapter for the words',
+        /const consoleRouteOf = \([\s\S]{0,900}?providerFormFor\(/.test(ext));
+    // An agent that reads the op must be told the field exists and what `null`
+    // means there, or a missing route reads as a missing feature.
+    ok('…and the op says the field is there and what nothing means',
+        /AND `route` SAYS WHAT IS ANSWERING/.test(ext));
+}
+
 if (hadUrl === undefined) { delete process.env.ANTHROPIC_BASE_URL; }
 else { process.env.ANTHROPIC_BASE_URL = hadUrl; }
 cp.spawn = realSpawn;

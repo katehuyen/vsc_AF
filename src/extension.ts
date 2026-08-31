@@ -338,7 +338,7 @@ import {
 import { expandUserPath, standardRoots } from './core/portablePaths';
 import { MissionsPanel } from './panels/missionsPanel';
 import { PortfolioPanel } from './panels/portfolioPanel';
-import { ConsolePanel } from './panels/consolePanel';
+import { ConsolePanel, ConsoleRoute } from './panels/consolePanel';
 import {
     historyWindow, historyWindowIndices, OLDER_CHUNK, transcriptHistory, transcriptMessages
 } from './core/consolehistory';
@@ -10403,7 +10403,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'console.sessions',
-            describe: 'The Console sessions this window hosts. ‼️ EVERY ROW SAYS WHICH ENGINE IT IS AND WHAT THAT ENGINE CAN DO (`engine`, `engineLabel`, `turnShape`, `steerable`, `reportsCost`, `costSource`, `takesEffort`) — read them BEFORE the figures beside them, because each one changes what a figure means: `cost` is the engine\'s own on a `costSource:"cli"` row and derived from your pricing rules on a `"tokens"` one; `effort` is refused outright where `takesEffort` is false; a message sent now is HELD until the turn ends unless `steerable`; and `asking.kind === "permission"` can only ever happen on an engine that stops and asks. ‼️ `steerable:false` does NOT mean the controls are dead — on `turnShape:"sharedAcp"` they reach a LIVE connection at the next turn boundary, which is a different thing from becoming a flag on a process that does not exist yet. Then: status, cost so far, turns, held messages (console.queue reads them), model, effort and permission mode as they were ASKED for (empty = nothing was overridden), what is REALLY in force (applied: the CLI\'s own get_settings answer — model, and effort null on a model with no effort levels; ‼️ `enforcedPermissionMode` is the same distinction for permissions and is the one to trust: an empty `permissionMode` can be `bypassPermissions` in force because Claude\'s own settings resolve Default to it, `permissionWhy` says where that came from, and `bypassAutoApproved` counts the permission requests a bypassed session had to answer itself — above zero means the CLI asked when it should not have), what the RUNNING turn is thinking with (turnModel/turnEffort, taken from applied when the turn began — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), ‼️ TWO DIFFERENT TOKEN MEASUREMENTS that must not be read as one: `tokens` is what the whole conversation has SPENT (it can exceed the window many times over — a long thread legitimately reads 5.4M), while `contextTokens` is what the window is HOLDING after the last model call, against `contextWindowTokens` (the capacity that session itself reported, which is not the model catalogue\'s published ceiling) with `contextPct`, `contextSource` (where the reading came from: stream-last-call / rollout-last-token-usage / transcript-last-call), `contextMeasuredAt` and `contextStale`; contextTokens is null when no per-call source exists — a session or turn total is NEVER used in its place, and contextPct is null rather than invented when the reading exceeds the window, whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
+            describe: 'The Console sessions this window hosts. ‼️ EVERY ROW SAYS WHICH ENGINE IT IS AND WHAT THAT ENGINE CAN DO (`engine`, `engineLabel`, `turnShape`, `steerable`, `reportsCost`, `costSource`, `takesEffort`) — read them BEFORE the figures beside them, because each one changes what a figure means: `cost` is the engine\'s own on a `costSource:"cli"` row and derived from your pricing rules on a `"tokens"` one; `effort` is refused outright where `takesEffort` is false; a message sent now is HELD until the turn ends unless `steerable`; and `asking.kind === "permission"` can only ever happen on an engine that stops and asks. ‼️ `steerable:false` does NOT mean the controls are dead — on `turnShape:"sharedAcp"` they reach a LIVE connection at the next turn boundary, which is a different thing from becoming a flag on a process that does not exist yet. Then: status, cost so far, turns, held messages (console.queue reads them), model, effort and permission mode as they were ASKED for (empty = nothing was overridden), what is REALLY in force (applied: the CLI\'s own get_settings answer — model, and effort null on a model with no effort levels; ‼️ `enforcedPermissionMode` is the same distinction for permissions and is the one to trust: an empty `permissionMode` can be `bypassPermissions` in force because Claude\'s own settings resolve Default to it, `permissionWhy` says where that came from, and `bypassAutoApproved` counts the permission requests a bypassed session had to answer itself — above zero means the CLI asked when it should not have), what the RUNNING turn is thinking with (turnModel/turnEffort, taken from applied when the turn began — a switch applies from the next turn, so these can differ from model/effort), the turn that just finished (lastTurn: ms/tokens/cost/outcome/model/effort — null while a turn runs), ‼️ TWO DIFFERENT TOKEN MEASUREMENTS that must not be read as one: `tokens` is what the whole conversation has SPENT (it can exceed the window many times over — a long thread legitimately reads 5.4M), while `contextTokens` is what the window is HOLDING after the last model call, against `contextWindowTokens` (the capacity that session itself reported, which is not the model catalogue\'s published ceiling) with `contextPct`, `contextSource` (where the reading came from: stream-last-call / rollout-last-token-usage / transcript-last-call), `contextMeasuredAt` and `contextStale`; contextTokens is null when no per-call source exists — a session or turn total is NEVER used in its place, and contextPct is null rather than invented when the reading exceeds the window, whatever the session is WAITING ON YOU for (asking: a question that has parked its turn — console.answer settles it) and the last few messages. ‼️ AND `route` SAYS WHAT IS ANSWERING ON THE OTHER SIDE OF THE ENGINE (id, label, noun, tier?, baseUrl?, authKind?, scopeNote) — the engine is the program, the route is the endpoint it talks to, and two cards on ONE engine can be served by two different companies. `null` on the four engines with no provider axis and on every launch that picked none, which is most of them; `scopeNote` is the engine\'s own word for how long the pick lasts (fixed for the session on Claude, changeable at a turn boundary on OpenCode). It is the SAME reader the Console card draws from, so this op and the page cannot say two different things. No credential is in it. args: id? (one session, with more of its transcript), messages? (how many messages to include, default 0)',
             handler: (args) => {
                 const want = optStr(args, 'id');
                 const take = typeof args.messages === 'number' ? Math.max(0, Math.floor(args.messages)) : 0;
@@ -10435,6 +10435,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     reportsCost: engineOf(s.engine).reportsCost,
                     costSource: engineOf(s.engine).costSource,
                     takesEffort: engineTakesEffort(s.engine),
+                    // X-105 - AND WHAT IS ANSWERING ON THE OTHER SIDE OF THE
+                    // ENGINE. The engine is the program; the route is the
+                    // endpoint that program talks to, and two cards on one
+                    // engine can be served by two different companies. The
+                    // SAME reader the card draws from (consoleRouteOf), so an
+                    // agent reading this op and a person reading the page
+                    // cannot be told two different things. Null on the four
+                    // engines with no provider axis and on every launch that
+                    // picked none, which is most of them. No credential: the
+                    // endpoint is an ordinary setting and the shape has no
+                    // field for one.
+                    route: consoleRouteOf(s.engine ?? 'claude', s.providerId, s.tier) ?? null,
                     status: s.status, model: s.model ?? null, effort: s.effort ?? null,
                     // ‼️ …and what the CLI says is REALLY in force, which is the
                     // only one of the two that survives "the user chose nothing"
@@ -16224,6 +16236,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return r.pick;
     };
 
+    /**
+     * ‼️ X-105 — WHICH ROUTE A HOSTED CARD IS SERVED BY, WRITTEN ONCE.
+     *
+     * Two readers need this answer — the Console page draws it on the card, and
+     * `console.sessions` hands it to an agent — and they must not be able to
+     * disagree, because the whole point of the item is that what a surface SAYS
+     * and what the process RUNS ON are the same statement. `providerFormFor` is
+     * the third: it is the reader the launcher's own route row is built from, so
+     * the word all three use is the engine adapter's word rather than any
+     * page's.
+     *
+     * `undefined` is the ordinary answer: four of the five engines have no
+     * provider axis, and most Claude launches pick no route.
+     *
+     * ‼️ NOTHING SECRET. The endpoint is an ordinary setting; the credential is
+     * not read here and the shape has no field for one to arrive in.
+     */
+    const consoleRouteOf = (
+        engine: string, providerId?: string, tier?: string
+    ): ConsoleRoute | undefined => {
+        const id = (providerId ?? '').trim();
+        if (!id) { return undefined; }
+        const form = providerFormFor(engineOf(engine).id, { providerId: id, tier }, 'acp');
+        if (!form.applies) { return undefined; }
+        const profile = providerProfiles().find(p => p.id === id);
+        return {
+            id,
+            // The route's own name; the raw id is the honest fallback for a
+            // profile deleted since the card was started — a card must not stop
+            // saying what it runs on because the settings file moved on.
+            label: form.providers.find(c => c.id === id)?.label || profile?.label || id,
+            noun: form.noun,
+            ...((tier ?? '').trim() ? { tier } : {}),
+            ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
+            ...(profile?.authKind ? { authKind: profile.authKind } : {}),
+            scopeNote: form.scopeNote
+        };
+    };
+
     const setProviderSecret = async (id: string, value: string): Promise<void> => {
         const key = secretKeyFor(id);
         if (!key) { return; }
@@ -20040,26 +20091,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * the ordinary card. The endpoint comes off the stored profile and is
          * public; the credential is not read here and has nowhere to go.
          */
-        routeOf: (engine: string, providerId?: string, tier?: string) => {
-            const id = (providerId ?? '').trim();
-            if (!id) { return undefined; }
-            const form = providerFormFor(engineOf(engine).id, { providerId: id, tier }, 'acp');
-            if (!form.applies) { return undefined; }
-            const profile = providerProfiles().find(p => p.id === id);
-            return {
-                id,
-                // The route's own name; the raw id is the honest fallback for a
-                // profile that has been deleted since the card was started —
-                // a card must not stop saying what it runs on because the
-                // settings file moved on without it.
-                label: form.providers.find(c => c.id === id)?.label || profile?.label || id,
-                noun: form.noun,
-                ...((tier ?? '').trim() ? { tier } : {}),
-                ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
-                ...(profile?.authKind ? { authKind: profile.authKind } : {}),
-                scopeNote: form.scopeNote
-            };
-        },
+        routeOf: consoleRouteOf,
         history: consoleHistory,
         olderHistory: consoleOlderHistory,
         lastWindow: () => lastWindow,
