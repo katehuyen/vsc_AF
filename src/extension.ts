@@ -148,6 +148,7 @@ import {
 } from './core/launchProvider';
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
 import { ProviderIdentity } from './core/providerIdentity';
+import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
 import {
     LaunchManifest, ManifestInput, manifestFor, manifestLeaks, manifestOf, newLaunchId,
     rememberManifest
@@ -10603,6 +10604,90 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            /**
+             * ‼️ X-105 — THE ONE DOOR THAT MAY MOVE A LIVE SESSION'S PROVIDER,
+             * AND THE ONLY PLACE THAT DECIDES WHETHER IT MAY.
+             *
+             * `console.setModel` changes what answers; this changes WHO SERVES
+             * IT, and on the two engines with a provider axis those are
+             * different questions with different answers. The verdict is the
+             * adapter's (`providerSwitchPolicy`), never this handler's: a rule
+             * written here would be a second statement of what each engine
+             * allows, and the day an adapter changes its mind this op would go
+             * on confidently enforcing the old one.
+             *
+             * ‼️ A REFUSAL IS THE ANSWER, WITH THE THING THAT DOES WORK NAMED.
+             * On Claude a route change mid-conversation is a different program —
+             * measured in August, resuming through a different route mixed two
+             * routes' models into one transcript — so it is refused and the
+             * refusal says fork or new session. Silently doing nothing, or
+             * silently doing it, are the two worse answers.
+             */
+            op: 'console.switch',
+            describe: 'Change WHO SERVES a hosted Console session — the provider/route, not the model. ‼️ WHETHER THIS IS ALLOWED AT ALL IS THE ENGINE\'S ANSWER, and the reply\'s `act` says which of four things happened: "unchanged" (it is already on that one, or none was asked for), "now" (it moves from the next turn), "turn-boundary" (a turn is running; the engine cannot change the provider of a turn under way, so it moves when that turn ends and is recorded as a NEW TURN IDENTITY — the turns before it keep the one they ran on), or a REFUSAL, which is thrown with the reason and the remedy. On Claude the route is base URL + auth + tier injected into the process before it was spawned, so it is FIXED FOR THE SESSION: a different route is a different program, and asking for one here is refused with "fork it or start a new session" rather than corrupting a transcript that cannot say which route served which turn. On OpenCode the provider is the engine\'s own and it publishes a way to change it, so the change is legitimate and lands at the turn boundary. ‼️ AND ON THAT ENGINE THE MODEL CARRIES THE PROVIDER (`opencode/big-pickle`), so a switch there needs the model you want too — the provider alone would leave the session sending the old qualified name. args: id (console id), providerId (the route/provider id — engines.providers lists them; a provider this engine cannot be pointed at is refused, never dropped), tier? (Claude routes only), model? (the wire-qualified model to move to; required where the model names the provider)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const row = consoleHost.get(id);
+                need(!!row, 'no such live console session (console.sessions lists them)');
+                const engine = engineOf(row!.engine).id;
+                const adapter = adapterFor(engine, registryDeps());
+                const model = optStr(args, 'model');
+                const tier = optStr(args, 'tier');
+                const verdict = providerSwitchPolicy(
+                    adapter,
+                    { providerId: row!.providerId, modelRef: row!.model },
+                    { providerId: optStr(args, 'providerId'), tier, model },
+                    // A turn under way is the whole difference between "now" and
+                    // "when this one ends"; a session id is what a fork would
+                    // have to be taken FROM, so it decides which remedy a
+                    // refusal is allowed to name.
+                    { turnRunning: row!.status === 'working', resumable: !!row!.sessionId },
+                    'acp'
+                );
+                // ‼️ REFUSED, NOT REPORTED AS A SUCCESS WITH A NOTE. A caller
+                // that asked for an endpoint and got a 200 with a sentence in it
+                // is a caller that believes it moved.
+                if (verdict.act === 'refuse') { throw new Error(verdict.why); }
+                if (verdict.act !== 'unchanged') {
+                    /**
+                     * ‼️ WHERE THE MODEL IS THE PROVIDER'S OWN HALF, THE MOVE
+                     * IS A MODEL CHANGE — there is no second control to send.
+                     * Setting the provider alone would leave the session sending
+                     * `oldprovider/model` and the card claiming the new one,
+                     * which is the exact disagreement this item exists to close.
+                     * The choices are named rather than one being picked here:
+                     * an engine that publishes six models under a provider has
+                     * no "obvious" one, and guessing would be this door
+                     * inventing a selection nobody made.
+                     */
+                    const form = providerFormFor(engine, { providerId: verdict.providerId }, 'acp');
+                    if (form.sub.kind === 'model') {
+                        const offered = form.sub.choices.filter(c => c.id).map(c => c.id);
+                        need(!!model,
+                            `on ${engine} the model names the provider, so a switch to "${verdict.providerId}" `
+                            + `needs the model you want too — one of: ${offered.join(', ') || '(none published)'}`);
+                        need(offered.includes(model),
+                            `"${model}" is not a model "${verdict.providerId}" serves — one of: `
+                            + (offered.join(', ') || '(none published)'));
+                    }
+                }
+                // The model is what actually carries the change to the engine,
+                // and `setModel` already holds it to the turn boundary where the
+                // engine requires that — the same mechanism the picker uses.
+                if (model) { need(consoleHost.setModel(id, model), 'no such live console session'); }
+                ConsolePanel.refreshIfOpen();
+                const after = consoleHost.get(id);
+                return {
+                    id, engine, act: verdict.act, why: verdict.why,
+                    /** what it is served by now, read by the SAME resolver the
+                     *  card and `console.sessions` use — so a caller and the
+                     *  panel cannot come away with different answers. */
+                    route: consoleRouteOf(engine, after?.providerId, after?.tier, after?.model) ?? null,
+                    model: after?.model ?? null
+                };
+            }
+        },
+        {
             op: 'console.setEffort',
             describe: 'Switch how hard a hosted session thinks (low | medium | high | xhigh | max; empty = back to the CLI default). It applies from the next turn, and the reply\'s `applied` says how it got there — see console.setModel. ‼️ AN ENGINE WITH NO REASONING-EFFORT SETTING REFUSES THIS RATHER THAN SWALLOWING IT ('
                 + enginesWithoutEffort()
@@ -16289,19 +16374,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * not read here and the shape has no field for one to arrive in.
      */
     const consoleRouteOf = (
-        engine: string, providerId?: string, tier?: string
+        engine: string, providerId?: string, tier?: string, modelRef?: string
     ): ConsoleRoute | undefined => {
         const id = (providerId ?? '').trim();
-        if (!id) { return undefined; }
-        const form = providerFormFor(engineOf(engine).id, { providerId: id, tier }, 'acp');
+        /**
+         * ‼️ X-105 — AND THE MODEL CAN BE THE THING THAT NAMES IT. On OpenCode
+         * the wire name IS `provider/model`, so a card started with no explicit
+         * provider is still being served by one the engine can name, and a card
+         * whose model was switched mid-session is being served by a DIFFERENT
+         * one than it launched on. Read off the model rather than stored beside
+         * it: the model is already kept true by the engine's own answers, and a
+         * second copy would be a second thing to go stale (see ConsoleRoute.now).
+         *
+         * ‼️ ONLY WHERE THE ENGINE VOUCHES FOR THE PREFIX. `providerOfModelRef`
+         * goes through `splitQualifiedRef`, which refuses to call `a` a provider
+         * unless `a` is on the engine's own published list — the anti-guess rule
+         * this whole family is built on, and the one `opencode.ts` already
+         * carries a scar from breaking.
+         */
+        const servingNow = providerOfModelRef(
+            adapterFor(engineOf(engine).id, registryDeps()), modelRef, 'acp');
+        if (!id && !servingNow) { return undefined; }
+        const form = providerFormFor(engineOf(engine).id, { providerId: id || servingNow, tier }, 'acp');
         if (!form.applies) { return undefined; }
+        const labelOf = (pid: string): string =>
+            form.providers.find(c => c.id === pid)?.label
+            || providerProfiles().find(p => p.id === pid)?.label || pid;
+        // A card launched with no route but running on a provider the engine
+        // names: the mark is that provider, and there is no earlier one to
+        // contrast it with.
+        if (!id) {
+            return {
+                id: servingNow, label: labelOf(servingNow), noun: form.noun, scopeNote: form.scopeNote
+            };
+        }
         const profile = providerProfiles().find(p => p.id === id);
         return {
             id,
+            ...(servingNow && servingNow !== id
+                ? { now: { id: servingNow, label: labelOf(servingNow) } } : {}),
             // The route's own name; the raw id is the honest fallback for a
             // profile deleted since the card was started — a card must not stop
             // saying what it runs on because the settings file moved on.
-            label: form.providers.find(c => c.id === id)?.label || profile?.label || id,
+            label: labelOf(id),
             noun: form.noun,
             ...((tier ?? '').trim() ? { tier } : {}),
             ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),

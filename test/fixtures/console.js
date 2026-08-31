@@ -166,6 +166,23 @@ const data = () => ({
                 scopeNote: 'fixed for the session - a different route is a different program, so a resume across one forks'
             }
         }),
+        // X-105 - AND THE CARD THAT MOVED. On the engine that qualifies a model
+        // (provider/model) a mid-session model change moves the provider, and
+        // the pill then names a DIFFERENT one from the launch record. Drawn only
+        // in that state, so the scene has to contain it or the difference
+        // between the two pills is photographed by nobody.
+        session({
+            id: 'cs5', agentName: 'gozcu', sessionId: 'ses_7c31f0aa',
+            engine: 'opencode', engineLabel: 'OpenCode', turnShape: 'sharedAcp',
+            reportsCost: false, model: 'anthropic/claude-opus-5',
+            title: 'Saglayici tur sinirinda degisti', status: 'idle', turns: 4,
+            tokens: 48200, lastTs: NOW - 200000,
+            route: {
+                id: 'opencode', label: 'opencode', noun: 'Provider',
+                now: { id: 'anthropic', label: 'anthropic' },
+                scopeNote: 'the engine may change this at a turn boundary, and records it as a new turn identity'
+            }
+        }),
         session({
             id: 'cs3', agentName: 'manager', sessionId: '', title: '',
             engine: 'codex', engineLabel: 'Codex', turnShape: 'perTurn',

@@ -1393,7 +1393,11 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
 {
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     for (const op of ['console.start', 'console.send', 'console.sessions', 'console.interrupt',
-        'console.permissionMode', 'console.setEffort', 'console.answer', 'console.close']) {
+        'console.permissionMode', 'console.setEffort', 'console.answer', 'console.close',
+        // ‼️ X-105 — WHO SERVES IT is a different question from WHAT ANSWERS, and
+        // an agent that could change the model but not the provider would be the
+        // one door unable to do what the acceptance line names.
+        'console.switch']) {
         ok(`${op} is on the bridge`, ext.includes(`op: '${op}'`));
     }
     ok('the host outlives the panel, and dies with the window',

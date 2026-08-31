@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.363.0 - X-105 (5/n): a provider change is answered, not guessed (2026-08-31)
+
+The item's second sentence is a POLICY, and it had no home in the code: Claude
+forbids a provider change inside one conversation and wants a new session or a
+fork, while OpenCode genuinely allows one at a turn boundary and records it as a
+new turn identity. Until now nothing asked the question at all — `console.setModel`
+on OpenCode moved the provider silently (the wire name **is** `provider/model`),
+and the card went on naming the route it launched on.
+
+**The verdict is the adapter's, and no engine is named to reach it.**
+`src/core/providerSwitch.ts` answers one question — may this live session change
+who serves it, and when — out of `providerScope` and
+`canSwitchProviderAtTurnBoundary`. Four answers, and `unchanged` is one of them:
+`unchanged` · `now` · `turn-boundary` · `refuse`. A refusal carries the remedy
+(`fork` when there is a conversation to carry over, `new` when there is not),
+because a no with nothing after it leaves the caller nowhere. The module names
+no engine at all, and a test measures that: a sixth engine gets the right answer
+by declaring its scope, not by somebody remembering to edit a list.
+
+**`console.switch` is the one door.** It asks the policy, THROWS a refusal
+rather than returning a success with a sentence beside it, and — on the engine
+where the model names the provider — refuses to invent a model, listing what
+that provider actually serves instead. `console.setModel` still changes what
+answers; this changes who serves it, and on two engines those are different
+questions.
+
+**And the card says who is serving it NOW.** On OpenCode a mid-session model
+change moves the provider, so a pill naming the launch value was pointing at an
+endpoint the session had stopped talking to. Both facts are kept and neither is
+stored twice: the current provider is DERIVED from the model the card is on
+(through the anti-guess reader — a prefix is only a provider when the engine
+published it), the launch record is untouched because X-102 made it immutable,
+and the panel's first line is the current one with `Started on:` under it. Same
+mark, no second pill, and the line is drawn only on a card that really moved.
+
 ## 3.362.0 - X-105 (4/n): the composer PICKS the route, and the bridge can too (2026-08-31)
 
 X-103 made the route pickable in the launcher; X-105 (2/n) made the started card

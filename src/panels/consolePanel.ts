@@ -96,6 +96,26 @@ export interface ConsoleRoute {
     authKind?: string;
     /** how long the pick lasts, in the adapter's own words */
     scopeNote: string;
+    /**
+     * ‼️ X-105 — WHO IS SERVING IT NOW, when that is no longer who it started
+     * with — and only ever on an engine whose scope allows the difference.
+     *
+     * `id`/`label` above are the LAUNCH record and they do not move: X-102 made
+     * the launch manifest immutable precisely so a card that ran three turns on
+     * one provider and then moved does not become a card that always ran on the
+     * second. But on OpenCode the model IS `provider/model`, so a mid-session
+     * model change moves the provider — and a pill that went on naming the
+     * launch value would be describing an endpoint the session stopped talking
+     * to. Both facts, one subject, one panel.
+     *
+     * ‼️ DERIVED FROM THE MODEL THE CARD IS ON, NEVER STORED A SECOND TIME. The
+     * model is already kept true by the engine's own answers
+     * (`applyOpencodeConfig`), so a stored copy of its provider half would be a
+     * second answer with its own way of going stale. And it is derived only
+     * where the engine VOUCHES for the prefix (`splitQualifiedRef`), which is
+     * the anti-guess rule this family is built on.
+     */
+    now?: { id: string; label: string };
 }
 
 export interface ConsoleDeps {
@@ -162,7 +182,12 @@ export interface ConsoleDeps {
      * ‼️ NOTHING SECRET. The endpoint is public (it is in the settings file);
      * the credential is not, is not read here, and has no field to arrive in.
      */
-    routeOf?(engine: string, providerId?: string, tier?: string): ConsoleRoute | undefined;
+    routeOf?(
+        engine: string, providerId?: string, tier?: string,
+        /** ‼️ X-105 — the model the card is on RIGHT NOW, because on one engine
+         *  that is what names the provider. See `ConsoleRoute.now`. */
+        modelRef?: string
+    ): ConsoleRoute | undefined;
     /**
      * ‼️ X-105 — WHAT THE COMPOSER MAY PICK, ASKED OF THE ENGINE'S OWN ADAPTER.
      *
@@ -725,7 +750,7 @@ export class ConsolePanel {
                 // with no provider axis and on every launch that picked none,
                 // which is most of them — a mark for "nothing" would be noise
                 // on every row.
-                route: this.deps.routeOf?.(s.engine ?? 'claude', s.providerId, s.tier) ?? null,
+                route: this.deps.routeOf?.(s.engine ?? 'claude', s.providerId, s.tier, s.model) ?? null,
                 // the session's own title — the same one the side panel and the
                 // viewer show, so a rename anywhere is a rename everywhere
                 title: this.titleFor(s),

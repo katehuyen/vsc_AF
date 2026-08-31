@@ -2817,13 +2817,35 @@
         const r = s && s.route;
         if (!r || !r.label) { return ''; }
         const noun = String(r.noun || 'Route');
+        /**
+         * ‼️ X-105 — THE PILL SAYS WHO IS SERVING IT NOW, AND THE PANEL SAYS
+         * WHO IT STARTED WITH.
+         *
+         * On an engine whose provider may change at a turn boundary, those are
+         * two different facts and the reader needs both: the current one is what
+         * the next turn will run on, the launch one is what the turns already in
+         * the transcript ran on. MIRROR — the pill cuts its own text, so the
+         * panel opens with the value the pill is showing.
+         *
+         * ONE SUBJECT: both live in this mark's own panel. A second pill for
+         * "started on" would be two marks for one question.
+         */
+        const nowLabel = (r.now && r.now.label) ? r.now.label : r.label;
+        const moved = !!(r.now && r.now.id && r.now.id !== r.id);
         return cardTip(
-            `<span class="af-route">${C.esc(r.label)}</span>`,
+            `<span class="af-route${moved ? ' af-route-moved' : ''}">${C.esc(nowLabel)}</span>`,
             // SHORTHAND: the pill is the short form, and the panel opens with
             // the long one so a reader never has to already know what it meant.
-            `${r.label} — the ${noun.toLowerCase()} this session is served by`,
+            `${nowLabel} — the ${noun.toLowerCase()} this session is served by`,
             window.AFTip.lines([
-                noun + ': ' + r.label,
+                noun + ': ' + nowLabel,
+                // ‼️ ONLY WHEN IT REALLY MOVED. On every other card this line
+                // would restate the line above it, which is how a panel teaches
+                // a reader to stop reading it.
+                moved
+                    ? 'Started on: ' + r.label
+                        + ' — the turns before the change ran on that one, and they still do'
+                    : '',
                 r.tier ? 'Tier: ' + r.tier : '',
                 // The one line that makes the mark CHECKABLE rather than
                 // decorative. Public — it is an ordinary setting; the credential

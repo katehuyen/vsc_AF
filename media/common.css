@@ -564,6 +564,17 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     border: 1px dashed currentColor; opacity: .85;
     color: var(--vscode-descriptionForeground, #9d9d9d);
 }
+/* X-105 - THE SESSION IS NO LONGER ON THE ONE IT STARTED WITH. Only reachable
+   on an engine whose provider may change at a turn boundary, and it is a fact
+   worth seeing without a hover: the turns already in the transcript ran on a
+   different endpoint than the next one will. Same shape and same dashed border
+   - it is the SAME mark, not a second one - lifted to the full foreground so it
+   stops reading as background metadata. Deliberately not a colour: red would
+   read as an error and this is a legitimate feature of that engine, and every
+   hue in this extension already means something else. */
+.af-route.af-route-moved {
+    opacity: 1; color: var(--vscode-foreground, #ccc);
+}
 /* ‼️ Antigravity is NOT green (U-49). Green is this extension's own signal —
    the live dot, an OK engine card, an assistant message, an active agent — so
    an `agy` badge in green read as "this row is fine" on every surface at once.

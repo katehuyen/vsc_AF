@@ -156,8 +156,27 @@ process.env.ANTHROPIC_BASE_URL = 'https://inherited.example/anthropic';
     // The adapter is the fourth reader and the authority: the launcher's own
     // route row is built from it, so the noun and the scope note a card shows
     // are the engine's words, not the panel's.
+    // ‼️ THE WINDOW IS WIDENED WHEN THE FUNCTION GROWS, NEVER THE GUARANTEE. It
+    // is still "inside consoleRouteOf's own body", which is the thing being
+    // measured; 900 was only ever how long the body happened to be.
     ok('…and it asks the engine\'s own adapter for the words',
-        /const consoleRouteOf = \([\s\S]{0,900}?providerFormFor\(/.test(ext));
+        /const consoleRouteOf = \([\s\S]{0,1800}?providerFormFor\(/.test(ext));
+    /**
+     * ‼️ X-105 — AND WHO IS SERVING IT NOW IS DERIVED, NOT STORED A SECOND TIME.
+     *
+     * On OpenCode the wire name IS `provider/model`, so a mid-session model
+     * change moves the provider — and the card went on naming the launch value.
+     * The fix must not be a second copy of the provider kept beside the model:
+     * the model is already kept true by the engine's own answers, so a stored
+     * half would be a second thing to go stale in the one place this family
+     * exists to keep honest.
+     */
+    ok('‼️ …and the provider serving it NOW is read off the model, through the '
+        + 'anti-guess reader rather than by splitting on a slash',
+        /const consoleRouteOf = \([\s\S]{0,1800}?providerOfModelRef\(/.test(ext)
+        && !/consoleRouteOf[\s\S]{0,1800}?modelRef\.split\('\/'\)/.test(ext));
+    ok('…and the launch record is not overwritten by it — `now` is its own field',
+        /now: \{ id: servingNow, label: labelOf\(servingNow\) \}/.test(ext));
     // An agent that reads the op must be told the field exists and what `null`
     // means there, or a missing route reads as a missing feature.
     ok('…and the op says the field is there and what nothing means',
