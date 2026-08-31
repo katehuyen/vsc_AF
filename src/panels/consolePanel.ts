@@ -505,9 +505,13 @@ export class ConsolePanel {
         const panel = vscode.window.createWebviewPanel(
             'agentfarm.console', 'Console', vscode.ViewColumn.Active,
             { enableScripts: true, retainContextWhenHidden: true });
-        ConsolePanel.current = new ConsolePanel(panel, deps);
-        apply(ConsolePanel.current);
-        ConsolePanel.current.refresh();
+        const fresh = new ConsolePanel(panel, deps);
+        ConsolePanel.current = fresh;
+        // ‼️ S-50 — APPLY, THEN LOAD. The order is the whole fix: what the door
+        // came to say has to be in the page's first payload, because a push
+        // aimed at a page that has not run yet lands nowhere (see `mount`).
+        apply(fresh);
+        fresh.mount();
     }
 
     /** Live update while the panel is open (the host fires on every event). */
@@ -567,12 +571,37 @@ export class ConsolePanel {
     }
 
     private constructor(private panel: vscode.WebviewPanel, private deps: ConsoleDeps) {
-        panel.webview.html = htmlShell(panel.webview, deps.extensionUri,
-            'Console', this.data(), 'console.js');
         panel.webview.onDidReceiveMessage(m => void this.onMessage(m), null, this.disposables);
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         this.disposables.push(deps.host.onChange(() => this.refresh()));
     }
+
+    /**
+     * ‼️ S-50 — THE PAGE IS LOADED AFTER THE DOOR HAS SAID WHAT IT CAME TO SAY.
+     *
+     * The shell used to be built in the constructor, which runs BEFORE
+     * `show`'s `apply` — so on the cold path (the Console is closed and this
+     * call is what creates it) the bootstrap `window.__DATA__` carried none of
+     * the caller's answers, and the `refresh()` that followed pushed them into
+     * a webview whose script had not run yet. A push into an unloaded page is
+     * not late, it is LOST; and because `presetAgent` is one-shot (`data()`
+     * consumes it) the agent went with it and no later refresh could say it
+     * again. Hence "the play button works, but only if the Console was already
+     * open".
+     *
+     * Loading the page is therefore a second step the caller takes once the
+     * instance describes what is to be shown. An already-open panel is
+     * untouched by this: it keeps arriving by push, which is the channel a
+     * loaded page reads.
+     */
+    private mount(): void {
+        this.mounted = true;
+        this.panel.webview.html = htmlShell(this.panel.webview, this.deps.extensionUri,
+            'Console', this.data(), 'console.js');
+    }
+
+    /** Has the page been loaded? Until it has, a push has nowhere to land. */
+    private mounted = false;
 
     private data(): Record<string, unknown> {
         const hosted = this.deps.host.list();
@@ -978,6 +1007,11 @@ export class ConsolePanel {
     }
 
     refresh(): void {
+        // ‼️ S-50 — a page that has not been loaded cannot read a push, and the
+        // push would still SPEND the one-shot `presetAgent` on the way out. The
+        // window this closes is short (construction to `mount()`), but it is the
+        // window a host event landing in it would empty the door's message in.
+        if (!this.mounted) { return; }
         const data = this.data();
         // The tab says how many conversations are waiting for you, so the nudge
         // reaches you with the Console in the background — the one place a
