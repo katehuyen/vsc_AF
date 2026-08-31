@@ -336,10 +336,21 @@ const launchTs = read('src', 'core', 'launch.ts');
     // this launch chose none, exactly like the three before them — the empty
     // string IS the record that this launch picked no route, which is what stops
     // the next one inheriting yesterday's.
-    eq('…and the same six are filed under the engine that ran them',
-        JSON.stringify(kept.byEngine),
-        '{"claude":{"model":"opus","effort":"high","permissionMode":"plan",'
-        + '"providerId":"","tier":"","variant":""}}');
+    // ‼️ X-150 — ASKED OF THE DIMENSION LIST, NOT OF SIX NAMES TYPED HERE.
+    // Pinning the row's key ORDER was pinning something that was never a
+    // guarantee (the record is read by name), and pinning the six names in a
+    // test is the same habit this item exists to break: a seventh engine-owned
+    // dimension has to make this line red BY ARRIVING, not by somebody editing
+    // it. The set is the list's; the values are still stated by hand.
+    const D = require(path.join(ROOT, 'media', 'afDimensions.js'));
+    const perEngine = D.idsWhere('perEngine');
+    const row = kept.byEngine.claude;
+    eq('…and the row filed under the engine holds exactly the engine-owned dimensions',
+        Object.keys(row).slice().sort().join(), perEngine.slice().sort().join());
+    eq('…with what this launch actually ran on, and \'\' where it chose none',
+        perEngine.map(k => `${k}=${row[k]}`).sort().join(),
+        ['model=opus', 'effort=high', 'permissionMode=plan',
+            'providerId=', 'tier=', 'variant='].sort().join());
     // ‼️ X-145 — AND THE OTHER ENGINES' ROWS SURVIVE THE LAUNCH. Writing the map
     // from scratch would make every start erase what the agent runs as on the
     // engines it was not started on — a memory that only remembers the last

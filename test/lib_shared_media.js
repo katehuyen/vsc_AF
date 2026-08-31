@@ -47,6 +47,12 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // SAME FILE (src/core/aflaunch.ts), and the four copies it replaced answered
     // the same pair differently. Loaded before afEngine.js, which asks it.
     'afLaunch.js',
+    // afDimensions.js was the nineteenth — the 16 launch dimensions as data
+    // (X-150), so "every dimension, every door" is something that fails a build
+    // rather than a sentence somebody has to remember. Shared for the same
+    // reason as afLaunch.js above, with one of its own: the shell key that
+    // decides a repaint is computed by the PAGE.
+    'afDimensions.js',
     // afEngine.js was the tenth — which engine ran a thing, drawn one way (U-26)
     'afEngine.js',
     // afProject.js was the eleventh — which project a thing belongs to, drawn

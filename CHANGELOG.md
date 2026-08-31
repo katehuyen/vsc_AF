@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.367.0 - X-150 (1/2): the 16 launch dimensions are data now (2026-08-31)
+
+A session here is described by 16 answers and can be started from 13 places.
+That is 208 obligations, and the sentence stating them lived in a 1.690-line
+document, in a `_REF` rule, and in 74 hand-written regexes — all three of which
+depend on a person remembering to read them. What that costs was measured:
+`providerId` and `tier` were added to the type, wired into the launcher, and
+simply never given a box in the Console composer. Nothing went red, because
+nothing was counting.
+
+**The list is now a record, in `media/afDimensions.js`.** Each row says who the
+answer belongs to, whether a launch writes it back, whether it is remembered per
+ENGINE (X-145), whether changing it rebuilds the composer shell, where the
+dimension does not exist at all — and one line of why it is the way it is. It
+lives in `media/` for the reason the clock and the narrowing rule do: both sides
+need it, and the shell key has to be computed BY THE PAGE or every repaint waits
+a round trip. `src/core/launchDimensions.ts` is its typed door.
+
+**‼️ The array is pinned to `LaunchOptions` in BOTH directions.** A field added
+to the interface with no row goes red; a row for a field that no longer exists
+goes red too. That is the difference between this and the constant it replaced.
+
+**Three places that counted these fields by hand now fold over the list.**
+`ENGINE_MEMORY_FIELDS` is derived rather than typed; the row `launchToRemember`
+files under an engine is built from it; and the six engine-owned dimensions
+`withLastLaunch` used to name one by one are inherited by the shape. A seventh
+of them is a flag on a row now, not six edits somebody has to remember.
+
+**‼️ Two remembered dimensions are exempt from that fold, and the exemption is
+counted rather than assumed.** `engine` decides which row the other six are read
+FROM, so it cannot be one of them; `superpowers` has three states and
+`undefined` is the one that means "the agent's own default decides" (K-34),
+which a fold over strings would spell as `''` and quietly turn into a fourth. A
+test requires each flat dimension to still be inherited by name — a third one
+arriving with nobody to inherit it fails the build.
+
+**S-51 closes as a class.** The composer's shell key was a string built by hand
+— the dimension list written a third time, incompletely, in a line that looks
+complete either way. It is folded from `redraws: true` now, and the test proves
+that every such dimension moves the key and that no other one does (a key that
+moved on a keystroke would detach the caret M-33 protects).
+
+Behaviour is unchanged throughout: the four dimensions in the derived key are
+exactly the four the hand-written line already counted. Second half of X-150 —
+turning the 74 source regexes in `test_launch_parity.js` into the generic
+16x13 matrix — is still open.
+
 ## 3.366.0 - X-149: one narrowing rule, loaded by both sides (2026-08-31)
 
 "The engine moved — what happens to the boxes under it" was answered in four

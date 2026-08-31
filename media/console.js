@@ -2912,13 +2912,19 @@
      * has answered with the tiers, so `sub.kind` moving from `none` to `tier` is
      * a change of shape even though nothing the user typed moved.
      */
+    /**
+     * ‼️ X-150 — THE PICKED VALUES ARE NO LONGER SPELT OUT HERE. `providerId`
+     * and `tier` are launch dimensions carrying `redraws: true`, so they reach
+     * the key through `AFDimensions.shellKeyOf` with the other two. What is left
+     * here is the only part that is NOT a dimension: the shape of the form the
+     * host published, which is a fact about what may be drawn rather than an
+     * answer anybody gave.
+     */
     function routeShape() {
         const f = composerForm();
-        const p = routePick();
-        return `${p.providerId || ''}|${p.tier || ''}|`
-            + (f ? `${f.applies ? 1 : 0}${f.noun || ''}${(f.providers || []).length}`
-                + `${(f.sub && f.sub.kind) || ''}${((f.sub && f.sub.choices) || []).length}`
-                : '-');
+        return f ? `${f.applies ? 1 : 0}${f.noun || ''}${(f.providers || []).length}`
+            + `${(f.sub && f.sub.kind) || ''}${((f.sub && f.sub.choices) || []).length}`
+            : '-';
     }
     /** …and the row under it, only where that row is a TIER. */
     function tierAxisOn() {
@@ -4131,7 +4137,17 @@
         // tier box exists at all and, on an engine whose sub-axis is the model,
         // what the model box may offer — so a pick that did not reach this key
         // would be a control changing nothing under a control that changed.
-        const composerShape = s ? '' : `|${engineNow()}|${st.model || ''}|${routeShape()}`;
+        // ‼️ X-150 — AND THE LIST OF WHAT COUNTS IS NOT TYPED OUT HERE ANY MORE.
+        // It was `|engine|model|route…`, which is the dimension list written a
+        // third time and incompletely: S-51 was a dimension missing from this
+        // line, and the line looks complete either way, which is why it took
+        // three versions to find. Every dimension carrying `redraws: true` is in
+        // the key by construction now (`media/afDimensions.js`), so the next one
+        // repaints without anybody remembering this line exists.
+        const composerShape = s ? '' : '|' + window.AFDimensions.shellKeyOf({
+            engine: engineNow(), model: st.model,
+            providerId: routePick().providerId, tier: routePick().tier
+        }) + '|' + routeShape();
         const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}`;
         if (shellKey !== key) {
             // ‼️ M-33 — ONLY A REBUILD NOBODY ASKED FOR WAITS.

@@ -357,6 +357,12 @@ export function htmlShell(
     // exactly how the same model id came to be RECOGNISED on one side and
     // FOREIGN on the other. Loaded before afEngine.js, which asks it.
     const launch = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afLaunch.js'));
+    // The 16 launch dimensions, as data (X-150). Ships everywhere for the same
+    // reason as the rule above, with one of its own: the shell key that decides
+    // a repaint is computed BY THE PAGE, so a list held only on the host would
+    // make every repaint wait a round trip — the turn-lag class of bug this
+    // whole item exists to end.
+    const dims = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afDimensions.js'));
     const sessTable = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'sessionsTable.js'));
     // Which engine a thing ran on, drawn the same way and in the same colour on
     // every surface. Ships everywhere for the reason U-26 was filed: a badge
@@ -420,6 +426,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${query}"></script>
 <script nonce="${nonce}" src="${time}"></script>
 <script nonce="${nonce}" src="${launch}"></script>
+<script nonce="${nonce}" src="${dims}"></script>
 <script nonce="${nonce}" src="${engine}"></script>
 <script nonce="${nonce}" src="${project}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>

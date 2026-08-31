@@ -16,6 +16,9 @@
 
 import { engineFirstPromptFlag, engineOf, EngineId, ENGINES, tuiArgs } from './consoleEngine';
 import { EffectivePermission, permissionFlags } from './permissionmode';
+// ‼️ X-150 — the 16 launch dimensions are DATA (`media/afDimensions.js`), and the
+// three places below that used to count them by hand fold over that list now.
+import { LaunchIntent, launchDimensionsWhere, rememberIntent, seedIntent } from './launchDimensions';
 
 /** One offered value of a launch dimension. `id: ''` is always "leave it alone". */
 export interface LaunchChoice {
@@ -659,10 +662,15 @@ export interface EngineLaunchMemory {
  * rather than over field names written out twice — which is how the three that
  * existed first stayed right for a year and the three added after them leaked
  * onto the wrong engine on their first day.
+ *
+ * ‼️ X-150 — AND THE LIST IS NO LONGER TYPED OUT HERE EITHER. It is the
+ * `perEngine` dimensions of `media/afDimensions.js`, which is the one place the
+ * 16 launch dimensions are described. A seventh engine-owned dimension is now a
+ * flag on a row rather than an edit to this constant that somebody has to
+ * remember to make — and `test_launch_dimensions.js` counts both directions.
  */
-export const ENGINE_MEMORY_FIELDS = [
-    'model', 'effort', 'permissionMode', 'providerId', 'tier', 'variant'
-] as const;
+export const ENGINE_MEMORY_FIELDS =
+    launchDimensionsWhere('perEngine') as unknown as readonly (keyof EngineLaunchMemory)[];
 
 /**
  * ‼️ S-34 — THE MEMORY AS A LAYER, BETWEEN WHAT THE CALLER SAID AND THE FLEET
@@ -690,21 +698,26 @@ export function withLastLaunch(o: LaunchOptions, last: LastLaunch | undefined): 
     const engine = pick(o.engine, last.engine);
     const prev = rememberedOn(engine, last);
     const sp = o.superpowers ?? last.superpowers;
+    /**
+     * ‼️ X-150 — THE ENGINE-OWNED SIX ARE FOLDED, NOT NAMED.
+     *
+     * They used to be six lines, each one a place a seventh dimension could
+     * fail to appear — and X-103 and X-145 are both the record of that
+     * happening. `seedIntent` reads them off `prev` and NOT off `last`, which is
+     * the whole of both those items: the row belongs to the engine this launch
+     * is on, so a mode chosen for one engine cannot arrive on the next as a flag
+     * nobody typed, and a Claude route profile id cannot land on OpenCode.
+     *
+     * ‼️ THE TWO FLAT ONES STAY BY NAME, and `test_launch_dimensions.js`
+     * requires it. `engine` DECIDES which row the six are read from, so it
+     * cannot be one of them; `superpowers` has three states and `undefined` is
+     * the one that means "the agent's own default decides" (K-34), which a fold
+     * over strings would spell as `''` and quietly turn into a fourth.
+     */
     return {
         ...o,
         ...(engine ? { engine: engine as EngineId } : {}),
-        model: pick(o.model, prev.model),
-        effort: pick(o.effort, prev.effort),
-        // ‼️ X-145 — `prev`, NOT `last`. The permission mode is per engine like
-        // the other two: reading it off the flat record was how a mode chosen
-        // for one engine arrived on the next one as a flag nobody typed.
-        permissionMode: pick(o.permissionMode, prev.permissionMode),
-        // ‼️ X-103 — read off `prev` for the same reason: the row belongs to the
-        // engine this launch is on. A route re-applied here is why the second
-        // session on Kimi is one Enter rather than three rows.
-        providerId: pick(o.providerId, prev.providerId),
-        tier: pick(o.tier, prev.tier),
-        variant: pick(o.variant, prev.variant),
+        ...seedIntent(o as LaunchIntent, prev as LaunchIntent),
         ...(sp === undefined ? {} : { superpowers: sp })
     };
 }
@@ -781,14 +794,12 @@ export function rememberedOn(engine: string | undefined, last: LastLaunch): Last
 export function launchToRemember(
     o: LaunchOptions, surface?: RunSurface, prev?: LastLaunch
 ): LastLaunch {
-    const mem: EngineLaunchMemory = {
-        model: o.model ?? '',
-        effort: o.effort ?? '',
-        permissionMode: o.permissionMode ?? '',
-        providerId: o.providerId ?? '',
-        tier: o.tier ?? '',
-        variant: o.variant ?? ''
-    };
+    // ‼️ X-150 — the row is BUILT from the dimension list, so a dimension that
+    // joins `EngineLaunchMemory` is written back without this line being
+    // touched. A row that omitted a field would let the previous engine's value
+    // show through the merge in `rememberedOn`, which is what makes writing
+    // every one of them, blank included, part of the shape rather than a habit.
+    const mem: EngineLaunchMemory = rememberIntent(o as LaunchIntent) as EngineLaunchMemory;
     const engine = (o.engine || '').trim();
     /**
      * ‼️ X-145 — THE OTHER ENGINES' ROWS SURVIVE THIS LAUNCH.
