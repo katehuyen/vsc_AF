@@ -754,7 +754,34 @@ export class ConsoleHost {
         // flag values come from fixed vocabularies (launch.ts).
         const child = cp.spawn(this.exe(), args, {
             cwd: init.cwd, shell: true, windowsHide: true,
-            stdio: ['pipe', 'pipe', 'pipe']
+            stdio: ['pipe', 'pipe', 'pipe'],
+            /**
+             * ‼️ X-105 — AND THE SAME ENVIRONMENT THE OTHER THREE SURFACES GET.
+             *
+             * This spawn passed no `env` at all, so the process inherited
+             * whatever the VS Code window carried — on the engine the Console
+             * exists for, and after X-101 had already given the per-turn
+             * engines one and X-104 the OS window. The card kept its
+             * `providerId`, wrote it into the launch manifest and reported it on
+             * every surface, while the process talked to whichever route the
+             * window happened to hold: every surface agreeing, all of them
+             * wrong about the only thing that matters.
+             *
+             * ‼️ AND THE UNROUTED CARD IS THE HALF THAT IS EASY TO MISS. "No
+             * route" is not "no statement": the official endpoint is reached by
+             * CLEARING what was inherited, which is what `clearEnv` is for and
+             * which nothing here could say while nothing here was said.
+             *
+             * THIS CARD'S OWN ROUTE, off the init that is about to become the
+             * state — not the agent's standing one. A card started on Kimi keeps
+             * Kimi even after the setting changes under it, for the reason
+             * X-101 gives: a route change is a different program.
+             */
+            env: spawnEnvironment(
+                process.env, [],
+                this.engineRuntime?.(init.agentId, engine.id, {
+                    providerId: init.providerId, tier: init.tier
+                }))
         });
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
