@@ -1,6 +1,6 @@
 {
   "note": "X-150. Every launch dimension x every launch door. Each cell is carried, exempt:<reason> or gap:<reason>. gapBudget MAY ONLY BE LOWERED - raising it means a door stopped carrying something, which is the failure this counts. Reseed the observable half with: node test/test_launch_matrix.js --fix",
-  "gapBudget": 141,
+  "gapBudget": 140,
   "cells": {
     "treeRow": {
       "engine": "carried",
@@ -195,7 +195,7 @@
       "name": "carried",
       "prompt": "carried",
       "resume": "carried",
-      "continueLast": "gap: not observed at this door",
+      "continueLast": "exempt: a task fires later with nobody at a window, so \"the most recent session\" is undefined at fire time - the task family names the session it continues by id (resumeSessionId) instead. Measured: continueLast appears 0 times in src/core/tasks.ts.",
       "projectContextFile": "carried",
       "cwd": "carried",
       "cli": "carried"
