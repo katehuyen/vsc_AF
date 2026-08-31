@@ -2,6 +2,65 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.369.0 - X-151: the doors are modules, and the matrix calls them (2026-08-31)
+
+`test/test_launch_parity.js` wrote this file's reason down before it existed:
+
+> "These live inside quickpick loops and message handlers in extension.ts, which
+> nothing can call. **THE SOURCE IS THE HANDLE**, and a missing door here is the
+> structural failure `_REF/agentfarm-dev.md` names."
+
+So door parity was measured by throwing regular expressions at 30.476 lines of
+source, and that measurement was wrong in both directions at once. A door that
+passed a whole `LaunchOptions` through named none of its fields and read as
+thirteen gaps; a door that merely MENTIONED a dimension in a comment read as
+carrying it. And neither could say anything about a dimension nobody had thought
+to write a regex for — which is exactly how `providerId` and `tier` reached the
+type, reached the launcher, and never reached the composer.
+
+**The 13 doors are modules now (`src/launch/doors/`)**, each with one job:
+`collect(ctx)` returns the intent it has assembled. ‼️ **A door does not start a
+session.** The spawning, the recording and the UI plumbing stay exactly where
+they were — this is a live product, and extracting the ANSWER is all the matrix
+ever needed, while extracting the ACT would have moved seven spawn paths at once
+for no extra measurement.
+
+**So the matrix stopped grepping and started calling.** Each door is handed EVERY
+dimension there is and asked what it hands on. A dimension that does not survive
+the call is not carried, whatever the source says. The gap count fell from **141
+to 31** — and the 31 are not noise, they are findings, each one named:
+
+| door | reaches it and stops |
+|---|---|
+| palette (continue) | model · effort · permissionMode · providerId · tier · variant · superpowers · cli |
+| mission | providerId · tier · variant · superpowers · cli |
+| projects · webviews | providerId · tier · variant · cli |
+| treeMenu | providerId · tier · variant |
+| composer | variant · name |
+| profile | superpowers |
+| bridge | superpowers |
+| task · automation | variant |
+| treeRow | cli |
+
+**‼️ Not one of them was fixed here.** Whether a "continue" should re-apply the
+remembered setup, whether a saved profile should store the discipline, whether a
+mission should carry a route — each is a real decision with a real behaviour
+change behind it, and this release is a hardening one. They are counted, named
+and left for somebody to take.
+
+**‼️ And a door that only DESCRIBES a call site is counted as such.** That is the
+same trap one level up: a module modelling what `extension.ts` does is a second
+statement of the rule, free to drift. So `wired` is a fact on each door, four of
+them really are what the extension calls now (treeRow · treeMenu · launcher ·
+projects), the count may only rise, and a test proves each wired door is
+genuinely imported rather than merely marked.
+
+Nine source-regex assertions were deleted rather than repointed at the new files
+(eight in `test_launch_parity.js`, one in `test_run_surface.js`): their subject
+had moved, and a regex aimed at a new file is the same measurement with the same
+blind spot. What they claimed is now stated as facts about the doors, proved by
+calling them.
+
 ## 3.368.0 - X-150 (2/2): 208 obligations, counted (2026-08-31)
 
 "Every launch dimension is carried by every door that starts a session" is true,

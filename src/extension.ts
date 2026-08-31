@@ -141,6 +141,15 @@ import {
     modelIdOk, ONE_EXECUTOR, PERMISSION_CHOICES, RunSurface, SUPERPOWERS_CHOICES,
     normSuperpowers, superpowersWord, twoExecutors, validateLaunch, withDefaults, withLastLaunch
 } from './core/launch';
+// ‼️ X-151 — THE DOORS. A door answers "what session is about to start"; it does
+// not start it. A site that consumes a door's answer WHOLESALE is a site where
+// adding a launch dimension is one edit to one module — which is the difference
+// between a door and a description of a door.
+import { registerLaunchDoors } from './launch/doors/all';
+import { launcherDoor } from './launch/doors/launcher';
+import { projectsDoor } from './launch/doors/projects';
+import { treeMenuDoor } from './launch/doors/treeMenu';
+import { treeRowDoor } from './launch/doors/treeRow';
 import { bumpRevision, ownershipTable, secretKeyFor } from './core/providerOwnership';
 import {
     describeDropped, describeProviderChoice, launchProviderForm, ProviderForm, ProviderPick,
@@ -630,6 +639,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // files this window actually writes and which shapes the manifest declares.
     // Both are cheap and both are wrong by default, so neither can wait.
     installSettingsDoor(context);
+    // ‼️ X-151 — and the LAUNCH doors, so the registry is a fact of this window
+    // rather than of whichever module happened to be imported first. Registering
+    // the same id twice throws: two doors under one id would be two places
+    // answering for one surface, which is the defect the folder exists to end.
+    registerLaunchDoors();
     let agents: AgentInfo[] = [];
     let insights: Insight[] = [];
     // Pricing history: a timestamped log of rule sets so past costs stay frozen
@@ -18597,7 +18611,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const runLauncher = async (
         agent: AgentInfo, seed: LaunchOptions, surface: RunSurface = 'terminal'
     ): Promise<void> => {
-        let o: LaunchOptions = { ...seed };
+        // ‼️ X-151 — the launcher opens ON what it was handed and names no
+        // dimension of its own, which is why it is the door a new one shows up
+        // at first (src/launch/doors/launcher.ts).
+        let o: LaunchOptions = launcherDoor.collect(
+            { agentId: agent.id, seed: () => seed }) as LaunchOptions;
         let where: RunSurface = surface;
         // …and WHAT it belongs to, per launch, starting at the window's active
         // project — the same rule the one-click start follows (launchProjectRow).
@@ -24622,13 +24640,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // record, one of them with an answer nobody gave.
             const o = seedLastLaunch(agent.id);
             if (how === 'console') {
+                // ‼️ X-151 — WHAT REACHES THE COMPOSER IS THE DOOR'S ANSWER, TAKEN
+                // WHOLE. It used to be four field names typed here, which is why
+                // providerId, tier and variant reached this door and stopped:
+                // adding a dimension to the type could not reach a list written
+                // at a call site. Now it is one edit, in src/launch/doors/projects.ts.
+                const { engine: seededEngine, ...launch } =
+                    projectsDoor.collect({ agentId: agent.id, seed: () => o });
                 ConsolePanel.show(consoleDeps, {
                     agentId: agent.id, pinAgent: true, projectId: id,
-                    engine: o.engine || launchDefaults().engine || 'claude',
-                    launch: {
-                        model: o.model, effort: o.effort,
-                        permissionMode: o.permissionMode, superpowers: o.superpowers
-                    }
+                    engine: (seededEngine as EngineId) || launchDefaults().engine || 'claude',
+                    launch
                 });
             } else {
                 if (!startClaudeSession(agent, o, undefined, undefined, id)) { return; }
@@ -27089,14 +27111,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // "Talk to X" is the door with the fewest questions in it, which is
             // exactly why it must not be the door that quietly answers them all
             // with the fleet defaults.
-            const o = seedLastLaunch(agent.id);
+            // ‼️ X-151 — the door's answer, taken whole (src/launch/doors/treeMenu.ts).
+            const { engine: seededEngine, ...launch } =
+                treeMenuDoor.collect({ agentId: agent.id, seed: seedLastLaunch });
             ConsolePanel.show(consoleDeps, {
                 agentId: agent.id, pinAgent: true,
-                ...(o.engine ? { engine: o.engine } : {}),
-                launch: {
-                    model: o.model, effort: o.effort,
-                    permissionMode: o.permissionMode, superpowers: o.superpowers
-                }
+                ...(seededEngine ? { engine: seededEngine as EngineId } : {}),
+                launch
             });
         }),
 
@@ -27611,7 +27632,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * decision one dimension along, and unstated is precisely how
                  * `agentFarm.superpowersDefaults` gets to answer it.
                  */
-                const o = agentEngineSeed(agent, (chosen.engine || 'claude') as EngineId);
+                // ‼️ X-151 — through the door (src/launch/doors/treeRow.ts), which
+                // is where the reason above is written down as a testable fact
+                // rather than as a comment nothing can check.
+                const o = treeRowDoor.collect({
+                    agentId: agent.id,
+                    engine: chosen.engine || 'claude',
+                    seed: seedLastLaunch,
+                    engineSeed: (_id, e) => agentEngineSeed(agent, e as EngineId)
+                }) as LaunchOptions;
                 if (chosen.surface === 'console') {
                     /**
                      * ‼️ THE CONSOLE OPENS ITS COMPOSER — IT DOES NOT SPAWN.

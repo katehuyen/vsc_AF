@@ -1,44 +1,41 @@
-// X-150 — 16 DIMENSIONS x 13 DOORS = 208 OBLIGATIONS, COUNTED.
+// X-150 / X-151 — 16 DIMENSIONS x 13 DOORS = 208 OBLIGATIONS, MEASURED BY CALLING.
 //
 // ‼️ THE RULE THIS FILE MAKES FAIL A BUILD.
 //
 // "Every launch dimension is carried by every door that starts a session." That
-// sentence is true, important, and until now it lived only in prose: a
+// sentence is true, important, and for a year it lived only in prose: a
 // 1.690-line SOP, a `_REF` rule, and 74 hand-written regexes. All three need a
 // person to read them, and the measurement behind X-148 is what happens when one
 // does not — `providerId` and `tier` reached the type and the launcher and were
-// simply never given a box in the Console composer. NOTHING WENT RED, because a
-// regex can only see the absence of something it was told to look for. It cannot
-// look for a rule nobody has written yet.
+// never given a box in the Console composer. NOTHING WENT RED, because a regex
+// can only see the absence of something it was told to look for. It cannot look
+// for a rule nobody has written yet.
 //
 // A matrix can. Every dimension crossed with every door is 208 cells, and EVERY
 // CELL MUST HAVE A VERDICT in `launch.matrix.json`:
 //
-//   carried              the door demonstrably handles it
+//   carried              the door demonstrably hands it on
 //   exempt: <reason>     it does not apply here, and the reason is written down
-//   gap: <reason>        it should and does not - counted against a budget
+//   gap: <reason>        it should and does not — counted against a budget
 //
-// So a seventeenth dimension arrives with THIRTEEN cells that have no verdict,
-// and the suite is red until somebody says, for each door, which of the three it
-// is. That is the whole item: the obligation is created by the dimension, not by
-// somebody remembering to create it.
+// A seventeenth dimension therefore arrives with THIRTEEN cells that have no
+// verdict, and the suite is red until somebody says, per door, which of the
+// three it is. The obligation is created by the dimension, not by somebody
+// remembering to create it.
 //
-// ‼️ WHAT IS HONEST ABOUT THE EVIDENCE, AND WHAT IS NOT YET.
+// ‼️ AND SINCE X-151 THE EVIDENCE IS A CALL, NOT A GREP.
 //
-// Most doors cannot be CALLED with a fixture and asked what they collected —
-// they live inside quickpick loops and message handlers in a 30.476-line file,
-// which is the finding that put X-151 on the board. Their cells are therefore
-// DECLARED, and they are declared as gaps: `door not addressable yet` is a
-// count, not an excuse, and X-151's acceptance is that count reaching zero.
+// The doors are modules (`src/launch/doors/`). Each is handed EVERY dimension
+// there is and asked what it hands on; a dimension that does not survive the
+// call is not carried, whatever its name being present in the source might have
+// suggested. That kills both halves of the old measurement's error: a door that
+// passes a whole `LaunchOptions` through used to read as thirteen gaps, and a
+// door that merely mentioned a dimension in a comment used to read as carrying
+// it.
 //
-// The doors that ARE addressable get a live check: a cell declared `carried` on
-// one of them is re-measured on every run, so removing a dimension from
-// `runLauncher` goes red today. That is the part of the matrix that already
-// bites, and it grows as X-151 lands rather than being rewritten.
-//
-// `node test/test_launch_matrix.js --fix` reseeds the manifest from what is
-// observable. It never invents an `exempt` — only a person can say a dimension
-// does not apply to a door, and saying it requires writing why.
+// `node test/test_launch_matrix.js --fix` reseeds from what the doors actually
+// do. It never invents an `exempt` — only a door can declare one, in its own
+// module, next to the code the reason is about.
 const fs = require('fs');
 const path = require('path');
 
@@ -50,43 +47,39 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const D = require(path.join(ROOT, 'media', 'afDimensions.js'));
-const { LAUNCH_DOORS, sourceOf, addressable } = require(path.join(__dirname, 'lib_launch_doors.js'));
+const { LAUNCH_DOORS, doorExemptions, FARM_RESOLVED, carries, fixtureCtx } =
+    require(path.join(__dirname, 'lib_launch_doors.js'));
 
 const DIMS = D.ids();
 const DOORS = LAUNCH_DOORS.map(d => d.id);
 
-/** What can be SEEN of a cell today. `null` = the door cannot be looked at. */
-function observe(door, dim) {
-    const src = sourceOf(door);
-    if (src === null) { return null; }
-    return new RegExp('\\b' + dim + '\\b').test(src);
+/** The verdict the code itself states for one cell. */
+function verdictFor(door, dim, carried) {
+    if (carried.indexOf(dim) >= 0) { return 'carried'; }
+    const why = doorExemptions(door)[dim];
+    if (why) { return 'exempt: ' + why; }
+    return 'gap: reaches this door and stops - nobody has said whether it should';
 }
 
 /* ---------------- the seed ---------------- */
 if (FIX) {
     const cells = {};
-    const prev = fs.existsSync(MANIFEST) ? JSON.parse(fs.readFileSync(MANIFEST, 'utf8')) : { cells: {} };
     for (const door of LAUNCH_DOORS) {
+        const carried = carries(door);
         cells[door.id] = {};
-        for (const dim of DIMS) {
-            // ‼️ A HUMAN VERDICT IS NEVER OVERWRITTEN. An `exempt` is somebody's
-            // stated judgement that a dimension does not apply to a door, and a
-            // tool that re-derives it every run would be a tool that quietly
-            // deletes the reasoning.
-            const was = (prev.cells[door.id] || {})[dim];
-            if (was && /^exempt:/.test(was)) { cells[door.id][dim] = was; continue; }
-            const seen = observe(door, dim);
-            cells[door.id][dim] = seen === null ? 'gap: door not addressable yet (X-151)'
-                : seen ? 'carried' : 'gap: not observed at this door';
-        }
+        for (const dim of DIMS) { cells[door.id][dim] = verdictFor(door, dim, carried); }
     }
     const gaps = DOORS.reduce((n, d) => n + DIMS.filter(x => /^gap:/.test(cells[d][x])).length, 0);
     fs.writeFileSync(MANIFEST, JSON.stringify({
-        note: 'X-150. Every launch dimension x every launch door. Each cell is carried, '
-            + 'exempt:<reason> or gap:<reason>. gapBudget MAY ONLY BE LOWERED - raising it '
-            + 'means a door stopped carrying something, which is the failure this counts. '
-            + 'Reseed the observable half with: node test/test_launch_matrix.js --fix',
+        note: 'X-150/X-151. Every launch dimension x every launch door, measured by CALLING '
+            + 'each door with every dimension set and seeing what it hands on. Each cell is '
+            + 'carried, exempt:<reason> or gap:<reason>. An exemption is declared in the '
+            + 'door module itself, beside the code its reason is about - never here. '
+            + 'gapBudget MAY ONLY BE LOWERED: raising it means a door stopped carrying '
+            + 'something, which is the failure this counts. Reseed: '
+            + 'node test/test_launch_matrix.js --fix',
         gapBudget: gaps,
+        wiredFloor: LAUNCH_DOORS.filter(d => d.wired).length,
         cells
     }, null, 2) + '\n', 'utf8');
     console.log(`launch.matrix.json written: ${DOORS.length} doors x ${DIMS.length} dimensions `
@@ -104,15 +97,18 @@ ok('every door states which surface it produces',
     LAUNCH_DOORS.every(d => ['console', 'terminal', 'either', 'task', 'headless'].indexOf(d.surface) >= 0));
 ok('‼️ …and why it is a door — a row with no reason is a row nobody can judge',
     LAUNCH_DOORS.every(d => typeof d.why === 'string' && d.why.length > 40));
+ok('‼️ every door can be CALLED — that is what X-151 was for',
+    LAUNCH_DOORS.every(d => typeof d.collect === 'function'));
+ok('…and answers with an object rather than throwing on a fixture',
+    LAUNCH_DOORS.every(d => {
+        try { return typeof d.collect(fixtureCtx()) === 'object'; } catch (e) { return false; }
+    }));
 
 /* ---------------- ‼️ EVERY CELL HAS A VERDICT ---------------- */
 {
     const missing = [];
     for (const door of DOORS) {
-        for (const dim of DIMS) {
-            const v = (M.cells[door] || {})[dim];
-            if (!v) { missing.push(`${door}.${dim}`); }
-        }
+        for (const dim of DIMS) { if (!(M.cells[door] || {})[dim]) { missing.push(`${door}.${dim}`); } }
     }
     ok('‼️ EVERY dimension has a verdict at EVERY door — a new one arrives with 13 empty cells'
         + (missing.length ? ` (missing: ${missing.slice(0, 6).join(', ')}…)` : ''),
@@ -129,6 +125,28 @@ ok('‼️ …and why it is a door — a row with no reason is a row nobody can 
         strayDim.length === 0);
 }
 
+/* ---------------- ‼️ THE MANIFEST IS WHAT THE DOORS DO ---------------- */
+{
+    // The heart of it: every cell is RE-MEASURED here by calling the door. The
+    // manifest is a record of a measurement, not a claim standing in for one —
+    // so taking `tier` out of a door goes red on the next run, and no amount of
+    // editing this file can make a door look like it carries something it drops.
+    const wrong = [];
+    for (const door of LAUNCH_DOORS) {
+        const carried = carries(door);
+        for (const dim of DIMS) {
+            const want = verdictFor(door, dim, carried);
+            const got = M.cells[door.id][dim];
+            const same = want === got
+                // the reason text may be reworded without a reseed; the KIND may not
+                || (want.split(':')[0] === got.split(':')[0] && want.startsWith('exempt'));
+            if (!same) { wrong.push(`${door.id}.${dim}: manifest says "${got.split(':')[0]}", the door does "${want.split(':')[0]}"`); }
+        }
+    }
+    ok('‼️ the manifest still matches what the doors ACTUALLY do'
+        + (wrong.length ? `\n      ${wrong.slice(0, 5).join('\n      ')}` : ''), wrong.length === 0);
+}
+
 /* ---------------- every excuse is written down ---------------- */
 {
     const bare = [];
@@ -141,53 +159,84 @@ ok('‼️ …and why it is a door — a row with no reason is a row nobody can 
     }
     ok('‼️ an exemption and a gap each carry a reason, or they are just a word that says no'
         + (bare.length ? ` (${bare.slice(0, 4).join(', ')})` : ''), bare.length === 0);
-    const known = [];
-    for (const door of DOORS) {
-        for (const dim of DIMS) {
-            const v = M.cells[door][dim];
-            if (['carried'].indexOf(v) < 0 && !/^(exempt|gap):/.test(v)) { known.push(`${door}.${dim}`); }
-        }
-    }
-    ok('…and no cell holds a verdict that is not one of the three', known.length === 0);
+    // ‼️ AND THE REASON LIVES IN THE DOOR, NOT HERE. An exemption written into
+    // this JSON would be a reason with no code beside it — the exact distance
+    // that let a 1.690-line document drift away from what was running.
+    ok('every exemption is declared by a door module, not by the manifest',
+        LAUNCH_DOORS.every(d => Object.values(d.exempt ?? {}).every(r => typeof r === 'string' && r.length > 20)));
+    // ‼️ THE THREE FARM-RESOLVED DIMENSIONS ARE NEVER A GAP — but they are not
+    // always an exemption either, and the difference is worth keeping. A door
+    // that hands the WHOLE setup through (the launcher, the surface picker)
+    // carries them like everything else, which is fine: it is passing on what it
+    // was given, not resolving anything. What must never happen is one of them
+    // being counted as missing, because nobody was ever going to ask for it at a
+    // door — that would be a budget full of work that must not be done.
+    ok('…and a farm-resolved dimension is never counted as a gap at any door',
+        Object.keys(FARM_RESOLVED).every(dim =>
+            DOORS.every(door => !/^gap:/.test(M.cells[door][dim]))));
 }
 
 /* ---------------- ‼️ THE BUDGET MAY ONLY BE LOWERED ---------------- */
 {
     let gaps = 0;
-    for (const door of DOORS) { for (const dim of DIMS) { if (/^gap:/.test(M.cells[door][dim])) { gaps++; } } }
+    const byDoor = {};
+    for (const door of DOORS) {
+        byDoor[door] = DIMS.filter(x => /^gap:/.test(M.cells[door][x]));
+        gaps += byDoor[door].length;
+    }
     ok(`‼️ the gap count is the budget — raising it means a door stopped carrying something `
         + `(gaps ${gaps}, budget ${M.gapBudget})`, gaps === M.gapBudget);
     ok('…and the budget is a real number somebody can watch fall', typeof M.gapBudget === 'number');
-    // The count X-151 exists to drive down: doors nothing can point at.
-    const blind = LAUNCH_DOORS.filter(d => !addressable(d));
+    const wired = LAUNCH_DOORS.filter(d => d.wired);
     console.log(`  matrix: ${DIMS.length}x${DOORS.length}=${DIMS.length * DOORS.length} cells · `
-        + `${gaps} gaps · ${blind.length}/${DOORS.length} doors not addressable yet (X-151)`);
-    ok('the doors that cannot be pointed at are counted rather than assumed fine',
-        blind.every(d => DIMS.every(x => /^(gap|exempt):/.test(M.cells[d.id][x]))));
+        + `${gaps} gaps · ${wired.length}/${DOORS.length} doors wired`);
+    for (const door of DOORS) {
+        if (byDoor[door].length) { console.log(`    ${door}: ${byDoor[door].join(', ')}`); }
+    }
+
+    /* ‼️ AND A DOOR THAT ONLY DESCRIBES A CALL SITE IS COUNTED AS SUCH.
+     *
+     * This is the trap the whole family exists to avoid, arriving one level up:
+     * a door module that MODELS what extension.ts does, rather than being what
+     * extension.ts calls, is a second statement of the same rule and is free to
+     * drift from it. So `wired` is a fact on the door, the count may only rise,
+     * and the remainder is exactly the work X-151 has left. */
+    ok(`‼️ the wired-door count may only rise (wired ${wired.length}, floor ${M.wiredFloor})`,
+        wired.length >= M.wiredFloor);
+    ok('…and a wired door is really imported by the extension, not just marked',
+        wired.every(d => new RegExp("from './launch/doors/" + d.id + "'")
+            .test(fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8'))));
+    ok('…and the registry is populated where the window starts, once',
+        /registerLaunchDoors\(\);/.test(fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8')));
 }
 
-/* ---------------- ‼️ THE HALF THAT ALREADY BITES ---------------- */
+/* ---------------- ‼️ WHAT THE OLD 74 REGEXES USED TO SAY ---------------- */
 {
-    // A cell declared `carried` on a door that CAN be looked at is re-measured
-    // every run. This is what stops the manifest becoming another document:
-    // take `tier` out of `runLauncher` and this goes red today, without waiting
-    // for X-151 to make the door callable.
-    const broke = [];
-    for (const door of LAUNCH_DOORS.filter(addressable)) {
-        for (const dim of DIMS) {
-            if (M.cells[door.id][dim] !== 'carried') { continue; }
-            if (!observe(door, dim)) { broke.push(`${door.id}.${dim}`); }
-        }
-    }
-    ok('‼️ a dimension declared carried at an addressable door is still carried there'
-        + (broke.length ? ` (lost: ${broke.join(', ')})` : ''), broke.length === 0);
+    // These were the guarantees `test_launch_parity.js` spent 74 regular
+    // expressions on, and they are stated here as facts about the doors instead
+    // — which is both shorter and stronger, because a rename cannot break them
+    // and a whole-object pass-through cannot hide from them.
+    const carriedBy = id => carries(LAUNCH_DOORS.find(d => d.id === id));
+    const has = (id, dim) => carriedBy(id).indexOf(dim) >= 0;
 
-    const anchored = LAUNCH_DOORS.filter(d => d.anchor);
-    ok('every named anchor still resolves — a renamed door is a door nothing is watching',
-        anchored.every(addressable));
-    ok('…and at least the launcher is one of them, because it is the door that '
-        + 'has always had to know the whole list',
-        addressable(LAUNCH_DOORS.find(d => d.id === 'launcher')));
+    ok('‼️ the launcher carries every dimension there is — it is the door that asks them all',
+        DIMS.filter(d => !Object.keys(FARM_RESOLVED).includes(d)).every(d => has('launcher', d)));
+    ok('‼️ the surface picker drops nothing on its way past — it decides WHERE, not WHAT',
+        DIMS.filter(d => !Object.keys(FARM_RESOLVED).includes(d)).every(d => has('surfacePick', d)));
+    ok('K-34 — the discipline reaches the doors that offer it',
+        has('launcher', 'superpowers') && has('composer', 'superpowers') && has('task', 'superpowers'));
+    ok('X-103 — the route reaches the composer, which is what X-105 was about',
+        has('composer', 'providerId') && has('composer', 'tier'));
+    ok('X-106 — and an automation carries it too, or a nightly job takes whatever was standing',
+        has('automation', 'providerId') && has('automation', 'tier'));
+    ok('‼️ the bridge collects from its ARGUMENTS and does not inherit — the one asymmetry',
+        LAUNCH_DOORS.find(d => d.id === 'bridge').collect({
+            agentId: 'a', seed: () => ({ model: 'from-the-record' }), picked: {}
+        }).model === undefined);
+    ok('…while every panel door DOES inherit, which is S-34',
+        LAUNCH_DOORS.find(d => d.id === 'webviews').collect({
+            agentId: 'a', seed: () => ({ model: 'from-the-record' })
+        }).model === 'from-the-record');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

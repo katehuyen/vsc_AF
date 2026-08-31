@@ -154,9 +154,22 @@ const base = read('src/panels/base.ts');
      * the fleet default → the engine's own file. Deterministic, and the same
      * pair of functions the spawn itself applies.
      */
+    // ‼️ X-151 — THE FIRST HALF OF THIS IS NOW RUN, NOT READ. The expression it
+    // used to match has moved into `src/launch/doors/treeRow.ts`, and pointing
+    // the regex at the new file would be the same measurement with the same
+    // blind spot. So the door is CALLED and asked which of the two seeders it
+    // used — the whole content of the rule above.
+    const treeRow = require(path.join(__dirname, '..', 'out', 'launch', 'doors', 'treeRow.js')).treeRowDoor;
     ok('…and the answer really reaches the launch',
-        /const o = agentEngineSeed\(agent, \(chosen\.engine \|\| 'claude'\) as EngineId\);/.test(startBody)
+        treeRow.collect({
+            agentId: 'a', engine: 'codex',
+            seed: () => ({ model: 'from-the-record' }),
+            engineSeed: (_id, e) => ({ engine: e, model: 'from-settings' })
+        }).model === 'from-settings'
         && /startClaudeSession\(agent, o, undefined, undefined, chosen\.projectId\)/.test(startBody));
+    ok('‼️ …and the door is what the extension really calls, not a description of it',
+        treeRow.wired === true
+        && /from '\.\/launch\/doors\/treeRow'/.test(ext));
     ok('…built out of the SAME two layers the spawn applies, not a second copy',
         /const agentEngineSeed = \(agent: AgentInfo, engine: EngineId\): LaunchOptions =>\s*\n\s*withDefaults\(withAgentEngineDefaults\(agent, \{ engine \}\), launchDefaults\(\)\);/.test(ext));
     // ‼️ …AND THE HEADER LINE FOLLOWS IT. A picker that kept quoting the record

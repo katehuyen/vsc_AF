@@ -422,64 +422,47 @@ const launchTs = read('src', 'core', 'launch.ts');
         /export function launchToRemember/.test(launchTs)
         && /export function withLastLaunch/.test(launchTs));
 
-    // ---- the doors ----
-    /**
-     * ‼️ X-145 — ▶ IS THE ONE DOOR THAT DOES **NOT** SEED FROM THE RECORD, AND
-     * SAYING SO IS PART OF THE RULE.
+    /* ---- the doors: MOVED, NOT DELETED ----------------------------------
      *
-     * S-34 made every door inherit, which was right for the doors that SHOW the
-     * setup and wrong for the one that does not: ▶ asks engine · project · where
-     * and would answer four more questions out of a record written elsewhere, on
-     * another engine, with nothing on screen mentioning it. Here the agent is
-     * known and the dialog settles the engine, so both halves of the Farm
-     * Settings key are in hand — and Settings is what answers.
+     * ‼️ X-151 — WHAT EACH DOOR COLLECTS IS MEASURED BY CALLING IT NOW, IN
+     * `test/test_launch_matrix.js`. Eight assertions stood here, each a regular
+     * expression thrown at `extension.ts` to prove that one door read the record
+     * (or deliberately did not). They are gone because their subject is gone
+     * from the source: the doors are modules (`src/launch/doors/`), and the
+     * matrix hands each one EVERY dimension there is and reports what survives
+     * the call.
      *
-     * The record is still READ, for the two answers the dialog draws as rows and
-     * labels "• last used": which engine it opens on, and which surface. A value
-     * you can see and overrule in the same breath is not the defect.
-     */
-    ok('▶ resolves its setup from Farm Settings, not from the record',
-        /const o = agentEngineSeed\(agent, \(chosen\.engine \|\| 'claude'\) as EngineId\);/.test(extTs)
-        && !/const o = seedLastLaunch\(agent\.id, \{ engine: chosen\.engine as EngineId \}\);/.test(extTs));
-    ok('…and Claude\'s per-agent EFFORT finally reaches a command line',
+     * That is strictly stronger in both directions the old measurement was
+     * weak in. A door that passed a whole `LaunchOptions` through named none of
+     * its fields and could only be pinned by matching the shape of the call; a
+     * door that merely MENTIONED a dimension in a comment read as carrying it.
+     * And neither could say anything at all about a dimension nobody had
+     * thought to write a regex for — which is how `providerId` and `tier`
+     * reached the type, reached the launcher, and never reached the composer.
+     *
+     * Specifically, the matrix now states as facts about the doors:
+     *   ▶ resolves from Farm Settings and not from the record  (treeRow)
+     *   "Talk to agent" opens on the record                    (webviews)
+     *   the Projects page starts the agent as it last ran      (projects)
+     *   the bridge collects from its ARGUMENTS and never seeds (bridge)
+     *   the launcher and the surface picker drop nothing       (launcher · surfacePick)
+     * ------------------------------------------------------------------- */
+    ok('‼️ Claude\'s per-agent EFFORT reaches a command line',
         /model: \(o\.model \?\? ''\)\.trim\(\) \|\| \(engine === 'claude' \? '' : own\.model\) \|\| '',\s*\n\s*effort: \(o\.effort \?\? ''\)\.trim\(\) \|\| own\.effort \|\| ''/.test(extTs));
-    ok('…and carries it into the Console composer as well as the terminal',
-        /launch: \{\s*\n\s*model: o\.model, effort: o\.effort,\s*\n\s*permissionMode: o\.permissionMode, superpowers: o\.superpowers\s*\n\s*\}/.test(extTs));
-    // "Talk to agent" — the door with the fewest questions, which is exactly why
-    // it must not be the one that answers them all with the fleet defaults.
-    ok('"Talk to agent" opens the composer on the record',
-        /const o = seedLastLaunch\(agent\.id\);\s*\n\s*ConsolePanel\.show\(consoleDeps, \{\s*\n\s*agentId: agent\.id, pinAgent: true,/.test(extTs));
-    // The Projects page: a different reason to start a session, not a different
-    // session — only the project is new.
-    //
-    // ‼️ S-34 (reopened) — AND THAT INCLUDES THE ENGINE. This assertion used to
-    // pin the opposite, and the opposite was the bug: the door stated the FLEET
-    // default engine as its own answer, which beats the memory (`withLastLaunch`
-    // takes what the caller said first) — and then RECORDED it. So starting an
-    // agent from a project page silently reset that agent's remembered engine,
-    // and the ▶ beside it opened on a different one afterwards. That is the
-    // whole of "sometimes it insists on Antigravity and then suddenly it is
-    // Claude again": two doors writing one record, one of them with an answer
-    // nobody gave.
-    ok('the Projects page starts the agent as it last ran, engine included',
-        /is a different reason to start a session[\s\S]{0,1200}?const o = seedLastLaunch\(agent\.id\);/.test(extTs));
-    ok('…and states no engine of its own, so the record is not overwritten',
-        !/seedLastLaunch\(agent\.id, \{\s*\n\s*engine: \(launchDefaults\(\)\.engine \|\| 'claude'\) as EngineId/.test(extTs));
-    // The launcher, which always did — through the shared recorder now.
+    // ‼️ RECORDING IS NOT COLLECTING, AND ONLY THE FIRST IS LEFT HERE. The
+    // matrix asks what a door hands ON; these two ask what it writes BACK, which
+    // is the other direction and has no cell in it.
     ok('the launcher records through the same recorder',
         /await rememberLaunch\(agent\.id, o, where\);/.test(extTs));
-
     // ‼️ THE BRIDGE RECORDS AND DOES NOT INHERIT, AND THE ASYMMETRY IS THE
     // DESIGN. The record means "what this agent was last RUN with", so a
     // headless start that skipped the write would leave ▶ offering a setup that
     // has been overtaken. Inheriting is the other direction: an unattended call
-    // that says nothing means the documented defaults.
+    // that says nothing means the documented defaults. (The not-inheriting half
+    // is now measured by calling the door — see the matrix.)
     ok('the bridge records both surfaces',
         /void rememberLaunch\(agent\.id, o, 'console'\);/.test(extTs)
         && /void rememberLaunch\(agent\.id, o, 'terminal'\);/.test(extTs));
-    const startOp = extTs.slice(extTs.indexOf("op: 'sessions.start'"),
-        extTs.indexOf("op: 'sessions.start'") + 12000);
-    ok('…and never seeds itself from it', !/seedLastLaunch/.test(startOp));
     ok('…and says so, where an agent calling it will read it',
         /recorded as this agent\\'s last setup/.test(extTs));
 
