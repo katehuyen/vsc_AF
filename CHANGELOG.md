@@ -2,6 +2,46 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.368.0 - X-150 (2/2): 208 obligations, counted (2026-08-31)
+
+"Every launch dimension is carried by every door that starts a session" is true,
+important, and until now it lived only in prose — a 1.690-line SOP, a `_REF`
+rule, and 74 hand-written regexes, all three of which need a person to read
+them. A regex can only see the absence of something it was told to look for; it
+cannot look for a rule nobody has written yet. That is exactly how `providerId`
+and `tier` reached the type and the launcher and never got a box in the Console
+composer with nothing going red.
+
+**A matrix can.** 16 dimensions crossed with 13 doors is 208 cells, and every
+one of them must now hold a verdict in `launch.matrix.json`: `carried`,
+`exempt: <reason>`, or `gap: <reason>`. A seventeenth dimension therefore
+arrives with THIRTEEN cells that have no verdict and the suite is red until
+somebody says, per door, which of the three it is. The obligation is created by
+the dimension, not by somebody remembering to create it — which is the whole
+item.
+
+**‼️ The first count is 67 carried, 141 gaps, and 7 of the 13 doors cannot be
+pointed at at all.** That is not a regression; it is the first time anybody has
+had the number. Most doors live inside quickpick loops and message handlers in a
+30.476-line file, so their cells are declared rather than measured — and
+declared as gaps, because `door not addressable yet` is a count and not an
+excuse. Driving it to zero is X-151's acceptance criterion, stated in a figure
+rather than a paragraph.
+
+**And the half that already bites, bites today.** A cell declared `carried` on a
+door that CAN be addressed is re-measured on every run, so taking a dimension
+out of `runLauncher` goes red now, without waiting for X-151. `gapBudget` may
+only be lowered: raising it means a door stopped carrying something, which is
+the failure being counted. Reseed the observable half with
+`node test/test_launch_matrix.js --fix` — it never invents an exemption, because
+only a person can say a dimension does not apply to a door, and saying it
+requires writing why.
+
+The 74 source regexes in `test_launch_parity.js` stay where they are for now:
+they are today's per-cell evidence, and deleting them before the doors are
+callable would replace measured guarantees with weaker ones. They fall away in
+X-151, when a door can be called with a fixture and asked what it collected.
+
 ## 3.367.0 - X-150 (1/2): the 16 launch dimensions are data now (2026-08-31)
 
 A session here is described by 16 answers and can be started from 13 places.

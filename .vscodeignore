@@ -15,4 +15,5 @@ VERSION_4_27/**
 VERSION_4_35/**
 tools/**
 parity.manifest.json
+launch.matrix.json
 par.out
