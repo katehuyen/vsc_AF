@@ -151,8 +151,10 @@ process.env.ANTHROPIC_BASE_URL = 'https://inherited.example/anthropic';
     ok('the route is described in exactly ONE place', defs === 1);
     ok('…and the Console page delegates to it rather than holding a copy',
         /routeOf: consoleRouteOf,/.test(ext));
+    // The call wraps now that it hands over four values, so the window crosses
+    // the line break — the guarantee is unchanged: the op reads the ONE reader.
     ok('…and so does the bridge op an agent reads',
-        /route: consoleRouteOf\(s\.engine/.test(ext));
+        /route: consoleRouteOf\(\s*s\.engine/.test(ext));
     // The adapter is the fourth reader and the authority: the launcher's own
     // route row is built from it, so the noun and the scope note a card shows
     // are the engine's words, not the panel's.
@@ -160,7 +162,7 @@ process.env.ANTHROPIC_BASE_URL = 'https://inherited.example/anthropic';
     // is still "inside consoleRouteOf's own body", which is the thing being
     // measured; 900 was only ever how long the body happened to be.
     ok('…and it asks the engine\'s own adapter for the words',
-        /const consoleRouteOf = \([\s\S]{0,1800}?providerFormFor\(/.test(ext));
+        /const consoleRouteOf = \([\s\S]{0,2600}?providerFormFor\(/.test(ext));
     /**
      * ‼️ X-105 — AND WHO IS SERVING IT NOW IS DERIVED, NOT STORED A SECOND TIME.
      *
@@ -173,10 +175,24 @@ process.env.ANTHROPIC_BASE_URL = 'https://inherited.example/anthropic';
      */
     ok('‼️ …and the provider serving it NOW is read off the model, through the '
         + 'anti-guess reader rather than by splitting on a slash',
-        /const consoleRouteOf = \([\s\S]{0,1800}?providerOfModelRef\(/.test(ext)
-        && !/consoleRouteOf[\s\S]{0,1800}?modelRef\.split\('\/'\)/.test(ext));
+        /const consoleRouteOf = \([\s\S]{0,2600}?providerOfModelRef\(/.test(ext)
+        && !/consoleRouteOf[\s\S]{0,2600}?modelRef\.split\('\/'\)/.test(ext));
     ok('…and the launch record is not overwritten by it — `now` is its own field',
         /now: \{ id: servingNow, label: labelOf\(servingNow\) \}/.test(ext));
+    /**
+     * ‼️ X-105 — AND THE REPORTED HALF IS READ THE SAME WAY, FROM THE TURN THAT
+     * ALREADY RAN. X-102 keeps declared and reported apart precisely because
+     * they may differ; a card that could only state one of them would be
+     * answering the wrong one of the two for the whole window between a
+     * turn-boundary change landing and the next turn starting.
+     */
+    ok('‼️ …and what the engine REPORTED for the last turn is derived the same way',
+        /const servedLast = providerOfModelRef\(adapter, reportedModelRef, 'acp'\);/.test(ext));
+    ok('…and only becomes a line when it says something the pill does not',
+        /servedLast && servedLast !== current/.test(ext));
+    ok('…and the Console page hands the reported model over to it',
+        /s\.model, s\.lastTurn\?\.model\)/.test(
+            fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8')));
     // An agent that reads the op must be told the field exists and what `null`
     // means there, or a missing route reads as a missing feature.
     ok('…and the op says the field is there and what nothing means',

@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.364.0 - X-105 (6/n): the card says who served the last turn, not only who was asked for (2026-08-31)
+
+X-102 keeps a run's DECLARED half and its REPORTED half apart because they are
+allowed to differ, and the Console card had only ever shown the first. On the
+engine that may change provider at a turn boundary that gap is a whole state: the
+change lands, the next turn has not started, and the engine's own events still
+name the provider that served turn four while the card is configured on another.
+A card that could state only one of those was answering the wrong question for
+the entire window between the two.
+
+The route mark now carries three facts and each line is drawn only when it says
+something the line above it does not: the pill is **who serves the next turn**,
+`Started on:` is the launch record (untouched — the manifest is immutable),
+and `Last turn ran on:` is **what the engine itself reported**, in its own words
+rather than as the request. Both derived through the anti-guess reader, so a
+prefix is a provider only where the engine published it — which is why this is
+absent on Claude and always will be: the transcript names a model and never a
+route, measured, and reading one out of the other is the one thing this family
+forbids.
+
+`console.sessions` and `console.switch` hand back the same three facts from the
+same single reader, so an agent and the panel cannot come away with different
+answers about one card.
+
 ## 3.363.0 - X-105 (5/n): a provider change is answered, not guessed (2026-08-31)
 
 The item's second sentence is a POLICY, and it had no home in the code: Claude

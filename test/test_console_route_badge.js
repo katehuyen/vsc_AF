@@ -112,11 +112,25 @@ ok('‼️ the moved card wears the provider serving it NOW',
     ok('…and the panel opens with the value the pill is showing',
         around.indexOf('Provider: anthropic') >= 0
         && around.indexOf('Provider: anthropic') < around.indexOf('Started on:'));
-    // ‼️ AND THE UNMOVED CARD IS NOT GIVEN THE LINE. A panel that restated the
+    /**
+     * ‼️ X-105 — AND THE REPORTED HALF IS ITS OWN LINE. `Started on:` is the
+     * launch record (what was ASKED for, immutable since X-102); this is what
+     * the engine's own events say served the turn that already ran. They are
+     * two different questions and a card between a boundary change and its next
+     * turn answers them differently — which is the whole reason X-102 keeps the
+     * declared and the reported halves apart instead of storing one.
+     */
+    ok('‼️ …and what the ENGINE reported for the turn that already ran',
+        /Last turn ran on: opencode/.test(around));
+    ok('…named as the engine\'s own word rather than as the request',
+        /what the engine itself reported, not what was asked for/.test(around));
+    // ‼️ AND THE UNMOVED CARD IS NOT GIVEN EITHER LINE. A panel that restated the
     // pill on every ordinary card is how a reader learns to stop reading it.
     const kimiAt = h.indexOf('Route: Kimi');
     ok('‼️ …and a card that never moved is not told where it started',
         kimiAt >= 0 && !/Started on:/.test(h.slice(kimiAt, kimiAt + 400)));
+    ok('…nor given a reported line that would only repeat its pill',
+        kimiAt >= 0 && !/Last turn ran on:/.test(h.slice(kimiAt, kimiAt + 400)));
 }
 
 // ---- ‼️ and nothing secret is anywhere on the page -------------------------

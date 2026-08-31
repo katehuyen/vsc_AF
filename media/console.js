@@ -2846,6 +2846,16 @@
                     ? 'Started on: ' + r.label
                         + ' — the turns before the change ran on that one, and they still do'
                     : '',
+                // ‼️ X-105 — THE REPORTED HALF. What the engine's own events say
+                // served the turn that already ran, which between a boundary
+                // change landing and the next turn starting is a different
+                // provider from the one above. Drawn only when it differs:
+                // otherwise it would restate the first line on every card, and a
+                // panel that repeats itself is one a reader stops opening.
+                (r.lastTurn && r.lastTurn.label)
+                    ? 'Last turn ran on: ' + r.lastTurn.label
+                        + ' — what the engine itself reported, not what was asked for'
+                    : '',
                 r.tier ? 'Tier: ' + r.tier : '',
                 // The one line that makes the mark CHECKABLE rather than
                 // decorative. Public — it is an ordinary setting; the credential

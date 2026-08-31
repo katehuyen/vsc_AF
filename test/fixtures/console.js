@@ -180,6 +180,12 @@ const data = () => ({
             route: {
                 id: 'opencode', label: 'opencode', noun: 'Provider',
                 now: { id: 'anthropic', label: 'anthropic' },
+                // X-105 - the REPORTED half. The change landed at the boundary
+                // and the next turn has not run yet, so the engine's own events
+                // still name the provider that served turn 4. Two true
+                // statements about one card, which is the state the pair exists
+                // for and the one a still picture has to contain.
+                lastTurn: { id: 'opencode', label: 'opencode' },
                 scopeNote: 'the engine may change this at a turn boundary, and records it as a new turn identity'
             }
         }),

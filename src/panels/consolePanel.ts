@@ -116,6 +116,20 @@ export interface ConsoleRoute {
      * the anti-guess rule this family is built on.
      */
     now?: { id: string; label: string };
+    /**
+     * ‼️ X-105 — WHO SERVED THE TURN THAT ALREADY RAN, when that is not who the
+     * next one will run on. The REPORTED half of the pair X-102 built: `now`
+     * above is what the engine is configured on for the next turn, this is what
+     * the engine's own events say served the last one, and between a turn-
+     * boundary change landing and the next turn starting they genuinely differ.
+     *
+     * ‼️ EMPTY ON CLAUDE FOR EVER, AND THAT IS MEASURED RATHER THAN MISSING. The
+     * transcript names a model and never a route (23 Aug 2026: two processes on
+     * separate routes under one model name, indistinguishable afterwards), and
+     * reading a provider out of a model name is the one thing this family
+     * forbids. So on that engine this is absent, which is the honest answer.
+     */
+    lastTurn?: { id: string; label: string };
 }
 
 export interface ConsoleDeps {
@@ -186,7 +200,10 @@ export interface ConsoleDeps {
         engine: string, providerId?: string, tier?: string,
         /** ‼️ X-105 — the model the card is on RIGHT NOW, because on one engine
          *  that is what names the provider. See `ConsoleRoute.now`. */
-        modelRef?: string
+        modelRef?: string,
+        /** ‼️ X-105 — and the one the engine REPORTED for the turn that already
+         *  ran. See `ConsoleRoute.lastTurn`. */
+        reportedModelRef?: string
     ): ConsoleRoute | undefined;
     /**
      * ‼️ X-105 — WHAT THE COMPOSER MAY PICK, ASKED OF THE ENGINE'S OWN ADAPTER.
@@ -750,7 +767,8 @@ export class ConsolePanel {
                 // with no provider axis and on every launch that picked none,
                 // which is most of them — a mark for "nothing" would be noise
                 // on every row.
-                route: this.deps.routeOf?.(s.engine ?? 'claude', s.providerId, s.tier, s.model) ?? null,
+                route: this.deps.routeOf?.(
+                    s.engine ?? 'claude', s.providerId, s.tier, s.model, s.lastTurn?.model) ?? null,
                 // the session's own title — the same one the side panel and the
                 // viewer show, so a rename anywhere is a rename everywhere
                 title: this.titleFor(s),

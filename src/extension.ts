@@ -10482,7 +10482,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // picked none, which is most of them. No credential: the
                     // endpoint is an ordinary setting and the shape has no
                     // field for one.
-                    route: consoleRouteOf(s.engine ?? 'claude', s.providerId, s.tier) ?? null,
+                    route: consoleRouteOf(
+                        s.engine ?? 'claude', s.providerId, s.tier, s.model, s.lastTurn?.model) ?? null,
                     status: s.status, model: s.model ?? null, effort: s.effort ?? null,
                     // ‼️ …and what the CLI says is REALLY in force, which is the
                     // only one of the two that survives "the user chose nothing"
@@ -10682,7 +10683,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     /** what it is served by now, read by the SAME resolver the
                      *  card and `console.sessions` use — so a caller and the
                      *  panel cannot come away with different answers. */
-                    route: consoleRouteOf(engine, after?.providerId, after?.tier, after?.model) ?? null,
+                    route: consoleRouteOf(
+                        engine, after?.providerId, after?.tier, after?.model, after?.lastTurn?.model) ?? null,
                     model: after?.model ?? null
                 };
             }
@@ -16374,7 +16376,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * not read here and the shape has no field for one to arrive in.
      */
     const consoleRouteOf = (
-        engine: string, providerId?: string, tier?: string, modelRef?: string
+        engine: string, providerId?: string, tier?: string,
+        modelRef?: string, reportedModelRef?: string
     ): ConsoleRoute | undefined => {
         const id = (providerId ?? '').trim();
         /**
@@ -16392,8 +16395,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * this whole family is built on, and the one `opencode.ts` already
          * carries a scar from breaking.
          */
-        const servingNow = providerOfModelRef(
-            adapterFor(engineOf(engine).id, registryDeps()), modelRef, 'acp');
+        const adapter = adapterFor(engineOf(engine).id, registryDeps());
+        const servingNow = providerOfModelRef(adapter, modelRef, 'acp');
+        /**
+         * ‼️ AND THE TURN THAT ALREADY RAN IS ITS OWN ANSWER (X-102's reported
+         * half). Between a turn-boundary change landing and the next turn
+         * starting, the engine is configured on one provider and the last turn
+         * in the transcript was served by another — two true statements, and a
+         * card that could only make one of them would be answering the question
+         * the reader did not ask half the time.
+         */
+        const servedLast = providerOfModelRef(adapter, reportedModelRef, 'acp');
         if (!id && !servingNow) { return undefined; }
         const form = providerFormFor(engineOf(engine).id, { providerId: id || servingNow, tier }, 'acp');
         if (!form.applies) { return undefined; }
@@ -16403,9 +16415,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // A card launched with no route but running on a provider the engine
         // names: the mark is that provider, and there is no earlier one to
         // contrast it with.
+        // Whichever of the two the pill is actually showing — the line below is
+        // only worth drawing when it says something that one does not.
+        const current = servingNow || id;
+        const lastTurn = servedLast && servedLast !== current
+            ? { lastTurn: { id: servedLast, label: labelOf(servedLast) } } : {};
         if (!id) {
             return {
-                id: servingNow, label: labelOf(servingNow), noun: form.noun, scopeNote: form.scopeNote
+                id: servingNow, label: labelOf(servingNow), noun: form.noun,
+                ...lastTurn, scopeNote: form.scopeNote
             };
         }
         const profile = providerProfiles().find(p => p.id === id);
@@ -16413,6 +16431,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             id,
             ...(servingNow && servingNow !== id
                 ? { now: { id: servingNow, label: labelOf(servingNow) } } : {}),
+            ...lastTurn,
             // The route's own name; the raw id is the honest fallback for a
             // profile deleted since the card was started — a card must not stop
             // saying what it runs on because the settings file moved on.
