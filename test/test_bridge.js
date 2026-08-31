@@ -2789,9 +2789,14 @@ const { opencodeStatus, syncToOpencode } =
         ok('sessions.start takes the project the session is filed under',
             /project\? \(id or name/.test(startBlock)
             && /resolveLaunchProject\(args\.project\)/.test(startBlock));
-        // 5000, not 3000: the op's own description grew when the engine axis
-        // arrived, and a window too small silently stops covering the handler.
-        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 9000);
+        // ‼️ THE WINDOW IS WIDENED WHEN THE OP GROWS, NEVER THE GUARANTEE.
+        // 3000 → 5000 → 9000 → 13000: this op's own DESCRIPTION grows every time
+        // a dimension is added to it (the engine axis, then the route), and a
+        // window that no longer reaches the handler stops measuring the handler
+        // while every assertion above it still passes. Two checks below fell off
+        // the end when X-105 added the route paragraph — the failure looked like
+        // a missing return field and was a short slice.
+        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 13000);
         ok('console.start takes it too, in the same words',
             /project\? \(id or name/.test(consoleStart)
             && /resolveLaunchProject\(args\.project\)/.test(consoleStart));
@@ -2801,6 +2806,27 @@ const { opencodeStatus, syncToOpencode } =
         // learns that by watching its message disappear has been told a lie by
         // omission, so the contract says it on the way in.
         ok('console.start takes an engine', /engine\?/.test(consoleStart));
+        // ‼️ X-105 — AND THE ROUTE, in the same commit as the composer's box.
+        //
+        // `_REF/agentfarm-dev.md` names this exact failure: a session dimension
+        // added to one surface and forgotten on the others is a structural
+        // failure, and the bridge is the surface an agent has. A person could
+        // point a card at Kimi in one click while an agent could only start one
+        // on whatever this window happened to be carrying.
+        ok('console.start takes the route the session is served by',
+            /providerId\?/.test(consoleStart) && /tier\?/.test(consoleStart));
+        // ‼️ REFUSED, NOT DROPPED, and narrowed by the ENGINE'S OWN adapter
+        // rather than by a list written here — the same `prunedPick` the
+        // launcher and the composer use. A caller who asked for an endpoint and
+        // silently got this window's own cannot tell, which is the whole thing
+        // X-101 exists to make impossible.
+        ok('…and a route this engine cannot be pointed at is refused, not quietly ignored',
+            /prunedPick\(engine, \{ providerId: wantRoute/.test(consoleStart)
+            && /need\(!wantRoute \|\| !!route\.providerId,/.test(consoleStart));
+        // …and the answer says what it really got, through the SAME resolver the
+        // card and console.sessions use — one statement, three readers.
+        ok('…and what it was actually pointed at comes back on the reply',
+            /route: consoleRouteOf\(engine, route\.providerId, route\.tier\) \?\? null/.test(consoleStart));
         // ‼️ B-12 — AND IT SAYS IT PER ENGINE, DERIVED. The sentence used to be
         // one per SHAPE, written when there were two: "Claude is one long-lived
         // process; every other engine here is ONE PROCESS PER TURN." A

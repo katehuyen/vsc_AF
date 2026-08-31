@@ -15,6 +15,7 @@ import {
     EngineId, engineFlagFor, engineNote, engineOf, ENGINES, engineTakesEffort, noTranscriptNote
 } from '../core/consoleEngine';
 import { EngineOption, engineRefusal } from '../core/engines';
+import { ProviderForm, ProviderPick, ProviderTransport } from '../core/launchProvider';
 import { EngineModels, narrowLaunch } from '../core/models';
 import {
     EFFORT_CHOICES, LastLaunch, LaunchOptions, modelChoices, PERMISSION_CHOICES,
@@ -162,6 +163,30 @@ export interface ConsoleDeps {
      * the credential is not, is not read here, and has no field to arrive in.
      */
     routeOf?(engine: string, providerId?: string, tier?: string): ConsoleRoute | undefined;
+    /**
+     * ‼️ X-105 — WHAT THE COMPOSER MAY PICK, ASKED OF THE ENGINE'S OWN ADAPTER.
+     *
+     * `routeOf` above answers "what is this card served by" for a card that
+     * already exists. This is the other half and a different question: what may
+     * a session ABOUT to start be pointed at. It is the SAME reader the
+     * launcher's route row is built from (`providerFormFor` → `launchProviderForm`),
+     * so the words on the composer, the words in the launcher and the words on
+     * the card are one statement rather than three.
+     *
+     * The transport is always `acp` here — a hosted card is spoken to over ACP,
+     * and the transport is what decides whether a variant may be offered at all
+     * (measured: the bare TUI takes no `--variant`, ACP declares none). Passing
+     * the panel's own transport rather than letting the form guess is the only
+     * way a control this panel draws cannot be one the panel then drops.
+     */
+    providerForm?(engine: string, pick: ProviderPick, transport: ProviderTransport): ProviderForm;
+    /**
+     * A pick narrowed to what the engine and route really carry, with whatever
+     * had to go SAID OUT LOUD. Asked on every change rather than at start: a
+     * tier that stops existing because the route moved must leave the box as the
+     * route moves, not survive on screen until Send and vanish silently then.
+     */
+    prunePick?(engine: string, pick: ProviderPick, transport: ProviderTransport): ProviderPick;
     /**
      * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, and where.
      *
@@ -528,11 +553,15 @@ export class ConsolePanel {
                     engine: c.composerEngine
                 };
                 c.composerSuperpowers = l.superpowers;
-                // ‼️ X-103 — the one dimension of the handed-over setup with no
-                // box on the page (X-105). Kept, not dropped: see composerRoute.
-                c.composerRoute = (l.providerId ?? '').trim()
+                // ‼️ X-103 — the route the calling door picked, carried rather
+                // than dropped. ‼️ X-105 — and now NARROWED on the way in, by
+                // the engine this composer is opening on: a door that offered a
+                // Claude route and then opened the panel on another engine used
+                // to leave the pick sitting in state where the new box could not
+                // show it and Send would still have used it.
+                c.composerRoute = c.prunedRoute((l.providerId ?? '').trim()
                     ? { providerId: l.providerId, tier: l.tier }
-                    : undefined;
+                    : undefined);
                 c.composerSeed++;
             }
             // undefined = "I have no opinion"; '' = "explicitly no project"
@@ -834,6 +863,31 @@ export class ConsolePanel {
             models: modelChoices(this.deps.modelAliases()),
             efforts: EFFORT_CHOICES,
             engineModels: this.deps.engineModels?.() ?? null,
+            /**
+             * ‼️ X-105 — THE ROUTE THE NEXT SESSION WILL RUN ON, AS A CONTROL.
+             *
+             * X-103 made the route pickable in the launcher and X-105 (2/n) made
+             * the started card SAY it. Between those two the composer carried
+             * the pick blind: a route handed over by a launcher was applied and
+             * had no box, so the person about to press Send could not see it,
+             * change it, or clear it. This is that box's data.
+             *
+             * `applies: false` on four of five engines is the ordinary answer
+             * and the page draws nothing at all for it — a disabled row asking a
+             * question with no answers is the control with no referent
+             * `docs/CONVENTIONS.md` forbids.
+             */
+            composerForm: this.deps.providerForm?.(
+                engineOf(this.chosenEngine()).id, this.composerRoute ?? {}, 'acp') ?? null,
+            /**
+             * …and WHAT IS CURRENTLY PICKED, echoed separately rather than read
+             * back out of the form. The form is a vocabulary; the pick is an
+             * answer, and a page that had to infer one from the other could not
+             * tell "nothing chosen" from "chosen, and the catalog has since
+             * stopped offering it" — which is exactly the case a route deleted
+             * in Settings produces.
+             */
+            composerPick: this.composerRoute ?? null,
             // Two lists, because they are two different questions. Starting a
             // session picks a FLAG (and "Default" — pass none — is a real
             // answer). Moving a running one sends `set_permission_mode`, which
@@ -1012,6 +1066,31 @@ export class ConsolePanel {
      * `undefined` when the dep is absent or the id is not one of ours: nothing
      * is known, so `narrowLaunch` narrows nothing.
      */
+    /**
+     * ‼️ X-105 — THE PICK, NARROWED BY THE ENGINE THAT WILL RUN IT.
+     *
+     * One place, because two callers need it and they must not be able to
+     * disagree: choosing a route, and moving the engine underneath one already
+     * chosen. Both are "what of this pick survives", and the answer is the
+     * adapter's — `prunePick` says out loud what it dropped, so a tier that
+     * stops existing is not something the user discovers at Send.
+     *
+     * A dep-less build (the tests' minimal panel) keeps the pick as given: this
+     * is a narrowing, and a narrowing nobody can perform is not a reason to
+     * throw the answer away.
+     */
+    private prunedRoute(
+        pick: { providerId?: string; tier?: string } | undefined
+    ): { providerId?: string; tier?: string } | undefined {
+        if (!pick?.providerId) { return undefined; }
+        const engine = engineOf(this.chosenEngine()).id;
+        const out = this.deps.prunePick?.(engine, pick, 'acp') ?? pick;
+        const providerId = (out.providerId ?? '').trim();
+        if (!providerId) { return undefined; }
+        const tier = (out.tier ?? '').trim();
+        return { providerId, ...(tier ? { tier } : {}) };
+    }
+
     private engineModelsFor(engine: string | undefined): EngineModels | undefined {
         const map = this.deps.engineModels?.();
         if (!map) { return undefined; }
@@ -1247,8 +1326,34 @@ export class ConsolePanel {
             // engine, and the composer does not draw the box for it.
             case 'setEngine':
                 this.composerEngine = str('id');
+                // ‼️ X-105 — A ROUTE BELONGS TO ONE ENGINE, exactly as a model
+                // does. A Claude route carried onto Codex is an endpoint its CLI
+                // was never going to be pointed at, and the pick is dropped by
+                // the new engine's own adapter rather than by a rule written
+                // here — an engine with no provider axis prunes everything away
+                // and says so, which is the honest answer for four of the five.
+                this.composerRoute = this.prunedRoute(this.composerRoute);
                 this.refresh();
                 break;
+            /**
+             * ‼️ X-105 — WHICH ROUTE THE NEXT SESSION RUNS ON.
+             *
+             * It goes back to the host rather than into the page's own state for
+             * the same two reasons the engine does: the narrowing lives here
+             * (the adapter is the only thing that knows a tier stopped existing
+             * when the route moved), and the answer has to survive a repaint
+             * that rebuilds the whole row. `''` is a real answer and the
+             * important one — "no route" means the child inherits this window's
+             * environment, which is what every launch made before X-101 did.
+             */
+            case 'setRoute': {
+                const providerId = str('providerId');
+                const tier = str('tier');
+                this.composerRoute = this.prunedRoute(
+                    providerId ? { providerId, ...(tier ? { tier } : {}) } : undefined);
+                this.refresh();
+                break;
+            }
             // "this composer is no longer about that agent" — the way out of a
             // pin, so a fixed agent is never a trap (see pinnedAgent).
             case 'unpinAgent':

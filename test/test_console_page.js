@@ -764,6 +764,154 @@ const html = allHtml;
     sandbox.document.activeElement = null;
 }
 
+// ---------- ‼️ X-105 — THE ROUTE IS A CONTROL, NOT A CARRIED VALUE ----------
+//
+// X-103 made the route pickable in the launcher and X-105 (2/n) made the
+// started card say what serves it. Between the two the composer carried the
+// pick BLIND: a route handed over by a launcher was applied and had no box, so
+// the person about to press Send could not see it, change it or clear it — and
+// a composer opened without one had no way to choose at all.
+//
+// The form is the ENGINE'S OWN WORDS, built host-side by the same reader the
+// launcher's route row and the card's pill use, so the noun on this box
+// (`Route` on Claude, `Provider` on OpenCode) is never this page's invention.
+{
+    const composer = () => app()._html;
+    const engines = [
+        { id: 'claude', label: 'Claude', ready: true },
+        { id: 'codex', label: 'Codex', ready: true },
+        { id: 'opencode', label: 'OpenCode', ready: true }
+    ];
+    const engineModels = {
+        claude: { models: [{ id: '', label: 'Default' }], efforts: {}, defaultEffort: {} },
+        codex: { models: [{ id: '', label: 'Default' }], efforts: {}, defaultEffort: {} },
+        opencode: {
+            models: [
+                { id: '', label: 'Default' },
+                { id: 'opencode/big-pickle', label: 'big-pickle' },
+                { id: 'anthropic/claude-opus-5', label: 'claude-opus-5' }
+            ],
+            efforts: {}, defaultEffort: {}
+        }
+    };
+    // No route chosen yet: the sub-axis is genuinely empty, because a tier is a
+    // question about a route and there is no route to ask it of.
+    const claudeForm = pick => ({
+        engine: 'claude', applies: true, noun: 'Route', scope: 'session',
+        scopeNote: 'fixed for the whole session on this engine',
+        providers: [
+            { id: '', label: 'Default', detail: 'this window\'s own environment' },
+            { id: 'kimi', label: 'Kimi' }
+        ],
+        sub: pick === 'kimi'
+            ? {
+                kind: 'tier', label: 'Tier', note: 'which model "Kimi" serves — the route decides',
+                choices: [{ id: '', label: 'Default' }, { id: 'opus', label: 'opus' }]
+            }
+            : { kind: 'none', label: '', note: '', choices: [] },
+        variants: [],
+        variantsWhy: 'ACP declares only model and mode, so no variant can be carried here'
+    });
+    const base = (engine, form, pick) => Object.assign(data(CONVO.slice()), {
+        selected: '', presetAgent: '', composerSeed: 20, engine, engines, engineModels,
+        defaults: {}, composerForm: form, composerPick: pick || null
+    });
+
+    push(base('claude', claudeForm(null), null));
+    ok('a Claude composer with a route set up draws a route box, in the engine\'s own noun',
+        /<select id="c-route">/.test(composer()) && /<span>route<\/span>/.test(composer())
+        && composer().includes('Kimi'));
+    // ‼️ …and the WORD is the quiet half, not the value. `.permlbl` dims its
+    // whole wrapper, which is right where three labelled boxes read as one group
+    // and wrong among six unlabelled selects: a dimmed value reads as a disabled
+    // control. Its own class, so the running composer's row is untouched.
+    ok('…with the label dimmed and the value at full strength',
+        /class="rtlbl"/.test(composer())
+        && /\.crow \.rtlbl > span \{ opacity:\.6/.test(composer())
+        && !/class="permlbl"[^>]*>route/.test(composer()));
+    ok('…with no tier box, because a tier is a question about a route and none is picked',
+        !/id="c-tier"/.test(composer()));
+    ok('‼️ …and the hover carries what makes the box auditable: the scope, and WHY '
+        + 'there is no variant control rather than silence about it',
+        composer().includes('fixed for the whole session on this engine')
+        && composer().includes('ACP declares only model and mode'));
+
+    // The hand is on the picker, as it is after every native select choice.
+    els['c-route'].tagName = 'SELECT';
+    sandbox.document.activeElement = els['c-route'];
+    posted.length = 0;
+    els['c-route'].value = 'kimi';
+    els['c-route'].listeners.change({ target: els['c-route'] });
+    ok('choosing a route tells the host, which owns the narrowing',
+        posted.some(m => m.type === 'setRoute' && m.providerId === 'kimi'));
+    ok('‼️ …and the box shows it AT ONCE — the same rule as the engine picker (S-51), '
+        + 'because the only rebuild is an echo that lands while the hand is still on it',
+        /value="kimi" selected/.test(composer()));
+
+    // …and the host's answer brings the tier axis with it.
+    push(base('claude', claudeForm('kimi'), { providerId: 'kimi' }));
+    ok('a picked route brings its tier box, in the adapter\'s own label',
+        /<select id="c-tier">/.test(composer()) && composer().includes('>opus<'));
+    els['c-tier'].tagName = 'SELECT';
+    sandbox.document.activeElement = els['c-tier'];
+    posted.length = 0;
+    els['c-tier'].value = 'opus';
+    els['c-tier'].listeners.change({ target: els['c-tier'] });
+    ok('choosing a tier keeps the route it belongs to',
+        posted.some(m => m.type === 'setRoute' && m.providerId === 'kimi' && m.tier === 'opus'));
+
+    // ‼️ AND CHANGING THE ROUTE DROPS THE TIER, because `standard` on one route
+    // is not `standard` on another — the adapter would drop it anyway; this
+    // stops the box showing a word that is already gone.
+    posted.length = 0;
+    els['c-route'].value = '';
+    els['c-route'].listeners.change({ target: els['c-route'] });
+    ok('‼️ moving the route does not carry the old route\'s tier with it',
+        posted.some(m => m.type === 'setRoute' && !m.providerId && !m.tier));
+
+    // ---- an engine with no provider axis says so by drawing nothing ----
+    sandbox.document.activeElement = null;
+    push(base('codex', { engine: 'codex', applies: false, noun: '', scope: 'session',
+        scopeNote: '', providers: [], sub: { kind: 'none', label: '', note: '', choices: [] },
+        variants: [] }, null));
+    ok('‼️ an engine with no provider axis gets no box at all — a disabled row asking '
+        + 'a question with no answers is the control with no referent',
+        !/id="c-route"/.test(composer()) && !/id="c-tier"/.test(composer()));
+
+    // ---- ‼️ AND WHERE THE SUB-AXIS IS THE MODEL, THE MODEL BOX IS IT ----
+    //
+    // OpenCode names a model `provider/model`, so "which provider" and "which
+    // model" are one question asked twice. A second Model box beside the one
+    // already on the strip would be two controls for one subject, and they can
+    // disagree within a click. The route narrows the box that is there instead.
+    const ocForm = pick => ({
+        engine: 'opencode', applies: true, noun: 'Provider', scope: 'turn',
+        scopeNote: 'this engine may change it at a turn boundary',
+        providers: [{ id: '', label: 'Default' }, { id: 'opencode', label: 'OpenCode' }],
+        sub: pick
+            ? {
+                kind: 'model', label: 'Model', note: 'what opencode publishes',
+                choices: [{ id: '', label: 'Default' }, { id: 'opencode/big-pickle', label: 'big-pickle' }]
+            }
+            : { kind: 'none', label: '', note: '', choices: [] },
+        variants: []
+    });
+    push(base('opencode', ocForm(null), null));
+    ok('with no provider picked the model box is every model the engine published',
+        composer().includes('big-pickle') && composer().includes('claude-opus-5'));
+    push(base('opencode', ocForm('opencode'), { providerId: 'opencode' }));
+    ok('‼️ a picked provider narrows the model box rather than adding a second one',
+        composer().includes('big-pickle') && !composer().includes('claude-opus-5'));
+    ok('‼️ …and there is exactly ONE model control on the strip',
+        (composer().match(/id="c-model"/g) || []).length === 1
+        && !/id="c-tier"/.test(composer()));
+    ok('…while the provider box itself is drawn, in THIS engine\'s noun',
+        /<select id="c-route">/.test(composer())
+        && composer().includes('this engine may change it at a turn boundary'));
+
+    sandbox.document.activeElement = null;
+}
+
 // ---------- whose turn is it ----------
 // The left panel's whole job, across many cards: who holds the ball, and for
 // how long. Colour is never alone (every state says its word); only the state

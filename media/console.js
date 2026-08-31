@@ -675,6 +675,24 @@
         /* the identity end of the row: sized, shrinkable, in that order */
         #c-agent { flex:1 1 120px; max-width:120px; }
         #c-engine { flex:2 1 118px; max-width:118px; }
+        /* ‼️ X-105 — the route and its tier. Sized like the engine and the
+           effort beside them because that is what they are: the route decides
+           what the model row MEANS, the tier is a short word. Both are drawn
+           only where the engine has the axis AND something is set up, so the row
+           measured above is unchanged for everybody else. */
+        #c-route { flex:2 1 112px; max-width:112px; }
+        #c-tier { flex:1 1 74px; max-width:74px; }
+        /* ‼️ THE LABEL IS THE QUIET HALF, THE VALUE IS NOT. .permlbl dims the
+           whole wrapper, which is right on the RUNNING row — three boxes, all
+           labelled, reading as one group — and wrong here, where these two sit
+           among six unlabelled selects: a dimmed value among full-strength ones
+           reads as a disabled control, which is the opposite of what a route
+           somebody just chose should look like. Its own class, so the running
+           row is untouched. (No backticks in this block: the whole stylesheet is
+           a template literal, and one would end it.) */
+        .crow .rtlbl { min-width:0; flex:0 1 auto; font-size:10px;
+            display:flex; align-items:center; gap:4px; }
+        .crow .rtlbl > span { opacity:.6; flex:none; }
         #c-model, #c-model-live { flex:1 1 112px; max-width:112px; }
         #c-effort, #c-effort-live { flex:1 1 82px; max-width:82px; }
         #c-perm { flex:3 1 104px; max-width:104px; }
@@ -2626,6 +2644,9 @@
      * take the half-written message's caret with it mid-sentence.
      */
     let shellOwed = false;
+    /** ‼️ X-105 — "the next host push is the answer to something I just asked
+     *  for", so M-33 lets that one through. One-shot: see paint(). */
+    let askedHost = false;
     /** Stops watching the PREVIOUS writing box's height (K-9, see keepHeight). */
     let stopBoxH = null;
     /** Last html written into each slot — nothing is touched unless it differs. */
@@ -2827,6 +2848,81 @@
     function modelsFor(engineId) {
         const em = (DATA.engineModels || {})[engineId || 'claude'];
         return (em && em.models) || DATA.models || [];
+    }
+    /**
+     * ‼️ X-105 — WHAT THE COMPOSER MAY PICK AS A ROUTE, IN THE ENGINE'S OWN
+     * WORDS, and what is currently picked. Both come from the host: the form is
+     * built by the SAME reader the launcher's route row and the card's route
+     * pill are (`providerFormFor`), and the pick is held host-side because the
+     * narrowing lives there — a tier that stops existing when the route moves is
+     * something only the adapter knows.
+     *
+     * `null` on four of the five engines, and on the fifth until somebody has
+     * set a route up. Nothing is drawn for either.
+     */
+    const composerForm = () => DATA.composerForm || null;
+    const routePick = () => DATA.composerPick || {};
+    /** Is there actually something to choose? A picker whose only row is
+     *  "Default" is a control with no referent, and the composer is not where a
+     *  person learns that routes exist — Settings is. */
+    function routeAxisOn() {
+        const f = composerForm();
+        return !!(f && f.applies && (f.providers || []).some(p => p.id));
+    }
+    /**
+     * ‼️ EVERYTHING ABOUT THE ROUTE THAT DECIDES WHICH BOXES EXIST — the shell
+     * key's share of this axis, in one place so the key and the markup cannot
+     * come to disagree about what a change is.
+     *
+     * The PICK is in it because the boxes are drawn from it, and so is the
+     * form's own shape: whether the axis applies at all, the engine's noun, and
+     * the kind and size of the sub-axis. The tier box appears only once the host
+     * has answered with the tiers, so `sub.kind` moving from `none` to `tier` is
+     * a change of shape even though nothing the user typed moved.
+     */
+    function routeShape() {
+        const f = composerForm();
+        const p = routePick();
+        return `${p.providerId || ''}|${p.tier || ''}|`
+            + (f ? `${f.applies ? 1 : 0}${f.noun || ''}${(f.providers || []).length}`
+                + `${(f.sub && f.sub.kind) || ''}${((f.sub && f.sub.choices) || []).length}`
+                : '-');
+    }
+    /** …and the row under it, only where that row is a TIER. */
+    function tierAxisOn() {
+        const f = composerForm();
+        return !!(routeAxisOn() && f.sub && f.sub.kind === 'tier'
+            && (f.sub.choices || []).some(c => c.id));
+    }
+    /**
+     * ‼️ X-105 — ON AN ENGINE WHOSE SUB-AXIS IS THE MODEL, THE MODEL BOX IS
+     * THAT AXIS — so the route narrows the box that is already there instead of
+     * putting a second one beside it.
+     *
+     * OpenCode names a model `provider/model` (`opencode/big-pickle`), which
+     * makes "which provider" and "which model" one question asked twice. Two
+     * controls for one subject can disagree within a click, and ONE SUBJECT is
+     * the rule this would break. With no route picked the adapter returns every
+     * row, so this is exactly the list the box has always shown; it narrows only
+     * once somebody has actually chosen.
+     *
+     * ‼️ AND IT IS THE COMPOSER'S ONLY. `modelsFor` still answers for a running
+     * card, whose route was decided when it started and has nothing to do with
+     * whatever the composer is currently pointing at.
+     */
+    function composerModels(engineId) {
+        const base = modelsFor(engineId);
+        const f = composerForm();
+        if (!f || !f.applies || !f.sub || f.sub.kind !== 'model' || !routePick().providerId) {
+            return base;
+        }
+        const allowed = {};
+        (f.sub.choices || []).forEach(c => { if (c.id) { allowed[c.id] = true; } });
+        const kept = base.filter(m => !m.id || allowed[m.id]);
+        // A narrowing that empties the box is not a narrowing, it is a broken
+        // catalog — the wider list is the honest fallback (same rule as
+        // `withCurrent`: never show a control that cannot say what is set).
+        return kept.some(m => m.id) ? kept : base;
     }
     /** …and the effort vocabulary of THAT model: Codex states its levels per
      *  model (five for luna, four for 5.5), so one shared list was wrong for
@@ -3031,6 +3127,55 @@
             const now = row ? String(row.label || row.id || '') : '';
             return (now ? now + '\n\n' : '') + standard;
         };
+        /**
+         * ‼️ X-105 — THE ROUTE, AS A CONTROL RATHER THAN A CARRIED VALUE.
+         *
+         * X-103 made the route pickable in the launcher and X-105 (2/n) made the
+         * started card say it out loud. Between the two the composer carried the
+         * pick BLIND: a route handed over by a launcher was applied and had no
+         * box, so the person about to press Send could not see it, change it, or
+         * clear it — and a composer opened without one had no way to choose.
+         *
+         * ‼️ THE WORDS ARE THE ENGINE'S. `Route` on Claude, `Provider` on
+         * OpenCode, and the label under it (`Tier`) is the adapter's too. A noun
+         * invented here would be a fourth place that can disagree with the
+         * launcher, the card and the bridge.
+         *
+         * ‼️ AND THE SUB-AXIS IS ONLY DRAWN WHEN IT IS A TIER. Where the engine's
+         * sub-axis is the MODEL it is already on this strip, and `composerModels`
+         * narrows that box instead — see the note there.
+         *
+         * ‼️ NO VARIANT BOX, and that is the transport's answer rather than an
+         * omission: a hosted card is spoken to over ACP, which declares only
+         * model and mode (measured — `opencode run --variant` exists and the TUI
+         * and ACP have no such thing). The form says WHY in `variantsWhy` and
+         * that sentence rides in the route box's own hover, where the reader is
+         * already asking about this axis.
+         */
+        const routeBoxesHtml = () => {
+            if (!routeAxisOn()) { return ''; }
+            const f = composerForm();
+            const pick = routePick();
+            const cur = pick.providerId || '';
+            const routeTip = [
+                'Which ' + f.noun.toLowerCase() + ' the new session is served by — the endpoint '
+                + 'the process really talks to, which the engine badge does not say. '
+                + 'Default leaves this window\'s own environment alone.',
+                f.scopeNote || '',
+                f.variantsWhy || '',
+                f.empty || ''
+            ].filter(Boolean).join(' · ');
+            const rows = withCurrent(f.providers || [], cur);
+            const route = `<label class="rtlbl" title="${C.esc(boxTip(rows, cur, routeTip))}"><span>${C.esc(f.noun.toLowerCase())}</span>
+                    <select id="c-route">${opts(rows, cur)}</select>
+                </label>`;
+            if (!tierAxisOn()) { return route; }
+            const tcur = pick.tier || '';
+            const trows = withCurrent(f.sub.choices || [], tcur);
+            return route + `<label class="rtlbl" title="${C.esc(boxTip(trows, tcur, f.sub.note))}"><span>${C.esc(f.sub.label.toLowerCase())}</span>
+                    <select id="c-tier">${opts(trows, tcur)}</select>
+                </label>`;
+        };
         const dead = s && (s.status === 'ended' || s.status === 'error');
         const placeholder = s
             ? (dead ? 'This session has ended — start a new one to keep talking.'
@@ -3170,7 +3315,8 @@
                 </select>`}
                 <select id="c-engine" title="${C.esc(boxTip((DATA.engines || []), engineNow(), 'Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.'))}">${engineOptionsHtml(engineNow())}</select>
                 ${engineHintHtml(engineNow())}
-                <select id="c-model" title="${C.esc(boxTip(withCurrent(modelsFor(engineNow()), st.model), st.model, 'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow())))}">${opts(withCurrent(modelsFor(engineNow()), st.model), st.model)}</select>
+                ${routeBoxesHtml()}
+                <select id="c-model" title="${C.esc(boxTip(withCurrent(composerModels(engineNow()), st.model), st.model, 'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow())))}">${opts(withCurrent(composerModels(engineNow()), st.model), st.model)}</select>
                 ${drawsEffort(engineNow())
                     ? `<select id="c-effort" title="${C.esc(boxTip(withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort, 'Reasoning effort' + flagOf(engineNow(), 'effort')))}">${opts(withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort)}</select>`
                     : ''}
@@ -3490,6 +3636,38 @@
             const box = document.getElementById('c-engine');
             if (box && box.focus) { box.focus(); }
         });
+        /**
+         * ‼️ X-105 — WHICH ROUTE THE NEXT SESSION RUNS ON, and the tier under it.
+         *
+         * Both go back to the host rather than into `st` for the reason the
+         * engine does: the NARROWING lives there. Only the engine's own adapter
+         * knows that a tier stopped existing because the route moved, and it
+         * says out loud what it dropped — a pick pruned silently on this side
+         * would leave the box agreeing with a value the launch will not use.
+         *
+         * ‼️ AND THE ROUTE IS THE ONE ABOVE THE TIER, so changing it clears the
+         * tier rather than carrying it: `standard` on one route is not
+         * `standard` on another, and the adapter would drop it anyway — this
+         * just stops the box showing a word that is about to go.
+         *
+         * ‼️ S-51 — AND BOTH REPAINT ON THE SPOT, for exactly the reason the
+         * engine picker does: the boxes below them are drawn off this pick, the
+         * only rebuild is the host's echo, and that echo lands while the hand is
+         * still on the select. See the S-51 note above.
+         */
+        const sendRoute = (providerId, tier, focusId) => {
+            DATA.composerPick = providerId ? { providerId, ...(tier ? { tier } : {}) } : null;
+            // the tiers under a route can only come from the host, and they must
+            // not have to wait for the hand to leave the box that asked
+            askedHost = true;
+            vscode.postMessage({ type: 'setRoute', providerId, tier });
+            paint();
+            const box = document.getElementById(focusId);
+            if (box && box.focus) { box.focus(); }
+        };
+        byId('c-route', 'change', e => sendRoute(e.target.value, '', 'c-route'));
+        byId('c-tier', 'change', e =>
+            sendRoute((routePick().providerId || ''), e.target.value, 'c-tier'));
         // giving the pin back: the picker returns, and st keeps whatever agent
         // was pinned as its starting selection
         byId('c-unpin', 'click', () => vscode.postMessage({ type: 'unpinAgent' }));
@@ -3914,7 +4092,11 @@
         // picker or a name, which is markup — so a pin that arrived while the
         // composer was already on screen has to rebuild the shell, exactly as a
         // change of session does.
-        const composerShape = s ? '' : `|${engineNow()}|${st.model || ''}`;
+        // ‼️ X-105 — THE ROUTE IS PART OF THE SHAPE TOO. It decides whether the
+        // tier box exists at all and, on an engine whose sub-axis is the model,
+        // what the model box may offer — so a pick that did not reach this key
+        // would be a control changing nothing under a control that changed.
+        const composerShape = s ? '' : `|${engineNow()}|${st.model || ''}|${routeShape()}`;
         const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}`;
         if (shellKey !== key) {
             // ‼️ M-33 — ONLY A REBUILD NOBODY ASKED FOR WAITS.
@@ -3935,7 +4117,19 @@
             // the reader is watching keeps arriving.
             const sameSession = shellKey !== null
                 && String(shellKey).split('|')[0] === String(DATA.selected || '');
-            if (fromHost && sameSession && window.AFRepaint.inAField(document)) {
+            // ‼️ X-105 — AND AN ANSWER I ASKED FOR IS NOT "A REBUILD NOBODY
+            // ASKED FOR" EITHER.
+            //
+            // The route box can only draw what the host resolved: pick a route
+            // and the TIERS under it arrive with the echo, not before it. That
+            // echo lands with the hand still on the select that asked for it —
+            // the S-51 shape exactly — so M-33 would put the new box on the
+            // slate and the reader would see it appear only after they reached
+            // somewhere else. `askedHost` is the page saying "this push is my
+            // own answer", and it is one-shot: the very next host push clears
+            // it, so an unrelated one a second later still waits.
+            if (fromHost && sameSession && !askedHost
+                && window.AFRepaint.inAField(document)) {
                 shellOwed = true;
             } else {
                 shellOwed = false;
@@ -3943,6 +4137,10 @@
                 buildShell(s);
             }
         }
+        // ‼️ ONE-SHOT, and consumed whether or not the shape actually moved: the
+        // answer arrived either way, and a flag left standing would let the next
+        // unrelated push through the guard as well.
+        if (fromHost) { askedHost = false; }
         // A pinned composer has no picker to disagree with, and the agent it is
         // fixed to is the one that must be started — not whatever was last left
         // in the page's own state.

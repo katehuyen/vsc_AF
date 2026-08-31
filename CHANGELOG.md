@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.362.0 - X-105 (4/n): the composer PICKS the route, and the bridge can too (2026-08-31)
+
+X-103 made the route pickable in the launcher; X-105 (2/n) made the started card
+say what serves it. Between those two the composer carried the pick **blind**: a
+route handed over by a launcher was applied and had no box, so the person about
+to press Send could not see it, change it, or clear it — and a composer opened
+without one had no way to choose at all.
+
+It has two controls now, and **the words are the engine's**: `Route` on Claude,
+`Provider` on OpenCode, `Tier` under it — all read off the engine's own adapter
+through the SAME `providerFormFor` the launcher's route row is built from and the
+card's pill resolves through. A fourth reader is exactly what X-105's acceptance
+line cannot survive.
+
+**‼️ AND THE SUB-AXIS IS ONLY A BOX WHERE IT IS A TIER.** Where the engine's
+sub-axis is the MODEL — OpenCode names one `provider/model` — that axis is
+already on this strip, so a picked provider **narrows the model box that is
+there** instead of adding a second one beside it. Two controls for one subject
+can disagree within a click, and ONE SUBJECT is the rule that would break.
+
+**‼️ Nothing is drawn where there is nothing to choose.** Four of five engines
+have no provider axis, and the fifth gets no box until a route has actually been
+set up — so the row measured at `nowrap` is unchanged for everybody who has never
+made one. There is no variant control either, and that is the transport's answer
+rather than an omission: a hosted card is spoken to over ACP, which declares only
+model and mode. The form says why, in the route box's own hover.
+
+**The narrowing stays where it belongs.** Picking a route, and moving the engine
+underneath one, both go through the adapter's own `prunePick` — which says out
+loud what it dropped, so a tier that stops existing is not something you discover
+at Send.
+
+**And the bridge got it in the same commit**, because `_REF/agentfarm-dev.md` is
+explicit that a session dimension reaches every door or it is a structural
+failure. `console.start` takes `providerId` and `tier`, **refuses** a route the
+engine cannot be pointed at rather than dropping it, and answers with what it was
+really pointed at — through the same resolver the card uses.
+
+**‼️ S-51's lesson applied twice more.** Both pickers repaint on the spot instead
+of waiting for the host's echo to arrive under the reader's hand. And because the
+tiers under a route can only come FROM the host, the page now marks the one push
+it is waiting for: an answer you asked for is not "a rebuild nobody asked for",
+so M-33 lets that single push through and still defers every other one.
+
 ## 3.361.0 - S-51: the engine moves, and the boxes move with it (2026-08-31)
 
 In the user's words: *"change the engine and the models and the efforts used to

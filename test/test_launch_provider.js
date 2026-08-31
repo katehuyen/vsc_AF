@@ -333,9 +333,28 @@ console.log('\n== and the doors really offer it ==');
     // below them: the engine (the axis itself), the route (the tiers and the
     // models under it) and the model (the variants it publishes). A fourth row
     // gaining a dependent one and not appearing here is what this count catches.
+    // ‼️ COUNTED BY THE LAUNCHER'S OWN CALL SHAPE, not by every use in the file.
+    // X-105 gave the same pruner to two more callers — the Console composer's
+    // route box (through `ConsoleDeps.prunePick`) and `console.start`, which
+    // REFUSES rather than keeps — and a bare `prunedPick(` count then measured
+    // "how many places use this" instead of "the three launcher rows that decide
+    // something below them". The three are the ones that keep what survived.
     ok('‼️ changing the engine, the route or the model PRUNES what is below it, out loud',
-        (ext.match(/prunedPick\(/g) || []).length === 3
+        (ext.match(/const kept = prunedPick\(/g) || []).length === 3
         && /showInformationMessage\(`Agent Farm: \$\{describeDropped\(r\.dropped\)\}`\)/.test(ext));
+    // ‼️ X-105 — AND THE COMPOSER IS A FOURTH DOOR ONTO THE SAME ROWS, so it
+    // prunes through the same function rather than deciding for itself what a
+    // route may carry. Its own two change points (picking a route, and moving
+    // the engine underneath one) go through one place — see `prunedRoute`.
+    {
+        const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8');
+        ok('…and so does the Console composer, through the engine\'s own adapter',
+            /this\.deps\.prunePick\?\.\(engine, pick, 'acp'\)/.test(panel)
+            && (panel.match(/this\.prunedRoute\(/g) || []).length >= 2);
+        ok('‼️ …asking as ACP, because that is what a hosted card really is — a form '
+            + 'asked as a TUI would offer a control this panel then drops',
+            /providerForm\?\.\(\s*\n?\s*engineOf\(this\.chosenEngine\(\)\)\.id, this\.composerRoute \?\? \{\}, 'acp'\)/.test(panel));
+    }
     ok('the model list becomes the PROVIDER\'s once the engine publishes one',
         /const catalogued = form\.sub\.kind === 'model' && form\.sub\.choices\.length;/.test(ext));
     ok('‼️ "Default" on the route row names its real value AND where it came from',

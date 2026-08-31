@@ -10255,7 +10255,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + Object.values(ENGINES).map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ')
                 + ' Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Not every engine HAS a reasoning effort: '
                 + enginesWithoutEffort()
-                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does). Returns the console id to talk to. ‼️ Not every engine states a price: '
+                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does). Returns the console id to talk to. ‼️ Not every engine states a price: '
                 + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
                 + ' publish what each turn cost and the figure is theirs; '
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
@@ -10292,12 +10292,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // under project X must not silently move the project the person
                 // in front of the window is working in.
                 const projectId = resolveLaunchProject(args.project);
+                /**
+                 * ‼️ X-105 — WHICH ROUTE, ON THE BRIDGE TOO, AND NARROWED BY THE
+                 * ENGINE'S OWN ADAPTER.
+                 *
+                 * The Console composer grew a route control in this same change,
+                 * and `_REF/agentfarm-dev.md` is explicit that a session
+                 * dimension reaches every door or it is a structural failure —
+                 * an agent that could start a card but not say what serves it
+                 * would be the one door unable to reproduce what a person can
+                 * now do in one click.
+                 *
+                 * ‼️ REFUSED, NOT DROPPED. A route named for an engine that has
+                 * no provider axis, or an id no profile matches, comes back
+                 * empty from `prunedPick` — and a caller who asked for an
+                 * endpoint and silently got this window's own is exactly the
+                 * lie X-101 exists to make impossible.
+                 */
+                const wantRoute = optStr(args, 'providerId');
+                const wantTier = optStr(args, 'tier');
+                const route = wantRoute
+                    ? prunedPick(engine, { providerId: wantRoute, tier: wantTier || undefined }, 'acp')
+                    : {};
+                need(!wantRoute || !!route.providerId,
+                    `"${wantRoute}" is not a route ${engine} can be pointed at here — `
+                    + 'engines.providers lists what is set up, and an engine with no provider axis takes none');
                 const id = consoleHost.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     engine: engine as EngineId,
                     model: optStr(args, 'model') || d.model,
                     effort: optStr(args, 'effort') || d.effort,
                     permissionMode: optStr(args, 'permissionMode') || d.permissionMode,
+                    ...(route.providerId ? { providerId: route.providerId } : {}),
+                    ...(route.tier ? { tier: route.tier } : {}),
                     resume,
                     carried: past ? carriedTotals(past) : undefined,
                     ...(projectId !== undefined ? { projectId } : {}),
@@ -10321,6 +10348,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     reportsCost: spec.reportsCost,
                     project: consoleHost.get(id)?.projectId
                         ? (projectStore.get(consoleHost.get(id)!.projectId!)?.name ?? null) : null,
+                    /**
+                     * ‼️ X-105 — WHAT IT IS ACTUALLY SERVED BY, stated on the way
+                     * out and read by the SAME resolver `console.sessions` and
+                     * the card use. A caller that asked for a route must be able
+                     * to see the answer without a second call, and `null` here
+                     * is the honest word for "this window's own environment".
+                     */
+                    route: consoleRouteOf(engine, route.providerId, route.tier) ?? null,
                     /** X-133 — whether the engineering discipline really went in.
                      *  Stated on the way out because a folder that cannot supply
                      *  the hook adds nothing at all, and a caller believing it
@@ -20092,6 +20127,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * public; the credential is not read here and has nowhere to go.
          */
         routeOf: consoleRouteOf,
+        /**
+         * ‼️ X-105 — THE COMPOSER'S ROUTE BOX, FROM THE LAUNCHER'S OWN READER.
+         *
+         * `providerFormFor` is what builds the launcher's route row and what
+         * `consoleRouteOf` above resolves a started card through. Handing the
+         * composer the SAME function is the whole point: the vocabulary the
+         * person picks from before Send, the words on the card after it, and the
+         * row in the launcher are one statement. A form assembled here would be
+         * a fourth reader, and X-105's acceptance line cannot hold with two.
+         */
+        providerForm: providerFormFor,
+        prunePick: prunedPick,
         history: consoleHistory,
         olderHistory: consoleOlderHistory,
         lastWindow: () => lastWindow,

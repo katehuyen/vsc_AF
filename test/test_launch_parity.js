@@ -566,9 +566,16 @@ const launchTs = read('src', 'core', 'launch.ts');
         /reconcileComposer\(next, false,\s*\n\s*mem \? \{ model: st\.model, effort: st\.effort \} : null\)/.test(consoleJs));
     // ‼️ AND THE BOX HAS TO DRAW WHAT SURVIVED, or the select shows its first
     // row while the state says something else — a control that lies.
+    // ‼️ X-105 — THE COMPOSER'S MODEL LIST IS `composerModels`, NOT `modelsFor`,
+    // and the difference is the point rather than a rename: on an engine whose
+    // provider sub-axis IS the model (OpenCode names one `provider/model`) the
+    // chosen route narrows this box, because a second Model box beside it would
+    // be two controls for one subject. `modelsFor` still answers for a RUNNING
+    // card, whose route was settled when it started. The guarantee below is
+    // unchanged — whatever list is drawn, it is wrapped in `withCurrent`.
     ok('the select carries the current value even when the catalog does not',
         /function withCurrent\(list, current\) \{/.test(consoleJs)
-        && /opts\(withCurrent\(modelsFor\(engineNow\(\)\), st\.model\), st\.model\)/.test(consoleJs)
+        && /opts\(withCurrent\(composerModels\(engineNow\(\)\), st\.model\), st\.model\)/.test(consoleJs)
         && /opts\(withCurrent\(effortsForModel\(engineNow\(\), st\.model\), st\.effort\), st\.effort\)/.test(consoleJs));
     // ‼️ AN ENGINE CHANGE IS STILL A RESET, AND THAT IS WHAT THIS FUNCTION IS
     // FOR. The claim used to be that the keep was per-engine "by construction",

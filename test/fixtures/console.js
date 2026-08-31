@@ -344,6 +344,42 @@ const rememberedComposerData = () => Object.assign(composerData(), {
  *  the engine can stop and ask. Five boxes become four; that is the picture. */
 const opencodeComposerData = () => Object.assign(composerData(), { engine: 'opencode' });
 
+/**
+ * ‼️ X-105 — THE COMPOSER WITH A ROUTE PICKED, which is the only state the two
+ * new boxes exist in.
+ *
+ * A picture of a composer with no route set up shows none of this change: the
+ * boxes are drawn only where the engine HAS the axis and something is actually
+ * configured, which is the rule that keeps the row unchanged for everybody who
+ * has never made a route. So the fixture makes one, picks it, and answers with
+ * the tiers under it — that is the whole of what a reader has to look at: two
+ * more controls in a row measured at nowrap, and whether they still fit.
+ */
+const routedComposerData = () => Object.assign(composerData(), {
+    engine: 'claude',
+    composerPick: { providerId: 'kimi', tier: 'opus' },
+    composerForm: {
+        engine: 'claude', applies: true, noun: 'Route', scope: 'session',
+        scopeNote: 'a route is fixed for the whole session on this engine',
+        providers: [
+            { id: '', label: 'Default', detail: 'this window\'s own environment — nothing injected, nothing cleared' },
+            { id: 'kimi', label: 'Kimi', detail: 'https://api.moonshot.ai/anthropic' },
+            { id: 'minimax', label: 'MiniMax', detail: 'https://api.minimax.io/anthropic' }
+        ],
+        sub: {
+            kind: 'tier', label: 'Tier',
+            note: 'which model "Kimi" serves — the route decides, not the name',
+            choices: [
+                { id: '', label: 'Default', detail: 'the route\'s own choice' },
+                { id: 'opus', label: 'opus', detail: 'kimi serves kimi-k2-thinking for "opus"' },
+                { id: 'sonnet', label: 'sonnet', detail: 'kimi serves kimi-k2-turbo for "sonnet"' }
+            ]
+        },
+        variants: [],
+        variantsWhy: 'a hosted card is spoken to over ACP, which declares only model and mode'
+    }
+});
+
 module.exports = {
     script: 'console.js',
     data,
@@ -429,6 +465,11 @@ module.exports = {
             id: 'console-no-skills',
             label: 'Console — the Superpowers folder cannot supply the hook',
             data: noSkillsData()
+        },
+        {
+            id: 'console-route',
+            label: 'Console — the composer picks the route the session is served by (X-105)',
+            data: routedComposerData()
         }
     ]
 };
