@@ -921,11 +921,17 @@
     // ‼️ ONCE, at module scope — wire() runs again on every paint.
     window.AFCtx.listen(ctxDo);
 
+    // ‼️ M-33 — A HOST PUSH WAITS FOR THE READER'S HANDS; THE PAGE'S OWN
+    // RENDERS DO NOT. render() replaces the whole of #app, so a repaint that
+    // arrives while somebody is typing detaches the box they are typing in and
+    // the caret falls to <body> — where space IS Page Down. Full text, and
+    // what a page-specific busy() is for: media/afRepaint.js.
+    const repaint = window.AFRepaint.guard(render);
     window.addEventListener('message', ev => {
         if (ev.data.type === 'data') {
             DATA = ev.data.data;
             if (DATA.focusItem) { focusItem = DATA.focusItem; expanded.add(DATA.focusItem); }
-            render();
+            repaint();
             return;
         }
         // ‼️ THE PALETTE OPENS THE PAGE'S OWN CAPTURE BOX (U-14). `queueAdd`

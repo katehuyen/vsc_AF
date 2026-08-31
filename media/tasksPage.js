@@ -762,7 +762,17 @@
                 + ' runs when it is launched, never on its own.')}">manual</span>`;
         return `<tr class="prow ${open ? 'open' : ''}" data-key="${key}"
             ${planCtx(p)} title="${C.esc(window.AFCtx.hint(k.label + ' — ' + k.hint))}">
-            <td class="tick">${p.switchable ? `<input type="checkbox" class="rowsel" data-kind="${p.kind}" data-id="${p.id}"${selected.has(key) ? ' checked' : ''}>` : ''}</td>
+            ${/* ‼️ M-33 — EVERY ROW TICKS, NOT ONLY THE SWITCHABLE ONES. The
+                  box used to exist only where the bulk bar had something to do
+                  with it, so the two kinds that cannot be switched — a workflow
+                  and a template — could not be picked at all, and the one act
+                  that DOES apply to all four (delete) had no way to reach them.
+                  What a press does with a selection is the bar's problem; being
+                  selectable is the row's. */''}
+            <td class="tick"><input type="checkbox" class="rowsel" data-kind="${p.kind}" data-id="${p.id}"
+                data-sw="${p.switchable ? '1' : ''}"${selected.has(key) ? ' checked' : ''}
+                title="${C.esc('Pick this ' + k.label + ' for the bar above'
+                + (p.switchable ? '.' : ' — it has no switch, so only Delete acts on it.'))}"></td>
             ${/* ‼️ M-25 · MIRROR — the triangle says which way it is pointing and
                   what is behind it. "details" was one word about neither. */''}
             <td class="expand" data-expand="${key}" role="button" tabindex="0"
@@ -879,6 +889,17 @@
             last: p => p.lastRunAt || 0
         });
 
+        // ‼️ M-33 — A TICK CANNOT OUTLIVE ITS ROW. The selection is now a
+        // DELETE list, so a key left behind by a filter change, or by a
+        // definition somebody else removed, would be a row acted on that the
+        // reader cannot see. Pruning to what is on screen makes "N selected"
+        // mean N ticked boxes in front of you, which is the only reading that
+        // makes the count on the confirm box worth anything.
+        const onScreen = new Set(sorted.map(p => p.kind + ':' + p.id));
+        for (const key of [...selected]) {
+            if (!onScreen.has(key)) { selected.delete(key); }
+        }
+
         // ‼️ M-25 — computed ONCE for the whole table, never per row: every
         // figure in an agent's hover comes off rows already on this page.
         const tally = agentTally(d.plan);
@@ -899,7 +920,7 @@
             📋 a <b>template</b> is a saved prompt. The first two run on their own; the last two run when launched.
             Every one of them produces <b>tasks</b> — see the Runs tab.</p>`;
         const head = `<tr>
-            <th class="tick"><input type="checkbox" class="allsel" title="select all switchable"></th>
+            <th class="tick"><input type="checkbox" class="allsel" title="select every row shown"></th>
             <th class="expand"></th>
             ${/* ‼️ M-25 — EVERY COLUMN IS DEFINED, AND DEFINED HERE. A column's
                   meaning is said once, on its heading; a sentence repeated
@@ -982,10 +1003,15 @@
             ${chooser && chooser.tab === 'plan' ? chooserHtml() : ''}
             ${!composer && composerMsg && tab === 'plan' ? `<div class="ntmsg">${C.esc(composerMsg)}</div>` : ''}
             ${activeChips(v, PLAN_DEF, { kind: 'kind', agent: 'agent', model: 'model', state: 'state', guard: 'guard', issues: 'needs attention' }, rows.length, d.plan.length)}
+            ${/* ‼️ M-33 · MIRROR — the two switch buttons say how much of THIS
+                  selection they can act on, because a selection may now hold
+                  rows that have no switch; syncBulk keeps both figures true
+                  between renders, since ticking a box does not repaint. */''}
             <div class="bulk" ${selected.size ? '' : 'hidden'}>
                 <b><span id="bulkn">${selected.size}</span> selected</b>
                 <button class="mini" data-bulk="on">switch on</button>
                 <button class="mini secondary" data-bulk="off">switch off</button>
+                <button class="mini secondary danger" data-bulk="delete">delete</button>
                 <button class="mini secondary" data-bulk="clear">clear</button>
             </div>
             <div class="tablewrap"><table class="grid">${head}${body}</table></div>`;
@@ -3243,6 +3269,7 @@
                 .bulk { display:flex; gap:6px; align-items:center; margin:0 0 8px; padding:5px 10px;
                     border:1px solid var(--vscode-focusBorder); border-radius:6px; }
                 .bulk[hidden] { display:none; }
+                .mini.danger:hover { border-color: var(--vscode-charts-red,#f14c4c); color: var(--vscode-charts-red,#f14c4c); }
                 .cmdbar { display:flex; gap:6px; margin:0 0 10px; }
                 .cmdbar input { flex:1; }
                 /* NEW TASK. A card on the page, in the page's own language — the
@@ -3535,14 +3562,36 @@
 
         // selection + bulk
         const syncBulk = () => {
+            const boxes = document.querySelectorAll('.rowsel');
+            // ‼️ M-33 · MIRROR — how many of the selection each button can act
+            // on, read off the boxes themselves rather than off a kind list
+            // kept in two places. Ticking a box does not repaint the page, so
+            // the figures have to be written here or they go stale on the
+            // second tick.
+            let sw = 0;
+            boxes.forEach(b => { if (b.checked && b.dataset.sw) { sw++; } });
             const bar = document.querySelector('.bulk');
             if (bar) {
                 bar.hidden = selected.size === 0;
                 const n = document.getElementById('bulkn');
                 if (n) { n.textContent = String(selected.size); }
+                const rest = selected.size - sw;
+                document.querySelectorAll('[data-bulk]').forEach(b => {
+                    const act = b.dataset.bulk;
+                    if (act === 'on' || act === 'off') {
+                        b.title = (sw
+                            ? 'Switches ' + act + ' the ' + sw + ' of ' + selected.size + ' selected that have a switch.'
+                            : 'Nothing selected has a switch.')
+                            + (rest ? '\n' + rest + ' workflow(s)/template(s) run when launched — they are untouched.' : '');
+                        b.disabled = sw === 0;
+                    } else if (act === 'delete') {
+                        b.title = 'Deletes all ' + selected.size + ' selected definition(s). '
+                            + 'It asks first, and says what it counted.\n\n'
+                            + 'The runs they already produced stay on the Runs tab.';
+                    }
+                });
             }
             const all = document.querySelector('.allsel');
-            const boxes = document.querySelectorAll('.rowsel');
             if (all) {
                 all.checked = selected.size > 0 && selected.size === boxes.length;
                 all.indeterminate = selected.size > 0 && selected.size < boxes.length;
@@ -3575,7 +3624,14 @@
                 const i = k.indexOf(':');
                 return { kind: k.slice(0, i), id: k.slice(i + 1) };
             });
-            if (rows.length) { post({ type: 'bulk', act: a, rows }); selected.clear(); }
+            if (!rows.length) { return; }
+            post({ type: 'bulk', act: a, rows });
+            // ‼️ M-33 — DELETE KEEPS THE TICKS. It is the one bulk act that
+            // asks a question, and dropping the selection here would mean
+            // saying No costs the reader every tick they just made. The host
+            // repaints either way, and the prune in planHtml takes the keys of
+            // whatever really went.
+            if (a !== 'delete') { selected.clear(); }
         });
         syncBulk();
 

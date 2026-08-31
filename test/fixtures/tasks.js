@@ -345,6 +345,26 @@ const drive = (r, draft, fireId) => {
 const variants = () => ([
     { id: 'tasks', label: 'Tasks → Runs — four engines, and a cost column that tells the truth', data: data() },
     { id: 'tasks-plan', label: 'Tasks → Plan — a schedule whose time passed, in a window that cannot fire', data: planData() },
+    // ‼️ M-33 — THE BULK BAR EXISTS IN NO OTHER STATE. It is hidden until
+    // something is ticked, so a picture of the Plan tab at rest shows none of
+    // the change: not the delete button beside the two switches, and not what
+    // the bar says when the selection holds rows that HAVE no switch (a
+    // workflow, a template) — which is the whole reason every row can be
+    // ticked now.
+    {
+        id: 'tasks-plan-selected',
+        label: 'Tasks → Plan — every kind ticked, and the bar that says what each button can reach',
+        data: planData(),
+        act: (r) => {
+            r.query('.rowsel').forEach(b => { b.checked = true; b.fire('change'); });
+            // Ticking a box deliberately does NOT repaint the page (M-33: the
+            // bar is kept true in place, so a host push cannot arrive between
+            // two ticks and throw the reader's work away). The picture needs
+            // the drawn state, so one push is asked for here — which is also
+            // the state a person is in a second after ticking anything.
+            r.send({ type: 'data', data: planData() });
+        }
+    },
     // ‼️ M-3 — the form with the retry block OPEN, which is the only state the
     // four numbers exist in. A picture of it shut would say nothing about the
     // row it adds, and the row is the change.

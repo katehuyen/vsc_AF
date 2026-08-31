@@ -2,6 +2,61 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.355.0 - M-33 closed: the Plan tab can delete, and no page repaints under your hands (2026-08-31)
+
+Two halves of one report. The first was fixed last release on the page it was
+reported from; both are finished here.
+
+### Plan rows can be deleted — in bulk, and one at a time
+
+"I can tick the rows on the Plan tab, but all I can do with them is switch them
+on and off. Why can I not delete them? Deleting several should ask; the ✕ at
+the end of a row should not — just delete it."
+
+Both, and the difference between them is the point. **The row ✕ asks nothing**:
+one row, you are pointing straight at it, and a box in the way of every tidy-up
+is the thing that made the page feel like it was arguing. What replaces the
+question is an **Undo** — the object goes back with its own id and in its own
+place, so a workflow that comes back is still the workflow its triggers point
+at. Re-creating it from the title would have made a new one and left them aimed
+at nothing. **The bulk delete asks first** and says what it counted, broken down
+by kind: "delete 6 items" hides that four of them were workflows.
+
+**Every row can be ticked now, not only the switchable ones.** A workflow and a
+template have no switch, so they could not be picked at all — and the one act
+that applies to all four kinds was exactly the one that could not reach them.
+The two switch buttons say how much of your selection they can touch and grey
+out when the answer is none; the ticks are pruned to what is actually on screen,
+so "4 selected" always means four boxes in front of you and a filter change
+cannot leave a hidden row inside a delete.
+
+Underneath, the four kinds now delete through one call instead of four —
+previously two asked their own question in the panel and two handed the press to
+a command that asked again, which is why no bulk act could be built out of them.
+Agents get `plan.delete`, which deletes across kinds in one call and refuses a
+bare kind: "delete every schedule" is never a call worth honouring on a typo.
+
+### The repaint guard, swept across the whole extension
+
+Last release fixed the caret bug on the Tasks page, where it was reported, and
+said the other pages were the next sweep. They are done: **twenty-four pages**
+now hold a host push until your hands are free, instead of redrawing the box you
+are typing in.
+
+The Console is the one deliberate exception and it is not an omission. It
+repaints incrementally on purpose — you watch a session's output while you type
+your next message to it — so holding the whole paint back would be the opposite
+bug. Exactly one part of it replaces the composer, and only that part waits: a
+session ENDING elsewhere no longer takes your half-written message's caret with
+it, while pressing a different session still answers immediately, because that
+one you asked for.
+
+And the rule is measured rather than remembered. A page that answers a host push
+must route it through the guard or be named with the reason it does not; the
+next page written cannot quietly copy the one line every page used to have.
+
+260 files · 17 157 checks · 0 failures.
+
 ## 3.354.0 - M-33: the caret stops getting thrown out of the box (2026-08-31)
 
 "I start typing, I press space, and it is as if I pressed Page Down — the caret

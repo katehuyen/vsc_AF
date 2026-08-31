@@ -14,6 +14,7 @@ import {
 } from '../core/launch';
 import { EngineModels } from '../core/models';
 import {
+    DeletedPlanRow,
     describeFailurePhase, FarmSchedule, FarmTask, FarmTemplate, FarmTrigger, FarmWorkflow,
     MissedPolicy, newId,
     RunDimensions, ScheduleKind, scheduleDue, settledKeyAfterEdit,
@@ -1461,6 +1462,39 @@ export class TasksPanel {
         return await vscode.window.showWarningMessage(text, { modal: true }, button) === button;
     }
 
+    /**
+     * ‼️ M-33 — DELETE A PLAN ROW WITHOUT A MODAL, BUT NOT WITHOUT A WAY BACK.
+     *
+     * The ✕ at the end of a row asks nothing: it is one row, the reader is
+     * pointing straight at it, and a box in the way of every tidy-up is what
+     * made the page feel like it was arguing. What replaces the question is an
+     * UNDO — non-blocking, and a real one, because `deletePlanRows` hands the
+     * object back with its own id (a re-creation from the title would give the
+     * workflow a new id and leave the triggers aimed at nothing).
+     *
+     * The bulk act is the other way round and asks BEFORE (see the `bulk`
+     * message): many rows, one press, and a reader who miscounted their ticks
+     * has no row to point at afterwards. Both end here, so what a delete
+     * actually does is written once.
+     */
+    private deletePlan(rows: readonly { kind: string; id: string }[]): void {
+        const m = this.deps.manager;
+        const gone = m.deletePlanRows(rows);
+        if (!gone.length) { return; }
+        this.refresh();
+        const what = gone.length === 1
+            ? `“${gone[0].title}”`
+            : `${gone.length} plan item(s)`;
+        void vscode.window.showInformationMessage(`Agent Farm: deleted ${what}.`, 'Undo')
+            .then(pick => {
+                if (pick !== 'Undo') { return; }
+                const back = m.restorePlanRows(gone as DeletedPlanRow[]);
+                this.refresh();
+                void vscode.window.showInformationMessage(
+                    `Agent Farm: put ${back} plan item(s) back.`);
+            });
+    }
+
     /** A refusal the FORM shows, in the form. A modal would take the focus off
      *  the half-filled fields it is complaining about. */
     private say(text: string): void {
@@ -1788,36 +1822,32 @@ export class TasksPanel {
             case 'plan': {
                 const node = this.planNode(msg.kind, msg.id);
                 if (!node) { break; }
-                const label = node.schedule?.title ?? node.trigger?.title
-                    ?? node.workflow?.title ?? node.template?.title ?? '';
                 switch (`${msg.kind}:${msg.act}`) {
                     case 'schedule:toggle': run('agentfarm.toggleSchedule', node); break;
                     case 'schedule:run': run('agentfarm.runScheduleNow', node); break;
                     // ‼️ Edit opens THE FORM, not a chain of boxes. The same
                     // form the + opens, prefilled — see composeFor.
                     case 'schedule:edit': this.compose('schedule', msg.id); break;
-                    case 'schedule:delete':
-                        if (await this.confirm(`Delete schedule "${label}"?`, 'Delete')) {
-                            run('agentfarm.deleteSchedule', node);
-                        }
-                        break;
+                    // ‼️ M-33 — THE FOUR ✕ BUTTONS ARE ONE ACT. Each kind used
+                    // to answer for itself: two asked here, two handed the job
+                    // to a command that asked again on its own — so the same
+                    // press was modal for all four, and the bulk delete could
+                    // not reuse a single one of them. They now share
+                    // `deletePlan`: no question, an Undo instead.
+                    case 'schedule:delete': this.deletePlan([{ kind: 'schedule', id: String(msg.id) }]); break;
+                    case 'trigger:delete': this.deletePlan([{ kind: 'trigger', id: String(msg.id) }]); break;
+                    case 'workflow:delete': this.deletePlan([{ kind: 'workflow', id: String(msg.id) }]); break;
+                    case 'template:delete': this.deletePlan([{ kind: 'template', id: String(msg.id) }]); break;
                     case 'trigger:toggle': run('agentfarm.toggleTrigger', node); break;
                     case 'trigger:run': run('agentfarm.fireTrigger', node); break;
                     case 'trigger:edit': this.compose('trigger', msg.id); break;
-                    case 'trigger:delete': run('agentfarm.deleteTrigger', node); break;   // command confirms
                     case 'workflow:run': run('agentfarm.runWorkflow', node); break;
                     // ‼️ A workflow's Edit is the workflow — its name AND its
                     // chain. It used to be `addWorkflowStep`, so the one thing
                     // "edit" could not do on a workflow was edit it.
                     case 'workflow:edit': this.compose('workflow', msg.id); break;
                     case 'template:edit': this.compose('template', msg.id); break;
-                    case 'workflow:delete': run('agentfarm.deleteWorkflow', node); break; // command confirms
                     case 'template:run': run('agentfarm.runTemplate', node); break;
-                    case 'template:delete':
-                        if (await this.confirm(`Delete template "${label}"?`, 'Delete')) {
-                            run('agentfarm.deleteTemplate', node);
-                        }
-                        break;
                     // Reachable only from the row's right-click menu — there is
                     // no room on the row for a button nobody presses weekly.
                     case 'schedule:export': run('agentfarm.exportSchtask', node); break;
@@ -1862,11 +1892,48 @@ export class TasksPanel {
             // Bulk switching — the thing that used to force one-by-one clicking.
             case 'bulk': {
                 const rows = Array.isArray(msg.rows) ? msg.rows : [];
+                // ‼️ M-33 — BULK DELETE ASKS, AND IT SAYS WHAT IT COUNTED.
+                // The opposite of the row ✕ on purpose: the reader ticked the
+                // rows some time ago and is now pressing one button, so the
+                // number is the only thing that can catch a miscount — and it
+                // is broken down by kind, because "delete 6 items" hides that
+                // four of them were the workflows.
+                if (msg.act === 'delete') {
+                    const live = rows.filter(r => this.planNode(r.kind, r.id));
+                    if (!live.length) { break; }
+                    const tally = ['schedule', 'trigger', 'workflow', 'template']
+                        .map(k => [k, live.filter(r => r.kind === k).length] as const)
+                        .filter(([, n]) => n > 0)
+                        .map(([k, n]) => `${n} ${k}${n > 1 ? 's' : ''}`);
+                    const only = live.length === 1 ? this.planNode(live[0].kind, live[0].id) : undefined;
+                    const name = only
+                        ? (only.schedule?.title ?? only.trigger?.title
+                            ?? only.workflow?.title ?? only.template?.title ?? '')
+                        : '';
+                    if (!await this.confirm(
+                        only
+                            ? `Delete the ${live[0].kind} “${name}”?`
+                            : `Delete ${live.length} plan items — ${tally.join(', ')}?`,
+                        'Delete')) {
+                        break;
+                    }
+                    this.deletePlan(live);
+                    break;
+                }
                 const on = msg.act === 'on';
                 const scheds = m.schedules.filter(s => rows.some(r => r.kind === 'schedule' && r.id === s.id));
                 const trigs = m.triggers.filter(t => rows.some(r => r.kind === 'trigger' && r.id === t.id));
                 const n = scheds.length + trigs.length;
-                if (!n) { break; }
+                // ‼️ M-33 — a selection may now hold rows that HAVE no switch
+                // (a workflow and a template run when they are launched). The
+                // press used to end in silence, which reads as a broken button
+                // rather than as an answer.
+                if (!n) {
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm: nothing to switch ${on ? 'on' : 'off'} — `
+                        + 'a workflow or a template has no switch, it runs when it is launched.');
+                    break;
+                }
                 if (!await this.confirm(
                     `${on ? 'Enable' : 'Disable'} ${n} item(s)?` +
                     (on ? ' They start firing on their own again.' : ''),

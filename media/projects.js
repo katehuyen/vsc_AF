@@ -78,6 +78,12 @@
         parentId: (seed && seed.parentId) || ''
     });
 
+    // ‼️ M-33 — A HOST PUSH WAITS FOR THE READER'S HANDS; THE PAGE'S OWN
+    // RENDERS DO NOT. render() replaces the whole of #app, so a repaint that
+    // arrives while somebody is typing detaches the box they are typing in and
+    // the caret falls to <body> — where space IS Page Down. Full text, and
+    // what a page-specific busy() is for: media/afRepaint.js.
+    const repaint = window.AFRepaint.guard(render);
     window.addEventListener('message', ev => {
         if (ev.data.type === 'result') {
             flash = ev.data.error ? { error: ev.data.error } : (ev.data.ok ? { ok: ev.data.ok } : null);
@@ -169,7 +175,7 @@
             // PROJECT invalidates the rows, because then they are somebody
             // else's people.
             if (selectedId !== was) { people = null; }
-            render();
+            repaint();
             return;
         }
         // the sessions table asks the host for a row's turn breakdown

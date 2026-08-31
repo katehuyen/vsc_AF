@@ -28,7 +28,10 @@ const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'
     + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afCtx.js'), 'utf8')
     + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afSessionCtx.js'), 'utf8')
     // …and the one clock, which the timeline rows hover with (media/afTime.js)
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afTime.js'), 'utf8');
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afTime.js'), 'utf8')
+    // …and the repaint guard (M-33), because the page WIRES it at load: a host
+    // push must not repaint the caret out of the box somebody is typing in.
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afRepaint.js'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 

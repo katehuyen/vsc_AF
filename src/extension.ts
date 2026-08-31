@@ -8853,6 +8853,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'plan.delete',
+            describe: 'Delete MANY plan definitions AT ONCE, of any of the four kinds — the Plan tab\'s bulk delete. '
+                + 'args: rows? (array of {kind (schedule|trigger|workflow|template), id or title}) — or, for one kind, '
+                + 'kind + titles? (array of ids/titles) / tag? (substring match on the title). '
+                + '‼️ A bare kind with neither titles nor tag is REFUSED: "delete every schedule" is never a typo worth honouring. '
+                + 'The runs a definition already produced stay on the Runs tab. There is no undo here (the page has one, in its own memory) — '
+                + 'read the list first with schedules.list / triggers.list / workflows.list / templates.list.',
+            handler: (args) => {
+                const KINDS = ['schedule', 'trigger', 'workflow', 'template'];
+                const listOf = (k: string): { id: string; title: string }[] =>
+                    k === 'schedule' ? taskManager.schedules
+                        : k === 'trigger' ? taskManager.triggers
+                            : k === 'workflow' ? taskManager.workflows
+                                : taskManager.templates;
+                const refs: { kind: string; id: string }[] = [];
+                if (Array.isArray(args.rows)) {
+                    for (const raw of args.rows as Record<string, unknown>[]) {
+                        const kind = String(raw?.kind ?? '');
+                        need(KINDS.includes(kind), `rows[].kind must be ${KINDS.join(' | ')}.`);
+                        const ref = String(raw?.id ?? raw?.title ?? '');
+                        const hit = listOf(kind).find(x => x.id === ref || x.title === ref);
+                        need(hit, `No ${kind} called "${ref}" — ${kind}s.list shows current ones.`);
+                        refs.push({ kind, id: (hit as { id: string }).id });
+                    }
+                } else {
+                    const kind = argStr(args, 'kind');
+                    need(KINDS.includes(kind), `kind must be ${KINDS.join(' | ')}.`);
+                    const titles = Array.isArray(args.titles)
+                        ? new Set(args.titles.map(x => String(x))) : undefined;
+                    const tag = optStr(args, 'tag').toLowerCase();
+                    need(titles || tag,
+                        'Pass rows, or titles, or tag. A bare kind would delete every one of them.');
+                    for (const x of listOf(kind)) {
+                        if (titles && !(titles.has(x.id) || titles.has(x.title))) { continue; }
+                        if (tag && !x.title.toLowerCase().includes(tag)) { continue; }
+                        refs.push({ kind, id: x.id });
+                    }
+                }
+                need(refs.length, 'Nothing matched — nothing was deleted.');
+                const gone = taskManager.deletePlanRows(refs);
+                TasksPanel.refreshIfOpen();
+                LivingPanel.refreshIfOpen();
+                return {
+                    count: gone.length,
+                    deleted: gone.map(g => ({ kind: g.kind, title: g.title }))
+                };
+            }
+        },
+        {
             op: 'schedules.runNow',
             describe: 'Queue a schedule\'s task right now (out of schedule). args: id or title',
             handler: (args) => {

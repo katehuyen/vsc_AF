@@ -3948,13 +3948,19 @@
     // page refreshes live — a listener wired inside it would multiply.
     window.AFCtx.listen(ctxDo);
 
+    // ‼️ M-33 — A HOST PUSH WAITS FOR THE READER'S HANDS; THE PAGE'S OWN
+    // RENDERS DO NOT. render() replaces the whole of #app, so a repaint that
+    // arrives while somebody is typing detaches the box they are typing in and
+    // the caret falls to <body> — where space IS Page Down. Full text, and
+    // what a page-specific busy() is for: media/afRepaint.js.
+    const repaint = window.AFRepaint.guard(render);
     window.addEventListener('message', ev => {
         const m = ev.data;
         if (m.type === 'data') {
             if (formOpen) { readForm(); }
             if (editing) { pendingData = { ...DATA, ...m.data }; return; }
             DATA = { ...DATA, ...m.data };
-            render();
+            repaint();
         } else if (m.type === 'focus-run' && m.id) {
             // ‼️ "OPEN THIS MISSION" HAS TO LAND ON THE MISSION. A project's
             // Work tab and a timeline row both say Open about one run; opening

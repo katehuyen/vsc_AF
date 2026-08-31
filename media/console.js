@@ -2615,6 +2615,17 @@
 
     /** What the shell was built for; when this changes, the shell is rebuilt. */
     let shellKey = null;
+    /**
+     * ‼️ M-33 — A SHELL REBUILD THE HOST ASKED FOR, PUT OFF UNTIL THE HANDS ARE
+     * FREE. Every other page answers a push by repainting all of `#app` and is
+     * guarded wholesale (media/afRepaint.js); this page must not be, because
+     * `paint` is incremental on purpose (S-29) and the reader is watching the
+     * output WHILE they type into the composer. Exactly one part of it throws
+     * the caret — `buildShell`, which replaces the composer — and the shell key
+     * carries the session's own status, so a session ending ELSEWHERE used to
+     * take the half-written message's caret with it mid-sentence.
+     */
+    let shellOwed = false;
     /** Stops watching the PREVIOUS writing box's height (K-9, see keepHeight). */
     let stopBoxH = null;
     /** Last html written into each slot — nothing is touched unless it differs. */
@@ -3809,7 +3820,13 @@
                 + `Turned on, it would be given the root hook plus an index of ${sp.skills} skills — TDD, systematic debugging, planning, verification — for the model to read one at a time, on demand.`));
     }
 
-    function paint() {
+    /**
+     * `fromHost` says the repaint is somebody ELSE's — a push, not a press. It
+     * is the only thing that may be put off: a render the user's own action
+     * asked for happens at once even with a field focused, because the field is
+     * what asked. See media/afRepaint.js for the same distinction drawn once.
+     */
+    function paint(fromHost) {
         const s = sel();
         // ‼️ THE PIN IS PART OF THE KEY. It decides whether the composer draws a
         // picker or a name, which is markup — so a pin that arrived while the
@@ -3818,8 +3835,31 @@
         const composerShape = s ? '' : `|${engineNow()}|${st.model || ''}`;
         const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}`;
         if (shellKey !== key) {
-            shellKey = key;
-            buildShell(s);
+            // ‼️ M-33 — ONLY A REBUILD NOBODY ASKED FOR WAITS.
+            //
+            // A CHANGE OF SESSION IS THE READER'S OWN ACT even though it arrives
+            // as a host push: pressing a card in the list is answered by the
+            // host echoing the whole state back. Holding that back because a
+            // `<select>` still had focus would read as "I clicked it and nothing
+            // happened" — the opposite complaint, and a worse one. So the wait
+            // is for the SAME session changing shape under the hands: its status
+            // flipping to ended, a pin arriving — none of which anybody here
+            // pressed, and every one of which replaces the composer.
+            //
+            // IT DEFERS, IT DOES NOT DROP: the key is deliberately not taken
+            // while the rebuild is owed, so the next pass sees the same
+            // difference and tries again, and `focusout` below pays the debt.
+            // Everything after this block still runs either way, so the output
+            // the reader is watching keeps arriving.
+            const sameSession = shellKey !== null
+                && String(shellKey).split('|')[0] === String(DATA.selected || '');
+            if (fromHost && sameSession && window.AFRepaint.inAField(document)) {
+                shellOwed = true;
+            } else {
+                shellOwed = false;
+                shellKey = key;
+                buildShell(s);
+            }
         }
         // A pinned composer has no picker to disagree with, and the agent it is
         // fixed to is the one that must be started — not whatever was last left
@@ -4433,9 +4473,19 @@
             // opened from an agent row: preselect that agent in the composer
             if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
             applyComposerSeed();
-            paint();
+            // ‼️ M-33 — this one is the HOST's: see paint(fromHost).
+            paint(true);
         }
     });
+    // ‼️ M-33 — the shell rebuild that paint() put off is a debt, and `focusout`
+    // is the moment the hands come free. Asked a tick late on purpose: the event
+    // fires while focus is still on the box being LEFT, so an immediate check
+    // would find a field either way and the page would stay stale for ever.
+    if (document.addEventListener) {
+        document.addEventListener('focusout', () => {
+            setTimeout(() => { if (shellOwed && !window.AFRepaint.inAField(document)) { paint(); } }, 0);
+        });
+    }
     if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
     applyComposerSeed();
     // The answer card's ceiling is a share of the WINDOW, so dragging the panel

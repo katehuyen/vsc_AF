@@ -6042,7 +6042,8 @@
         "page:tasksPanel.ts#bulk"
       ],
       "ops": [
-        "automations.bulk"
+        "automations.bulk",
+        "plan.delete"
       ]
     },
     {
@@ -6247,7 +6248,8 @@
         "page:tasksPanel.ts#schedule:delete"
       ],
       "ops": [
-        "schedules.delete"
+        "schedules.delete",
+        "plan.delete"
       ]
     },
     {
@@ -6334,7 +6336,8 @@
         "page:tasksPanel.ts#template:delete"
       ],
       "ops": [
-        "templates.delete"
+        "templates.delete",
+        "plan.delete"
       ]
     },
     {
@@ -6362,7 +6365,8 @@
         "page:tasksPanel.ts#trigger:delete"
       ],
       "ops": [
-        "triggers.delete"
+        "triggers.delete",
+        "plan.delete"
       ]
     },
     {
@@ -6418,7 +6422,8 @@
         "page:tasksPanel.ts#workflow:delete"
       ],
       "ops": [
-        "workflows.delete"
+        "workflows.delete",
+        "plan.delete"
       ]
     },
     {

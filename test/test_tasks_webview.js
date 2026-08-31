@@ -558,7 +558,20 @@ ok('per-row 7d cost is shown', html().includes('$70.90') || html().includes('$71
 ok('switchable rows get a real switch', /class="sw on"/.test(html()) && /class="sw off"/.test(html()));
 ok('non-switchable rows say so instead of faking a switch',
     (html().match(/>manual</g) || []).length >= 2);
-ok('only switchable rows get a checkbox', query('.rowsel').length === 4);
+// ‼️ M-33 — EVERY ROW TICKS NOW. The rule here used to be "only switchable
+// rows get a checkbox", and it is the exact thing the bulk delete could not
+// live with: a workflow and a template have no switch, so they were
+// unselectable, and the one act that applies to all four kinds could not reach
+// them. The gate is not loosened — it measures the two facts that replaced it:
+// every row is selectable, and the box itself says whether it has a switch, so
+// the bar can tell the reader what a press will and will not touch.
+{
+    const ticks = query('.rowsel');
+    ok('every plan row gets a checkbox, not only the switchable ones',
+        ticks.length === query('.prow').length && ticks.length > 4);
+    ok('the checkbox states whether its row has a switch',
+        ticks.filter(b => b.dataset.sw).length === 4);
+}
 
 // ------------------------------------------------------ PLAN: row actions
 posted = [];
@@ -680,11 +693,26 @@ setFilter('group', 'kind');
 {
     const boxes = query('.rowsel');
     boxes.forEach(b => { b.checked = true; b.fire('change'); });
+    // ‼️ M-33 — the bulk DELETE reaches every kind, which is why the tick had
+    // to leave the switchable rows in the first place.
+    posted = [];
+    clickData('bulk', 'delete');
+    ok('bulk delete posts every selected row, of every kind',
+        posted[0] && posted[0].type === 'bulk' && posted[0].act === 'delete'
+        && posted[0].rows.length === boxes.length
+        && posted[0].rows.some(r => r.kind === 'workflow')
+        && posted[0].rows.some(r => r.kind === 'template'));
+    // ‼️ …and it is the ONE bulk act that keeps the selection: the host still
+    // has to ask, and saying No must not cost the reader every tick they made.
+    posted = [];
+    clickData('bulk', 'delete');
+    ok('the ticks survive a delete, because the host has yet to ask',
+        posted[0] && posted[0].rows.length === boxes.length);
     posted = [];
     clickData('bulk', 'off');
     ok('bulk switch-off posts every selected row with its kind',
         posted[0] && posted[0].type === 'bulk' && posted[0].act === 'off'
-        && posted[0].rows.length === 4
+        && posted[0].rows.length === boxes.length
         && posted[0].rows.some(r => r.kind === 'schedule' && r.id === 's1')
         && posted[0].rows.some(r => r.kind === 'trigger' && r.id === 't1'));
     posted = [];

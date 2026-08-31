@@ -36,7 +36,11 @@ const shared = fs.readFileSync(path.resolve(__dirname, '../media/afTextTools.js'
     // BOTH open it: a stub would let the page and the panel drift apart, which
     // is the drift that put a truncating native title on the strip in the first
     // place (docs/CONVENTIONS.md → Hover).
-    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afTip.js'), 'utf8');
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afTip.js'), 'utf8')
+    // …and the repaint guard (M-33), because the page WIRES it at load: a host
+    // push must not repaint the caret out of the box somebody is typing in.
+    // Not a stub — the guard's own decision is what the page's behaviour is.
+    + '\n' + fs.readFileSync(path.resolve(__dirname, '../media/afRepaint.js'), 'utf8');
 const createAfmsDom = require(path.resolve(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };

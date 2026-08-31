@@ -1396,6 +1396,31 @@ export interface TaskManagerOptions {
     announce?: (n: { key: string; title: string; body: string; level?: 1 | 2 | 3 }) => void;
 }
 
+/** The four things the Plan tab lists. They share an id and a title, which is
+ *  all a delete has to know about them. */
+export type PlanDefinition = FarmSchedule | FarmTrigger | FarmWorkflow | FarmTemplate;
+
+/** A plan row that has been taken out of its list, with the place it came from
+ *  so it can go back there. See TaskManager.deletePlanRows. */
+export interface DeletedPlanRow {
+    kind: 'schedule' | 'trigger' | 'workflow' | 'template';
+    /** Its index in that list at the moment it was removed. */
+    at: number;
+    title: string;
+    item: PlanDefinition;
+}
+
+function takePlanRow<T extends PlanDefinition>(list: T[], id: string): { at: number; item: T } | undefined {
+    const at = list.findIndex(x => x.id === id);
+    return at < 0 ? undefined : { at, item: list.splice(at, 1)[0] };
+}
+
+function putPlanRow<T extends PlanDefinition>(list: T[], at: number, item: T): number {
+    if (list.some(x => x.id === item.id)) { return 0; }
+    list.splice(Math.min(Math.max(at, 0), list.length), 0, item);
+    return 1;
+}
+
 export class TaskManager implements vscode.Disposable {
     tasks: FarmTask[] = [];
     schedules: FarmSchedule[] = [];
@@ -4442,8 +4467,7 @@ export class TaskManager implements vscode.Disposable {
     }
 
     deleteTemplate(t: FarmTemplate): void {
-        this.templates = this.templates.filter(x => x.id !== t.id);
-        this.save();
+        this.deletePlanRows([{ kind: 'template', id: t.id }]);
     }
 
     // ---------- workflows ----------
@@ -4456,8 +4480,7 @@ export class TaskManager implements vscode.Disposable {
     }
 
     deleteWorkflow(w: FarmWorkflow): void {
-        this.workflows = this.workflows.filter(x => x.id !== w.id);
-        this.save();
+        this.deletePlanRows([{ kind: 'workflow', id: w.id }]);
     }
 
     renameWorkflow(w: FarmWorkflow, title: string): void {
@@ -5493,8 +5516,7 @@ export class TaskManager implements vscode.Disposable {
     }
 
     deleteTrigger(t: FarmTrigger): void {
-        this.triggers = this.triggers.filter(x => x.id !== t.id);
-        this.save();
+        this.deletePlanRows([{ kind: 'trigger', id: t.id }]);
     }
 
     markTriggerFired(t: FarmTrigger): void {
@@ -5592,8 +5614,65 @@ export class TaskManager implements vscode.Disposable {
     }
 
     deleteSchedule(s: FarmSchedule): void {
-        this.schedules = this.schedules.filter(x => x.id !== s.id);
-        this.save();
+        this.deletePlanRows([{ kind: 'schedule', id: s.id }]);
+    }
+
+    // ---------- deleting PLAN rows: one door, and it is reversible ----------
+    //
+    // ‼️ THE FOUR NAMED DELETES ABOVE ARE NAMES FOR THIS ONE. They each used to
+    // carry their own filter-and-save, which is how the page and the bridge
+    // ended up doing the same act two different ways — caught by the parity
+    // gate the moment the page moved. Keep the names (a tree command deleting a
+    // schedule should say so) and keep one implementation under them.
+
+    /**
+     * ‼️ M-33 — THE FOUR PLAN KINDS DELETE THROUGH ONE DOOR, AND IT REMEMBERS
+     * WHERE THE ROW WAS. The Plan tab lets a reader tick any row; before this
+     * there were four separate deletes, two of which asked their own question
+     * inside a command, so a bulk act could not be built out of them without
+     * putting four modal boxes in a row.
+     *
+     * It returns what it took, in the ORDER AND PLACES it took them from, which
+     * is what makes `restorePlanRows` an undo rather than a re-creation: the
+     * object goes back with its own id, so a trigger that points at a workflow
+     * still points at it, and a schedule keeps the run history filed under its
+     * id. Re-adding by title would have made a new id and quietly orphaned
+     * both.
+     */
+    deletePlanRows(refs: readonly { kind: string; id: string }[]): DeletedPlanRow[] {
+        const gone: DeletedPlanRow[] = [];
+        for (const ref of refs) {
+            let hit: { at: number; item: PlanDefinition } | undefined;
+            switch (ref.kind) {
+                case 'schedule': hit = takePlanRow(this.schedules, ref.id); break;
+                case 'trigger': hit = takePlanRow(this.triggers, ref.id); break;
+                case 'workflow': hit = takePlanRow(this.workflows, ref.id); break;
+                case 'template': hit = takePlanRow(this.templates, ref.id); break;
+                default: hit = undefined; break;
+            }
+            if (hit) {
+                gone.push({ kind: ref.kind as DeletedPlanRow['kind'], at: hit.at, title: hit.item.title, item: hit.item });
+            }
+        }
+        if (gone.length) { this.save(); }
+        return gone;
+    }
+
+    /** Put back exactly what `deletePlanRows` took. Lowest place first, so a
+     *  run of rows taken out of one list lands back in its own order; a row
+     *  that is somehow already there is skipped rather than doubled. */
+    restorePlanRows(rows: readonly DeletedPlanRow[]): number {
+        let n = 0;
+        for (const r of [...rows].sort((a, b) => a.at - b.at)) {
+            switch (r.kind) {
+                case 'schedule': n += putPlanRow(this.schedules, r.at, r.item as FarmSchedule); break;
+                case 'trigger': n += putPlanRow(this.triggers, r.at, r.item as FarmTrigger); break;
+                case 'workflow': n += putPlanRow(this.workflows, r.at, r.item as FarmWorkflow); break;
+                case 'template': n += putPlanRow(this.templates, r.at, r.item as FarmTemplate); break;
+            }
+        }
+        if (n) { this.save(); }
+        return n;
     }
 
     /** Manual "Run Now": the master switch still applies (paused means paused),

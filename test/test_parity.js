@@ -103,8 +103,30 @@ const keyCache = new Map();
  * each side is expanded once, in place: its own text, plus the panel methods
  * it delegates to, plus whatever the host gave the deps keys those use.
  */
+/**
+ * ‼️ PROSE IS NOT A SIGNATURE — AND THE FAILURE IT CAUSED WAS SILENT.
+ *
+ * The scan below is one regex over the whole file, and an ordinary English
+ * sentence in a doc comment — "…asks BEFORE (see the `bulk` message): many
+ * rows, one press…" — reads to it exactly like `name(args): type {`. The match
+ * then runs on to the next `{`, SWALLOWING the real declaration that follows,
+ * and that method quietly leaves the map: its body is no longer folded into
+ * the door that calls it, the door loses the vocabulary that proved it shares
+ * core with its op, and this gate reports drift that is not there. The reverse
+ * is worse — a comment can hide a genuine second implementation from the gate.
+ *
+ * So comments are blanked before the scan. Blanked, not removed: every
+ * character keeps its place, so the offsets the scan indexes with still point
+ * at the code they pointed at.
+ */
+const withoutComments = (src) => src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\r\n]/g, ' '))
+    // Only a comment that OWNS its line: `'https://…'` inside a string must
+    // survive, and a trailing `// note` cannot fake a signature on its own.
+    .replace(/(^|\n)([ \t]*)\/\/[^\r\n]*/g, (m, lead, indent) => lead + indent + ' '.repeat(m.length - lead.length - indent.length));
+
 const methodBodies = (file) => {
-    const src = sourceOf(file);
+    const src = withoutComments(sourceOf(file));
     let map = keyCache.get('§m§' + file);
     if (!map) {
         map = new Map();

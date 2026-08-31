@@ -208,5 +208,61 @@ const AFRepaint = sandbox.window.AFRepaint;
         /'media', 'afRepaint\.js'/.test(shell) && /src="\$\{repaint\}"/.test(shell));
 }
 
+/* =========================================================================
+ * 7 — ‼️ …ON EVERY PAGE, AND THE NEXT ONE TOO
+ *
+ * SHIPPING the component to every page is not the same as USING it, and the
+ * first sweep left it wired to one page out of twenty-four. The way this rots
+ * is nobody's fault and entirely predictable: somebody writes the next page,
+ * copies the one line every page has —
+ *
+ *     if (m.type === 'data') { DATA = m.data; render(); }
+ *
+ * — and that page throws the caret exactly as all of them used to. So the rule
+ * is measured rather than remembered: a page that answers a host `data` push
+ * must route it through the guard, or be named here with the reason it does
+ * not. A name with no reason is not accepted, because "it is on the list" is
+ * how a list stops meaning anything.
+ * ========================================================================= */
+{
+    const dir = path.join(ROOT, 'media');
+    // The two pages that answer a push WITHOUT replacing #app, and why.
+    const EXCEPT = {
+        // ‼️ The Console repaints incrementally on purpose (S-29): the reader
+        // watches the output WHILE they type, so deferring the whole paint
+        // would be the opposite bug. Exactly one part of it replaces the
+        // composer — `buildShell` — and that part does the waiting itself.
+        'console.js': /shellOwed/,
+        // The component itself, which quotes the line in its own preamble.
+        'afRepaint.js': /window\.AFRepaint = /
+    };
+    const missing = [];
+    for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js'))) {
+        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        // Does this file answer a host `data` push at all?
+        if (!/type === 'data'\)/.test(src)) { continue; }
+        if (EXCEPT[f]) {
+            if (!EXCEPT[f].test(src)) { missing.push(f + ' (named as an exception, but no longer answers for itself)'); }
+            continue;
+        }
+        if (!/AFRepaint\.guard\(/.test(src)) { missing.push(f + ' (repaints straight into the page)'); }
+    }
+    ok('‼️ every page that answers a host push routes it through the guard'
+        + (missing.length ? ' — ' + missing.join(', ') : ''),
+        missing.length === 0);
+
+    // …and the wiring is the real thing, not a variable named `repaint` that
+    // nothing calls: the push has to reach it.
+    const unused = [];
+    for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js'))) {
+        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        if (!/AFRepaint\.guard\(/.test(src)) { continue; }
+        if (!/\brepaint\(\)/.test(src)) { unused.push(f); }
+    }
+    ok('…and every guard that is built is actually called'
+        + (unused.length ? ' — ' + unused.join(', ') : ''),
+        unused.length === 0);
+}
+
 console.log(`test_repaint_guard: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
