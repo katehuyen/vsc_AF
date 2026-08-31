@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.358.0 - X-105 (1/n): the Console card runs on the route the card says it is on (2026-08-31)
+
+**The same defect, a fourth time — this time on the surface the Console exists
+for.**
+
+Three surfaces already hand the CLI a complete environment: the per-turn engines
+since X-101, the OS terminal window since X-104. The Console's own Claude path
+never did. It started the process with a working directory and nothing else, so
+the session inherited whatever the VS Code window happened to be carrying.
+
+What that produces is this family's quiet failure, and it is the reason it went
+unnoticed: a card started on Kimi keeps Kimi on its state, writes Kimi into the
+launch manifest and reports Kimi on every surface — while the process talks to
+whichever endpoint the window held. Every surface agrees with every other one,
+and all of them are wrong about the only thing that matters.
+
+**And the card with no route chosen is the half that is easy to miss.** "No
+route" is not "no statement": the official endpoint is reached by *clearing* what
+was inherited. A leftover `ANTHROPIC_BASE_URL` in the window answered the exact
+question the official route was picked to answer, and nothing here could say
+otherwise because nothing here was said at all.
+
+The card's **own** route is used — the one it was started on, not the agent's
+standing one. A card started on Kimi stays on Kimi even after the setting changes
+under it, because a route change is a different program.
+
+Measured by driving a real session host and reading back what the process was
+actually given: the route reaches it, the inherited one is gone rather than
+outvoted, everything else the window carried survives (an overlay, not a
+replacement), and a card with no route is no longer hijacked by a leftover.
+
+*Deliberately unchanged:* the shared OpenCode runtime is one process for the
+whole window and can carry no per-card environment — and does not need to, since
+OpenCode's provider is its own native configuration.
+
 ## 3.357.0 - S-50 and U-127: the Console the door opened, and one Sessions column (2026-08-31)
 
 Two long-standing wrongs, each fixed at the one place it was made.
