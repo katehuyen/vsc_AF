@@ -184,6 +184,25 @@ const data = () => ({
         permissions: [{ id: '', label: 'Default', detail: 'asks before acting' }],
         defaults: { model: '', effort: '', permissionMode: '' },
         engineModels: {},
+        // X-106 - the routes the form may point a run at, and the tiers that
+        // belong to each. Drawn only where there is something to pick, so a
+        // still page without this photographs the one state the boxes are not
+        // in - which is every state except the one they exist for.
+        routes: {
+            claude: {
+                noun: 'Route',
+                providers: [
+                    {
+                        id: 'kimi-work', label: 'Kimi (work)', detail: 'https://api.moonshot.ai/anthropic',
+                        tiers: [
+                            { id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' },
+                            { id: 'sonnet', label: 'sonnet', detail: 'kimi-k2' }
+                        ]
+                    },
+                    { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [{ id: 'opus', label: 'opus', detail: 'MiniMax-M2' }] }
+                ]
+            }
+        },
         engines: [
             { id: 'claude', label: 'Claude Code', ready: true, next: 'Ready, on a plan.' },
             { id: 'codex', label: 'Codex', ready: true, next: 'Ready, on a plan.' }
@@ -465,6 +484,32 @@ const variants = () => ([
                 'nt-unknownfallback': 'park'
             });
             drive(r, draft, 'nt-retrybehavior');
+        }
+    },
+    /**
+     * ‼ X-106 — THE FORM WITH A ROUTE ON IT, WHICH IS THE ONE STATE THE TWO
+     * BOXES EXIST FOR.
+     *
+     * They are drawn only where the chosen engine has a provider axis with
+     * something set up, and the TIER box only once a route has been picked —
+     * so a picture of the form untouched photographs neither. What has to be
+     * read here is that they sit with the other launch dimensions rather than
+     * beside the prompt, and that the tier row appears UNDER the route it
+     * belongs to.
+     */
+    {
+        id: 'tasks-route',
+        label: 'Tasks → the New-task form, pointed at a route (X-106)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = {
+                'nt-prompt': 'gece taraması — Kimi rotasında',
+                'nt-route': 'kimi-work'
+            };
+            drive(r, draft, 'nt-route');
+            Object.assign(draft, { 'nt-tier': 'opus' });
+            drive(r, draft, 'nt-tier');
         }
     },
     // ‼️ S-19 — the form when the run continues a conversation instead of

@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.365.0 - X-106: an unattended run can say which route serves it (2026-08-31)
+
+Every launch dimension on a stored automation is there because of one sentence:
+an automation fires with nobody at a window, so anything about the run has to be
+stated when the automation is WRITTEN or it is not stated at all. The endpoint
+the process really talks to was the one dimension that could not be stated
+anywhere — a nightly job took whichever standing route the agent happened to have
+at 3 a.m., which is a decision nobody made about a run nobody watched.
+
+**It travels by the shape, not by ten call sites.** `providerId` and `tier` are
+now part of `RunDimensions`, so a schedule, a trigger, a template and a workflow
+step carry them without any of those knowing they exist — and a retry, a clone
+and an edit inherit them the same way. Both spawn shapes in the runner (the
+headless one and the interactive one, which live 400 lines apart) pass the task's
+own route to the same resolver the Console and the terminals already use.
+
+**Refused, not narrowed — and that is the difference between a composer and an
+automation.** A composer redraws, so dropping an impossible value and saying so
+is right there. An automation is written once and read months later, so a route
+quietly discarded at write time is a run that silently takes the agent's standing
+endpoint for ever after. A route this engine cannot be pointed at, a tier the
+route does not map, a tier with no route at all, and a route beside a `cli`
+profile are each refused by name at the moment they are written down.
+
+Whether a route EXISTS is not a question `core/bridge.ts` can answer — it needs
+the engine's adapter and the user's own profiles — so it arrives as a callback,
+and the callback is attached in exactly ONE place. Ten doors passing their own
+would be ten places to leave it off, and the one left off is the schedule that
+stores a typo tonight and refuses it at 3 a.m.
+
+**And the form offers what the bridge offers.** The New-task form has a Route box
+(drawn only where the engine has a provider axis with something set up) and a
+Tier box under it (drawn only once a route publishes tiers) — because `opus` is
+`kimi-k2-thinking` on one route and `MiniMax-M2` on another, so the tiers ride ON
+each route rather than in a list of their own. Moving the engine or the route
+drops what the new one cannot carry, exactly as the model box already does.
+
 ## 3.364.0 - X-105 (6/n): the card says who served the last turn, not only who was asked for (2026-08-31)
 
 X-102 keeps a run's DECLARED half and its REPORTED half apart because they are

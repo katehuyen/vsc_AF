@@ -273,8 +273,8 @@ import {
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
     argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgePage, bridgeRunDimensions,
-    DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, SUPERPOWERS_NOTE,
-    needOneExecutor, optStr, parseBridgeRequest, stageBridgeCli
+    DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, ROUTE_NOTE, SUPERPOWERS_NOTE,
+    needOneExecutor, needRoutableEngine, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
 import {
     archivedOutputBody, archivedReplyText, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
@@ -6605,7 +6605,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // `engine: "gemnii"` was stored happily and refused at 3 a.m. when the
         // chain fired. Same validator as `tasks.add`; the spread stays for the
         // webhook/media/browser blocks, which this does not touch.
-        const dims = bridgeRunDimensions(raw);
+        const dims = runDims(raw);
         return {
             ...passthrough,
             agentId: who.id, agentName: who.name,
@@ -6798,7 +6798,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // open", so it is the door the wording was written for — but it is
                 // not the only one, and five hand-typed copies would be five
                 // contracts.
-                + INTERACTIVE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + ' '
+                + INTERACTIVE_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE + ' '
                 // ‼️ M-7 — the ONE ceiling the caller may lift, and the three it may not.
                 + 'ignoreBudget? (default false — launch even when the daily budget is spent. '
                 + 'It is the user\'s own ceiling about money, so a run they named may pass it; '
@@ -6967,10 +6967,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // surface is refused with one sentence at every door
                         // instead of being quietly dropped at this one.
                         ...(() => {
-                            const d = bridgeRunDimensions(args);
+                            const d = runDims(args);
                             return {
                                 ...(d.interactiveTarget ? { interactiveTarget: d.interactiveTarget as InteractiveTarget } : {}),
-                                ...(d.interactiveClose ? { interactiveClose: d.interactiveClose as InteractiveClose } : {})
+                                ...(d.interactiveClose ? { interactiveClose: d.interactiveClose as InteractiveClose } : {}),
+                                // ‼️ X-106 — AND THE ROUTE, THROUGH THE SAME READER.
+                                // A task built field by field here is exactly how a
+                                // dimension reaches every OTHER door and not this
+                                // one; the checks (a route this engine cannot be
+                                // pointed at, a tier the route does not map, a
+                                // route beside a CLI profile) already ran inside
+                                // `runDims`, so nothing is decided a second time.
+                                ...(d.providerId ? { providerId: d.providerId as string } : {}),
+                                ...(d.tier ? { tier: d.tier as string } : {})
                             };
                         })(),
                         ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
@@ -7090,7 +7099,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // ‼️ Validated against the engine this RETRY will run on — the
                 // one passed, or the original's — so "retry it on gemini" cannot
                 // quietly carry the old engine's effort into a CLI that has none.
-                const dims = bridgeRunDimensions({
+                const dims = runDims({
                     ...args,
                     engine: optStr(args, 'engine') || (t as FarmTask).engine || ''
                 }, { mode: (t as FarmTask).mode });
@@ -7108,6 +7117,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     optStr(args, 'engine') || (t as FarmTask).engine || '',
                     cliStated ? cli : ((t as FarmTask).cli ?? '')
                 );
+                /**
+                 * ‼️ X-106 — AND THE ROUTE IS THREE-STATE HERE FOR THE SAME
+                 * REASON `cli` IS: absent = the original's, "" = explicitly
+                 * none, an id = that route. Without the middle state, "retry it
+                 * without the Kimi route this time" would be unsayable for any
+                 * task that carried one.
+                 *
+                 * ‼️ AND THE CONTRADICTION IS ASKED ABOUT THE MERGED RUN. Neither
+                 * "retry it on the Kimi route" nor a task still carrying a CLI
+                 * profile is wrong on its own; only the two together are, and
+                 * neither call mentions both fields.
+                 */
+                const routeStated = args.providerId !== undefined;
+                needRoutableEngine(
+                    cliStated ? cli : ((t as FarmTask).cli ?? ''),
+                    routeStated ? optStr(args, 'providerId') : ((t as FarmTask).providerId ?? '')
+                );
                 const over = {
                     ...(optStr(args, 'agent') ? { agent: findAgent(optStr(args, 'agent') as string) } : {}),
                     ...(optStr(args, 'title') ? { title: optStr(args, 'title') as string } : {}),
@@ -7120,6 +7146,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(effort ? { effort } : {}),
                     ...(permissionMode ? { permissionMode } : {}),
                     ...(cliStated ? { cli } : {}),
+                    // ‼️ X-106 — see `routeStated` above. The tier rides with the
+                    // route it was read off; stating a route without one clears
+                    // the old tier rather than carrying a word that meant
+                    // something on the endpoint the retry is leaving.
+                    ...(routeStated
+                        ? {
+                            providerId: (dims.providerId as string) || undefined,
+                            tier: (dims.tier as string) || undefined
+                        }
+                        : {}),
                     ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
                     ...(optStr(args, 'project') ? { projectId: optStr(args, 'project') as string } : {}),
                     ...(Number(args.priority) ? { priority: Math.trunc(Number(args.priority)) } : {}),
@@ -7358,7 +7394,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + ' — ‼️ refused HERE if unknown, rather than at 3 a.m. with nobody watching), model?, effort? (‼️ refused on an engine that has no such setting: '
                 + enginesWithoutEffort()
                 + '), permissionMode? (‼️ the words are shared and the mechanisms are not — a schedule fires UNATTENDED, so on an engine that cannot stop and ask this is a restraint chosen up front, and on one that can there is nobody to answer and the request comes back refused), cli?, workDir?, priority?, project? (a schedule fires with nobody looking, so a project is DECLARED here or it has none) — plus fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — no agent is woken when it fails)'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const seeds = parseSeedSchedules(JSON.stringify([
@@ -7375,7 +7411,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // agent setting a schedule up over the bridge and a person
                 // setting one up on the page must be able to say the same
                 // things (see core/tasks.ts RunDimensions).
-                const dims = bridgeRunDimensions(args);
+                const dims = runDims(args);
                 const s = taskManager.addSchedule({ ...seeds[0], model: model || undefined, fireIf, ...dims });
                 return {
                     id: s.id, title: s.title, fireIf: s.fireIf ?? null,
@@ -8572,7 +8608,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // older shape accepted has been taken away.
             op: 'triggers.add',
             describe: 'Install a trigger. args: title, type (watch|hook|webhook, default watch), watch? / watchPath? (the file or folder — watch type; must exist), hookEvent? (start|prompt|toolStart|toolEnd|permission|notify|stop|subagent|compact|end — hook type, default stop), hookAgent? (agent name filter), token? (webhook — generated when absent), then the action either FLAT — action ("task"|"dispatch"|"workflow", default task), agent (name|id, for task), prompt (task/dispatch), mode? (headless|interactive), workflow? (id|title) — or NESTED as action: {kind, agent, prompt, title?, mode?, engine?, model?, effort?, permissionMode?}. Run dimensions on either shape: engine? (' + ENGINE_ENUM + ' — refused if unknown, at install time rather than at 3 a.m.), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?. Also debounceSec?, cooldownSec?, maxPerHour? (0 = unlimited), enabled? (default true), fireIf? ({kind:folderHasFiles|fileMissing|pathChangedWithin|queueHasWork, path?, except?[], minCount?, hours?, recursive?} — the CONTENT brake: a watch fires on any filesystem change, this stops the wake-up for free when there is no real work). Prompts may use {watch} and {payload}. A webhook trigger returns its POST url.'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.triggers.some(t => t.title === title),
@@ -8603,8 +8639,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Dimensions may be stated at either level; the nested ones win
                 // because they are the more specific statement.
                 const dims = {
-                    ...bridgeRunDimensions(args, { mode }),
-                    ...(nested ? bridgeRunDimensions(nested, { mode }) : {})
+                    ...runDims(args, { mode }),
+                    ...(nested ? runDims(nested, { mode }) : {})
                 };
                 // ‼️ M-22 — each level was already checked on its own, and that
                 // is not the same question: `{engine, action:{cli}}` states one
@@ -8696,7 +8732,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'templates.add',
             describe: 'Save a reusable task template (launched by hand from its row, or with templates.run). A template is a task you have not run yet, so it takes the SAME run dimensions a task does and remembers them: args: title, prompt, mode? (headless|interactive), agent? (name|id — omit for an unbound template that asks at run time), engine? (' + ENGINE_ENUM + '), model?, effort? (‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode?, cli?, workDir?, priority?, project?'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
             handler: (args) => {
                 const title = argStr(args, 'title');
                 need(!taskManager.templates.some(t => t.title === title),
@@ -8709,7 +8745,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     agentId: agent?.id, agentName: agent?.name,
                     // ‼️ The saved launch — the thing a template exists to hold
                     // and the thing it used to drop (X-35).
-                    ...bridgeRunDimensions(args)
+                    ...runDims(args)
                 });
                 return {
                     id: t.id, title: t.title, agent: t.agentName ?? null,
@@ -8916,7 +8952,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'templates.run',
             describe: 'Run a template as a task now — on the engine and with the model/effort/permissions the template was SAVED with, which is the point of a template. Any run dimension passed here overrides the saved one for this run only. args: id or title, agent? (name|id — required when the template is not bound to an agent), engine?, model?, effort?, permissionMode?, cli? (‼️ M-22 — three-state: omit = the template\'s own, "" = clear it, a name = that profile; a run may not carry an engine AND a profile, since the profile would replace the command line and drop the engine in silence), workDir?, priority?, project?'
-                + INTERACTIVE_NOTE + ROUNDS_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
+                + INTERACTIVE_NOTE + ROUNDS_NOTE + ROUTE_NOTE + FINISH_SOUND_NOTE + SUPERPOWERS_NOTE,
             handler: (args) => {
                 const ref = optStr(args, 'id') || argStr(args, 'title');
                 const tpl = taskManager.templates.find(x => x.id === ref || x.title === ref);
@@ -8930,7 +8966,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // a template used to build a bare task, so everything the
                 // template remembered about HOW to run was dropped at the one
                 // moment it mattered.
-                const over = bridgeRunDimensions({
+                const over = runDims({
                     ...args, engine: optStr(args, 'engine') || t.engine || ''
                 }, { mode: t.mode });
                 // ‼️ M-22 — same three-state `cli` as `tasks.rerun`, and for the
@@ -13107,7 +13143,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // engine this schedule will end up on, so "effort on
                         // gemini" is refused whether the engine was set now or
                         // set last week.
-                        const dims = bridgeRunDimensions({
+                        const dims = runDims({
                             engine: optStr(args, 'engine') || cur.engine || '',
                             ...Object.fromEntries(stated.map(k => [k, optStr(args, k)]))
                         });
@@ -13345,7 +13381,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         need(tr.action.kind !== 'workflow',
                             'A workflow trigger carries no run dimensions of its own — set them on the workflow\'s steps.');
                         const action = tr.action as Exclude<FarmTrigger['action'], { kind: 'workflow' }>;
-                        const dims = bridgeRunDimensions({
+                        const dims = runDims({
                             engine: optStr(args, 'engine') || action.engine || '',
                             ...Object.fromEntries(stated.map(k => [k, optStr(args, k)]))
                         });
@@ -16345,6 +16381,95 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * ‼️ X-106 — THE ROUTES A FORM MAY OFFER, PER ENGINE, IN ONE OBJECT.
+     *
+     * The task/schedule/trigger/template form redraws itself LOCALLY when the
+     * engine box changes — that is what `engineModels` is for and this is its
+     * twin. Sending the whole matrix up front rather than asking the host per
+     * change is the same trade `engineModels` already makes: the catalogs are
+     * resolved here anyway, the lists are small, and a picker that had to wait
+     * for a round trip would stall under the pointer.
+     *
+     * ‼️ THE TIERS RIDE WITH THE ROUTE THEY BELONG TO, not in a list beside it.
+     * `opus` is `kimi-k2-thinking` on one route and `MiniMax-M2` on another
+     * (X-101), so a flat tier list would be a word that means different things
+     * depending on which row happened to be selected. Read from the SAME reader
+     * the launcher, the Console composer and the card all use.
+     *
+     * An engine with no provider axis, or with nothing set up, is simply absent
+     * — the form draws no box, exactly as it draws no CLI row when there are no
+     * CLI profiles.
+     */
+    const engineRouteMatrix = (): Record<string, {
+        noun: string;
+        providers: { id: string; label: string; detail: string; tiers: LaunchChoice[] }[];
+    }> => {
+        const out: Record<string, {
+            noun: string;
+            providers: { id: string; label: string; detail: string; tiers: LaunchChoice[] }[];
+        }> = {};
+        for (const id of Object.keys(ENGINES)) {
+            // ‼️ `run` is the transport: a task is spawned headless. Asking as
+            // `acp` here would offer a form the door cannot carry, which is the
+            // defect `ProviderTransport` exists to prevent.
+            const form = providerFormFor(id, {}, 'run');
+            const providers = form.providers.filter(p => p.id);
+            if (!form.applies || !providers.length) { continue; }
+            out[id] = {
+                noun: form.noun,
+                providers: providers.map(p => ({
+                    id: p.id, label: p.label, detail: p.detail ?? '',
+                    // Only a TIER axis becomes a second box. Where the sub-axis
+                    // is the MODEL (OpenCode names a model `provider/model`) the
+                    // model box on this same form already IS that axis, and two
+                    // controls for one subject is what ONE SUBJECT forbids.
+                    tiers: (() => {
+                        const sub = providerFormFor(id, { providerId: p.id }, 'run').sub;
+                        return sub.kind === 'tier' ? sub.choices.filter(c => c.id) : [];
+                    })()
+                }))
+            };
+        }
+        return out;
+    };
+
+    /**
+     * ‼️ X-106 — EVERY STORED AUTOMATION READS ITS DIMENSIONS THROUGH HERE, AND
+     * THIS IS THE ONE PLACE THE ROUTE RESOLVER IS ATTACHED.
+     *
+     * `bridgeRunDimensions` is pure core: it cannot know whether a route exists,
+     * because that needs the engine's adapter and the user's own profiles. It
+     * takes the question as a callback, and the callback is wired ONCE — ten
+     * call sites each passing their own would be ten places for the check to be
+     * left off, and the one left off is a schedule that stores a typo'd route
+     * tonight and refuses it at 3 a.m. with nobody watching.
+     *
+     * ‼️ REFUSED, NOT NARROWED — and that is the difference between this and
+     * `prunedPick` below. A composer redraws, so dropping an impossible value
+     * and saying so is the right answer there. An automation is WRITTEN ONCE
+     * and read months later: a route quietly dropped at write time is a run that
+     * silently takes the agent's standing endpoint for ever after, which is
+     * exactly the decision-nobody-made this dimension exists to end.
+     */
+    const runDims = (
+        args: Record<string, unknown>, opts: { mode?: string } = {}
+    ): Record<string, unknown> => bridgeRunDimensions(args, {
+        ...opts,
+        route: (engine, providerId, tier) => {
+            const kept = pruneProviderPick(
+                adapterFor(engineOf(engine).id, registryDeps()),
+                { providerId, ...(tier ? { tier } : {}) }, 'run').pick;
+            if (!kept.providerId) {
+                return `"${providerId}" is not a route ${engineOf(engine).id} can be pointed at — `
+                    + 'engines.providers lists what is set up, and an engine with no provider axis takes none.';
+            }
+            return tier && !kept.tier
+                ? `"${tier}" is not a tier the "${providerId}" route maps — engines.providers lists what it serves.`
+                : undefined;
+        }
+    });
+
+    /**
      * A pick, narrowed to what the engine and route currently chosen can really
      * carry — and the dropped values SAID OUT LOUD rather than vanishing.
      */
@@ -16999,6 +17124,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // S-20 — and what each ENGINE offers, so the form's Model box follows
         // its Engine box instead of always listing Claude's aliases.
         engineModels: () => engineModelMatrix(),
+        engineRoutes: () => engineRouteMatrix(),
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.
@@ -20232,6 +20358,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // S-20 — …and what each of them currently offers as a model, so the
         // composer's Model and Effort boxes follow the Engine box.
         engineModels: () => engineModelMatrix(),
+        engineRoutes: () => engineRouteMatrix(),
         launchDefaults: () => launchDefaults(),
         // ‼️ S-34 — the per-agent record, read and written through the SAME two
         // functions every other door uses. The panel gets no copy of its own:

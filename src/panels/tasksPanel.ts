@@ -76,6 +76,18 @@ export interface TasksDeps {
      *  today. It matters most here: nobody is sitting in front of a task, so a
      *  `--model` the engine rejects surfaces hours later in an archive file. */
     engineModels?(): Record<string, EngineModels>;
+    /**
+     * X-106 - the ROUTES each engine may be pointed at, with the tiers that
+     * belong to each one. Twin of engineModels above and read the same way:
+     * the form redraws locally when the engine box changes, so both matrices
+     * are sent up front. Absent, or an engine missing from it, means no route
+     * box - which is the right answer for the three engines with no provider
+     * axis and for a Claude with no profiles set up yet.
+     */
+    engineRoutes?(): Record<string, {
+        noun: string;
+        providers: { id: string; label: string; detail: string; tiers: { id: string; label: string; detail?: string }[] }[];
+    }>;
     launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
@@ -827,6 +839,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             models: modelChoices(deps.modelAliases()),
             efforts: EFFORT_CHOICES,
             engineModels: deps.engineModels?.() ?? null,
+            // X-106 - and which routes it may be pointed at (see ConsoleRoute).
+            routes: deps.engineRoutes?.() ?? null,
             permissions: PERMISSION_CHOICES,
             // ‼️ M-26 — the two axes of an INTERACTIVE run, from the same
             // vocabulary module the efforts and the permission modes come from,
@@ -1099,6 +1113,10 @@ export function taskSeed(t: FarmTask): Record<string, unknown> {
         agent: t.agentName, title: t.title, prompt: t.prompt, mode: t.mode,
         engine: t.engine ?? '', model: t.model ?? '', effort: t.effort ?? '',
         permissionMode: t.permissionMode ?? '', cli: t.cli ?? '',
+        // X-106 - the route it is served by, and the tier of that route. Every
+        // dimension of RunDimensions is a box on this form, so every one of them
+        // has to come back out of the stored object (test_task_seed.js sweeps it).
+        providerId: t.providerId ?? '', tier: t.tier ?? '',
         // M-26 - what the object was set to, so reopening the form shows it.
         interactiveTarget: t.interactiveTarget ?? 'vscode',
         interactiveClose: t.interactiveClose ?? 'stay-open',
@@ -1266,7 +1284,8 @@ function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
         // `''` = "the agent's default decides", which is a THIRD answer and not
         // the same as `off`.
         superpowers: s.superpowers === undefined ? '' : (s.superpowers ? 'on' : 'off'),
-        cli: s.cli ?? '', workDir: s.workDir ?? '', priority: s.priority ?? 0,
+        cli: s.cli ?? '', providerId: s.providerId ?? '', tier: s.tier ?? '',
+        workDir: s.workDir ?? '', priority: s.priority ?? 0,
         ignoreBudget: !!s.ignoreBudget,
         // ‼️ M-27 — what it was saved with, so reopening the form shows the
         // chain instead of an empty editor over a schedule that has one.
@@ -1301,7 +1320,8 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         // `''` = "the agent's default decides", which is a THIRD answer and not
         // the same as `off`.
         superpowers: dims.superpowers === undefined ? '' : (dims.superpowers ? 'on' : 'off'),
-        cli: dims.cli ?? '', workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
+        cli: dims.cli ?? '', providerId: dims.providerId ?? '', tier: dims.tier ?? '',
+        workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
         ignoreBudget: !!dims.ignoreBudget,
         // ‼️ M-27 — the chain it was saved with (see RunDimensions.rounds).
         rounds: normalizeRounds(dims.rounds),
@@ -1575,7 +1595,8 @@ export class TasksPanel {
                 // would silently reset the engine it is holding.
                 engine: tpl.engine ?? '', model: tpl.model ?? '', effort: tpl.effort ?? '',
                 permissionMode: tpl.permissionMode ?? '', project: tpl.projectId ?? '',
-                cli: tpl.cli ?? '', workDir: tpl.workDir ?? '', priority: tpl.priority ?? 0,
+                cli: tpl.cli ?? '', providerId: tpl.providerId ?? '', tier: tpl.tier ?? '',
+                workDir: tpl.workDir ?? '', priority: tpl.priority ?? 0,
                 // ‼️ M-27 — a template is "that again", and a chain is part of
                 // what "that" was.
                 rounds: normalizeRounds(tpl.rounds)
@@ -1630,6 +1651,13 @@ export class TasksPanel {
             effort: str('effort') || undefined,
             permissionMode: str('permissionMode') || undefined,
             cli: str('cli') || undefined,
+            // X-106 - AND WHICH ROUTE SERVES IT. The dimension an automation needs
+            // most and could not state: with nobody at a window, a run that names
+            // none takes whichever route the agent is set to when it fires. The
+            // tier travels with the route it was read off - without one the word
+            // has no referent (opus is a different model on two routes).
+            providerId: str('providerId') || undefined,
+            tier: str('providerId') ? (str('tier') || undefined) : undefined,
             // ‼️ M-26 — an automation's run appears somewhere too, and it is the
             // case where the choice matters MOST: it fires with nobody at a
             // window, so "open it in a terminal I will find in the morning"
@@ -2184,6 +2212,10 @@ export class TasksPanel {
                         effort: str('effort') || undefined,
                         permissionMode: str('permissionMode') || undefined,
                         cli: str('cli') || undefined,
+                        // X-106 - and on the route the form is showing, which is
+                        // the original's unless it was changed there.
+                        providerId: str('providerId') || undefined,
+                        tier: str('providerId') ? (str('tier') || undefined) : undefined,
                         interactiveTarget: mode === 'interactive' && str('interactiveTarget')
                             ? normInteractiveTarget(str('interactiveTarget')) : undefined,
                         interactiveClose: mode === 'interactive' && str('interactiveClose')
@@ -2263,6 +2295,9 @@ export class TasksPanel {
                     ...(str('effort') ? { effort: str('effort') } : {}),
                     ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
                     ...(str('cli') ? { cli: str('cli') } : {}),
+                    // X-106 - the route this run is served by (see dims()).
+                    ...(str('providerId') ? { providerId: str('providerId') } : {}),
+                    ...(str('providerId') && str('tier') ? { tier: str('tier') } : {}),
                     // M-26 - where an interactive run opens and whether it stays.
                     // Only sent when the mode is interactive: the boxes are not on
                     // the page otherwise, and a headless task carrying a surface

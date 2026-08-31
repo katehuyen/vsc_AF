@@ -1623,6 +1623,36 @@
         const em = ntEngineModels(engine);
         return (em && em.models) || (DATA.launch || {}).models || [];
     }
+    /**
+     * ‼️ X-106 — THE ROUTES THIS ENGINE MAY BE POINTED AT, or nothing.
+     *
+     * Twin of `ntEngineModels` and read the same way: the whole matrix arrives
+     * with the page, so switching the engine box redraws locally instead of
+     * waiting on a round trip under the pointer. `null` for the three engines
+     * with no provider axis and for one with nothing set up yet — both are
+     * complete answers, and neither draws a box.
+     */
+    function ntRoutes(engine) {
+        const all = (DATA.launch || {}).routes || {};
+        const f = all[engine || 'claude'];
+        return (f && (f.providers || []).length) ? f : null;
+    }
+    /**
+     * ‼️ X-106 — A ROUTE BELONGS TO ONE ENGINE, AND A TIER TO ONE ROUTE.
+     *
+     * The same narrowing the model box already does when the engine changes: a
+     * Kimi route carried onto Codex is an endpoint its CLI was never going to be
+     * pointed at, and a tier kept across a route change is a word that meant
+     * `kimi-k2-thinking` on the route being left. Dropped rather than left
+     * sitting in a box that now disagrees with the row above it.
+     */
+    function ntNarrowRoute(c) {
+        if (!c) { return; }
+        const f = ntRoutes(c.engine);
+        const row = f && (f.providers || []).find(p => p.id === (c.providerId || ''));
+        if (!row) { c.providerId = ''; c.tier = ''; return; }
+        if (c.tier && !(row.tiers || []).some(t => t.id === c.tier)) { c.tier = ''; }
+    }
     /** The levels THAT model supports — Codex states them per model. */
     function ntEfforts(engine, model) {
         // ‼️ AN ENGINE WITH NO EFFORT FLAG OFFERS NO EFFORTS (X-35). `gemini`
@@ -2284,6 +2314,53 @@
                 `<option value="${C.esc(p.name)}"${p.name === c.cli ? ' selected' : ''}>${C.esc(p.name)}</option>`))
             .join('');
         /**
+         * ‼️ X-106 — WHICH ROUTE THE RUN IS SERVED BY, and it matters MORE here
+         * than anywhere else in this extension.
+         *
+         * An automation fires with nobody at a window. Every other dimension on
+         * this form already understood that — the engine, the effort, the tone,
+         * the discipline are all here because "it can only be said when the
+         * automation is WRITTEN" — and the endpoint the process actually talks
+         * to was the one that could not be said at all: a nightly job took
+         * whichever standing route the agent happened to have at 3 a.m.
+         *
+         * ‼️ DRAWN ONLY WHERE THERE IS SOMETHING TO PICK, exactly as the CLI row
+         * beside it is. Three of the five engines have no provider axis and a
+         * Claude with no profiles set up has nothing to offer — a box with no
+         * referent is what docs/CONVENTIONS.md forbids, and this form is not
+         * where a person learns that routes exist (the Providers page is).
+         *
+         * ‼️ AND THE TIER BOX BELONGS TO THE ROUTE ABOVE IT. `opus` is
+         * `kimi-k2-thinking` on one route and `MiniMax-M2` on another, so the
+         * word has no meaning until a route answers it — which is why the tiers
+         * ride ON each route rather than in a list of their own.
+         */
+        const routeForm = ntRoutes(c.engine);
+        const routeRow = (() => {
+            if (!routeForm) { return ''; }
+            const noun = String(routeForm.noun || 'Route');
+            const opts = ['<option value=""' + (c.providerId ? '' : ' selected')
+                + '>— none: nothing injected, nothing cleared —</option>']
+                .concat(routeForm.providers.map(p =>
+                    `<option value="${C.esc(p.id)}"${p.id === c.providerId ? ' selected' : ''}>${C.esc(p.label)}</option>`))
+                .join('');
+            const row = `<label class="ntf" title="${C.esc(noun
+                + ': the endpoint this run really talks to, which the engine itself never says. '
+                + 'An automation fires with nobody watching, so a run that names none takes '
+                + 'whichever route the agent happens to be set to when it fires. '
+                + 'None = nothing injected and nothing cleared, which is what every run written '
+                + 'before this did.')}"><span>${C.esc(noun)}</span>
+                    <select id="nt-route">${opts}</select></label>`;
+            const tiers = (routeForm.providers.find(p => p.id === c.providerId) || {}).tiers || [];
+            if (!tiers.length) { return row; }
+            const topts = ['<option value=""' + (c.tier ? '' : ' selected') + '>— the route\'s own choice —</option>']
+                .concat(tiers.map(t =>
+                    `<option value="${C.esc(t.id)}"${t.id === c.tier ? ' selected' : ''}>${C.esc(t.label)}${t.detail ? ' — ' + C.esc(t.detail) : ''}</option>`))
+                .join('');
+            return row + `<label class="ntf" title="Which model this route serves for that name. A tier is not a model: &quot;opus&quot; is one model on one route and another on the next, which is why it is asked here and not in the model box."><span>Tier</span>
+                    <select id="nt-tier">${topts}</select></label>`;
+        })();
+        /**
          * ‼️ WHICH ENGINE (X-18) — and it matters MORE here than in the Console.
          *
          * Nobody is sitting in front of an unattended run. An engine that is not
@@ -2489,6 +2566,7 @@
                     <select id="nt-project">${projOpts}</select></label>
                 ${(L.clis || []).length ? `<label class="ntf" title="A named CLI profile from agentFarm.cliProfiles. A non-claude executor is not monitored the way claude is — its output is archived and that is all."><span>CLI</span>
                     <select id="nt-cli">${cliOpts}</select></label>` : ''}
+                ${routeRow}
                 <label class="ntf" title="Higher runs sooner when the queue is full. It also ages up while waiting, so nothing starves."><span>Priority</span>
                     <input type="number" id="nt-priority" step="1" value="${C.esc(String(c.priority || 0))}"></label>
                 <label class="ntf wide" title="Run it somewhere other than the agent's own folder — a worktree, a repo it is working on. Empty = the agent folder."><span>Working folder</span>
@@ -2586,6 +2664,12 @@
         // above it, so no mode-dependent skip applies.
         v('superpowers', 'superpowers');
         v('project', 'project'); v('cli', 'cli'); v('workdir', 'workDir');
+        // ‼️ X-106 — the route and the tier under it. Drawn only where the
+        // engine has a provider axis with something set up, and `v()` skips what
+        // is not on the page — so moving to an engine with no routes and back
+        // keeps the answer on the draft instead of erasing a choice the user
+        // made (same rule as the interactive pair above).
+        v('route', 'providerId'); v('tier', 'tier');
         n('priority', 'priority');
         b('start', 'start'); b('enabled', 'enabled'); b('ignorebudget', 'ignoreBudget');
         // M-3 — the fields only exist while the picker says "set it here", and
@@ -3715,6 +3799,11 @@
                 }
                 render();
             });
+            // ‼️ X-106 — the tier list is the ROUTE's own, so moving the route
+            // has to redraw the box under it (and drop a tier the new route does
+            // not map). The same shape the engine handler below has.
+            byId('nt-route', 'change', () => { readComposer(); ntNarrowRoute(composer); render(); });
+            byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {
                 readComposer();
                 // A model belongs to one engine: `sonnet` carried over to Codex
@@ -3723,6 +3812,8 @@
                 if (composer && !ntModels(composer.engine).some(m => m.id === (composer.model || ''))) {
                     composer.model = ''; composer.effort = '';
                 }
+                // ‼️ X-106 — and so does a route (see ntNarrowRoute).
+                ntNarrowRoute(composer);
                 // …and even when the model survives the change, its effort
                 // vocabulary may not: the same engine can state different
                 // levels for the same name.

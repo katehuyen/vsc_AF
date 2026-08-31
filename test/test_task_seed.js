@@ -49,6 +49,10 @@ const P = require(path.join(ROOT, 'out', 'panels', 'tasksPanel.js'));
 const DIMENSION_BOX = {
     engine: 'engine', model: 'model', effort: 'effort',
     permissionMode: 'permissionMode', cli: 'cli',
+    // ‼️ X-106 — the route and the tier under it. The tier is its own box
+    // rather than part of the route's, because `opus` is a different model on
+    // two routes: folding them would make one stored value mean two things.
+    providerId: 'providerId', tier: 'tier',
     interactiveTarget: 'interactiveTarget', interactiveClose: 'interactiveClose',
     finishSound: 'finishSound', superpowers: 'superpowers',
     workDir: 'workDir', priority: 'priority',

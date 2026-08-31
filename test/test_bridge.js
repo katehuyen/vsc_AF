@@ -4389,7 +4389,12 @@ const { opencodeStatus, syncToOpencode } =
             /never inherits a conversation/.test(addC));
 
         const sched = at('schedules.add');
-        ok('schedules.add takes the run dimensions', /bridgeRunDimensions\(args\)/.test(sched));
+        // X-106 - the reader is now reached through `runDims`, the ONE place the
+        // route resolver is attached to it (whether a route EXISTS is an adapter
+        // question core/bridge.ts cannot answer, so it arrives as a callback).
+        // Same guarantee, one hop: what is measured is that the door does not
+        // read its own dimensions.
+        ok('schedules.add takes the run dimensions', /runDims\(args\)/.test(sched));
         ok('…and its contract names them', /effort\?/.test(sched) && /permissionMode\?/.test(sched)
             && /workDir\?/.test(sched) && /priority\?/.test(sched) && /project\?/.test(sched));
         ok('…and says why a project has to be DECLARED on an automation',
@@ -4399,7 +4404,7 @@ const { opencodeStatus, syncToOpencode } =
         // in the same commit, which is the whole rule.
         ok('‼️ triggers.add exists', /op: 'triggers\.add'/.test(src));
         const trig = at('triggers.add');
-        ok('…and takes the same dimensions', /bridgeRunDimensions\(args\)/.test(trig));
+        ok('…and takes the same dimensions', /runDims\(args\)/.test(trig));
         ok('…refuses a watch trigger with nothing to watch',
             /A watch trigger needs watch/.test(trig));
         // ‼️ …and a path that is not there, which used to install happily and
@@ -4879,7 +4884,7 @@ const { opencodeStatus, syncToOpencode } =
         for (const op of ['schedules.add', 'templates.add', 'workflows.add', 'workflows.step.add']) {
             const b = blockOf(op);
             ok(`${op} reads its dimensions through the checked reader`,
-                /bridgeRunDimensions\(|bridgeStep\b/.test(b));
+                /runDims\(|bridgeStep\b/.test(b));
         }
 
         // ---- three-state `cli`, so the refusal is not a dead end ----

@@ -273,6 +273,32 @@ export interface FarmTask {
      * other, and stating both is refused rather than silently ranked.
      */
     engine?: string;
+    /**
+     * ‼️ X-106 — WHICH ROUTE THIS RUN IS SERVED BY, and it is a THIRD axis
+     * beside `engine` and `cli`.
+     *
+     * An automation fires with nobody at a window, so everything about the run
+     * has to be stated when the automation is WRITTEN or it is not stated at
+     * all — and until now this one could not be stated anywhere: a queued task
+     * inherited whatever standing route the agent happened to have at 3 a.m.,
+     * which is a decision nobody made about a run nobody watched.
+     *
+     * Absent means what it has always meant: no route chosen, nothing injected
+     * and nothing cleared, and the agent's own record decides. Four of the five
+     * engines are in that state permanently.
+     *
+     * ‼️ AND IT IS REFUSED BESIDE A `cli`, NOT RANKED. A CLI profile is a
+     * command template for a binary this extension knows nothing about — there
+     * is no engine there to point at an endpoint, so a route beside one is two
+     * statements about a question only one of them can answer, exactly as
+     * `engine` + `cli` already is.
+     */
+    providerId?: string;
+    /** ‼️ Claude routes only — which tier of that route. A separate field from
+     *  `model` for the reason X-101 gives: `opus` is a different model on two
+     *  routes, so folding it in would make one pick mean two things. Travels
+     *  WITH `providerId`; a tier alone has no referent. */
+    tier?: string;
     /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
     cli?: string;
     /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
@@ -610,6 +636,20 @@ export interface RunDimensions {
     model?: string;
     effort?: string;
     permissionMode?: string;
+    /**
+     * ‼️ X-106 — AND WHICH ROUTE IT IS SERVED BY (see FarmTask.providerId).
+     *
+     * It rides here with the model and the permission mode for the reason every
+     * dimension in this shape does: an automation fires with nobody at a
+     * window, so "the nightly batch goes through the Kimi route" can only be
+     * said when the automation is written, or it is not said at all — and this
+     * is the dimension where not saying it is worst, because the run silently
+     * takes whichever standing route the agent had at 3 a.m.
+     */
+    providerId?: string;
+    /** Claude routes only — which tier of that route. Travels WITH `providerId`
+     *  (see FarmTask.tier). */
+    tier?: string;
     cli?: string;
     /**
      * ‼️ M-26 — WHERE AN INTERACTIVE RUN OPENS, AND WHETHER IT STAYS.
@@ -689,6 +729,27 @@ export interface RunDimensions {
     retry?: RetryPolicy;
 }
 
+/**
+ * ‼️ X-106 — THE ROUTE A RUN NAMED, IN THE SHAPE THE RESOLVER TAKES IT.
+ *
+ * `undefined` rather than `{}` when nothing was chosen, because that is the
+ * value the resolver already reads as "the agent's own record decides" — the
+ * behaviour every task written before this dimension existed had, and the one
+ * four of the five engines have permanently.
+ *
+ * One helper for both spawn shapes: written out twice, the second is where
+ * somebody forgets, and a run that quietly inherited a route looks exactly like
+ * one that chose it.
+ */
+export function routeOf(
+    t: { providerId?: string; tier?: string }
+): { providerId?: string; tier?: string } | undefined {
+    const providerId = (t.providerId ?? '').trim();
+    if (!providerId) { return undefined; }
+    const tier = (t.tier ?? '').trim();
+    return { providerId, ...(tier ? { tier } : {}) };
+}
+
 /** The run dimensions of an automation, in the shape `addTask` takes them —
  *  empty fields dropped, so "not stated" never becomes an explicit empty flag. */
 export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
@@ -698,6 +759,22 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     if (d.model) { r.model = d.model; }
     if (d.effort) { r.effort = d.effort; }
     if (d.permissionMode) { r.permissionMode = d.permissionMode; }
+    /**
+     * ‼️ X-106 — THE ROUTE TRAVELS BY THE SHAPE, NOT BY TEN CALL SITES. Every
+     * stored automation object extends `RunDimensions` — a schedule, a trigger,
+     * a template, a workflow step — and every one of them reaches a run through
+     * here. So the dimension is inherited by a retry, a clone and an edit
+     * without any of those knowing it exists, which is the only way a
+     * seventeenth dimension does not become a seventeenth thing to forget.
+     *
+     * ‼️ AND A TIER WITHOUT A ROUTE IS DROPPED. `opus` is a different model on
+     * two routes; with no route chosen the word answers nothing, and carrying
+     * it would let a stored automation claim a decision that cannot be resolved.
+     */
+    if (d.providerId) {
+        r.providerId = d.providerId;
+        if (d.tier) { r.tier = d.tier; }
+    }
     if (d.cli) { r.cli = d.cli; }
     // ‼️ M-26 — the DEFAULT is dropped, like every other field here. A task
     // carrying `interactiveTarget: 'vscode'` and one carrying nothing run
@@ -2950,7 +3027,12 @@ export class TaskManager implements vscode.Disposable {
          */
         const env = terminalEnvOverlay(
             [this.opts.getEnv?.(agent.id)],
-            this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude'));
+            // ‼️ X-106 — AND THE ROUTE THE TASK ITSELF NAMED. This passed nothing
+            // and the agent's standing route answered for every automation; a
+            // nightly job pointed at one endpoint by hand ran on whichever one
+            // the agent was set to when it fired. `undefined` is unchanged
+            // behaviour for every task written before the dimension existed.
+            this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude', routeOf(task)));
         if (target === 'external') {
             fs.mkdirSync(this.outputsDir, { recursive: true });
             const exitFile = path.join(this.outputsDir, `${task.id}.exit`);
@@ -3369,7 +3451,11 @@ export class TaskManager implements vscode.Disposable {
         const spawnEnv = spawnEnvironment(
             process.env,
             [engineEnv, this.opts.getEnv?.(agent.id)],
-            this.opts.engineRuntime?.(agent.id, engine.id)
+            // ‼️ X-106 — the task's own route, on the headless path too. Both
+            // spawn shapes read it from the same helper, because the way this
+            // regresses is one of the two being given the route and the other
+            // being left inheriting (see `openInteractive`).
+            this.opts.engineRuntime?.(agent.id, engine.id, routeOf(task))
         );
         const child = argv
             ? cp.spawn(engine.exe, argv, {
@@ -4293,6 +4379,7 @@ export class TaskManager implements vscode.Disposable {
         over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
             & Partial<Pick<FarmTask,
                 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
+                | 'providerId' | 'tier'
                 | 'interactiveTarget' | 'interactiveClose' | 'finishSound' | 'superpowers'
                 | 'priority' | 'projectId' | 'ignoreBudget'
                 // ‼️ M-32 — …and the three the AUTOMATIC retry has always
@@ -4331,6 +4418,20 @@ export class TaskManager implements vscode.Disposable {
             });
         copy.attempt = attempt;
         copy.outputContract = task.outputContract;
+        // X-106 - AND THE RETRY RUNS ON THE ROUTE THE ORIGINAL RAN ON. The same
+        // rule the engine and the model already follow here, and the one where
+        // silence costs most: a retry that quietly moved to the agent-s standing
+        // endpoint is a different run wearing the same name, and nothing
+        // afterwards would say which one served it. The tier travels with the
+        // route it belongs to - carried separately it could survive onto a route
+        // that maps a different model for the same word.
+        if (over && 'providerId' in over) {
+            copy.providerId = over.providerId;
+            copy.tier = over.providerId ? over.tier : undefined;
+        } else {
+            copy.providerId = task.providerId;
+            copy.tier = task.tier;
+        }
         copy.cli = over?.cli ?? task.cli;
         copy.workDir = over?.workDir ?? task.workDir;
         // ‼️ M-26 — a retry runs where the original ran, unless the form said

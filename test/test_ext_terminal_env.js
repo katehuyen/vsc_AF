@@ -224,7 +224,11 @@ if (process.platform === 'win32') {
     // An interactive task: the target says WHERE a person wants to watch it, and
     // has never been a statement about what it should run on.
     const at = tasksTs.indexOf('private openInteractive(');
-    const body = at < 0 ? '' : tasksTs.slice(at, at + 2600);
+    // Widened, not loosened (X-106 added the task's own route to the overlay and
+    // said why): the window has to reach past `createTerminal` or the second half
+    // of the guarantee is not read at all. Measured — the call sits ~2 300
+    // characters in, and its own body needs another 600.
+    const body = at < 0 ? '' : tasksTs.slice(at, at + 3400);
     ok('the task builds its overlay ABOVE the target branch',
         /const env = terminalEnvOverlay\(/.test(body)
         && body.indexOf('terminalEnvOverlay') < body.indexOf("target === 'external'"));

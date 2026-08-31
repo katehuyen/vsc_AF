@@ -257,7 +257,16 @@ export function optStr(args: Record<string, unknown>, key: string): string {
  */
 export function bridgeRunDimensions(
     args: Record<string, unknown>,
-    opts: { mode?: string } = {}
+    /**
+     * ‼️ X-106 — `route` IS A QUESTION, NOT A RULE. Whether a route exists and
+     * whether this engine can be pointed at it are the adapter's and the user's
+     * profiles' answers; this file has neither and must not grow a copy of
+     * either. It returns the refusal sentence, or nothing.
+     */
+    opts: {
+        mode?: string;
+        route?: (engine: string, providerId: string, tier: string) => string | undefined;
+    } = {}
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     // ‼️ THE ENGINE IS CHECKED WHERE IT IS WRITTEN DOWN, NOT WHERE IT RUNS
@@ -424,8 +433,66 @@ export function bridgeRunDimensions(
             out.rounds = rounds;
         }
     }
+    /**
+     * ‼️ X-106 — AND WHICH ROUTE IT IS SERVED BY, REFUSED WHERE IT IS WRITTEN
+     * DOWN RATHER THAN WHERE IT RUNS.
+     *
+     * This is the same lesson the engine name and the effort already taught in
+     * this function: a schedule, a trigger, a template and a workflow step are
+     * runs that have not happened yet, and none of them passes through the
+     * task door's own checks. A route stored with a typo is refused at 3 a.m.
+     * with nobody watching — the failure furthest in time from the mistake.
+     *
+     * ‼️ WHETHER THE ROUTE EXISTS IS NOT A QUESTION THIS FILE CAN ANSWER, and
+     * pretending otherwise is exactly the defect X-98 measured. It needs the
+     * engine's adapter and the user's own profiles, so it arrives as `opts.route`
+     * — the same doctrine `cli` follows (checked against the user's profiles,
+     * never against a constant here). Absent, the shape is still checked.
+     */
+    {
+        const providerId = optStr(args, 'providerId') ?? '';
+        const tier = optStr(args, 'tier') ?? '';
+        if (providerId) {
+            needRoutableEngine(out.cli, providerId);
+            const refused = opts.route?.(String(out.engine ?? 'claude'), providerId, tier);
+            need(!refused, refused ?? '');
+            out.providerId = providerId;
+            if (tier) { out.tier = tier; }
+        } else {
+            // ‼️ A TIER WITH NO ROUTE IS REFUSED, NOT DROPPED. `opus` is a
+            // different model on two routes, so the word answers nothing until
+            // one is named — and a caller who set a tier and silently got none
+            // cannot tell that from having got it.
+            need(!tier, 'a tier belongs to a route: name the providerId it is a tier OF, or leave both out.');
+        }
+    }
     needOneExecutor(out.engine, out.cli);
     return out;
+}
+
+/**
+ * ‼️ X-106 — A ROUTE NEEDS AN ENGINE TO POINT, AND A CLI PROFILE IS NOT ONE.
+ *
+ * A CLI profile is a command TEMPLATE for a binary this extension knows nothing
+ * about: it is spawned, its output is archived, and that is the whole
+ * relationship — there is no endpoint to inject, no environment this extension
+ * owns, and no way to tell afterwards what served it. A route beside one is two
+ * statements about a question only one of them can answer, which is the same
+ * contradiction `needOneExecutor` refuses between `engine` and `cli` and is
+ * refused the same way: named, not silently ranked.
+ *
+ * Exported for the merge-time callers, exactly as `needOneExecutor` is: half the
+ * ops lay an override over a stored run, so the contradiction is usually made by
+ * ONE argument ("retry it on the Kimi route" against a task still carrying a CLI
+ * profile) and only the merged run mentions both.
+ */
+export function needRoutableEngine(cli: unknown, providerId: unknown): void {
+    const hasCli = typeof cli === 'string' && !!cli.trim();
+    const hasRoute = typeof providerId === 'string' && !!providerId.trim();
+    need(!(hasCli && hasRoute),
+        'a route and a CLI profile are two answers to one question. A CLI profile is a command '
+        + 'template for a binary Agent Farm does not know — there is no endpoint to point at it, '
+        + 'and nothing afterwards could say what served the run. State one or the other.');
 }
 
 /**
@@ -484,6 +551,27 @@ export const INTERACTIVE_NOTE =
     + 'Both are refused, not ignored, on a headless run — including one that is headless '
     + 'because no mode was stated at all.';
 
+/**
+ * ‼️ X-106 — WHICH ROUTE THE RUN IS SERVED BY, said once and spliced into every
+ * door that can write one down. A note typed out per op is how `console.start`
+ * came to describe a route and `schedules.add` came to describe none, while both
+ * accepted the argument.
+ */
+export const ROUTE_NOTE =
+    ' ‼️ AND WHICH ROUTE SERVES IT — providerId? (the endpoint the process really '
+    + 'talks to, which the engine itself never says. On Claude it is one of the route '
+    + 'profiles Agent Farm owns and injects; on OpenCode it is the engine\'s own provider '
+    + 'id. engines.providers lists what is set up), tier? (Claude routes only — which model '
+    + 'that route serves for this name; "opus" is a different model on two routes, which is '
+    + 'why it is not folded into model). ‼️ THIS IS THE DIMENSION AN AUTOMATION MOST NEEDS '
+    + 'AND COULD NOT STATE: a run that names none takes whichever standing route the agent '
+    + 'happens to have when it fires, at 3 a.m., with nobody there to notice. Omitted, '
+    + 'nothing is injected and nothing is cleared — exactly what every run written before '
+    + 'this did. A route this engine cannot be pointed at, a tier the route does not map, '
+    + 'and a route beside a `cli` profile are all REFUSED HERE rather than dropped: an '
+    + 'automation is written once and read months later, so a value silently discarded at '
+    + 'write time is a decision that never happens and never says so.';
+
 export const ROUNDS_NOTE =
     ' ‼️ AND HOW MANY TURNS IT GOES — rounds? ([{prompt, delayMin?}, …] or plain '
     + 'strings). A ROUND is one more prompt sent into the SAME conversation, once the round '
@@ -528,6 +616,7 @@ export const DIMS_OUT_NOTE =
 export function bridgeDimsOut(
     o: {
         engine?: string; model?: string; effort?: string; permissionMode?: string;
+        providerId?: string; tier?: string;
         cli?: string; workDir?: string; priority?: number; projectId?: string;
         interactiveTarget?: string; interactiveClose?: string;
         finishSound?: string;
@@ -564,6 +653,15 @@ export function bridgeDimsOut(
         model: o.model ?? null,
         effort: o.effort ?? null,
         permissionMode: o.permissionMode ?? null,
+        // X-106 - WHICH ROUTE THE RUN IS SERVED BY, on the way back out too.
+        // The panel-bridge equivalence rule this serializer exists for: a route
+        // set on a schedule and read back without one, then written away again,
+        // is a decision the user made silently erased by a round trip. null is
+        // the real answer "no route chosen" - nothing injected, nothing cleared.
+        providerId: o.providerId ?? null,
+        // Claude routes only; null on every other engine and on every launch
+        // that named no route, because a tier has no referent without one.
+        tier: o.tier ?? null,
         cli: o.cli ?? null,
         // ‼️ M-26 — the DEFAULTS are named rather than left null, for the same
         // reason the engine is: "where does this open, and does it stay?" has an
