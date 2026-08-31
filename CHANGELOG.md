@@ -2,6 +2,66 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.357.0 - S-50 and U-127: the Console the door opened, and one Sessions column (2026-08-31)
+
+Two long-standing wrongs, each fixed at the one place it was made.
+
+### S-50 — the play button works even when the Console was closed
+
+Every door that starts a session hands the Console the agent, the engine and the
+whole setup: the ▶ on an agent row, the launcher's **Start Session**, "Talk to
+agent", the project page. It worked — as long as the Console was **already
+open**. Opened cold, none of it arrived: not the agent, not the engine, not the
+model, effort or permission mode. The composer came up on the fleet defaults as
+though nobody had chosen anything, on both doors at once, which is exactly why
+it read as "the feature does not work" rather than as a timing bug.
+
+The cause was one line of ordering. The page's shell was built inside the
+panel's constructor, which runs **before** `show()` applies the caller's
+options — so the first payload the page ever read described a panel nobody had
+told anything yet. The refresh that followed pushed the real answers into a
+webview whose script had not run, and **a push into an unloaded page is not
+late, it is lost**. The preselected agent is deliberately one-shot (it seeds the
+picker once and is let go), so that dropped payload did not merely arrive late:
+it took the agent with it, and nothing could ever say it again. With no session
+running, no host event fires either — so "later" never came at all.
+
+Loading the page is now a step of its own, taken **after** the door has said what
+it came to say. What was chosen is in the page's first payload. A refresh aimed
+at a page that has not loaded yet returns instead of spending the one-shot on
+nobody.
+
+An already-open Console is untouched: it is revealed and pushed to, which is the
+channel a loaded page reads — and that path is measured in the same test file, so
+a fix to one can never be paid for out of the other. A plain **Open Console**
+still opens a plain composer with nobody preselected.
+
+### U-127 — one Sessions column, one vocabulary
+
+In the Runs table, a Claude row said `bc384059`. The Antigravity row under it
+said the word **transcript**.
+
+Not the engine's fault — a question of where each CLI puts the id. Claude names
+the *file* after the session (`<id>.jsonl`), so reading the file's name has
+always been right for it. Antigravity names the *folder* and gives every
+conversation a file of the same name
+(`…/brain/<id>/.system_generated/logs/transcript.jsonl`), so the column printed
+a constant. A column of identifiers with a constant in it is a column you cannot
+match against a Console card, a swim lane or a log line — which is the whole
+reason it is there.
+
+The file is asked first (Claude, unchanged to the character), then the folders
+above it, nearest first. The folder test is a full id on purpose: a looser one
+would read Claude's own project folder as a session. Anything unrecognised comes
+back exactly as it did before.
+
+Measured against this machine's own run history, both engines:
+
+| engine | was | now |
+|---|---|---|
+| Antigravity | `transcript` | `18b148ce` |
+| Claude | `bc384059` | `bc384059` |
+
 ## 3.356.0 - X-104 (1/n): the OS terminal window runs on the route you picked (2026-08-31)
 
 Of every surface that starts a CLI, the external terminal was the only one that
