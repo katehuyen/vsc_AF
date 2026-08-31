@@ -588,11 +588,39 @@ function buildPlan(deps: TasksDeps, now: number): PlanRow[] {
     return rows;
 }
 
-/** A transcript is named `<sessionId>.jsonl`; '' when nothing was matched. */
-function sessionIdOf(file?: string): string {
+/**
+ * Which session a matched transcript belongs to, read off its path. '' when
+ * nothing was matched.
+ *
+ * ‼️ U-127 — A TRANSCRIPT IS NOT ALWAYS NAMED AFTER ITS SESSION. Claude writes
+ * `<sessionId>.jsonl`, so on Claude the basename IS the id and this column has
+ * always been right. Antigravity names the FOLDER instead — every conversation
+ * of its is `…/brain/<sessionId>/.system_generated/logs/transcript.jsonl` — so
+ * the basename put the literal word **transcript** in the Sessions column, on a
+ * link that did open the right conversation. Two rows of one table then
+ * answered "which session?" in two different vocabularies, and the row that
+ * answered with a word could not be matched against a Console card, a swim lane
+ * or a log line — which is the entire reason the column exists.
+ *
+ * So the file is asked first (Claude, unchanged to the character), then the
+ * folders above it, nearest first. The folder test is a FULL uuid on purpose:
+ * the loose "looks hexish" shape that is right for a basename would read
+ * Claude's own project slug as an id one directory up.
+ *
+ * Anything this cannot read is returned exactly as before — an unrecognised
+ * basename is still the best string the row has, and the caller keeps the run's
+ * own declared id behind it.
+ */
+const UUID_DIR = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function sessionIdOf(file?: string): string {
     if (!file) { return ''; }
     const base = path.basename(file).replace(/\.jsonl$/i, '');
-    return /^[0-9a-f-]{8,}$/i.test(base) ? base : base;
+    if (/^[0-9a-f-]{8,}$/i.test(base)) { return base; }
+    const parts = file.replace(/\\/g, '/').split('/');
+    for (let i = parts.length - 2; i >= 0; i--) {
+        if (UUID_DIR.test(parts[i])) { return parts[i]; }
+    }
+    return base;
 }
 
 /**
