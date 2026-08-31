@@ -20028,6 +20028,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         learnSlash: (engine: string, agentId: string | undefined, r: SlashReport) =>
             learnSlash(engine, agentId, r),
         liveOwners: () => readCliSessions(claudeDir()),
+        /**
+         * ‼️ X-105 — WHAT A CARD IS ACTUALLY TALKING TO, in the engine's own
+         * vocabulary. `providerFormFor` is the SAME reader the launcher's route
+         * row is built from, so the word the card uses and the word the picker
+         * used cannot drift apart: a description invented here would be a fifth
+         * place that can disagree with the four that already exist.
+         *
+         * Asked only when the card actually named a route, which is why the
+         * catalog refresh inside the form builder is not on the render path for
+         * the ordinary card. The endpoint comes off the stored profile and is
+         * public; the credential is not read here and has nowhere to go.
+         */
+        routeOf: (engine: string, providerId?: string, tier?: string) => {
+            const id = (providerId ?? '').trim();
+            if (!id) { return undefined; }
+            const form = providerFormFor(engineOf(engine).id, { providerId: id, tier }, 'acp');
+            if (!form.applies) { return undefined; }
+            const profile = providerProfiles().find(p => p.id === id);
+            return {
+                id,
+                // The route's own name; the raw id is the honest fallback for a
+                // profile that has been deleted since the card was started —
+                // a card must not stop saying what it runs on because the
+                // settings file moved on without it.
+                label: form.providers.find(c => c.id === id)?.label || profile?.label || id,
+                noun: form.noun,
+                ...((tier ?? '').trim() ? { tier } : {}),
+                ...(profile?.baseUrl ? { baseUrl: profile.baseUrl } : {}),
+                ...(profile?.authKind ? { authKind: profile.authKind } : {}),
+                scopeNote: form.scopeNote
+            };
+        },
         history: consoleHistory,
         olderHistory: consoleOlderHistory,
         lastWindow: () => lastWindow,

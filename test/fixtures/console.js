@@ -108,7 +108,9 @@ const session = (o) => Object.assign({
     turnStartedAt: 0, turnTokens: 0, turnWTokens: 0, turnApiCalls: 0, turnSteps: 0,
     turnThinking: 0, turnCost: 0, turnModel: '', turnEffort: '', lastTurn: null,
     pendingPermission: null, pendingAsk: null, exitReason: '',
-    projectId: '', projectName: '', projectIcon: '', messages: []
+    projectId: '', projectName: '', projectIcon: '', messages: [],
+    // X-105 - most cards have no route, and that is the ordinary answer.
+    route: null
 }, o);
 
 const data = () => ({
@@ -149,6 +151,19 @@ const data = () => ({
             lastTurn: {
                 outcome: 'done', ms: 41200, cost: 0.084, tokens: 51200, wTokens: 42100,
                 apiCalls: 6, steps: 19, thinking: 4, model: 'claude-opus-5-20260514', effort: 'high'
+            }
+        }),
+        // X-105 - THE ROUTED CARD. A still page with no route on it would
+        // photograph none of this: the mark is drawn only when there is one,
+        // so the scene has to contain the case it exists for.
+        session({
+            id: 'cs4', agentName: 'developer', sessionId: '019fe860-11aa-4c02',
+            title: 'Kimi rotasinda tur', status: 'idle', turns: 1, tokens: 12800,
+            lastTs: NOW - 300000,
+            route: {
+                id: 'kimi', label: 'Kimi', noun: 'Route', tier: 'sonnet',
+                baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'apiKey',
+                scopeNote: 'fixed for the session - a different route is a different program, so a resume across one forks'
             }
         }),
         session({

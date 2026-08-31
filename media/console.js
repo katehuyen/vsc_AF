@@ -1838,7 +1838,7 @@
                 <div class="h">
                     ${cardTip(`<span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>`,
                         twho.head, twho.body, 'nw')}
-                    ${engineBadge(s)}
+                    ${engineBadge(s)}${routeBadge(s)}
                     ${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}
                     ${/* ‼️ U-94 — the card's own 🔖 keeps the WHOLE conversation.
                           The rows below carry one each, but only for the card
@@ -2765,6 +2765,56 @@
     }
 
     /**
+     * ‼️ X-105 — WHAT IS ANSWERING, BESIDE WHICH PROGRAM IS ASKING.
+     *
+     * The engine badge says which CLI is running. It has never said what that
+     * CLI is talking to — and two cards on the same engine can be served by two
+     * different companies' models at the same moment. The card has carried the
+     * pick since X-103 and stayed silent about it, which made the one fact this
+     * whole family of items exists to establish the one fact the reader could
+     * not check.
+     *
+     * ONE SUBJECT: it is its own mark with its own panel, never a line inside
+     * the engine's. The engine is the program; the route is the endpoint.
+     *
+     * ‼️ AND IT DOES NOT WEAR AN ENGINE COLOUR. Those five hues mean "which
+     * engine" on every surface in this extension, so a sixth pill in one of them
+     * would read as a sixth engine.
+     *
+     * Nothing is drawn when there is no route, which is most cards: four of the
+     * five engines have no provider axis at all and most Claude launches pick
+     * none. A mark that said "none" on every row would cost every reader a pill
+     * to learn nothing.
+     *
+     * ‼️ Page-local ON PURPOSE, for now: it is drawn on one surface, and a
+     * shared component is added when the SECOND one needs it (X-108 puts this
+     * identity on the session index) — at which point it moves to
+     * `media/afRoute.js` and both read the same file, the way the engine badge
+     * already does (U-26).
+     */
+    function routeBadge(s) {
+        const r = s && s.route;
+        if (!r || !r.label) { return ''; }
+        const noun = String(r.noun || 'Route');
+        return cardTip(
+            `<span class="af-route">${C.esc(r.label)}</span>`,
+            // SHORTHAND: the pill is the short form, and the panel opens with
+            // the long one so a reader never has to already know what it meant.
+            `${r.label} — the ${noun.toLowerCase()} this session is served by`,
+            window.AFTip.lines([
+                noun + ': ' + r.label,
+                r.tier ? 'Tier: ' + r.tier : '',
+                // The one line that makes the mark CHECKABLE rather than
+                // decorative. Public — it is an ordinary setting; the credential
+                // is not here and has no field to arrive in.
+                r.baseUrl ? 'Endpoint: ' + r.baseUrl : '',
+                r.authKind ? 'Auth: ' + r.authKind : '',
+                r.scopeNote ? '\n' + r.scopeNote : ''
+            ]),
+            'rtw');
+    }
+
+    /**
      * ‼️ S-20 — THE MODEL BOX BELONGS TO THE ENGINE, NOT TO THE PAGE.
      *
      * One list served every engine, so choosing Codex still offered Claude's
@@ -3086,7 +3136,7 @@
             ? `<span class="fixed" title="The folder this session opened in — decided when the process started, and the one thing that cannot change">
                     ${C.esc(s.agentName)}
                 </span>
-                ${engineBadge(s)}${engineHintHtml(s.engine)}
+                ${engineBadge(s)}${routeBadge(s)}${engineHintHtml(s.engine)}
                 <label class="permlbl" title="${C.esc(boxTip(modelsFor(s.engine), s.model, modelTip + ' · ' + modelNote(s.engine)))}">model
                     <select id="c-model-live">${opts(modelsFor(s.engine), s.model)}</select>
                 </label>

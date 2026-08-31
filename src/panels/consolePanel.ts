@@ -77,6 +77,26 @@ function sweepSpills(dir: string): void {
  * `claude` process this window owns.
  */
 
+/**
+ * A route as a card can say it. Everything here is public: the endpoint lives
+ * in an ordinary setting, and the credential has no field to travel in.
+ */
+export interface ConsoleRoute {
+    /** the profile (Claude) or provider (OpenCode) id the card was started on */
+    id: string;
+    /** its own name, which is what the reader sees */
+    label: string;
+    /** the word THIS engine uses — `Route` on Claude, `Provider` on OpenCode */
+    noun: string;
+    /** Claude only: which tier of that route, when the launch named one */
+    tier?: string;
+    /** where it points. Public, and the one line that makes the mark checkable */
+    baseUrl?: string;
+    authKind?: string;
+    /** how long the pick lasts, in the adapter's own words */
+    scopeNote: string;
+}
+
 export interface ConsoleDeps {
     extensionUri: vscode.Uri;
     host: ConsoleHost;
@@ -120,6 +140,28 @@ export interface ConsoleDeps {
      */
     engines(): EngineOption[];
     launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
+    /**
+     * ‼️ X-105 — WHICH ROUTE A CARD IS ON, DESCRIBED BY THE ENGINE'S OWN
+     * ADAPTER.
+     *
+     * The card has carried `providerId` since X-103 and said nothing about it,
+     * which made the one fact this whole family of items exists to establish —
+     * what a conversation is actually served by — the one fact the reader could
+     * not see. It is asked for per engine because the two engines with a
+     * provider axis do not mean the same thing by it: on Claude it is a ROUTE
+     * that Agent Farm injects and that is fixed for the session; on OpenCode it
+     * is the engine's OWN provider, which the engine may legitimately change at
+     * a turn boundary. The noun and the scope note are the adapter's own words,
+     * never this panel's — a description invented here would be a fifth place
+     * that can disagree with the four that already exist.
+     *
+     * `undefined` is the ordinary answer: four of the five engines have no
+     * provider axis at all, and most Claude launches pick no route.
+     *
+     * ‼️ NOTHING SECRET. The endpoint is public (it is in the settings file);
+     * the credential is not, is not read here, and has no field to arrive in.
+     */
+    routeOf?(engine: string, providerId?: string, tier?: string): ConsoleRoute | undefined;
     /**
      * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, and where.
      *
@@ -643,6 +685,18 @@ export class ConsolePanel {
                 // means the strip shows tokens and says why there is no dollar —
                 // never a zero, which reads as "that turn was free".
                 reportsCost: engineOf(s.engine).reportsCost,
+                // ‼️ X-105 — …AND WHAT IS ANSWERING ON THE OTHER SIDE OF IT.
+                // The engine is the program; the route is the endpoint that
+                // program talks to, and two cards on the same engine can be two
+                // different companies' models. The card has carried the pick
+                // since X-103 and said nothing about it, so the one fact this
+                // family of items exists to establish was the one fact the
+                // reader could not check. Resolved through the engine's own
+                // adapter (see ConsoleDeps.routeOf); null on the four engines
+                // with no provider axis and on every launch that picked none,
+                // which is most of them — a mark for "nothing" would be noise
+                // on every row.
+                route: this.deps.routeOf?.(s.engine ?? 'claude', s.providerId, s.tier) ?? null,
                 // the session's own title — the same one the side panel and the
                 // viewer show, so a rename anywhere is a rename everywhere
                 title: this.titleFor(s),
