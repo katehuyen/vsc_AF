@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.361.0 - S-51: the engine moves, and the boxes move with it (2026-08-31)
+
+In the user's words: *"change the engine and the models and the efforts used to
+follow it; now they do not. You go to open the model box yourself, and only once
+you press it does it become what it should have been."*
+
+That last sentence was the whole diagnosis. The model list, the effort list and
+the hint that says what an engine changes about the composer are **all** drawn
+off the composer's current engine, so none of them moves without a shell rebuild
+— and the engine picker had no rebuild of its own. Its only one was the host's
+echo of the choice, which arrives at the one moment the reader's hand is still on
+the picker they just used, because a native `<select>` keeps focus after a
+choice. M-33 read that as hands-on and put the rebuild on the slate; the debt was
+then paid by the `focusout` of the user reaching for the model box — which is
+precisely why the list corrected itself the instant they went to argue with it.
+
+**M-33 was not the thing to loosen.** Its rule already says *only a rebuild
+nobody asked for waits*, and this one was asked for by the very hand it was
+waiting on. So the fix is the answer the model picker beside it has always used:
+the engine picker repaints on the spot, and hands focus back to itself afterwards
+so an arrow-key walk through the engine list still reaches its second step.
+
+Measured on the page, with the hand held on the picker the way the browser holds
+it — and the deferral it does **not** touch is measured in the same file: a
+rebuild nobody asked for still waits while a box is held, and is still paid the
+moment the hands come free.
+
 ## 3.360.0 - X-105 (3/n): one reader for the route, and the bridge says it too (2026-08-31)
 
 `console.sessions` described every dimension of a hosted card except the one this

@@ -3457,6 +3457,38 @@
                 mem ? { model: st.model, effort: st.effort } : null);
             save();
             vscode.postMessage({ type: 'setEngine', id: next });
+            /**
+             * ‼️ S-51 — AND THE BOXES ANSWER NOW, NOT WHEN THE HAND LETS GO.
+             *
+             * The model list, the effort list and the hint under them are all
+             * drawn off `engineNow()`, so none of them moves without a shell
+             * rebuild — and the only rebuild this handler had was the HOST's
+             * echo of the message above. That echo arrives at the one moment
+             * the reader's hand is still on the picker they just used, because
+             * a native `<select>` keeps focus after a choice, so M-33 read the
+             * page as hands-on and put the rebuild on the slate. The debt was
+             * then paid by the `focusout` of the user reaching for the model
+             * box — which is precisely why the list corrected itself the
+             * instant they went to argue with it.
+             *
+             * ‼️ M-33 IS NOT THE THING TO LOOSEN: its rule is already "only a
+             * rebuild NOBODY ASKED FOR waits", and this one was asked for by
+             * the hand it was waiting on. So the answer is the same one the
+             * model picker beside it has always used — repaint on the spot.
+             *
+             * The engine is echoed into DATA first because the redraw asks
+             * `engineNow()` and the host has not spoken yet. Nothing is risked:
+             * the next push replaces DATA whole, the host's answer for this box
+             * is the value posted one line above, and the refusal that matters
+             * lives at start, not here.
+             */
+            DATA.engine = next;
+            paint();
+            // …and the rebuild replaced the very control the hand is on, so it
+            // is handed back. Without this an arrow-key walk through the engine
+            // list would lose focus on its first step and never reach a second.
+            const box = document.getElementById('c-engine');
+            if (box && box.focus) { box.focus(); }
         });
         // giving the pin back: the picker returns, and st keeps whatever agent
         // was pinned as its starting selection

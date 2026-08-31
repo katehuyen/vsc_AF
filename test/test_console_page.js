@@ -118,6 +118,12 @@ const sandbox = {
         addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
     },
     document: {
+        // ‼️ S-51 — WHERE THE HAND IS. M-33 asks `AFRepaint.inAField(document)`
+        // before it rebuilds anything, so a shim without this reads as "nobody
+        // is touching the page" and every deferral test would pass on a page
+        // that never defers. A test sets it to the element it is pretending to
+        // hold, and puts it back to null afterwards.
+        activeElement: null,
         getElementById: id => {
             // The page builds its shell once and then writes into named slots,
             // so an element exists as soon as the shell — or any slot already
@@ -661,6 +667,101 @@ const html = allHtml;
         && state.afConsole.permissionMode === 'default');
     ok('…and the chip is left to the repaint, never to a message',
         !posted.some(m => m.type === 'setSuperpowers'));
+}
+
+// ---------- ‼️ S-51 — THE ENGINE MOVES, AND THE BOXES MOVE WITH IT ----------
+//
+// In the user's words: "change the engine and the models and the efforts used
+// to follow it; now they do not. You go to open the model box yourself, and
+// only once you press it does it become what it should have been."
+//
+// That last sentence is the whole diagnosis. The model list, the effort list
+// and the engine's own hint are ALL drawn off `engineNow()`, which only moves
+// on a shell rebuild — and the rebuild was arriving as the HOST's echo of
+// `setEngine`, at the one moment the reader's hand is still on the picker they
+// just used (a native `<select>` keeps focus after a choice). M-33 read that as
+// hands-on and put the rebuild on the slate; the debt was then paid by the
+// `focusout` of the user reaching for the model box, which is exactly why the
+// list corrected itself the instant they went to argue with it.
+//
+// A picker the reader pressed is the reader's own act — the same rule the model
+// picker beside it already follows — so it repaints on the spot.
+{
+    const composer = () => app()._html;
+    const engines = [
+        { id: 'claude', label: 'Claude', ready: true },
+        { id: 'codex', label: 'Codex', ready: true }
+    ];
+    const engineModels = {
+        claude: {
+            models: [{ id: '', label: 'Default' }, { id: 'sonnet', label: 'Sonnet' }],
+            efforts: { '': [{ id: '', label: 'Default' }, { id: 'high', label: 'high' }] },
+            defaultEffort: {}
+        },
+        codex: {
+            models: [{ id: '', label: 'Default' }, { id: 'gpt-5.6-terra', label: 'GPT 5.6 Terra' }],
+            efforts: { '': [{ id: '', label: 'Default' }, { id: 'xhigh', label: 'xhigh' }] },
+            defaultEffort: {}
+        }
+    };
+    const onEngine = id => Object.assign(data(CONVO.slice()), {
+        selected: '', presetAgent: '', composerSeed: 10, engine: id, engines, engineModels,
+        defaults: { engine: 'claude', model: 'sonnet', effort: 'high', permissionMode: 'default' }
+    });
+
+    push(onEngine('claude'));
+    ok('the composer opens on Claude, offering Claude\'s vocabulary',
+        /value="claude" selected/.test(composer())
+        && composer().includes('Sonnet') && !composer().includes('GPT 5.6 Terra')
+        && composer().includes('>high<') && !composer().includes('>xhigh<'));
+
+    // ‼️ THE HAND IS STILL ON THE PICKER. This is not a contrivance: it is what
+    // a native select does after a choice, and it is the only condition under
+    // which the bug appears at all.
+    els['c-engine'].tagName = 'SELECT';
+    sandbox.document.activeElement = els['c-engine'];
+    posted.length = 0;
+    els['c-engine'].value = 'codex';
+    els['c-engine'].listeners.change({ target: els['c-engine'] });
+
+    ok('the choice reaches the host, which owns the refusal',
+        posted.some(m => m.type === 'setEngine' && m.id === 'codex'));
+    ok('‼️ …and the model box is the new engine\'s AT ONCE, without waiting for '
+        + 'a round trip or for the hand to leave the control',
+        composer().includes('GPT 5.6 Terra') && !composer().includes('Sonnet'));
+    ok('‼️ …and so is the effort box, which is looked up by engine and model both',
+        composer().includes('>xhigh<') && !composer().includes('>high<'));
+    ok('‼️ …and the hint that says what this engine changes about the composer',
+        composer().includes('Codex · ready'));
+    ok('…with the picker itself showing the engine that was chosen',
+        /value="codex" selected/.test(composer()));
+    ok('…and a model belonging to the engine just left is not carried over',
+        state.afConsole.model === '' && state.afConsole.effort === '');
+
+    // The host's echo agrees with what is already on screen, so it costs
+    // nothing: same engine, same shell key, no second rebuild.
+    const writes = app()._writes;
+    push(onEngine('codex'));
+    ok('…and the host\'s echo of the same choice does not rebuild it a second time',
+        app()._writes === writes && composer().includes('GPT 5.6 Terra'));
+
+    // ‼️ AND M-33 IS NOT WEAKENED. A shell change the reader did NOT ask for,
+    // arriving from the host while a field is held, still waits — and is still
+    // paid when the hands come free. Breaking this is how the caret gets thrown
+    // out of the box again.
+    els['c-text'].tagName = 'TEXTAREA';
+    sandbox.document.activeElement = els['c-text'];
+    const heldAt = app()._writes;
+    const pinned = Object.assign(onEngine('codex'), { pinnedAgent: 'dev' });
+    push(pinned);
+    ok('‼️ a rebuild nobody asked for still waits while a box is held',
+        app()._writes === heldAt);
+    sandbox.document.activeElement = null;
+    fireDoc('focusout');
+    ok('…and is paid the moment the hands come free, never dropped',
+        app()._writes > heldAt);
+
+    sandbox.document.activeElement = null;
 }
 
 // ---------- whose turn is it ----------
