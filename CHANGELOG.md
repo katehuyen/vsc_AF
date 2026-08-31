@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.359.0 - X-105 (2/n): the card says what it is served by (2026-08-31)
+
+The engine badge has always said which **program** is running. It has never said
+what that program is *talking to* — and two cards on the same engine can be
+served by two different companies' models at the same moment. The Console has
+carried the pick since 3.35x and said it out loud nowhere, which made the one
+fact this whole line of work exists to establish the one fact you could not
+check.
+
+**The route is now its own mark, beside the engine badge.** Not a line inside
+it: the engine is the program, the route is the endpoint, and a badge that
+answers two questions is a badge that will eventually answer one of them wrong.
+
+It appears only when there **is** a route. Four of the five engines have no
+provider axis at all and most Claude launches pick none — a pill reading "none"
+on every row would cost every reader something to learn nothing.
+
+The pill carries the route's own short name; hovering it opens with the long
+form, then the **endpoint** — the line that makes the mark checkable instead of
+decorative — the tier, and the engine's own words for how long the pick lasts
+(fixed for the session on Claude; changeable at a turn boundary on OpenCode).
+Those words come from the same reader the launcher's route row is built from, so
+what the card says and what the picker said cannot drift apart.
+
+Nothing secret is anywhere near it: the endpoint is an ordinary setting, and the
+credential is not read and has no field to travel in — measured on the rendered
+page, not on the type.
+
+Deliberately not in an engine colour: those five hues mean "which engine" on
+every surface here, so a sixth pill wearing one would read as a sixth engine.
+
 ## 3.358.0 - X-105 (1/n): the Console card runs on the route the card says it is on (2026-08-31)
 
 **The same defect, a fourth time — this time on the surface the Console exists
