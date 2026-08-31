@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.360.0 - X-105 (3/n): one reader for the route, and the bridge says it too (2026-08-31)
+
+`console.sessions` described every dimension of a hosted card except the one this
+whole line of work exists to establish: **what is answering on the other side of
+the engine.** An agent could read the engine, the shape, the model, the effort,
+the permissions and the tokens — and still not know which company served the
+conversation.
+
+It says `route` now: the route's id and name, the engine's own noun for it, the
+tier, the endpoint, the auth kind, and the engine's own words for how long the
+pick lasts. `null` where there is none — and the op's description says what that
+means, because otherwise a missing route reads as a missing feature.
+
+**And it is the same reader the card draws from.** The resolution lives in one
+place that both the page and the op delegate to, and it asks the engine's own
+adapter — the same one the launcher's route row is built from — for the words it
+uses. If those were two readings, "what the card says is what the process runs
+on" could not be true by construction: it can only hold while there is one
+statement.
+
 ## 3.359.0 - X-105 (2/n): the card says what it is served by (2026-08-31)
 
 The engine badge has always said which **program** is running. It has never said
