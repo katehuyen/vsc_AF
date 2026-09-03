@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.370.0 - X-166: ticking a box and typing a sentence no longer costs you the boxes (2026-09-03)
+
+The user answered four questions, ticked all four, added a sentence — and the agent
+was handed the sentence alone. It read as an agent ignoring them. It was not.
+
+**MEASURED, over every AskUserQuestion in the transcript history (26 calls, eight
+months): when `response` is present the CLI renders `"The user responded: <text>"`
+and DROPS `answers` outright.** Eight of those calls lost picks that way. The picks
+were never lost from the RECORD — `toolUseResult.answers` has all four of them,
+sitting in the transcript that same evening — only from the model's view. That is the
+worst shape a bug can have: no error, no gap, an answer that looks complete.
+
+`answerAsk` was sending both, because the composer always sends both: the picks it
+has and whatever is in the free-text box. So `askInput` now folds the picks INTO the
+response text, which is the only channel that survives, and still sends `answers`
+alongside — it costs nothing, it is what the transcript records, and a CLI that one
+day honours both would merely repeat itself. The failure worth avoiding is the silent
+one.
+
+Untouched: picking with nothing typed, and typing with nothing picked. Only the
+combination changes, and only because the combination was the one that lost data.
+
+Selecting and then typing is not exotic. It is what somebody does when the list is
+nearly right — which is when their answer is worth the most.
+
 ## 3.369.0 - X-151: the doors are modules, and the matrix calls them (2026-08-31)
 
 `test/test_launch_parity.js` wrote this file's reason down before it existed:

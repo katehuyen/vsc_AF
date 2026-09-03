@@ -1878,6 +1878,44 @@ export function describeAnswer(ask: ConsoleAsk, d: AskDecision): string {
 }
 
 /**
+ * The tool input the answer rides back in.
+ *
+ * ‼ MEASURED, and it is the whole reason this is a function rather than a spread:
+ * when `response` is present the CLI renders ONLY "The user responded: <text>" and
+ * DROPS `answers` entirely. Eight calls across eight months of transcripts did exactly
+ * that — one of them threw away all four of the choices the user had just ticked, and
+ * the agent carried on having seen none of them (X-166). Selecting and then typing is
+ * not an exotic combination; it is what somebody does when the list is nearly right.
+ *
+ * So when the user did BOTH, the picks are folded into the response text, which is the
+ * only channel that survives. `answers` is still sent: it costs nothing, it is what the
+ * transcript's own `toolUseResult.answers` records, and a CLI that one day honours both
+ * would merely repeat itself — the failure to avoid is the silent one.
+ */
+const NL = String.fromCharCode(10);
+
+export function askInput(
+    input: Record<string, unknown>, d: { answers?: Record<string, string | string[]>; response?: string }
+): Record<string, unknown> {
+    const answers = d.answers && Object.keys(d.answers).length ? d.answers : undefined;
+    const free = d.response?.trim() ?? '';
+    const response = answers && free ? [foldAnswers(answers), '', free].join(NL) : free;
+    return {
+        ...input,
+        ...(answers ? { answers } : {}),
+        ...(response ? { response } : {})
+    };
+}
+
+/** The picks as text, in the same `question → answer` shape the transcript row uses. */
+export function foldAnswers(answers: Record<string, string | string[]>): string {
+    return Object.entries(answers)
+        .map(([q, a]) => `${q} → ${Array.isArray(a) ? a.join(', ') : a}`)
+        .filter(line => !line.endsWith('→ '))
+        .join(NL);
+}
+
+/**
  * Answer the pending ask: the state that comes back has nothing pending, and
  * `line` is what must go on the wire to un-park the turn.
  *
@@ -1895,12 +1933,7 @@ export function answerAsk(
         : {
             behavior: 'allow' as const,
             updatedInput: decision.kind === 'answer'
-                ? {
-                    ...ask.input,
-                    ...(decision.answers && Object.keys(decision.answers).length
-                        ? { answers: decision.answers } : {}),
-                    ...(decision.response?.trim() ? { response: decision.response.trim() } : {})
-                }
+                ? askInput(ask.input, decision)
                 : ask.input,
             // ‼️ Only ever on a plain allow. An AskUserQuestion is not a
             // permission at all (see ConsoleAsk), so "don't ask again" has

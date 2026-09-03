@@ -137,6 +137,26 @@ const ASK_PERMISSION = {
     ok('a multi-select answer stays an array',
         Array.isArray(JSON.parse(multi.line).response.response.updatedInput.answers['Tea or coffee?']));
 
+    // ‼️ X-166 — PICKING AND TYPING AT THE SAME TIME. Measured against the CLI: when
+    // `response` is present it renders "The user responded: <text>" and DROPS `answers`
+    // outright. One real call lost all four of the choices the user had just ticked and
+    // the agent never saw them. So the picks are folded into the text that survives.
+    const both = answerAsk(asked, {
+        kind: 'answer', answers: { 'Tea or coffee?': 'Coffee' }, response: 'but make it decaf'
+    }, NOW);
+    const bothIn = JSON.parse(both.line).response.response.updatedInput;
+    ok('picking AND typing keeps the pick, folded into the response the CLI honours',
+        bothIn.response.indexOf('Tea or coffee? → Coffee') === 0
+        && bothIn.response.endsWith('but make it decaf'));
+    ok('…and the structured answers still ride along for the record',
+        bothIn.answers['Tea or coffee?'] === 'Coffee');
+    ok('…while typing with nothing picked is left exactly as typed',
+        JSON.parse(answerAsk(asked, { kind: 'answer', response: 'just start' }, NOW).line)
+            .response.response.updatedInput.response === 'just start');
+    ok('…and picking with nothing typed sends no response at all',
+        JSON.parse(answerAsk(asked, { kind: 'answer', answers: { 'Tea or coffee?': 'Tea' } }, NOW).line)
+            .response.response.updatedInput.response === undefined);
+
     // a permission is allowed or denied — the input is handed back untouched
     const perm = reduce(fresh(), ASK_PERMISSION);
     const allowed = JSON.parse(answerAsk(perm, { kind: 'allow' }, NOW).line);
