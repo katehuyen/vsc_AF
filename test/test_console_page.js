@@ -2305,19 +2305,19 @@ const html = allHtml;
     const list = els['c-list'] ? els['c-list']._html : '';
     const rlist = els['c-rlist'] ? els['c-rlist']._html : '';
 
-    ok('a live card wears its colour', /class="cdotc on" data-color="407c78cb-aaaa"/.test(list)
+    ok('a live card wears its colour', /class="cdotc on" data-cdot="live|407c78cb-aaaa"/.test(list)
         && /background:#e05252/.test(list));
     ok('‼️ …and so does the same session on the "where you left off" row',
-        /data-color="9c67e970-aaaa"[^>]*style="background:#5fb85f/.test(list));
+        /data-cdot="back|9c67e970-aaaa"[^>]*style="background:#5fb85f/.test(list));
     ok('‼️ …and on a resumable row, which is the third card kind in this panel',
-        /data-color="bb11cc22-dddd"[^>]*style="background:#3d8bfd/.test(rlist));
+        /data-cdot="resume|bb11cc22-dddd"[^>]*style="background:#3d8bfd/.test(rlist));
 
     // The palette is closed until it is asked for — a colour picker standing
     // open on every card is a column of pickers, not a list of sessions.
     ok('nothing is open to begin with', !/class="cpal"/.test(list));
     posted.length = 0;
-    const dot = sandbox.document.querySelectorAll('[data-color]')
-        .find(e => e.dataset.color === '407c78cb-aaaa');
+    const dot = sandbox.document.querySelectorAll('[data-cdot]')
+        .find(e => e.dataset.cdot === 'live|407c78cb-aaaa');
     dot._fn({ stopPropagation() { } });
     const open = els['c-list']._html;
     ok('pressing the dot opens the palette', /class="cpal"/.test(open));
@@ -2328,8 +2328,8 @@ const html = allHtml;
     // the picker stayed open over the next card while the reader worked on.
     fireDoc('click', {});
     ok('‼️ a click anywhere else shuts the palette', !/class="cpal"/.test(els['c-list']._html));
-    sandbox.document.querySelectorAll('[data-color]')
-        .find(e => e.dataset.color === '407c78cb-aaaa')._fn({ stopPropagation() { } });
+    sandbox.document.querySelectorAll('[data-cdot]')
+        .find(e => e.dataset.cdot === 'live|407c78cb-aaaa')._fn({ stopPropagation() { } });
     ok('…it reopens on the dot', /class="cpal"/.test(els['c-list']._html));
     fireDoc('keydown', { key: 'Escape' });
     ok('…and Escape shuts it too', !/class="cpal"/.test(els['c-list']._html));
@@ -2337,8 +2337,8 @@ const html = allHtml;
     fireDoc('click', {});
     ok('‼️ …while a click with nothing open repaints nothing',
         els['c-list']._writes === writesBefore);
-    sandbox.document.querySelectorAll('[data-color]')
-        .find(e => e.dataset.color === '407c78cb-aaaa')._fn({ stopPropagation() { } });
+    sandbox.document.querySelectorAll('[data-cdot]')
+        .find(e => e.dataset.cdot === 'live|407c78cb-aaaa')._fn({ stopPropagation() { } });
 
     // K-35 — the dot says what it is by BEING it. The hover it used to open
     // repeated the same three sentences on every card in the list and spilled
@@ -2362,8 +2362,8 @@ const html = allHtml;
     // Clearing goes through the same door with an empty string — the store is
     // what decides that "not a hex" means "no colour".
     posted.length = 0;
-    sandbox.document.querySelectorAll('[data-color]')
-        .find(e => e.dataset.color === '407c78cb-aaaa')._fn({ stopPropagation() { } });
+    sandbox.document.querySelectorAll('[data-cdot]')
+        .find(e => e.dataset.cdot === 'live|407c78cb-aaaa')._fn({ stopPropagation() { } });
     sandbox.document.querySelectorAll('[data-swatch]')
         .find(e => e.dataset.swatch === '407c78cb-aaaa|')._fn({ stopPropagation() { } });
     ok('“none” clears it through the same message', posted.some(m =>
@@ -2372,8 +2372,8 @@ const html = allHtml;
     // A colour of your own, which is the half of the item a fixed palette
     // cannot answer.
     posted.length = 0;
-    sandbox.document.querySelectorAll('[data-color]')
-        .find(e => e.dataset.color === '407c78cb-aaaa')._fn({ stopPropagation() { } });
+    sandbox.document.querySelectorAll('[data-cdot]')
+        .find(e => e.dataset.cdot === 'live|407c78cb-aaaa')._fn({ stopPropagation() { } });
     const own = sandbox.document.querySelectorAll('[data-custom]')[0];
     own.value = '#123456';
     own._fns.change();
@@ -2389,9 +2389,76 @@ const html = allHtml;
     push(fresh);
     const raw = els['c-list']._html;
     ok('‼️ a session with no id yet gets a dead dot, not a live one',
-        /class="cdotc dead"/.test(raw) && !/data-color=""/.test(raw));
+        /class="cdotc dead"/.test(raw) && !raw.includes('data-cdot="live|"'));
     ok('…and the hover says why rather than leaving the reader to guess',
         /has not written its first turn/.test(raw));
+}
+
+// ---------- U-126: one press opens ONE palette ----------
+//
+// ‼️ THE THING THAT IS OPEN IS A DOT, NOT A SESSION. The same session is drawn
+// on up to three surfaces of this one column — the live card, the "where you
+// left off" shelf and the resume list — and the open state used to be the
+// session's ID. Every dot filed under that id then drew itself a palette, so a
+// session standing on two surfaces answered one press with two pickers, one of
+// them over a card the reader never touched. Two of the three surfaces share a
+// slot (`c-list`), so the slot cannot tell them apart either: the key is the
+// SURFACE the dot was drawn on.
+{
+    const swatches = ['#e05252', '#3d8bfd', '#5fb85f'];
+    const d = data(CONVO.slice(), { color: '#e05252' });
+    d.sessionColors = swatches;
+    // the live card's own id, back again on the shelf: both inside `c-list`
+    d.lastWindow = [{
+        sessionId: '407c78cb-aaaa', agentName: 'developer', title: 'Kalan eksikler',
+        cwd: 'D:/a/dev', endedAt: Date.now() - 3600000, color: '#e05252'
+    }];
+    // …and once more in the resume list, which is the other slot
+    d.resumable = [{
+        sessionId: '407c78cb-aaaa', title: 'Kalan eksikler', agentName: 'developer',
+        engine: 'claude', cwd: 'D:/a/dev', pinned: false, ts: Date.now(), cost: 0.02,
+        tokens: 900, wTokens: 900, turns: 2, color: '#e05252'
+    }];
+    push(d);
+    const dots = sandbox.document.querySelectorAll('[data-cdot]')
+        .filter(e => String(e.dataset.cdot).endsWith('|407c78cb-aaaa'));
+    ok('‼️ one session on three surfaces is three separately-keyed dots',
+        dots.length === 3
+        && new Set(dots.map(e => e.dataset.cdot)).size === 3);
+
+    const open = () => (els['c-list']._html + els['c-rlist']._html).match(/class="cpal"/g) || [];
+    const press = where => dots.find(e => e.dataset.cdot === where + '|407c78cb-aaaa')
+        ._fn({ stopPropagation() { } });
+    // The palette is drawn INSIDE the pressed dot's own wrapper, so "which dot
+    // is open" is answered by what directly follows that dot's button.
+    const carries = (h, where) => {
+        const at = h.indexOf('data-cdot="' + where + '|407c78cb-aaaa"');
+        return at >= 0 && h.slice(at, at + 240).includes('</button><div class="cpal"');
+    };
+
+    press('back');
+    ok('‼️ pressing the shelf dot opens exactly ONE palette', open().length === 1);
+    ok('…and it is the shelf dot that carries it', carries(els['c-list']._html, 'back'));
+
+    press('back');
+    ok('…pressing it again shuts it', open().length === 0);
+
+    press('live');
+    ok('the live card has its own dot and it answers for itself',
+        open().length === 1 && carries(els['c-list']._html, 'live'));
+
+    press('resume');
+    ok('‼️ …and pressing a dot in the OTHER slot moves the palette rather than adding one',
+        open().length === 1 && carries(els['c-rlist']._html, 'resume'));
+
+    // The mark itself is still filed against the session, not the surface: the
+    // swatch a shelf dot offers writes the same colour the live card wears.
+    posted.length = 0;
+    sandbox.document.querySelectorAll('[data-swatch]')
+        .find(e => e.dataset.swatch === '407c78cb-aaaa|#5fb85f')._fn({ stopPropagation() { } });
+    ok('…while the colour is still kept against the SESSION, not the surface',
+        posted.some(m => m.type === 'setSessionColor'
+            && m.sessionId === '407c78cb-aaaa' && m.color === '#5fb85f'));
 }
 
 // ---------- K-30: the "/" picker in the composer ----------

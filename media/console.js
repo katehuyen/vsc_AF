@@ -1698,6 +1698,17 @@
      * against the id, and a process that has not written its first turn has not
      * got one yet. That dot is drawn and dead, and says why — rather than being
      * pressable and silently saving nothing.
+     *
+     * ‼️ U-126 — WHAT IS OPEN IS A DOT, NOT A SESSION. `colorPick` holds
+     * `<surface>|<sessionId>`, and the surface half is what the item was about:
+     * this held a bare session id, so EVERY dot filed under that id drew itself
+     * a palette. One session standing on two of the three surfaces answered a
+     * single press with two pickers, the second one over a card the reader
+     * never touched. The slot cannot be the key either — the live cards and the
+     * "where you left off" shelf are both inside `c-list`, and the same session
+     * really can be on both (a hosted session that has ENDED keeps its card and
+     * comes back onto the shelf). The colour itself is still filed against the
+     * session id alone; only "which dot is open" is per-surface.
      */
     let colorPick = '';
 
@@ -1732,7 +1743,7 @@
      * why. That one is a native `title` — short, and drawn by the host above
      * every pane, so it cannot be clipped by the one it sits in.
      */
-    function colorDot(sessionId, color) {
+    function colorDot(sessionId, color, where) {
         const id = String(sessionId || '');
         if (!id) {
             // ‼️ In the SAME absolutely-positioned holder as a live dot. Left in
@@ -1743,9 +1754,11 @@
                 + ' colour against. It can be coloured the moment the CLI names it."></span></span>';
         }
         const hex = C.esc(color || '');
-        const dot = `<button class="cdotc${color ? ' on' : ''}" data-color="${C.esc(id)}"${color
+        // The dot's own name: which surface drew it, and whose colour it is.
+        const key = `${where || 'live'}|${id}`;
+        const dot = `<button class="cdotc${color ? ' on' : ''}" data-cdot="${C.esc(key)}"${color
             ? ` style="background:${hex}; border-color:${hex}"` : ''}></button>`;
-        return `<span class="cdotw">${dot}${colorPick === id
+        return `<span class="cdotw">${dot}${colorPick === key
             ? colorPalette(id, color || '') : ''}</span>`;
     }
 
@@ -1791,10 +1804,13 @@
         // than take the whole page down with a message naming nothing.
         if (!root || typeof root.querySelectorAll !== 'function') { return; }
         wireColorClose();
-        root.querySelectorAll('[data-color]').forEach(b =>
+        root.querySelectorAll('[data-cdot]').forEach(b =>
             b.addEventListener('click', ev => {
                 ev.stopPropagation();
-                colorPick = colorPick === b.dataset.color ? '' : b.dataset.color;
+                // ‼️ U-126 — the key is the DOT's, and the dot carries it. The
+                // slot this wiring was called for cannot say which of the two
+                // card kinds inside `c-list` was pressed.
+                colorPick = colorPick === b.dataset.cdot ? '' : b.dataset.cdot;
                 renderList();
             }));
         root.querySelectorAll('[data-cpal]').forEach(p =>
@@ -1869,7 +1885,7 @@
                         session: s.sessionId, whole: true, kept: s.wikiKept || []
                     }) : ''}
                 </div>
-                ${colorDot(s.sessionId, s.color)}
+                ${colorDot(s.sessionId, s.color, 'live')}
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
                 <div class="m">${cardTip(`<span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>`,
                     tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(s))}</span>`, ctxTip(s).head, ctxTip(s).body)}` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
@@ -1913,7 +1929,7 @@
                 ${cardTip(`<span class="t2">${C.esc(r.title || '(no name)')}</span>`,
                     r.title ? `${r.title.length.toLocaleString()} characters` : 'never named',
                     r.title || 'This session ended before the CLI named it.', 't2w')}
-                ${colorDot(r.sessionId, r.color)}
+                ${colorDot(r.sessionId, r.color, 'back')}
                 <div class="m">ended ${relTime(r.endedAt)} ago · click to continue</div>
             </div>`).join('')}` : '';
         return `${callout}
@@ -2114,7 +2130,7 @@
                         ]), 'nw')}
                     ${resumeEngineBadge(r)}
                 </div>
-                ${colorDot(r.sessionId, r.color)}
+                ${colorDot(r.sessionId, r.color, 'resume')}
                 <div class="m wrap">${cardTip(who(r.agentName, r.sessionId),
                     `${r.agentName || 'session'}${r.sessionId ? ` · #${String(r.sessionId).slice(0, 8)}` : ''}`,
                     window.AFTip.lines([

@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.371.0 - U-126: the thing that opens is a dot, not a session (2026-09-03)
+
+One press on a colour dot opened two palettes. Not always — only when the same
+session was drawn twice in the left column, which is exactly when the reader is
+most likely to press one.
+
+The open state was the SESSION ID. `colorDot()` is called from three places for
+the three card kinds — the live card, the "where you left off" shelf, the resume
+list — and each of them drew a palette for any dot whose id matched. A session
+standing on two surfaces therefore answered a single press with two pickers, the
+second one hanging over a card the reader never touched.
+
+The slot is not the answer either: the live cards and the shelf are both inside
+`c-list`, and the same session really can be on both — a hosted session that has
+ENDED keeps its card and comes back onto the shelf the moment it is no longer
+running. So the key is now `<surface>|<sessionId>`, carried by the dot itself
+(`data-cdot`), and the handler reads it off the button rather than off the slot
+it was wired for.
+
+The colour is still a mark filed against the session id alone. Only "which dot is
+open" became per-surface — which is what it always meant.
+
 ## 3.370.0 - X-166: ticking a box and typing a sentence no longer costs you the boxes (2026-09-03)
 
 The user answered four questions, ticked all four, added a sentence — and the agent
