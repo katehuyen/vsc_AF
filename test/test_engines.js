@@ -44,15 +44,15 @@ const by = (list, id) => list.find(e => e.id === id);
     // find the gesture.
     ok('…and a missing CLI is named as the first problem, with the install step on it',
         list.every(e => /not installed on this machine/.test(e.next))
-        && ['claude', 'codex', 'gemini'].every(id => /Install it with: npm install -g \S+/.test(by(list, id).next)));
-    // ‼️ …INCLUDING THE ONE THAT DOES NOT COME FROM A PACKAGE REGISTRY. Offering
-    // `npm install -g agy` would send the user to something that does not exist,
-    // so that row names the app it ships with instead — a different sentence for
-    // the same job, which is why `installHint` exists at all.
-    ok('‼️ an engine with no install COMMAND still says how it arrives',
-        !by(list, 'agy').installCommand
-        && /Antigravity app/.test(by(list, 'agy').next)
-        && /agy install/.test(by(list, 'agy').next));
+        && ['claude', 'codex', 'gemini', 'agy', 'opencode']
+            .every(id => /Install it with: \S+/.test(by(list, id).next)));
+    // ‼️ …INCLUDING THE ONE THAT DOES NOT COME FROM A PACKAGE REGISTRY. `npm
+    // install -g agy` would send the user to something that does not exist; the
+    // vendor's own installer script does, and it is the same one the migration
+    // system runs (`_setup\\Install-Engines.ps1`).
+    ok('‼️ the engine that is not on a package registry gets its vendor script, not a guess',
+        /antigravity\.google\/cli\/install/.test(by(list, 'agy').installCommand || '')
+        && !/npm/.test(by(list, 'agy').installCommand || ''));
     ok('the summary counts what can run', JSON.stringify(enginesSummary(list))
         === JSON.stringify({ ready: 0, total: 5, onPlan: 0 }));
     // ‼️ X-38 — AND THE ONE ENGINE THAT NEEDS NO SIGN-IN IS STILL NOT READY WITH
@@ -64,6 +64,67 @@ const by = (list, id) => list.find(e => e.id === id);
         !by(list, 'opencode').ready
         && /not installed on this machine/.test(by(list, 'opencode').next)
         && /npm install -g opencode-ai/.test(by(list, 'opencode').next));
+}
+
+// ---------- U-129: the command that is typed has to be the one that works ----
+//
+// ‼️ EVERY INSTALL BUTTON ON THIS PAGE FAILED ON A BARE MACHINE, and the reason
+// is one the page could not see: `npm install -g …` needs Node, and a machine
+// that has no engine on it usually has no Node either — so the terminal answered
+// "npm is not recognized" for all of them. Three of the five engines ship an
+// OFFICIAL installer script that needs nothing at all, and the user's own
+// migration system (`_setup\Install-Engines.ps1`) already puts those first: the
+// `Script` method is method #1 for claude, codex and agy, npm the fallback. This
+// row copies that table rather than inventing a second answer to the same
+// question. Measured on this machine: `claude` resolves to `~/.local/bin`,
+// `codex` to `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` — both native installs,
+// neither from npm.
+//
+// The script is a PowerShell one-liner on Windows and a shell one on Unix, so
+// the command is platform-picked; a machine question, asked of the probe like
+// every other machine question this module asks.
+{
+    const win = readEngines(Object.assign(probe({}), { isWindows: true }));
+    const nix = readEngines(Object.assign(probe({}), { isWindows: false }));
+    const cmd = (list, id) => by(list, id).installCommand || '';
+
+    ok('‼️ the three engines with a vendor installer offer THAT, not npm',
+        ['claude', 'codex', 'agy'].every(id => !/npm/.test(cmd(win, id))));
+    ok('…on Windows it is the PowerShell form',
+        cmd(win, 'claude') === 'irm https://claude.ai/install.ps1 | iex'
+        && cmd(win, 'codex') === 'irm https://chatgpt.com/codex/install.ps1 | iex'
+        && cmd(win, 'agy') === 'irm https://antigravity.google/cli/install.ps1 | iex');
+    ok('‼️ …and on macOS/Linux the SAME row says the shell form',
+        cmd(nix, 'claude') === 'curl -fsSL https://claude.ai/install.sh | bash'
+        && cmd(nix, 'codex') === 'curl -fsSL https://chatgpt.com/codex/install.sh | bash'
+        && cmd(nix, 'agy') === 'curl -fsSL https://antigravity.google/cli/install.sh | bash');
+    ok('the two that really do come from npm are unchanged, on either platform',
+        cmd(win, 'gemini') === 'npm install -g @google/gemini-cli'
+        && cmd(nix, 'gemini') === 'npm install -g @google/gemini-cli'
+        && cmd(win, 'opencode') === 'npm install -g opencode-ai'
+        && cmd(nix, 'opencode') === 'npm install -g opencode-ai');
+    // ‼️ …AND THE NPM ONES SAY WHAT THEY NEED. "npm is not recognized" is not a
+    // sentence a user can act on; "this one needs Node" is.
+    ok('‼️ an npm route names its prerequisite instead of letting the shell say it',
+        /Node/.test(by(win, 'gemini').next) && /Node/.test(by(win, 'opencode').next)
+        && !/Node/.test(by(win, 'claude').next));
+
+    // ‼️ AND THE SIGN-IN COMMAND WAS WRONG TOO, in the way that is hardest to
+    // see: `claude /login` is not an error, it STARTS A SESSION with "/login" as
+    // the prompt. Measured against the CLI's own help — `claude auth login` is
+    // the subcommand, and it has been for a while.
+    const on = readEngines(Object.assign(
+        probe({ path: ['claude', 'codex', 'opencode'] }), { isWindows: true }));
+    ok('‼️ the Claude sign-in is the SUBCOMMAND, not a slash command typed at a shell',
+        by(on, 'claude').loginCommand === 'claude auth login');
+    ok('…and the other two were already right, measured against their own help',
+        by(on, 'codex').loginCommand === 'codex login'
+        && by(on, 'opencode').loginCommand === 'opencode auth login');
+
+    // A probe that does not answer the platform question still gets a command
+    // rather than nothing — the older callers (two bridge fixtures) never asked.
+    ok('an unasked platform still yields a runnable line',
+        !!cmd(readEngines(probe({})), 'claude'));
 }
 
 // ---------- OpenCode: READY with an empty auth.json, which is measured ----------
@@ -589,7 +650,8 @@ const by = (list, id) => list.find(e => e.id === id);
             const half = engineOptions(readEngines(probe({ path: ['claude'] })));
             const why = engineRefusal(half, 'codex') || '';
             ok('‼️ an engine that cannot run is refused with the ONE thing to do about it',
-                /cannot run on this machine/.test(why) && /npm install -g @openai\/codex/.test(why));
+                /cannot run on this machine/.test(why)
+                && /chatgpt\.com\/codex\/install/.test(why));
             ok('…named by its label, not by its id — the picker showed the label',
                 /^Codex /.test(why));
         }

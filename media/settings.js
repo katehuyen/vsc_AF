@@ -1160,7 +1160,7 @@
         // storable before the CLI arrives and costs nothing to have ready.
         const install = !e.cli.found && e.installCommand
             ? `<button class="small" data-engcmd="${C.esc(e.installCommand)}"
-                title="${C.esc(`Write ${e.installCommand} into a terminal — it is NOT run for you, so you can read it first. Node and npm have to be on this machine.`)}">Install ${C.esc(e.cli.command)}</button>`
+                title="${C.esc(`Write ${e.installCommand} into a terminal — it is NOT run for you, so you can read it first.`)}">Install ${C.esc(e.cli.command)}</button>`
             : '';
         // ‼️ U-59 — same words as the Engines page, for the same reason: on an
         // engine that already runs without a credential, "Sign in with a plan"

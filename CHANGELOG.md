@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.372.0 - U-129: the install button types a command that can actually run (2026-09-03)
+
+Every Install button on the Engines page typed `npm install -g …` into a terminal,
+and on the machine that needs it most — a bare one, with no engine on it — that
+machine has no Node either. So the answer was `npm is not recognized`, for all of
+them, which reads as a page whose buttons do not work.
+
+Three of the five engines ship an official installer that needs nothing at all, and
+the user's own migration system (`_setup\Install-Engines.ps1`) already puts those
+FIRST: the `Script` method is method #1 for Claude Code, Codex and Antigravity, with
+npm as the fallback. This page now copies that table rather than giving a second
+answer to the same question. Measured on this machine: `claude` resolves to
+`~/.local/bin`, `codex` to `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin` — both native
+installs, neither from npm.
+
+- **Claude Code · Codex · Antigravity** — the vendor's own script, picked by
+  platform: `irm … | iex` on Windows, `curl … | bash` elsewhere. Antigravity had no
+  install command at all before, only a sentence, so it was the one row the page
+  could not put in front of a terminal.
+- **Gemini · OpenCode** — still npm, because that really is where they come from,
+  and the row now says the route needs Node.js v20+ instead of leaving the shell to
+  say something unreadable.
+- **The sign-in was wrong too, in the way that is hardest to see:** `claude /login`
+  is not an error. It starts an ordinary session with `/login` as the prompt — the
+  CLI opens, nothing signs in. It is `claude auth login`, read off the CLI's own
+  help. Codex and OpenCode were already right.
+- **And the line is typed into a shell that can run it.** On Windows the terminal is
+  opened as PowerShell: `irm … | iex` typed into cmd is the same unreadable failure,
+  one layer further out.
+
+Nothing runs by itself. The command is still typed, not executed, and the user
+reads it and presses Enter.
+
 ## 3.371.0 - U-126: the thing that opens is a dot, not a session (2026-09-03)
 
 One press on a colour dot opened two palettes. Not always — only when the same

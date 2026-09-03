@@ -15897,7 +15897,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ The NAME only. Asking the vault whether it holds a key is not the
         // same as reading it, and this path never reads it.
         hasSecret: (name: string): boolean => vault.names().includes(name),
-        hasEnv: (name: string): boolean => !!process.env[name]
+        hasEnv: (name: string): boolean => !!process.env[name],
+        // U-129 — which shell will be asked to run the install line this page
+        // prints. `irm … | iex` here, `curl … | bash` everywhere else.
+        isWindows: process.platform === 'win32'
     };
     const engineMatrix = (): EngineStatus[] => readEngines(engineProbe);
     /**
@@ -16217,7 +16220,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * command that was not a login.
      */
     const engineTerminal = (command: string): void => {
-        const term = vscode.window.createTerminal({ name: 'Agent Farm: engine' });
+        // ‼️ U-129 — AND IT IS TYPED INTO THE SHELL THAT CAN RUN IT. The install
+        // lines are the vendors' own, and on Windows those are PowerShell
+        // one-liners (`irm … | iex`). Typed into the user's default profile they
+        // land in whatever that happens to be — cmd answers `irm` with "not
+        // recognized", which is the same unreadable failure this item is about,
+        // only one layer further out. The shell is named on Windows and left
+        // alone everywhere else, where the default is already a POSIX shell.
+        const term = vscode.window.createTerminal(process.platform === 'win32'
+            ? { name: 'Agent Farm: engine', shellPath: 'powershell.exe' }
+            : { name: 'Agent Farm: engine' });
         term.show();
         term.sendText(command, false);
         void vscode.window.showInformationMessage(

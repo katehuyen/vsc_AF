@@ -143,6 +143,17 @@ export interface EngineProbe {
     hasSecret(name: string): boolean;
     /** is this variable set in the extension host's own environment */
     hasEnv(name: string): boolean;
+    /**
+     * ‼️ U-129 — WHICH SHELL WILL BE ASKED TO RUN THE LINE WE PRINT. An install
+     * script is a PowerShell one-liner on Windows and a `curl … | bash` on the
+     * others, and a row that prints the wrong one prints a command that cannot
+     * work. It is a machine question, so it is asked of the probe like every
+     * other machine question here. Optional: two fixtures predate it, and a
+     * missing answer falls back to the platform this is developed and measured
+     * on rather than to nothing at all — a row with no command is the dead end
+     * the whole module exists to remove.
+     */
+    isWindows?: boolean;
 }
 
 interface EngineSpec {
@@ -154,12 +165,24 @@ interface EngineSpec {
     billing: string;
     docs: string;
     loginCommand?: string;
+    /** the cross-platform command — only for engines that really do come from a
+     *  package registry, where the same line works in every shell */
     installCommand?: string;
     /**
+     * ‼️ U-129 — …OR THE VENDOR'S OWN INSTALLER, WHICH IS THE ROUTE THAT ACTUALLY
+     * WORKS ON A BARE MACHINE. Every install button on this page used to type
+     * `npm install -g …`, and a machine with no engine on it usually has no Node
+     * either, so the terminal answered "npm is not recognized" for all of them.
+     * Three of the five ship an official script that needs nothing; the user's
+     * own migration system (`_setup\Install-Engines.ps1`) already tries those
+     * FIRST and npm only as a fallback, and this table is a copy of that one
+     * rather than a second answer to the same question. Two forms because it is
+     * two shells: `irm … | iex` on Windows, `curl … | bash` elsewhere.
+     */
+    installScript?: { win: string; unix: string };
+    /**
      * …or, for an engine that does NOT arrive by a command, the one sentence
-     * that says how it does arrive. Antigravity ships with a desktop app; a row
-     * offering `npm install -g` for it would send the user to a package that
-     * does not exist.
+     * that says how it does arrive.
      */
     installHint?: string;
     /** What to do when nothing is signed in and there is no `loginCommand` to
@@ -229,8 +252,16 @@ const SPECS: EngineSpec[] = [
         env: 'ANTHROPIC_API_KEY',
         billing: 'A Claude Pro or Max plan, signed in once in the browser. An API key is the alternative, not the normal route.',
         docs: 'https://code.claude.com/docs/en/authentication',
-        loginCommand: 'claude /login',
-        installCommand: 'npm install -g @anthropic-ai/claude-code',
+        // ‼️ U-129 — `claude /login` IS NOT AN ERROR, WHICH IS WHY IT SURVIVED.
+        // Typed at a shell it starts an ordinary session with "/login" as the
+        // prompt: the CLI opens, nothing signs in, and the user is left reading
+        // an answer to a question they did not ask. `auth login` is the
+        // subcommand — read off `claude auth --help` on this machine.
+        loginCommand: 'claude auth login',
+        installScript: {
+            win: 'irm https://claude.ai/install.ps1 | iex',
+            unix: 'curl -fsSL https://claude.ai/install.sh | bash'
+        },
         read(probe) {
             const creds = json(probe.readHome(CLAUDE_CREDS));
             if (creds && creds.claudeAiOauth) {
@@ -262,7 +293,10 @@ const SPECS: EngineSpec[] = [
         billing: 'A ChatGPT Plus, Pro, Team or Business plan, signed in once in the browser — exactly like Claude Code. An API key is the alternative.',
         docs: 'https://developers.openai.com/codex/auth',
         loginCommand: 'codex login',
-        installCommand: 'npm install -g @openai/codex',
+        installScript: {
+            win: 'irm https://chatgpt.com/codex/install.ps1 | iex',
+            unix: 'curl -fsSL https://chatgpt.com/codex/install.sh | bash'
+        },
         read(probe) {
             const auth = json(probe.readHome(CODEX_AUTH));
             if (auth) {
@@ -350,7 +384,17 @@ const SPECS: EngineSpec[] = [
         env: '',
         billing: 'A Google account signed into the Antigravity app — the CLI borrows that sign-in. There is no API key for this engine and nothing to keep in the vault.',
         docs: 'https://antigravity.google',
-        installHint: 'It arrives with the Antigravity app rather than from a package registry; install that, then run `agy install` once to put the command on PATH.',
+        // ‼️ U-129 — IT IS NOT ON A PACKAGE REGISTRY, WHICH IS NOT THE SAME AS
+        // HAVING NO INSTALLER. This row carried a sentence and no command, so it
+        // was the one engine the page could not put in front of a terminal at
+        // all. The vendor publishes an installer script and the migration system
+        // runs it (`_setup\Install-Engines.ps1`, method #1 for this engine); the
+        // desktop app is still where the SIGN-IN comes from, and that is what
+        // `signInHint` is for.
+        installScript: {
+            win: 'irm https://antigravity.google/cli/install.ps1 | iex',
+            unix: 'curl -fsSL https://antigravity.google/cli/install.sh | bash'
+        },
         signInHint: 'Open the Antigravity app and sign in with your Google account — the CLI borrows that sign-in. This engine has no key and no sign-in command of its own.',
         read(probe) {
             const onboarding = json(probe.readHome(AGY_ONBOARDING));
@@ -552,7 +596,19 @@ export function claudeOnlyScopeNote(
  * the fix. Every branch here ends in something to DO, or in the reason nothing
  * needs doing.
  */
-function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth): string {
+/**
+ * ‼️ U-129 — THE ONE LINE THIS ROW WILL TYPE INTO A TERMINAL, resolved once so
+ * the button, the tooltip and the "next step" sentence can never disagree about
+ * it. A vendor script beats npm wherever there is one, for the reason the whole
+ * item exists: `npm install -g` needs Node, and the machine that has no engine
+ * on it is exactly the machine that has no Node.
+ */
+function installFor(spec: EngineSpec, windows: boolean): string | undefined {
+    if (spec.installScript) { return windows ? spec.installScript.win : spec.installScript.unix; }
+    return spec.installCommand;
+}
+
+function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth, install: string | undefined): string {
     if (!cli.found) {
         // ‼️ A SIGNED-IN ACCOUNT WITH NO CLI IS ITS OWN STATE, and the one this
         // machine is actually in: `~/.codex/auth.json` says the ChatGPT plan is
@@ -561,8 +617,14 @@ function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth): string {
         // install is the only thing missing — so the row says so.
         const grant = auth.mode === 'subscription' ? ' The sign-in is already on disk, so this is the only step left.'
             : auth.mode === 'apikey' ? ' The key is already there, so this is the only step left.' : '';
+        // ‼️ U-129 — AN NPM ROUTE NAMES ITS PREREQUISITE. "npm is not
+        // recognized" is not a sentence anybody can act on; "this one needs
+        // Node" is, and it is the difference between a button that failed for a
+        // reason the page knew and one that failed for a reason it did not.
+        const needs = install && !spec.installScript
+            ? ' That route needs Node.js (v20 or newer) on this machine.' : '';
         return `${spec.label} is not installed on this machine — nothing can start until the ${spec.command} command exists.`
-            + (spec.installCommand ? ` Install it with: ${spec.installCommand}.`
+            + (install ? ` Install it with: ${install}.${needs}`
                 : spec.installHint ? ` ${spec.installHint}` : '')
             + grant;
     }
@@ -600,6 +662,9 @@ function nextStep(spec: EngineSpec, cli: EngineCli, auth: EngineAuth): string {
 
 /** The whole matrix, in the order the panel draws it. */
 export function readEngines(probe: EngineProbe): EngineStatus[] {
+    // A probe that predates the question is answered with the platform this is
+    // measured on — see `EngineProbe.isWindows`.
+    const windows = probe.isWindows !== false;
     return SPECS.map(spec => {
         const path = safe(() => probe.which(spec.command));
         const cli: EngineCli = { command: spec.command, found: !!path, path: path || undefined };
@@ -619,9 +684,9 @@ export function readEngines(probe: EngineProbe): EngineStatus[] {
             // the belt to that braces, for a spec that declares readiness
             // without its reader having been taught the new mode.
             ready: cli.found && (auth.mode !== 'none' || !!spec.readyWithoutCredential),
-            next: nextStep(spec, cli, auth),
+            next: nextStep(spec, cli, auth, installFor(spec, windows)),
             loginCommand: spec.loginCommand,
-            installCommand: spec.installCommand,
+            installCommand: installFor(spec, windows),
             billing: spec.billing,
             docs: spec.docs
         };

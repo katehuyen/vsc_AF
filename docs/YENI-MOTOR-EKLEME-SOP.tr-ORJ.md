@@ -243,7 +243,7 @@ Her satırın kanıtı `CLI sürümü + komut/olay + gözlenen sonuç` biçimind
 | Ürün adı nedir? | Kullanıcının gördüğü doğru ad |
 | Motor id’si nedir? | Küçük harf kalıcı depolama anahtarı |
 | Executable nedir? | PATH’te aranacak gerçek komut; Windows’ta `.cmd` shim mi gerçek `.exe` mi |
-| Kurulum yolu nedir? | Gerçek komut veya uygulama kurulumu; komut yoksa dürüst `installHint` |
+| Kurulum yolu nedir? | Üreticinin kendi kurulum script’i varsa `installScript` (`{ win, unix }`) — bare bir makinede Node olmadığı için npm rotası ilk tercih değildir; yalnızca paket kayıt defterinden gelen motorlar `installCommand` kullanır; hiçbiri yoksa dürüst `installHint` |
 | Kesin sürüm nedir? | `--version` çıktısı; ölçümün tarihi |
 | Giriş yolları nelerdir? | Abonelik/OAuth, API key, kurumsal sağlayıcı; birden fazlaysa hepsi |
 | Giriş kanıtı nerede? | Yalnız durum çıkaran dosya/ayar; token değeri asla loglanmaz veya Bridge’e çıkmaz |

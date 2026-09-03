@@ -19,8 +19,8 @@ const engines = () => ([
         key: { env: 'ANTHROPIC_API_KEY', inVault: false },
         ready: true,
         next: 'Ready, on a plan. Nothing to pay per token and no key to keep.',
-        loginCommand: 'claude /login',
-        installCommand: 'npm install -g @anthropic-ai/claude-code',
+        loginCommand: 'claude auth login',
+        installCommand: 'irm https://claude.ai/install.ps1 | iex',
         billing: 'A Claude Pro or Max plan, signed in once in the browser. An API key is the alternative, not the normal route.',
         docs: 'https://code.claude.com/docs/en/authentication'
     },
@@ -35,10 +35,10 @@ const engines = () => ([
         key: { env: 'OPENAI_API_KEY', inVault: false },
         ready: false,
         next: 'Codex is not installed on this machine — nothing can start until the codex command exists.'
-            + ' Install it with: npm install -g @openai/codex.'
+            + ' Install it with: irm https://chatgpt.com/codex/install.ps1 | iex.'
             + ' The sign-in is already on disk, so this is the only step left.',
         loginCommand: 'codex login',
-        installCommand: 'npm install -g @openai/codex',
+        installCommand: 'irm https://chatgpt.com/codex/install.ps1 | iex',
         billing: 'A ChatGPT Plus, Pro, Team or Business plan, signed in once in the browser — exactly like Claude Code. An API key is the alternative.',
         docs: 'https://developers.openai.com/codex/auth'
     },
@@ -71,6 +71,7 @@ const engines = () => ([
         ready: true,
         next: 'Ready, on a plan. Nothing to pay per token and no key to keep.',
         billing: 'A Google account signed into the Antigravity app — the CLI borrows that sign-in. There is no API key for this engine and nothing to keep in the vault.',
+        installCommand: 'irm https://antigravity.google/cli/install.ps1 | iex',
         docs: 'https://antigravity.google'
     },
     {
