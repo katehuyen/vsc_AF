@@ -92,6 +92,12 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
     ok('the engine and model travel when they are given, and are absent when they are not',
         newSentry(Object.assign({ engine: 'claude', model: 'haiku' }, asked), NOW).engine === 'claude'
         && newSentry(asked, NOW).model === undefined);
+    ok('a campaign may carry its own failure brake',
+        newSentry(Object.assign({ failLimit: 5 }, asked), NOW).failLimit === 5);
+    ok('‼️ a brake of zero is SWITCHED OFF, and that is a real answer that survives',
+        newSentry(Object.assign({ failLimit: 0 }, asked), NOW).failLimit === 0);
+    ok('a brake that is not a number is left absent, so the setting default applies',
+        newSentry(Object.assign({ failLimit: 'lots' }, asked), NOW).failLimit === undefined);
 }
 
 // ---- stopping is the user's, and it is visible -----------------------------

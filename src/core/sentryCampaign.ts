@@ -50,6 +50,19 @@ export interface SentryRecord extends SentryCampaign {
     /** the row of the last round, so a surface can open it */
     lastTaskId?: string;
     lastRoundAt?: number;
+    /**
+     * ‼️ THE FAILURE BRAKE, WHICH IS NOT A ROUND BUDGET. The user refused a
+     * round budget: a campaign that is working carries on for ever. But a
+     * campaign whose sessions produce NOTHING, over and over, is a broken setup
+     * opening empty sessions all night — and the quota never stops it, because
+     * a session that fails instantly spends nothing. How many barren rounds in
+     * a row end it; 0 switches the brake off. Absent = the setting's default.
+     */
+    failLimit?: number;
+    /** barren rounds in a row. Wiped by the first round that achieves something. */
+    failStreak?: number;
+    /** why it stopped, when it was not simply switched off */
+    stoppedWhy?: string;
 }
 
 /** What a caller asks for when they start one. */
@@ -58,6 +71,7 @@ export interface SentryAsk {
     agent?: string;
     ceiling?: unknown;
     safetyBufferMin?: unknown;
+    failLimit?: unknown;
     engine?: string;
     model?: string;
 }
@@ -100,6 +114,7 @@ export function refuseSentry(live: SentryRecord | undefined, ask: SentryAsk): st
 export function newSentry(ask: SentryAsk, now: number): SentryRecord {
     const ceiling = clamp(ask.ceiling, 1, 100);
     const safetyBufferMin = clamp(ask.safetyBufferMin, 0, 24 * 60);
+    const failLimit = clamp(ask.failLimit, 0, 1000);
     return {
         id: `sc-${now.toString(36)}`,
         project: String(ask.project ?? '').trim(),
@@ -108,6 +123,7 @@ export function newSentry(ask: SentryAsk, now: number): SentryRecord {
         startedAt: now,
         ...(ceiling !== undefined ? { ceiling } : {}),
         ...(safetyBufferMin !== undefined ? { safetyBufferMin } : {}),
+        ...(failLimit !== undefined ? { failLimit } : {}),
         ...(ask.engine ? { engine: String(ask.engine) } : {}),
         ...(ask.model ? { model: String(ask.model) } : {})
     };
