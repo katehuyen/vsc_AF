@@ -1638,6 +1638,17 @@
         return (f && (f.providers || []).length) ? f : null;
     }
     /**
+     * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, held with the page for the same
+     * reason the routes are: moving the engine box must redraw HERE rather than
+     * wait on a round trip under the pointer. The empty answer is the ordinary
+     * one — four of the five engines cannot isolate a sign-in and a machine that
+     * has captured none has nothing to choose between — and it draws no box.
+     */
+    function ntAccounts(engine) {
+        const all = (DATA.launch || {}).accounts || {};
+        return (all[engine || 'claude'] || []).filter(a => a && a.id);
+    }
+    /**
      * ‼️ X-106 — A ROUTE BELONGS TO ONE ENGINE, AND A TIER TO ONE ROUTE.
      *
      * The same narrowing the model box already does when the engine changes: a
@@ -1646,6 +1657,14 @@
      * `kimi-k2-thinking` on the route being left. Dropped rather than left
      * sitting in a box that now disagrees with the row above it.
      */
+    function ntNarrowAccount(c) {
+        if (!c || !c.account) { return; }
+        // ‼️ AN ACCOUNT BELONGS TO ONE ENGINE — a Claude slot carried onto Codex
+        // names a directory Codex never reads, so the run would go to the main
+        // sign-in while the form claimed otherwise. Dropped rather than left
+        // sitting in a box that disagrees with the row above it.
+        if (!ntAccounts(c.engine).some(a => a.id === c.account)) { c.account = ''; }
+    }
     function ntNarrowRoute(c) {
         if (!c) { return; }
         const f = ntRoutes(c.engine);
@@ -2375,6 +2394,33 @@
                     <select id="nt-tier">${topts}</select></label>`;
         })();
         /**
+         * ‼️ X-169 — WHOSE PLAN PAYS FOR THIS RUN, and it matters MORE here than
+         * anywhere: a task fires with nobody watching, so an account that is not
+         * named when the task is WRITTEN is never named at all — the run takes
+         * whichever sign-in happens to be standing at 3 a.m., which on a machine
+         * rotating three plans is the one thing that decides whether it finishes.
+         *
+         * Drawn only where the engine can isolate a sign-in AND at least one has
+         * been captured; the empty row is not "no account", it is the MAIN one,
+         * and it says so in those words.
+         */
+        const accountRow = (() => {
+            const rows = ntAccounts(c.engine);
+            if (!rows.length) { return ''; }
+            const opts = ['<option value=""' + (c.account ? '' : ' selected')
+                + '>— the standing choice, else the main sign-in —</option>']
+                .concat(rows.map(a =>
+                    `<option value="${C.esc(a.id)}"${a.id === c.account ? ' selected' : ''}>`
+                    + `${a.health === 'ready' ? '' : '⚠ '}${C.esc(a.label)}${a.active ? ' •' : ''}</option>`))
+                .join('');
+            return `<label class="ntf" title="${C.esc('Which sign-in of this engine pays for the run. '
+                + 'Leave it empty and the ACTIVE account of that engine answers when the run fires — the '
+                + 'one the Engines page points at — and failing that the main sign-in, which is what '
+                + 'every run written before this took. A dot marks the standing choice; a warning '
+                + 'sign marks a slot that needs signing in again.')}"><span>Account</span>
+                    <select id="nt-account">${opts}</select></label>`;
+        })();
+        /**
          * ‼️ WHICH ENGINE (X-18) — and it matters MORE here than in the Console.
          *
          * Nobody is sitting in front of an unattended run. An engine that is not
@@ -2581,6 +2627,7 @@
                 ${(L.clis || []).length ? `<label class="ntf" title="A named CLI profile from agentFarm.cliProfiles. A non-claude executor is not monitored the way claude is — its output is archived and that is all."><span>CLI</span>
                     <select id="nt-cli">${cliOpts}</select></label>` : ''}
                 ${routeRow}
+                ${accountRow}
                 <label class="ntf" title="Higher runs sooner when the queue is full. It also ages up while waiting, so nothing starves."><span>Priority</span>
                     <input type="number" id="nt-priority" step="1" value="${C.esc(String(c.priority || 0))}"></label>
                 <label class="ntf wide" title="Run it somewhere other than the agent's own folder — a worktree, a repo it is working on. Empty = the agent folder."><span>Working folder</span>
@@ -2684,6 +2731,11 @@
         // keeps the answer on the draft instead of erasing a choice the user
         // made (same rule as the interactive pair above).
         v('route', 'providerId'); v('tier', 'tier');
+        // ‼️ X-169 — and the sign-in. Drawn only where the engine has one to
+        // offer, and `v()` skips what is not on the page — so moving to an
+        // engine with no accounts and back keeps the answer on the draft instead
+        // of erasing a choice the user made.
+        v('account', 'account');
         n('priority', 'priority');
         b('start', 'start'); b('enabled', 'enabled'); b('ignorebudget', 'ignoreBudget');
         // M-3 — the fields only exist while the picker says "set it here", and
@@ -3817,6 +3869,7 @@
             // has to redraw the box under it (and drop a tier the new route does
             // not map). The same shape the engine handler below has.
             byId('nt-route', 'change', () => { readComposer(); ntNarrowRoute(composer); render(); });
+            byId('nt-account', 'change', () => { readComposer(); render(); });
             byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {
                 readComposer();
@@ -3831,6 +3884,8 @@
                 }
                 // ‼️ X-106 — and so does a route (see ntNarrowRoute).
                 ntNarrowRoute(composer);
+                // ‼️ X-169 — and so does an account (see ntNarrowAccount).
+                ntNarrowAccount(composer);
                 // …and even when the model survives the change, its effort
                 // vocabulary may not: the same engine can state different
                 // levels for the same name.

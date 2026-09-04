@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const projectsDoor: LaunchDoor = {
     id: 'projects',
@@ -26,7 +26,7 @@ export const projectsDoor: LaunchDoor = {
      * other is not carried.
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
-        return pick(ctx.seed(ctx.agentId ?? ''),
-            ['engine', 'model', 'effort', 'permissionMode', 'superpowers']);
+        return withAccount(ctx, pick(ctx.seed(ctx.agentId ?? ''),
+            ['engine', 'model', 'effort', 'permissionMode', 'superpowers']));
     }
 };

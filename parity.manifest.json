@@ -1120,6 +1120,15 @@
       }
     },
     {
+      "capability": "consolePanel.ts#setAccount",
+      "ui": [
+        "page:consolePanel.ts#setAccount"
+      ],
+      "ops": [
+        "console.start"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#setRoute",
       "ui": [
         "page:consolePanel.ts#setRoute"

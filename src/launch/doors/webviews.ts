@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const webviewsDoor: LaunchDoor = {
     id: 'webviews',
@@ -17,7 +17,7 @@ export const webviewsDoor: LaunchDoor = {
     },
     /** Measured: seeds with the whole remembered setup, forwards five named fields. */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
-        return pick(ctx.seed(ctx.agentId ?? ''),
-            ['engine', 'model', 'effort', 'permissionMode', 'superpowers']);
+        return withAccount(ctx, pick(ctx.seed(ctx.agentId ?? ''),
+            ['engine', 'model', 'effort', 'permissionMode', 'superpowers']));
     }
 };

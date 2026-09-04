@@ -53,6 +53,10 @@ const DIMENSION_BOX = {
     // rather than part of the route's, because `opus` is a different model on
     // two routes: folding them would make one stored value mean two things.
     providerId: 'providerId', tier: 'tier',
+    // ‼️ X-169 — and WHOSE PLAN pays for it. Its own box rather than part of the
+    // route's: a route is an endpoint and an account is a sign-in, and a run may
+    // legitimately name either one alone.
+    account: 'account',
     interactiveTarget: 'interactiveTarget', interactiveClose: 'interactiveClose',
     finishSound: 'finishSound', superpowers: 'superpowers',
     workDir: 'workDir', priority: 'priority',

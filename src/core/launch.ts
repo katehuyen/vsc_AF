@@ -37,6 +37,32 @@ export interface LaunchOptions {
      */
     engine?: EngineId;
     /**
+     * ‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE RUNS IT, by slot id
+     * (`agentFarm.accounts`). Empty or absent means the main account: the
+     * identity that is signed in on this machine right now, which is what every
+     * launch made before this said and must keep meaning. NOTHING IS INJECTED
+     * for it — the absence of the variable IS the main account, and naming the
+     * default explicitly would put a config-dir override into every session
+     * Agent Farm starts that no session carried before.
+     *
+     * ‼️ IT IS NOT REMEMBERED, unlike the model or the effort, and that is a
+     * decision rather than an omission. Those are preferences; an account is a
+     * STATE — how much of a plan is left, which changes hourly. Remembered per
+     * agent it would pin an agent to an exhausted plan and, through the S-34
+     * layer order, would silently outrank the "use this next" gesture on the
+     * Engines page: the user would press a button that does nothing visible.
+     * One place holds it (`agentFarm.activeAccounts`, per engine), one gesture
+     * moves it, and `accountStore.resolveAccount` is the only order there is.
+     *
+     * ‼️ AN ID THAT NAMES NOTHING IS REFUSED, NOT IGNORED
+     * (`accountStore.accountRefusal`): falling back to the main account for a
+     * slot that was forgotten would start the session on whichever identity
+     * happens to be signed in, which is the exact accident this family exists
+     * to end. The command builders never emit it — like `cli` it decides the
+     * process's ENVIRONMENT, not its command line.
+     */
+    account?: string;
+    /**
      * ‼️ X-103 — WHICH PROVIDER THIS RUN IS ON, and it sits here rather than
      * beside the model because it decides what the model row MEANS.
      *

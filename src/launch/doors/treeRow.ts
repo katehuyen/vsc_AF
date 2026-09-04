@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, withAccount } from './index';
 
 export const treeRowDoor: LaunchDoor = {
     id: 'treeRow',
@@ -24,8 +24,8 @@ export const treeRowDoor: LaunchDoor = {
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
         const agentId = ctx.agentId ?? '';
-        return (ctx.engineSeed && ctx.engine)
+        return withAccount(ctx, (ctx.engineSeed && ctx.engine)
             ? ctx.engineSeed(agentId, ctx.engine) as LaunchIntent
-            : ctx.seed(agentId) as LaunchIntent;
+            : ctx.seed(agentId) as LaunchIntent);
     }
 };

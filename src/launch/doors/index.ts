@@ -55,6 +55,18 @@ export interface LaunchDoorCtx {
     engineSeed?: (agentId: string, engine: string) => LaunchOptions;
     /** what the person actually answered at this door, where it asks. */
     picked?: LaunchIntent;
+    /**
+     * ‼️ X-169 — WHICH SIGN-IN THIS ENGINE IS ON, and it is a function for the
+     * same reason `seed` is one: the rule belongs to
+     * `accountStore.resolveAccount` and a door that wrote it out would be the
+     * fourteenth copy of it.
+     *
+     * It answers `stated ?? the engine's active account ?? nothing`, so a door
+     * with no picker still hands on the account its session will really run
+     * under — which is the whole point of "use this next" being one gesture in
+     * one place (`agentFarm.activeAccounts`) rather than a per-agent memory.
+     */
+    accountFor?: (engine: string | undefined, stated?: string) => string;
 }
 
 export interface LaunchDoor {
@@ -125,6 +137,36 @@ export function pick(o: LaunchOptions, keys: readonly string[]): LaunchIntent {
     const src = o as unknown as Record<string, unknown>;
     for (const k of keys) { if (src[k] !== undefined) { out[k] = src[k]; } }
     return out as LaunchIntent;
+}
+
+/**
+ * ‼️ X-169 — THE ACCOUNT, PUT ON A DOOR'S ANSWER RATHER THAN LEFT TO THE SPAWN.
+ *
+ * The dimension is NOT remembered (an account is a state, not a preference), so
+ * the S-34 layer cannot carry it the way it carries the model — and a door that
+ * simply said nothing would leave "which account is this?" to be answered
+ * behind its back, minutes later, by whatever `agentFarm.activeAccounts` says
+ * at spawn time. That is the shape of every defect this folder is named after:
+ * the surface shows one thing and the process runs on another.
+ *
+ * So every door resolves it HERE, through the extension's own resolver, and
+ * hands it on as a settled answer. Two consequences worth stating:
+ *
+ *   · **A stated account still wins** — `resolveAccount` puts it first, so a
+ *     picker at the door (the launcher, the composer, a task form, the bridge's
+ *     arguments) overrules the standing one exactly as it should.
+ *   · **Empty means nothing was settled**, and the key is left OFF rather than
+ *     written as `''`. An empty string travelling as an answer would reach
+ *     `resolveAccount` again at the spawn and be re-resolved anyway — but every
+ *     surface in between would show a door that had answered "the main account"
+ *     when it had answered nothing at all.
+ */
+export function withAccount(ctx: LaunchDoorCtx, o: LaunchIntent): LaunchIntent {
+    if (!ctx.accountFor) { return o; }
+    const src = o as Record<string, unknown>;
+    const id = ctx.accountFor(
+        (src.engine as string | undefined) ?? ctx.engine, src.account as string | undefined);
+    return id ? { ...o, account: id } as LaunchIntent : o;
 }
 
 const REGISTRY: LaunchDoor[] = [];

@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const surfacePickDoor: LaunchDoor = {
     id: 'surfacePick',
@@ -14,6 +14,7 @@ export const surfacePickDoor: LaunchDoor = {
      * It names no dimension because it decides about none.
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
-        return { ...(ctx.seed(ctx.agentId ?? '') as LaunchIntent), ...(ctx.picked ?? {}) };
+        return withAccount(ctx,
+            { ...(ctx.seed(ctx.agentId ?? '') as LaunchIntent), ...(ctx.picked ?? {}) });
     }
 };

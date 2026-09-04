@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const taskDoor: LaunchDoor = {
     id: 'task',
@@ -15,8 +15,8 @@ export const taskDoor: LaunchDoor = {
     },
     /** The RunDimensions contract (src/core/tasks.ts), as it stands after X-106. */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
-        return pick(ctx.seed(ctx.agentId ?? '', ctx.picked as never),
-            ['engine', 'model', 'effort', 'permissionMode', 'providerId', 'tier',
-                'cli', 'superpowers', 'prompt', 'resume']);
+        return withAccount(ctx, pick(ctx.seed(ctx.agentId ?? '', ctx.picked as never),
+            ['engine', 'account', 'model', 'effort', 'permissionMode', 'providerId', 'tier',
+                'cli', 'superpowers', 'prompt', 'resume']));
     }
 };

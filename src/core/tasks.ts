@@ -299,6 +299,17 @@ export interface FarmTask {
      *  routes, so folding it in would make one pick mean two things. Travels
      *  WITH `providerId`; a tier alone has no referent. */
     tier?: string;
+    /**
+     * ‼️ X-169 — WHICH SIGN-IN THIS RUN IS ON, by slot id (`agentFarm.accounts`).
+     *
+     * It rides here with the route for the reason every dimension in this shape
+     * does: a task fires with nobody at a window, so "the nightly batch runs on
+     * the second account" can only be said when the task is WRITTEN or it is not
+     * said at all. Absent means the engine's active account decides and, failing
+     * that, the main sign-in — which is what every task written before this item
+     * runs as, to the character.
+     */
+    account?: string;
     /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
     cli?: string;
     /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
@@ -650,6 +661,9 @@ export interface RunDimensions {
     /** Claude routes only — which tier of that route. Travels WITH `providerId`
      *  (see FarmTask.tier). */
     tier?: string;
+    /** ‼️ X-169 — and which SIGN-IN serves it (see FarmTask.account). Same
+     *  reason as the route: nobody is at a window at 3 a.m. to pick one. */
+    account?: string;
     cli?: string;
     /**
      * ‼️ M-26 — WHERE AN INTERACTIVE RUN OPENS, AND WHETHER IT STAYS.
@@ -775,6 +789,11 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
         r.providerId = d.providerId;
         if (d.tier) { r.tier = d.tier; }
     }
+    // ‼️ X-169 — the account travels by the shape too, so a schedule, a
+    // trigger, a template and a workflow step each carry it without knowing it
+    // exists. It does NOT travel with the route: an account is a sign-in and a
+    // route is an endpoint, and a run may legitimately name either alone.
+    if (d.account) { r.account = d.account; }
     if (d.cli) { r.cli = d.cli; }
     // ‼️ M-26 — the DEFAULT is dropped, like every other field here. A task
     // carrying `interactiveTarget: 'vscode'` and one carrying nothing run
@@ -1339,6 +1358,19 @@ export interface TaskManagerOptions {
          */
         route?: { providerId?: string; tier?: string }
     ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined;
+    /**
+     * ‼️ X-169 — WHICH SIGN-IN THIS RUN GETS, as the environment it takes.
+     *
+     * Same doctrine as `engineRuntime` above and for the same reason: the slot
+     * list and the "use this next" map are settings, and the VARIABLE'S NAME
+     * belongs to the engine's own adapter (`engineAccounts.accountEnv`). A
+     * runner that spelt `CLAUDE_CONFIG_DIR` would be a runner that works on one
+     * engine while looking general.
+     *
+     * Absent, or an empty map, is the main sign-in — byte for byte what every
+     * task ran as before this item.
+     */
+    accountLayer?: (engine: string, account?: string) => Record<string, string> | undefined;
     /**
      * ‼️ X-102 — WRITE THIS SPAWN'S MANIFEST AND HAND BACK ITS ID.
      *
@@ -3026,7 +3058,12 @@ export class TaskManager implements vscode.Disposable {
          * run, and it has never been a statement about what it should run on.
          */
         const env = terminalEnvOverlay(
-            [this.opts.getEnv?.(agent.id)],
+            // ‼️ X-169 — the same layer on the terminal surface. Leaving a name
+            // out here does NOT remove it (only `null` does), which is exactly
+            // why the account goes through `terminalEnvOverlay` rather than
+            // being written onto the map by hand.
+            [this.opts.getEnv?.(agent.id),
+                this.opts.accountLayer?.(task.engine ?? 'claude', task.account)],
             // ‼️ X-106 — AND THE ROUTE THE TASK ITSELF NAMED. This passed nothing
             // and the agent's standing route answered for every automation; a
             // nightly job pointed at one endpoint by hand ran on whichever one
@@ -3450,7 +3487,11 @@ export class TaskManager implements vscode.Disposable {
          */
         const spawnEnv = spawnEnvironment(
             process.env,
-            [engineEnv, this.opts.getEnv?.(agent.id)],
+            // ‼️ X-169 — the account is one more LAYER on the list this argument
+            // already is; no second injection path, so the clearing order below
+            // stays the one thing that decides what survives.
+            [engineEnv, this.opts.getEnv?.(agent.id),
+                this.opts.accountLayer?.(engine.id, task.account)],
             // ‼️ X-106 — the task's own route, on the headless path too. Both
             // spawn shapes read it from the same helper, because the way this
             // regresses is one of the two being given the route and the other
@@ -4379,7 +4420,7 @@ export class TaskManager implements vscode.Disposable {
         over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
             & Partial<Pick<FarmTask,
                 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
-                | 'providerId' | 'tier'
+                | 'providerId' | 'tier' | 'account'
                 | 'interactiveTarget' | 'interactiveClose' | 'finishSound' | 'superpowers'
                 | 'priority' | 'projectId' | 'ignoreBudget'
                 // ‼️ M-32 — …and the three the AUTOMATIC retry has always
@@ -4432,6 +4473,10 @@ export class TaskManager implements vscode.Disposable {
             copy.providerId = task.providerId;
             copy.tier = task.tier;
         }
+        // X-169 - and on the account the original ran on. A retry that moved to
+        // whichever account happens to be active now would bill a different
+        // plan for the same work and say nothing about it.
+        copy.account = over && 'account' in over ? over.account : task.account;
         copy.cli = over?.cli ?? task.cli;
         copy.workDir = over?.workDir ?? task.workDir;
         // ‼️ M-26 — a retry runs where the original ran, unless the form said

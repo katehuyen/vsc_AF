@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const launcherDoor: LaunchDoor = {
     id: 'launcher',
@@ -20,6 +20,7 @@ export const launcherDoor: LaunchDoor = {
      * is why a new dimension shows up here first.
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
-        return { ...(ctx.seed(ctx.agentId ?? '') as LaunchIntent), ...(ctx.picked ?? {}) };
+        return withAccount(ctx,
+            { ...(ctx.seed(ctx.agentId ?? '') as LaunchIntent), ...(ctx.picked ?? {}) });
     }
 };

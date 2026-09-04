@@ -682,6 +682,12 @@
            measured above is unchanged for everybody else. */
         #c-route { flex:2 1 112px; max-width:112px; }
         #c-tier { flex:1 1 74px; max-width:74px; }
+        /* ‼️ X-169 — the sign-in, sized like the route because it is the same
+           kind of answer one axis over: the route says which endpoint, this says
+           whose plan pays. Drawn only where the engine can isolate an account
+           AND at least one has been captured, so the row measured above is
+           unchanged for everybody else. */
+        #c-account { flex:2 1 118px; max-width:118px; }
         /* ‼️ THE LABEL IS THE QUIET HALF, THE VALUE IS NOT. .permlbl dims the
            whole wrapper, which is right on the RUNNING row — three boxes, all
            labelled, reading as one group — and wrong here, where these two sit
@@ -2910,6 +2916,30 @@
      */
     const composerForm = () => DATA.composerForm || null;
     const routePick = () => DATA.composerPick || {};
+    /**
+     * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, AND WHICH ONE THE NEXT SESSION
+     * TAKES. Both come from the host for the reason the route does: the slot
+     * list and the "use this next" map are settings, and the narrowing (an
+     * account belongs to ONE engine) is only knowable there.
+     *
+     * The empty list is the ordinary answer — four of the five engines cannot
+     * isolate a sign-in at all, and a machine that has never captured one has
+     * nothing to choose between. Nothing is drawn for either: a picker offering
+     * one row that is already true is the control with no referent.
+     */
+    const accountRows = () => DATA.composerAccounts || [];
+    const accountPick = () => DATA.composerAccount || '';
+    function accountAxisOn() { return accountRows().some(a => a && a.id); }
+    /**
+     * ‼️ WHETHER THE BOX EXISTS AT ALL, which is a fact about what may be drawn
+     * rather than an answer anybody gave — the same distinction `routeShape`
+     * makes, and the reason the PICK is not in here: `account` carries
+     * `redraws: false` (it decides no other control), so it reaches the shell
+     * key through nothing and must not sneak in by the back door. What DOES
+     * belong is the axis appearing: capture an account with the Console open and
+     * the box has to turn up without waiting for something else to move.
+     */
+    function accountShape() { return accountRows().length + (accountAxisOn() ? 'a' : '-'); }
     /** Is there actually something to choose? A picker whose only row is
      *  "Default" is a control with no referent, and the composer is not where a
      *  person learns that routes exist — Settings is. */
@@ -3233,6 +3263,51 @@
                     <select id="c-tier">${opts(trows, tcur)}</select>
                 </label>`;
         };
+        /**
+         * ‼️ X-169 — WHOSE PLAN PAYS FOR THE NEXT SESSION.
+         *
+         * The one dimension on this strip that is a STATE rather than a
+         * preference, and the composer is where that difference shows: it is not
+         * remembered per agent, so the box opens on whatever the Engines page's
+         * "use this next" last pointed at and every session says so out loud
+         * before it starts. Blank is a real answer and the important one — the
+         * main sign-in, which is what every session started before this ran as.
+         *
+         * ‼️ MIRROR — the box is too narrow for an address, so its tooltip opens
+         * with the account that is actually set. Each ROW's own hover carries
+         * the figures the choice turns on: how much of that plan is spent, and
+         * whether the sign-in has fallen over — which is a fact the reader needs
+         * before they press Send, not after.
+         */
+        const accountBoxHtml = () => {
+            if (!accountAxisOn()) { return ''; }
+            const cur = accountPick();
+            const rows = accountRows().map(a => ({
+                id: a.id,
+                // ‼️ SHORTHAND — the row is a `<select>` line, so it carries the
+                // shortest unambiguous form: the label, a dot for the standing
+                // choice, a warning sign for a sign-in that has fallen over. The
+                // figures go in the hover, where there is room for them.
+                label: (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''),
+                detail: [
+                    a.health === 'ready' ? '' : 'this sign-in needs attention — capture it again',
+                    a.active ? 'the standing choice for this engine' : '',
+                    // X-170 — the figure the choice actually turns on. -1 is an
+                    // account nothing has measured, and saying nothing about it
+                    // is the honest answer: not knowing is not "plenty left".
+                    a.percent >= 0 ? a.percent + '% of the 5-hour window used' : ''
+                ].filter(Boolean).join(' · ')
+            }));
+            const tip = 'Which sign-in of this engine pays for the new session. '
+                + 'Blank is the main account — the identity signed in on this machine. '
+                + 'A dot marks the standing choice (Engines page → use this next); '
+                + 'this box overrules it for THIS session only, because an account is a '
+                + 'state and not a preference and nothing here is remembered.';
+            const shown = withCurrent(rows, cur);
+            return `<label class="rtlbl" title="${C.esc(boxTip(shown, cur, tip))}"><span>account</span>
+                    <select id="c-account">${opts(shown, cur)}</select>
+                </label>`;
+        };
         const dead = s && (s.status === 'ended' || s.status === 'error');
         const placeholder = s
             ? (dead ? 'This session has ended — start a new one to keep talking.'
@@ -3373,6 +3448,7 @@
                 <select id="c-engine" title="${C.esc(boxTip((DATA.engines || []), engineNow(), 'Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.'))}">${engineOptionsHtml(engineNow())}</select>
                 ${engineHintHtml(engineNow())}
                 ${routeBoxesHtml()}
+                ${accountBoxHtml()}
                 <select id="c-model" title="${C.esc(boxTip(withCurrent(composerModels(engineNow()), st.model), st.model, 'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow())))}">${opts(withCurrent(composerModels(engineNow()), st.model), st.model)}</select>
                 ${drawsEffort(engineNow())
                     ? `<select id="c-effort" title="${C.esc(boxTip(withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort, 'Reasoning effort' + flagOf(engineNow(), 'effort')))}">${opts(withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort)}</select>`
@@ -3723,6 +3799,21 @@
             if (box && box.focus) { box.focus(); }
         };
         byId('c-route', 'change', e => sendRoute(e.target.value, '', 'c-route'));
+        /**
+         * ‼️ X-169 — the pick goes to the HOST, like the route and for the same
+         * reason: only that side holds the slot list, so only that side can say
+         * that an account stopped applying when the engine moved. The echo is
+         * painted straight away so the box does not sit on the old value while
+         * the round trip happens.
+         */
+        byId('c-account', 'change', e => {
+            DATA.composerAccount = e.target.value || '';
+            askedHost = true;
+            vscode.postMessage({ type: 'setAccount', id: e.target.value || '' });
+            paint();
+            const box = document.getElementById('c-account');
+            if (box && box.focus) { box.focus(); }
+        });
         byId('c-tier', 'change', e =>
             sendRoute((routePick().providerId || ''), e.target.value, 'c-tier'));
         // giving the pin back: the picker returns, and st keeps whatever agent
@@ -4163,7 +4254,7 @@
         const composerShape = s ? '' : '|' + window.AFDimensions.shellKeyOf({
             engine: engineNow(), model: st.model,
             providerId: routePick().providerId, tier: routePick().tier
-        }) + '|' + routeShape();
+        }) + '|' + routeShape() + '|' + accountShape();
         const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}`;
         if (shellKey !== key) {
             // ‼️ M-33 — ONLY A REBUILD NOBODY ASKED FOR WAITS.

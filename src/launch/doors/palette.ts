@@ -1,8 +1,9 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const paletteDoor: LaunchDoor = {
     id: 'palette',
+    wired: true,
     label: 'Command palette and status bar',
     surface: 'terminal',
     why: 'the keyboard path, and the one that CONTINUES rather than starts. It has no picker '
@@ -22,7 +23,7 @@ export const paletteDoor: LaunchDoor = {
      * left as gaps for somebody to decide, not exempted by a comment.
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
-        return pick(ctx.seed(ctx.agentId ?? '', ctx.picked as never),
-            ['engine', 'resume', 'continueLast']);
+        return withAccount(ctx, pick(ctx.seed(ctx.agentId ?? '', ctx.picked as never),
+            ['engine', 'resume', 'continueLast']));
     }
 };

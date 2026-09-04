@@ -403,6 +403,25 @@ const routedComposerData = () => Object.assign(composerData(), {
     }
 });
 
+/**
+ * ‼️ X-169 — THE SAME COMPOSER WITH THREE SIGN-INS CAPTURED, which is the state
+ * this whole family exists for: a person rotating plans has to see whose one the
+ * next session will spend BEFORE they press Send, and the row is already eight
+ * pickers wide. The picture is the only thing that says whether a ninth fits.
+ *
+ * One slot is deliberately not `ready`: a token that has fallen over is a fact
+ * the reader needs before they start, and it has to be visible as a WARNING
+ * rather than as a row that merely reads slightly differently.
+ */
+const accountComposerData = () => Object.assign(routedComposerData(), {
+    composerAccounts: [
+        { id: 'work-1', label: 'work@studio', health: 'ready', active: true, percent: 91 },
+        { id: 'personal', label: 'personal@gmail', health: 'ready', active: false, percent: 12 },
+        { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false, percent: -1 }
+    ],
+    composerAccount: 'personal'
+});
+
 module.exports = {
     script: 'console.js',
     data,
@@ -493,6 +512,11 @@ module.exports = {
             id: 'console-route',
             label: 'Console — the composer picks the route the session is served by (X-105)',
             data: routedComposerData()
+        },
+        {
+            id: 'console-account',
+            label: 'Console — and which sign-in pays for it, on a machine rotating three (X-169)',
+            data: accountComposerData()
         }
     ]
 };

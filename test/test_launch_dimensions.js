@@ -48,8 +48,8 @@ function fieldsOf(name) {
 {
     const declared = fieldsOf('LaunchOptions');
     const listed = D.ids();
-    ok('LaunchOptions still declares 16 dimensions (got ' + declared.length + ')',
-        declared.length === 16);
+    ok('LaunchOptions still declares 17 dimensions (got ' + declared.length + ')',
+        declared.length === 17);
     eq('‼️ every dimension LaunchOptions declares has a row, in the same order',
         listed, declared);
     const orphan = listed.filter(id => declared.indexOf(id) < 0);
@@ -188,8 +188,11 @@ function fieldsOf(name) {
         D.applies('providerId', { hasProviderAxis: false }) === false);
     ok('a variant exists only where the chosen model publishes one',
         D.applies('variant', { hasVariants: false }) === false);
+    ok('an account exists only on an engine whose sign-in can be sealed (X-169)',
+        D.applies('account', { hasAccounts: false }) === false && D.applies('account', { hasAccounts: true }));
     ok('‼️ an UNSTATED fact means the dimension applies — a dimension nobody ruled out is one that holds',
-        D.applies('effort', {}) && D.applies('tier', {}) && D.applies('providerId', {}));
+        D.applies('effort', {}) && D.applies('tier', {}) && D.applies('providerId', {})
+        && D.applies('account', {}));
     ok('a dimension with no gate always applies', D.applies('model', { takesEffort: false }));
     ok('and one that does not exist applies to nothing', D.applies('nonsense', {}) === false);
 }

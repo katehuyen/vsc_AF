@@ -11,7 +11,11 @@ export const missionDoor: LaunchDoor = {
         continueLast: 'a delegation is a new run.',
         resume: 'a delegated run rejoins nothing - the mission is what carries the thread, '
             + 'and it does that in its own record rather than in a session id.',
-        name: 'the mission names the work; the session takes the agent own name.'
+        name: 'the mission names the work; the session takes the agent own name.',
+        account: 'X-169 - a mission runs for HOURS across rounds and its delegates spawn one '
+            + 'at a time. An account frozen into the mission would pin round nine to a plan '
+            + 'that round two exhausted, and it would do it silently. Each delegate run '
+            + 'resolves the account at its own spawn, from the one place that holds it.'
     },
     /**
      * MEASURED: requested is { engine, model, effort, permissionMode }

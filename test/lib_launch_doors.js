@@ -44,10 +44,13 @@ const PER_ENGINE = {
 };
 const EVERYTHING = {
     ...REMEMBERED,
-    permission: { mode: 'plan' }, name: 'nightly', prompt: 'go',
+    account: 'work-1', permission: { mode: 'plan' }, name: 'nightly', prompt: 'go',
     resume: 'sess-1', continueLast: true,
     projectContextFile: 'C:/tmp/brief.md', cwd: 'C:/work', cli: 'my-profile'
 };
+
+/** `agentFarm.activeAccounts` — the one place "use this next" writes to. */
+const ACTIVE = { claude: 'active-claude', codex: 'active-codex' };
 
 function fixtureCtx() {
     return {
@@ -56,6 +59,11 @@ function fixtureCtx() {
         project: 'prj-1',
         seed: (_id, o) => ({ ...(o || {}), ...REMEMBERED }),
         engineSeed: (_id, engine) => ({ ...PER_ENGINE, engine }),
+        // ‼️ X-169 — the extension's own `resolveAccount(stated, engine, active)`,
+        // answered here with the same order and nothing else: what the launch
+        // states wins, otherwise the engine's active account, otherwise the main
+        // sign-in (which is the ABSENCE of an answer, not an empty one).
+        accountFor: (engine, stated) => String(stated || '').trim() || ACTIVE[engine || 'claude'] || '',
         picked: { ...EVERYTHING }
     };
 }

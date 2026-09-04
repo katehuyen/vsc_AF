@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const treeMenuDoor: LaunchDoor = {
     id: 'treeMenu',
@@ -25,9 +25,9 @@ export const treeMenuDoor: LaunchDoor = {
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
         const o = ctx.seed(ctx.agentId ?? '');
-        return {
+        return withAccount(ctx, {
             ...pick(o, ['engine', 'model', 'effort', 'permissionMode', 'superpowers']),
             ...pick((ctx.picked ?? {}) as never, ['cli'])
-        };
+        });
     }
 };

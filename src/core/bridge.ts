@@ -299,6 +299,14 @@ export function bridgeRunDimensions(
     opts: {
         mode?: string;
         route?: (engine: string, providerId: string, tier: string) => string | undefined;
+        /**
+         * ‼️ X-169 — AND WHETHER THAT SIGN-IN IS ON THIS MACHINE, which is the
+         * same kind of question as `route` and arrives the same way: the slot
+         * list is a setting and the "belongs to one engine" rule is the account
+         * store's, so this file has neither and must not grow a copy of either.
+         * It returns the refusal sentence, or nothing.
+         */
+        account?: (engine: string, account: string) => string | undefined;
     } = {}
 ): Record<string, unknown> {
     const out: Record<string, unknown> = {};
@@ -497,6 +505,28 @@ export function bridgeRunDimensions(
             // one is named — and a caller who set a tier and silently got none
             // cannot tell that from having got it.
             need(!tier, 'a tier belongs to a route: name the providerId it is a tier OF, or leave both out.');
+        }
+    }
+    /**
+     * ‼️ X-169 — WHICH SIGN-IN THE RUN IS ON, refused where it is WRITTEN DOWN.
+     *
+     * The same reason the route above is: a schedule, a trigger, a template and
+     * a workflow step are runs that have not happened yet, so an account id with
+     * a typo in it is otherwise discovered at 3 a.m. by nobody. And it is a
+     * REFUSAL rather than a fallback — dropping it would run the job on whichever
+     * identity happens to be signed in, which is the accident this whole family
+     * exists to end.
+     *
+     * Absent is the ordinary answer and means the engine's active account, and
+     * failing that the main sign-in: byte for byte what every run written before
+     * this item does.
+     */
+    {
+        const account = optStr(args, 'account') ?? '';
+        if (account) {
+            const refused = opts.account?.(String(out.engine ?? 'claude'), account);
+            need(!refused, refused ?? '');
+            out.account = account;
         }
     }
     needOneExecutor(out.engine, out.cli);

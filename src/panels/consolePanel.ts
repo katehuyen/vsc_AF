@@ -230,6 +230,26 @@ export interface ConsoleDeps {
      */
     prunePick?(engine: string, pick: ProviderPick, transport: ProviderTransport): ProviderPick;
     /**
+     * ‼️ X-169 — WHICH SIGN-INS THIS ENGINE HAS ON THIS MACHINE, and which one
+     * the next session takes if nobody says otherwise.
+     *
+     * Asked per engine, and the empty list is the ordinary answer: an engine
+     * whose sign-in cannot be isolated has no accounts to offer and the composer
+     * then shows no control at all — a control with no referent is what
+     * docs/CONVENTIONS.md forbids, and one that pretended to switch accounts on
+     * an engine that ignores the variable would be worse than absent.
+     *
+     * ‼️ NOTHING SECRET. A slot is an id, a label and a health verdict; no token
+     * is read here and none has a field to arrive in.
+     */
+    accountsFor?(engine: string): {
+        id: string; label: string; health: string; active: boolean;
+        /** ‼️ X-170 — how much of the 5-hour window that plan has spent, or -1
+         *  where nothing has measured it. The figure the choice turns on, so it
+         *  travels with the row rather than costing a click. */
+        percent: number;
+    }[];
+    /**
      * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, and where.
      *
      * The composer is one of ten doors onto the same launch, and it was the one
@@ -448,6 +468,16 @@ export class ConsolePanel {
      * so the NEXT session does not inherit a route nobody chose for it.
      */
     private composerRoute: { providerId?: string; tier?: string } | undefined = undefined;
+    /**
+     * ‼️ X-169 — WHICH SIGN-IN THE NEXT CARD STARTS ON.
+     *
+     * Held here rather than on the page for the same reason the route is: it
+     * has to survive a repaint that rebuilds the whole strip, and it is pruned
+     * by the engine (a Claude account is not a Codex one). `undefined` is the
+     * ordinary answer and means "whatever `agentFarm.activeAccounts` says at
+     * spawn" — which is the one place the "use this next" button writes.
+     */
+    private composerAccount: string | undefined = undefined;
 
     /**
      * ‼️ K-34 — A SETUP THE COMPOSER OPENS ON, rather than a session spawned
@@ -538,6 +568,9 @@ export class ConsolePanel {
             /** X-103 — the route the calling door picked; carried to the start
              *  because the composer has no control for it yet (X-105). */
             providerId?: string; tier?: string;
+            /** X-169 — the sign-in the calling door resolved. Absent leaves the
+             *  engine's active account to answer at the spawn. */
+            account?: string;
         };
     }): void {
         const apply = (c: ConsolePanel): void => {
@@ -604,6 +637,11 @@ export class ConsolePanel {
                 c.composerRoute = c.prunedRoute((l.providerId ?? '').trim()
                     ? { providerId: l.providerId, tier: l.tier }
                     : undefined);
+                // ‼️ X-169 — and the sign-in, narrowed the same way: a door that
+                // resolved a Claude account and then opened the panel on Codex
+                // would leave a pick in state that no box can show and that Send
+                // would still have used.
+                c.composerAccount = c.prunedAccount((l.account ?? '').trim() || undefined);
                 c.composerSeed++;
             }
             // undefined = "I have no opinion"; '' = "explicitly no project"
@@ -931,6 +969,22 @@ export class ConsolePanel {
              * in Settings produces.
              */
             composerPick: this.composerRoute ?? null,
+            /**
+             * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, AND WHICH ONE IS PICKED.
+             *
+             * Two fields for the reason the route needs two: the list is a
+             * vocabulary and the pick is an answer, and a page that inferred one
+             * from the other could not tell "nobody chose" from "chosen, and the
+             * slot has since been forgotten".
+             *
+             * An empty list is the ordinary answer on four of the five engines
+             * and on a machine that has never captured an account — the page
+             * draws nothing at all for it, because a control offering a choice
+             * of one thing that is already true is the control with no referent
+             * docs/CONVENTIONS.md forbids.
+             */
+            composerAccounts: this.deps.accountsFor?.(engineOf(this.chosenEngine()).id) ?? [],
+            composerAccount: this.composerAccount ?? '',
             // Two lists, because they are two different questions. Starting a
             // session picks a FLAG (and "Default" — pass none — is a real
             // answer). Moving a running one sends `set_permission_mode`, which
@@ -1132,6 +1186,22 @@ export class ConsolePanel {
         if (!providerId) { return undefined; }
         const tier = (out.tier ?? '').trim();
         return { providerId, ...(tier ? { tier } : {}) };
+    }
+
+    /**
+     * ‼️ X-169 — AN ACCOUNT BELONGS TO ONE ENGINE, exactly as a route does.
+     * A Claude slot carried onto Codex names a directory Codex never reads, so
+     * the session would start on the main account while the strip claimed
+     * otherwise — the quiet failure this whole family exists to end. The list is
+     * the engine's own (`accountsFor`), so the pruning is a lookup rather than a
+     * rule written here.
+     */
+    private prunedAccount(id: string | undefined): string | undefined {
+        const want = (id ?? '').trim();
+        if (!want) { return undefined; }
+        const engine = engineOf(this.chosenEngine()).id;
+        const mine = this.deps.accountsFor?.(engine) ?? [];
+        return mine.some(a => a.id === want) ? want : undefined;
     }
 
     private engineModelsFor(engine: string | undefined): EngineModels | undefined {
@@ -1376,6 +1446,9 @@ export class ConsolePanel {
                 // here — an engine with no provider axis prunes everything away
                 // and says so, which is the honest answer for four of the five.
                 this.composerRoute = this.prunedRoute(this.composerRoute);
+                // ‼️ X-169 — and the sign-in with it, for the same reason and by
+                // the same rule: an account belongs to one engine.
+                this.composerAccount = this.prunedAccount(this.composerAccount);
                 this.refresh();
                 break;
             /**
@@ -1389,6 +1462,20 @@ export class ConsolePanel {
              * important one — "no route" means the child inherits this window's
              * environment, which is what every launch made before X-101 did.
              */
+            /**
+             * ‼️ X-169 — WHICH SIGN-IN THE NEXT SESSION RUNS ON.
+             *
+             * It goes back to the host rather than into the page's own state for
+             * the two reasons the route does: the narrowing lives here (only this
+             * side knows the slot list), and the answer has to survive a repaint
+             * that rebuilds the whole strip. `''` is a real answer and the
+             * important one — it means the main sign-in, which is what every
+             * session started before this ran as.
+             */
+            case 'setAccount':
+                this.composerAccount = this.prunedAccount(str('id'));
+                this.refresh();
+                break;
             case 'setRoute': {
                 const providerId = str('providerId');
                 const tier = str('tier');
@@ -1444,7 +1531,11 @@ export class ConsolePanel {
                     // page: there is no route control on it yet (X-105), so a
                     // `str('providerId')` here would read an empty box and erase
                     // the very pick the launcher handed over.
-                    ...(this.composerRoute ?? {})
+                    ...(this.composerRoute ?? {}),
+                    // ‼️ X-169 — from the composer's carried value for the same
+                    // reason, and absent when nobody picked one: absent is what
+                    // lets the engine's active account answer at the spawn.
+                    ...(this.composerAccount ? { account: this.composerAccount } : {})
                 };
                 this.selected = host.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
@@ -1456,6 +1547,10 @@ export class ConsolePanel {
                     // ConsoleSessionState holds it so a window reload cannot move
                     // a live conversation to a different endpoint.
                     providerId: started.providerId, tier: started.tier,
+                    // ‼️ X-169 — and ON the account, kept on the card's state so
+                    // a re-spawn cannot follow the "use this next" button into
+                    // somebody else's plan mid-conversation.
+                    account: started.account,
                     // ‼️ ALWAYS EXPLICIT, including the empty string. Leaving it
                     // out means "inherit the window's active project" one layer
                     // down (ConsoleHost.start), which is the inheritance the box
@@ -1484,6 +1579,10 @@ export class ConsolePanel {
                 // …and its own route: a card started from the launcher must not
                 // hand its endpoint to the next session nobody launched from it.
                 this.composerRoute = undefined;
+                // …and its own account, for the same reason: a card started on
+                // the second plan must not hand it to the next session nobody
+                // launched from it.
+                this.composerAccount = undefined;
                 // ‼️ K-34 — one-shot. A setup left standing would reapply itself
                 // to the NEXT session, which nobody launched from it.
                 this.composerLaunch = undefined;

@@ -352,8 +352,13 @@ const deps = () => ({
     // why it is on the state and not on the per-window host record.
     ok('‼️ …and the console asks for the route the CARD was started on',
         /providerId: h\.state\.providerId, tier: h\.state\.tier/.test(con));
+    // ‼️ THE TRAILING CHARACTER IS `[,)]` AND NOT `)`: X-169 added a SECOND dep
+    // after this one (the account's environment layer), so the call no longer
+    // ends here. What is being measured is that the console is handed the same
+    // named resolver as the other three surfaces — not where the argument list
+    // happens to stop.
     ok('‼️ and the extension gives it the same function the other three use',
-        /\(agentId, engine, route\) => engineRuntimeFor\(agentId, engine, route\)\)/.test(ext));
+        /\(agentId, engine, route\) => engineRuntimeFor\(agentId, engine, route\)[,)]/.test(ext));
 
     // ---- the extension supplies it ----
     ok('‼️ the extension really supplies the runtime dep',

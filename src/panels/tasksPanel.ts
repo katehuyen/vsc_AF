@@ -88,6 +88,19 @@ export interface TasksDeps {
         noun: string;
         providers: { id: string; label: string; detail: string; tiers: { id: string; label: string; detail?: string }[] }[];
     }>;
+    /**
+     * ‼️ X-169 — WHICH SIGN-INS EACH ENGINE HAS ON THIS MACHINE, for the form's
+     * Account row. A task is UNATTENDED, so "the nightly batch on the second
+     * account" can only be said when the task is written or it is never said at
+     * all — and it must be sayable in the form as well as over the bridge, or
+     * the two doors disagree about a run that then bills the wrong plan.
+     *
+     * Empty for an engine whose sign-in cannot be isolated and for a machine
+     * that has captured none; the form draws nothing for either.
+     *
+     * ‼️ NOTHING SECRET — an id, a label and a health verdict.
+     */
+    engineAccounts?(): Record<string, { id: string; label: string; health: string; active: boolean }[]>;
     launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
@@ -841,6 +854,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             engineModels: deps.engineModels?.() ?? null,
             // X-106 - and which routes it may be pointed at (see ConsoleRoute).
             routes: deps.engineRoutes?.() ?? null,
+            // ‼️ X-169 — and which sign-in may pay for it (see engineAccounts).
+            accounts: deps.engineAccounts?.() ?? null,
             permissions: PERMISSION_CHOICES,
             // ‼️ M-26 — the two axes of an INTERACTIVE run, from the same
             // vocabulary module the efforts and the permission modes come from,
@@ -1117,6 +1132,11 @@ export function taskSeed(t: FarmTask): Record<string, unknown> {
         // dimension of RunDimensions is a box on this form, so every one of them
         // has to come back out of the stored object (test_task_seed.js sweeps it).
         providerId: t.providerId ?? '', tier: t.tier ?? '',
+        // X-169 - and which sign-in pays for it. A task is unattended, so this
+        // can only be said when the task is WRITTEN; the same sweep requires it
+        // to come back out again, or reopening the form would silently move a
+        // nightly run back onto whichever account is standing at that moment.
+        account: t.account ?? '',
         // M-26 - what the object was set to, so reopening the form shows it.
         interactiveTarget: t.interactiveTarget ?? 'vscode',
         interactiveClose: t.interactiveClose ?? 'stay-open',

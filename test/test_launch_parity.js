@@ -169,8 +169,9 @@ const launchTs = read('src', 'core', 'launch.ts');
     // already-open Console — which is the case this whole path exists for.
     ok('handing a setup over bumps the seed the page reads',
         // ‼️ X-103 widened the window: the block now also carries the route the
-        // calling door picked (composerRoute), which has no box on the page yet.
-        /if \(opts\?\.launch\) \{[\s\S]{0,1400}?c\.composerSeed\+\+;/.test(panelTs));
+        // calling door picked (composerRoute). ‼️ X-169 widened it again for the
+        // account, which is the same shape of carried answer one axis over.
+        /if \(opts\?\.launch\) \{[\s\S]{0,2000}?c\.composerSeed\+\+;/.test(panelTs));
     // ‼️ X-103 — AND THE ROUTE IS CARRIED RATHER THAN DROPPED. Dropped, the
     // launcher would draw a route row, take the pick, and start a card on a
     // completely different endpoint without a word. There is no control for it

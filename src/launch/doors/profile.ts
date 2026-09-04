@@ -13,7 +13,12 @@ export const profileDoor: LaunchDoor = {
         resume: 'a profile is a SETUP, not a session - it cannot store which conversation to rejoin.',
         continueLast: 'a profile cannot mean continue the last session either - which last '
             + 'one, on which agent, months after it was saved.',
-        cli: 'M-22 - a profile saves engine flags; a CLI profile is a different executor.'
+        cli: 'M-22 - a profile saves engine flags; a CLI profile is a different executor.',
+        account: 'X-169 - a profile is a SETUP and an account is a STATE. Stored, it would pin '
+            + 'a saved launch to a plan that may be exhausted by the time anybody presses it, '
+            + 'and it would outrank the use-this-next gesture the same way a per-agent memory '
+            + 'would - which is the decision that item took. A launch from a profile still runs '
+            + 'on the resolved account; it is simply not the profile that answers.'
     },
     /**
      * THE STORED LIST IS PROFILE_KEYS (src/core/launchProfiles.ts), and all three

@@ -433,6 +433,19 @@ export interface ConsoleSessionState {
      *  read against a different route maps the word through the wrong endpoint. */
     tier?: string;
     /**
+     * ‼️ X-169 — WHICH SIGN-IN THIS CARD IS RUNNING AS, on the state for exactly
+     * the reason the route is: a persistent engine re-spawns, and a window
+     * reload must not move a live conversation onto a different account. Held
+     * only in memory it would fall back to whatever `agentFarm.activeAccounts`
+     * says at re-spawn time — and since that map is the ONE thing the "use this
+     * next" button writes, a card would silently follow the user's next choice
+     * mid-conversation.
+     *
+     * Absent means the main sign-in, which is what every card started before
+     * this item ran as and what a machine with no captured account still gets.
+     */
+    account?: string;
+    /**
      * ‼️ X-102 — WHICH SPAWN THIS CARD IS, and therefore which manifest.
      *
      * The card learns its `sessionId` from the engine minutes into the
@@ -1651,6 +1664,9 @@ export function newSessionState(o: {
     /** X-103 — the route this card runs on; kept on the state so a window reload
      *  cannot quietly move a live conversation to a different endpoint. */
     providerId?: string; tier?: string;
+    /** X-169 — the sign-in this card runs as; kept on the state so a re-spawn
+     *  cannot follow the "use this next" button into another account. */
+    account?: string;
     /** X-102 — the spawn this card is, so its manifest can be found again once
      *  the engine finally names the conversation (see ConsoleSessionState). */
     launchId?: string;
@@ -1679,6 +1695,9 @@ export function newSessionState(o: {
         // "nothing" for a card that outlives the setting.
         ...(o.providerId?.trim() ? { providerId: o.providerId.trim() } : {}),
         ...(o.tier?.trim() ? { tier: o.tier.trim() } : {}),
+        // Absent rather than '' for the same reason: an unset account is the
+        // main sign-in, and a stored empty string would look like an answer.
+        ...(o.account?.trim() ? { account: o.account.trim() } : {}),
         // Absent rather than '' for the same reason the route is: a card with no
         // manifest is a card whose setup is genuinely unknown, and an empty
         // string would be a handle that looks like one and finds nothing.

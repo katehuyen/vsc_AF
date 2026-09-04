@@ -288,6 +288,14 @@ export interface HostedSessionInit {
     providerId?: string;
     tier?: string;
     /**
+     * ‼️ X-169 — WHICH SIGN-IN THIS CARD RUNS AS. Absent means the engine's
+     * active account decides and, failing that, the main one — which is what
+     * every card started before this item did, to the character. Named here so
+     * a door's choice reaches the spawn instead of being re-read from settings
+     * minutes later, behind the person who made it.
+     */
+    account?: string;
+    /**
      * ‼️ X-102 — THE SPAWN THIS CARD IS, minted and recorded by the door that
      * started it. Absent means no manifest was written for this card, which is
      * a real answer and the one every card started before this item gives.
@@ -533,7 +541,20 @@ export class ConsoleHost {
              *  agent's stored record, which is what every caller written before
              *  a picker existed meant. */
             route?: { providerId?: string; tier?: string }
-        ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined
+        ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined,
+        /**
+         * ‼️ X-169 — THE ACCOUNT'S ENVIRONMENT, resolved by the side that owns
+         * the slot list and the "use this next" map, for the same reason
+         * `engineRuntime` is: a core module that read `agentFarm.accounts`
+         * itself would be a second resolver, and the variable's NAME belongs to
+         * the engine's own adapter rather than to this file.
+         *
+         * Absent, or an empty map, leaves the environment exactly as it has
+         * always been — which IS the main sign-in.
+         */
+        private accountLayer?: (
+            engine: string, account?: string
+        ) => Record<string, string> | undefined
     ) {}
 
     /** The shared OpenCode runtime, made on demand. `undefined` when this build
@@ -677,7 +698,8 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-            providerId: init.providerId, tier: init.tier, launchId: init.launchId,
+            providerId: init.providerId, tier: init.tier, account: init.account,
+            launchId: init.launchId,
             now, sessionId: init.resume, projectId, resumed: !!init.resume,
             carried: init.resume ? init.carried : undefined
         });
@@ -778,7 +800,11 @@ export class ConsoleHost {
              * X-101 gives: a route change is a different program.
              */
             env: spawnEnvironment(
-                process.env, [],
+                // ‼️ X-169 — the account as a LAYER, which is what this argument
+                // has always been for. A second injection path would have to
+                // re-solve the clearing order below, and one of the two would
+                // eventually be wrong.
+                process.env, [this.accountLayer?.(engine.id, init.account)],
                 this.engineRuntime?.(init.agentId, engine.id, {
                     providerId: init.providerId, tier: init.tier
                 }))
@@ -1528,7 +1554,11 @@ export class ConsoleHost {
                 // `ANTHROPIC_BASE_URL` answers the question the chosen route was
                 // picked to answer, and the transcript records neither.
                 env: spawnEnvironment(
-                    process.env, [],
+                    // ‼️ X-169 — off the STATE, not the setting: every re-spawn
+                    // of a persistent engine comes through here, and reading it
+                    // live would move a long conversation onto whichever account
+                    // the "use this next" button was last pressed for.
+                    process.env, [this.accountLayer?.(h.engine.id, h.state.account)],
                     // ‼️ X-103 — THIS CARD'S OWN ROUTE, not the agent's standing
                     // one, when the card was started on one. Every re-spawn of a
                     // persistent engine comes through here, so reading it off

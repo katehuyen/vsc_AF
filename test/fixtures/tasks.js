@@ -203,6 +203,18 @@ const data = () => ({
                 ]
             }
         },
+        // ‼️ X-169 - the sign-ins the form may bill a run to. Here for the same
+        // reason the routes are: the box is drawn only where there is something
+        // to pick, so a fixture without them photographs the one state the row
+        // is not in. One slot is deliberately not `ready` - a fallen token has
+        // to be visible as a warning before somebody schedules a night on it.
+        accounts: {
+            claude: [
+                { id: 'work-1', label: 'work@studio', health: 'ready', active: true },
+                { id: 'personal', label: 'personal@gmail', health: 'ready', active: false },
+                { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false }
+            ]
+        },
         engines: [
             { id: 'claude', label: 'Claude Code', ready: true, next: 'Ready, on a plan.' },
             { id: 'codex', label: 'Codex', ready: true, next: 'Ready, on a plan.' }
@@ -510,6 +522,29 @@ const variants = () => ([
             drive(r, draft, 'nt-route');
             Object.assign(draft, { 'nt-tier': 'opus' });
             drive(r, draft, 'nt-tier');
+        }
+    },
+    /**
+     * ‼ X-169 — AND WHOSE PLAN PAYS FOR IT, which is the box a machine rotating
+     * three sign-ins needs most on THIS form: a task fires with nobody watching,
+     * so an account not named when the task is written is never named at all.
+     *
+     * What has to be read here is that it sits with the other launch dimensions
+     * rather than beside the prompt, that the empty row says what leaving it
+     * empty MEANS, and that a slot whose token has fallen over is marked before
+     * anybody schedules a night on it.
+     */
+    {
+        id: 'tasks-account',
+        label: 'Tasks → the New-task form, billed to a named sign-in (X-169)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            const draft = {
+                'nt-prompt': 'gece taraması — ikinci hesapta',
+                'nt-account': 'personal'
+            };
+            drive(r, draft, 'nt-account');
         }
     },
     // ‼️ S-19 — the form when the run continues a conversation instead of

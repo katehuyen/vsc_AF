@@ -1,4 +1,4 @@
-// X-150 / X-151 — 16 DIMENSIONS x 13 DOORS = 208 OBLIGATIONS, MEASURED BY CALLING.
+// X-150 / X-151 — 17 DIMENSIONS x 13 DOORS = 221 OBLIGATIONS, MEASURED BY CALLING.
 //
 // ‼️ THE RULE THIS FILE MAKES FAIL A BUILD.
 //
@@ -11,14 +11,14 @@
 // can only see the absence of something it was told to look for. It cannot look
 // for a rule nobody has written yet.
 //
-// A matrix can. Every dimension crossed with every door is 208 cells, and EVERY
+// A matrix can. Every dimension crossed with every door is 221 cells, and EVERY
 // CELL MUST HAVE A VERDICT in `launch.matrix.json`:
 //
 //   carried              the door demonstrably hands it on
 //   exempt: <reason>     it does not apply here, and the reason is written down
 //   gap: <reason>        it should and does not — counted against a budget
 //
-// A seventeenth dimension therefore arrives with THIRTEEN cells that have no
+// An eighteenth dimension therefore arrives with THIRTEEN cells that have no
 // verdict, and the suite is red until somebody says, per door, which of the
 // three it is. The obligation is created by the dimension, not by somebody
 // remembering to create it.
@@ -90,9 +90,9 @@ if (FIX) {
 const M = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
 
 /* ---------------- the shape ---------------- */
-ok('the matrix is 16 dimensions wide', DIMS.length === 16);
+ok('the matrix is 17 dimensions wide', DIMS.length === 17);
 ok('…and 13 doors deep', DOORS.length === 13);
-ok('‼️ …so there are 208 obligations', DIMS.length * DOORS.length === 208);
+ok('‼️ …so there are 221 obligations', DIMS.length * DOORS.length === 221);
 ok('every door states which surface it produces',
     LAUNCH_DOORS.every(d => ['console', 'terminal', 'either', 'task', 'headless'].indexOf(d.surface) >= 0));
 ok('‼️ …and why it is a door — a row with no reason is a row nobody can judge',
@@ -136,7 +136,10 @@ ok('…and answers with an object rather than throwing on a fixture',
         const carried = carries(door);
         for (const dim of DIMS) {
             const want = verdictFor(door, dim, carried);
-            const got = M.cells[door.id][dim];
+            // ‼️ A MISSING CELL IS THE CASE THIS BLOCK MOST HAS TO SURVIVE — it
+            // is what a new dimension looks like, and throwing here buried the
+            // one line above that says which cells they are.
+            const got = M.cells[door.id][dim] || '(no verdict)';
             const same = want === got
                 // the reason text may be reworded without a reseed; the KIND may not
                 || (want.split(':')[0] === got.split(':')[0] && want.startsWith('exempt'));
@@ -229,6 +232,23 @@ ok('…and answers with an object rather than throwing on a fixture',
         has('composer', 'providerId') && has('composer', 'tier'));
     ok('X-106 — and an automation carries it too, or a nightly job takes whatever was standing',
         has('automation', 'providerId') && has('automation', 'tier'));
+    /**
+     * ‼️ X-169 — THE ACCOUNT, WHICH IS THE FIRST DIMENSION THAT IS A STATE.
+     *
+     * It is not remembered, so the S-34 layer cannot carry it the way it carries
+     * the model — every door resolves it through the extension's own resolver
+     * instead and hands it on settled. A door that said nothing would leave
+     * "whose plan pays" to be answered behind its back at the spawn, which is
+     * the shape of every defect this folder is named after.
+     */
+    ok('‼️ X-169 — the sign-in reaches every door that could state one',
+        ['composer', 'treeRow', 'treeMenu', 'launcher', 'surfacePick', 'projects',
+            'webviews', 'palette', 'bridge', 'task', 'automation']
+            .every(d => has(d, 'account')));
+    ok('…and the two that deliberately do not are SAID to, because a state is not a saved setup',
+        ['profile', 'mission'].every(d =>
+            !has(d, 'account')
+            && !!doorExemptions(LAUNCH_DOORS.find(x => x.id === d)).account));
     ok('‼️ the bridge collects from its ARGUMENTS and does not inherit — the one asymmetry',
         LAUNCH_DOORS.find(d => d.id === 'bridge').collect({
             agentId: 'a', seed: () => ({ model: 'from-the-record' }), picked: {}
@@ -237,6 +257,33 @@ ok('…and answers with an object rather than throwing on a fixture',
         LAUNCH_DOORS.find(d => d.id === 'webviews').collect({
             agentId: 'a', seed: () => ({ model: 'from-the-record' })
         }).model === 'from-the-record');
+}
+
+/* ---------------- ‼️ X-169 — WHAT "RESOLVED" MEANS AT A DOOR ---------------- */
+{
+    // The matrix above counts WHETHER a door carries the account. This is the
+    // other half and the one a reseed cannot notice: WHICH account it carries.
+    // All three answers are load-bearing, and the third is the one that looks
+    // like a detail — a door handing on `''` would be a door claiming to have
+    // answered "the main sign-in" when nobody answered anything, and every
+    // surface between it and the spawn would repeat the claim.
+    const door = LAUNCH_DOORS.find(d => d.id === 'composer');
+    const ctx = (stated, standing) => ({
+        agentId: 'a',
+        seed: (_id, o) => ({ ...(o || {}) }),
+        // the extension's own `resolveAccount(stated, engine, active)`, in order
+        accountFor: (_engine, said) => String(said || '').trim() || (standing || ''),
+        picked: stated === undefined ? {} : { account: stated }
+    });
+    ok('‼️ X-169 — an account stated AT the door wins over the standing one',
+        door.collect(ctx('work-1', 'standing')).account === 'work-1');
+    ok('…and where the door states none, the standing choice answers',
+        door.collect(ctx(undefined, 'standing')).account === 'standing');
+    ok('‼️ …and where there is neither, the key is ABSENT rather than empty',
+        !('account' in door.collect(ctx(undefined, ''))));
+    ok('‼️ a door handed no resolver at all is unchanged, byte for byte — which is '
+        + 'every caller written before this dimension existed',
+        !('account' in door.collect({ agentId: 'a', seed: (_id, o) => ({ ...(o || {}) }) })));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.373.0 - X-169: which sign-in pays for the session, at every door (2026-09-04)
+
+Three Claude Pro plans on one machine, switched by hand all day: `/login` in a
+terminal, the right Chrome profile, sometimes a fresh Google sign-in. X-168
+measured the way out — `CLAUDE_CONFIG_DIR` isolates an account completely, so
+switching is not copying files over the live one, it is pointing the SPAWN at a
+different directory. This is that measurement turned into a launch dimension.
+
+`account` is the seventeenth field of `LaunchOptions`, which means the matrix
+that counts "every dimension, every door" grew from 208 obligations to 221 and
+went red until every one of the thirteen had a verdict. Eleven doors carry it;
+two say out loud why they do not.
+
+- **The composer has a box for it**, beside the route, and it opens on whatever
+  the standing choice is — so the account a session will spend is readable before
+  Send rather than discoverable afterwards. Its hover says which one is set, then
+  what "empty" means: the main sign-in, the identity this machine is logged in as.
+- **The launcher has a row**, the Tasks form has a box, and `sessions.start`,
+  `console.start` and `tasks.add` all take an `account` argument and answer with
+  the one they really started as. A task is unattended, so "the nightly batch on
+  the second plan" can only be said when the task is WRITTEN or it is never said.
+- **An id naming no stored slot is REFUSED, not downgraded.** Falling back to the
+  main account for a slot that was forgotten would start the run on whoever
+  happens to be signed in — the exact accident this whole family exists to end.
+  An account belongs to one engine and is refused on another.
+- **The variable's NAME is the engine adapter's** (`engineAccounts.accountEnv`).
+  No door and no runner spells `CLAUDE_CONFIG_DIR`; an engine that cannot isolate
+  a sign-in shows no control at all rather than one that pretends to work.
+- **It is NOT remembered per agent, and that is the decision.** A model is a
+  preference; an account is a STATE — how much of a plan is left, which changes
+  hourly. Remembered, it would pin an agent to an exhausted plan and, through the
+  S-34 layer order, would silently outrank the "use this next" gesture: a button
+  that does nothing visible. `agentFarm.activeAccounts` holds it, per engine, and
+  a launch that names one still wins.
+- **One injection path, not a second one.** The environment goes in through the
+  `layers` argument `providerRuntime.spawnEnvironment` and `terminalEnvOverlay`
+  already take — the place that knows a name left OUT of a terminal overlay is
+  not removed by leaving it out (only `null` removes it).
+- **A card keeps the account it started on.** It is on the session state, like
+  the route, so a re-spawn or a window reload cannot walk a live conversation
+  onto whichever plan the button was last pressed for.
+
+Nothing changes on a machine that has captured no accounts: no variable is
+injected, no box is drawn, and every launch is byte for byte what it was.
+
 ## 3.372.0 - U-129: the install button types a command that can actually run (2026-09-03)
 
 Every Install button on the Engines page typed `npm install -g …` into a terminal,

@@ -2,10 +2,10 @@
 //
 // ‼️ WHAT THIS FILE IS FOR: MAKING "EVERY DIMENSION, EVERY DOOR" COUNTABLE.
 //
-// A session in this extension is described by 16 answers — which engine, which
-// model, which effort, which route, which tier, which permission mode, and ten
-// more — and it can be started from 13 places. That is 208 obligations, and
-// until this file existed the sentence stating them lived in a 1.690-line SOP,
+// A session in this extension is described by 17 answers — which engine, which
+// account, which model, which effort, which route, which tier, which permission
+// mode, and ten more — and it can be started from 13 places. That is 221
+// obligations, and until this file existed the sentence stating them lived in a 1.690-line SOP,
 // in a `_REF` rule and in 74 hand-written regexes. All three depend on a person
 // remembering to read them, and the measurement behind X-148 is what happens
 // when one does not: `providerId` and `tier` were added to the type, wired into
@@ -55,7 +55,7 @@
     'use strict';
 
     /**
-     * ‼️ THE 16, IN THE ORDER `LaunchOptions` DECLARES THEM.
+     * ‼️ THE 17, IN THE ORDER `LaunchOptions` DECLARES THEM.
      *
      * `owner` is whose answer it is: `user` = somebody picked it, `engine` = the
      * program decides and we only carry it, `farm` = this extension resolved it
@@ -64,12 +64,21 @@
      * `appliesTo(ctx)` is where a dimension does not exist at all rather than
      * being empty — a control with no referent is what docs/CONVENTIONS.md
      * forbids. `ctx` carries only facts the caller already holds:
-     * `{ engine, takesEffort, hasProviderAxis, hasTiers, hasVariants }`.
+     * `{ engine, takesEffort, hasProviderAxis, hasTiers, hasVariants, hasAccounts }`.
      */
     const LAUNCH_DIMENSIONS = [
         {
             id: 'engine', owner: 'user', remembered: true, perEngine: false, redraws: true,
             why: 'X-18 - which program runs. Absent means claude, which is what every caller written before engines existed meant.'
+        },
+        {
+            id: 'account', owner: 'user', remembered: false, perEngine: false, redraws: false,
+            appliesTo: c => c.hasAccounts !== false,
+            why: 'X-169 - WHICH SIGN-IN of that engine runs it. NOT remembered, and that is the '
+                + 'decision rather than an omission: a model is a preference, an account is a '
+                + 'STATE (how much of a plan is left, which changes hourly). Remembered per agent '
+                + 'it would pin an agent to an exhausted plan and outrank the "use this next" '
+                + 'gesture on the Engines page, which would then visibly do nothing.'
         },
         {
             id: 'providerId', owner: 'user', remembered: true, perEngine: true, redraws: true,

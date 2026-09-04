@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const bridgeDoor: LaunchDoor = {
     id: 'bridge',
@@ -18,8 +18,8 @@ export const bridgeDoor: LaunchDoor = {
      * bug to find.
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
-        return pick((ctx.picked ?? {}) as never,
-            ['engine', 'providerId', 'tier', 'model', 'variant', 'effort',
-                'permissionMode', 'name', 'prompt', 'resume', 'continueLast']);
+        return withAccount(ctx, pick((ctx.picked ?? {}) as never,
+            ['engine', 'account', 'providerId', 'tier', 'model', 'variant', 'effort',
+                'permissionMode', 'name', 'prompt', 'resume', 'continueLast']));
     }
 };

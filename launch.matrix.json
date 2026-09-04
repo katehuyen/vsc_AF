@@ -1,10 +1,11 @@
 {
   "note": "X-150/X-151. Every launch dimension x every launch door, measured by CALLING each door with every dimension set and seeing what it hands on. Each cell is carried, exempt:<reason> or gap:<reason>. An exemption is declared in the door module itself, beside the code its reason is about - never here. gapBudget MAY ONLY BE LOWERED: raising it means a door stopped carrying something, which is the failure this counts. Reseed: node test/test_launch_matrix.js --fix",
   "gapBudget": 31,
-  "wiredFloor": 4,
+  "wiredFloor": 5,
   "cells": {
     "treeRow": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "carried",
       "tier": "carried",
       "variant": "carried",
@@ -23,6 +24,7 @@
     },
     "treeMenu": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "gap: reaches this door and stops - nobody has said whether it should",
       "tier": "gap: reaches this door and stops - nobody has said whether it should",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
@@ -41,6 +43,7 @@
     },
     "launcher": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "carried",
       "tier": "carried",
       "variant": "carried",
@@ -59,6 +62,7 @@
     },
     "profile": {
       "engine": "carried",
+      "account": "exempt: X-169 - a profile is a SETUP and an account is a STATE. Stored, it would pin a saved launch to a plan that may be exhausted by the time anybody presses it, and it would outrank the use-this-next gesture the same way a per-agent memory would - which is the decision that item took. A launch from a profile still runs on the resolved account; it is simply not the profile that answers.",
       "providerId": "carried",
       "tier": "carried",
       "variant": "carried",
@@ -77,6 +81,7 @@
     },
     "composer": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "carried",
       "tier": "carried",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
@@ -95,6 +100,7 @@
     },
     "surfacePick": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "carried",
       "tier": "carried",
       "variant": "carried",
@@ -113,6 +119,7 @@
     },
     "projects": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "gap: reaches this door and stops - nobody has said whether it should",
       "tier": "gap: reaches this door and stops - nobody has said whether it should",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
@@ -131,6 +138,7 @@
     },
     "webviews": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "gap: reaches this door and stops - nobody has said whether it should",
       "tier": "gap: reaches this door and stops - nobody has said whether it should",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
@@ -149,6 +157,7 @@
     },
     "palette": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "gap: reaches this door and stops - nobody has said whether it should",
       "tier": "gap: reaches this door and stops - nobody has said whether it should",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
@@ -167,6 +176,7 @@
     },
     "bridge": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "carried",
       "tier": "carried",
       "variant": "carried",
@@ -185,6 +195,7 @@
     },
     "task": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "carried",
       "tier": "carried",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
@@ -203,6 +214,7 @@
     },
     "automation": {
       "engine": "carried",
+      "account": "carried",
       "providerId": "carried",
       "tier": "carried",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",
@@ -221,6 +233,7 @@
     },
     "mission": {
       "engine": "carried",
+      "account": "exempt: X-169 - a mission runs for HOURS across rounds and its delegates spawn one at a time. An account frozen into the mission would pin round nine to a plan that round two exhausted, and it would do it silently. Each delegate run resolves the account at its own spawn, from the one place that holds it.",
       "providerId": "gap: reaches this door and stops - nobody has said whether it should",
       "tier": "gap: reaches this door and stops - nobody has said whether it should",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",

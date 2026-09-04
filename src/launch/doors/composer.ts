@@ -1,5 +1,5 @@
 import { LaunchIntent } from '../../core/launchDimensions';
-import { LaunchDoor, LaunchDoorCtx, pick } from './index';
+import { LaunchDoor, LaunchDoorCtx, pick, withAccount } from './index';
 
 export const composerDoor: LaunchDoor = {
     id: 'composer',
@@ -18,8 +18,8 @@ export const composerDoor: LaunchDoor = {
      * has to look at is worth more than an excuse nobody wrote.
      */
     collect(ctx: LaunchDoorCtx): LaunchIntent {
-        return pick(ctx.seed(ctx.agentId ?? '', ctx.picked as never),
-            ['engine', 'model', 'effort', 'permissionMode', 'providerId', 'tier',
-                'superpowers', 'prompt', 'resume']);
+        return withAccount(ctx, pick(ctx.seed(ctx.agentId ?? '', ctx.picked as never),
+            ['engine', 'account', 'model', 'effort', 'permissionMode', 'providerId', 'tier',
+                'superpowers', 'prompt', 'resume']));
     }
 };

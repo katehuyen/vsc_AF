@@ -148,6 +148,7 @@ import {
 import { registerLaunchDoors } from './launch/doors/all';
 import { launcherDoor } from './launch/doors/launcher';
 import { projectsDoor } from './launch/doors/projects';
+import { paletteDoor } from './launch/doors/palette';
 import { treeMenuDoor } from './launch/doors/treeMenu';
 import { treeRowDoor } from './launch/doors/treeRow';
 import { bumpRevision, ownershipTable, secretKeyFor } from './core/providerOwnership';
@@ -3004,6 +3005,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * environment it has always had, byte for byte.
              */
             engineRuntime: (agentId, engine, route) => engineRuntimeFor(agentId, engine, route),
+            // ‼️ X-169 — and which sign-in it runs as, from the same side and for
+            // the same reason (see TaskRunnerOpts.accountLayer).
+            accountLayer: (engine, account) => launchAccountEnv({ engine, account }),
             /**
              * ‼️ X-102 — THE RUNNER STATES THE FACTS; THIS SIDE WRITES THE
              * RECORD. Same doctrine as `engineRuntime` above, and the same
@@ -7002,7 +7006,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 // route beside a CLI profile) already ran inside
                                 // `runDims`, so nothing is decided a second time.
                                 ...(d.providerId ? { providerId: d.providerId as string } : {}),
-                                ...(d.tier ? { tier: d.tier as string } : {})
+                                ...(d.tier ? { tier: d.tier as string } : {}),
+                                // ‼️ X-169 — AND WHICH SIGN-IN PAYS FOR IT, through
+                                // the same reader. A task is unattended: "the
+                                // nightly batch on the second account" can only be
+                                // said when it is written, or it is never said.
+                                ...(d.account ? { account: d.account as string } : {})
                             };
                         })(),
                         ...(optStr(args, 'workDir') ? { workDir: optStr(args, 'workDir') as string } : {}),
@@ -9370,7 +9379,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'sessions.start',
             describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? ('
                 + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), provider? (‼️ X-103 — WHICH ROUTE THIS SESSION RUNS ON. On Claude it is the id of a stored route profile (providers.list) and it is injected as environment, in isolation from whatever this window carries; on OpenCode it is the engine\'s own provider id and travels in its `-m`. UNSET IS A REAL ANSWER AND THE DEFAULT ONE: the agent\'s stored route applies, and if it has none then NOTHING is injected and NOTHING is cleared — which is not "Anthropic", it is inheritance, and the window may already name somebody else\'s endpoint. Ask providers.runtime to see exactly what a launch of this agent would clear and inject), tier? (Claude only, and only alongside a provider — which tier of that route. It is not a model: `opus` is kimi-k2-thinking on one route and MiniMax-M2 on another, so the route has to be chosen before the word means anything. A tier with no provider is REFUSED rather than dropped), model? (alias or id), variant? (the reasoning variant, only where the engine publishes one FOR THAT MODEL — measured per model, not per engine. ‼️ A terminal cannot carry it: the bare TUI takes no --variant and ACP declares only model and mode, so it belongs to a headless run), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults — this op is deliberately NOT seeded from what the agent was last started with, because an unattended call that says nothing means the documented defaults and not whatever a person last clicked. ‼️ S-34 — but what it DOES start IS recorded as this agent\'s last setup (engine, model, effort, permissionMode, superpowers, surface), so the UI doors that DO inherit are offering a fact rather than a stale one; ask sessions.lastLaunch to read it. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), provider? (‼️ X-103 — WHICH ROUTE THIS SESSION RUNS ON. On Claude it is the id of a stored route profile (providers.list) and it is injected as environment, in isolation from whatever this window carries; on OpenCode it is the engine\'s own provider id and travels in its `-m`. UNSET IS A REAL ANSWER AND THE DEFAULT ONE: the agent\'s stored route applies, and if it has none then NOTHING is injected and NOTHING is cleared — which is not "Anthropic", it is inheritance, and the window may already name somebody else\'s endpoint. Ask providers.runtime to see exactly what a launch of this agent would clear and inject), tier? (Claude only, and only alongside a provider — which tier of that route. It is not a model: `opus` is kimi-k2-thinking on one route and MiniMax-M2 on another, so the route has to be chosen before the word means anything. A tier with no provider is REFUSED rather than dropped), account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list. Unset is a real answer and the default one: the ACTIVE account of that engine applies (accounts.activate, agentFarm.activeAccounts) and if there is none then nothing is injected at all — which is the main sign-in, the identity this machine is logged in as. An id naming no stored slot is REFUSED rather than downgraded, because falling back to the main account would start the run on whoever happens to be signed in. An account belongs to ONE engine and is refused on another. The response says which account it really started as), model? (alias or id), variant? (the reasoning variant, only where the engine publishes one FOR THAT MODEL — measured per model, not per engine. ‼️ A terminal cannot carry it: the bare TUI takes no --variant and ACP declares only model and mode, so it belongs to a headless run), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults — this op is deliberately NOT seeded from what the agent was last started with, because an unattended call that says nothing means the documented defaults and not whatever a person last clicked. ‼️ S-34 — but what it DOES start IS recorded as this agent\'s last setup (engine, model, effort, permissionMode, superpowers, surface), so the UI doors that DO inherit are offering a fact rather than a stale one; ask sessions.lastLaunch to read it. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
@@ -9381,6 +9390,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // call written before this item meant and must keep meaning.
                     providerId: optStr(args, 'provider'),
                     tier: optStr(args, 'tier'),
+                    // ‼️ X-169 — WHICH SIGN-IN. Unset means the engine's active
+                    // account, and failing that the main one — which is what
+                    // every call written before this item meant and must keep
+                    // meaning. An id naming no slot is refused below rather than
+                    // downgraded: a caller that asked for the second plan and
+                    // silently got the first has been told nothing.
+                    account: optStr(args, 'account'),
                     model: optStr(args, 'model'),
                     variant: optStr(args, 'variant'),
                     effort: optStr(args, 'effort'),
@@ -9420,6 +9436,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // in a warning toast nobody is there to read.
                 const engineRefused = engineRefusal(engineMatrix(), merged.engine);
                 need(!engineRefused, engineRefused ?? '');
+                // ‼️ X-169 — and whether the account it names is on this machine.
+                const accountRefused = launchAccountRefusal(
+                    { engine: engineOf(merged.engine).id, account: merged.account });
+                need(!accountRefused, accountRefused);
                 const surface = optStr(args, 'surface') || 'terminal';
                 need(surface === 'terminal' || surface === 'console',
                     `surface must be "terminal" or "console", not "${surface}"`);
@@ -9433,7 +9453,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // report a price (see console.start, which answers the same way).
                 const shape = {
                     engine: spec.id, turnShape: spec.shape,
-                    steerable: spec.liveControls, reportsCost: spec.reportsCost
+                    steerable: spec.liveControls, reportsCost: spec.reportsCost,
+                    // ‼️ X-169 — WHICH SIGN-IN IT REALLY STARTED AS, resolved
+                    // rather than echoed: a caller that named none still needs
+                    // to know which plan it just spent, and '' is the honest
+                    // answer for the main account rather than a guess at a name.
+                    account: launchAccountFor(spec.id, merged.account)
                 };
                 if (surface === 'console') {
                     startConsoleSession(agent, o, project);
@@ -10315,7 +10340,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + Object.values(ENGINES).map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ')
                 + ' Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Not every engine HAS a reasoning effort: '
                 + enginesWithoutEffort()
-                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does). Returns the console id to talk to. ‼️ Not every engine states a price: '
+                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list. Omit and the ACTIVE account of that engine applies, and failing that nothing is injected at all — which is the main sign-in and what every card started before this ran as. An id naming no stored slot is REFUSED rather than downgraded; an account belongs to ONE engine. The answer says which one it really started as), providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does). Returns the console id to talk to. ‼️ Not every engine states a price: '
                 + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
                 + ' publish what each turn cost and the figure is theirs; '
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
@@ -10377,9 +10402,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!wantRoute || !!route.providerId,
                     `"${wantRoute}" is not a route ${engine} can be pointed at here — `
                     + 'engines.providers lists what is set up, and an engine with no provider axis takes none');
+                /**
+                 * ‼️ X-169 — AND WHICH SIGN-IN PAYS FOR IT. Refused rather than
+                 * downgraded, for the reason the route above is: a caller that
+                 * asked for the second plan and silently got the first has been
+                 * told nothing, and the transcript records neither.
+                 */
+                const wantAccount = optStr(args, 'account');
+                const accountNo = launchAccountRefusal({ engine, account: wantAccount });
+                need(!accountNo, accountNo);
+                const account = launchAccountFor(engine, wantAccount);
                 const id = consoleHost.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     engine: engine as EngineId,
+                    ...(account ? { account } : {}),
                     model: optStr(args, 'model') || d.model,
                     effort: optStr(args, 'effort') || d.effort,
                     permissionMode: optStr(args, 'permissionMode') || d.permissionMode,
@@ -10406,6 +10442,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     turnShape: spec.shape,
                     steerable: spec.liveControls,
                     reportsCost: spec.reportsCost,
+                    // ‼️ X-169 — and which sign-in it really started as: '' is
+                    // the honest word for the main account, never a guess.
+                    account,
                     project: consoleHost.get(id)?.projectId
                         ? (projectStore.get(consoleHost.get(id)!.projectId!)?.name ?? null) : null,
                     /**
@@ -15933,6 +15972,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         normalizeActive(cfg().get<Record<string, string>>('activeAccounts', {}));
     const writeAccounts = async (list: EngineAccountSlot[]): Promise<void> => {
         await cfg().update('accounts', list, vscode.ConfigurationTarget.Global);
+        // ‼️ A CAPTURE OR A FORGET IS EXACTLY THE MOMENT THE SNAPSHOT IS WRONG,
+        // and it is the moment the user is looking. See `slotIdentityFresh`.
+        identitySeen.clear();
     };
     const writeActiveAccounts = async (map: Record<string, string>): Promise<void> => {
         await cfg().update('activeAccounts', map, vscode.ConfigurationTarget.Global);
@@ -15959,6 +16001,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Who is in a captured slot. */
     const slotIdentity = (slot: EngineAccountSlot): AccountIdentity =>
         accountAdapterFor(slot.engine).readIdentity(diskFs, slot.dir);
+    /**
+     * ‼️ THE SAME ANSWER, FOR A SURFACE THAT ASKS SEVERAL TIMES A SECOND.
+     *
+     * `slotIdentity` READS FILES — for Claude, `.credentials.json` and the whole
+     * of `.claude.json`, which on a machine that has trusted a few hundred
+     * folders is megabytes. The Console repaints its whole state object while a
+     * turn streams, and the Tasks form and the launcher redraw under the hand,
+     * so those three would each turn a picker into a disk load. The panels' own
+     * `engineList` already holds its walk for a few seconds for exactly this
+     * reason; this is that rule, for the other reader.
+     *
+     * ‼️ THE DELIBERATE ASK IS NOT CACHED. `accounts.list`, `accounts.status`
+     * and the Engines page go through `slotIdentity` directly: somebody pressing
+     * refresh means "read it NOW", and answering from a snapshot would make the
+     * one gesture that exists to prove the disk state prove nothing.
+     */
+    const IDENTITY_TTL_MS = 5000;
+    const identitySeen = new Map<string, { at: number; id: AccountIdentity }>();
+    const slotIdentityFresh = (slot: EngineAccountSlot): AccountIdentity => {
+        const now = Date.now();
+        const had = identitySeen.get(slot.id);
+        if (had && now - had.at < IDENTITY_TTL_MS) { return had.id; }
+        const id = slotIdentity(slot);
+        identitySeen.set(slot.id, { at: now, id });
+        return id;
+    };
     /**
      * ‼️ ONE REQUEST BUDGET FOR EVERY ACCOUNT (X-170) — not one service per
      * slot, which would multiply every ceiling in planusage.ts by the number of
@@ -16026,6 +16094,96 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             usageState: u?.state ?? 'error',
             note: u?.note || ''
         };
+    };
+    /**
+     * ‼️ X-169 — WHICH SIGN-IN A LAUNCH RUNS ON, IN ONE FUNCTION, so no surface
+     * invents its own order. What the launch itself states wins; otherwise the
+     * engine's active account — the one thing "use this next" writes; otherwise
+     * nothing at all, which is the main sign-in and today's behaviour to the
+     * character.
+     *
+     * This is what every launch door is handed as `accountFor`, so the account a
+     * door shows and the account the process gets are one resolution rather than
+     * two that agree most of the time.
+     */
+    const launchAccountFor = (engine: string | undefined, stated?: string): string =>
+        resolveAccount(stated, engine, activeAccounts());
+    /** The slot a launch resolves to, or nothing — which IS the main account. */
+    const launchAccountSlot = (o: { engine?: string; account?: string }): EngineAccountSlot | undefined => {
+        const id = launchAccountFor(o.engine, o.account);
+        return id ? findSlot(storedAccounts(), id) : undefined;
+    };
+    /**
+     * ‼️ THE ENVIRONMENT LAYER, AND IT IS A LAYER RATHER THAN A SECOND
+     * INJECTION PATH. `providerRuntime.spawnEnvironment` and
+     * `terminalEnvOverlay` already take a list of layers for exactly this, and
+     * the terminal trap — leaving a name out does not REMOVE it, only `null`
+     * does — is solved in there once. A second path would have to solve it
+     * again, which is how one of the two ends up wrong.
+     *
+     * ‼️ The variable's NAME comes from the engine's own adapter
+     * (`accountEnv`), never spelt out here: a door that wrote `CLAUDE_CONFIG_DIR`
+     * would be a door that only works on one engine while looking general.
+     */
+    const launchAccountEnv = (o: { engine?: string; account?: string }): Record<string, string> =>
+        accountEnv(launchAccountSlot(o));
+    /**
+     * ‼️ AN ACCOUNT ID THAT NAMES NOTHING IS REFUSED, NOT IGNORED — falling back
+     * to the main sign-in for a slot that was forgotten would start the session
+     * on whichever identity happens to be signed in, which is the exact accident
+     * this family exists to end.
+     */
+    const launchAccountRefusal = (o: { engine?: string; account?: string }): string =>
+        accountRefusal(o.account, storedAccounts(), o.engine);
+    /**
+     * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, AS PICKER ROWS. One reader for
+     * the launcher, the composer and the bridge, so the words on all three are
+     * one statement rather than three that agree today.
+     */
+    const accountRowsFor = (engine: string): { id: string; label: string; detail: string }[] =>
+        slotsFor(storedAccounts(), engine).map(sl => {
+            const id = slotIdentityFresh(sl);
+            const u = accountUsage.current().find(x => x.slotId === sl.id);
+            return {
+                id: sl.id,
+                label: slotLabel(sl) + (activeAccounts()[sl.engine] === sl.id ? ' •' : ''),
+                // ‼️ THE FIGURES, NOT AN EXPLANATION — the row's own state is
+                // what the reader is deciding on: is this one signed in, and how
+                // much of its plan is left.
+                detail: [
+                    id.health === 'ready' ? '' : 'needs signing in again',
+                    id.email || '',
+                    u && u.percent >= 0 ? `${u.percent}% of the 5-hour window used` : ''
+                ].filter(Boolean).join(' · ')
+            };
+        });
+    /**
+     * ‼️ X-169 — EVERY ENGINE'S SIGN-INS AT ONCE, for a form whose engine box can
+     * move under the reader. The Tasks form redraws locally when the engine
+     * changes (a round trip under the pointer is the turn-lag bug X-150 is
+     * about), so it is handed the whole matrix rather than one engine's slice —
+     * exactly as `engineRouteMatrix` already is.
+     */
+    const engineAccountMatrix = (): Record<string,
+        { id: string; label: string; health: string; active: boolean }[]> => {
+        const out: Record<string, { id: string; label: string; health: string; active: boolean }[]> = {};
+        const active = activeAccounts();
+        for (const sl of storedAccounts()) {
+            (out[sl.engine] ??= []).push({
+                id: sl.id, label: slotLabel(sl),
+                health: slotIdentityFresh(sl).health,
+                active: active[sl.engine] === sl.id
+            });
+        }
+        return out;
+    };
+    /** What to print beside the launcher's Account row. */
+    const accountRowLabel = (engine: string, stated: string | undefined): string => {
+        const id = launchAccountFor(engine, stated);
+        if (!id) { return 'Main account'; }
+        const slot = findSlot(storedAccounts(), id);
+        if (!slot) { return `${id} (not on this machine)`; }
+        return slotLabel(slot) + (stated?.trim() ? '' : ' (the standing choice)');
     };
     /** What each engine can do about accounts at all, in its own words. */
     const accountEngineNotes = () => ENGINE_AUTH_ADAPTERS.map(a => ({
@@ -16622,7 +16780,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return tier && !kept.tier
                 ? `"${tier}" is not a tier the "${providerId}" route maps — engines.providers lists what it serves.`
                 : undefined;
-        }
+        },
+        // ‼️ X-169 — and whether that sign-in is on this machine, through the
+        // one reader (`accountStore.accountRefusal`). The same doctrine as the
+        // route beside it: the question is asked here, the ANSWER lives where
+        // the slots do.
+        account: (engine, account) =>
+            launchAccountRefusal({ engine: engineOf(engine).id, account }) || undefined
     });
 
     /**
@@ -17281,6 +17445,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // its Engine box instead of always listing Claude's aliases.
         engineModels: () => engineModelMatrix(),
         engineRoutes: () => engineRouteMatrix(),
+        // ‼️ X-169 — and the sign-ins each engine has, through the one reader.
+        engineAccounts: () => engineAccountMatrix(),
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.
@@ -17642,8 +17808,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  (their lifecycle is tracked via terminal close events). */
     // Returns the created terminal (undefined in external-terminal mode) so the
     // E2a lifecycle watcher can track external-CLI sessions; existing callers
-    // ignore the return value, so claude behaviour is unchanged. `env` (E2b)
-    // is only passed for external-CLI sessions — claude terminals get none.
+    // ignore the return value, so claude behaviour is unchanged.
+    // ‼️ `env` IS A LAYER, NOT A CUSTOM-CLI SPECIAL CASE ANY MORE (X-169). It
+    // began as the custom-CLI path's own variables; the account's config-dir
+    // override now rides in it too, on every engine, because `terminalEnvOverlay`
+    // below is the one place that knows a name left out of an overlay is NOT
+    // removed. An empty map is the ordinary answer and changes nothing.
     const launchClaudeTerminal = (
         name: string, cwd: string | undefined, command: string,
         env?: Record<string, string>, sessionId?: string, project?: string,
@@ -18043,6 +18213,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
             return undefined;
         }
+        // ‼️ X-169 — AND WHICH SIGN-IN IT RUNS ON, refused here rather than
+        // silently downgraded: an id naming no slot would otherwise start the
+        // session on whoever happens to be logged in, which looks identical to
+        // it having worked.
+        const accountNo = launchAccountRefusal({ engine: spec.id, account: merged.account });
+        if (accountNo) {
+            void vscode.window.showWarningMessage(`Agent Farm: ${accountNo}`);
+            return undefined;
+        }
         // The project is resolved ONCE and used for both halves of the launch —
         // what the session is TOLD (the context file) and what it is FILED under
         // (the stamp). Two reads of `activeProjectId()` could land either side
@@ -18115,11 +18294,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             superpowers: merged.superpowers ?? superpowersOnFor(agent.name)
         });
         launchClaudeTerminal(`${spec.exe}: ${agent.name}`, cwd ?? agent.dir, command,
+            // ‼️ X-169 — THE ACCOUNT, AS AN ENVIRONMENT LAYER on the surface that
+            // already takes one. Absent resolves to the engine's active account
+            // and, failing that, to nothing at all — and nothing at all IS the
+            // main sign-in, so a machine that has never captured an account
+            // spawns the identical process it always did.
+            launchAccountEnv({ engine: spec.id, account: merged.account }),
             // ‼️ X-103 — the route this launch resolved to, not the one the
             // settings file happens to hold. `merged` has already had the
             // agent's record applied under it, so an unset launch still lands on
             // the standing route and a set one wins — the whole layer, once.
-            undefined, sessionId, projectId, spec.id, route, launchId || undefined);
+            sessionId, projectId, spec.id, route, launchId || undefined);
         // A named launch should show its name in the panel within seconds, not
         // at the next quiet scan: the CLI writes its session file a moment
         // after boot, so look twice while the user is still watching. The name
@@ -18757,7 +18942,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // dimension of its own, which is why it is the door a new one shows up
         // at first (src/launch/doors/launcher.ts).
         let o: LaunchOptions = launcherDoor.collect(
-            { agentId: agent.id, seed: () => seed }) as LaunchOptions;
+            // ‼️ X-169 — and which sign-in it opens on: the launcher shows every
+            // dimension, so it must show this one settled rather than let it be
+            // answered behind the row at the spawn.
+            { agentId: agent.id, seed: () => seed, accountFor: launchAccountFor }) as LaunchOptions;
         let where: RunSurface = surface;
         // …and WHAT it belongs to, per launch, starting at the window's active
         // project — the same rule the one-click start follows (launchProjectRow).
@@ -18895,6 +19083,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     description: show(merged.tier),
                     detail: form.sub.note, act: 'tier'
                 } as Row] : []),
+                /**
+                 * ‼️ X-169 — WHOSE PLAN PAYS FOR IT, and it sits beside the route
+                 * because it is the same kind of answer one axis over: the route
+                 * says which endpoint answers, this says which sign-in is billed
+                 * and rate-limited for it.
+                 *
+                 * Drawn only where the engine can isolate a sign-in AND at least
+                 * one has been captured — on every other engine a row here would
+                 * spend a line on a question with no answers, and one that
+                 * pretended to switch accounts on an engine that ignores the
+                 * variable would be worse than absent.
+                 */
+                ...(accountRowsFor(spec.id).length ? [{
+                    label: '$(account) Account',
+                    description: accountRowLabel(spec.id, merged.account),
+                    detail: 'which sign-in of this engine the session runs as — blank is the main '
+                        + 'account. It is not remembered: an account is a state, not a preference, '
+                        + 'and the standing choice lives on the Engines page.',
+                    act: 'account'
+                } as Row] : []),
                 {
                     label: '$(star-full) Model', description: show(merged.model) + inherited(o.model, d.model),
                     // ‼️ THE LIST IS THE PROVIDER'S WHEN THE ENGINE PUBLISHES ONE
@@ -19009,7 +19217,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             // started the card on a different endpoint would be
                             // lying about the one thing this item exists to make
                             // sayable. See ConsolePanel.composerRoute.
-                            providerId: merged.providerId, tier: merged.tier
+                            providerId: merged.providerId, tier: merged.tier,
+                            // ‼️ X-169 — and the sign-in, for the same reason:
+                            // the launcher shows an Account row, so a card
+                            // started on a different one would make that row a
+                            // lie about the only thing it exists to say.
+                            account: merged.account
                         }
                     });
                 } else {
@@ -19071,6 +19284,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     o.model = kept.model ?? '';
                     o.variant = kept.variant ?? '';
                 }
+                continue;
+            }
+            if (pick.act === 'account') {
+                // ‼️ '' IS A REAL ROW AND THE DEFAULT ONE — the main sign-in. It
+                // is offered by name rather than implied by an empty box: "no
+                // account" and "the account this machine is signed in as" are
+                // the same thing, and only one of them reads like a decision.
+                const v = await pickChoice(
+                    'Which sign-in should this session run as?',
+                    [{
+                        id: '', label: 'Main account',
+                        detail: 'the identity signed in on this machine — nothing is injected'
+                    }, ...accountRowsFor(spec.id)],
+                    merged.account ?? '', false);
+                if (v !== undefined) { o.account = v; }
                 continue;
             }
             if (pick.act === 'tier') {
@@ -19564,7 +19792,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // through. Three surfaces reading a launch three ways would be three
         // answers to "which route is this run on", and the transcript records
         // none of them.
-        (agentId, engine, route) => engineRuntimeFor(agentId, engine, route));
+        (agentId, engine, route) => engineRuntimeFor(agentId, engine, route),
+        // ‼️ X-169 — and the account's own variable, from the same side, for the
+        // same reason: the slot list and the "use this next" map are settings,
+        // and the variable's NAME is the engine adapter's to state.
+        (engine, account) => launchAccountEnv({ engine, account }));
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).
     consoleHostRef = consoleHost;
@@ -20519,11 +20751,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // composer's Model and Effort boxes follow the Engine box.
         engineModels: () => engineModelMatrix(),
         engineRoutes: () => engineRouteMatrix(),
+        // ‼️ X-169 — and the sign-ins each engine has, through the one reader.
+        engineAccounts: () => engineAccountMatrix(),
         launchDefaults: () => launchDefaults(),
         // ‼️ S-34 — the per-agent record, read and written through the SAME two
         // functions every other door uses. The panel gets no copy of its own:
         // a second store would be a second answer to "what did this agent last
         // run as", and the whole item is that there must be one.
+        /**
+         * ‼️ X-169 — WHICH SIGN-INS THIS ENGINE HAS, for the composer's box.
+         * Never a token: an id, what to call it, whether it can still be used
+         * and whether it is the standing choice. The same shape the Engines page
+         * and the bridge are answered with, out of the same reader.
+         */
+        accountsFor: (engine: string) => {
+            // ‼️ THE USAGE IS AN IN-MEMORY SNAPSHOT (X-170), not a request — the
+            // service holds one budget for every account and refreshes on its
+            // own beat. Reading it here costs nothing, and a picker that made
+            // the reader click to find out how much of a plan is left would be
+            // the DENSITY rule broken on the one figure the choice turns on.
+            const usage = accountUsage.current();
+            return slotsFor(storedAccounts(), engine).map(sl => {
+                const u = usage.find(x => x.slotId === sl.id);
+                return {
+                    id: sl.id, label: slotLabel(sl),
+                    health: slotIdentityFresh(sl).health,
+                    active: activeAccounts()[sl.engine] === sl.id,
+                    percent: u && u.percent >= 0 ? u.percent : -1
+                };
+            });
+        },
         lastLaunch: (agentId: string) => lastLaunchOf(agentId),
         rememberLaunch: (agentId: string, o: LaunchOptions, surface: RunSurface) =>
             void rememberLaunch(agentId, o, surface),
@@ -21119,6 +21376,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
             return;
         }
+        // ‼️ X-169 — and the same refusal for the sign-in, on this side of every
+        // picker too. Nothing reachable today can hand this an id that names no
+        // slot; the check is here because the silent alternative — starting on
+        // whoever happens to be logged in — is indistinguishable from success.
+        const accountNo = launchAccountRefusal(
+            { engine: engineOf(merged.engine).id, account: merged.account });
+        if (accountNo) {
+            void vscode.window.showWarningMessage(`Agent Farm: ${accountNo}`);
+            return;
+        }
         /**
          * ‼️ X-102 — THE MANIFEST FOR A CARD, WRITTEN BEFORE THE PROCESS STARTS.
          *
@@ -21161,6 +21428,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // kept ON THE CARD (ConsoleSessionState) rather than re-read at each
             // spawn, so a long conversation stays on the endpoint it began on.
             providerId: merged.providerId, tier: merged.tier,
+            // ‼️ X-169 — AND WHICH SIGN-IN, resolved once here rather than left
+            // to the spawn: the card keeps it on its own state, so a re-spawn of
+            // a persistent engine cannot walk a live conversation onto whichever
+            // plan the "use this next" button was last pressed for. Empty is the
+            // main sign-in and stays absent, because an empty string on the
+            // state would look like an answer somebody gave.
+            ...(launchAccountFor(engineOf(merged.engine).id, merged.account)
+                ? { account: launchAccountFor(engineOf(merged.engine).id, merged.account) } : {}),
             // undefined = inherit the window's active project (ConsoleHost does
             // the read); '' = explicitly none. See launchClaudeTerminal.
             ...(project !== undefined ? { projectId: project } : {}),
@@ -24788,7 +25063,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // adding a dimension to the type could not reach a list written
                 // at a call site. Now it is one edit, in src/launch/doors/projects.ts.
                 const { engine: seededEngine, ...launch } =
-                    projectsDoor.collect({ agentId: agent.id, seed: () => o });
+                    projectsDoor.collect({
+                        agentId: agent.id, seed: () => o, accountFor: launchAccountFor
+                    });
                 ConsolePanel.show(consoleDeps, {
                     agentId: agent.id, pinAgent: true, projectId: id,
                     engine: (seededEngine as EngineId) || launchDefaults().engine || 'claude',
@@ -27255,7 +27532,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // with the fleet defaults.
             // ‼️ X-151 — the door's answer, taken whole (src/launch/doors/treeMenu.ts).
             const { engine: seededEngine, ...launch } =
-                treeMenuDoor.collect({ agentId: agent.id, seed: seedLastLaunch });
+                treeMenuDoor.collect({
+                    agentId: agent.id, seed: seedLastLaunch, accountFor: launchAccountFor
+                });
             ConsolePanel.show(consoleDeps, {
                 agentId: agent.id, pinAgent: true,
                 ...(seededEngine ? { engine: seededEngine as EngineId } : {}),
@@ -27781,7 +28060,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     agentId: agent.id,
                     engine: chosen.engine || 'claude',
                     seed: seedLastLaunch,
-                    engineSeed: (_id, e) => agentEngineSeed(agent, e as EngineId)
+                    engineSeed: (_id, e) => agentEngineSeed(agent, e as EngineId),
+                    // ‼️ X-169 — the account is NOT in the per-engine settings
+                    // row and never will be: it is a state, not a preference.
+                    // It is resolved here, from the one place that holds it, so
+                    // the shortest path to a session says whose plan pays.
+                    accountFor: launchAccountFor
                 }) as LaunchOptions;
                 if (chosen.surface === 'console') {
                     /**
@@ -27812,7 +28096,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // the launch, and it does the remembering.
                         launch: {
                             model: o.model, effort: o.effort,
-                            permissionMode: o.permissionMode, superpowers: o.superpowers
+                            permissionMode: o.permissionMode, superpowers: o.superpowers,
+                            // ‼️ X-169 — …and the account the door settled, into
+                            // the box the person is about to look at.
+                            account: o.account
                         }
                     });
                     return;
@@ -27870,15 +28157,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         }
                         return;
                     }
-                    startClaudeSession(agent, {
-                        engine: engine.id,
-                        // On an engine that resumes by id, say WHICH — "the
-                        // latest in this folder" is the CLI's own idea of latest
-                        // and it does not know about the other three.
-                        ...(latest && engine.id !== 'claude'
-                            ? { resume: latest.sessionId }
-                            : { continueLast: true })
-                    });
+                    // ‼️ X-151 — through the door (src/launch/doors/palette.ts).
+                    // ‼️ X-169 — WHICH MATTERS MOST ON A CONTINUE, and the answer
+                    // is the standing one rather than the conversation's. The
+                    // transcripts are shared across every slot by design (the
+                    // capture junctions them into one root), so rejoining
+                    // yesterday's conversation on today's fresh account is the
+                    // thing this whole family exists to make possible — a
+                    // continue pinned to the plan it started on would be the
+                    // rotation stopping at exactly the point it is needed.
+                    startClaudeSession(agent, paletteDoor.collect({
+                        agentId: agent.id, engine: engine.id, seed: seedLastLaunch,
+                        accountFor: launchAccountFor,
+                        picked: {
+                            engine: engine.id,
+                            // On an engine that resumes by id, say WHICH — "the
+                            // latest in this folder" is the CLI's own idea of
+                            // latest and it does not know about the other three.
+                            ...(latest && engine.id !== 'claude'
+                                ? { resume: latest.sessionId }
+                                : { continueLast: true })
+                        }
+                    }) as LaunchOptions);
                     return;
                 }
                 if (!latest) {
