@@ -1519,7 +1519,10 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('a session under a finished project is still named, off its own row',
         /s\.projectId === id && s\.projectName/.test(js));
     ok('…and the picker still answers for the new session it is about',
-        /<option value=""\$\{DATA\.activeProjectId \? '' : ' selected'\}>/.test(js));
+        // U-128 put a title on the option; the fact under test is that the
+        // EMPTY option is the selected one when no project is picked, so the
+        // match stops before whatever else the tag now carries.
+        /<option value=""\$\{DATA\.activeProjectId \? '' : ' selected'\}/.test(js));
 }
 
 // ---------- X-18/X-19: which engine is answering, on the surface ----------
@@ -1540,7 +1543,10 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('‼️ …offering an engine that cannot run here as DISABLED rather than hiding it',
         /\$\{e\.ready \? '' : ' disabled'\}/.test(js));
     ok('…with the one thing to do about it on the row itself',
-        /title="\$\{C\.esc\(e\.next\)\}"/.test(js));
+        // U-128 — still `e.next`, now behind the shared helper that puts the
+        // engine's own name in front of it: an option saying only the remedy
+        // does not say which engine it is the remedy for.
+        /title="\$\{C\.esc\(optionTip\([^)]*e\.next\)\)\}"/.test(js));
     ok('the panel checks it again on its own side of the webview wall',
         /const refused = engineRefusal\(this\.engineList\(\), engine\)/.test(panel));
     ok('…and passes the engine to the host', /engine: engine as EngineId,/.test(panel));

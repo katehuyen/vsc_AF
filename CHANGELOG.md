@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.381.0 - U-128: an option in a narrow box says its own name (2026-09-05)
+
+You asked why the Console's project picker did not show a project's full name on
+hover when the boxes beside it did — and answered it in the asking: our own
+design principles already said it had to. The measurement was worse than the
+report. **2 291 of the 2 639 options this extension draws carried no usable
+`title` at all**, including 126 on the Console itself, because options were built
+as `title="${detail}"` and most lists carry no detail.
+
+- **Every option the Console draws now opens its hover with its own text**, and a
+  detail follows after a blank line — the same order `boxTip` puts the current
+  value before the standing explanation. One helper (`optionTip`) that all six of
+  the page's option builders go through, so the next list cannot forget it.
+- **The project picker** carries the whole project name; **the agent picker**
+  carries the name and the folder the session will open in — the thing that
+  box's own tooltip has always promised.
+- **‼️ And it is measured, so it cannot come back.** `test/test_option_tips.js`
+  renders every page fixture and counts the options that say nothing;
+  `test/optiontips.manifest.json` holds a per-page budget that may only SHRINK,
+  exactly like the parity gate's `gapBudget`. A page missing from the manifest
+  must be at zero, so a NEW page cannot arrive with the defect in it. The
+  Console is at **0 of 249**; the other 23 pages are recorded at today's numbers
+  and can be paid down one at a time.
+
 ## 3.380.0 - S-52: a session you resume tomorrow did not run for a day (2026-09-05)
 
 The Sessions table measured Duration from the first message to the last. That figure is

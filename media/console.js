@@ -57,6 +57,25 @@
      *                 those to 1 and 0 and you have the old instant behaviour
      *                 back, exactly.
      */
+    /**
+     * ‼️ U-128 — AN OPTION SAYS ITS OWN NAME, ALWAYS.
+     *
+     * A `<select>` on this page is narrow and the browser CUTS the text inside
+     * it; the one surface that can give it back is the option's own native
+     * `title`, because an AFTip cannot reach into an OS-drawn popup (see the
+     * five names). Options were built as `title="${detail}"`, so every one that
+     * carried no detail was drawn with an EMPTY title — measured on this page's
+     * own fixture, 126 of 249 options offered a hover that showed nothing.
+     *
+     * The name comes first and always; a detail, where there is one, follows
+     * after a blank line — the same order `boxTip` puts the current value
+     * before the standing explanation. EVERY option this page draws goes
+     * through here, so the next list somebody adds cannot forget it, and
+     * `test_console_page.js` fails the build if one does.
+     */
+    const optionTip = (label, detail) =>
+        [String(label || ''), String(detail || '')].map(x => x.trim()).filter(Boolean).join('\n\n');
+
     const ORDER_MODES = [
         { v: 'fixed', t: 'cards never move' },
         { v: 'waiting', t: 'waiting for you first' },
@@ -1994,7 +2013,7 @@
         return `<div class="rpanel">
             <select id="c-ord-mode" title="What is allowed to move a card">
                 ${ORDER_MODES.map(m =>
-                    `<option value="${m.v}"${m.v === o.mode ? ' selected' : ''}>${C.esc(m.t)}</option>`).join('')}
+                    `<option value="${m.v}"${m.v === o.mode ? ' selected' : ''} title="${C.esc(optionTip(m.t))}">${C.esc(m.t)}</option>`).join('')}
             </select>
             ${o.mode === 'active' ? `<div class="rrow">
                 <label class="rn" title="How many separate signs of life a session must show before it is allowed to climb. 1 = every single line moves it.">after
@@ -2049,7 +2068,7 @@
         if (!st.showResume || !st.showRFilter) { return ''; }
         const q = st.rq;
         const agents = (DATA.resumeAgents || []);
-        const opt = (v, t, cur) => `<option value="${C.esc(v)}"${v === cur ? ' selected' : ''}>${C.esc(t)}</option>`;
+        const opt = (v, t, cur) => `<option value="${C.esc(v)}"${v === cur ? ' selected' : ''} title="${C.esc(optionTip(t))}">${C.esc(t)}</option>`;
         const chip = (id, label, on, tip, cls) =>
             `<button class="rchip${cls ? ' ' + cls : ''}${on ? ' on' : ''}" id="${id}" title="${C.esc(tip)}">${label}</button>`;
         return `<div class="rpanel">
@@ -2858,7 +2877,7 @@
         return (DATA.engines || []).map(e => {
             const mark = e.ready ? '' : ' — ' + (e.auth === 'none' ? 'not signed in' : 'not installed');
             return `<option value="${C.esc(e.id)}"${e.id === cur ? ' selected' : ''}${e.ready ? '' : ' disabled'}
-                    title="${C.esc(e.next)}">${C.esc(e.label)}${C.esc(mark)}</option>`;
+                    title="${C.esc(optionTip(e.label + mark, e.next))}">${C.esc(e.label)}${C.esc(mark)}</option>`;
         }).join('');
     }
 
@@ -3310,7 +3329,7 @@
 
     function buildShell(s) {
         const opts = (list, cur) => (list || []).map(o =>
-            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''} title="${C.esc(o.detail || '')}">${C.esc(o.label || o.id)}</option>`).join('');
+            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''} title="${C.esc(optionTip(o.label || o.id, o.detail))}">${C.esc(o.label || o.id)}</option>`).join('');
         /**
          * ‼️ K-16 — A BOX'S HOVER SAYS WHAT IS IN IT, THEN WHAT IT IS FOR.
          *
@@ -3558,8 +3577,8 @@
                 <span id="c-live"></span>
                 <button id="c-send"${dead ? ' disabled' : ''}>Send</button>`
             : `${pinnedAgentHtml() || `<select id="c-agent" title="${C.esc(boxTip((DATA.agents || []).map(a => ({ id: a.id, label: a.name })), st.agentId, 'Which agent — the session opens in its folder'))}">
-                    <option value="">Choose an agent…</option>
-                    ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''}>${C.esc(a.name)}</option>`).join('')}
+                    <option value="" title="${C.esc(optionTip('Choose an agent…', 'the session opens in that agent\'s own folder'))}">Choose an agent…</option>
+                    ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''} title="${C.esc(optionTip(a.name, a.dir))}">${C.esc(a.name)}</option>`).join('')}
                 </select>`}
                 <select id="c-engine" title="${C.esc(boxTip((DATA.engines || []), engineNow(), 'Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.'))}">${engineOptionsHtml(engineNow())}</select>
                 ${engineHintHtml(engineNow())}
@@ -3571,8 +3590,8 @@
                     : ''}
                 <select id="c-perm" title="${C.esc(boxTip(DATA.permissions, st.permissionMode, startPermTip))}">${opts(DATA.permissions, st.permissionMode)}</select>
                 <select id="c-proj" title="${C.esc(boxTip([{ id: '', label: '◧ No project' }, ...(DATA.projects || []).map(p => ({ id: p.id, label: (p.icon || '◧') + ' ' + p.name }))], DATA.activeProjectId || '', 'Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar\'s active project is the window\'s answer, not this session\'s, and neither writes the other.'))}">
-                    <option value=""${DATA.activeProjectId ? '' : ' selected'}>◧ No project</option>
-                    ${(DATA.projects || []).map(p => `<option value="${C.esc(p.id)}"${p.id === DATA.activeProjectId ? ' selected' : ''}>${p.icon ? C.esc(p.icon) + ' ' : '◧ '}${C.esc(p.name)}</option>`).join('')}
+                    <option value=""${DATA.activeProjectId ? '' : ' selected'} title="${C.esc(optionTip('◧ No project', 'the session is told about no project and is filed under none'))}">◧ No project</option>
+                    ${(DATA.projects || []).map(p => `<option value="${C.esc(p.id)}"${p.id === DATA.activeProjectId ? ' selected' : ''} title="${C.esc((p.icon ? p.icon + ' ' : '◧ ') + p.name)}">${p.icon ? C.esc(p.icon) + ' ' : '◧ '}${C.esc(p.name)}</option>`).join('')}
                 </select>
                 <span class="grow"></span>
                 <span id="c-live"></span>
