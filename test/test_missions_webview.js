@@ -2055,5 +2055,77 @@ ok('Collapse all folds the whole list', detailCount() === 0);
     msgHandler({ data: { type: 'data', data: { ...DATA, pending: { questions: [], approvals: [] }, runs: [RUN] } } });
 }
 
+// ---------- ‼️ X-177 — the sentry campaign's block ----------
+// Missions is the page the campaign lives on and no third panel was opened, so
+// what is checked here is the split the item asks for: this surface carries the
+// SETUP and the HISTORY, and never what is true this second (that is the
+// Console strip). The state has to be readable in one word and the reason
+// nothing is happening has to be the campaign's OWN sentence.
+{
+    const sentry = (over) => Object.assign({
+        defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 },
+        idlePollMin: 10,
+        permissionModes: [{ id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'everything' }],
+        campaign: null, running: false, rounds: []
+    }, over || {});
+    const paint = (s) => msgHandler({ data: { type: 'data', data: { ...DATA, sentry: s } } });
+
+    paint(sentry());
+    ok('with no campaign the block says what one WOULD do before anything is pressed',
+        html().includes('>Sentry<') && html().includes('takes the next item off a project backlog'));
+    ok('...and offers to start one', html().includes('id="s-new"'));
+    ok('...and offers no Pause or Stop for a campaign that does not exist',
+        !html().includes('id="s-pause"') && !html().includes('id="s-stop"'));
+
+    const CAMP = {
+        id: 'sc-1', project: 'prj_9ujsbtzr', agent: 'a1', status: 'running', rounds: 7,
+        engine: 'claude', lastAction: 'start', lastRule: 'has-room', lastAt: 1,
+        lastWhy: 'slot-2 has the most room left, so X-178 starts there'
+    };
+    paint(sentry({
+        campaign: CAMP, running: true, rotatesAccounts: true, failLimit: 3, failStreak: 1,
+        projectName: 'AgentFarm', agentName: 'developer',
+        rounds: [{ id: 't9', title: 'Sentry R7 · X-178', status: 'running', createdAt: 1, endedAt: null, account: 'slot-2' }]
+    }));
+    ok('a running campaign is RUNNING in one word', html().includes('>RUNNING<'));
+    ok('‼️ ...and the reason it is doing what it is doing is the campaign OWN sentence',
+        html().includes('slot-2 has the most room left'));
+    ok('...it names what it works through and as whom, rather than an id to look up',
+        html().includes('AgentFarm') && html().includes('developer'));
+    ok('...the barren streak is shown against the brake that would stop it',
+        html().includes('1/3 barren'));
+    ok('...every round it opened is listed with the account that round spent',
+        html().includes('Sentry R7 · X-178') && html().includes('slot-2'));
+    ok('...and it offers Pause and Stop, but not Resume',
+        html().includes('id="s-pause"') && html().includes('id="s-stop"') && !html().includes('id="s-resume"'));
+
+    paint(sentry({
+        campaign: { ...CAMP, status: 'paused', lastAction: 'sleep', lastRule: 'wait-for-reset',
+            lastWhy: 'every account is at or above 95%', wakeAt: 2 },
+        running: false, projectName: 'AgentFarm', agentName: 'developer',
+        nextWords: { code: 'X-178', at: 1, prompt: 'Take X-178 and work through it.' },
+        rounds: []
+    }));
+    ok('a paused campaign is PAUSED — not stopped, and not running',
+        html().includes('>PAUSED<'));
+    ok('...it offers Resume rather than Pause', html().includes('id="s-resume"') && !html().includes('id="s-pause"'));
+    ok('‼️ ...and it says it is holding the sentence its next round will open on',
+        html().includes('next words · X-178'));
+
+    posted = [];
+    getEl('s-resume').listeners.click();
+    ok('Resume asks the host for exactly that, and decides nothing itself',
+        posted.some(m => m.type === 'sentryControl' && m.action === 'resume'));
+
+    // ‼️ THE REFUSALS ARE THE PAGE'S OWN, so an empty box is named rather than
+    // round-tripped to be told the same thing.
+    paint(sentry());
+    getEl('s-new').listeners.click();
+    posted = [];
+    getEl('s-start').listeners.click();
+    ok('starting with nothing filled in refuses on the page and asks the host nothing',
+        !posted.length && html().includes('pick the project'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
