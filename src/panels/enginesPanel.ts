@@ -46,6 +46,24 @@ export interface EnginesPanelDeps {
      * the webview in either direction.
      */
     profiles(): PublicProviderProfile[];
+    /**
+     * ‼️ X-172 (first slice) — WHICH SIGN-IN THIS ENGINE IS CURRENTLY PLUGGED
+     * INTO, and how much of that plan is left.
+     *
+     * This page is already the page for "what can this machine run, how is it
+     * paid for, is it signed in" — the account is the sub-fact of that last
+     * question, which is why X-167 put it here rather than on Secrets (a vault
+     * is written and never read back; an account is measured and changed).
+     *
+     * ‼️ NOTHING SECRET, like everything else on this page: an id, a label, an
+     * address, a health verdict and a percentage. There is no dep here that can
+     * return a token, so the honest question — "was it ever given anything to
+     * redact" — answers no.
+     */
+    accounts?(): {
+        id: string; engine: string; label: string; email: string;
+        health: string; active: boolean; percent: number; resetsAt: number;
+    }[];
     /** who is the authority for which data — the item's first acceptance line,
      *  and it is only met if a person can SEE it */
     ownership(): OwnershipRow[];
@@ -75,6 +93,10 @@ function buildData(deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestRes
          * "this route has no key yet", which is the only thing a reader needs.
          */
         profiles: deps.profiles(),
+        // ‼️ X-172 — the sign-ins, for the chip on each engine's own card. The
+        // empty list is the ordinary answer on a machine that has captured
+        // none, and nothing is drawn for it.
+        accounts: deps.accounts?.() ?? [],
         ownership: deps.ownership()
     };
 }

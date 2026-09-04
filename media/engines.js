@@ -128,6 +128,62 @@
             + '</div>';
     }
 
+    /**
+     * ‼️ X-172 — WHICH SIGN-IN THIS ENGINE IS PLUGGED INTO, on the engine's own
+     * card.
+     *
+     * This page already answers "what can this machine run, how is it paid for,
+     * is it signed in". WHOSE sign-in is the sub-fact of that last question, and
+     * a person rotating three plans has to be able to read it here rather than
+     * open a session to find out.
+     *
+     * ‼️ NOTHING IS DRAWN WHERE THERE IS NOTHING TO SAY — an engine that cannot
+     * isolate an account, and a machine that has captured none, both get no
+     * chip. The main sign-in is the ABSENCE of a slot, not a slot: an engine
+     * with accounts stored but none standing says "main account" out loud,
+     * because "no account" and "the account this machine is logged in as" are
+     * the same thing and only one of them reads like a decision.
+     *
+     * ‼️ SHORTHAND + AFTip — the chip is one short name and the panel under it
+     * carries the address, how much of that plan is spent and when the window
+     * turns over. A figure is not an explanation, which is why the chip's panel
+     * lists them rather than describing what an account is.
+     */
+    function accountChipHtml(e) {
+        const mine = (DATA.accounts || []).filter(a => a && a.engine === e.id);
+        if (!mine.length) { return ''; }
+        const T = window.AFTip;
+        const on = mine.find(a => a.active);
+        const spent = (a) => a.percent >= 0 ? a.percent + '% of the 5-hour window used' : '';
+        // ‼️ THE WALL TIME AND THE WAIT, because they answer different
+        // questions — "can I start something now" and "is it worth waiting".
+        // `AFTime.ago` is deliberately not used: it is written for the PAST and
+        // a reset is in the future, so it would print "37m ago" about a window
+        // that has not turned over yet.
+        const turns = (a) => {
+            if (!a.resetsAt) { return ''; }
+            const mins = Math.max(0, Math.round((a.resetsAt - Date.now()) / 60000));
+            const wait = mins < 60 ? mins + 'm' : Math.round(mins / 60) + 'h';
+            return 'window turns over at ' + window.AFTime.clock(a.resetsAt) + ' (in ' + wait + ')';
+        };
+        const lines = mine.map(a =>
+            (a.active ? '→ ' : '   ') + (a.label || a.id)
+            + (a.email && a.email !== a.label ? ' · ' + a.email : '')
+            + (a.health === 'ready' ? '' : ' · needs signing in again')
+            + [spent(a), turns(a)].filter(Boolean).map(x => ' · ' + x).join(''));
+        const head = on ? 'Next session: ' + (on.label || on.id) : 'Next session: the main account';
+        const body = lines.join('\n')
+            + '\n\n' + 'The main account — the identity this machine is signed in as — is the ABSENCE of a '
+            + 'choice, not a row: nothing is injected for it. An account is not remembered per agent; it '
+            + 'is a state, and this is the one place that holds it.';
+        return T.wrap(
+            '<span class="engacct' + (on ? ' a-on' : '') + '">'
+            + esc(on ? (on.label || on.id) : 'main account')
+            + (on && on.health !== 'ready' ? ' ⚠' : '')
+            + (on && on.percent >= 0 ? ' · ' + on.percent + '%' : '')
+            + '</span>', head, body);
+    }
+
     function cardHtml(e) {
         const b = badgeOf(e);
         // A row offers the step it is actually ON: an engine that is not
@@ -164,6 +220,7 @@
             + '<div class="enghead">'
             + '<span class="engname">' + esc(e.label) + '</span>'
             + '<span class="engbadge b-' + b.tone + '" title="' + esc(factsOf(e)) + '">' + esc(b.text) + '</span>'
+            + accountChipHtml(e)
             + '<span class="grow"></span>'
             + install + login + test
             // ‼️ NO KEY BUTTON FOR AN ENGINE WITH NO KEY. Drawing it would offer
@@ -361,6 +418,19 @@
                     cursor:help; border:1px solid var(--vscode-widget-border,#4446); }
                 .engbadge.b-ok { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
                 .engbadge.b-warn { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
+                /* ‼️ X-172 — the sign-in chip. Quieter than the state badge beside
+                   it on purpose: the badge answers "can this run at all", which is
+                   the louder question; this answers "on whose plan", which the
+                   reader only asks once the first one is yes. The a-on class marks
+                   a captured account standing, and it is an OUTLINE rather than a
+                   fill so it cannot be mistaken for a state verdict. (No backticks
+                   in this block: the whole stylesheet is a template literal and one
+                   would end it.) */
+                .engacct { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
+                    cursor:help; border:1px dashed var(--vscode-widget-border,#4446); opacity:.8; }
+                .engacct.a-on { border-style:solid; opacity:1;
+                    border-color:var(--vscode-charts-blue,#4a9eff);
+                    color:var(--vscode-charts-blue,#4a9eff); }
                 .engbill { font-size:12px; opacity:.75; margin-top:6px; max-width:820px; }
                 .engnext { font-size:12px; margin-top:5px; max-width:820px; }
                 .engdetail { margin-top:2px; }

@@ -16951,6 +16951,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // and there is no dep here that can return a credential. A surface
         // cannot leak what it was never given.
         profiles: () => publicProviderProfiles(),
+        /**
+         * ‼️ X-172 — the sign-ins, through the SAME reader the bridge answers
+         * with (`publicAccount`), so the page and `accounts.list` cannot come to
+         * disagree about who is on this machine. It says nothing a token could
+         * hide in: `publicAccount` builds its row by naming what is public.
+         */
+        accounts: () => {
+            const usage = accountUsage.current();
+            const active = activeAccounts();
+            return storedAccounts().map(sl => {
+                const pub = publicAccount(sl, usage, active);
+                return {
+                    id: pub.id, engine: pub.engine, label: pub.label, email: pub.email,
+                    health: pub.health, active: pub.active,
+                    percent: pub.percent, resetsAt: pub.resetsAt
+                };
+            });
+        },
         ownership: () => ownershipTable(),
         saveProfile: async (input: Record<string, unknown>): Promise<string[]> => {
             const list = providerProfiles();

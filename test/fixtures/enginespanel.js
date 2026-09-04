@@ -30,6 +30,39 @@ const data = () => {
          * make two vaults. A fixture showing only one side would let the two
          * be drawn as good and bad without anybody noticing.
          */
+        /**
+         * ‼️ X-172 — THE SIGN-INS, WITH ALL THREE STATES PRESENT, because the
+         * chip's whole job is to tell them apart: one engine standing on a
+         * captured account, one with accounts stored but none standing (the
+         * MAIN sign-in, which is the absence of a choice rather than a row),
+         * and every other engine with no accounts at all and therefore no chip.
+         * A fixture with only the happy state photographs the one case the
+         * control is not for.
+         */
+        accounts: [
+            {
+                id: 'work-1', engine: 'claude', label: 'work@studio',
+                email: 'work@studio.example', health: 'ready', active: true,
+                percent: 91, resetsAt: NOW + 37 * 60 * 1000
+            },
+            {
+                id: 'personal', engine: 'claude', label: 'personal@gmail',
+                email: 'personal@gmail.com', health: 'ready', active: false,
+                percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000
+            },
+            {
+                id: 'spare', engine: 'claude', label: 'spare@gmail',
+                email: 'spare@gmail.com', health: 'needs-signin', active: false,
+                percent: -1, resetsAt: 0
+            },
+            // Captured, and NOT standing — the chip says "main account" here,
+            // which is the state a reader is most likely to misread as "none".
+            {
+                id: 'codex-work', engine: 'codex', label: 'work@studio',
+                email: 'work@studio.example', health: 'ready', active: false,
+                percent: -1, resetsAt: 0
+            }
+        ],
         ownership: [
             {
                 engine: 'claude', kind: 'catalog', owner: 'agent-farm',
