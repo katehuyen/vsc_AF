@@ -1,0 +1,186 @@
+// X-188 — A PATH THE USER CAN WRITE, RESOLVED BY A MODULE THAT REFUSES TO GUESS.
+//
+// The defect this exists to end is one line: `cevapDir()` fell back to
+// `D:\zone\know\note\obsidian\…\01_CEVAPLAR`, one person's vault, compiled into
+// an extension that is supposed to work on any machine. The user's own words
+// were "hiç bugünün klasörüne göre program yazılır mı" — a program is written
+// open-ended, elastic, adaptable.
+//
+// The rules this file pins are the ones that make such a setting SAFE to have:
+//
+//   * `${name}` is the syntax, because a path template is typed into a settings
+//     box beside real paths and VS Code's own settings already speak it
+//     (`${workspaceFolder}`, `${userHome}`). Prompt templates keep `{name}` —
+//     two different subjects, and neither borrows the other's punctuation.
+//   * ‼️ AN UNRESOLVED VARIABLE CANCELS THE PATH. It does NOT become an empty
+//     string. `${vault}/01_CEVAPLAR` on a machine with no vault must skip that
+//     source, not look in `/01_CEVAPLAR` and report "no handover note" about a
+//     folder that was never the question. This is the same law X-174 states for
+//     facts: not measured is not the same as measured empty.
+//   * an UNKNOWN name and a KNOWN name with nothing behind it are both refusals,
+//     and they are told apart in the reason, because one is a typo the user can
+//     fix and the other is a machine that has no such thing.
+//   * a resolved value is NOT re-expanded — a folder literally called
+//     `${home}` cannot make this loop or reach anywhere else.
+//   * the dictionary lives in ONE place and is exported, so a settings page can
+//     draw the list rather than repeat it.
+'use strict';
+const path = require('path');
+const {
+    PATH_VARS, resolvePathVars, resolvePathList
+} = require(path.resolve(__dirname, '../out/core/pathVars.js'));
+
+let pass = 0, fail = 0;
+const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
+
+// 2026-09-05 12:34:56 local
+const NOW = new Date(2026, 8, 5, 12, 34, 56).getTime();
+const CTX = {
+    home: 'C:/Users/rotam',
+    workspace: 'D:/repo',
+    repo: 'D:/repo',
+    vault: 'D:/vault',
+    project: 'Agent Farm',
+    projectFolder: 'D:/vault/10_PROJECTS/Agent Farm',
+    projectNotes: 'D:/vault/10_PROJECTS/Agent Farm/10_Notes',
+    agentDir: 'D:/agents/developer',
+    sessionId: '689569e7-94b4-45f9-bb60-4c0f33b2bb5a',
+    now: NOW
+};
+
+// ---- the plain substitutions ----------------------------------------------
+{
+    const r = resolvePathVars('${vault}/00_OUTPUT/01_CEVAPLAR', CTX);
+    ok('a known variable is replaced', r.ok && r.value === 'D:/vault/00_OUTPUT/01_CEVAPLAR');
+    ok('…and nothing is reported missing', r.missing.length === 0);
+
+    ok('several in one template', resolvePathVars('${home}/x/${project}', CTX).value
+        === 'C:/Users/rotam/x/Agent Farm');
+    ok('a template with no variables is itself',
+        resolvePathVars('D:/plain/path', CTX).value === 'D:/plain/path');
+    ok('an empty template resolves to empty and is still ok',
+        resolvePathVars('', CTX).ok === true && resolvePathVars('', CTX).value === '');
+}
+
+// ---- VS Code's own names work too, because the user already knows them -----
+{
+    ok('${workspaceFolder} is the same thing as ${workspace}',
+        resolvePathVars('${workspaceFolder}/a', CTX).value === 'D:/repo/a');
+    ok('${userHome} is the same thing as ${home}',
+        resolvePathVars('${userHome}/a', CTX).value === 'C:/Users/rotam/a');
+}
+
+// ---- the session id, whole and short --------------------------------------
+{
+    ok('${sessionId} is the whole id',
+        resolvePathVars('${sessionId}.md', CTX).value === CTX.sessionId + '.md');
+    ok('${sessionId8} is the eight characters a handover note is named by',
+        resolvePathVars('devir_${sessionId8}.md', CTX).value === 'devir_689569e7.md');
+}
+
+// ---- dates -----------------------------------------------------------------
+{
+    ok('${today} is the local calendar day, zero padded',
+        resolvePathVars('${today}', CTX).value === '2026-09-05');
+    ok('${yesterday} is the day before it',
+        resolvePathVars('${yesterday}', CTX).value === '2026-09-04');
+    ok('${date:YYYY} and friends',
+        resolvePathVars('${date:YYYY-MM}', CTX).value === '2026-09'
+        && resolvePathVars('${date:YYMMDD}', CTX).value === '260905'
+        && resolvePathVars('${date:HH-mm}', CTX).value === '12-34');
+}
+
+// ---- ‼️ a refusal is a refusal, never an empty string ----------------------
+{
+    const unknown = resolvePathVars('${nosuchthing}/x', CTX);
+    ok('an UNKNOWN variable cancels the path', unknown.ok === false);
+    ok('…and the path is not handed back half-built', unknown.value === '');
+    ok('…and it is named', unknown.missing.includes('nosuchthing'));
+    ok('…and the reason says it is not a variable at all',
+        /not a variable/i.test(unknown.why));
+
+    const absent = resolvePathVars('${vault}/x', { home: 'C:/h', now: NOW });
+    ok('a KNOWN variable with nothing behind it cancels the path too', absent.ok === false);
+    ok('…and says that this machine has no such thing, which is a different fault',
+        /nothing/i.test(absent.why) && absent.missing.includes('vault'));
+
+    const blank = resolvePathVars('${vault}/x', Object.assign({}, CTX, { vault: '   ' }));
+    ok('whitespace is not a value either', blank.ok === false);
+
+    ok('every missing name is collected, not just the first',
+        resolvePathVars('${a}/${b}', CTX).missing.join(',') === 'a,b');
+}
+
+// ---- a resolved value is not re-expanded -----------------------------------
+{
+    const r = resolvePathVars('${home}/end', Object.assign({}, CTX, { home: 'C:/${vault}' }));
+    ok('a value that looks like a variable is left alone', r.ok && r.value === 'C:/${vault}/end');
+}
+
+// ---- the list form: skip the ones that cannot be built, keep the rest ------
+{
+    const r = resolvePathList(['${vault}/a', '${nope}/b', 'D:/plain'], CTX);
+    ok('a list keeps the paths it could build, in order',
+        r.paths.join('|') === 'D:/vault/a|D:/plain');
+    ok('…and says which it skipped and why, rather than dropping them silently',
+        r.skipped.length === 1 && r.skipped[0].template === '${nope}/b'
+        && /not a variable/i.test(r.skipped[0].why));
+    ok('an empty entry is skipped as nothing, not as a fault',
+        resolvePathList(['', '   ', 'D:/x'], CTX).paths.join('|') === 'D:/x');
+}
+
+// ---- the dictionary is exported so a page can draw it ----------------------
+{
+    ok('the dictionary is a list of names with a sentence each',
+        Array.isArray(PATH_VARS) && PATH_VARS.length >= 12
+        && PATH_VARS.every(v => typeof v.name === 'string' && v.name
+            && typeof v.describe === 'string' && v.describe.length > 10));
+    ok('…and every name it advertises really resolves',
+        PATH_VARS.filter(v => !/^date:/.test(v.name))
+            .every(v => resolvePathVars('${' + v.name + '}', CTX).ok));
+    ok('…with no duplicate names',
+        new Set(PATH_VARS.map(v => v.name)).size === PATH_VARS.length);
+}
+
+// ---- and the three folders that used to END in one person's vault ---------
+//
+// The resolver on its own changes nothing; what closes the defect is that the
+// callers go through it. The legacy absolute path stays — the user's own
+// instruction was that today's folders may remain, but "en fazla olsa olsa …
+// fallback olarak", nothing more — so what is pinned here is its POSITION: last,
+// reached only when neither the setting nor the built-in template can be built.
+{
+    const fs = require('fs');
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const props = pkg.contributes.configuration.properties || {};
+
+    ok('there is ONE resolver the folder settings go through',
+        /const configuredFolder = \(/.test(ext)
+        && (ext.match(/configuredFolder\(\n/g) || []).length === 3);
+    ok('…and it asks the module, rather than expanding anything itself',
+        /resolvePathVars\(candidate, ctx\)/.test(ext));
+    ok('…and a template it could not build is SKIPPED, never half-used',
+        /if \(r\.ok && r\.value\.trim\(\)\)/.test(ext));
+
+    for (const [name, tpl] of [
+        ['wikiRoot', '${vault}/00_WIKI'],
+        ['reportDir', '${vault}/00_AGENT_AREA/00_OUTPUT/10_REPORT'],
+        ['answerDir', '${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR']
+    ]) {
+        ok(`${name} has a machine-independent built-in ahead of the legacy path`,
+            ext.indexOf(`'${name}', '${tpl}'`) >= 0);
+    }
+    ok('‼️ the legacy vault path appears ONLY as a last-resort argument',
+        (ext.match(/path\.join\('D:', 'zone', 'know'/g) || []).length === 3
+        && !/\|\| path\.join\('D:', 'zone', 'know'/.test(ext));
+
+    ok('${vault} has a setting behind it, so it need never be reached',
+        !!props['agentFarm.vaultDir'] && props['agentFarm.vaultDir'].default === '');
+    ok('…and the folder settings say the variables are allowed',
+        /\$\{vault\}/.test(props['agentFarm.reportDir'].markdownDescription || '')
+        && /\$\{vault\}/.test(props['agentFarm.answerDir'].markdownDescription || ''));
+}
+
+console.log(`test_path_vars: ${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

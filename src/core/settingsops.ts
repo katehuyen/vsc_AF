@@ -258,6 +258,14 @@ const CATEGORY_OF: Record<string, string> = {
     dailyDigest: 'reports', weeklySummary: 'reports', autoReport: 'reports',
     autoReportFolder: 'reports', autoReportDays: 'reports', autoReportIncludeOutputs: 'reports',
     digestTtsModel: 'reports', digestTtsFolder: 'reports', reportDir: 'reports',
+    /**
+     * ‼️ X-188 — `vaultDir` sits with the folders that USE it rather than in a
+     * section of its own. It is one line answering "where do the things the
+     * agents write end up", which is this section's question; a `${vault}` that
+     * the reader has to go and find in another section is the split X-57 warned
+     * about when it moved the wiki root out of here for the opposite reason.
+     */
+    vaultDir: 'reports',
     notifyWebhookUrl: 'reports', notifyWebhookEvents: 'reports',
     // work queue (user→agent async channel) + its answer folder
     answerDir: 'queue', 'queue.groupSize': 'queue', 'queue.maxAgeHours': 'queue',

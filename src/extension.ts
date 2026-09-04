@@ -209,6 +209,7 @@ import {
     normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel, slotsFor
 } from './core/accountStore';
 import { AccountUsageService, SlotUsage, mostRoom, nextResetAt } from './core/accountUsage';
+import { PathVarContext, resolvePathVars } from './core/pathVars';
 import { EngineRunner, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
@@ -14031,13 +14032,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * into the setting, because a setting the extension rewrites is a setting
      * the user can no longer read.
      */
-    const wikiRoot = (): string => {
-        const set = (cfg().get<string>('wikiRoot') ?? '').trim();
-        const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-        return set
-            ? expandUserPath(set, { workspaceRoot: ws })
-            : path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_WIKI');
+    /**
+     * ‼️ X-188 — WHAT `${vault}` AND FRIENDS MEAN ON THIS MACHINE.
+     *
+     * Built fresh every time on purpose: a workspace can be opened, a vault
+     * configured, a project switched, all while the extension is running.
+     */
+    const pathCtx = (extra: PathVarContext = {}): PathVarContext => ({
+        home: os.homedir(),
+        workspace: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
+        repo: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
+        vault: (afConfig().get<string>('vaultDir') ?? '').trim(),
+        ...extra
+    });
+
+    /**
+     * ‼️ X-188 — A CONFIGURED FOLDER, RESOLVED RATHER THAN HARD-CODED.
+     *
+     * Three folders in this file used to end in one person's Obsidian vault
+     * spelled out in the source. That is the disease X-179 removed from
+     * `prompts.ts`, and the user's instruction about it was exact: the folders
+     * as they stand today may remain — "en fazla olsa olsa bu şimdiki klasörler
+     * fallback olarak sisteme girebilir" — but nothing more than a fallback.
+     *
+     * So the order is: what the user configured (which may now carry
+     * `${vault}`, `${workspace}`, `${today}` …), then a built-in template that
+     * is machine-independent, and only if neither can be BUILT, the legacy
+     * absolute path this extension shipped with. A template that cannot resolve
+     * is skipped rather than half-built — `resolvePathVars` empties it, so a
+     * missing `${vault}` can never become a folder at the root of a drive.
+     */
+    const configuredFolder = (
+        setting: string, builtIn: string, legacy: string, extra: PathVarContext = {}
+    ): string => {
+        const ctx = pathCtx(extra);
+        const ws = ctx.workspace ?? '';
+        const set = (afConfig().get<string>(setting) ?? '').trim();
+        for (const candidate of [set, builtIn]) {
+            if (!candidate) { continue; }
+            const r = resolvePathVars(candidate, ctx);
+            if (r.ok && r.value.trim()) { return expandUserPath(r.value, { workspaceRoot: ws }); }
+        }
+        return legacy;
     };
+
+    const wikiRoot = (): string => configuredFolder(
+        'wikiRoot', '${vault}/00_WIKI',
+        path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_WIKI'));
     // ‼️ U-70 — ONE `WikiDeps`, TWO DOORS. The bridge ops and the Wiki page are
     // the same acts (`core/wiki.ts` holds the bodies), so they are handed the
     // same dependency object: a page reading a different root, or starting a
@@ -14316,11 +14357,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // and this writes it to the report folder as YYYY-MM-DD_<name>.md (the
     // vault's report convention) so the UI can open it. reportPath links a
     // file the agent already wrote itself.
-    const reportDir = (): string => {
-        const cfg = afConfig().get<string>('reportDir');
-        return (cfg && cfg.trim())
-            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '10_REPORT');
-    };
+    const reportDir = (): string => configuredFolder(
+        'reportDir', '${vault}/00_AGENT_AREA/00_OUTPUT/10_REPORT',
+        path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '10_REPORT'));
     const writeReport = (a: { title: string; name?: string; body: string; agentName?: string }): string => {
         const dir = reportDir();
         fs.mkdirSync(dir, { recursive: true });
@@ -14411,11 +14450,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // (constitution §7/§13) — only the target folder differs. The empty-topic
     // fallback is forced to "cevap" (not the report word "rapor") so a title-less
     // answer still reads as an answer.
-    const cevapDir = (): string => {
-        const cfg = afConfig().get<string>('answerDir');
-        return (cfg && cfg.trim())
-            || path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '01_CEVAPLAR');
-    };
+    const cevapDir = (): string => configuredFolder(
+        'answerDir', '${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR',
+        path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '01_CEVAPLAR'));
     const writeAnswer = (a: { title: string; name?: string; body: string; agentName?: string }): string => {
         const dir = cevapDir();
         fs.mkdirSync(dir, { recursive: true });

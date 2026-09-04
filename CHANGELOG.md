@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.384.0 - X-188: a folder setting you can write, and a resolver that refuses to guess (2026-09-05)
+
+Three folders in this extension ended in one person's Obsidian vault, spelled
+out in the source: the wiki root, the report folder and the answers folder. Your
+words about it were exact — a program is written open-ended and elastic, not
+against today's folder — and about what may survive: today's folders may stay,
+**as a fallback and nothing more**.
+
+- **`${vault}` `${workspace}` `${home}` `${today}` `${date:YYMMDD}` and nine
+  others now work in every one of those settings.** The syntax is `${…}` because
+  that is what the settings file next to it already speaks (`${workspaceFolder}`,
+  `${userHome}`), and both of VS Code's names work as aliases. Prompt templates
+  keep their own `{name}`: two subjects, neither borrowing the other's
+  punctuation.
+- **‼️ An unresolved variable CANCELS the path — it never becomes an empty
+  string.** `${vault}/01_CEVAPLAR` on a machine with no vault skips that folder
+  rather than looking in `\01_CEVAPLAR`, finding nothing and reporting it as an
+  answer. An unknown name and a known one with nothing behind it are told apart
+  in the reason: one is a typo you can fix, the other is a machine that has no
+  such thing.
+- **New setting `agentFarm.vaultDir`** — say where your vault is once, and the
+  three folders derive from it. The built-in defaults are now
+  `${vault}/00_WIKI`, `${vault}/…/10_REPORT`, `${vault}/…/01_CEVAPLAR`, so the
+  legacy absolute path is only reached when neither your setting nor the
+  built-in template can be BUILT. Nothing changes for you until you set it.
+- A resolved value is not re-expanded, so a folder literally called `${home}`
+  cannot loop or reach anywhere it was not pointed.
+- The dictionary of variables lives in one exported list, so the settings
+  surface X-193 adds can draw it instead of repeating it.
+
 ## 3.383.0 - X-187: the Engines page asks for the quota it draws (2026-09-05)
 
 You captured three accounts, opened Engines and saw no limit anywhere — no bar,

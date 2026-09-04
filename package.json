@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.383.0",
+  "version": "3.384.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8959,15 +8959,20 @@
           "default": "",
           "description": "Override the fal.ai queue base URL (testing / self-hosted proxy). Empty = https://queue.fal.run."
         },
+        "agentFarm.vaultDir": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Your notes vault, if you keep one. This is what `${vault}` means in every folder setting below, so the reports, answers and wiki folders can be written once as `${vault}/…` instead of three absolute paths. Empty = there is no vault on this machine, and a setting that asks for `${vault}` is SKIPPED rather than half-built — a path with a variable missing from it would point somewhere nobody meant."
+        },
         "agentFarm.reportDir": {
           "type": "string",
           "default": "",
-          "description": "Default folder where agents' full 'notices.post report' files are written (naming YYYY-MM-DD_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\00_OUTPUT\\10_REPORT."
+          "markdownDescription": "Default folder where agents' full 'notices.post report' files are written (naming YYYY-MM-DD_<name>.md). Accepts the path variables `${vault}` `${workspace}` `${home}` `${today}` `${date:YYMMDD}` — see agentFarm.vaultDir. Empty = `${vault}/00_AGENT_AREA/00_OUTPUT/10_REPORT`."
         },
         "agentFarm.answerDir": {
           "type": "string",
           "default": "",
-          "description": "Folder where a work item's detailed answer (not a user-requested report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Empty = D:\\zone\\know\\note\\obsidian\\00_AGENT_AREA\\00_OUTPUT\\01_CEVAPLAR."
+          "markdownDescription": "Folder where a work item's detailed answer (not a user-requested report) is written by queue.stamp (naming YYYY-MM-DD_<agent>_<name>.md). Accepts the same path variables as agentFarm.reportDir. Empty = `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR`."
         },
         "agentFarm.queue.targets": {
           "type": "array",
