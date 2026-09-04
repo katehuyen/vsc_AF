@@ -271,6 +271,50 @@ const step = (over) => sentryStep(Object.assign({
     ok('...and the stale sentence does not sit on the record for ever', cleared.carry === undefined);
 }
 
+// ---- ‼️ …BUT A WAIT IS NOT A MOVE -----------------------------------------
+// `backlog.next` gives nothing while every remaining item is XL or waiting on
+// an unfinished ⛔ — that is the campaign WAITING, and it says nothing about
+// whether the sentence still fits. Dropped there, the same failure comes back
+// through another door: the item is at the top again ten minutes later and the
+// session opens on the campaign's first-round words instead.
+{
+    const asleep = step({ usage: [slot('a', { percent: 99 })], finished: goodRound() });
+    const held = rec({ carry: { prompt: asleep.words.prompt, code: NEXT.code, at: NOW } });
+
+    const empty = sentryStep({ campaign: held, usage: [slot('a')], now: NOW + 10 * MIN });
+    ok('a tick that finds nothing in the backlog KEEPS the sentence it is holding',
+        empty.plan.action === 'idle' && !!empty.carry && empty.carry.prompt === asleep.words.prompt);
+    applySentryStep(held, empty, undefined, NOW + 10 * MIN);
+    ok('...on the record, so the item that comes back ten minutes later still gets it',
+        !!held.carry && held.carry.code === NEXT.code);
+
+    const back = sentryStep({
+        campaign: held, usage: [slot('a')], next: NEXT,
+        opening: 'FIRST ROUND WORDS', now: NOW + 20 * MIN
+    });
+    ok('...and the round it finally opens is the one those words were written for',
+        back.plan.action === 'start' && back.round.prompt === asleep.words.prompt);
+}
+
+// ---- ‼️ WORDS BUILT WITH NO ITEM NAME NOTHING ------------------------------
+// Every continuation template spells the next item out, so a sentence built
+// while the backlog had nothing to give carries an EMPTY code: sent later it
+// would tell a paid session to take "the next item: ". It is not the sentence
+// that is kept — the one that names an item stands.
+{
+    const held = rec({ carry: { prompt: 'HELD WORDS FOR X-177', code: NEXT.code, at: NOW } });
+    const s = sentryStep({
+        campaign: held, usage: [slot('a')], finished: goodRound(), now: NOW + MIN
+    });
+    ok('a round that ends into an empty backlog builds words that name no item',
+        !!s.words && s.words.vars.nextCode === '');
+    ok('‼️ ...and those are not the words that are kept',
+        !!s.carry && s.carry.prompt === 'HELD WORDS FOR X-177' && s.carry.code === NEXT.code);
+    applySentryStep(held, s, undefined, NOW + MIN);
+    ok('...so the record still holds the sentence that names its item',
+        !!held.carry && held.carry.prompt === 'HELD WORDS FOR X-177');
+}
+
 // ---- a stopped campaign is not driven at all -------------------------------
 {
     const s = sentryStep({

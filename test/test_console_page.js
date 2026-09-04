@@ -2638,5 +2638,72 @@ const html = allHtml;
     ok('…and moving back brings it', /af-slwarn/.test(pop()));
 }
 
+// ---------- ‼️ X-177 — the sentry's live strip ----------
+// The Console is where the reader's eye already is, so it is where "something
+// is running unattended right now" belongs. ONE SUBJECT applies hard here: the
+// strip carries only what is true this second — who is working, on which
+// account, how much of that window is left, what is next and what last
+// happened. The setup, the form and the round table are the Missions page's,
+// and the strip's controls are there too, so it has no buttons of its own.
+{
+    const base = () => data(CONVO.slice());
+    const CAMP = {
+        id: 'sc-1', project: 'prj_9ujsbtzr', agent: 'dev', status: 'running', rounds: 7,
+        engine: 'claude', lastAction: 'start', lastRule: 'has-room', lastAt: 1,
+        lastWhy: 'slot-2 has the most room left, so X-178 starts there'
+    };
+    const sentry = (over) => ({ ...base(), sentry: Object.assign({
+        campaign: CAMP, running: true, rotatesAccounts: true, failLimit: 3, failStreak: 0,
+        projectName: 'AgentFarm', agentName: 'developer', rounds: [],
+        nextWords: null,
+        live: {
+            id: 't9', title: 'Sentry R7 · X-178', status: 'running', startedAt: 1,
+            account: 'slot-2', accountPercent: 38, accountResetsAt: null
+        }
+    }, over || {}) });
+
+    push({ ...base(), sentry: null });
+    ok('a machine with no campaign set up gets no strip at all', !html().includes('c-sgo'));
+
+    push(sentry());
+    ok('a running round says WHO is working and on WHICH account, in one line',
+        html().includes('developer') && html().includes('slot-2'));
+    ok('‼️ …and how much of that account is LEFT, which is the figure no task row carries',
+        html().includes('62% left'));
+    ok('…and which item it is on right now', html().includes('X-178'));
+    ok('the strip has no controls of its own — they belong to the page it points at',
+        !/<button/.test(els['c-sentry']._html || ''));
+
+    posted.length = 0;
+    const go = sandbox.document.getElementById('c-sgo');
+    if (go) { go.listeners.click(); }
+    ok('‼️ …and pressing it goes to the page that has them',
+        posted.some(m => m.type === 'afnav' && m.to === 'missions'));
+
+    push(sentry({
+        running: false, live: null,
+        campaign: { ...CAMP, lastAction: 'sleep', lastRule: 'wait-for-reset', wakeAt: 4102444800000,
+            lastWhy: 'every account is at or above 95% of its five-hour window' },
+        nextWords: { prompt: 'Take X-178 and work through it.', code: 'X-178', at: 1 }
+    }));
+    ok('a campaign asleep on the quota wall says so in the SAME word the other page uses, and until when',
+        html().includes('SLEEPING') && html().includes('until'));
+    ok('‼️ …in the campaign own words, so the morning reader knows WHY nothing ran',
+        html().includes('every account is at or above 95%'));
+    ok('…and what the round it is holding will open on', html().includes('X-178'));
+
+    push(sentry({ running: false, live: null, campaign: { ...CAMP, status: 'paused', pausedAt: 2 } }));
+    ok('a paused campaign is PAUSED on the strip too — the one word the two pages share',
+        html().includes('PAUSED'));
+
+    push(sentry({
+        running: false, live: null,
+        campaign: { ...CAMP, status: 'stopped', stoppedAt: 3,
+            stoppedWhy: '3 rounds in a row produced nothing' }
+    }));
+    ok('‼️ a campaign that STOPPED in the night is still drawn — that is the morning read',
+        html().includes('STOPPED') && html().includes('3 rounds in a row produced nothing'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

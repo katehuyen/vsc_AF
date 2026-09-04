@@ -401,6 +401,21 @@ export interface ConsoleDeps {
      * without reloading anything.
      */
     promptSnippets(): PromptSnippetsSnapshot;
+    /**
+     * ‼️ X-177 — THE SENTRY CAMPAIGN, for the one line at the top of this page.
+     *
+     * The Console is where the user's eye already is, so it is where the fact
+     * that something is running unattended RIGHT NOW belongs — who is working,
+     * on which account, how much of that window is left. It is the same payload
+     * the Missions page is built from (`sentryPayload`) rather than a reading
+     * of its own: the two surfaces divide the SUBJECT (here the live moment,
+     * there the setup and the history), never the source.
+     *
+     * Optional, and `null` when nothing is configured — a host that has no
+     * campaign to describe draws no strip at all, which is also what the fixture
+     * pages and every other embedder get for free.
+     */
+    sentry?(): Record<string, unknown> | null;
 }
 
 export class ConsolePanel {
@@ -1105,6 +1120,10 @@ export class ConsolePanel {
             superpowersHealth: this.deps.superpowersHealth(),
             // the agent this composer is fixed to, when it was opened from one
             pinnedAgent: this.pinnedAgent ?? '',
+            // X-177 — the unattended campaign, drawn as ONE line under the
+            // header. Null is the ordinary answer on a machine nobody has set
+            // one up on, and the page draws nothing for it.
+            sentry: this.deps.sentry?.() ?? null,
             // the shelf + the transcripts the query asks for (see resumeList)
             ...this.resumeList()
         };

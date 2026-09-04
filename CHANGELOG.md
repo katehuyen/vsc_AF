@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.378.0 - X-177: the sentry, in one line, where your eye already is (2026-09-04)
+
+The other half of the item. Missions carries the campaign's setup and its history; the
+**Console** — the page you are already looking at — now carries what is true this second,
+and no fact is drawn on both.
+
+- **A one-line sentry strip under the Console header.** Running, it says which round is
+  open on which item, as whom, on which sign-in, and **how much of that account's
+  five-hour window is left** — the one figure no task row can carry. Sleeping, it says
+  when it wakes and why it is waiting, in the campaign's own words. Paused, it says so.
+  Stopped, it is still drawn, faded, saying what stopped it — because a campaign that
+  ended at three in the morning is exactly what somebody needs to read at nine.
+- It has **no controls of its own**: pressing it goes to Missions, where they are. The
+  whole sentence, the project, the round count and the words the next round is already
+  holding are one hover away.
+- **‼️ The live clock left Missions.** That block already said in its own comment that
+  what is true this second is the Console's subject, and then drew the campaign's wake
+  moment anyway. It is now in one place.
+- **‼️ Fixed: a wait destroyed the sentence the next round was holding.** `backlog.next`
+  gives nothing while every remaining item is XL or waiting on an unfinished ⛔ — a WAIT,
+  which says nothing about whether the words still fit. They were dropped there anyway,
+  so the item back at the top ten minutes later opened on the campaign's FIRST-round
+  sentence: the same failure 3.377.0 fixed, through another door. Only a DIFFERENT item
+  drops them now. And words built while the backlog had nothing to give — they name an
+  empty item — are no longer kept over words that name a real one.
+
 ## 3.377.0 - X-177: the sentry has a face, and a pause of its own (2026-09-04)
 
 The campaign shipped in 3.376.0 could only be reached from the bridge. It now has the

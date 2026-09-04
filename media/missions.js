@@ -3145,14 +3145,14 @@
                     'Built when the last round ended and kept through the wait, so a campaign coming '
                     + 'back from a quota wall does not fall back to the sentence the FIRST round was given.']))
             : '';
-        // ‼️ NO LIVE STRIP HERE. What is happening THIS SECOND — who is running
-        // on which account and how much of that account is left — is the
-        // Console strip's subject, and the item says so by name. This page
-        // carries the setup and the history; the round on the board is in the
-        // table below with every other round, which is where history keeps it.
-        const sleeping = c && c.wakeAt && !s.live
-            ? `<div class="nowstrip paused"><span class="nowdot hold"></span> asleep until ${C.esc(sentryWhen(c.wakeAt))} — zero tokens, zero requests</div>`
-            : '';
+        // ‼️ NO LIVE STRIP HERE, AND NO LIVE CLOCK EITHER. What is true THIS
+        // SECOND — who is running on which account, how much of that account is
+        // left, and the moment a sleeping campaign wakes — is the Console
+        // strip's subject, and the item says so by name. This page carries the
+        // setup and the history; the round on the board is in the table below
+        // with every other round, which is where history keeps it. What stays
+        // here is the campaign's own SENTENCE (`Why`), which is the decision
+        // rather than the clock.
         const body = !sentryOpen ? '' : (on
             ? `<div class="sbody">
                 <div class="provrow"><span class="plabel">Working</span>
@@ -3164,7 +3164,6 @@
                     ${words}
                 </div>
                 <div class="provrow"><span class="plabel">Why</span>${sentryWhy(c)}</div>
-                ${sleeping}
                 ${sentryRoundsHtml(s)}
             </div>`
             : (sentryFormOpen ? sentryFormHtml(s) : `<div class="sbody"><div class="dim">

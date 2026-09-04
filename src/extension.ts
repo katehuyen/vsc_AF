@@ -17705,7 +17705,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         // M-24 — the saved prompts, for the four boxes in the New-task form
         // that take one. The same reader the Console and Farm Settings use.
-        promptSnippets: () => readPromptSnippets()
+        promptSnippets: () => readPromptSnippets(),
+        // X-177 — the SAME payload the Missions page reads. The Console draws
+        // only the live moment out of it; a second reading built here would be
+        // a second answer to "what is the sentry doing".
+        sentry: () => sentryPayload()
     };
 
     needsEmitter.event(() => {

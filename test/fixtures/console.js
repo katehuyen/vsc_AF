@@ -422,6 +422,78 @@ const accountComposerData = () => Object.assign(routedComposerData(), {
     composerAccount: 'personal'
 });
 
+/**
+ * ‼️ X-177 — THE SENTRY STRIP, WHICH IS THE ONE THING ON THIS PAGE NOBODY IS
+ * WATCHING WHEN IT MATTERS.
+ *
+ * It is drawn for a night that already happened: a campaign seven rounds in,
+ * running unattended on the second sign-in with a third of that window spent.
+ * Everything the strip claims has to be readable in the picture at the width
+ * the header sets — the state in one word, who is working, which account, what
+ * is LEFT of it, and what the next round is already holding.
+ */
+const CAMPAIGN = {
+    id: 'sc-1', project: 'prj_9ujsbtzr', agent: 'dev', status: 'running', rounds: 7,
+    engine: 'claude', permissionMode: 'bypassPermissions', superpowers: true,
+    startedAt: NOW - 6 * 3600 * 1000, lastAction: 'start', lastRule: 'has-room',
+    lastAt: NOW - 12 * 60 * 1000,
+    lastWhy: 'slot-2 has the most room left, so X-178 starts there'
+};
+const sentryData = () => Object.assign(data(), {
+    sentry: {
+        campaign: CAMPAIGN, running: true, rotatesAccounts: true,
+        failLimit: 3, failStreak: 0, idlePollMin: 10,
+        projectName: 'AgentFarm', agentName: 'developer',
+        nextWords: null,
+        live: {
+            id: 't9', title: 'Sentry R7 · X-178', status: 'running',
+            startedAt: NOW - 12 * 60 * 1000, account: 'slot-2',
+            accountPercent: 38, accountResetsAt: NOW + 2 * 3600 * 1000
+        },
+        rounds: [], defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 }
+    }
+});
+/**
+ * ‼️ …AND THE STATE THE WHOLE ITEM EXISTS FOR: every account is walled, so
+ * nothing is running and nothing is wrong. The strip has to say when it wakes,
+ * why it is waiting IN THE CAMPAIGN'S OWN WORDS, and that the round it will
+ * open is already holding its sentence — otherwise a reader at midnight cannot
+ * tell a sleeping campaign from a broken one.
+ */
+const sentryAsleepData = () => Object.assign(data(), {
+    sentry: {
+        campaign: {
+            ...CAMPAIGN, rounds: 9, lastAction: 'sleep', lastRule: 'wait-for-reset',
+            wakeAt: NOW + 3 * 3600 * 1000 + 3 * 60 * 1000,
+            lastWhy: 'every account is at or above 95% of its five-hour window — sleeping until '
+                + 'the earliest reset plus 3 minutes of safety'
+        },
+        running: false, rotatesAccounts: true, failLimit: 3, failStreak: 0, idlePollMin: 10,
+        projectName: 'AgentFarm', agentName: 'developer', live: null,
+        nextWords: {
+            code: 'X-178', at: NOW - 40 * 60 * 1000,
+            prompt: 'The previous session finished its work: X-177. Nothing is outstanding.\n\n'
+                + 'Take the next item on AgentFarm: X-178 — NOBET BEKCISI (effort S).'
+        },
+        rounds: [], defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 }
+    }
+});
+
+/** …and the state the strip was ASKED for: what happened while nobody looked. */
+const sentryStoppedData = () => Object.assign(data(), {
+    sentry: {
+        campaign: {
+            ...CAMPAIGN, status: 'stopped', stoppedAt: NOW - 3 * 3600 * 1000, rounds: 11,
+            lastAction: 'stopped', lastRule: 'fail-streak',
+            stoppedWhy: '3 rounds in a row produced nothing — the campaign stops rather than '
+                + 'opening more empty sessions.'
+        },
+        running: false, rotatesAccounts: true, failLimit: 3, failStreak: 3, idlePollMin: 10,
+        projectName: 'AgentFarm', agentName: 'developer', nextWords: null, live: null,
+        rounds: [], defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 }
+    }
+});
+
 module.exports = {
     script: 'console.js',
     data,
@@ -517,6 +589,21 @@ module.exports = {
             id: 'console-account',
             label: 'Console — and which sign-in pays for it, on a machine rotating three (X-169)',
             data: accountComposerData()
+        },
+        {
+            id: 'console-sentry',
+            label: 'Console — the sentry is working through the backlog while nobody watches (X-177)',
+            data: sentryData()
+        },
+        {
+            id: 'console-sentry-asleep',
+            label: 'Console — the sentry waiting out a quota wall, holding the next round words (X-177)',
+            data: sentryAsleepData()
+        },
+        {
+            id: 'console-sentry-stopped',
+            label: 'Console — …and the strip that explains a night that ended at three (X-177)',
+            data: sentryStoppedData()
         }
     ]
 };

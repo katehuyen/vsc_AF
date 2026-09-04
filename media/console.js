@@ -171,6 +171,29 @@
         body { overflow:hidden; padding:16px 20px 12px; }
         #app { height:100%; min-height:0; display:flex; flex-direction:column; }
         #c-head { flex:none; }
+        /* X-177 — the sentry's one line. It is a whole-strip press (it GOES to
+           Missions, where the controls are), so it is styled as one thing that
+           highlights, and it stays a single row at any width: what does not fit
+           is cut, and the hover carries it in full. */
+        #c-sentry { flex:none; }
+        #c-sentry:empty { display:none; }
+        .sstrip { display:flex; align-items:center; gap:7px; min-width:0; cursor:pointer;
+            margin:0 0 8px; padding:4px 9px; font-size:11.5px; border-radius:7px;
+            border:1px solid var(--vscode-widget-border,#4443);
+            background:var(--vscode-editor-background); }
+        .sstrip:hover { background:var(--vscode-list-hoverBackground); }
+        /* A campaign that has ENDED is still drawn — that is the morning read —
+           but it is not competing with a live one for the eye. */
+        .sstrip.s-off { opacity:.62; }
+        .sdot { width:8px; height:8px; border-radius:50%; flex:none;
+            background:var(--vscode-charts-green,#4caf50); }
+        .sdot.wait { background:var(--vscode-charts-yellow,#cca700); }
+        .sdot.bad { background:var(--vscode-editorWarning-foreground,#cca700); }
+        .sdot.off { background:var(--vscode-descriptionForeground,#888); }
+        .sstrip .sname { flex:none; opacity:.72; letter-spacing:.3px; }
+        .sstrip .sstate { flex:none; font-weight:600; letter-spacing:.3px; }
+        .sstrip .sline { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .sstrip .snext { flex:none; opacity:.8; }
         .cwrap { display:flex; gap:14px; align-items:stretch; flex:1 1 auto; min-height:0; }
         /* ‼️ U-105 — THE COLUMN IS 250px OF CONTENT, SCROLLBAR OR NO SCROLLBAR.
            The Resume section lives inside this scroller, so opening it is what
@@ -2516,6 +2539,99 @@
             ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
     }
 
+    /**
+     * ‼️ X-177 — THE SENTRY, IN ONE LINE, ON THE PAGE THE READER IS ALREADY ON.
+     *
+     * ONE SUBJECT, and this is the half that decides which page gets what: the
+     * strip carries what is true THIS SECOND — who is working, on which
+     * account, how much of that account's window is left, when it wakes, what
+     * is next. The setup, the form and every round the campaign ever opened
+     * are the Missions page's, and no fact is drawn on both.
+     *
+     * ‼️ IT IS DRAWN WHENEVER THERE IS A CAMPAIGN, running or not (the user's
+     * own call, 2026-09-04). A campaign that stopped at three in the morning is
+     * exactly what somebody needs at nine, and a strip that vanished with it
+     * would leave the night unexplained — so a stopped one is faded, and says
+     * what stopped it.
+     *
+     * ‼️ AND IT HAS NO CONTROLS OF ITS OWN. Pause, Resume and Stop live on the
+     * page it points at; the strip is one press that GOES there. That is why it
+     * takes the `navigation` exemption in the parity manifest rather than an op
+     * of its own — there is no action here for an agent to reach.
+     */
+    function sentryState(s, c) {
+        if (c.status === 'paused') { return { word: 'PAUSED', dot: 'wait' }; }
+        if (c.status !== 'running') { return { word: 'STOPPED', dot: 'off', off: true }; }
+        if (s.live) { return { word: 'RUNNING', dot: '' }; }
+        if (c.lastAction === 'sleep') { return { word: 'SLEEPING', dot: 'wait' }; }
+        if (c.lastAction === 'blocked') { return { word: 'BLOCKED', dot: 'bad' }; }
+        return { word: 'WAITING', dot: '' };
+    }
+
+    /** The account a live round is spending, and what is left of it. */
+    function sentryAccount(live) {
+        // ‼️ NO SLOT IS THE MAIN SIGN-IN (X-172), not a missing value — and an
+        // account whose allowance nobody could read has NO percentage rather
+        // than a zero, which is the one number that would read as a wall.
+        const who = live.account ? C.esc(live.account) : 'main sign-in';
+        const left = typeof live.accountPercent === 'number'
+            ? ` · ${Math.max(0, 100 - live.accountPercent)}% left` : '';
+        return ` on ${who}${left}`;
+    }
+
+    function sentryStripHtml() {
+        const s = DATA.sentry;
+        const c = s && s.campaign;
+        if (!c) { return ''; }
+        const st = sentryState(s, c);
+        const next = s.nextWords && s.nextWords.code
+            ? `<span class="snext">next ${C.esc(s.nextWords.code)}</span>` : '';
+        let line;
+        if (s.live) {
+            // The round's own title is what the BOARD calls it (`Sentry R7 ·
+            // X-178`), so the strip and the task row cannot come to say two
+            // different things about the same session.
+            line = `${C.esc(s.live.title || '')} as ${C.esc(s.agentName || c.agent || '')}`
+                + sentryAccount(s.live);
+        } else if (c.status === 'running' && c.wakeAt) {
+            // ‼️ THE CLOCK IS THE STRIP'S OWN, so the planner's tail — which
+            // says the same thing in words ("… — sleeping until the earliest
+            // reset plus 3 minutes of safety") — is not drawn a second time on
+            // the same line. What is cut is the ARITHMETIC behind the time, and
+            // that belongs in the panel with the rest of the sentence.
+            const why = String(c.lastWhy || '').split(' — ')[0];
+            line = `until ${C.esc(window.AFTime.clock(c.wakeAt))} — ${C.esc(why)}`;
+        } else if (c.status !== 'running') {
+            line = C.esc(c.stoppedWhy || c.lastWhy || '');
+        } else {
+            line = C.esc(c.lastWhy || '');
+        }
+        // The whole sentence, what it is working through and the words it is
+        // holding go in the panel: the row is one line by design, and what it
+        // cuts has to be a hover away rather than a click away.
+        const tip = window.AFTip.lines([
+            c.lastWhy || '',
+            '',
+            `${s.projectName || c.project || ''} · as ${s.agentName || c.agent || ''}`
+                + ` · ${c.rounds || 0} round(s)`,
+            c.wakeAt ? `wakes ${window.AFTime.stamp(c.wakeAt)}` : '',
+            s.nextWords && s.nextWords.prompt
+                ? `\nThe next round already has its words:\n${s.nextWords.prompt}` : '',
+            '',
+            'Press for the campaign itself — its setup, its rounds and its controls.'
+        ]);
+        return window.AFTip.wrap(
+            `<div class="sstrip${st.off ? ' s-off' : ''}" id="c-sgo">
+                <span class="sdot ${st.dot}"></span>
+                <span class="sname">SENTRY</span>
+                <span class="sstate">${st.word}</span>
+                <span class="sline">${line}</span>
+                <span class="grow"></span>
+                ${next}
+            </div>`,
+            `Sentry — ${st.word.toLowerCase()}`, tip, 'tip-free');
+    }
+
     function headerHtml(s) {
         return window.AFHeader.html({
             page: 'console',
@@ -3464,6 +3580,7 @@
 
         document.getElementById('app').innerHTML = `${STYLE}
             <div id="c-head"></div>
+            <div id="c-sentry"></div>
             <div class="cwrap">
                 <div class="clist">
                     <div id="c-lhead"></div>
@@ -4404,6 +4521,15 @@
 
         if (slot('c-head', headerHtml(s))) {
             window.AFHeader.wire(vscode, { onRefresh: () => vscode.postMessage({ type: 'refresh' }) });
+        }
+
+        // X-177 — its own slot, like everything else on this page: a streamed
+        // line must not rebuild a strip the reader is hovering.
+        if (slot('c-sentry', sentryStripHtml())) {
+            const go = document.getElementById('c-sgo');
+            if (go) {
+                go.addEventListener('click', () => vscode.postMessage({ type: 'afnav', to: 'missions' }));
+            }
         }
 
         renderList();

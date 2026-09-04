@@ -164,7 +164,11 @@ function carryOn(
 ): { prompt: string; code?: string } | undefined {
     const k = c.carry;
     if (!k || !String(k.prompt ?? '').trim()) { return undefined; }
-    if (k.code && k.code !== next?.code) { return undefined; }
+    // ‼️ …BUT A WAIT IS NOT A MOVE. `backlog.next` gives nothing while every
+    // remaining item is XL or waiting on an unfinished ⛔; that is the campaign
+    // waiting, and it says nothing about whether the sentence still fits. Only
+    // a DIFFERENT item drops it.
+    if (k.code && next?.code && k.code !== next.code) { return undefined; }
     return { prompt: k.prompt, ...(k.code ? { code: k.code } : {}) };
 }
 
@@ -196,8 +200,12 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     // earlier step left behind stands — and if THAT no longer fits, nothing
     // does, which is how a stale sentence leaves the record instead of living
     // on it for ever.
-    const carry = words
-        ? { prompt: words.prompt, ...(i.next ? { code: i.next.code } : {}) }
+    // ‼️ …AND WORDS BUILT WITH NO ITEM NAME NOTHING: every continuation
+    // template spells the next item out, so a sentence built while the backlog
+    // had nothing to give carries an EMPTY code, and sent later it would tell a
+    // paid session to take "the next item: ". The one that names an item stands.
+    const carry = words && i.next
+        ? { prompt: words.prompt, code: i.next.code }
         : carryOn(c, i.next);
     const base = { diagnosis, words, failStreak: streak, ...(carry ? { carry } : {}) };
 
