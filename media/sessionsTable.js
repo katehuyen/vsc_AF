@@ -21,12 +21,29 @@
 (function () {
     'use strict';
 
+    /**
+     * ‼️ S-52 — HOW LONG THE SESSION RAN, not how long it sat there.
+     *
+     * `durationMin` is the wall clock from the first message to the last, and a
+     * conversation resumed the next morning is one session with a night inside
+     * it: the column read "1 512m" for forty minutes of work, and cost per hour
+     * was divided by somebody's sleep. The host now measures the stretches
+     * between turns that are long enough to be an absence (`agentFarm.
+     * sessionBreakMin`) and hands both figures down.
+     *
+     * The fallback is the wall clock rather than 0 — an embedding that has not
+     * been taught the new fields reads exactly as it did before, and no figure
+     * is ever invented out of an absent one.
+     */
+    const activeOf = r => (typeof r.activeMin === 'number' ? r.activeMin : (r.durationMin || 0));
+    const awayOf = r => (typeof r.awayMin === 'number' ? r.awayMin : 0);
+
     const SORTS = [
         { id: 'recent', label: 'Recent', key: r => r.ts || 0 },
         { id: 'cost', label: 'Cost', key: r => r.cost || 0 },
         { id: 'tokens', label: 'Tokens', key: r => r.tokens || 0 },
         { id: 'ctx', label: 'Ctx now', key: r => r.ctx || 0 },
-        { id: 'duration', label: 'Duration', key: r => r.durationMin || 0 },
+        { id: 'duration', label: 'Duration', key: r => activeOf(r) },
         { id: 'turns', label: 'Turns', key: r => r.turns || 0 }
     ];
 
@@ -35,7 +52,7 @@
         { id: 'tokens', label: 'Tokens', get: r => r.tokens || 0 },
         { id: 'cost', label: 'Cost $', get: r => r.cost || 0 },
         { id: 'ctx', label: 'Ctx', get: r => r.ctx || 0 },
-        { id: 'duration', label: 'Minutes', get: r => r.durationMin || 0 },
+        { id: 'duration', label: 'Minutes', get: r => activeOf(r) },
         { id: 'turns', label: 'Turns', get: r => r.turns || 0 },
         { id: 'tools', label: 'Tools', get: r => r.toolCalls || 0 },
         { id: 'errors', label: 'Errors', get: r => r.errors || 0 }
@@ -565,7 +582,7 @@
                 tokens: 'Every token the session moved — input, output and cache alike. The ⚖ column beside it is the same session measured against the plan limit.',
                 cost: 'What the session cost in dollars, from the pricing rules. A subscription engine reports no dollar figure and is honestly 0.',
                 ctx: 'How much context was in the window after the last reply — "how full was it when this stopped".',
-                duration: 'Wall clock from the first message to the last, in minutes. Not time spent working.',
+                duration: 'Minutes the session actually ran — first message to last, less any stretch between turns long enough to be an absence (agentFarm.sessionBreakMin). A session resumed the next day filters on the work, not on the night in the middle; the wall clock is on the cell hover.',
                 turns: 'How many prompts a person (or a launcher) sent. A turn is one ask and everything the agent did to answer it.',
                 tools: 'Every tool call the session made across all of its turns.',
                 errors: 'Tool calls that came back as errors.'
@@ -762,8 +779,11 @@
          * $24 and neither number means anything. A rate needs a denominator
          * worth dividing by; below one hour there is none, so nothing is said.
          */
-        const perHour = r => (r.durationMin >= 60
-            ? C.fmtUSD((r.cost || 0) / (r.durationMin / 60)) : '');
+        // ‼️ S-52 — divided by what the session RAN. Against the wall clock, a
+        // session picked up again the next morning reported a few cents an
+        // hour: that is the night in the denominator, not a cheap session.
+        const perHour = r => (activeOf(r) >= 60
+            ? C.fmtUSD((r.cost || 0) / (activeOf(r) / 60)) : '');
 
         const TIP = {
             origin: r => [
@@ -809,17 +829,24 @@
             when: r => [
                 line('Last activity', `${stamp(r.ts)} · ${relTime(r.ts)}`),
                 line('Started', stamp(r.firstTs)),
-                line('Ran for', dur(r.durationMin)),
+                line('Ran for', dur(activeOf(r)) + (awayOf(r) ? ` (away ${dur(awayOf(r))})` : '')),
                 line('Turns', r.turns || 0),
                 line('State', r.active ? 'running' : 'idle')
             ],
+            // ‼️ S-52 — the cell shows what it RAN; the two figures it was
+            // carved out of are here, and only when there was something to
+            // carve. A session that was never put down says nothing extra —
+            // "away 0" on every ordinary row is a line the reader stops seeing.
             duration: r => [
-                line('Duration', dur(r.durationMin) + ' (wall clock)'),
+                line('Ran for', dur(activeOf(r))),
+                line('Away', awayOf(r)
+                    ? `${dur(awayOf(r))} over ${r.breaks || 1} break${(r.breaks || 1) === 1 ? '' : 's'}` : ''),
+                line('Wall clock', awayOf(r) ? `${dur(r.durationMin)} (first message to last)` : ''),
                 line('Started', stamp(r.firstTs)),
                 line('Ended', stamp(r.ts)),
-                line('Per turn', per(r.durationMin, r.turns, n => `${round1(n)} min`)),
-                line('Per API call', r.apiCalls && r.durationMin
-                    ? `${round1(r.durationMin * 60 / r.apiCalls)} s` : ''),
+                line('Per turn', per(activeOf(r), r.turns, n => `${round1(n)} min`)),
+                line('Per API call', r.apiCalls && activeOf(r)
+                    ? `${round1(activeOf(r) * 60 / r.apiCalls)} s` : ''),
                 line('Cost per hour', perHour(r))
             ],
             turns: r => [
@@ -830,7 +857,7 @@
                 line('Cost per turn', per(r.cost, r.turns, n => C.fmtUSD(n))),
                 line('Tools per turn', per(r.toolCalls, r.turns, n => round1(n))),
                 line('Files per turn', per(r.files, r.turns, n => round1(n))),
-                line('Minutes per turn', per(r.durationMin, r.turns, n => round1(n)))
+                line('Minutes per turn', per(activeOf(r), r.turns, n => round1(n)))
             ],
             tools: r => [
                 line('Tool calls', r.toolCalls || 0),
@@ -1026,7 +1053,7 @@
             files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',
             title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests. unread = transcript above the scan limit, its figures were not read">Title</th>',
             when: '<th class="num" title="Time since the session was last active">When</th>',
-            duration: '<th class="num" title="First turn to last, in wall clock">Duration</th>',
+            duration: '<th class="num" title="Minutes the session actually ran &#8212; first message to last, less any pause between turns long enough to be an absence. &#8943; marks a session that was put down and picked up again; its wall clock is on the cell.">Duration</th>',
             turns: '<th class="num" title="Prompts sent. One turn = one thing asked for; it takes many API calls">Turns</th>',
             tools: '<th class="num" title="Tool calls across the session (Read, Edit, Bash, MCP…)">Tools</th>',
             errors: '<th class="num" title="Tool results that came back as errors">Err</th>',
@@ -1095,7 +1122,15 @@
             },
             files: r => `<td class="num" title="${tipOf(TIP.files(r))}">${r.files || ''}</td>`,
             when: r => `<td class="num" title="${tipOf(TIP.when(r))}">${relTime(r.ts)}</td>`,
-            duration: r => `<td class="num" title="${tipOf(TIP.duration(r))}">${r.durationMin || 0}m</td>`,
+            // ‼️ S-52 — the minutes it RAN, and beside it the span it ran
+            // ACROSS, in the same shape the token column already uses for its
+            // second figure (`.wtok`, common.css). A bare mark was drawn first
+            // and photographed: at this size it was invisible, so the row still
+            // read as a fifty-minute session with nothing to say that it had
+            // been slept on. `⋯` rather than a pause glyph — the session is not
+            // paused now, it was put down and picked up again.
+            duration: r => `<td class="num" title="${tipOf(TIP.duration(r))}">${activeOf(r) || 0}m`
+                + `${awayOf(r) ? `<span class="wtok">⋯${dur(r.durationMin)}</span>` : ''}</td>`,
             turns: r => `<td class="num" title="${tipOf(TIP.turns(r))}">${r.turns || 0}</td>`,
             tools: r => `<td class="num" title="${tipOf(TIP.tools(r))}">${r.toolCalls || 0}</td>`,
             errors: r => `<td class="num" title="${tipOf(TIP.errors(r))}">${r.errors || ''}</td>`,

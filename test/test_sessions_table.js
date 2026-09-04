@@ -182,8 +182,13 @@ const mkRow = (i, extra) => Object.assign({
     ok('When says the whole date and both ends',
         /title="[^"]*Last activity:[^"]*Started:[^"]*Ran for: 20 min/.test(html()));
     ok('Duration derives the per-turn average', html().includes('Per turn: 5 min'));
-    ok('Duration says it is wall clock — as a value, not a lecture',
-        html().includes('Duration: 20 min (wall clock)'));
+    // ‼️ S-52 — the first line is what it RAN. This session was never put
+    // down, so the two figures it would have been carved out of say nothing:
+    // an 'Away: 0' under every ordinary row is a line the reader stops seeing.
+    ok('Duration leads with what the session ran — as a value, not a lecture',
+        html().includes('Ran for: 20 min'));
+    ok('‼️ …and a session with no absence in it says nothing about one',
+        !html().includes('Away:') && !html().includes('Wall clock:'));
     ok('Turns derives what one turn costs',
         html().includes('Tokens per turn: 100t') && html().includes('Cost per turn: $2'));
     ok('Turns separates the prompts you sent from the round trips they took',
@@ -1328,6 +1333,66 @@ const mkRow = (i, extra) => Object.assign({
         cells.indexOf('is a reason to look') < 0 && cells.indexOf('an alias') < 0);
     ok('...and the engine cell is still well under the paragraph ceiling',
         (html().match(/<td[^>]*title="([^"]*)"/g) || []).every(s => s.length < 800));
+}
+
+// ---------- S-52: the session that was slept on ----------
+//
+// Duration was `lastTs - firstTs`, so a conversation picked up again the next
+// morning read as a day and a half — and every rate derived from it was divided
+// by somebody's sleep. The cell now shows what the session RAN, with the span
+// it ran ACROSS beside it, in the shape the token column already uses for its
+// second figure.
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'span',
+        columns: ['title', 'duration', 'turns'], stateKey: 'span'
+    });
+    // one ordinary session; one put down overnight and picked up for two hours;
+    // one put down overnight whose work does not add up to an hour; and one
+    // from an embedding that has never been taught the new fields
+    t.setRows([
+        mkRow(1, { title: 'straight through', durationMin: 40 }),
+        mkRow(2, {
+            title: 'slept on', durationMin: 1520, activeMin: 120, awayMin: 1400, breaks: 2,
+            firstTs: NOW - 26 * 3600000, apiCalls: 24, cost: 6
+        }),
+        mkRow(3, {
+            title: 'slept on, barely worked', durationMin: 1550, activeMin: 50,
+            awayMin: 1500, breaks: 1, firstTs: NOW - 26 * 3600000, apiCalls: 9, cost: 6
+        }),
+        mkRow(4, { title: 'old embedding', durationMin: 33 })
+    ], 10);
+    const html = () => containers.span.innerHTML;
+
+    ok('S-52: the cell shows the minutes it RAN, not the day it spanned',
+        html().includes('>120m<span class="wtok">') && !html().includes('>1520m'));
+    ok('S-52: …and the span it ran across rides beside it rather than disappearing',
+        html().includes('<span class="wtok">⋯25.3 h</span>'));
+    ok('S-52: a session that was never put down is drawn exactly as it was before',
+        html().includes('>40m</td>'));
+    ok('‼️ S-52: …and carries no mark — a mark on every row marks nothing',
+        (html().match(/wtok">⋯/g) || []).length === 2);
+    ok('‼️ S-52: an embedding that sends no active figure falls back to the wall clock',
+        html().includes('>33m</td>'));
+
+    const tips = (html().match(/<td class="num" title="([^"]*)"/g) || [])
+        .filter(x => x.indexOf('Away') >= 0);
+    const worked = tips.filter(x => x.indexOf('Ran for: 2 h') >= 0).join(' ');
+    ok('S-52: the hover names the absence and how many times it happened',
+        worked.indexOf('Away: 23.3 h over 2 breaks') >= 0);
+    ok('S-52: …and the wall clock it was carved out of',
+        worked.indexOf('Wall clock: 25.3 h (first message to last)') >= 0);
+    ok('‼️ S-52: a rate is divided by the work, never by the night',
+        worked.indexOf('Cost per hour: $3') >= 0);
+    // ‼️ …and where the work does not add up to an hour there is no rate at
+    // all. The wall clock used to manufacture one out of the sleep: $6 over
+    // 25.8 hours reported 23 cents an hour, which said nothing about anything.
+    const barely = tips.filter(x => x.indexOf('Ran for: 50 min') >= 0).join(' ');
+    ok('‼️ S-52: fifty minutes of work states no hourly rate, and no longer invents one',
+        barely.length > 0 && barely.indexOf('Cost per hour') < 0);
+    ok('S-52: …and its per-turn minutes come off the work as well',
+        barely.indexOf('Per turn: 16.7 min') >= 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

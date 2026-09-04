@@ -62,6 +62,19 @@ const data = () => ({
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             scanLimit: { bytes: 31_457_280, limit: 24 * 1024 * 1024 }
         }),
+        // ‼️ S-52 — THE SESSION THAT WAS SLEPT ON. Picked up again the next
+        // morning, so its wall clock is more than a day and the work inside it
+        // is fifty minutes. The cell has to show the fifty and mark the gap
+        // legibly enough at this size that nobody reads "50m" as the whole
+        // story — the ⋯ and the figures behind it are the whole point of the
+        // item, and a mark too faint to see is the bug unfixed.
+        row(11, {
+            engine: '', models: ['claude-opus-5'],
+            title: 'Oturum 11 — dün akşam başladı, bu sabah devam etti',
+            firstTs: NOW - 26 * 3600000,
+            durationMin: 1550, activeMin: 50, awayMin: 1500, breaks: 2,
+            turns: 9, apiCalls: 26, cost: 6.4
+        }),
         // ‼️ S-35 — the two robots that used to look identical. Both are
         // origin 'auto'; only the first ran with no terminal behind it, and the
         // 🌙 that says so has to be legible at 9px beside the 🤖 it qualifies.

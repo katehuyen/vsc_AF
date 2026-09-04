@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.379.0",
+  "version": "3.380.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9724,6 +9724,12 @@
           "default": 45,
           "minimum": 0,
           "description": "How long, in minutes, a sentry round may say nothing before the watchdog ends it. The campaign's loop is driven by rounds ENDING, so a round that never ends holds it for ever — and an unattended session parked on a permission prompt is exactly that: it spends nothing, so the quota never breaks the deadlock either. Silence is measured from the run's own output, so a thinking turn is never touched. The round is ended as FAILED (which counts against the failure brake), never as cancelled (which is your hand and would stop the campaign), and it is not retried. 0 switches the watchdog off."
+        },
+        "agentFarm.sessionBreakMin": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "description": "How long, in minutes, a pause between two turns has to run before the session counts as PUT DOWN rather than thinking. A conversation you resume the next morning is one session with a night inside it, and the Duration column measured first message to last — so it read as a day and a half, and cost per hour was divided by your sleep. Only the stretch BETWEEN turns is taken off; a long round is the work itself and is never called absence. The wall clock is still on the cell, next to what was actually run. 0 switches the split off and Duration goes back to being first-to-last."
         },
         "agentFarm.promptSnippetsFile": {
           "type": "string",

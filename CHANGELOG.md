@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.380.0 - S-52: a session you resume tomorrow did not run for a day (2026-09-05)
+
+The Sessions table measured Duration from the first message to the last. That figure is
+true, but it was the only one on the row — so a conversation picked up again the next
+morning read as a day and a half, and every rate derived from it was divided by a night's
+sleep. Measured on this machine: **36 sessions** carry a gap of over an hour, the worst of
+them reporting 1 247 minutes for 144 minutes of work.
+
+- **Duration is now what the session RAN**, with the span it ran ACROSS beside it —
+  `50m ⋯25.8 h` — in the same shape the token column already uses for its second figure.
+  A session that was never put down is drawn exactly as before, mark and all absent.
+- **‼️ Absence is measured BETWEEN turns, never inside one.** A three-hour headless round
+  is the work itself; a rule that called a long turn absence would subtract exactly what
+  the figure exists to show.
+- **‼️ Nothing is subtracted on no evidence.** A session whose turns were not recorded is
+  unmeasured, not idle: active falls back to the wall clock rather than to a guess.
+- **The rates follow the work.** Cost per hour, minutes per turn and seconds per API call
+  are divided by what ran; below an hour of real work no rate is stated at all, where the
+  wall clock used to manufacture one out of the sleep (23 cents an hour said nothing).
+- The cell's hover carries the absence, how many times it happened, and the wall clock it
+  was carved out of — and says none of it on a session that has none.
+- `agentFarm.sessionBreakMin`, default 30 minutes, decides when a pause stops being
+  someone thinking and becomes someone away. **0 switches the split off** and Duration
+  goes back to being first-to-last.
+
 ## 3.379.0 - X-178: the watchdog, and a sign-in that falls at two in the morning (2026-09-04)
 
 The campaign's loop is driven by rounds ENDING. That left one state nothing could

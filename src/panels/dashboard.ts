@@ -13,6 +13,7 @@ import { buildData as buildViewerData } from './sessionViewer';
 import { afConfig } from '../core/settingsDoor';
 import { LaunchManifest, manifestOf } from '../core/launchManifest';
 import { describeDrift, runDrift, turnRuntimes } from '../core/turnRuntime';
+import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
 
 export interface DashboardDeps {
     extensionUri: vscode.Uri;
@@ -196,7 +197,28 @@ export function sessionRowPool(
         const model = s.models?.length ? s.models[s.models.length - 1] : '';
         return contextWindowFor(model);
     };
+    // ‼️ S-52 — HOW LONG A SESSION WAS LEFT, and therefore how long it ran. A
+    // conversation resumed the next morning has always read as a day and a half
+    // on this table, because the wall clock was the only figure on the row. 0
+    // switches the question off and every figure goes back to the wall clock.
+    const breakMin = afConfig().get<number>('sessionBreakMin', SESSION_BREAK_MIN);
+    const spanFields = (s: SessionInfo) => {
+        const v = sessionSpan(s, breakMin);
+        return {
+            // the figure this table has always shown, unchanged and still named
+            // the same thing — every surface that reads `durationMin` keeps
+            // reading the wall clock
+            durationMin: Math.round(v.wallMs / 60000),
+            // …and what it actually ran, with the stretches nobody was there
+            // for taken out. Equal to the wall clock on a session that was
+            // never put down, which is most of them.
+            activeMin: Math.round(v.activeMs / 60000),
+            awayMin: Math.round(v.awayMs / 60000),
+            breaks: v.breaks
+        };
+    };
     const rows = sessions.map(s => ({
+        ...spanFields(s),
         file: s.file,
         agent: (s.agentName ?? '?') + (s.machine ? ` ⇄ ${s.machine}` : ''),
         agentName: s.agentName ?? '',
@@ -213,7 +235,6 @@ export function sessionRowPool(
         // there was no way to ask WHEN it ran without opening it — a duration
         // with only one endpoint on the row cannot answer that.
         firstTs: s.firstTs || 0,
-        durationMin: s.firstTs && s.lastTs ? Math.round((s.lastTs - s.firstTs) / 60000) : 0,
         turns: s.userTurns,
         toolCalls: s.toolCalls,
         errors: s.errors,
