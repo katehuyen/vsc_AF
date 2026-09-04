@@ -24,7 +24,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const OUT = path.join(__dirname, '..', 'out', 'core');
 const {
-    newSentry, refuseSentry, stopSentry, sentryRunning, noteSentryPlan, noteSentryRound,
+    newSentry, refuseSentry, stopSentry, pauseSentry, resumeSentry, sentryRunning, noteSentryPlan, noteSentryRound,
     sentryDue, SENTRY_TAKEN_KEEP
 } = require(path.join(OUT, 'sentryCampaign.js'));
 const { planSentry, SENTRY_DEFAULT_CEILING } = require(path.join(OUT, 'sentryRun.js'));
@@ -108,6 +108,40 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
     ok('...and the planner plans nothing for it',
         planSentry({ campaign: rec, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', now: NOW })
             .action === 'stopped');
+}
+
+// ---- ‼️ PAUSE: a hold that belongs to the campaign (X-177) ------------------
+// The farm's master switch stops every automation there is; this stops one
+// campaign. Kept apart from `stopped` because they answer different questions:
+// stopped is a record nobody is coming back to, paused is one the user is
+// standing over — so it still holds the single slot, and everything it had
+// already worked out survives the hold.
+{
+    const held = pauseSentry(newSentry(asked, NOW), NOW + MIN);
+    ok('a paused campaign says so and remembers when',
+        held.status === 'paused' && held.pausedAt === NOW + MIN);
+    ok('‼️ a paused campaign is NEVER due — the pump does not tick it at all',
+        sentryDue(held, false, 10, NOW + 999 * MIN) === false);
+    ok('...and it still stands in the way of a second one, because it is not finished with',
+        /paus/i.test(refuseSentry(held, asked) || ''));
+
+    held.carry = { prompt: 'the words the last round earned', code: 'X-177', at: NOW };
+    const back = resumeSentry(held, NOW + 5 * MIN);
+    ok('resuming puts it back to running and clears the hold',
+        back.status === 'running' && back.pausedAt === undefined);
+    ok('‼️ ...and the words the campaign had already earned survive it',
+        back.carry.prompt === 'the words the last round earned');
+
+    const idled = noteSentryPlan(newSentry(asked, NOW),
+        { action: 'idle', rule: 'nothing-to-take', why: 'x' }, NOW);
+    const again = resumeSentry(pauseSentry(idled, NOW + MIN), NOW + 5 * MIN);
+    ok('...and it looks AT ONCE, rather than serving out the poll it was paused in the middle of',
+        sentryDue(again, false, 10, NOW + 5 * MIN) === true);
+
+    ok('pausing a stopped campaign does nothing — stopped is finished with',
+        pauseSentry(stopSentry(newSentry(asked, NOW), NOW), NOW).status === 'stopped');
+    ok('...and resuming one does not raise the dead either',
+        resumeSentry(stopSentry(newSentry(asked, NOW), NOW), NOW).status === 'stopped');
 }
 
 // ---- ‼️ whether a round is going is DERIVED from the rows -------------------

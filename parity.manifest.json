@@ -2649,6 +2649,26 @@
       ]
     },
     {
+      "capability": "missionsPanel.ts#sentryControl",
+      "ui": [
+        "page:missionsPanel.ts#sentryControl"
+      ],
+      "ops": [
+        "sentry.stop",
+        "sentry.pause",
+        "sentry.resume"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#sentryStart",
+      "ui": [
+        "page:missionsPanel.ts#sentryStart"
+      ],
+      "ops": [
+        "sentry.start"
+      ]
+    },
+    {
       "capability": "missionsPanel.ts#tail",
       "ui": [
         "page:missionsPanel.ts#tail"

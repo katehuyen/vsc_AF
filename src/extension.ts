@@ -14954,6 +14954,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             specs: missionStore.specs,
             runs: missionRunsForPanel(),
             agents: agents.map(a => ({ id: a.id, name: a.name })),
+            // ‼️ X-177 — THE SENTRY CAMPAIGN BELONGS ON THIS PAGE. Missions is
+            // already the page for work that runs while nobody is watching, and
+            // the item is explicit that no third panel is opened for it. What
+            // goes here is the CONFIGURATION and the history; what is true right
+            // now goes on the Console strip, and neither repeats the other.
+            sentry: sentryPayload(),
             /**
              * ‼️ X-94 — THE PROJECTS, SO THE FORM CAN OFFER ONE.
              *
@@ -15139,6 +15145,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         settleApproval: (runId: string, ok: boolean) => {
             const id = missionApprovals.get(runId);
             if (id) { approvalQueue.settle(id, ok); }
+        },
+        // ‼️ X-177 — the page's two sentry doors. Both go through the SAME
+        // manager methods the bridge ops use: a surface that started a campaign
+        // its own way would be a second definition of what a campaign is.
+        sentryStart: (input: Record<string, unknown>): string | undefined => {
+            const agentKey = String(input.agent ?? '').trim();
+            const agent = agents.find(a => a.id === agentKey || a.name === agentKey);
+            if (!agent) { return 'pick the agent the campaign runs its sessions as'; }
+            const started = taskManager.startSentryCampaign({
+                project: String(input.project ?? '').trim(),
+                agent: agent.id,
+                opening: String(input.prompt ?? '').trim(),
+                ...(input.engine ? { engine: String(input.engine) } : {}),
+                ...(input.model ? { model: String(input.model) } : {}),
+                ...(input.permissionMode ? { permissionMode: String(input.permissionMode) } : {}),
+                ...(input.superpowers === true ? { superpowers: true } : {}),
+                ceiling: input.ceiling,
+                safetyBufferMin: input.safetyBufferMin,
+                failLimit: input.failLimit !== undefined
+                    ? input.failLimit
+                    : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT)
+            });
+            if (!started.ok) { return started.error ?? 'the campaign could not be started'; }
+            // Moves at once, for `sentry.start`'s reason: "did it take?" is the
+            // one question a switch has to answer immediately.
+            sentryTick();
+            return undefined;
+        },
+        sentryControl: (action: 'stop' | 'pause' | 'resume') => {
+            if (action === 'stop') { taskManager.endSentryCampaign('stopped from the Missions page'); return; }
+            taskManager.holdSentryCampaign(action === 'pause');
+            if (action === 'resume') { sentryTick(); }
         },
         pickFolder: async () => {
             const picked = await vscode.window.showOpenDialog({
@@ -23487,7 +23525,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const sentryTick = (finishedTask?: FarmTask): void => {
         const rec = taskManager.sentry;
-        if (!rec || rec.status !== 'running') { return; }
+        // ‼️ X-177 — A PAUSED CAMPAIGN IS STILL DRIVEN, and opens nothing. The
+        // verdict on the round that just ended and the sentence that answers it
+        // are free, and `planSentry` refuses to start on a paused campaign — so
+        // running the step anyway means a hold does not throw away the words
+        // the round earned. Only `stopped` is not driven at all.
+        if (!rec || rec.status === 'stopped') { return; }
 
         // ---- where the work comes from ------------------------------------
         let doc: { project: Project; folder: string; text: string };
@@ -23613,6 +23656,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 tags: ['sentry']
             });
         }
+    };
+
+    /**
+     * ‼️ X-177 — THE CAMPAIGN AS BOTH SURFACES SEE IT.
+     *
+     * One payload, two readers, and the split between them is a rule rather
+     * than a habit (ONE SUBJECT): Missions draws the CONFIGURATION and the
+     * history — what it was set up to do and what it has done — while the
+     * Console strip draws only what is true RIGHT NOW. Both are served from
+     * here so a fact can never be computed two ways; each page picks what its
+     * own subject is and ignores the rest.
+     *
+     * Every figure is derived on read. Nothing about a campaign is cached: the
+     * round on the board comes from the task rows, the room left comes from the
+     * account matrix, and both change under the page while it is open.
+     */
+    const sentryPayload = (): Record<string, unknown> => {
+        const rec = taskManager.sentry;
+        const failLimit = cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT);
+        const base = {
+            defaults: {
+                ceiling: SENTRY_DEFAULT_CEILING,
+                safetyBufferMin: RETRY_DEFAULT_SAFETY_MIN,
+                failLimit
+            },
+            idlePollMin: cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),
+            // ‼️ THE VOCABULARY IS SENT, NOT RETYPED. A form that spelled the
+            // permission modes itself would be a second copy of a list the CLI
+            // owns, and the copy is the one that goes out of date.
+            permissionModes: PERMISSION_MODES_LIVE
+        };
+        if (!rec) { return { ...base, campaign: null, running: false, rounds: [] }; }
+        const proj = projectStore.get(rec.project);
+        const agent = agents.find(a => a.id === rec.agent || a.name === rec.agent);
+        const rows = taskManager.tasks.filter(t => t.sentryOf === rec.id);
+        const live = rows.find(t => t.status === 'running' || t.status === 'queued');
+        // The room left on the account the LIVE round is spending — the one
+        // figure the strip exists for, and the one nobody can read off a task.
+        const slot = live?.account
+            ? accountUsage.current().find(u => u.slotId === live.account)
+            : undefined;
+        return {
+            ...base,
+            campaign: rec,
+            running: !!live,
+            rotatesAccounts: !!rec.engine,
+            failLimit: typeof rec.failLimit === 'number' ? rec.failLimit : failLimit,
+            failStreak: rec.failStreak ?? 0,
+            // ‼️ NAMED, not just identified. A campaign row that says `prj_9ujsbtzr`
+            // is a row the reader has to go and look up; the id travels too, for
+            // the controls that need it.
+            projectName: proj?.name ?? rec.project,
+            agentName: agent?.name ?? rec.agent,
+            nextWords: rec.carry ?? null,
+            live: live
+                ? {
+                    id: live.id, title: live.title, status: live.status,
+                    startedAt: live.startedAt ?? live.createdAt,
+                    account: live.account ?? '',
+                    accountPercent: slot && slot.state === 'ok' && slot.percent >= 0 ? slot.percent : null,
+                    accountResetsAt: slot?.resetsAt ?? null
+                }
+                : null,
+            rounds: rows.map(t => ({
+                id: t.id, title: t.title, status: t.status,
+                createdAt: t.createdAt, endedAt: t.endedAt ?? null,
+                account: t.account ?? ''
+            }))
+        };
     };
 
     /**
@@ -31227,6 +31339,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(rec, 'no sentry campaign has ever been started here');
                 const stopped = taskManager.endSentryCampaign(optStr(args, 'why'));
                 return { campaign: stopped, roundStillRunning: taskManager.sentryBusy() };
+            }
+        },
+        {
+            op: 'sentry.pause',
+            describe: 'HOLD the sentry campaign: it opens no more rounds until you resume it, and '
+                + 'everything it has worked out — the codes it took, the failure streak, and above all '
+                + 'the words the last round earned for the next one — waits exactly where it is. ‼️ THIS '
+                + 'IS NOT THE FARM\'S MASTER SWITCH: automation.pause stops every schedule there is, '
+                + 'this stops one campaign. ‼️ A round already on the board is LEFT RUNNING — it is a '
+                + 'real session that is really spending, and killing it is tasks.cancel, asked for '
+                + 'separately — but its ending will decide nothing while the hold is on. args: none',
+            handler: () => {
+                const rec = taskManager.sentry;
+                need(rec, 'no sentry campaign has ever been started here');
+                need((rec as SentryRecord).status === 'running',
+                    `the campaign is ${(rec as SentryRecord).status}, so there is nothing to pause`);
+                return { campaign: taskManager.holdSentryCampaign(true), roundStillRunning: taskManager.sentryBusy() };
+            }
+        },
+        {
+            op: 'sentry.resume',
+            describe: 'Let a PAUSED sentry campaign go again. It looks at the backlog AT ONCE rather '
+                + 'than serving out the poll it was paused in the middle of, and it opens its next '
+                + 'round on the words it had already built for it — not on the sentence the FIRST '
+                + 'round was given. args: none',
+            handler: () => {
+                const rec = taskManager.sentry;
+                need(rec, 'no sentry campaign has ever been started here');
+                need((rec as SentryRecord).status === 'paused',
+                    `the campaign is ${(rec as SentryRecord).status}, so there is nothing to resume`);
+                const back = taskManager.holdSentryCampaign(false);
+                // The same reason `sentry.start` moves at once: "did it take?"
+                // is the one question a switch has to answer immediately.
+                sentryTick();
+                return { campaign: back, running: taskManager.sentryBusy() };
             }
         },
         {

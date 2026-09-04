@@ -28,6 +28,15 @@ export interface MissionsDeps {
      *  shows it verbatim rather than deciding either for itself. */
     guide(runId: string, text: string): { note?: string; error?: string };
     settleApproval(runId: string, ok: boolean): void;
+    /**
+     * ‼️ X-177 — THE SENTRY CAMPAIGN'S SWITCH, in the shape the mission rows
+     * already use (`control`): one verb, three positions. Start is apart from
+     * it because it is the only one that carries a form, and it answers with
+     * the refusal in words — one campaign at a time, and it needs a project, an
+     * agent and the words the first round opens on.
+     */
+    sentryStart(input: Record<string, unknown>): string | undefined;
+    sentryControl(action: 'stop' | 'pause' | 'resume'): void;
     pickFolder(): Thenable<string | undefined>;
     /** Live-tail of an archived task output (last KBs only) for the expanded
      *  step's output box; undefined = file unreadable/outside the outputs dir. */
@@ -121,6 +130,30 @@ export class MissionsPanel {
                     if (pick !== 'Cancel mission') { break; }
                 }
                 this.deps.control(action, runId);
+                this.refresh();
+                break;
+            }
+            // ‼️ X-177 — the sentry campaign. `sentryStart` answers with the
+            // refusal rather than throwing, because the form has to print it;
+            // stopping ASKS FIRST, for the same reason cancelling a mission
+            // does — it is the end of something that was left running on
+            // purpose, and the record of the night goes with it.
+            case 'sentryStart': {
+                const error = this.deps.sentryStart(msg.input as Record<string, unknown>);
+                void this.panel.webview.postMessage({ type: 'sentryError', error: error ?? '' });
+                this.refresh();
+                break;
+            }
+            case 'sentryControl': {
+                const action = String(msg.action ?? '');
+                if (action !== 'stop' && action !== 'pause' && action !== 'resume') { break; }
+                if (action === 'stop') {
+                    const pick = await vscode.window.showWarningMessage(
+                        'Stop the sentry campaign? A round already running is left to finish.',
+                        { modal: true }, 'Stop campaign');
+                    if (pick !== 'Stop campaign') { break; }
+                }
+                this.deps.sentryControl(action);
                 this.refresh();
                 break;
             }

@@ -25,7 +25,7 @@ const { BridgeRegistry, argStr, optStr } = require(path.join(OUT, 'bridge.js'));
 const { diagnoseSession } = require(path.join(OUT, 'sessionDiagnosis.js'));
 const { resolveSentryTemplates, buildNextPrompt, SENTRY_VERDICTS } = require(path.join(OUT, 'sentryPrompt.js'));
 const {
-    newSentry, refuseSentry, stopSentry, sentryRunning
+    newSentry, refuseSentry, stopSentry, pauseSentry, resumeSentry, sentryRunning
 } = require(path.join(OUT, 'sentryCampaign.js'));
 
 const NOW = Date.UTC(2026, 8, 4, 12, 0, 0);
@@ -275,13 +275,43 @@ function registry(disk) {
                     describe: 'Switch the sentry campaign off. args: why?',
                     handler: (a) => {
                         if (!store.sentry) { throw new Error('no sentry campaign has ever been started here'); }
-                        if (store.sentry.status === 'running') {
+                        if (store.sentry.status !== 'stopped') {
                             stopSentry(store.sentry, NOW + 1000);
                             if (optStr(a, 'why')) { store.sentry.stoppedWhy = optStr(a, 'why'); }
                         }
                         return {
                             campaign: store.sentry,
                             roundStillRunning: sentryRunning(store.tasks, store.sentry.id)
+                        };
+                    }
+                },
+                {
+                    op: 'sentry.pause',
+                    describe: 'Hold the campaign: it opens no more rounds until you resume it. args: none',
+                    handler: () => {
+                        if (!store.sentry) { throw new Error('no sentry campaign has ever been started here'); }
+                        if (store.sentry.status !== 'running') {
+                            throw new Error(`the campaign is ${store.sentry.status}, so there is nothing to pause`);
+                        }
+                        pauseSentry(store.sentry, NOW + 1000);
+                        return {
+                            campaign: store.sentry,
+                            roundStillRunning: sentryRunning(store.tasks, store.sentry.id)
+                        };
+                    }
+                },
+                {
+                    op: 'sentry.resume',
+                    describe: 'Let a paused campaign go again, looking at once. args: none',
+                    handler: () => {
+                        if (!store.sentry) { throw new Error('no sentry campaign has ever been started here'); }
+                        if (store.sentry.status !== 'paused') {
+                            throw new Error(`the campaign is ${store.sentry.status}, so there is nothing to resume`);
+                        }
+                        resumeSentry(store.sentry, NOW + 2000);
+                        return {
+                            campaign: store.sentry,
+                            running: sentryRunning(store.tasks, store.sentry.id)
                         };
                     }
                 },
@@ -302,8 +332,9 @@ function registry(disk) {
         };
 
         const cat = campaignOps().reg.catalog().map(c => c.op);
-        ok('the three campaign ops are in farm.ops',
-            ['sentry.start', 'sentry.stop', 'sentry.status'].every(x => cat.includes(x)));
+        ok('every campaign op is in farm.ops',
+            ['sentry.start', 'sentry.stop', 'sentry.pause', 'sentry.resume', 'sentry.status']
+                .every(x => cat.includes(x)));
 
         {
             const { reg } = campaignOps();
@@ -339,6 +370,42 @@ function registry(disk) {
             const r = await reg.dispatch('sentry.start',
                 { project: 'p', agent: 'a', prompt: 'go', engine: 'claude' });
             ok('naming an engine is what turns account rotation on', r.result.rotatesAccounts === true);
+        }
+
+        // ---- ‼️ X-177 — the HOLD, which is not the farm's master switch -----
+        {
+            const { reg, store } = campaignOps();
+            const nothing = await reg.dispatch('sentry.pause', {});
+            ok('pausing when no campaign was ever started is refused in words, not a silent no-op',
+                !nothing.ok && /ever been started/i.test(nothing.error));
+
+            await reg.dispatch('sentry.start', { project: 'p', agent: 'a', prompt: 'the opening words' });
+            store.sentry.carry = { prompt: 'the words the last round earned', code: 'X-177', at: NOW };
+            const held = await reg.dispatch('sentry.pause', {});
+            ok('a running campaign can be held, and says so', held.ok && held.result.campaign.status === 'paused');
+            ok('‼️ ...and the words it had already built for the next round are untouched',
+                held.result.campaign.carry.prompt === 'the words the last round earned');
+
+            const again = await reg.dispatch('sentry.pause', {});
+            ok('pausing a paused campaign is refused by naming the state it is in',
+                !again.ok && /paused/i.test(again.error));
+
+            const second = await reg.dispatch('sentry.start', { project: 'other', agent: 'b', prompt: 'go' });
+            ok('‼️ a paused campaign still holds the one slot — a second is refused under it',
+                !second.ok && /paus/i.test(second.error));
+
+            const back = await reg.dispatch('sentry.resume', {});
+            ok('resuming puts it back to running', back.ok && back.result.campaign.status === 'running');
+            ok('...and it still has the words, which is the whole difference from stop-then-start',
+                back.result.campaign.carry.prompt === 'the words the last round earned');
+            const backAgain = await reg.dispatch('sentry.resume', {});
+            ok('resuming a running campaign is refused by naming the state it is in',
+                !backAgain.ok && /running/i.test(backAgain.error));
+
+            await reg.dispatch('sentry.pause', {});
+            const off = await reg.dispatch('sentry.stop', { why: 'enough for tonight' });
+            ok('‼️ a PAUSED campaign can be stopped — a hold is not a trap you have to resume out of',
+                off.ok && off.result.campaign.status === 'stopped');
         }
 
         {

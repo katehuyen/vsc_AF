@@ -93,6 +93,20 @@ export function planSentry(i: SentryInputs): SentryPlan {
     const ceiling = typeof c.ceiling === 'number' ? c.ceiling : SENTRY_DEFAULT_CEILING;
     const buffer = typeof c.safetyBufferMin === 'number' ? c.safetyBufferMin : RETRY_DEFAULT_SAFETY_MIN;
 
+    // ‼️ X-177 — PAUSED IS NOT STOPPED. A hold that belongs to this campaign
+    // rather than to the whole farm: the master switch stops every automation
+    // there is, and wanting the sentry to stand still for an hour is not
+    // wanting that. The answer is `blocked` — the gate's own word for a pause —
+    // because `stopped` is what a record nobody is coming back to says, and a
+    // surface that could not tell the two apart would offer Start where Resume
+    // belongs.
+    if (c.status === 'paused') {
+        return {
+            action: 'blocked', rule: 'user-paused',
+            why: 'the campaign is paused — it opens nothing until you resume it, and everything '
+                + 'it had already worked out is waiting where it was'
+        };
+    }
     if (c.status !== 'running') {
         return {
             action: 'stopped', rule: 'user-stopped',

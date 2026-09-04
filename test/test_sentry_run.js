@@ -50,6 +50,21 @@ const plan = (over) => planSentry(Object.assign({
     ok('...and says so rather than leaving a surface to guess', p.why.length > 10 && !!p.rule);
 }
 
+// ---- ‼️ PAUSED IS NOT STOPPED (X-177) --------------------------------------
+// A hold that belongs to the CAMPAIGN. The farm's master switch pauses every
+// schedule there is, and somebody who wants their sentry to stand still for an
+// hour should not have to switch the whole farm off to get it. The answer is
+// `blocked` — the same one the gate's own pause produces — rather than
+// `stopped`, which is the word for a record nobody is coming back to.
+{
+    const p = plan({ campaign: campaign({ status: 'paused' }) });
+    ok('a paused campaign opens nothing', p.action === 'blocked' && p.prompt === undefined);
+    ok('...and is told apart from a stopped one by its RULE, not by its wording alone',
+        p.rule === 'user-paused' && /paus/i.test(p.why));
+    ok('...and names no moment to wake at, because only the user resumes it',
+        p.wakeAt === undefined);
+}
+
 // ---- ‼️ SEQUENTIAL, and that is the whole concurrency story for this item ---
 {
     const p = plan({ running: true });

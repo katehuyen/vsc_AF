@@ -3030,6 +3030,214 @@
         </thead><tbody>${rows || `<tr><td colspan="9" class="muted">No runs match the filters.</td></tr>`}</tbody></table>`;
     }
 
+    // ---------- ‼️ X-177 — THE SENTRY CAMPAIGN, ON THE PAGE IT BELONGS TO ----
+    // Missions is already the page for work that runs while nobody is watching,
+    // and the item forbids a third panel by name. So the campaign's SETUP and
+    // its HISTORY live here — what it was told to do, and what it has done —
+    // while what is true this second lives on the Console strip. Neither
+    // surface repeats the other (ONE SUBJECT).
+    let sentryFormOpen = false;
+    let sentryErr = '';
+    let sentryOpen = true;
+    const sentryForm = {
+        project: '', agent: '', engine: '', model: '',
+        // ‼️ THE DEFAULT IS THE UNATTENDED ONE, on purpose. A headless round
+        // that stops to ask permission has nobody to answer it and never ends,
+        // which is a spent account and no work. The picker is right there to
+        // say otherwise.
+        permissionMode: 'bypassPermissions',
+        superpowers: false, prompt: '', ceiling: '', safetyBufferMin: '', failLimit: ''
+    };
+
+    /** SHORTHAND: one word for the whole state, and the panel carries the rest. */
+    function sentryChip(s) {
+        const c = s.campaign;
+        if (!c) { return '<span class="mchip">OFF</span>'; }
+        if (c.status === 'paused') { return '<span class="mchip wait">PAUSED</span>'; }
+        if (c.status !== 'running') { return '<span class="mchip">STOPPED</span>'; }
+        if (s.running) { return '<span class="mchip live">RUNNING</span>'; }
+        if (c.lastAction === 'sleep') { return '<span class="mchip wait">SLEEPING</span>'; }
+        if (c.lastAction === 'blocked') { return '<span class="mchip bad">BLOCKED</span>'; }
+        return '<span class="mchip live">WAITING</span>';
+    }
+
+    function sentryWhen(t) {
+        return t ? new Date(t).toLocaleString() : '';
+    }
+
+    /** The campaign's own account of itself: the last plan, in its own words. */
+    function sentryWhy(c) {
+        if (!c || !c.lastWhy) { return ''; }
+        const short = C.esc(c.lastWhy.length > 150 ? c.lastWhy.slice(0, 150) + '…' : c.lastWhy);
+        return window.AFTip.wrap(
+            `<span class="swhy">${short}</span>`,
+            `${c.lastAction || 'plan'} — ${c.lastRule || ''}`,
+            window.AFTip.lines([c.lastWhy, '', 'decided ' + sentryWhen(c.lastAt)]));
+    }
+
+    function sentryRoundsHtml(s) {
+        if (!s.rounds || !s.rounds.length) { return ''; }
+        const rows = s.rounds.slice().reverse().slice(0, 12).map(r => {
+            const cls = r.status === 'done' ? 'ok' : (r.status === 'failed' ? 'bad'
+                : (r.status === 'cancelled' ? 'wait' : 'live'));
+            const mins = r.endedAt && r.createdAt ? Math.round((r.endedAt - r.createdAt) / 60000) : null;
+            return `<tr class="mrow" data-sround="${C.esc(r.id)}">
+                <td>${C.esc(r.title)}</td>
+                <td><span class="mchip ${cls}">${C.esc(r.status)}</span></td>
+                <td>${r.account ? C.esc(r.account) : '<span class="dim">main sign-in</span>'}</td>
+                <td>${C.esc(sentryWhen(r.createdAt))}</td>
+                <td>${mins === null ? '' : mins + 'm'}</td>
+            </tr>`;
+        }).join('');
+        return `<table class="mtable"><thead><tr>
+            <th title="The row this round ran as. A sentry round is an ORDINARY task: the same runner opens it, the same terminal watches it, the same cancel button ends it.">Round</th>
+            <th>Status</th>
+            <th title="The captured sign-in the round spent. Empty means the main sign-in — the absence of a slot IS the main account.">Account</th>
+            <th>Opened</th><th>Took</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function sentryFormHtml(s) {
+        const opt = (list, sel, idKey, nameKey) => (list || []).map(x =>
+            `<option value="${C.esc(x[idKey])}"${x[idKey] === sel ? ' selected' : ''}>${C.esc(x[nameKey])}</option>`).join('');
+        return `<div class="sform">
+            ${sentryErr ? `<div class="formerr">${C.esc(sentryErr)}</div>` : ''}
+            <div class="srow">
+                <label>Project<select id="s-project"><option value="">— pick one —</option>
+                    ${opt(DATA.projects, sentryForm.project, 'id', 'name')}</select></label>
+                <label>Runs as<select id="s-agent"><option value="">— pick one —</option>
+                    ${opt(DATA.agents, sentryForm.agent, 'id', 'name')}</select></label>
+                <label title="Naming an engine is what turns account rotation on: without one every round runs on the main sign-in, because choosing an account would mean assuming an engine.">Engine
+                    <select id="s-engine"><option value="">main sign-in only</option>
+                    ${opt((DATA.engines || []).map(e => ({ id: e.id, name: e.label })), sentryForm.engine, 'id', 'name')}</select></label>
+                <label>Model<input id="s-model" value="${C.esc(sentryForm.model)}" placeholder="engine default" list="s-models"></label>
+                <datalist id="s-models">${(DATA.modelAliases || []).map(m => `<option value="${C.esc(m)}">`).join('')}</datalist>
+            </div>
+            <div class="srow">
+                <label title="What a round may do without asking. ‼️ An unattended round that stops to ask has nobody to answer it and never ends.">Permissions
+                    <select id="s-perm">${(s.permissionModes || []).map(m =>
+                        `<option value="${C.esc(m.id)}"${m.id === sentryForm.permissionMode ? ' selected' : ''}>${C.esc(m.label)}</option>`).join('')}</select></label>
+                <label class="scheck"><input type="checkbox" id="s-sp"${sentryForm.superpowers ? ' checked' : ''}> Superpowers</label>
+                <label title="Five-hour percentage at or above which an account is a wall and is not worth starting a round on.">Ceiling %
+                    <input id="s-ceiling" type="number" min="1" max="100" placeholder="${C.esc(String((s.defaults || {}).ceiling || ''))}" value="${C.esc(sentryForm.ceiling)}"></label>
+                <label title="Minutes to wait past a measured reset before trying that account again.">Safety min
+                    <input id="s-buffer" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).safetyBufferMin || ''))}" value="${C.esc(sentryForm.safetyBufferMin)}"></label>
+                <label title="Barren rounds IN A ROW that switch the campaign off. Not a round budget — a working campaign runs until you stop it — but the one alarm no quota can raise: a broken setup opening empty sessions all night spends nothing and would never stop. 0 switches it off.">Failure brake
+                    <input id="s-fail" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).failLimit || ''))}" value="${C.esc(sentryForm.failLimit)}"></label>
+            </div>
+            <label class="sprompt">First round opens with
+                <textarea id="s-prompt" rows="3" placeholder="Every continuation sentence is built on &quot;the previous session&quot; — the first round has none, so these words are yours.">${C.esc(sentryForm.prompt)}</textarea></label>
+            <div class="srow">
+                <button id="s-start">Start campaign</button>
+                <button id="s-cancel" class="ghost">Cancel</button>
+            </div>
+        </div>`;
+    }
+
+    function sentryHtml() {
+        const s = DATA.sentry || {};
+        const c = s.campaign;
+        const on = c && (c.status === 'running' || c.status === 'paused');
+        const words = s.nextWords && s.nextWords.prompt
+            ? window.AFTip.wrap(
+                `<span class="mchip">next words${s.nextWords.code ? ' · ' + C.esc(s.nextWords.code) : ''}</span>`,
+                'What the next round will open on',
+                window.AFTip.lines([s.nextWords.prompt, '',
+                    'Built when the last round ended and kept through the wait, so a campaign coming '
+                    + 'back from a quota wall does not fall back to the sentence the FIRST round was given.']))
+            : '';
+        // ‼️ NO LIVE STRIP HERE. What is happening THIS SECOND — who is running
+        // on which account and how much of that account is left — is the
+        // Console strip's subject, and the item says so by name. This page
+        // carries the setup and the history; the round on the board is in the
+        // table below with every other round, which is where history keeps it.
+        const sleeping = c && c.wakeAt && !s.live
+            ? `<div class="nowstrip paused"><span class="nowdot hold"></span> asleep until ${C.esc(sentryWhen(c.wakeAt))} — zero tokens, zero requests</div>`
+            : '';
+        const body = !sentryOpen ? '' : (on
+            ? `<div class="sbody">
+                <div class="provrow"><span class="plabel">Working</span>
+                    <b>${C.esc(s.projectName || '')}</b> as <b>${C.esc(s.agentName || '')}</b>
+                    <span class="mchip prov">${c.rounds || 0} round(s)</span>
+                    ${s.rotatesAccounts ? `<span class="mchip prov">rotates ${C.esc(c.engine)} accounts</span>`
+                        : '<span class="mchip prov" title="No engine was named, so every round runs on the main sign-in — choosing an account would mean assuming an engine.">main sign-in</span>'}
+                    ${s.failLimit ? `<span class="mchip ${s.failStreak ? 'bad' : 'prov'}" title="Barren rounds in a row against the brake that stops the campaign.">${s.failStreak}/${s.failLimit} barren</span>` : ''}
+                    ${words}
+                </div>
+                <div class="provrow"><span class="plabel">Why</span>${sentryWhy(c)}</div>
+                ${sleeping}
+                ${sentryRoundsHtml(s)}
+            </div>`
+            : (sentryFormOpen ? sentryFormHtml(s) : `<div class="sbody"><div class="dim">
+                No campaign is running. A campaign takes the next item off a project backlog, opens a
+                clean unattended session on it as an ordinary task row, and when that row ends it reads
+                what the session left behind and opens the next one — until you stop it.
+                ${c ? `<br>The last one ${C.esc(c.status)} ${C.esc(sentryWhen(c.stoppedAt))}${c.stoppedWhy ? ' — ' + C.esc(c.stoppedWhy) : ''}` : ''}
+                </div></div>`));
+        return `<div class="ssec">
+            <div class="shead">
+                <span class="tcaret" id="s-caret">${sentryOpen ? '▾' : '▸'}</span>
+                <b>Sentry</b> ${sentryChip(s)}
+                <span class="grow1"></span>
+                ${on && c.status === 'running' ? '<button id="s-pause" class="ghost">Pause</button>' : ''}
+                ${on && c.status === 'paused' ? '<button id="s-resume">Resume</button>' : ''}
+                ${on ? '<button id="s-stop" class="ghost">Stop</button>' : ''}
+                ${!on && !sentryFormOpen ? '<button id="s-new">+ Start a campaign</button>' : ''}
+            </div>
+            ${body}
+        </div>`;
+    }
+
+    function readSentryForm() {
+        const v = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
+        sentryForm.project = v('s-project');
+        sentryForm.agent = v('s-agent');
+        sentryForm.engine = v('s-engine');
+        sentryForm.model = v('s-model');
+        sentryForm.permissionMode = v('s-perm');
+        sentryForm.prompt = v('s-prompt');
+        sentryForm.ceiling = v('s-ceiling');
+        sentryForm.safetyBufferMin = v('s-buffer');
+        sentryForm.failLimit = v('s-fail');
+        const sp = document.getElementById('s-sp');
+        sentryForm.superpowers = !!(sp && sp.checked);
+    }
+
+    function wireSentry() {
+        const w = (id, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener('click', fn); } };
+        w('s-caret', () => { sentryOpen = !sentryOpen; render(); });
+        w('s-new', () => { sentryFormOpen = true; sentryErr = ''; sentryOpen = true; render(); });
+        w('s-cancel', () => { readSentryForm(); sentryFormOpen = false; sentryErr = ''; render(); });
+        w('s-pause', () => vscode.postMessage({ type: 'sentryControl', action: 'pause' }));
+        w('s-resume', () => vscode.postMessage({ type: 'sentryControl', action: 'resume' }));
+        w('s-stop', () => vscode.postMessage({ type: 'sentryControl', action: 'stop' }));
+        w('s-start', () => {
+            readSentryForm();
+            // ‼️ REFUSED HERE FIRST, so the page can say which box is empty
+            // rather than round-tripping to be told the same thing.
+            if (!sentryForm.project) { sentryErr = 'pick the project whose backlog the campaign works through'; render(); return; }
+            if (!sentryForm.agent) { sentryErr = 'pick the agent the campaign runs its sessions as'; render(); return; }
+            if (!sentryForm.prompt.trim()) {
+                sentryErr = 'the first round needs words to open on — every continuation sentence is '
+                    + 'built on "the previous session", and the first round has none';
+                render(); return;
+            }
+            const num = (x) => (String(x).trim() === '' ? undefined : Number(x));
+            vscode.postMessage({
+                type: 'sentryStart',
+                input: {
+                    project: sentryForm.project, agent: sentryForm.agent, prompt: sentryForm.prompt,
+                    engine: sentryForm.engine || undefined, model: sentryForm.model || undefined,
+                    permissionMode: sentryForm.permissionMode || undefined,
+                    superpowers: sentryForm.superpowers,
+                    ceiling: num(sentryForm.ceiling), safetyBufferMin: num(sentryForm.safetyBufferMin),
+                    failLimit: num(sentryForm.failLimit)
+                }
+            });
+        });
+        document.querySelectorAll('[data-sround]').forEach(el => el.addEventListener('click', () =>
+            vscode.postMessage({ type: 'consoleAgent', agentId: (DATA.sentry.campaign || {}).agent })));
+    }
+
     function render() {
         // ‼️ U-65 — read the transcript's place BEFORE the markup that holds it
         // is thrown away. Nothing else on this page can be scrolled away from
@@ -3107,6 +3315,28 @@
                 @keyframes afpulse { 0%,100% { opacity:.35 } 50% { opacity:1 } }
                 button.pressed { outline:2px solid var(--vscode-inputValidation-warningBorder, #b89500);
                     background:var(--vscode-inputValidation-warningBackground, #664d0033); }
+                /* ---- ‼️ X-177 — the sentry campaign's own block ---- */
+                .ssec { margin:10px 0 16px; border:1px solid var(--vscode-panel-border, rgba(128,128,128,.35));
+                    border-radius:6px; }
+                .shead { display:flex; align-items:center; gap:8px; padding:6px 10px; font-size:13px;
+                    background:color-mix(in srgb, var(--vscode-textLink-foreground) 8%, transparent);
+                    border-radius:5px 5px 0 0; }
+                .shead .tcaret { cursor:pointer; width:12px; text-align:center; opacity:.75; }
+                .grow1 { flex:1; }
+                .sbody, .sform { padding:8px 12px 12px; }
+                .srow { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin:6px 0; }
+                .srow label, .sprompt { display:flex; flex-direction:column; gap:2px; font-size:11px;
+                    color:var(--vscode-descriptionForeground); }
+                .srow label.scheck { flex-direction:row; align-items:center; gap:5px; font-size:12px;
+                    color:var(--vscode-foreground); }
+                .srow input[type=number] { width:90px; }
+                .sprompt { margin:6px 0; }
+                .sprompt textarea { width:100%; max-width:760px; padding:5px 8px; }
+                .swhy { font-size:12px; }
+                .dim { color:var(--vscode-descriptionForeground); font-size:12px; }
+                .formerr { color:var(--vscode-errorForeground, #f66); font-size:12px; margin-bottom:6px; }
+                button.ghost { background:transparent; color:var(--vscode-foreground);
+                    border:1px solid var(--vscode-panel-border, rgba(128,128,128,.45)); }
                 .mtable { width:100%; border-collapse:collapse; margin-top:8px; }
                 .mtable th { text-align:left; font-size:11px; opacity:.7; padding:4px 8px; }
                 .mtable td { padding:4px 8px; border-top:1px solid var(--vscode-widget-border, #3333); font-size:12px; }
@@ -3382,6 +3612,7 @@
                 actions: `<button id="newmission">+ New Mission</button>`,
                 guide: 'missions'
             })}
+            ${sentryHtml()}
             ${formOpen ? formHtml() : ''}
             ${listHtml()}
         `;
@@ -3395,6 +3626,7 @@
             cvNow.scrollTop = rd.atEnd ? (cvNow.scrollHeight || 0) : rd.scroll;
         }
         window.AFHeader.wire(vscode);
+        wireSentry();
         const wire = (id, fn) => {
             const el = document.getElementById(id);
             if (el) { el.addEventListener('click', fn); }
@@ -3987,6 +4219,15 @@
         } else if (m.type === 'formError') {
             readForm();
             formErr = m.error;
+            render();
+        } else if (m.type === 'sentryError') {
+            // ‼️ X-177 — the campaign's refusal, or its acceptance. An empty
+            // error IS the answer "it started": the form closes on it rather
+            // than waiting for the payload to come round, so the switch answers
+            // "did it take?" at once.
+            if (sentryFormOpen) { readSentryForm(); }
+            sentryErr = m.error || '';
+            if (!sentryErr) { sentryFormOpen = false; sentryForm.prompt = ''; }
             render();
         } else if (m.type === 'created') {
             formOpen = false;

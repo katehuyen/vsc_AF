@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.377.0 - X-177: the sentry has a face, and a pause of its own (2026-09-04)
+
+The campaign shipped in 3.376.0 could only be reached from the bridge. It now has the
+surface it belongs on: **Missions**, which is already the page for work that runs while
+nobody is watching. No third panel was opened — the item forbids one by name.
+
+- **A Sentry block at the top of Missions.** Off, it says what a campaign would do before
+  you press anything. Set up, it is four rows of controls: the project whose backlog it
+  works through, the agent it runs as, the engine (naming one is what turns account
+  rotation on), the model, the permissions, the ceiling, the safety buffer, the failure
+  brake, and the words the FIRST round opens on — which are yours because every
+  continuation sentence is built on "the previous session" and the first round has none.
+- **Running, it is the campaign's own account of itself:** the state in one word, the
+  last plan IN ITS OWN WORDS (why nothing is happening right now is the question a
+  surface has to answer), what it is working through and as whom, the barren streak
+  against its brake, the moment it wakes if it is sleeping off a quota wall, and every
+  round it has opened with the account each one spent.
+- **‼️ Pause is now the campaign's own, not the farm's.** The automation master switch
+  stops every schedule there is; wanting the sentry to stand still for an hour is not
+  wanting that. A paused campaign opens nothing, still holds the one campaign slot, and
+  keeps everything it had worked out — above all the sentence it had already built for
+  its next round. Resume looks at the backlog AT ONCE rather than serving out the poll it
+  was paused in the middle of. `sentry.pause` and `sentry.resume` on the bridge.
+- **‼️ A round that ends while the campaign is paused is still read.** The verdict and
+  the next session's words are free to compute, so a hold does not throw away what the
+  round earned.
+
 ## 3.376.0 - X-176: the sentry campaign actually runs (2026-09-04)
 
 X-174 could say what a finished session left behind and X-175 could say what to tell the

@@ -33,8 +33,8 @@ import {
 } from './retry';
 import { opencodeSpawnEnv } from './opencodesync';
 import {
-    newSentry, refuseSentry, SENTRY_DEFAULT_POLL_MIN, SentryAsk, SentryRecord,
-    sentryDue, sentryRunning, stopSentry
+    newSentry, pauseSentry, refuseSentry, resumeSentry, SENTRY_DEFAULT_POLL_MIN, SentryAsk,
+    SentryRecord, sentryDue, sentryRunning, stopSentry
 } from './sentryCampaign';
 import { applySentryStep, SentryRoundSpec, SentryStep } from './sentryDriver';
 import {
@@ -4281,9 +4281,26 @@ export class TaskManager implements vscode.Disposable {
      * for separately.
      */
     endSentryCampaign(why?: string): SentryRecord | undefined {
-        if (!this.sentry || this.sentry.status !== 'running') { return this.sentry; }
+        if (!this.sentry || this.sentry.status === 'stopped') { return this.sentry; }
         stopSentry(this.sentry, Date.now());
         if (why) { this.sentry.stoppedWhy = why; }
+        this.save();
+        return this.sentry;
+    }
+
+    /**
+     * ‼️ X-177 — HOLD a campaign, and let it go again.
+     *
+     * A pause of THIS campaign rather than of the whole farm: the automation
+     * master switch stops every schedule there is, and wanting the sentry to
+     * stand still for an hour is not wanting that. A round already on the board
+     * is left running for `endSentryCampaign`'s reason — it is a real session
+     * that is really spending, and killing it is `cancelTask`, asked for
+     * separately — but its ending will decide nothing while the hold is on.
+     */
+    holdSentryCampaign(on: boolean): SentryRecord | undefined {
+        if (!this.sentry) { return undefined; }
+        if (on) { pauseSentry(this.sentry, Date.now()); } else { resumeSentry(this.sentry, Date.now()); }
         this.save();
         return this.sentry;
     }

@@ -43,6 +43,8 @@ export interface SentryRecord extends SentryCampaign {
     startedAt: number;
     /** …and off, when they did */
     stoppedAt?: number;
+    /** ‼️ X-177 — …and the moment they put it on HOLD, which is a different thing */
+    pausedAt?: number;
     /** the last plan, so a surface can say why nothing is happening right now */
     lastAction?: string;
     lastRule?: string;
@@ -146,6 +148,14 @@ export function refuseSentry(live: SentryRecord | undefined, ask: SentryAsk): st
     if (!String(ask.agent ?? '').trim()) {
         return 'a campaign opens sessions as somebody, so it needs an agent — none was given';
     }
+    // ‼️ X-177 — A PAUSED CAMPAIGN STILL HOLDS THE SLOT. It is one the user is
+    // standing over, not one they are finished with, and starting a second
+    // underneath it would lose everything the paused one has worked out. Only
+    // `stopped` stands aside.
+    if (live && live.status === 'paused') {
+        return `a campaign is paused on ${live.project} (as ${live.agent}) — the sentry runs one at a `
+            + 'time, so resume that one or stop it before starting another';
+    }
     if (live && live.status === 'running') {
         return `a campaign is already running on ${live.project} (as ${live.agent}) — the sentry runs `
             + 'one session at a time, so stop that one before starting another';
@@ -183,6 +193,42 @@ export function stopSentry(rec: SentryRecord, now: number): SentryRecord {
     rec.status = 'stopped';
     rec.stoppedAt = now;
     delete rec.wakeAt;
+    delete rec.pausedAt;
+    return rec;
+}
+
+/**
+ * ‼️ X-177 — THE USER'S SWITCH, HELD. A pause of THIS campaign: the farm's
+ * master switch stops every automation there is, and somebody who wants their
+ * sentry to stand still for an hour should not have to switch the farm off to
+ * get it.
+ *
+ * Nothing else is touched — the taken codes, the failure streak and above all
+ * the words the last round earned (`carry`) are exactly where they were, which
+ * is the whole difference between a pause and a stop-then-start. A stopped
+ * campaign is not raised: stopped is a record nobody is coming back to.
+ */
+export function pauseSentry(rec: SentryRecord, now: number): SentryRecord {
+    if (rec.status !== 'running') { return rec; }
+    rec.status = 'paused';
+    rec.pausedAt = now;
+    return rec;
+}
+
+/**
+ * …and released.
+ *
+ * ‼️ IT LOOKS AT ONCE. `wakeAt` is set to the moment of the resume rather than
+ * left as it was: a campaign paused in the middle of its ten-minute poll — or
+ * in the middle of a three-hour sleep whose accounts may since have reset —
+ * would otherwise stand there doing nothing after the user pressed Resume,
+ * which is the one thing a switch must never do.
+ */
+export function resumeSentry(rec: SentryRecord, now: number): SentryRecord {
+    if (rec.status !== 'paused') { return rec; }
+    rec.status = 'running';
+    delete rec.pausedAt;
+    rec.wakeAt = now;
     return rec;
 }
 

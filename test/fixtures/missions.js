@@ -610,8 +610,84 @@ const OUTCOMES = {
     ]
 };
 
+/**
+ * ‼️ X-177 — THE SENTRY BLOCK. Three states worth drawing, because they are
+ * three different pages: nothing set up yet (the block has to explain what a
+ * campaign IS before anybody presses a button), the setup form (four rows of
+ * controls, the case that wraps), and a campaign that is really working — which
+ * is the one carrying the live strip, the round table and the chips that have
+ * to stay readable side by side.
+ */
+const SENTRY_DEFAULTS = {
+    defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 },
+    idlePollMin: 10,
+    permissionModes: [
+        { id: 'default', label: 'default', detail: 'asks before anything that is not read-only' },
+        { id: 'acceptEdits', label: 'acceptEdits', detail: 'file edits auto-approved' },
+        { id: 'plan', label: 'plan', detail: 'plans only' },
+        { id: 'dontAsk', label: 'dontAsk', detail: 'stops instead of asking' },
+        { id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'EVERY action auto-approved' }
+    ]
+};
+
+const SENTRY_OFF = Object.assign({ campaign: null, running: false, rounds: [] }, SENTRY_DEFAULTS);
+
+const SENTRY_LIVE = Object.assign({
+    campaign: {
+        id: 'sc-1', project: 'prj_9ujsbtzr', agent: 'a1', status: 'running',
+        startedAt: Date.now() - 5 * 3600 * 1000, rounds: 7, engine: 'claude', model: 'sonnet',
+        permissionMode: 'bypassPermissions', ceiling: 95, failLimit: 3, failStreak: 1,
+        lastAction: 'start', lastRule: 'has-room', lastAt: Date.now() - 12 * 60 * 1000,
+        lastWhy: 'slot-2 has the most room left, so X-178 starts there',
+        taken: ['X-174', 'X-175', 'X-176', 'X-177', 'X-178']
+        // ‼️ NO `carry` HERE, and that is the honest state: this campaign has a
+        // round on the board, and the words were SPENT the moment that row
+        // existed. A fixture showing both would be drawing something the code
+        // cannot produce.
+    },
+    running: true,
+    rotatesAccounts: true,
+    failLimit: 3,
+    failStreak: 1,
+    projectName: 'PRS.MuratVural_DEV_VSC.AgentFarm',
+    agentName: 'developer',
+    nextWords: null,
+    live: {
+        id: 't9', title: 'Sentry R7 · X-178', status: 'running',
+        startedAt: Date.now() - 12 * 60 * 1000,
+        account: 'slot-2', accountPercent: 38, accountResetsAt: Date.now() + 2 * 3600 * 1000
+    },
+    rounds: [
+        { id: 't5', title: 'Sentry R4 · X-175', status: 'done', createdAt: Date.now() - 4 * 3600 * 1000, endedAt: Date.now() - 3 * 3600 * 1000, account: 'slot-1' },
+        { id: 't6', title: 'Sentry R5 · X-176', status: 'done', createdAt: Date.now() - 3 * 3600 * 1000, endedAt: Date.now() - 2 * 3600 * 1000, account: 'slot-1' },
+        { id: 't7', title: 'Sentry R6 · X-177', status: 'failed', createdAt: Date.now() - 2 * 3600 * 1000, endedAt: Date.now() - 100 * 60 * 1000, account: '' },
+        { id: 't9', title: 'Sentry R7 · X-178', status: 'running', createdAt: Date.now() - 12 * 60 * 1000, endedAt: null, account: 'slot-2' }
+    ]
+}, SENTRY_DEFAULTS);
+
+/** Paused, asleep, and carrying the words it will open on when it is let go. */
+const SENTRY_HELD = Object.assign({}, SENTRY_LIVE, {
+    campaign: Object.assign({}, SENTRY_LIVE.campaign, {
+        status: 'paused', pausedAt: Date.now() - 30 * 60 * 1000,
+        lastAction: 'sleep', lastRule: 'wait-for-reset',
+        lastWhy: 'every account is at or above 95% of its five-hour window — sleeping until the '
+            + 'earliest reset plus 3 minutes of safety',
+        wakeAt: Date.now() + 96 * 60 * 1000
+    }),
+    running: false,
+    live: null,
+    nextWords: {
+        code: 'X-178',
+        at: Date.now() - 30 * 60 * 1000,
+        prompt: 'The previous session (878ae65b) finished its work: X-177. Nothing is outstanding.\n\n'
+            + 'Take the next item on PRS.MuratVural_DEV_VSC.AgentFarm: X-178 — NÖBET GÜVENLİĞİ '
+            + '(effort M). Read what has already been fought over it before you start.'
+    }
+});
+
 const data = (over) => Object.assign({
     newForm: false,
+    sentry: SENTRY_OFF,
     specs: [SPEC],
     runs: [RUN],
     agents: AGENTS,
@@ -703,6 +779,32 @@ module.exports = {
     script: 'missions.js',
     data,
     variants: () => [
+        {
+            // ‼️ X-177 — the block with NOTHING set up. It has to explain what a
+            // campaign is before anybody presses a button, and it is the state
+            // every reader meets first.
+            id: 'sentry-off', label: 'Sentry — no campaign, and what one would do',
+            data: data({})
+        },
+        {
+            // The setup form: four rows of controls plus the opening words. The
+            // case that wraps, and the one where a squeezed picker hides.
+            id: 'sentry-form', label: 'Sentry — the campaign setup form',
+            data: data({}),
+            act: (r) => { fire(r.sandbox.document.getElementById('s-new'), 'click'); }
+        },
+        {
+            // A campaign really working: the live strip, the chips and the round
+            // table side by side — the picture that has to stay readable.
+            id: 'sentry-live', label: 'Sentry — a campaign on its seventh round',
+            data: data({ sentry: SENTRY_LIVE })
+        },
+        {
+            // Paused and asleep, carrying the words it will open on. The two
+            // states that used to be one, drawn apart.
+            id: 'sentry-held', label: 'Sentry — paused, asleep, holding its next sentence',
+            data: data({ sentry: SENTRY_HELD })
+        },
         {
             // ‼️ The team rows with members PICKED, because an unchecked row
             // draws every control disabled and a disabled select hides exactly
