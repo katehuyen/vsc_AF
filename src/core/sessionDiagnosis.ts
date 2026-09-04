@@ -118,6 +118,10 @@ export interface HandoverNote {
 }
 
 export interface SessionDiagnosis {
+    /** the session this is about, exactly as it was handed in */
+    sessionId: string;
+    /** …and its eight-character form, the one a note and a folder are named by */
+    session: string;
     outcome: SessionOutcome;
     /** the rule that produced it, by name — a verdict you can argue with */
     rule: string;
@@ -145,6 +149,13 @@ export interface SessionDiagnosis {
 
 const NAME_RE = /^(\d{4}-\d{2}-\d{2})_devir_(\d{2})_([0-9a-f]{8})_(.+)\.md$/i;
 
+/** The eight characters a note, a folder and a log row all name a session by.
+ *  One function, because a second copy that trimmed differently would look for
+ *  a note under a name nobody wrote. */
+export function shortSessionId(id: string): string {
+    return String(id ?? '').replace(/-/g, '').slice(0, 8).toLowerCase();
+}
+
 /** Read a handover file name apart. Anything else is not one — no near misses. */
 export function parseHandoverName(file: string): HandoverNote | undefined {
     const m = NAME_RE.exec(String(file ?? '').trim());
@@ -156,7 +167,7 @@ export function parseHandoverName(file: string): HandoverNote | undefined {
  *  position in the folder — the newest file is somebody else's note as often
  *  as it is this one's. */
 export function handoverFor(sessionId: string, files: string[]): HandoverNote | undefined {
-    const short = String(sessionId ?? '').replace(/-/g, '').slice(0, 8).toLowerCase();
+    const short = shortSessionId(sessionId);
     if (short.length < 8) { return undefined; }
     const mine = (files || []).map(parseHandoverName)
         .filter((n): n is HandoverNote => !!n && n.session === short);
@@ -172,7 +183,7 @@ export function handoverFor(sessionId: string, files: string[]): HandoverNote | 
  * person reads is inside the note.
  */
 export function handoverName(o: { date: string; seq: number; sessionId: string; topic: string }): string {
-    const short = String(o.sessionId ?? '').replace(/-/g, '').slice(0, 8).toLowerCase();
+    const short = shortSessionId(o.sessionId);
     const seq = String(Math.max(1, Math.min(99, Math.round(o.seq || 1)))).padStart(2, '0');
     const topic = slugify(o.topic || 'devir', { ascii: true, max: 48 }) || 'devir';
     return `${o.date}_devir_${seq}_${short}_${topic}.md`;
@@ -262,8 +273,10 @@ export function diagnoseSession(
         evidence.push(`five-hour window at ${facts.quotaPercent}%`);
     }
 
-    const out = (outcome: SessionOutcome, rule: string, why: string): SessionDiagnosis =>
-        ({ outcome, rule, why, evidence, unknown, handover, limit, policy: p });
+    const out = (outcome: SessionOutcome, rule: string, why: string): SessionDiagnosis => ({
+        sessionId: facts.sessionId, session: shortSessionId(facts.sessionId),
+        outcome, rule, why, evidence, unknown, handover, limit, policy: p
+    });
 
     // ---- the ladder --------------------------------------------------------
     const codes = closed.map(c => c.code).join(', ');
