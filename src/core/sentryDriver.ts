@@ -113,6 +113,13 @@ export interface SentryStep {
     stop?: string;
     /** barren rounds in a row, INCLUDING the one that just ended */
     failStreak?: number;
+    /**
+     * ‼️ THE WORDS TO KEEP FOR A ROUND THAT IS NOT OPENED YET — see `carryOn`.
+     * Present whenever there are words worth keeping, INCLUDING on a step that
+     * plans a round: it is the row really existing that spends them, and a row
+     * that could not be created must not cost the sentence.
+     */
+    carry?: { prompt: string; code?: string };
 }
 
 /**
@@ -142,6 +149,25 @@ function barren(fin: FinishedRound, d: SessionDiagnosis | undefined): boolean {
     return fin.status === 'failed' || d?.outcome === 'nothing-to-continue';
 }
 
+/**
+ * ‼️ THE WORDS A PREVIOUS STEP LEFT BEHIND, if they still fit the work in hand.
+ *
+ * A sleep or a wait is crossed by a tick with NO finished session behind it, so
+ * that tick can build no sentence of its own; without the carried one it would
+ * fall back to the campaign's opening words and send the next session at the
+ * item the FIRST round was given. But every continuation sentence names its
+ * item by code, so a sentence written for something that is no longer next is
+ * worse than none: it is dropped, and the opening words stand in.
+ */
+function carryOn(
+    c: SentryRecord, next?: { code: string }
+): { prompt: string; code?: string } | undefined {
+    const k = c.carry;
+    if (!k || !String(k.prompt ?? '').trim()) { return undefined; }
+    if (k.code && k.code !== next?.code) { return undefined; }
+    return { prompt: k.prompt, ...(k.code ? { code: k.code } : {}) };
+}
+
 /** One turn of the campaign's loop. Reads nothing, starts nothing, costs nothing. */
 export function sentryStep(i: SentryStepInputs): SentryStep {
     const c = i.campaign;
@@ -166,7 +192,14 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     const streak = fin
         ? (barren(fin, diagnosis) ? (Number(c.failStreak) || 0) + 1 : 0)
         : (Number(c.failStreak) || 0);
-    const base = { diagnosis, words, failStreak: streak };
+    // Freshly built words replace anything carried; with none, whatever an
+    // earlier step left behind stands — and if THAT no longer fits, nothing
+    // does, which is how a stale sentence leaves the record instead of living
+    // on it for ever.
+    const carry = words
+        ? { prompt: words.prompt, ...(i.next ? { code: i.next.code } : {}) }
+        : carryOn(c, i.next);
+    const base = { diagnosis, words, failStreak: streak, ...(carry ? { carry } : {}) };
 
     // ---- the user's hand, above every other rule ---------------------------
     if (fin && fin.status === 'cancelled' && c.status === 'running') {
@@ -185,7 +218,7 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     }
 
     // ---- and then the ordinary decision -----------------------------------
-    const prompt = words ? words.prompt : String(i.opening ?? '');
+    const prompt = words ? words.prompt : (carry?.prompt ?? String(i.opening ?? ''));
     const plan = planSentry({
         campaign: c, usage: i.usage, automation: i.automation,
         next: i.next, prompt, running: i.running, now: i.now
@@ -228,6 +261,12 @@ export function applySentryStep(
     // would let a campaign report sessions it never opened, on a machine where
     // the row failed to be created.
     if (step.round && taskId) { noteSentryRound(rec, step.round.code, taskId, now); }
+    // ‼️ …AND THE SAME MOMENT SPENDS THE WORDS. A row that really exists is
+    // carrying them now; anything else — a sleep, a wait, a row that could not
+    // be created — leaves them on the record for the tick that opens the round.
+    if (step.round && taskId) { delete rec.carry; }
+    else if (step.carry) { rec.carry = { ...step.carry, at: now }; }
+    else { delete rec.carry; }
     if (step.stop) {
         stopSentry(rec, now);
         rec.stoppedWhy = step.stop;

@@ -227,6 +227,50 @@ const step = (over) => sentryStep(Object.assign({
     ok('...and nothing about it switched the campaign off', r2.status === 'running');
 }
 
+// ---- ‼️ THE WORDS SURVIVE THE WAIT -----------------------------------------
+// A round ends against the quota wall, so the verdict and the sentence that
+// answers it ARE built — and then nothing is opened for three hours. The tick
+// that finally opens the next round has no finished session behind it, so it
+// can build no words of its own. Dropped, those words fall back to the
+// campaign's OPENING sentence, and the sentry sends the next session at the
+// item the very first round was given — hours after that item closed.
+{
+    const asleep = step({ usage: [slot('a', { percent: 99 })], finished: goodRound() });
+    ok('a plan that opened no round keeps the words it had already built for the next one',
+        !!asleep.carry && asleep.carry.prompt === asleep.words.prompt && asleep.carry.code === NEXT.code);
+
+    const r = rec();
+    applySentryStep(r, asleep, undefined, NOW);
+    ok('...on the record, because the wait is exactly what a reload happens in the middle of',
+        !!r.carry && r.carry.prompt === asleep.words.prompt && r.carry.at === NOW);
+
+    const woke = sentryStep({
+        campaign: r, usage: [slot('a')], next: NEXT, opening: 'FIRST ROUND WORDS', now: NOW + 60 * MIN
+    });
+    ok('‼️ the tick that wakes up opens on the CARRIED words, never on the opening sentence again',
+        woke.plan.action === 'start' && woke.round.prompt === asleep.words.prompt);
+
+    const spent = rec({ carry: r.carry });
+    applySentryStep(spent, woke, 't9', NOW + 60 * MIN);
+    ok('a round that really got a row spends them — the tick after it does not repeat the sentence',
+        spent.carry === undefined);
+
+    const failed = rec({ carry: r.carry });
+    applySentryStep(failed, woke, undefined, NOW + 60 * MIN);
+    ok('...but a row that could not be created keeps them, rather than losing the words to a failed write',
+        !!failed.carry && failed.carry.prompt === asleep.words.prompt);
+
+    const moved = sentryStep({
+        campaign: r, usage: [slot('a')], next: { code: 'X-999', text: 'something else', effort: 'S' },
+        opening: 'FIRST ROUND WORDS', now: NOW + 60 * MIN
+    });
+    ok('‼️ words written for an item that is no longer next are DROPPED — they name it by code',
+        moved.plan.action === 'start' && moved.round.prompt === 'FIRST ROUND WORDS');
+    const cleared = rec({ carry: r.carry });
+    applySentryStep(cleared, moved, undefined, NOW + 60 * MIN);
+    ok('...and the stale sentence does not sit on the record for ever', cleared.carry === undefined);
+}
+
 // ---- a stopped campaign is not driven at all -------------------------------
 {
     const s = sentryStep({

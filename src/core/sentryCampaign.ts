@@ -80,6 +80,22 @@ export interface SentryRecord extends SentryCampaign {
     permissionMode?: string;
     superpowers?: boolean;
     /**
+     * ‼️ THE WORDS BUILT FOR A ROUND THAT WAS NOT OPENED YET.
+     *
+     * The verdict on a finished round and the sentence that answers it are
+     * built the moment that round ends — but the round it was written for is
+     * opened later whenever the plan said sleep (a quota wall) or idle (an
+     * empty backlog). The tick that finally opens it has no finished session
+     * behind it and so can build no words of its own, and without this the
+     * campaign would fall back to its OPENING sentence: the next session sent
+     * at the item the FIRST round was given, hours after that item closed.
+     *
+     * ‼️ IT IS BOUND TO THE CODE IT NAMES. Every continuation sentence spells
+     * the item out (`{nextCode}`), so words written for an item that is no
+     * longer at the top of the backlog are dropped rather than sent.
+     */
+    carry?: { prompt: string; code?: string; at: number };
+    /**
      * ‼️ THE WORDS THE FIRST ROUND OPENS ON. Every template X-175 ships is
      * built on "the previous session", and the campaign's first round has no
      * previous session — so the opening sentence is the caller's, and it is

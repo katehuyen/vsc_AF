@@ -31251,6 +31251,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     failLimit: limit,
                     failStreak: rec.failStreak ?? 0,
                     idlePollMin: cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),
+                    // ‼️ WHAT THE NEXT ROUND WILL ACTUALLY OPEN ON. A campaign
+                    // sleeping through a quota wall already knows its next
+                    // sentence — it was built when the last round ended — and a
+                    // status that could not show it would leave the one
+                    // question worth asking ("what is it about to say?")
+                    // answerable only after the money is spent.
+                    nextWords: rec.carry
+                        ? { code: rec.carry.code, at: rec.carry.at, prompt: rec.carry.prompt }
+                        : undefined,
                     rounds: taskManager.tasks
                         .filter(t => t.sentryOf === rec.id)
                         .map(t => ({
