@@ -2,6 +2,7 @@
 // per-agent scope) and — the security-critical part — env(agentId) filtering,
 // which decides whether a spawned agent's task receives a given secret.
 const path = require('path');
+const fs = require('fs');
 const Module = require('module');
 
 // ---- fake vscode (SecretsVault only touches the injected storage/state; the
@@ -116,6 +117,27 @@ function fakes() {
         ok('ignores {secret:...} placeholders', looksLikePlaintextSecret('{"token":"{secret:FAL_KEY}"}') === undefined);
     }
 
-    console.log(`\n${pass} passed, ${fail} failed`);
+    
+// ---------- X-173 — WHERE THE ONE GESTURE THIS PAGE IS FOR ACTUALLY SITS ----
+//
+// ‼️ `+ Add secret` used to be handed to the header as a page ACTION, which puts
+// it in the same row as the twelve global navigation buttons with a divider
+// between them. A row mixing "go somewhere else" with "make a new thing here"
+// reads as thirteen destinations, and the gesture the page exists for is the
+// least findable thing on it. It belongs beside the filter — the row that is
+// already about the list underneath.
+{
+    const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'secrets.js'), 'utf8');
+    const header = page.slice(page.indexOf('AFHeader.html({'), page.indexOf('class="card sec-intro"'));
+    ok('‼️ the add button is NOT a header action — the nav row is destinations only',
+        !/actions:/.test(header) && !/sec-add/.test(header));
+    ok('…it is in the page\'s own toolbar, on the row the filter is on',
+        /class="sec-tools"[\s\S]*?id="sec-q"[\s\S]*?id="sec-add"/.test(page));
+    ok('…and that row is one thing rather than two stacked ones',
+        page.includes('.sec-tools { display: flex;'));
+    ok('the empty state still points at it, since it is the only thing to do there',
+        page.includes('No secrets stored yet — click <b>+ Add secret</b>'));
+}
+console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

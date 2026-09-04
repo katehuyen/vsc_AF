@@ -200,6 +200,17 @@
                 .sec-intro { line-height: 1.4; }
                 .sec-intro code { font-size: 12px; }
                 .searchbar input { width: 260px; }
+                /* ‼️ X-173 — THE PAGE'S OWN TOOLBAR, and the reason it exists.
+                   "+ Add secret" used to be handed to the header as a page
+                   ACTION, which puts it in the same row as the twelve global
+                   navigation buttons with only a divider between them. A row
+                   that mixes "go somewhere else" with "make a new thing here"
+                   reads as thirteen destinations, and the one gesture the page
+                   is actually for is the least findable thing on it. It belongs
+                   beside the filter — the row that is already about the list
+                   underneath. */
+                .sec-tools { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+                .sec-tools .searchbar { margin: 0; }
                 .tb { border-collapse: collapse; width: 100%; }
                 .tb th { text-align: left; font-size: 11px; opacity: .7; padding: 5px 8px; }
                 .tb td { padding: 6px 8px; vertical-align: top; border-top: 1px solid var(--vscode-widget-border, #4443); }
@@ -223,9 +234,7 @@
             ${window.AFHeader.html({
                 page: 'secrets',
                 title: '🔑 Secrets',
-                sub: esc(sub),
-                actions: `<button class="mini add" id="sec-add"${form ? ' disabled' : ''}
-                    title="Name, value, what it is for and who may use it — on one card">+ Add secret</button>`
+                sub: esc(sub)
             })}
             <div class="card sec-intro" style="margin-bottom:10px">
                 Values live in the <b>OS keychain</b> (VS Code SecretStorage) — never in settings files or git.
@@ -235,8 +244,12 @@
                 never shown here — use <b>replace</b> to change it.
             </div>
             ${form ? formHtml() : (secMsg ? window.AFForm.msg(secMsg, !secMsgOk) : '')}
-            <div class="searchbar" style="margin-bottom:8px"><input id="sec-q" type="text" placeholder="filter secrets…" value="${esc(state.q)}"
-                title="${esc(window.AFQuery.tip('Searched against the name, the description and the agents it is scoped to.'))}"></div>
+            <div class="sec-tools">
+                <div class="searchbar"><input id="sec-q" type="text" placeholder="filter secrets…" value="${esc(state.q)}"
+                    title="${esc(window.AFQuery.tip('Searched against the name, the description and the agents it is scoped to.'))}"></div>
+                <button class="mini add" id="sec-add"${form ? ' disabled' : ''}
+                    title="Name, value, what it is for and who may use it — on one card">+ Add secret</button>
+            </div>
             <div class="card tablewrap"><table class="tb">
                 <tr><th>Name</th><th>Value</th><th>Description</th><th>Used by (scope)</th><th>Updated</th><th></th></tr>
                 ${rows()}
