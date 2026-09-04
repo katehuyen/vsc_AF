@@ -25,7 +25,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const OUT = path.join(__dirname, '..', 'out', 'core');
 const {
     newSentry, refuseSentry, stopSentry, sentryRunning, noteSentryPlan, noteSentryRound,
-    SENTRY_TAKEN_KEEP
+    sentryDue, SENTRY_TAKEN_KEEP
 } = require(path.join(OUT, 'sentryCampaign.js'));
 const { planSentry, SENTRY_DEFAULT_CEILING } = require(path.join(OUT, 'sentryRun.js'));
 
@@ -161,6 +161,31 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
         rec.taken.length === SENTRY_TAKEN_KEEP);
     ok('...and the count is NOT capped, because it is the honest number',
         rec.rounds === 3 + SENTRY_TAKEN_KEEP + 10);
+}
+
+// ---- ‼️ when to look again, WITHOUT a second scheduler ----------------------
+{
+    const POLL = 10;
+    const due = (rec, running, now) => sentryDue(rec, running, POLL, now);
+
+    ok('nothing to drive when there is no campaign', due(undefined, false, NOW) === false);
+    ok('a stopped campaign is never due', due(stopSentry(newSentry(asked, NOW), NOW), false, NOW) === false);
+    ok('‼️ a campaign with a round on the board is NOT due — that round ending is what drives it',
+        due(newSentry(asked, NOW), true, NOW + 99 * MIN) === false);
+    ok('a campaign that has never been looked at is due at once, not in ten minutes',
+        due(newSentry(asked, NOW), false, NOW) === true);
+
+    const idle = noteSentryPlan(newSentry(asked, NOW), { action: 'idle', rule: 'nothing-to-take', why: 'x' }, NOW);
+    ok('an idling campaign is left alone until the poll comes round',
+        due(idle, false, NOW + (POLL - 1) * MIN) === false);
+    ok('...and then looks again, because a new item may have been written',
+        due(idle, false, NOW + (POLL + 1) * MIN) === true);
+
+    const asleep = noteSentryPlan(newSentry(asked, NOW),
+        { action: 'sleep', rule: 'wait-for-reset', why: 'walled', wakeAt: NOW + 180 * MIN }, NOW);
+    ok('‼️ a measured sleep OUTRANKS the poll — a three-hour wall is not poked every ten minutes',
+        due(asleep, false, NOW + (POLL + 1) * MIN) === false);
+    ok('...and the moment it lifts, it is due', due(asleep, false, NOW + 180 * MIN) === true);
 }
 
 // ---- it is stored, so it must survive being written down -------------------

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.375.0",
+  "version": "3.376.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9706,6 +9706,18 @@
           "x-af-browse": "file",
           "default": "",
           "description": "A markdown file holding the words a sentry campaign starts the NEXT session with, when you want your own instead of the built-in ones. Same shape as Saved prompts: a heading names the verdict the block answers — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — and only text inside ``` fences is used. Placeholders like {nextCode}, {handoverPath}, {evidence} and {assist} are filled in; one nothing answers is left visible rather than blanked. A block replaces just that verdict, so every verdict you do not write keeps its built-in wording and this can stay empty for ever without anything being missing. A path named here that is not on disk is reported, never cleared. `sentry.templates` on the bridge shows what was read and what was refused."
+        },
+        "agentFarm.sentryFailureLimit": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "description": "How many BARREN rounds in a row switch a sentry campaign off. A round is barren when the run failed, or when it \"succeeded\" and left nothing behind at all. This is not a round budget \u2014 a campaign that is WORKING runs until you stop it \u2014 it is an alarm for the case no quota can catch: a broken setup opening empty sessions all night, each one failing instantly and therefore spending nothing. The streak is wiped by the first round that achieves something. 0 switches the brake off entirely. A campaign may carry its own limit (sentry.start { failLimit })."
+        },
+        "agentFarm.sentryIdlePollMin": {
+          "type": "number",
+          "default": 10,
+          "minimum": 1,
+          "description": "How often, in minutes, an IDLING sentry campaign looks at the backlog again. An empty backlog is a wait rather than a finish, so something has to notice the item you write tomorrow morning \u2014 and that something is the beat the farm already keeps, not a timer of the sentry's own. It does not apply while a round is on the board (that round ending is what drives the next one) and it never shortens a measured sleep: a three-hour quota wall is waited out, not poked every ten minutes."
         },
         "agentFarm.promptSnippetsFile": {
           "type": "string",

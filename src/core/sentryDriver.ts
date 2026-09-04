@@ -97,6 +97,8 @@ export interface SentryRoundSpec {
     slotId?: string;
     engine?: string;
     model?: string;
+    permissionMode?: string;
+    superpowers?: boolean;
 }
 
 export interface SentryStep {
@@ -201,7 +203,9 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
             prompt: plan.prompt || prompt,
             ...(plan.slotId ? { slotId: plan.slotId } : {}),
             ...(c.engine ? { engine: c.engine } : {}),
-            ...(c.model ? { model: c.model } : {})
+            ...(c.model ? { model: c.model } : {}),
+            ...(c.permissionMode ? { permissionMode: c.permissionMode } : {}),
+            ...(c.superpowers ? { superpowers: true } : {})
         }
     };
 }

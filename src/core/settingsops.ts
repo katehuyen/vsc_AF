@@ -211,6 +211,11 @@ const CATEGORY_OF: Record<string, string> = {
     // session with. Filed together, the reader who turns the campaign off would
     // go looking for it under prompts (ONE SUBJECT).
     sentryTemplatesFile: 'tasks',
+    // ‼️ X-176 — the campaign's two brakes. Tasks & Automation for the same
+    // reason the templates are there: what they govern is an UNATTENDED RUNNER
+    // opening task rows, not a prompt somebody pastes into a box (ONE SUBJECT).
+    sentryFailureLimit: 'tasks',
+    sentryIdlePollMin: 'tasks',
     // media pipeline & browser
     mediaAuthSecret: 'media', replicateAuthSecret: 'media', replicateBaseUrl: 'media',
     mediaBaseUrl: 'media', outputsMaxMB: 'media', ingestFolders: 'media',

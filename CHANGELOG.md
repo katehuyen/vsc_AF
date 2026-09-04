@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.376.0 - X-176: the sentry campaign actually runs (2026-09-04)
+
+X-174 could say what a finished session left behind and X-175 could say what to tell the
+next one, but nothing CALLED either of them. This release is the runner: switch a campaign
+on for a project, and it takes the next item off that project's backlog, opens a clean
+unattended session on it, watches that session end, diagnoses it, writes the next
+session's opening words from the verdict, and opens the next round — until you stop it.
+
+- **A round is an ORDINARY TASK ROW.** The same runner opens it, the same terminal is
+  watched, the same cancel button ends it, the same pump launches it. That is how "no
+  second scheduler" — the item's own condition — holds all the way down to the launch.
+  The price is that the task board fills with campaign rounds, which is the accepted cost.
+- **‼️ Only you end a campaign.** There is no round budget and no time budget, so an
+  EMPTY BACKLOG IS A WAIT rather than a finish: an item written tomorrow morning finds
+  the sentry still standing there. The brakes that do exist are the ones that already
+  existed — the automation gate (master switch, pause, quiet hours), the five-hour
+  ceiling per account, and a sleep until the earliest MEASURED reset plus a safety buffer.
+- **‼️ Cancelling the round cancels the campaign.** The sentry runs one session at a
+  time, so reaching for cancel on the round it is running is you saying stop. The machine
+  is reading your switch, not inventing one of its own.
+- **‼️ A failure brake, which is not a round budget.** A campaign whose sessions produce
+  NOTHING, over and over, is a broken setup opening empty sessions all night — and no
+  quota stops it, because a session that fails instantly spends nothing. Three barren
+  rounds in a row switch it off with a notice; the streak is wiped by the first round that
+  achieves something. `agentFarm.sentryFailureLimit` changes it, `0` switches it off, and
+  a campaign may carry its own.
+- **‼️ What nobody measured is not a measurement**, all the way through the runner. An
+  answers folder that would not list is not "no handover note"; a `git status` that would
+  not answer is not "clean"; and one unreadable repository makes the whole repo fact
+  unmeasured, because "clean" is a claim about all of them. Those land in the verdict's
+  `unknown`, where they ask instead of assuming.
+- **‼️ Engine-agnostic, by name.** A campaign that names no engine runs every round on
+  the main sign-in and rotates no account — choosing one would mean assuming an engine.
+  `sentry.start` and `sentry.status` both say so (`rotatesAccounts`) rather than leaving
+  you to wonder why nothing rotates.
+- **On the bridge:** `sentry.start` (project, agent, the words the first round opens on,
+  and the dimensions every round is launched with — including `permissionMode`, without
+  which an unattended round can stop to ask and never end), `sentry.stop` (the record is
+  kept; a round already on the board is left alone), and `sentry.status` (the last plan in
+  its own words, the moment it wakes, the rounds it opened, the streak against its brake).
+- **New settings** in Farm Settings → Tasks & Automation: `agentFarm.sentryFailureLimit`
+  and `agentFarm.sentryIdlePollMin` (how often an idling campaign looks at the backlog
+  again — it never shortens a measured sleep, so a three-hour quota wall is waited out
+  rather than poked every ten minutes).
+
 ## 3.375.0 - X-174 · X-175: what a finished session left behind, and the sentence the next one opens on (2026-09-04)
 
 The sentry (X-167) has to answer two questions every time a session ends, and both

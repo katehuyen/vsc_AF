@@ -186,9 +186,15 @@ const step = (over) => sentryStep(Object.assign({
 
 // ---- the campaign's own dimensions travel to the row it creates -------------
 {
-    const s = step({ campaign: rec({ engine: 'claude', model: 'haiku' }), opening: 'go' });
+    const s = step({
+        campaign: rec({
+            engine: 'claude', model: 'haiku', permissionMode: 'bypassPermissions', superpowers: true
+        }), opening: 'go'
+    });
     ok('the engine and model the campaign was started with are on every round it opens',
         s.round.engine === 'claude' && s.round.model === 'haiku');
+    ok('‼️ …and so is the permission mode, without which an unattended round stops to ask and never ends',
+        s.round.permissionMode === 'bypassPermissions' && s.round.superpowers === true);
     ok('the account the plan chose is the account the row runs on', s.round.slotId === 'a');
 
     const main = step({ usage: [], opening: 'go' });

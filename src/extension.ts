@@ -124,6 +124,12 @@ import { diagnoseSession, RepoState, TouchedCode } from './core/sessionDiagnosis
 import {
     buildNextPrompt, resolveSentryTemplates, SENTRY_VERDICTS, SentryTemplateSet
 } from './core/sentryPrompt';
+import {
+    newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
+} from './core/sentryCampaign';
+import { SENTRY_DEFAULT_FAIL_LIMIT, sentryStep } from './core/sentryDriver';
+import { SENTRY_DEFAULT_CEILING } from './core/sentryRun';
+import { measureSession } from './core/sentryMeasure';
 import { QualityStore, sampleQuality } from './core/quality';
 import {
     buildCostReport, buildDailyDigest, buildFleetReport, buildOutputsDigest, buildTriggerReport
@@ -2940,6 +2946,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 projectId: spec.task.projectId
             }),
             consoleTaskState: id => consoleTaskRead?.(id),
+            // ‼️ X-176 — the sentry's one step, and how often an idling
+            // campaign looks again. Both live out here because the manager owns
+            // no vault path, no git and no backlog file; see `sentryTick`.
+            sentryTick: (task) => sentryTick(task),
+            sentryPollMin: () => cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),
             maxConcurrent: () => cfg().get<number>('maxConcurrentTasks', 2),
             maxConcurrentPerAgent: () => cfg().get<number>('maxConcurrentPerAgent', 1),
             outputsMaxMB: () => cfg().get<number>('outputsMaxMB', 200),
@@ -23454,6 +23465,156 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const trackLedgerOf = (folder: string): string =>
         trackFileIn(tracksFolder(folder, projectSkeleton()));
 
+    // ---------- ‼️ X-176 - THE SENTRY CAMPAIGN, DRIVEN ----------
+    /**
+     * One turn of the campaign's loop, and the ONLY impure part of the sentry.
+     *
+     * Everything here is a READING - an answers folder, a `git status`, a track
+     * ledger, a backlog file, the account matrix. The decision is `sentryStep`,
+     * which is pure and tested and cannot be reached from here except by being
+     * handed what was actually measured. That split is the whole design: an
+     * unattended runner that spends real money must not have its rules living
+     * in the same place as its file handles.
+     *
+     * ‼️ A READING THAT FAILED IS `undefined`, NEVER AN EMPTY ANSWER. Every
+     * `catch` below returns nothing rather than a zero or a `[]`, because
+     * `measureSession` and `diagnoseSession` treat those as opposites: one is
+     * "nobody looked", the other is "somebody looked and it was empty", and
+     * collapsing them manufactures a verdict that a paid session is opened on.
+     *
+     * Called from exactly two places, both inside the manager: a round of the
+     * campaign ended, or the pump found the campaign due. No timer of its own.
+     */
+    const sentryTick = (finishedTask?: FarmTask): void => {
+        const rec = taskManager.sentry;
+        if (!rec || rec.status !== 'running') { return; }
+
+        // ---- where the work comes from ------------------------------------
+        let doc: { project: Project; folder: string; text: string };
+        try {
+            const d = backlogDoc(rec.project);
+            doc = { project: d.project, folder: d.folder, text: d.text };
+        } catch (e) {
+            // A project that has moved, been renamed or lost its backlog is not
+            // a reason to end a campaign - the user may put it back. It is a
+            // reason to open nothing and say so, and the poll will look again.
+            taskManager.applySentry({
+                plan: {
+                    action: 'blocked', rule: 'no-backlog',
+                    why: `the backlog of "${rec.project}" could not be read - ${String((e as Error)?.message ?? e)}`
+                }
+            });
+            return;
+        }
+
+        // ---- what the round that just ended left behind --------------------
+        const sid = String(finishedTask?.runSessionId ?? '').trim();
+        const facts = finishedTask ? measureSession({
+            sessionId: sid,
+            repos: (doc.project.repos ?? []).filter(r => !!(r || '').trim()),
+            ...(finishedTask.progress ? { progress: finishedTask.progress } : {})
+        }, {
+            // ‼️ A NOTE IS FOUND BY THE SESSION'S ID. With no id there is
+            // nothing to look for, and reporting "no handover note" about a run
+            // that was never bound to a conversation is a false measurement.
+            answers: () => {
+                if (!sid) { return undefined; }
+                try { return fs.readdirSync(cevapDir()); } catch { return undefined; }
+            },
+            dirty: (repo) => {
+                try {
+                    const out = cp.execFileSync('git', ['status', '--porcelain'], {
+                        cwd: repo, encoding: 'utf8', windowsHide: true, timeout: 20000
+                    });
+                    return out.split('\n').filter(l => l.trim().length > 0).length;
+                } catch { return undefined; }
+            },
+            tracks: () => {
+                try { return readTrackFile(trackLedgerOf(doc.folder)); } catch { return undefined; }
+            },
+            output: () => {
+                if (!finishedTask.outputFile) { return undefined; }
+                try { return fs.readFileSync(finishedTask.outputFile, 'utf8').slice(-4000); } catch { return undefined; }
+            },
+            quotaPercent: () => windowPct()
+        }) : undefined;
+
+        // ---- what to take next --------------------------------------------
+        let next: { code: string; text: string; effort?: string } | undefined;
+        try {
+            const item = nextBacklog(doc.text, { limit: 1 }).items[0];
+            if (item?.code) {
+                next = { code: item.code, text: item.text ?? '', ...(item.effort ? { effort: item.effort } : {}) };
+            }
+        } catch { next = undefined; }
+
+        // ---- which accounts it may spend -----------------------------------
+        // ‼️ ENGINE-AGNOSTIC (the item says so by name). A campaign that named
+        // no engine does NOT rotate accounts: choosing one would mean assuming
+        // an engine, and the absence of a slot is already the main sign-in
+        // (X-172). `sentry.status` says this out loud rather than leaving the
+        // user to wonder why nothing rotates.
+        const engineId = (rec.engine ?? '').trim().toLowerCase();
+        const usage = engineId
+            ? accountUsage.current().filter(u => String(u.engine ?? '').toLowerCase() === engineId)
+            : [];
+
+        const step = sentryStep({
+            campaign: rec,
+            ...(finishedTask && facts ? {
+                finished: {
+                    status: finishedTask.status,
+                    taskId: finishedTask.id,
+                    // The code it ran on, from the campaign's own record rather
+                    // than parsed back out of a title somebody may have renamed.
+                    ...(rec.taken?.length ? { code: rec.taken[rec.taken.length - 1] } : {}),
+                    facts
+                }
+            } : {}),
+            usage,
+            automation: taskManager.automation,
+            ...(next ? { next } : {}),
+            templates: sentryTemplateSet().templates,
+            ...(rec.opening ? { opening: rec.opening } : {}),
+            project: doc.project.name,
+            running: taskManager.sentryBusy(),
+            now: Date.now()
+        });
+
+        // ---- and what that decision costs ----------------------------------
+        let row: FarmTask | undefined;
+        if (step.round) {
+            const agent = agents.find(a => a.id === rec.agent || a.name === rec.agent);
+            if (!agent) {
+                taskManager.applySentry({
+                    plan: {
+                        action: 'blocked', rule: 'no-agent',
+                        why: `"${rec.agent}" is not in the fleet any more - the campaign waits rather than `
+                            + 'guessing who to run as'
+                    }
+                });
+                return;
+            }
+            row = taskManager.openSentryRound(agent, step.round, doc.project.id);
+        }
+        taskManager.applySentry(step, row?.id);
+
+        // ‼️ A CAMPAIGN THAT SWITCHED ITSELF OFF SAYS SO, WHERE THE USER READS.
+        // The two ways it can happen (their own cancel, the failure brake) are
+        // both things they need to find in the morning without going looking.
+        if (step.stop) {
+            noticesStore.add({
+                title: `Sentry stopped - ${doc.project.name}`,
+                type: 'alert',
+                level: 2,
+                body: step.stop,
+                agentName: rec.agent,
+                projectId: doc.project.id,
+                tags: ['sentry']
+            });
+        }
+    };
+
     /**
      * ‼️ P-14 — WHICH TURN OF A SESSION A MOMENT FELL IN.
      *
@@ -30990,6 +31151,114 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         file: s.file, source: s.source, missing: s.missing, refusals: s.refusals
                     }
                 });
+            }
+        },
+        {
+            op: 'sentry.start',
+            describe: 'Switch a SENTRY CAMPAIGN on: take the next item off a project backlog, open a '
+                + 'clean unattended session on it as an ordinary task row, and when that row ends, '
+                + 'diagnose it (sentry.prompt) and open the next one. ‼️ IT SPENDS REAL MONEY, '
+                + 'unattended, until somebody stops it: there is no round budget and no time budget by '
+                + 'the user\'s own decision, so an EMPTY BACKLOG IS A WAIT, not a finish. The brakes '
+                + 'that do exist: the automation gate (master switch / quiet hours), the five-hour '
+                + 'ceiling per account, a measured sleep until the earliest reset, and the failure '
+                + 'brake (N barren rounds in a row). ‼️ ONE CAMPAIGN AT A TIME - a second is refused '
+                + 'by name, because the runner is sequential. ‼️ `prompt` is REQUIRED in practice: '
+                + 'every continuation template is built on "the previous session" and the first round '
+                + 'has none, so a campaign with no opening words refuses to start a round rather than '
+                + 'opening an empty session. ‼️ ACCOUNT ROTATION NEEDS `engine`: without one the '
+                + 'rounds run on the main sign-in, because choosing an account would mean assuming an '
+                + 'engine. args: project (id or name), agent (id or name), prompt (the words the FIRST '
+                + 'round opens on), engine?, model?, permissionMode? (an unattended round that stops '
+                + 'to ask permission never ends), superpowers?, ceiling? (five-hour % at or above '
+                + 'which an account is a wall, default ' + String(SENTRY_DEFAULT_CEILING) + '), '
+                + 'safetyBufferMin? (minutes past a reset before trying again), failLimit? (barren '
+                + 'rounds in a row that stop it; 0 = no brake, default from '
+                + 'agentFarm.sentryFailureLimit)',
+            handler: (args) => {
+                const a = args as Record<string, unknown>;
+                const project = argStr(args, 'project');
+                const { project: proj } = projectDocsFor(project);
+                const agentKey = argStr(args, 'agent');
+                const agent = agents.find(x => x.id === agentKey || x.name === agentKey);
+                need(agent, `no agent called "${agentKey}" - agents.list shows them`);
+                const started = taskManager.startSentryCampaign({
+                    project: proj.id,
+                    agent: (agent as AgentInfo).id,
+                    opening: optStr(args, 'prompt'),
+                    ...(optStr(args, 'engine') ? { engine: optStr(args, 'engine') } : {}),
+                    ...(optStr(args, 'model') ? { model: optStr(args, 'model') } : {}),
+                    ...(optStr(args, 'permissionMode') ? { permissionMode: optStr(args, 'permissionMode') } : {}),
+                    ...(a.superpowers === true ? { superpowers: true } : {}),
+                    ceiling: a.ceiling,
+                    safetyBufferMin: a.safetyBufferMin,
+                    failLimit: a.failLimit !== undefined
+                        ? a.failLimit
+                        : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT)
+                });
+                need(started.ok, started.error ?? 'the campaign could not be started');
+                // ‼️ AND IT MOVES AT ONCE. A campaign that waited for the next
+                // pump beat to open its first round would look broken for half a
+                // minute, and "did it take?" is the one question a switch has to
+                // answer immediately.
+                sentryTick();
+                const rec = taskManager.sentry as SentryRecord;
+                return {
+                    campaign: rec,
+                    running: taskManager.sentryBusy(),
+                    rotatesAccounts: !!rec.engine,
+                    note: rec.engine
+                        ? undefined
+                        : 'no engine was named, so every round runs on the main sign-in and no account '
+                        + 'is rotated - naming one turns the five-hour ceiling and the sleep-until-reset on'
+                };
+            }
+        },
+        {
+            op: 'sentry.stop',
+            describe: 'Switch the sentry campaign OFF. ‼️ Only this ends a campaign - there is no round '
+                + 'budget and no time budget, so nothing else ever will. A round already on the board is '
+                + 'LEFT ALONE: it is a real session that is really spending, and killing it is '
+                + 'tasks.cancel, asked for separately. The record is kept (what it took, when, why it '
+                + 'stopped) because it is the only account of an unattended night. args: why? (kept on '
+                + 'the record)',
+            handler: (args) => {
+                const rec = taskManager.sentry;
+                need(rec, 'no sentry campaign has ever been started here');
+                const stopped = taskManager.endSentryCampaign(optStr(args, 'why'));
+                return { campaign: stopped, roundStillRunning: taskManager.sentryBusy() };
+            }
+        },
+        {
+            op: 'sentry.status',
+            describe: 'What the sentry campaign is doing, and WHY it is not doing anything else. The '
+                + 'last plan in its own words (`lastAction` / `lastRule` / `lastWhy`), the moment it '
+                + 'wakes if it is sleeping through a quota wall, the rounds it has opened and the codes '
+                + 'it took, the barren-round streak against its brake, and whether a round is on the '
+                + 'board right now. ‼️ "Is a round running" is DERIVED from the task rows every time '
+                + 'it is asked, never stored - a stored flag is how a campaign comes to believe it is '
+                + 'still running a round that died with the window. args: none',
+            handler: () => {
+                const rec = taskManager.sentry;
+                if (!rec) { return { campaign: undefined, running: false }; }
+                const limit = typeof rec.failLimit === 'number'
+                    ? rec.failLimit
+                    : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT);
+                return {
+                    campaign: rec,
+                    running: taskManager.sentryBusy(),
+                    rotatesAccounts: !!rec.engine,
+                    failLimit: limit,
+                    failStreak: rec.failStreak ?? 0,
+                    idlePollMin: cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),
+                    rounds: taskManager.tasks
+                        .filter(t => t.sentryOf === rec.id)
+                        .map(t => ({
+                            id: t.id, title: t.title, status: t.status,
+                            createdAt: t.createdAt, endedAt: t.endedAt,
+                            ...(t.account ? { account: t.account } : {})
+                        }))
+                };
             }
         },
         {

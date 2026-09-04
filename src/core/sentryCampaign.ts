@@ -28,6 +28,14 @@ import { SentryCampaign, SentryPlan } from './sentryRun';
 /** How many taken codes are kept. A campaign the user never stops runs for ever. */
 export const SENTRY_TAKEN_KEEP = 50;
 
+/**
+ * How often an IDLING campaign looks again, in minutes, when nobody has said
+ * otherwise. An empty backlog is a wait, so something has to notice the item
+ * written tomorrow morning — and that something is the pump the farm already
+ * runs, not a timer of the sentry's own.
+ */
+export const SENTRY_DEFAULT_POLL_MIN = 10;
+
 /** The campaign as it is stored: what to do, plus the record of what was done. */
 export interface SentryRecord extends SentryCampaign {
     id: string;
@@ -63,6 +71,22 @@ export interface SentryRecord extends SentryCampaign {
     failStreak?: number;
     /** why it stopped, when it was not simply switched off */
     stoppedWhy?: string;
+    /**
+     * ‼️ THE DIMENSIONS EVERY ROUND IS OPENED WITH. `permissionMode` is the one
+     * that is not a nicety: an unattended headless session that stops to ask
+     * permission is a session that never ends, on an account nobody is watching.
+     * Absent means the fleet default, which is the user's to set.
+     */
+    permissionMode?: string;
+    superpowers?: boolean;
+    /**
+     * ‼️ THE WORDS THE FIRST ROUND OPENS ON. Every template X-175 ships is
+     * built on "the previous session", and the campaign's first round has no
+     * previous session — so the opening sentence is the caller's, and it is
+     * kept HERE rather than in a closure because a window that reloads before
+     * the first round ever starts must still know what to say.
+     */
+    opening?: string;
 }
 
 /** What a caller asks for when they start one. */
@@ -74,6 +98,9 @@ export interface SentryAsk {
     failLimit?: unknown;
     engine?: string;
     model?: string;
+    permissionMode?: string;
+    superpowers?: boolean;
+    opening?: string;
 }
 
 /** Is this row a round of that campaign, still owing an answer? */
@@ -125,7 +152,10 @@ export function newSentry(ask: SentryAsk, now: number): SentryRecord {
         ...(safetyBufferMin !== undefined ? { safetyBufferMin } : {}),
         ...(failLimit !== undefined ? { failLimit } : {}),
         ...(ask.engine ? { engine: String(ask.engine) } : {}),
-        ...(ask.model ? { model: String(ask.model) } : {})
+        ...(ask.model ? { model: String(ask.model) } : {}),
+        ...(ask.permissionMode ? { permissionMode: String(ask.permissionMode) } : {}),
+        ...(ask.superpowers ? { superpowers: true } : {}),
+        ...(String(ask.opening ?? '').trim() ? { opening: String(ask.opening).trim() } : {})
     };
 }
 
@@ -143,6 +173,31 @@ export function stopSentry(rec: SentryRecord, now: number): SentryRecord {
 /** Is a round of this campaign on the board, queued or running? */
 export function sentryRunning(tasks: { status?: string; sentryOf?: string }[], id: string): boolean {
     return (tasks || []).some(t => !!t && t.sentryOf === id && pending(String(t.status ?? '')));
+}
+
+/**
+ * ‼️ WHEN TO LOOK AGAIN — the whole of "no second scheduler".
+ *
+ * The farm already runs a pump; this is the question that pump asks. Three
+ * rules, in this order:
+ *
+ *   · a campaign with a round ON THE BOARD is not due at all — that round
+ *     ending is what drives the next one, and ticking underneath it would open
+ *     a second session while the first is still spending;
+ *   · a MEASURED sleep outranks the poll. A three-hour wall is waited out, not
+ *     poked every ten minutes;
+ *   · otherwise the poll, because an empty backlog is a WAIT: the item written
+ *     tomorrow morning has to find the sentry still standing there. A campaign
+ *     nobody has looked at yet (`lastAt` absent) is due immediately.
+ */
+export function sentryDue(
+    rec: SentryRecord | undefined, running: boolean, pollMin: number, now: number
+): boolean {
+    if (!rec || rec.status !== 'running' || running) { return false; }
+    const at = typeof rec.wakeAt === 'number'
+        ? rec.wakeAt
+        : (Number(rec.lastAt) || 0) + Math.max(1, pollMin) * 60 * 1000;
+    return now >= at;
 }
 
 /**

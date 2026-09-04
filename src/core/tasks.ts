@@ -33,6 +33,11 @@ import {
 } from './retry';
 import { opencodeSpawnEnv } from './opencodesync';
 import {
+    newSentry, refuseSentry, SENTRY_DEFAULT_POLL_MIN, SentryAsk, SentryRecord,
+    sentryDue, sentryRunning, stopSentry
+} from './sentryCampaign';
+import { applySentryStep, SentryRoundSpec, SentryStep } from './sentryDriver';
+import {
     normalizeRounds, planNextRound, refuseNextRound, ROUND_BINDING_CODE, roundBindingReason,
     TaskRound, totalRounds
 } from './taskRounds';
@@ -172,6 +177,15 @@ export interface FarmTask {
      * clears this the moment the binding arrives.
      */
     roundAwaits?: string;
+    /**
+     * ‼️ X-176 — THE SENTRY CAMPAIGN THIS ROW IS A ROUND OF.
+     *
+     * A campaign round is an ORDINARY TASK: the same runner opens it, the same
+     * terminal is watched, the same cancel button ends it. This field is the
+     * only thing that makes it a campaign's — which is why "is a round running"
+     * is asked of the BOARD (`sentryRunning`) and never stored on the campaign.
+     */
+    sentryOf?: string;
     /** Explicit model for THIS task (e.g. a mission's per-member override).
      *  Beats the model-policy engine; empty = policy/agent default. */
     model?: string;
@@ -1262,6 +1276,10 @@ interface StoreShape {
     archiveRepair?: { id: string; month: string }[];
     /** ‼️ X-71/X-73 — the runs themselves (see `WorkflowRunRecord`). */
     workflowRuns?: Record<string, WorkflowRunRecord>;
+    /** ‼️ X-176 — the sentry campaign, which is the one part of it that has to
+     *  outlive a window: a campaign held in memory would be silently switched
+     *  off by every reload, in the middle of the night nobody is watching. */
+    sentry?: SentryRecord;
 }
 
 /**
@@ -1322,6 +1340,22 @@ export interface TaskManagerOptions {
      *  resumed run is charged. Undefined = not indexed yet, and the task simply
      *  starts from nothing rather than from a guess. */
     sessionUsage?: (sessionId: string, engine?: string) => { cost: number; tokens: number } | undefined;
+    /**
+     * ‼️ X-176 — DRIVE THE SENTRY CAMPAIGN ONE STEP.
+     *
+     * The manager owns the record, the rows and the pump; it owns none of the
+     * MEASURING (an answers folder in a vault, a git status, a project's track
+     * ledger, a backlog file) and none of the account reading. So the step
+     * itself is the host's, and it is called from exactly two places: a round
+     * of the campaign has ended, or the pump found the campaign due
+     * (`sentryDue`). There is no timer of the sentry's own — that is the
+     * item's own condition.
+     *
+     * `task` is the round that just ended, or undefined for a pump tick.
+     */
+    sentryTick?: (task?: FarmTask) => void;
+    /** How often an idling campaign looks again (`agentFarm.sentryIdlePollMin`). */
+    sentryPollMin?: () => number;
     maxConcurrent?: () => number;
     maxConcurrentPerAgent?: () => number;
     /** Return a reason to defer auto work (e.g. quota window nearly full), or
@@ -1538,6 +1572,9 @@ export class TaskManager implements vscode.Disposable {
     triggers: FarmTrigger[] = [];
     automation: AutomationState = {};
     automationLog: AutomationEvent[] = [];
+    /** ‼️ X-176 — the sentry campaign the user switched on, or nothing. ONE, by
+     *  design: the runner is sequential (see core/sentryCampaign.ts). */
+    sentry?: SentryRecord;
     /** ‼️ M-8 (V3) — tombstones that could not be written yet. See
      *  `pumpArchiveRepair`: kept in the STORE because the failure this repairs
      *  is "the disk refused a write", and a memory-only queue would be lost by
@@ -1706,6 +1743,8 @@ export class TaskManager implements vscode.Disposable {
             this.triggers = Array.isArray(json.triggers) ? json.triggers : [];
             this.automation = json.automation && typeof json.automation === 'object' ? json.automation : {};
             this.automationLog = Array.isArray(json.automationLog) ? json.automationLog : [];
+            this.sentry = json.sentry && typeof json.sentry === 'object' && json.sentry.id
+                ? json.sentry : undefined;
             // M-8 (V3) — the tombstones a previous window could not write. It
             // survives the restart on purpose: a restart is very often what
             // clears whatever was holding the file.
@@ -2302,6 +2341,7 @@ export class TaskManager implements vscode.Disposable {
             triggers: this.triggers,
             automation: this.automation,
             automationLog: this.automationLog,
+            ...(this.sentry ? { sentry: this.sentry } : {}),
             ...(this.archiveRepair.length ? { archiveRepair: this.archiveRepair } : {}),
             ...(this.runRecords.size
                 ? { workflowRuns: Object.fromEntries(this.runRecords) } : {})
@@ -2453,7 +2493,8 @@ export class TaskManager implements vscode.Disposable {
             | 'interactiveTarget' | 'interactiveClose' | 'finishSound' | 'superpowers'
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
-            | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits'>>
+            | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits' | 'sentryOf'
+            | 'account'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -2814,6 +2855,15 @@ export class TaskManager implements vscode.Disposable {
             task.autoStart = false;
             this.clearPark(task);
             this.launch(task);
+        }
+        // ‼️ X-176 — NO SECOND SCHEDULER: the sentry's "look again" is a
+        // question asked on the beat the farm already keeps. `sentryDue` holds
+        // every rule about when (a round on the board means no, a measured
+        // sleep outranks the poll, an empty backlog is a wait).
+        if (this.sentry && sentryDue(
+            this.sentry, sentryRunning(this.tasks, this.sentry.id),
+            this.opts.sentryPollMin?.() ?? SENTRY_DEFAULT_POLL_MIN, now)) {
+            try { this.opts.sentryTick?.(); } catch { /* the campaign is not worth a crash */ }
         }
     }
 
@@ -3619,6 +3669,10 @@ export class TaskManager implements vscode.Disposable {
         // step (planNextRound refuses one) and putting it after would make the
         // reader hunt through three early returns to find out.
         if (status === 'done') { this.openNextRound(task); }
+        // ‼️ X-176 — …AND A SENTRY ROUND DRIVES ITS CAMPAIGN, whether it ended
+        // well or badly: a round that hit the wall is exactly the case the
+        // verdict (X-174) exists to read, so failure is not a reason to stop.
+        this.driveSentry(task);
 
         // Workflow chaining takes precedence over plain queue auto-advance.
         if (task.workflowId !== undefined && task.stepIndex !== undefined) {
@@ -4187,6 +4241,88 @@ export class TaskManager implements vscode.Disposable {
         task.endedAt = Date.now();
         noteTaskEvent(task, 'cancelled', 'by you');
         this.save();
+        // ‼️ X-176 — the user's hand on a campaign round is the user's hand on
+        // the campaign. The driver decides that (`sentryStep`); this only has
+        // to make sure it is asked, which is the half that would otherwise be
+        // silently missing.
+        this.driveSentry(task);
+    }
+
+    /**
+     * ‼️ X-176 — ask the host to drive the campaign, if this row was one of its
+     * rounds. One place, so the three endings (done, failed, cancelled) cannot
+     * drift apart, and guarded by the runner check for B11's reason: a follower
+     * window mirrors the store and must not open sessions of its own.
+     */
+    private driveSentry(task: FarmTask): void {
+        if (!task.sentryOf || !this.sentry || this.sentry.id !== task.sentryOf) { return; }
+        if (!this.runner()) { return; }
+        try { this.opts.sentryTick?.(task); } catch { /* the campaign is not worth a crash */ }
+    }
+
+    /**
+     * ‼️ X-176 — SWITCH A CAMPAIGN ON. Refused by name (`refuseSentry`): one at
+     * a time, and it needs a project and an agent. The refusal is returned, not
+     * thrown, because every door that offers this has to be able to print it.
+     */
+    startSentryCampaign(ask: SentryAsk): { ok: boolean; error?: string; campaign?: SentryRecord } {
+        const refusal = refuseSentry(this.sentry, ask);
+        if (refusal) { return { ok: false, error: refusal }; }
+        this.sentry = newSentry(ask, Date.now());
+        this.save();
+        return { ok: true, campaign: this.sentry };
+    }
+
+    /**
+     * …and OFF. The record is KEPT rather than deleted: what a campaign took
+     * and why it ended is the only account anybody has of an unattended night.
+     * A round already on the board is left alone — it is a real session that is
+     * really spending, and killing it is `cancelTask`'s decision to be asked
+     * for separately.
+     */
+    endSentryCampaign(why?: string): SentryRecord | undefined {
+        if (!this.sentry || this.sentry.status !== 'running') { return this.sentry; }
+        stopSentry(this.sentry, Date.now());
+        if (why) { this.sentry.stoppedWhy = why; }
+        this.save();
+        return this.sentry;
+    }
+
+    /** Write what a driver step decided onto the record, in one store write. */
+    applySentry(step: SentryStep, taskId?: string): void {
+        if (!this.sentry) { return; }
+        applySentryStep(this.sentry, step, taskId, Date.now());
+        this.save();
+    }
+
+    /**
+     * ‼️ X-176 — MAKE THE CAMPAIGN'S NEXT ROUND A ROW.
+     *
+     * An ORDINARY TASK: the same runner opens it, the same terminal is watched,
+     * the same cancel button ends it, and the same pump launches it. That is
+     * how the item's "no second scheduler" holds all the way down to the
+     * launch, and the price of it — the board fills with campaign rounds — is
+     * the user's own call.
+     */
+    openSentryRound(agent: AgentInfo, spec: SentryRoundSpec, projectId?: string): FarmTask | undefined {
+        if (!this.sentry) { return undefined; }
+        const row = this.addTask(agent, spec.title, spec.prompt, 'headless', {
+            ...(projectId ? { projectId } : {}),
+            sentryOf: this.sentry.id,
+            ...(spec.slotId ? { account: spec.slotId } : {}),
+            ...(spec.engine ? { engine: spec.engine } : {}),
+            ...(spec.model ? { model: spec.model } : {}),
+            ...(spec.permissionMode ? { permissionMode: spec.permissionMode } : {}),
+            ...(spec.superpowers ? { superpowers: true } : {})
+        });
+        row.autoStart = true;
+        this.save();
+        return row;
+    }
+
+    /** Is a round of the live campaign on the board right now? Derived, never stored. */
+    sentryBusy(): boolean {
+        return !!this.sentry && sentryRunning(this.tasks, this.sentry.id);
     }
 
     private killProcess(taskId: string, child: cp.ChildProcess): void {
