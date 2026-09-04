@@ -8167,7 +8167,33 @@
           "x-af-values": "agent",
           "description": "Agent a new chat talks to before it picks one with /agent. Empty = a chat must bind an agent first."
         },
-        "agentFarm.providerProfiles": {
+        "agentFarm.accounts": {
+      "type": "array",
+      "default": [],
+      "markdownDescription": "The engine accounts captured on this machine. An account is a CONFIG DIRECTORY, not a copied file: starting a session with one set points the engine at that directory with its own variable (CLAUDE_CONFIG_DIR for Claude Code), so the identity of the session you are talking to right now is never touched and two accounts can run at the same time. Captured from the Engines page — sign in normally once, press Capture, and the address and plan are read off the disk. No token is ever stored here; the credentials stay in the account's own directory.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "Folder-safe id, minted from the address." },
+          "engine": { "type": "string", "description": "Which engine this sign-in belongs to. An account belongs to one engine." },
+          "label": { "type": "string", "description": "What you call it. The address is the fallback." },
+          "dir": { "type": "string", "description": "The config directory this account IS." },
+          "email": { "type": "string", "description": "The address this sign-in belongs to, read off the disk when it was captured. Empty is normal on engines that do not record one." },
+          "subscriptionType": { "type": "string", "description": "The plan the sign-in states (pro, max, chatgpt...). What the account is entitled to is between you and the vendor; this is only what the file said." },
+          "capturedAt": { "type": "number", "description": "When it was sealed, epoch ms." }
+        }
+      },
+      "scope": "application"
+    },
+    "agentFarm.activeAccounts": {
+      "type": "object",
+      "default": {},
+      "markdownDescription": "Which account the NEXT session on each engine uses, keyed by engine id. Set by 'Use this next' on the Engines page. An account is deliberately not remembered per agent: it is a STATE (how much of a plan is left, which changes hourly), not a preference, so one place holds it and one gesture moves it. Empty means the main sign-in — no variable is set and the session inherits exactly what it always did.",
+      "additionalProperties": { "type": "string" },
+      "x-af-keys": "engine",
+      "scope": "application"
+    },
+    "agentFarm.providerProfiles": {
           "type": "array",
           "default": [],
           "markdownDescription": "X-100 — the Anthropic-compatible ROUTES Agent Farm holds for Claude Code: which provider, which endpoint, and which model each tier resolves to. Managed on the Engines page (`Agent Farm: Open Engines` → Providers); this key is the same list in its raw form.\n\n‼️ **No credential is ever written here.** A route's key lives in the OS keychain (SecretStorage), filed under the profile's `id` — which is why the id is permanent and a copy deliberately starts with no key. Anything you type into this array that is not one of the fields below is DROPPED on the way in, so a key pasted here does not become a stored one; it just does not work.\n\n‼️ **This list is Claude's alone.** OpenCode owns its own providers, `auth.json` and `opencode.json` (`opencode auth login`, `/connect`), and a second copy here would make two vaults where the stale one wins silently — so a profile naming another engine is refused rather than ignored.\n\n`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, tier mapping) or its key is replaced — never on a rename. A launch records the revision it ran on, so a route edited afterwards cannot silently rewrite what a past session was served by.",

@@ -132,6 +132,25 @@ export interface EngineAuthAdapter {
      * config directory moves more than the identity.
      */
     sharedPaths: string[];
+    /**
+     * Where this engine keeps all of that when NOTHING is relocated, relative
+     * to the user's home.
+     */
+    liveDir: string;
+    /**
+     * ‼️ …EXCEPT THE ONES THAT ARE NOT UNDER IT, AND THERE IS ALWAYS ONE.
+     *
+     * Claude is the proof and the trap: the credentials are
+     * `~/.claude/.credentials.json`, but the identity — `oauthAccount`, the
+     * email, every folder-trust record — is `~/.claude.json`, at the HOME ROOT,
+     * one level up from everything else that engine owns. Assuming
+     * `<liveDir>/<name>` for all of them makes a capture that copies one file,
+     * finds no address, seals a slot anyway and starts a session on an account
+     * that is not signed in. Nothing errors; it just does not work.
+     *
+     * Keyed by the slot-relative name, valued by the home-relative source.
+     */
+    liveFiles?: Record<string, string>;
     /** one line: what was actually tried, so the claim can be argued with */
     evidence: string;
     /**
@@ -292,7 +311,17 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         support: 'measured',
         configEnv: 'CLAUDE_CONFIG_DIR',
         ownFiles: ['.credentials.json', '.claude.json'],
-        sharedPaths: ['projects', 'history.jsonl', 'todos', 'shell-snapshots'],
+        // ‼️ DIRECTORIES ONLY, and `history.jsonl` is left out on purpose. A
+        // directory is shared with a junction, which needs no administrator on
+        // Windows; a FILE would need a real symlink, which does — so a capture
+        // that tried to share it would fail on the machine this was built for.
+        // Prompt history diverging per account costs nothing. Transcripts
+        // diverging costs the panel every session it starts, which is why those
+        // are here.
+        sharedPaths: ['projects', 'todos', 'shell-snapshots'],
+        liveDir: '.claude',
+        // ‼️ the identity is at the HOME ROOT, not under .claude — see liveFiles
+        liveFiles: { '.claude.json': '.claude.json' },
         evidence: 'Measured on this machine 2026-09-03: pointed at an empty directory, '
             + '`claude auth status --json` answered loggedIn:false, reported its projectsDirectory '
             + 'inside that directory, and wrote a fresh .claude.json there.',
@@ -304,7 +333,8 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         support: 'declared',
         configEnv: 'CODEX_HOME',
         ownFiles: ['auth.json'],
-        sharedPaths: ['sessions', 'history.jsonl'],
+        sharedPaths: ['sessions'],
+        liveDir: '.codex',
         evidence: 'CODEX_HOME is Codex\'s own documented override for ~/.codex, but it has NOT been run '
             + 'here — the codex CLI is not installed on this machine, only its auth.json is. Capturing a '
             + 'second Codex account is allowed and stays marked "declared" until somebody proves it.',
@@ -322,6 +352,7 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         configEnv: '',
         ownFiles: ['oauth_creds.json', 'google_accounts.json'],
         sharedPaths: [],
+        liveDir: '.gemini',
         evidence: 'The Gemini CLI writes its Google sign-in into ~/.gemini and this side has not verified any '
             + 'variable that relocates it, so a second Gemini identity cannot be kept apart yet. Reading the one '
             + 'that is there works; capture waits on that one measurement.',
@@ -337,6 +368,7 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         configEnv: '',
         ownFiles: ['opencode/auth.json'],
         sharedPaths: [],
+        liveDir: '.local/share',
         evidence: 'OpenCode stores credentials under the shared XDG data root (~/.local/share/opencode/auth.json), '
             + 'so moving that root would move every other XDG application with it — not an isolation, a side effect. '
             + 'It also runs with no credential at all (X-38), so a second slot is rarely the point here.',
@@ -352,6 +384,7 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         configEnv: '',
         ownFiles: [],
         sharedPaths: [],
+        liveDir: '.gemini/antigravity-cli',
         evidence: 'Antigravity is paid for by an app sign-in and keeps no credential file this side can seal into a '
             + 'directory, so two identities cannot be kept apart for it. Nothing here pretends otherwise.',
         readIdentity: noIdentity,
@@ -374,10 +407,26 @@ export function adapterFor(engine: string | undefined): EngineAuthAdapter {
         configEnv: '',
         ownFiles: [],
         sharedPaths: [],
+        liveDir: '',
         evidence: `No account adapter is written for "${id || 'this engine'}" yet, so it cannot hold a second identity.`,
         readIdentity: noIdentity,
         quotaSource: () => ({ kind: 'none', reason: 'No account adapter for this engine.' })
     };
+}
+
+/**
+ * Where one of a slot's files lives BEFORE anything is relocated, relative to
+ * the user's home — the source a capture copies from.
+ *
+ * ‼️ The one-line override table is the whole point of this function: read it
+ * off `liveDir` alone and Claude's identity file is looked for in the wrong
+ * place, so the capture seals a slot with no address and no sign-in in it.
+ */
+export function liveSource(engine: string | undefined, name: string): string {
+    const a = adapterFor(engine);
+    const override = a.liveFiles?.[name];
+    if (override) { return override; }
+    return a.liveDir ? path.posix.join(a.liveDir.replace(/\\/g, '/'), name) : name;
 }
 
 /** The engines a second account can actually be captured for, right now. */

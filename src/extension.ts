@@ -188,6 +188,15 @@ import {
     readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS,
     claudeOnlyScopeNote
 } from './core/engines';
+import {
+    AccountFs, AccountIdentity, EngineAccountSlot, ENGINE_AUTH_ADAPTERS,
+    accountEnv, adapterFor as accountAdapterFor, describeSlotLayout, liveSource
+} from './core/engineAccounts';
+import {
+    CapturePlan, accountRefusal, addSlot, findSlot, forgetActive, forgetSlot,
+    normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel, slotsFor
+} from './core/accountStore';
+import { AccountUsageService, SlotUsage, mostRoom, nextResetAt } from './core/accountUsage';
 import { EngineRunner, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
@@ -283,7 +292,7 @@ import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } fro
 import {
     argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgePage, bridgeRunDimensions,
     DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, ROUTE_NOTE, SUPERPOWERS_NOTE,
-    needOneExecutor, needRoutableEngine, optStr, parseBridgeRequest, stageBridgeCli
+    needOneExecutor, needRoutableEngine, optBool, optNum, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
 import {
     archivedOutputBody, archivedReplyText, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
@@ -15903,6 +15912,127 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         isWindows: process.platform === 'win32'
     };
     const engineMatrix = (): EngineStatus[] => readEngines(engineProbe);
+
+    /* ============ X-167 — ACCOUNTS: MORE THAN ONE SIGN-IN, NO BROWSER =========
+     *
+     * The public half of an account is `agentFarm.accounts` — an ordinary
+     * setting a person can read and diff, holding an address, a plan name and a
+     * DIRECTORY. There is no private half stored here at all: the credentials
+     * stay in that directory, written and refreshed by the engine's own CLI, and
+     * nothing in this extension ever reads a token out of them. The only public
+     * fact is whether a sign-in is there, whose it is, and how much of its plan
+     * is left — the same boundary the route store draws, for the same reason.
+     *
+     * ‼️ ACTIVATING ONE IS AN ENVIRONMENT VARIABLE AND NOTHING ELSE (X-168).
+     * Nothing is copied over the live directory, so the session the user is
+     * talking to right now keeps its identity and two accounts can run at once.
+     */
+    const accountRoot = path.join(context.globalStorageUri.fsPath, 'accounts');
+    const storedAccounts = (): EngineAccountSlot[] => normalizeSlots(cfg().get<unknown[]>('accounts', []));
+    const activeAccounts = (): Record<string, string> =>
+        normalizeActive(cfg().get<Record<string, string>>('activeAccounts', {}));
+    const writeAccounts = async (list: EngineAccountSlot[]): Promise<void> => {
+        await cfg().update('accounts', list, vscode.ConfigurationTarget.Global);
+    };
+    const writeActiveAccounts = async (map: Record<string, string>): Promise<void> => {
+        await cfg().update('activeAccounts', map, vscode.ConfigurationTarget.Global);
+    };
+    const diskFs: AccountFs = {
+        read: f => { try { return fs.readFileSync(f, 'utf8'); } catch { return undefined; } },
+        exists: f => { try { return fs.existsSync(f); } catch { return false; } }
+    };
+    /**
+     * ‼️ THE LIVE DIRECTORY IS NOT SHAPED LIKE A SLOT, which is exactly the trap
+     * `liveSource` exists for: Claude's credentials are `~/.claude/.credentials.json`
+     * while its identity — the address, the plan, every folder-trust record — is
+     * `~/.claude.json`, at the home root. So the adapter is handed a READER over
+     * home rather than a directory, and it goes on asking for the same names it
+     * asks a slot for.
+     */
+    const liveFsFor = (engine: string): AccountFs => {
+        const at = (p: string) => path.join(os.homedir(), liveSource(engine, p.replace(/\\/g, '/')));
+        return { read: p => diskFs.read(at(p)), exists: p => diskFs.exists(at(p)) };
+    };
+    /** Who is signed in to this engine on this machine RIGHT NOW. */
+    const liveIdentity = (engine: string): AccountIdentity =>
+        accountAdapterFor(engine).readIdentity(liveFsFor(engine), '');
+    /** Who is in a captured slot. */
+    const slotIdentity = (slot: EngineAccountSlot): AccountIdentity =>
+        accountAdapterFor(slot.engine).readIdentity(diskFs, slot.dir);
+    /**
+     * ‼️ ONE REQUEST BUDGET FOR EVERY ACCOUNT (X-170) — not one service per
+     * slot, which would multiply every ceiling in planusage.ts by the number of
+     * accounts and make asking how much quota is left the thing that burns it.
+     */
+    const accountUsage = new AccountUsageService({
+        slots: () => storedAccounts(),
+        // The same interval the single-account card is tuned to, deliberately:
+        // two refresh policies in one codebase is how one of them ends up wrong.
+        ttlMs: planBeatMs,
+        edgeFloorMs: planEdgeFloorMs,
+        cliVersion: installedCliVersion
+    });
+    /**
+     * Carry out a capture plan. The interesting half — which files, from where,
+     * to where, and whether it should happen at all — was decided by
+     * `planCapture`; this is the four lines of `fs` that cannot be tested
+     * without copying somebody's real credentials somewhere.
+     *
+     * ‼️ A JUNCTION, NOT A COPY, for the shared directories. `CLAUDE_CONFIG_DIR`
+     * moves the transcripts too and Agent Farm indexes ONE root, so a session
+     * started under an isolated slot would be invisible in the panel. A junction
+     * needs no administrator on Windows; a file symlink does, which is why the
+     * shared list holds directories only.
+     */
+    const runCapturePlan = (plan: CapturePlan): string => {
+        if (!plan.slot) { return plan.refusal || 'Nothing to capture.'; }
+        try {
+            fs.mkdirSync(plan.slot.dir, { recursive: true });
+            let copied = 0;
+            for (const c of plan.copies) {
+                if (!fs.existsSync(c.from)) { continue; }
+                fs.copyFileSync(c.from, c.to);
+                copied++;
+            }
+            // ‼️ Nothing copied is a failed capture, not an empty one. Sealing a
+            // directory with no credentials in it produces a row that starts
+            // sessions as nobody — the silent failure this whole family is about.
+            if (!copied) {
+                return `Nothing was found to copy for ${plan.slot.engine} — the sign-in files were not `
+                    + 'where this engine keeps them. Nothing was captured.';
+            }
+            for (const l of plan.links) {
+                if (fs.existsSync(l.to)) { continue; }
+                if (!fs.existsSync(l.from)) { continue; }
+                try { fs.symlinkSync(l.from, l.to, 'junction'); } catch { /* see below */ }
+            }
+            return '';
+        } catch (e) {
+            return `Could not write the account directory: ${String((e as Error)?.message ?? e)}`;
+        }
+    };
+    /** One slot as every surface may see it — never a token, ever. */
+    const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
+        const id = slotIdentity(slot);
+        const u = usage.find(x => x.slotId === slot.id);
+        return {
+            id: slot.id, engine: slot.engine, label: slotLabel(slot), dir: slot.dir,
+            email: slot.email || id.email || '', plan: slot.subscriptionType || id.subscriptionType || '',
+            capturedAt: slot.capturedAt || 0,
+            health: id.health,
+            active: active[slot.engine] === slot.id,
+            percent: u?.percent ?? -1,
+            resetsAt: u?.resetsAt ?? 0,
+            usageState: u?.state ?? 'error',
+            note: u?.note || ''
+        };
+    };
+    /** What each engine can do about accounts at all, in its own words. */
+    const accountEngineNotes = () => ENGINE_AUTH_ADAPTERS.map(a => ({
+        engine: a.engine, support: a.support, variable: a.configEnv || null,
+        canCapture: a.support !== 'unmapped', why: a.evidence,
+        layout: describeSlotLayout(a.engine)
+    }));
     /**
      * S-20 — WHICH MODELS EACH ENGINE OFFERS TODAY, through the same probe.
      *
@@ -30206,6 +30336,169 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await setPromptSnippetsFile(file);
                 const snap = readPromptSnippets();
                 return { file: snap.file || null, source: snap.source, count: snap.items.length };
+            }
+        },
+        {
+            op: 'accounts.list',
+            describe: 'THE SIGN-INS CAPTURED ON THIS MACHINE, per engine — who they are, how much of '
+                + 'their plan is left, and which one the next session will use. An account here is a '
+                + 'CONFIG DIRECTORY, not a copied credential: starting a session with one set points the '
+                + 'engine at that directory through its own variable (CLAUDE_CONFIG_DIR on Claude Code), '
+                + 'so the identity of the session you are talking to right now is never touched and two '
+                + 'accounts can run at once. Per account: id, engine, label, email, plan, health '
+                + '("ready" | "needs-signin" = the refresh token died and only a person can fix it | '
+                + '"unreadable"), percent (the five-hour window, -1 when not read yet), resetsAt, active. '
+                + 'Also `engines`: what each engine can do about accounts at all and WHY — "measured" '
+                + '(proven on a real machine), "declared" (the vendor documents the variable, unproven '
+                + 'here), "unmapped" (no verified way to keep two identities apart, so capture is '
+                + 'refused). ‼️ NO TOKEN VALUE IS EVER RETURNED and none can be set from here — the same '
+                + 'boundary the secrets vault draws. args: engine? (only that engine\'s accounts)',
+            handler: (args) => {
+                const engine = (optStr(args, 'engine') ?? '').trim();
+                const all = storedAccounts();
+                const list = engine ? slotsFor(all, engine) : all;
+                const active = activeAccounts();
+                // A read, not a fetch: the shared budget decides whether this
+                // turn costs a request at all (X-170).
+                void accountUsage.beat();
+                const usage = accountUsage.current();
+                return {
+                    accounts: list.map(s => publicAccount(s, usage, active)),
+                    active, root: accountRoot,
+                    rateLimitedUntil: accountUsage.rateLimitedUntil() || null,
+                    engines: accountEngineNotes()
+                };
+            }
+        },
+        {
+            op: 'accounts.capture',
+            describe: 'SEAL THE SIGN-IN THAT IS ON THIS DISK RIGHT NOW as a reusable account. It opens '
+                + 'no browser and signs nobody in: the user signs in normally once (`claude auth login`), '
+                + 'then this reads the address and plan off the disk, copies the identity files into a '
+                + 'directory of their own, and links the session records back at the one root Agent Farm '
+                + 'indexes — so history, resume and cost keep working. Capturing is a COPY: the account '
+                + 'being sealed stays signed in and any session running as it is untouched. Refused, with '
+                + 'the reason, when the engine has no verified way to isolate an identity, when nothing '
+                + 'is signed in, or when the stored files cannot be read. args: engine? (default claude), '
+                + 'label? (what to call it; the address is the fallback), activate? (also make it the '
+                + 'account the next session uses, default false)',
+            handler: async (args) => {
+                const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
+                const label = (optStr(args, 'label') ?? '').trim();
+                const list = storedAccounts();
+                const plan = planCapture({
+                    engine, home: os.homedir(), root: accountRoot,
+                    identity: liveIdentity(engine), taken: list.map(s => s.id), label
+                });
+                need(!plan.refusal, plan.refusal);
+                const failed = runCapturePlan(plan);
+                need(!failed, failed);
+                const slot = plan.slot as EngineAccountSlot;
+                await writeAccounts(addSlot(list, slot));
+                if (optBool(args, 'activate', false)) {
+                    await writeActiveAccounts({ ...activeAccounts(), [engine]: slot.id });
+                }
+                return {
+                    captured: publicAccount(slot, accountUsage.current(), activeAccounts()),
+                    copied: plan.copies.length, linked: plan.links.length,
+                    layout: describeSlotLayout(engine)
+                };
+            }
+        },
+        {
+            op: 'accounts.activate',
+            describe: 'WHICH ACCOUNT THE NEXT SESSION ON THIS ENGINE OPENS WITH. It changes nothing that '
+                + 'is already running — an account is fixed for a session the way a route is (X-105), so '
+                + 'switching means starting another one. Pass an empty id to go back to the main sign-in, '
+                + 'which sets no variable at all and is exactly what every session did before accounts '
+                + 'existed. ‼️ An account is deliberately NOT remembered per agent: it is a state (how '
+                + 'much of a plan is left, which changes hourly), not a preference, so this one place '
+                + 'holds it and a launch that names its own account still wins. args: id (the account, or '
+                + '"" for the main sign-in), engine? (needed only when clearing)',
+            handler: async (args) => {
+                const id = (optStr(args, 'id') ?? '').trim();
+                const list = storedAccounts();
+                const active = activeAccounts();
+                if (!id) {
+                    const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
+                    const next = { ...active };
+                    delete next[engine];
+                    await writeActiveAccounts(next);
+                    return { engine, active: null, note: `${engine} sessions will use the main sign-in.` };
+                }
+                const slot = findSlot(list, id);
+                need(!!slot, `No account "${id}" is stored on this machine — accounts.list shows what is.`);
+                const s = slot as EngineAccountSlot;
+                await writeActiveAccounts({ ...active, [s.engine]: s.id });
+                return {
+                    engine: s.engine, active: s.id,
+                    note: `The next ${s.engine} session opens as ${slotLabel(s)}.`
+                };
+            }
+        },
+        {
+            op: 'accounts.status',
+            describe: 'CAN A SESSION BE STARTED RIGHT NOW, AND ON WHICH ACCOUNT — the one question an '
+                + 'unattended runner asks. Per engine: the account with the most room (a MEASURED figure '
+                + 'beats an unread one, because the guess is what ends the session ten minutes in), '
+                + 'whether anything is usable at all, and when the first exhausted account comes back so '
+                + 'a loop can sleep spending nothing until then. Unlike accounts.list this may spend one '
+                + 'request to refresh a stale figure — one, whatever the number of accounts, because the '
+                + 'budget is shared. args: engine? (default claude), ceiling? (0-100, the five-hour '
+                + 'percentage at which an account counts as full; default 95)',
+            handler: async (args) => {
+                const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
+                const ceiling = Math.max(1, Math.min(100, optNum(args, 'ceiling', 95)));
+                await accountUsage.refresh();
+                const mine = slotsFor(storedAccounts(), engine).map(s => s.id);
+                const usage = accountUsage.current().filter(u => mine.includes(u.slotId));
+                const best = mostRoom(usage, ceiling);
+                const waking = nextResetAt(usage, ceiling);
+                const refusal = !mine.length
+                    ? `No ${engine} account has been captured yet — accounts.capture seals the sign-in that is on this disk.`
+                    : '';
+                return {
+                    engine, ceiling,
+                    best: best ? best.slotId : null,
+                    percent: best ? best.percent : -1,
+                    usable: usage.filter(u => u.state !== 'expired' && u.state !== 'no-auth').length,
+                    needsSignin: usage.filter(u => u.state === 'expired' || u.state === 'no-auth').map(u => u.slotId),
+                    nextResetAt: waking || null,
+                    rateLimitedUntil: accountUsage.rateLimitedUntil() || null,
+                    note: refusal || (best
+                        ? `${slotLabel(findSlot(storedAccounts(), best.slotId))} has the most room.`
+                        : (waking
+                            ? 'Every account is at or past the ceiling — the first one comes back at nextResetAt.'
+                            : 'No account can start a session right now; see needsSignin.'))
+                };
+            }
+        },
+        {
+            op: 'accounts.forget',
+            describe: 'DROP AN ACCOUNT FROM THE LIST. The directory itself is left on disk by default — '
+                + 'forgetting is a bookkeeping act, and deleting somebody\'s stored sign-in because they '
+                + 'tidied a list is not recoverable. Pass deleteFiles:true to remove the directory too. '
+                + 'An account that was the active one stops being it in the same act, because a next '
+                + 'session pointed at an id that names nothing would silently fall back to whichever '
+                + 'identity happens to be signed in. args: id, deleteFiles? (default false)',
+            handler: async (args) => {
+                const id = argStr(args, 'id').trim();
+                const list = storedAccounts();
+                const slot = findSlot(list, id);
+                need(!!slot, `No account "${id}" is stored on this machine.`);
+                const s = slot as EngineAccountSlot;
+                await writeAccounts(forgetSlot(list, id));
+                await writeActiveAccounts(forgetActive(activeAccounts(), id));
+                let removed = false;
+                if (optBool(args, 'deleteFiles', false)) {
+                    try { fs.rmSync(s.dir, { recursive: true, force: true }); removed = true; }
+                    catch { removed = false; }
+                }
+                return {
+                    forgotten: s.id, engine: s.engine, dir: s.dir, filesRemoved: removed,
+                    note: removed ? 'The account directory was deleted too.'
+                        : `The directory is still at ${s.dir} — capture it again to bring it back.`
+                };
             }
         },
         {

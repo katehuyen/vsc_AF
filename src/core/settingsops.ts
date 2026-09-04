@@ -222,6 +222,12 @@ const CATEGORY_OF: Record<string, string> = {
     // in it — a route's key is in the OS keychain and never in a settings file,
     // which is why this key can sit in an ordinary category at all.
     providerProfiles: 'cli',
+    // ‼️ X-171 — the captured ACCOUNTS, filed with the engines for the same
+    // reason as the routes above: they answer "which sign-ins can this machine
+    // start a session as", not "what does a new session start as". No token is
+    // in either of them — the credentials stay in the account's own directory,
+    // which is why these can sit in an ordinary category at all.
+    accounts: 'cli', activeAccounts: 'cli',
     // reaching the farm from outside this VS Code window
     'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
     'telegram.enabled': 'access', 'telegram.allowedChats': 'access',

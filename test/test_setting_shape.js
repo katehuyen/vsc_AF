@@ -418,8 +418,24 @@ const PROPS = manifest.contributes.configuration.properties;
     const page = fs4.readFileSync(path.join(__dirname, '..', 'media', 'settings.js'), 'utf8');
     const of = (k) => S.shapeOf(PROPS['agentFarm.' + k]);
 
-    ok('the three maps are still the three maps, and this test is about them',
-        Object.values(PROPS).map(p => S.shapeOf(p)).filter(s => s && s.kind === 'map').length === 3);
+    // ‼️ THE CENSUS IS OVER RULES, NOT OVER A COUNT. It used to assert there
+    // were exactly three maps, so `activeAccounts` (X-171) turned a legitimate
+    // fourth into a red build — and the fix a hurried reader reaches for is
+    // bumping 3 to 4, which measures nothing at all. What this section is
+    // actually about is that every map DECLARES what a pair is, so that is what
+    // is asked: the three that started it are still maps, and any map added
+    // since answers the same two questions they do.
+    const maps = Object.entries(PROPS)
+        .map(([k, p]) => [k, S.shapeOf(p)])
+        .filter(([, s]) => s && s.kind === 'map');
+    ok('the three maps this section was written about are still maps',
+        ['budgets', 'superpowersDefaults', 'agentEngineDefaults']
+            .every(k => maps.some(([n]) => n === 'agentFarm.' + k)));
+    ok('‼️ …and EVERY map says what one value is, so none of them gets the empty'
+        + ' JSON box back by being added later',
+        maps.every(([, s]) => s.summary.length > 20)
+        && maps.filter(([n]) => n !== 'agentFarm.agentEngineDefaults')
+            .every(([, s]) => !!s.valueType));
 
     // ‼️ THEY ARE NOT THE SAME SHAPE, and the schema says so on each of them.
     ok('‼️ a map reads what ONE VALUE is off `additionalProperties` — the three'
@@ -444,6 +460,12 @@ const PROPS = manifest.contributes.configuration.properties;
         && of('agentEngineDefaults').keySource === 'agentDir');
     ok('…and a map that declares nothing gets no suggestions rather than wrong ones',
         S.shapeOf({ type: 'object' }).keySource === undefined);
+    // ‼️ X-171 — a fourth source, and it is a different KIND of name: an engine,
+    // not an agent. The page reads the list off the engines it is already
+    // drawing, so nothing here is a second copy of that list.
+    ok('‼️ …and an account map is keyed by ENGINE, which is its own source',
+        of('activeAccounts').keySource === 'engine'
+        && /return \(DATA\.engines \|\| \[\]\)\.map\(e => e\.id\)/.test(page));
 
     ok('‼️ the page chooses the pair editor from the SHAPE, like every other one',
         /it\.shape\.kind === 'map'\) \{ return mapHtml\(it\); \}/.test(page));

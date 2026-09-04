@@ -670,6 +670,10 @@
         const agents = reports.filter(r => !r.duplicate)
             .reduce((a, r) => a.concat(r.candidates || []), []);
         if (source === 'agentDir') { return agents.map(c => c.dir).filter(Boolean); }
+        // X-171 — an account is chosen PER ENGINE, so the names of this one are
+        // the engines this machine knows. Read off the same list the Engines
+        // section draws, never a second copy of it.
+        if (source === 'engine') { return (DATA.engines || []).map(e => e.id).filter(Boolean); }
         const names = agents.map(c => c.name).filter(Boolean);
         if (source === 'agent') { return names; }
         // The wildcard first, because it is the answer a fleet-wide figure wants

@@ -234,6 +234,39 @@ export function optStr(args: Record<string, unknown>, key: string): string {
 }
 
 /**
+ * An optional boolean arg.
+ *
+ * ‼️ THE STRING FORMS COUNT, because the CLI helper's `key=value` shorthand is
+ * how most of these arrive: `af.js accounts.forget id=x deleteFiles=true` hands
+ * over the WORD "true" whenever the coercion misses, and an op reading
+ * `args.x === true` then silently does the opposite of what was typed. A flag
+ * that reads as false when somebody wrote "true" is the worst kind of trap —
+ * nothing errors, the destructive half just does not happen (or does).
+ */
+export function optBool(args: Record<string, unknown>, key: string, fallback = false): boolean {
+    const v = args[key];
+    if (typeof v === 'boolean') { return v; }
+    if (typeof v === 'number') { return v !== 0; }
+    if (typeof v === 'string') {
+        const s = v.trim().toLowerCase();
+        if (['true', 'yes', 'on', '1'].includes(s)) { return true; }
+        if (['false', 'no', 'off', '0', ''].includes(s)) { return false; }
+    }
+    return fallback;
+}
+
+/** An optional number arg — the same string tolerance, for the same reason. */
+export function optNum(args: Record<string, unknown>, key: string, fallback: number): number {
+    const v = args[key];
+    if (typeof v === 'number' && isFinite(v)) { return v; }
+    if (typeof v === 'string' && v.trim()) {
+        const n = Number(v.trim());
+        if (isFinite(n)) { return n; }
+    }
+    return fallback;
+}
+
+/**
  * The run dimensions an automation can state — read the same way for every op
  * that installs one.
  *
