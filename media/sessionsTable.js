@@ -38,14 +38,33 @@
     const activeOf = r => (typeof r.activeMin === 'number' ? r.activeMin : (r.durationMin || 0));
     const awayOf = r => (typeof r.awayMin === 'number' ? r.awayMin : 0);
 
+    /**
+     * ‼️ U-128/U-130 — EVERY OPTION SAYS WHAT PICKING IT DOES.
+     *
+     * A `<select>` cuts its own text and the list it opens is drawn by the
+     * operating system, so an AFTip cannot reach into it — the option's native
+     * `title` is the only surface there is. `tip` is the ORDER this criterion
+     * puts the table in, which is a different fact from what the figure means
+     * (that is the column's own `<th>` and `RANGE_TIP`), so neither repeats the
+     * other.
+     */
     const SORTS = [
-        { id: 'recent', label: 'Recent', key: r => r.ts || 0 },
-        { id: 'cost', label: 'Cost', key: r => r.cost || 0 },
-        { id: 'tokens', label: 'Tokens', key: r => r.tokens || 0 },
-        { id: 'ctx', label: 'Ctx now', key: r => r.ctx || 0 },
-        { id: 'duration', label: 'Duration', key: r => activeOf(r) },
-        { id: 'turns', label: 'Turns', key: r => r.turns || 0 }
+        { id: 'recent', label: 'Recent', key: r => r.ts || 0,
+            tip: 'the session that moved last, first' },
+        { id: 'cost', label: 'Cost', key: r => r.cost || 0,
+            tip: 'the most expensive first — a subscription engine reports no dollars and sinks' },
+        { id: 'tokens', label: 'Tokens', key: r => r.tokens || 0,
+            tip: 'the most text moved first, cache reads included' },
+        { id: 'ctx', label: 'Ctx now', key: r => r.ctx || 0,
+            tip: 'the fullest window first — which session was closest to its limit when it stopped' },
+        { id: 'duration', label: 'Duration', key: r => activeOf(r),
+            tip: 'the longest RUN first, not the longest span: a session resumed the next day '
+                + 'sorts on the work in it, never on the night in the middle (S-52)' },
+        { id: 'turns', label: 'Turns', key: r => r.turns || 0,
+            tip: 'the most prompts first — one turn is one ask and everything done to answer it' }
     ];
+    /** The option's own name first, then what picking it does. */
+    const sortTip = s => s.label + (s.tip ? '\n\n' + s.tip : '');
 
     // min–max range filters run over the same figures the sorts use (and then some)
     const FRANGES = [
@@ -1270,7 +1289,7 @@
             return `${STYLE}
             <div class="chiprow">
                 <span class="muted small">Sort by:</span>
-                <select class="af-sort">${SORTS.map(s => `<option value="${s.id}"${s.id === sort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
+                <select class="af-sort">${SORTS.map(s => `<option value="${s.id}"${s.id === sort ? ' selected' : ''} title="${C.esc(sortTip(s))}">${s.label}</option>`).join('')}</select>
                 <span class="muted small">Show:</span>
                 <input type="number" class="af-count" min="1" step="1" value="${tableN > 0 ? tableN : ''}" placeholder="all" title="How many sessions to list after sorting — empty means all">
                 <button class="chip af-allrows${tableN === 0 ? ' on' : ''}" title="List every session (click again to go back to ${defaultN})">All</button>

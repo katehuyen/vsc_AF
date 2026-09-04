@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.382.0 - U-130 (1/n): the sessions table pays its own hover debt (2026-09-05)
+
+The first page off the budget U-128 opened. The shared Sessions table's sort box
+drew six options that said nothing; each now opens with its own name and then
+says what picking it DOES — which is a different fact from what the figure means
+(that is the column's `<th>`), so neither repeats the other.
+
+- Because the table is shared, one fix lowered four pages at once: **sessions
+  30→0, agentdetail 6→0, dashboard 39→33, planusage 156→132.** Fleet total
+  2 291 → 2 225 and the budget is relocked at the new floor, which is the whole
+  point of a number that may only shrink.
+- The Duration option says out loud what S-52 changed: it sorts on the longest
+  RUN, never the longest span.
+
 ## 3.381.0 - U-128: an option in a narrow box says its own name (2026-09-05)
 
 You asked why the Console's project picker did not show a project's full name on
