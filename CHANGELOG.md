@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.385.0 - X-190: the sentry gets a policy, and the three modes stop being three code paths (2026-09-05)
+
+The sentry that shipped was purely mechanical: measure, fill a template, open
+the next round, never think. You asked for the switch instead — mechanical /
+intelligent / hybrid — with condition inputs wide and flexible, because "çok dar
+kalıplara sıkışmış bir hibrit sistem çok etkili olmaz". New pure module
+`src/core/sentryPolicy.ts` decides, and it costs nothing to decide.
+
+- **‼️ The three modes are three PRESETS over one condition set, not three
+  branches.** Mechanical is the empty set, intelligent is a set that always
+  fires, hybrid is whatever you build. Written as branches, two of them would
+  rot unwatched — and three fixed modes would be exactly the narrow mould. As
+  presets, the mechanical path is exercised by every hybrid round that fires
+  nothing.
+- **Seventeen fields, ten operators, AND groups.** Fields cover the diagnosis,
+  the handover note and where it came from, the repository, the round, the
+  quota, the accounts and the raw output. Conditions are ORed; a group's parts
+  are ANDed; an empty group is not "always".
+- **‼️ An unknown field fails with its eyes open.** It does not fire — firing on
+  a name nobody implemented spends money at 3 a.m. — and it is not swallowed
+  either, because a condition that quietly never fires is a rule that failed
+  silently. It comes back by name, and a broken row never disarms the working
+  ones. Same for a regular expression that will not compile.
+- **The verdict names what woke the leader**, so a round can say why it was
+  opened the way it was.
+- The dictionary lives in one exported list, so the missions editor (X-194)
+  draws it rather than repeating it: adding a field touches no UI.
+
+Nothing is wired to it yet — the leader turn itself is X-191. This is the
+decision, tested on its own, with no way for it to spend anything.
+
 ## 3.384.0 - X-188: a folder setting you can write, and a resolver that refuses to guess (2026-09-05)
 
 Three folders in this extension ended in one person's Obsidian vault, spelled
