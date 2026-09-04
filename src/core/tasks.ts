@@ -37,6 +37,8 @@ import {
     SentryRecord, sentryDue, sentryRunning, stopSentry
 } from './sentryCampaign';
 import { applySentryStep, SentryRoundSpec, SentryStep } from './sentryDriver';
+import { SENTRY_DEFAULT_STALL_MIN, SlotHealth, slotHealth, stalledRound } from './sentryWatch';
+import { SlotUsage } from './accountUsage';
 import {
     normalizeRounds, planNextRound, refuseNextRound, ROUND_BINDING_CODE, roundBindingReason,
     TaskRound, totalRounds
@@ -1356,6 +1358,9 @@ export interface TaskManagerOptions {
     sentryTick?: (task?: FarmTask) => void;
     /** How often an idling campaign looks again (`agentFarm.sentryIdlePollMin`). */
     sentryPollMin?: () => number;
+    /** X-178 — how long a round may say nothing before the watchdog ends it
+     *  (`agentFarm.sentryStallMin`; 0 switches it off). */
+    sentryStallMin?: () => number;
     maxConcurrent?: () => number;
     maxConcurrentPerAgent?: () => number;
     /** Return a reason to defer auto work (e.g. quota window nearly full), or
@@ -2865,6 +2870,81 @@ export class TaskManager implements vscode.Disposable {
             this.opts.sentryPollMin?.() ?? SENTRY_DEFAULT_POLL_MIN, now)) {
             try { this.opts.sentryTick?.(); } catch { /* the campaign is not worth a crash */ }
         }
+        // ‼️ X-178 — AND THE OTHER QUESTION THE SAME BEAT ASKS. `sentryDue` is
+        // false precisely while a round is on the board, so nothing above ever
+        // looks at the round that IS running — and that is the one state the
+        // campaign cannot recover from by itself: a session parked on a
+        // permission prompt never ends, so nothing ever drives the loop again.
+        // Still no second scheduler: the same beat, a different question.
+        this.watchSentryRound(now);
+    }
+
+    /**
+     * ‼️ X-178 — IS THE ROUND ON THE BOARD STILL ALIVE?
+     *
+     * The decision is `stalledRound` and every rule is in it; this reads the one
+     * fact it needs and carries out what it says. Only the RUNNER window may do
+     * this — a follower mirrors the store (B11) and would be killing a process
+     * it does not own.
+     *
+     * ‼️ ENDED AS FAILED, NEVER AS CANCELLED. Cancelling the round the sentry is
+     * running is the USER saying stop, and the driver reads it that way and ends
+     * the campaign — which is the opposite of what a watchdog is for. A failed
+     * round is a barren one, so three stalls in a row still hit the failure
+     * brake and a genuinely broken setup still stops.
+     */
+    private watchSentryRound(now: number): void {
+        const rec = this.sentry;
+        if (!rec || rec.status !== 'running' || !this.runner()) { return; }
+        const round = this.tasks.find(t => !!t && t.sentryOf === rec.id
+            && (t.status === 'running' || t.status === 'queued'));
+        if (!round) { return; }
+        const seen = this.lastActivityOf(round);
+        const v = stalledRound({
+            round: {
+                id: round.id, status: String(round.status ?? ''),
+                ...(round.startedAt ? { startedAt: round.startedAt } : {})
+            },
+            ...(seen ? { lastActivityAt: seen } : {}),
+            limitMin: this.opts.sentryStallMin?.() ?? SENTRY_DEFAULT_STALL_MIN,
+            now
+        });
+        if (!v.stalled) { return; }
+        const child = this.processes.get(round.id);
+        if (child) { this.killProcess(round.id, child); }
+        noteTaskEvent(round, 'finished', `ended by the sentry watchdog — ${v.why}`);
+        // ‼️ AND IT IS NOT RETRIED. A retry re-runs THIS row, with the same
+        // prompt and the same permission mode, into the same parked prompt —
+        // and holds the campaign for another watchdog period while it does it.
+        // The campaign's own next round is the retry, and it is a fresh reading
+        // of the backlog.
+        this.finish(round, 'failed', { retry: false });
+        // Silent stopping is forbidden by name in this item: the user finds this
+        // in the morning without going looking for it.
+        this.opts.announce?.({
+            key: `sentry-stall:${round.id}`,
+            title: `Sentry round ended — ${round.title}`,
+            body: v.why,
+            level: 2
+        });
+    }
+
+    /**
+     * The newest moment anything was SEEN from a run: its own output file, as
+     * the filesystem stamps it.
+     *
+     * ‼️ THE CHEAPEST HONEST HEARTBEAT, and engine-agnostic — every engine's
+     * lines go through the same runner into the same file, so nothing here has
+     * to know one CLI's streaming format from another's. It is also the exact
+     * signature of the state being watched for: a session waiting on a
+     * permission prompt has printed the question and then nothing.
+     *
+     * 0 when there is no file yet, which is "not measured" rather than "silent"
+     * — `stalledRound` refuses to end a round on that.
+     */
+    private lastActivityOf(task: FarmTask): number {
+        if (!task.outputFile) { return 0; }
+        try { return Math.round(fs.statSync(task.outputFile).mtimeMs); } catch { return 0; }
     }
 
     private launch(task: FarmTask): boolean {
@@ -3645,7 +3725,7 @@ export class TaskManager implements vscode.Disposable {
         });
     }
 
-    private finish(task: FarmTask, status: TaskStatus): void {
+    private finish(task: FarmTask, status: TaskStatus, o?: { retry?: boolean }): void {
         task.status = status;
         task.endedAt = Date.now();
         // ‼️ M-12 — THE CLASS IS RECORDED THE MOMENT THE RUN ENDS, and at this
@@ -3663,7 +3743,10 @@ export class TaskManager implements vscode.Disposable {
             + (status === 'failed' ? ` — ${describeFailurePhase(task)}` : ''));
         this.save();
         this.pump();
-        if (status === 'failed') { this.maybeScheduleRetry(task); }
+        // ‼️ X-178 — `retry: false` is the watchdog's ending, and it is the one
+        // failure that must NOT be retried: the row it would re-run is the row
+        // that went quiet.
+        if (status === 'failed' && o?.retry !== false) { this.maybeScheduleRetry(task); }
         // ‼️ M-27 — AND AN ANSWERED ROUND OPENS THE NEXT ONE. Before the
         // workflow branch below, because a task with rounds is never a workflow
         // step (planNextRound refuses one) and putting it after would make the
@@ -4306,6 +4389,24 @@ export class TaskManager implements vscode.Disposable {
     }
 
     /** Write what a driver step decided onto the record, in one store write. */
+    /**
+     * ‼️ X-178 — WHICH SIGN-INS HAVE FALLEN, AND WHICH OF THAT IS NEWS.
+     *
+     * The decision is `slotHealth`; this holds the record it is decided against
+     * and answers with what the host should announce. Returns undefined when
+     * there is no campaign — a fleet nobody is running unattended has nothing
+     * to be told about at two in the morning.
+     */
+    applySentrySlotHealth(usage: SlotUsage[]): SlotHealth | undefined {
+        if (!this.sentry) { return undefined; }
+        const h = slotHealth(this.sentry.downSlots, usage);
+        if (h.newlyDown.length || h.recovered.length) {
+            if (h.down.length) { this.sentry.downSlots = h.down; } else { delete this.sentry.downSlots; }
+            this.save();
+        }
+        return h;
+    }
+
     applySentry(step: SentryStep, taskId?: string): void {
         if (!this.sentry) { return; }
         applySentryStep(this.sentry, step, taskId, Date.now());

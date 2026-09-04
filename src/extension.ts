@@ -127,6 +127,7 @@ import {
 import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
 } from './core/sentryCampaign';
+import { SENTRY_DEFAULT_STALL_MIN } from './core/sentryWatch';
 import { SENTRY_DEFAULT_FAIL_LIMIT, sentryStep } from './core/sentryDriver';
 import { SENTRY_DEFAULT_CEILING } from './core/sentryRun';
 import { measureSession } from './core/sentryMeasure';
@@ -2951,6 +2952,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // no vault path, no git and no backlog file; see `sentryTick`.
             sentryTick: (task) => sentryTick(task),
             sentryPollMin: () => cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),
+            // X-178 — how long a round may say nothing before the watchdog ends
+            // it. 0 switches the watchdog off; the manager holds the rule.
+            sentryStallMin: () => cfg().get<number>('sentryStallMin', SENTRY_DEFAULT_STALL_MIN),
             maxConcurrent: () => cfg().get<number>('maxConcurrentTasks', 2),
             maxConcurrentPerAgent: () => cfg().get<number>('maxConcurrentPerAgent', 1),
             outputsMaxMB: () => cfg().get<number>('outputsMaxMB', 200),
@@ -23606,6 +23610,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ? accountUsage.current().filter(u => String(u.engine ?? '').toLowerCase() === engineId)
             : [];
 
+        // ‼️ X-178 — AND WHETHER THE ACCOUNTS THEMSELVES ARE STILL THERE.
+        //
+        // A rejected sign-in has never stopped a campaign — `slotIsUsable`
+        // refuses it and `mostRoom` picks from the rest — so the only failure
+        // left is nobody being TOLD, which is the same loss in slow motion: the
+        // user finds out in the morning by wondering why one account was never
+        // touched. Announced once per fall (the record holds what was already
+        // reported), and re-armed when the slot answers again.
+        const health = taskManager.applySentrySlotHealth(usage);
+        for (const id of health?.newlyDown ?? []) {
+            const rest = usage.filter(u => u.slotId !== id && u.state !== 'expired' && u.state !== 'no-auth');
+            noticesStore.add({
+                title: `Sentry - ${id} needs signing in again`,
+                type: 'alert',
+                level: health?.anyUsable ? 2 : 3,
+                body: health?.anyUsable
+                    ? `The endpoint rejected ${id}'s token, so the campaign is not using it. It carries `
+                        + `on with the other ${rest.length} account(s) — sign in again to bring it back.`
+                    : `The endpoint rejected ${id}'s token, and it was the last account this campaign `
+                        + 'could use. Nothing will be opened until one of them is signed in again — the '
+                        + 'campaign is standing, not stopped, so signing in is all it needs.',
+                agentName: rec.agent,
+                projectId: doc.project.id,
+                tags: ['sentry']
+            });
+        }
+
         const step = sentryStep({
             campaign: rec,
             ...(finishedTask && facts ? {
@@ -31402,6 +31433,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     failLimit: limit,
                     failStreak: rec.failStreak ?? 0,
                     idlePollMin: cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),
+                    // X-178 — the watchdog's limit and the sign-ins that have
+                    // fallen: an agent asked to explain why a night produced
+                    // three rounds instead of eight needs both, and neither can
+                    // be worked out from the rows.
+                    stallMin: cfg().get<number>('sentryStallMin', SENTRY_DEFAULT_STALL_MIN),
+                    downSlots: rec.downSlots ?? [],
                     // ‼️ WHAT THE NEXT ROUND WILL ACTUALLY OPEN ON. A campaign
                     // sleeping through a quota wall already knows its next
                     // sentence — it was built when the last round ended — and a

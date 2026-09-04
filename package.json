@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.378.0",
+  "version": "3.379.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9718,6 +9718,12 @@
           "default": 10,
           "minimum": 1,
           "description": "How often, in minutes, an IDLING sentry campaign looks at the backlog again. An empty backlog is a wait rather than a finish, so something has to notice the item you write tomorrow morning \u2014 and that something is the beat the farm already keeps, not a timer of the sentry's own. It does not apply while a round is on the board (that round ending is what drives the next one) and it never shortens a measured sleep: a three-hour quota wall is waited out, not poked every ten minutes."
+        },
+        "agentFarm.sentryStallMin": {
+          "type": "number",
+          "default": 45,
+          "minimum": 0,
+          "description": "How long, in minutes, a sentry round may say nothing before the watchdog ends it. The campaign's loop is driven by rounds ENDING, so a round that never ends holds it for ever — and an unattended session parked on a permission prompt is exactly that: it spends nothing, so the quota never breaks the deadlock either. Silence is measured from the run's own output, so a thinking turn is never touched. The round is ended as FAILED (which counts against the failure brake), never as cancelled (which is your hand and would stop the campaign), and it is not retried. 0 switches the watchdog off."
         },
         "agentFarm.promptSnippetsFile": {
           "type": "string",

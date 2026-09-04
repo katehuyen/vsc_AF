@@ -216,6 +216,7 @@ const CATEGORY_OF: Record<string, string> = {
     // opening task rows, not a prompt somebody pastes into a box (ONE SUBJECT).
     sentryFailureLimit: 'tasks',
     sentryIdlePollMin: 'tasks',
+    sentryStallMin: 'tasks',
     // media pipeline & browser
     mediaAuthSecret: 'media', replicateAuthSecret: 'media', replicateBaseUrl: 'media',
     mediaBaseUrl: 'media', outputsMaxMB: 'media', ingestFolders: 'media',

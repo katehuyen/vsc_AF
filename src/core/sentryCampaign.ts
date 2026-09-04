@@ -74,6 +74,17 @@ export interface SentryRecord extends SentryCampaign {
     /** why it stopped, when it was not simply switched off */
     stoppedWhy?: string;
     /**
+     * ‼️ X-178 — THE SIGN-INS THIS CAMPAIGN HAS ALREADY REPORTED AS FALLEN.
+     *
+     * A rejected account does not stop the campaign — `slotIsUsable` refuses it
+     * and the rest carry the work — so the only thing that CAN go wrong is
+     * nobody being told. This is what turns "told" into "told once": a campaign
+     * that runs for three days would otherwise post the same alert every poll,
+     * and an alert that repeats is an alert nobody reads. Cleared as each slot
+     * answers again, so the second fall is news as well.
+     */
+    downSlots?: string[];
+    /**
      * ‼️ THE DIMENSIONS EVERY ROUND IS OPENED WITH. `permissionMode` is the one
      * that is not a nicety: an unattended headless session that stops to ask
      * permission is a session that never ends, on an account nobody is watching.

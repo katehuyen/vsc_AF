@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.379.0 - X-178: the watchdog, and a sign-in that falls at two in the morning (2026-09-04)
+
+The campaign's loop is driven by rounds ENDING. That left one state nothing could
+recover from — a round that never ends — and the quota does not break it either,
+because a session parked on a permission prompt spends nothing.
+
+- **A watchdog on the beat the farm already keeps** (no second scheduler): the same pump
+  tick that asks "is the campaign due?" now also asks "is the round on the board still
+  alive?". Silence is measured from the run's own output, so it is engine-agnostic and a
+  thinking turn is never touched. `agentFarm.sentryStallMin`, default 45 minutes, 0 to
+  switch it off.
+- **‼️ The stalled round is ended as FAILED, never as cancelled.** Cancelling the round
+  the sentry is running is your hand on the campaign and stops it — the opposite of what
+  a watchdog is for. Failed is a barren round, so three stalls in a row still hit the
+  failure brake and a genuinely broken setup still ends. It is **not retried**: the row a
+  retry would re-run is the row that went quiet.
+- **The reason is written down in three places** — the row's own event, a level-2 notice,
+  and the campaign's next decision. Silent stopping is forbidden by the item's own words.
+- **A fallen sign-in is now reported.** It never stopped the campaign (an expired slot is
+  already refused and the rest carry the work) — but nobody was told, which is the same
+  loss in slow motion. Told **once per fall**, re-armed when the slot answers again, and
+  raised to level 3 with different words when it was the last usable account.
+- `sentry.status` now carries `stallMin` and `downSlots`.
+
 ## 3.378.0 - X-177: the sentry, in one line, where your eye already is (2026-09-04)
 
 The other half of the item. Missions carries the campaign's setup and its history; the
