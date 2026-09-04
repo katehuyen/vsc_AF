@@ -165,7 +165,8 @@ af-role: backlog
 
 # {project} — Backlog
 
-<!-- Every field is OPTIONAL: a line of plain text is a valid item.
+<!-- Plain text without an area is only for quick inbox thoughts. When opening an item,
+     filling in the axes below (area, kind, priority, effort) is strongly expected:
 
      - [ ] P-5 What to do  #bug 🔺 [effort:: S] [parent:: P-1] ⛔ P-3 [plan:: afprj-05]
 
