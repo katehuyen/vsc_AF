@@ -613,6 +613,42 @@
       }
     },
     {
+      "capability": "base.ts#svc-allow-add",
+      "ui": [
+        "page:base.ts#svc-allow-add"
+      ],
+      "ops": [
+        "settings.set"
+      ]
+    },
+    {
+      "capability": "base.ts#svc-allow-remove",
+      "ui": [
+        "page:base.ts#svc-allow-remove"
+      ],
+      "ops": [
+        "settings.set"
+      ]
+    },
+    {
+      "capability": "base.ts#svc-set",
+      "ui": [
+        "page:base.ts#svc-set"
+      ],
+      "ops": [
+        "settings.set"
+      ]
+    },
+    {
+      "capability": "base.ts#svc-verify",
+      "ui": [
+        "page:base.ts#svc-verify"
+      ],
+      "ops": [
+        "telegram.status"
+      ]
+    },
+    {
       "capability": "base.ts#wikiAsk",
       "ui": [
         "page:base.ts#wikiAsk"
@@ -1101,6 +1137,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#setAccount",
+      "ui": [
+        "page:consolePanel.ts#setAccount"
+      ],
+      "ops": [
+        "console.start"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#setEffort",
       "ui": [
         "page:consolePanel.ts#setEffort"
@@ -1120,24 +1165,6 @@
       }
     },
     {
-      "capability": "consolePanel.ts#setAccount",
-      "ui": [
-        "page:consolePanel.ts#setAccount"
-      ],
-      "ops": [
-        "console.start"
-      ]
-    },
-    {
-      "capability": "consolePanel.ts#setRoute",
-      "ui": [
-        "page:consolePanel.ts#setRoute"
-      ],
-      "ops": [
-        "console.start"
-      ]
-    },
-    {
       "capability": "consolePanel.ts#setModel",
       "ui": [
         "page:consolePanel.ts#setModel"
@@ -1155,6 +1182,15 @@
         "kind": "visual",
         "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
       }
+    },
+    {
+      "capability": "consolePanel.ts#setRoute",
+      "ui": [
+        "page:consolePanel.ts#setRoute"
+      ],
+      "ops": [
+        "console.start"
+      ]
     },
     {
       "capability": "consolePanel.ts#setSessionColor",
@@ -1738,6 +1774,33 @@
       ],
       "ops": [
         "sessions.files"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#accountActivate",
+      "ui": [
+        "page:enginesPanel.ts#accountActivate"
+      ],
+      "ops": [
+        "accounts.activate"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#accountCapture",
+      "ui": [
+        "page:enginesPanel.ts#accountCapture"
+      ],
+      "ops": [
+        "accounts.capture"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#accountForget",
+      "ui": [
+        "page:enginesPanel.ts#accountForget"
+      ],
+      "ops": [
+        "accounts.forget"
       ]
     },
     {
@@ -6707,6 +6770,42 @@
       ]
     },
     {
+      "capability": "toolboxPanel.ts#hooks-clear-port",
+      "ui": [
+        "page:toolboxPanel.ts#hooks-clear-port"
+      ],
+      "ops": [
+        "hooks.port.clear"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#hooks-install",
+      "ui": [
+        "page:toolboxPanel.ts#hooks-install"
+      ],
+      "ops": [
+        "hooks.install"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#hooks-remove",
+      "ui": [
+        "page:toolboxPanel.ts#hooks-remove"
+      ],
+      "ops": [
+        "hooks.remove"
+      ]
+    },
+    {
+      "capability": "toolboxPanel.ts#hooks-restart",
+      "ui": [
+        "page:toolboxPanel.ts#hooks-restart"
+      ],
+      "ops": [
+        "hooks.listener.restart"
+      ]
+    },
+    {
       "capability": "toolboxPanel.ts#mcp-def",
       "ui": [
         "page:toolboxPanel.ts#mcp-def"
@@ -6794,42 +6893,6 @@
       ],
       "ops": [
         "toolbox.copy"
-      ]
-    },
-    {
-      "capability": "base.ts#svc-allow-add",
-      "ui": [
-        "page:base.ts#svc-allow-add"
-      ],
-      "ops": [
-        "settings.set"
-      ]
-    },
-    {
-      "capability": "base.ts#svc-allow-remove",
-      "ui": [
-        "page:base.ts#svc-allow-remove"
-      ],
-      "ops": [
-        "settings.set"
-      ]
-    },
-    {
-      "capability": "base.ts#svc-set",
-      "ui": [
-        "page:base.ts#svc-set"
-      ],
-      "ops": [
-        "settings.set"
-      ]
-    },
-    {
-      "capability": "base.ts#svc-verify",
-      "ui": [
-        "page:base.ts#svc-verify"
-      ],
-      "ops": [
-        "telegram.status"
       ]
     },
     {
@@ -7087,42 +7150,6 @@
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
-    },
-    {
-      "capability": "toolboxPanel.ts#hooks-install",
-      "ui": [
-        "page:toolboxPanel.ts#hooks-install"
-      ],
-      "ops": [
-        "hooks.install"
-      ]
-    },
-    {
-      "capability": "toolboxPanel.ts#hooks-remove",
-      "ui": [
-        "page:toolboxPanel.ts#hooks-remove"
-      ],
-      "ops": [
-        "hooks.remove"
-      ]
-    },
-    {
-      "capability": "toolboxPanel.ts#hooks-restart",
-      "ui": [
-        "page:toolboxPanel.ts#hooks-restart"
-      ],
-      "ops": [
-        "hooks.listener.restart"
-      ]
-    },
-    {
-      "capability": "toolboxPanel.ts#hooks-clear-port",
-      "ui": [
-        "page:toolboxPanel.ts#hooks-clear-port"
-      ],
-      "ops": [
-        "hooks.port.clear"
-      ]
     }
   ]
 }

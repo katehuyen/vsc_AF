@@ -61,9 +61,33 @@ export interface EnginesPanelDeps {
      * redact" — answers no.
      */
     accounts?(): {
-        id: string; engine: string; label: string; email: string;
+        id: string; engine: string; label: string; email: string; plan: string;
         health: string; active: boolean; percent: number; resetsAt: number;
+        usageState: string; note: string; capturedAt: number; dir: string;
     }[];
+    /**
+     * ‼️ X-172 — WHAT EACH ENGINE CAN DO ABOUT ACCOUNTS AT ALL, and it is the
+     * half that decides whether a Capture button is honest. Three of the five
+     * have no verified way to keep two identities apart, so a picker listing
+     * them offers a gesture whose only outcome is a refusal. The page does not
+     * hide them either — it says why, in the adapter's own words.
+     */
+    accountEngines(): {
+        engine: string; support: string; variable: string | null;
+        canCapture: boolean; why: string; layout: string;
+    }[];
+    /**
+     * ‼️ X-172 — THE THREE GESTURES, AND THEY ARE NOT OPTIONAL.
+     *
+     * `accounts()` is optional because an empty list is the ordinary answer on
+     * a machine that has captured none, and nothing is drawn for it. A WRITER
+     * is the opposite case: the page draws the button either way, so a missing
+     * dep would be a control that looks alive and does nothing. Each answers
+     * with the refusal to show, or an empty string when it went through.
+     */
+    captureAccount(engine: string, label: string): Promise<string>;
+    activateAccount(id: string, engine: string): Promise<string>;
+    forgetAccount(id: string): Promise<string>;
     /** who is the authority for which data — the item's first acceptance line,
      *  and it is only met if a person can SEE it */
     ownership(): OwnershipRow[];
@@ -97,6 +121,9 @@ function buildData(deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestRes
         // empty list is the ordinary answer on a machine that has captured
         // none, and nothing is drawn for it.
         accounts: deps.accounts?.() ?? [],
+        // …and what each engine could do about one at all, which is what makes
+        // the Capture picker offer only the engines it can really serve.
+        accountEngines: deps.accountEngines(),
         ownership: deps.ownership()
     };
 }
@@ -190,6 +217,30 @@ export class EnginesPanel {
                 // moment at which the page holds a credential.
                 this.deps.profileKey(String(msg.id ?? ''), String(msg.label ?? msg.id ?? ''));
                 break;
+            /* ---- X-172 — the sign-ins this machine holds ---------------- */
+            //
+            // ‼️ EVERY ONE OF THESE CALLS THE FUNCTION THE BRIDGE OP CALLS.
+            // The page names an account and an engine; which files move,
+            // whether it is allowed at all and what it costs is decided in one
+            // place, so `accounts.capture` and this button cannot come to mean
+            // two different things.
+            case 'accountCapture':
+                await this.wroteAccount(await this.deps.captureAccount(
+                    String(msg.engine ?? ''), String(msg.label ?? '')));
+                break;
+            case 'accountActivate':
+                // An empty id is a real answer and the way BACK: it clears the
+                // engine rather than naming an account, which is the main
+                // sign-in — the absence of a choice, not a row.
+                await this.wroteAccount(await this.deps.activateAccount(
+                    String(msg.id ?? ''), String(msg.engine ?? '')));
+                break;
+            case 'accountForget':
+                // Bookkeeping only: the directory is left on disk. Deleting
+                // somebody's stored sign-in because they tidied a list is not
+                // recoverable, so the page is not given that switch at all.
+                await this.wroteAccount(await this.deps.forgetAccount(String(msg.id ?? '')));
+                break;
             case 'engineDocs':
                 // https only — a docs button is not a way to open anything else.
                 if (typeof msg.url === 'string' && /^https:\/\//.test(msg.url)) {
@@ -211,6 +262,16 @@ export class EnginesPanel {
         }
         await this.panel.webview.postMessage({ type: 'prov-msg', text: '' });
         this.refresh();
+    }
+
+    /**
+     * X-172 — the same rule as `write`, for the accounts section: a refusal
+     * lands in the section it happened in rather than in a toast that outlives
+     * the press. Nothing was written when there is one, so nothing is redrawn.
+     */
+    private async wroteAccount(refusal: string): Promise<void> {
+        await this.panel.webview.postMessage({ type: 'acc-msg', text: refusal });
+        if (!refusal) { this.refresh(); }
     }
 
     /**

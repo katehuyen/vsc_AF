@@ -23,6 +23,9 @@
     /** X-100 — every reason a route was refused, together and where it happened.
      *  A toast would outlive the form and be read against the next attempt. */
     let provMsg = '';
+    /** X-172 — a refusal from a capture, an activate or a forget, shown in the
+     *  section it happened in rather than as a toast that outlives the press. */
+    let acctMsg = '';
 
     // ‼️ M-33 — A HOST PUSH WAITS FOR THE READER'S HANDS; THE PAGE'S OWN
     // RENDERS DO NOT. render() replaces the whole of #app, so a repaint that
@@ -35,6 +38,7 @@
         if (m.type === 'data') { DATA = m.data; testing.clear(); repaint(); return; }
         if (m.type === 'eng-testing') { testing.add(m.id); render(); return; }
         if (m.type === 'prov-msg') { provMsg = String(m.text || ''); render(); return; }
+        if (m.type === 'acc-msg') { acctMsg = String(m.text || ''); render(); return; }
         if (m.type === 'eng-msg') { notes[m.id] = String(m.text || ''); render(); }
     });
 
@@ -155,17 +159,9 @@
         const T = window.AFTip;
         const on = mine.find(a => a.active);
         const spent = (a) => a.percent >= 0 ? a.percent + '% of the 5-hour window used' : '';
-        // ‼️ THE WALL TIME AND THE WAIT, because they answer different
-        // questions — "can I start something now" and "is it worth waiting".
-        // `AFTime.ago` is deliberately not used: it is written for the PAST and
-        // a reset is in the future, so it would print "37m ago" about a window
-        // that has not turned over yet.
-        const turns = (a) => {
-            if (!a.resetsAt) { return ''; }
-            const mins = Math.max(0, Math.round((a.resetsAt - Date.now()) / 60000));
-            const wait = mins < 60 ? mins + 'm' : Math.round(mins / 60) + 'h';
-            return 'window turns over at ' + window.AFTime.clock(a.resetsAt) + ' (in ' + wait + ')';
-        };
+        // The countdown is accountTurns' — the card below says the same thing,
+        // and one page may not hold two answers to one question.
+        const turns = accountTurns;
         const lines = mine.map(a =>
             (a.active ? '→ ' : '   ') + (a.label || a.id)
             + (a.email && a.email !== a.label ? ' · ' + a.email : '')
@@ -335,6 +331,162 @@
             + '</div></div>';
     }
 
+    /**
+     * ‼️ X-172 — WHEN THAT PLAN'S WINDOW TURNS OVER, in one function, because
+     * the chip and the card both say it and two answers to one question on one
+     * page is the drift this repo keeps paying for.
+     *
+     * THE WALL TIME AND THE WAIT together: they answer different questions —
+     * "can I start something now" and "is it worth waiting". `AFTime.ago` is
+     * deliberately not used: it is written for the PAST and a reset is in the
+     * future, so it would print "37m ago" about a window that has not turned
+     * over yet.
+     */
+    /** The engine's own name, from the matrix the page already has. Every card
+     *  above says "Claude Code" and "Antigravity"; a section under them saying
+     *  "claude" and "agy" reads as a different product. The id is kept only on
+     *  the technical line, where it sits beside the slot id it matches. */
+    const engineLabel = (id) =>
+        ((DATA.engines || []).find(e => e.id === id) || {}).label || id;
+
+    function accountTurns(a) {
+        if (!a.resetsAt) { return ''; }
+        const mins = Math.max(0, Math.round((a.resetsAt - Date.now()) / 60000));
+        const wait = mins < 60 ? mins + 'm' : Math.round(mins / 60) + 'h';
+        return 'window turns over at ' + window.AFTime.clock(a.resetsAt) + ' (in ' + wait + ')';
+    }
+
+    /**
+     * ONE CAPTURED SIGN-IN. The chip on the engine card answers "on whose plan"
+     * in two words; this is the row that can be acted on.
+     *
+     * ‼️ -1 IS NOT 0%. An account nobody has read a figure for and an account
+     * with nothing left would draw the same empty bar, and one of them is ready
+     * to work — so a bar is drawn ONLY where a percentage was really read, and
+     * the other two states say which one they are in their own words.
+     */
+    function accountCardHtml(a) {
+        const T = window.AFTip;
+        const read = a.percent >= 0;
+        const hot = a.percent >= 90 ? 'hot' : a.percent >= 75 ? 'warn' : '';
+        const window5 = read
+            ? '<div class="acwin">'
+            + '<div class="acwt"><span>five-hour window</span><strong>' + a.percent + '%</strong></div>'
+            + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>'
+            + '<div class="acsub">' + esc(accountTurns(a) || 'no reset time was read') + '</div></div>'
+            : '<div class="acnone">five-hour window — '
+            + (a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired'
+                ? 'needs signing in again, so nothing was read'
+                : 'not read yet') + '</div>';
+        const stand = a.active
+            ? T.wrap('<button class="secondary small" data-acmain="' + esc(a.engine) + '">Main account</button>',
+                'Stand this one down',
+                'The next ' + engineLabel(a.engine) + ' session goes back to the main sign-in — the identity this '
+                + 'machine is logged in as, for which nothing is injected at all. It changes nothing that '
+                + 'is already running: an account is fixed for a session the way a route is.')
+            : T.wrap('<button class="small" data-acuse="' + esc(a.id) + '" data-acengine="' + esc(a.engine) + '">Use next</button>',
+                'The next ' + engineLabel(a.engine) + ' session opens as ' + (a.label || a.id),
+                'Nothing already running moves — starting on another account means starting another '
+                + 'session. An account is deliberately not remembered per agent: it is a state (how much '
+                + 'of a plan is left, which changes hourly), not a preference, so this one place holds it '
+                + 'and a launch that names its own account still wins.');
+        return '<div class="accard' + (a.active ? ' a-now' : '') + '">'
+            + '<div class="pohead">'
+            + '<span class="poname">' + esc(a.label || a.id) + '</span>'
+            + (a.email && a.email !== a.label
+                ? T.wrap('<span class="poid">' + esc(a.email) + '</span>', 'id: ' + a.id,
+                    'The address the engine itself reports for this sign-in. The id is what a launch names '
+                    + 'and what the directory is called: ' + (a.dir || 'under the accounts root') + '.')
+                : '')
+            + (a.plan ? '<span class="acplan">' + esc(a.plan) + '</span>' : '')
+            + (a.active ? '<span class="acnow">standing</span>' : '')
+            + (a.health === 'ready' ? ''
+                : T.wrap('<span class="acbad">' + esc(a.health === 'needs-signin' ? 'needs signing in' : 'unreadable') + '</span>', 'This sign-in is not usable',
+                    'The stored credential no longer refreshes, and only a person can fix it: sign in '
+                    + 'again in a terminal and capture it once more. Nothing here can renew it.'))
+            + '<span class="grow"></span>'
+            + stand
+            + T.wrap('<button class="secondary small" data-acforget="' + esc(a.id) + '">Forget</button>',
+                'Drop it from this list',
+                'Bookkeeping, not a deletion: the directory is left on disk, so capturing it again brings '
+                + 'it back. An account that was standing stops being it in the same act — a next session '
+                + 'pointed at an id that names nothing would silently fall back to whoever is signed in.')
+            + '</div>'
+            + window5
+            + '<div class="pobody muted small">' + esc(a.engine)
+            + (a.capturedAt ? ' · captured ' + esc(age(a.capturedAt, DATA.now)) : '')
+            + ' · ' + esc(a.id)
+            + (a.note ? ' · ' + esc(a.note) : '') + '</div></div>';
+    }
+
+    /**
+     * ‼️ X-172 — THE SIGN-INS THIS MACHINE HOLDS, AND THE THREE GESTURES.
+     *
+     * The chip slice made the page SAY which account each engine is plugged
+     * into and left every gesture on the bridge. A page that shows a state it
+     * cannot change is the same dead end this page was built to remove — "not
+     * configured" with nothing attached to it, in a new costume.
+     *
+     * ‼️ CAPTURE IS OFFERED ONLY WHERE IT CAN WORK. Three of the five engines
+     * have no verified way to keep two identities apart, so a picker listing
+     * them would offer a gesture whose only outcome is a refusal. They are not
+     * hidden either — they say WHY, in the adapter's own words, because "it is
+     * not in the list" is the answer that sends somebody looking for a setting.
+     */
+    function accountsHtml() {
+        const T = window.AFTip;
+        const list = DATA.accounts || [];
+        const engines = DATA.accountEngines || [];
+        const can = engines.filter(e => e.canCapture);
+        const cannot = engines.filter(e => !e.canCapture);
+        const form = can.length
+            ? '<div class="poform">'
+            + T.wrap('<select id="ac-engine">'
+                + can.map(e => '<option value="' + esc(e.engine) + '">' + esc(engineLabel(e.engine))
+                    + (e.support === 'declared' ? ' (unproven here)' : '') + '</option>').join('')
+                + '</select>', 'Whose sign-in is being sealed',
+                can.map(e => engineLabel(e.engine) + ' — ' + (e.variable || 'no variable') + ' · ' + e.support
+                    + '\n' + e.why).join('\n\n'))
+            + T.wrap('<input id="ac-label" placeholder="what to call it">', 'A name for this account',
+                'Free to change at any time, and free to leave empty — the address the engine reports is '
+                + 'the fallback. It is not the id: the id is minted from the address and cannot change, '
+                + 'because the directory is named after it.')
+            + T.wrap('<button class="small" data-accapture="1" id="ac-add">Capture this sign-in</button>',
+                'Seal the sign-in that is on this disk right now',
+                'It opens no browser and signs nobody in: you sign in normally once, and this reads the '
+                + 'address and plan off the disk, copies the identity files into a directory of their own, '
+                + 'and links the session records back at the one root Agent Farm indexes — so history, '
+                + 'resume and cost keep working. Capturing is a COPY: the account being sealed stays '
+                + 'signed in and any session running as it is untouched.\n\n'
+                + 'It does NOT become the standing choice. The next session opens on whatever is standing '
+                + 'now, and the new card is where you change that.')
+            + '</div>'
+            : '';
+        return '<div class="posec">'
+            + '<h3 class="potitle">Accounts</h3>'
+            + '<p class="englede">More than one sign-in of the same engine, without signing in and out. '
+            + '<b>An account is a config directory, not a copied credential:</b> starting a session with '
+            + 'one set points the engine at that directory through its own variable, so the session you '
+            + 'are talking to right now is never touched and two accounts can run at once. '
+            + '<b>The main sign-in — the identity this machine is logged in as — is the ABSENCE of a '
+            + 'choice rather than a row:</b> nothing is injected for it, and that is what every session '
+            + 'did before accounts existed. <b>No credential is on this page in either direction</b>; an '
+            + 'account here is an address, a plan, a health verdict and a percentage.</p>'
+            + form
+            + '<div class="pomsg" id="ac-msg">' + esc(acctMsg) + '</div>'
+            + (list.length
+                ? list.map(accountCardHtml).join('')
+                : '<div class="muted small">No sign-in has been sealed on this machine yet. Every session '
+                + 'runs as the main account — which is the ordinary answer, not a fault.</div>')
+            + (cannot.length
+                ? '<div class="acwhy muted small">No second sign-in on '
+                + cannot.map(e => T.wrap('<b>' + esc(engineLabel(e.engine)) + '</b>',
+                    engineLabel(e.engine) + ' cannot hold a second sign-in', e.why)).join(', ')
+                + ' — hover for what each one was found to do instead.</div>'
+                : '')
+            + '</div>';
+    }
+
     function providersHtml() {
         const profiles = DATA.profiles || [];
         return '<div class="posec">'
@@ -455,6 +607,33 @@
                     background:var(--vscode-inputValidation-warningBackground,#663);
                     padding:5px 8px; border-radius:5px; }
                 .englede { max-width:820px; margin:0 0 14px; font-size:12px; opacity:.8; }
+                /* ‼️ X-172 — accounts. The card, the head and the body are the
+                   ROUTES' classes (.pocard is .accard's twin and .pohead/.pobody
+                   are shared outright): two sections of one page that look like
+                   two products is the fault a new CSS family here would ship.
+                   What is new is only what a plan figure needs. */
+                .accard { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px;
+                    padding:8px 11px; margin-bottom:8px; }
+                /* the standing one wears the rule, in the SAME blue as the chip on
+                   its engine card — one colour for one fact across the page */
+                .accard.a-now { border-left:3px solid var(--vscode-charts-blue,#3794ff); }
+                .acplan, .acnow, .acbad { font-size:10px; padding:1px 8px; border-radius:9px;
+                    white-space:nowrap; border:1px solid var(--vscode-widget-border,#4446); }
+                .acnow { background:var(--vscode-charts-blue,#3794ff); color:#fff; border-color:transparent; }
+                /* a dead sign-in is YOUR MOVE, not a system error: the same yellow
+                   the held verdict and the keyless route wear. */
+                .acbad { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
+                    border-color:transparent; cursor:help; }
+                .acwin { margin-top:6px; max-width:420px; }
+                .acwt { display:flex; justify-content:space-between; align-items:baseline;
+                    gap:8px; font-size:12px; }
+                .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
+                .acnone { margin-top:6px; font-size:12px; }
+                .acwhy { margin-top:8px; }
+                .poform select { font-size:12px; padding:3px 6px;
+                    background:var(--vscode-input-background); color:var(--vscode-input-foreground);
+                    border:1px solid var(--vscode-input-border,#4446); border-radius:4px; }
+                #ac-label { width:220px; }
                 /* X-100 — providers */
                 .posec { margin-top:22px; border-top:1px solid var(--vscode-widget-border,#4443); padding-top:14px; }
                 .potitle { font-size:14px; margin:0 0 8px; }
@@ -517,6 +696,7 @@
                 and it costs one real turn. ⊘ means the check declined to run: nothing was called, and the row
                 says what you can do about it.</p>
             ${list.map(cardHtml).join('')}
+            ${accountsHtml()}
             ${providersHtml()}`;
         wire();
     }
@@ -550,6 +730,22 @@
                 }
             }));
         }
+        /* ---- X-172 — the accounts. The page names an account and an engine;
+           WHICH files move, whether it is allowed at all and what it costs is
+           the host's, through the very functions the bridge ops call. */
+        document.querySelectorAll('[data-acuse]').forEach(b =>
+            b.addEventListener('click', () => post({
+                type: 'accountActivate', id: b.dataset.acuse, engine: b.dataset.acengine })));
+        // The way BACK: the main sign-in is the absence of a slot, so it is
+        // named by its ENGINE and clears rather than choosing.
+        document.querySelectorAll('[data-acmain]').forEach(b =>
+            b.addEventListener('click', () => post({
+                type: 'accountActivate', id: '', engine: b.dataset.acmain })));
+        document.querySelectorAll('[data-acforget]').forEach(b =>
+            b.addEventListener('click', () => post({ type: 'accountForget', id: b.dataset.acforget })));
+        document.querySelectorAll('[data-accapture]').forEach(b =>
+            b.addEventListener('click', () => post({
+                type: 'accountCapture', engine: val('ac-engine'), label: val('ac-label') })));
         document.querySelectorAll('[data-pokey]').forEach(b =>
             b.addEventListener('click', () => post({
                 type: 'providerKey', id: b.dataset.pokey, label: b.dataset.polabel })));

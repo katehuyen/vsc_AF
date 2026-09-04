@@ -42,25 +42,68 @@ const data = () => {
         accounts: [
             {
                 id: 'work-1', engine: 'claude', label: 'work@studio',
-                email: 'work@studio.example', health: 'ready', active: true,
-                percent: 91, resetsAt: NOW + 37 * 60 * 1000
+                email: 'work@studio.example', plan: 'max20x', health: 'ready', active: true,
+                percent: 91, resetsAt: NOW + 37 * 60 * 1000,
+                usageState: 'ok', note: '', capturedAt: NOW - 6 * 24 * 3600 * 1000,
+                dir: 'C:/Users/mv/AppData/agent-farm/accounts/work-1'
             },
             {
                 id: 'personal', engine: 'claude', label: 'personal@gmail',
-                email: 'personal@gmail.com', health: 'ready', active: false,
-                percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000
+                email: 'personal@gmail.com', plan: 'pro', health: 'ready', active: false,
+                percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000,
+                usageState: 'ok', note: '', capturedAt: NOW - 2 * 3600 * 1000,
+                dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
             },
             {
                 id: 'spare', engine: 'claude', label: 'spare@gmail',
-                email: 'spare@gmail.com', health: 'needs-signin', active: false,
-                percent: -1, resetsAt: 0
+                email: 'spare@gmail.com', plan: 'pro', health: 'needs-signin', active: false,
+                percent: -1, resetsAt: 0,
+                usageState: 'no-auth', note: 'The refresh token was rejected.', capturedAt: NOW - 21 * 24 * 3600 * 1000,
+                dir: 'C:/Users/mv/AppData/agent-farm/accounts/spare'
             },
             // Captured, and NOT standing — the chip says "main account" here,
             // which is the state a reader is most likely to misread as "none".
             {
                 id: 'codex-work', engine: 'codex', label: 'work@studio',
-                email: 'work@studio.example', health: 'ready', active: false,
-                percent: -1, resetsAt: 0
+                email: 'work@studio.example', plan: '', health: 'ready', active: false,
+                percent: -1, resetsAt: 0,
+                usageState: 'unread', note: '', capturedAt: NOW - 3 * 3600 * 1000,
+                dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-work'
+            }
+        ],
+        /**
+         * ‼️ X-172 — WHAT EACH ENGINE CAN DO ABOUT ACCOUNTS AT ALL, and it is
+         * the half that decides whether a CAPTURE button is honest. Three of
+         * the five have no verified way to keep two identities apart, so a
+         * picker listing them would offer a gesture whose only outcome is a
+         * refusal — the fixture carries all three answers (measured, declared,
+         * unmapped) so the page cannot be drawn against the happy one alone.
+         */
+        accountEngines: [
+            {
+                engine: 'claude', support: 'measured', variable: 'CLAUDE_CONFIG_DIR', canCapture: true,
+                why: 'Measured on this machine 2026-09-03: pointed at an empty directory, Claude Code asked to sign in again and left the main directory untouched.',
+                layout: 'An account is a config directory, chosen with CLAUDE_CONFIG_DIR before the process starts.'
+            },
+            {
+                engine: 'codex', support: 'declared', variable: 'CODEX_HOME', canCapture: true,
+                why: 'CODEX_HOME is Codex own documented override for ~/.codex, but it has NOT been run against a second identity on this side.',
+                layout: 'An account is a config directory, chosen with CODEX_HOME before the process starts.'
+            },
+            {
+                engine: 'gemini', support: 'unmapped', variable: null, canCapture: false,
+                why: 'The Gemini CLI writes its Google sign-in into ~/.gemini and this side has not verified any variable that moves it.',
+                layout: 'The Gemini CLI writes its Google sign-in into ~/.gemini and this side has not verified any variable that moves it.'
+            },
+            {
+                engine: 'opencode', support: 'unmapped', variable: null, canCapture: false,
+                why: 'OpenCode stores credentials under the shared XDG data root, which no per-session variable relocates.',
+                layout: 'OpenCode stores credentials under the shared XDG data root, which no per-session variable relocates.'
+            },
+            {
+                engine: 'agy', support: 'unmapped', variable: null, canCapture: false,
+                why: 'Antigravity is paid for by an app sign-in and keeps no credential file this side can seal into a slot.',
+                layout: 'Antigravity is paid for by an app sign-in and keeps no credential file this side can seal into a slot.'
             }
         ],
         ownership: [

@@ -16095,6 +16095,90 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             note: u?.note || ''
         };
     };
+    /* ============ X-172 — THE THREE ACTS, EACH IN ONE PLACE ================
+     *
+     * ‼️ WHY THEY ARE FUNCTIONS RATHER THAN BRIDGE HANDLERS. Until the Engines
+     * page grew its Accounts section there was exactly one door, and "which
+     * files move, and is this allowed at all" could live inside it. There are
+     * two doors now. A second copy of that reasoning is precisely how a page
+     * and its op come to mean different things — the fault the parity gate
+     * exists to catch — so the op and the button call the same function and the
+     * op keeps only the shape of its own answer.
+     *
+     * Each returns the REFUSAL to show (empty = it went through) beside
+     * whatever the caller needs to describe what happened.
+     */
+    const captureAccount = async (engine: string, label: string, activate: boolean):
+        Promise<{ refusal: string; plan: CapturePlan; slot?: EngineAccountSlot }> => {
+        const eng = (engine || '').trim() || 'claude';
+        const list = storedAccounts();
+        const plan = planCapture({
+            engine: eng, home: os.homedir(), root: accountRoot,
+            identity: liveIdentity(eng), taken: list.map(s => s.id), label: (label || '').trim()
+        });
+        if (plan.refusal) { return { refusal: plan.refusal, plan }; }
+        const failed = runCapturePlan(plan);
+        if (failed) { return { refusal: failed, plan }; }
+        const slot = plan.slot as EngineAccountSlot;
+        await writeAccounts(addSlot(list, slot));
+        // ‼️ CAPTURING IS NOT CHOOSING, and the default says so. Redirecting the
+        // next session as a side effect of writing something down would move
+        // where the money comes from without anybody asking for it.
+        if (activate) { await writeActiveAccounts({ ...activeAccounts(), [eng]: slot.id }); }
+        return { refusal: '', plan, slot };
+    };
+    /** Which account the next session on an engine opens with. An empty id is a
+     *  real answer and the way back: it CLEARS the engine rather than naming an
+     *  account, which is the main sign-in — the absence of a choice, not a row. */
+    const activateAccount = async (id: string, engine: string):
+        Promise<{ refusal: string; engine: string; active: string | null; note: string }> => {
+        const clean = (id || '').trim();
+        const active = activeAccounts();
+        if (!clean) {
+            const eng = (engine || '').trim() || 'claude';
+            const next = { ...active };
+            delete next[eng];
+            await writeActiveAccounts(next);
+            return { refusal: '', engine: eng, active: null, note: `${eng} sessions will use the main sign-in.` };
+        }
+        const slot = findSlot(storedAccounts(), clean);
+        if (!slot) {
+            return {
+                refusal: `No account "${clean}" is stored on this machine — accounts.list shows what is.`,
+                engine: '', active: null, note: ''
+            };
+        }
+        await writeActiveAccounts({ ...active, [slot.engine]: slot.id });
+        return {
+            refusal: '', engine: slot.engine, active: slot.id,
+            note: `The next ${slot.engine} session opens as ${slotLabel(slot)}.`
+        };
+    };
+    /** Drop an account from the list. The directory is left on disk unless the
+     *  caller says otherwise: forgetting is a bookkeeping act, and deleting
+     *  somebody's stored sign-in because they tidied a list is not recoverable. */
+    const forgetAccount = async (id: string, deleteFiles: boolean):
+        Promise<{ refusal: string; slot?: EngineAccountSlot; filesRemoved: boolean }> => {
+        const clean = (id || '').trim();
+        const list = storedAccounts();
+        const slot = findSlot(list, clean);
+        if (!slot) {
+            return {
+                refusal: `No account "${clean}" is stored on this machine.`, filesRemoved: false
+            };
+        }
+        await writeAccounts(forgetSlot(list, clean));
+        // ‼️ An account that WAS the standing one stops being it in the same act:
+        // a next session pointed at an id that names nothing would silently fall
+        // back to whichever identity happens to be signed in.
+        await writeActiveAccounts(forgetActive(activeAccounts(), clean));
+        let filesRemoved = false;
+        if (deleteFiles) {
+            try { fs.rmSync(slot.dir, { recursive: true, force: true }); filesRemoved = true; }
+            catch { filesRemoved = false; }
+        }
+        return { refusal: '', slot, filesRemoved };
+    };
     /**
      * ‼️ X-169 — WHICH SIGN-IN A LAUNCH RUNS ON, IN ONE FUNCTION, so no surface
      * invents its own order. What the launch itself states wins; otherwise the
@@ -16964,11 +17048,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const pub = publicAccount(sl, usage, active);
                 return {
                     id: pub.id, engine: pub.engine, label: pub.label, email: pub.email,
-                    health: pub.health, active: pub.active,
-                    percent: pub.percent, resetsAt: pub.resetsAt
+                    plan: pub.plan, health: pub.health, active: pub.active,
+                    percent: pub.percent, resetsAt: pub.resetsAt,
+                    // ‼️ usageState is what keeps -1 from reading as 0%: an account
+                    // nobody has read a figure for and one whose sign-in died draw
+                    // the same empty bar, and one of them is ready to work.
+                    usageState: pub.usageState, note: pub.note,
+                    capturedAt: pub.capturedAt, dir: pub.dir
                 };
             });
         },
+        // What each engine can do about accounts at all — the picker offers only
+        // the engines that really can, and the others say why rather than vanishing.
+        accountEngines: () => accountEngineNotes(),
+        /**
+         * ‼️ X-172 — THE PAGE'S BUTTONS AND THE BRIDGE'S OPS ARE THE SAME THREE
+         * FUNCTIONS. A page that reimplemented "seal this sign-in" would be a
+         * second answer to a question that must have exactly one, and the two
+         * would drift on the first refusal either of them learned about.
+         *
+         * Both defaults are the op's: a capture does NOT become the standing
+         * choice, and a forget does NOT delete the directory.
+         */
+        captureAccount: async (engine: string, label: string): Promise<string> =>
+            (await captureAccount(engine, label, false)).refusal,
+        activateAccount: async (id: string, engine: string): Promise<string> =>
+            (await activateAccount(id, engine)).refusal,
+        forgetAccount: async (id: string): Promise<string> =>
+            (await forgetAccount(id, false)).refusal,
         ownership: () => ownershipTable(),
         saveProfile: async (input: Record<string, unknown>): Promise<string[]> => {
             const list = providerProfiles();
@@ -30701,25 +30808,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'label? (what to call it; the address is the fallback), activate? (also make it the '
                 + 'account the next session uses, default false)',
             handler: async (args) => {
-                const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
-                const label = (optStr(args, 'label') ?? '').trim();
-                const list = storedAccounts();
-                const plan = planCapture({
-                    engine, home: os.homedir(), root: accountRoot,
-                    identity: liveIdentity(engine), taken: list.map(s => s.id), label
-                });
-                need(!plan.refusal, plan.refusal);
-                const failed = runCapturePlan(plan);
-                need(!failed, failed);
-                const slot = plan.slot as EngineAccountSlot;
-                await writeAccounts(addSlot(list, slot));
-                if (optBool(args, 'activate', false)) {
-                    await writeActiveAccounts({ ...activeAccounts(), [engine]: slot.id });
-                }
+                const done = await captureAccount(
+                    optStr(args, 'engine') ?? '', optStr(args, 'label') ?? '',
+                    optBool(args, 'activate', false));
+                need(!done.refusal, done.refusal);
+                const slot = done.slot as EngineAccountSlot;
                 return {
                     captured: publicAccount(slot, accountUsage.current(), activeAccounts()),
-                    copied: plan.copies.length, linked: plan.links.length,
-                    layout: describeSlotLayout(engine)
+                    copied: done.plan.copies.length, linked: done.plan.links.length,
+                    layout: describeSlotLayout(slot.engine)
                 };
             }
         },
@@ -30734,24 +30831,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'holds it and a launch that names its own account still wins. args: id (the account, or '
                 + '"" for the main sign-in), engine? (needed only when clearing)',
             handler: async (args) => {
-                const id = (optStr(args, 'id') ?? '').trim();
-                const list = storedAccounts();
-                const active = activeAccounts();
-                if (!id) {
-                    const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
-                    const next = { ...active };
-                    delete next[engine];
-                    await writeActiveAccounts(next);
-                    return { engine, active: null, note: `${engine} sessions will use the main sign-in.` };
-                }
-                const slot = findSlot(list, id);
-                need(!!slot, `No account "${id}" is stored on this machine — accounts.list shows what is.`);
-                const s = slot as EngineAccountSlot;
-                await writeActiveAccounts({ ...active, [s.engine]: s.id });
-                return {
-                    engine: s.engine, active: s.id,
-                    note: `The next ${s.engine} session opens as ${slotLabel(s)}.`
-                };
+                const done = await activateAccount(
+                    optStr(args, 'id') ?? '', optStr(args, 'engine') ?? '');
+                need(!done.refusal, done.refusal);
+                return { engine: done.engine, active: done.active, note: done.note };
             }
         },
         {
@@ -30800,21 +30883,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'session pointed at an id that names nothing would silently fall back to whichever '
                 + 'identity happens to be signed in. args: id, deleteFiles? (default false)',
             handler: async (args) => {
-                const id = argStr(args, 'id').trim();
-                const list = storedAccounts();
-                const slot = findSlot(list, id);
-                need(!!slot, `No account "${id}" is stored on this machine.`);
-                const s = slot as EngineAccountSlot;
-                await writeAccounts(forgetSlot(list, id));
-                await writeActiveAccounts(forgetActive(activeAccounts(), id));
-                let removed = false;
-                if (optBool(args, 'deleteFiles', false)) {
-                    try { fs.rmSync(s.dir, { recursive: true, force: true }); removed = true; }
-                    catch { removed = false; }
-                }
+                const done = await forgetAccount(
+                    argStr(args, 'id'), optBool(args, 'deleteFiles', false));
+                need(!done.refusal, done.refusal);
+                const s = done.slot as EngineAccountSlot;
                 return {
-                    forgotten: s.id, engine: s.engine, dir: s.dir, filesRemoved: removed,
-                    note: removed ? 'The account directory was deleted too.'
+                    forgotten: s.id, engine: s.engine, dir: s.dir, filesRemoved: done.filesRemoved,
+                    note: done.filesRemoved ? 'The account directory was deleted too.'
                         : `The directory is still at ${s.dir} — capture it again to bring it back.`
                 };
             }
