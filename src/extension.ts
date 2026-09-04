@@ -17138,6 +17138,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // the engines that really can, and the others say why rather than vanishing.
         accountEngines: () => accountEngineNotes(),
         /**
+         * ‼️ X-187 — THE PAGE ASKS FOR A LIVE READING, and this is where the
+         * only door that was ever wired (the bridge) stops being the only one.
+         *
+         * `accounts()` above answers from `accountUsage.current()`, which never
+         * touches the network — so on a cold host every card drew percent -1 and
+         * resetsAt 0 and the user, quite correctly, reported seeing no limit at
+         * all. `beat()` reads ONE slot and enforces the shared floor and backoff
+         * itself, which is what keeps three accounts from meaning three times
+         * the requests (X-170).
+         */
+        readAccounts: () => accountUsage.beat(),
+        // The SAME interval the single-account card is tuned to. One number,
+        // one place, because two refresh policies is how one of them ends up wrong.
+        accountBeatMs: planBeatMs,
+        /**
          * ‼️ X-172 — THE PAGE'S BUTTONS AND THE BRIDGE'S OPS ARE THE SAME THREE
          * FUNCTIONS. A page that reimplemented "seal this sign-in" would be a
          * second answer to a question that must have exactly one, and the two

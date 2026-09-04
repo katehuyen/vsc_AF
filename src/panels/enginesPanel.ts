@@ -88,6 +88,26 @@ export interface EnginesPanelDeps {
     captureAccount(engine: string, label: string): Promise<string>;
     activateAccount(id: string, engine: string): Promise<string>;
     forgetAccount(id: string): Promise<string>;
+    /**
+     * ‼️ X-187 — ASK FOR A LIVE READING. NOT OPTIONAL.
+     *
+     * `accounts()` answers from `AccountUsageService.current()`, which never
+     * touches the network. On a cold extension host that cache is EMPTY, so
+     * every card drew percent -1 and resetsAt 0 — the page reporting, quite
+     * truthfully, that nobody had ever looked. The service had a door for this
+     * (`beat()`) and only the bridge was wired to it.
+     *
+     * Required rather than optional on purpose: a missing dep here is a page
+     * that silently goes back to drawing an empty bar, which is the defect
+     * itself and would fail silently (Principle 1). One call = one slot; the
+     * service takes them in turn behind ONE machine-wide floor, so the panel
+     * never names an account and never counts requests.
+     */
+    readAccounts(): Promise<unknown>;
+    /** How often an OPEN page may ask again — the user's own active interval,
+     *  the same one the single-account card is tuned to. Two refresh policies in
+     *  one codebase is how one of them ends up wrong. */
+    accountBeatMs(): number;
     /** who is the authority for which data — the item's first acceptance line,
      *  and it is only met if a person can SEE it */
     ownership(): OwnershipRow[];
@@ -139,12 +159,24 @@ export class EnginesPanel {
     private verdicts = new Map<EngineId, EngineTestResult>();
     /** ids with a call in flight — a second press must not buy a second turn */
     private running = new Set<EngineId>();
+    /**
+     * ‼️ X-187 — ONE TIMER FOR THE PAGE, never one per account. The service
+     * already walks the slots in turn behind a single shared floor, so a timer
+     * per card would buy nobody a fresher figure and would be exactly the
+     * "three accounts, three times the requests" mistake X-170 forbids.
+     */
+    private beat: ReturnType<typeof setInterval> | undefined;
 
     static show(deps: EnginesPanelDeps): void {
         if (EnginesPanel.current) {
             EnginesPanel.current.deps = deps;
             EnginesPanel.current.panel.reveal();
             EnginesPanel.current.refresh();
+            // ‼️ X-187 — coming back to an open page is the same question as
+            // opening one: "what is left of my plan, now". The figures may be
+            // minutes old; the service's own TTL decides whether this costs a
+            // request at all.
+            EnginesPanel.current.live();
             return;
         }
         const panel = vscode.window.createWebviewPanel(
@@ -166,6 +198,32 @@ export class EnginesPanel {
             panel.webview, deps.extensionUri, 'Engines', buildData(deps, this.verdicts), 'engines.js');
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
+        this.live();
+        this.beat = setInterval(() => {
+            // A hidden page is not a page anybody is reading. `retainContextWhenHidden`
+            // keeps this panel alive behind other tabs, so without this check an
+            // Engines tab opened once would go on asking all day for figures
+            // nobody is looking at.
+            if (this.panel.visible) { this.live(); }
+        }, Math.max(1000, this.deps.accountBeatMs()));
+    }
+
+    /**
+     * ‼️ X-187 — ASK, THEN REDRAW.
+     *
+     * The redraw is the half that is easy to forget: `readAccounts` fills the
+     * service's cache, and `accounts()` reads that cache, so a reading with no
+     * `refresh` behind it lands somewhere the page never looks again.
+     *
+     * A failed reading is not an error here. The service answers with the state
+     * it managed to reach — `expired`, `error`, rate-limited — and the card
+     * says so in its own words; there is nothing for this method to report that
+     * the payload does not already carry.
+     */
+    private live(): void {
+        void Promise.resolve(this.deps.readAccounts())
+            .catch(() => undefined)
+            .then(() => { this.refresh(); });
     }
 
     private refresh(): void {
@@ -271,7 +329,10 @@ export class EnginesPanel {
      */
     private async wroteAccount(refusal: string): Promise<void> {
         await this.panel.webview.postMessage({ type: 'acc-msg', text: refusal });
-        if (!refusal) { this.refresh(); }
+        // ‼️ X-187 — a gesture that went through changed WHICH accounts there
+        // are to have figures for, so the reading is asked for again rather
+        // than waiting out the interval on a card that has never been read.
+        if (!refusal) { this.live(); }
     }
 
     /**
@@ -303,6 +364,7 @@ export class EnginesPanel {
 
     private dispose(): void {
         EnginesPanel.current = undefined;
+        if (this.beat) { clearInterval(this.beat); this.beat = undefined; }
         for (const d of this.disposables) { d.dispose(); }
     }
 }

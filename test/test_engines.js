@@ -584,11 +584,38 @@ const by = (list, id) => list.find(e => e.id === id);
         const ext2 = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
         const page = fs.readFileSync(path.join(__dirname, '..', 'media', 'engines.js'), 'utf8');
 
+        // ‼️ X-187 NARROWED THIS, AND ONLY IN THE DIRECTION OF BEING STRICTER.
+        //
+        // The rule was written as "no timer anywhere in this panel", which was a
+        // proxy for the thing that actually matters: nothing may spend a TURN on
+        // its own. A turn against an engine costs the user's plan; a usage
+        // reading is a free GET already held behind `AccountUsageService`'s own
+        // machine-wide floor and backoff, and refusing to make one is what left
+        // the Accounts cards drawing an empty bar for ever.
+        //
+        // So the ban is now stated as what it means — no scheduled path may
+        // reach `deps.test` — plus an ALLOW-LIST of exactly one thing a timer in
+        // this file may call. A second entry here is a decision somebody has to
+        // make on purpose, which is the point.
+        const timerBodies = [...panel.matchAll(/set(?:Interval|Timeout)\(([\s\S]*?)\}, /g)].map(m => m[1]);
         ok('‼️ the test runs from the button and from nothing else',
             /case 'engineTest'/.test(panel)
             // refresh and open rebuild the page out of the CACHE, never by calling
             && !/refresh\(\)[\s\S]{0,200}this\.deps\.test\(/.test(panel)
-            && !/setInterval|setTimeout/.test(panel));
+            && !timerBodies.some(b => /this\.deps\.test\(|runTest\(/.test(b)));
+        ok('…and the only thing this panel may schedule is a free usage reading',
+            // ‼️ The COUNT is part of the claim: `every` over an empty list is
+            // true, so without this the allow-list would go green on a build
+            // that lost the reading altogether — a rule that passes by being
+            // absent is not a rule.
+            timerBodies.length === 1
+            && timerBodies.every(b => /this\.live\(\)/.test(b))
+            && /private live\(\)/.test(panel)
+            && /this\.deps\.readAccounts\(\)/.test(panel));
+        ok('…which is skipped while nobody is looking at the page',
+            /this\.panel\.visible/.test(panel));
+        ok('…and stops when the page closes',
+            /clearInterval\(this\.beat\)/.test(panel));
         ok('…and a second press does not buy a second turn',
             /this\.running\.has\(id\)/.test(panel) && /this\.running\.add\(id\)/.test(panel));
         ok('…and a missing CLI is refused rather than spent',

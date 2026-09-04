@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.383.0 - X-187: the Engines page asks for the quota it draws (2026-09-05)
+
+You captured three accounts, opened Engines and saw no limit anywhere — no bar,
+no reset countdown. The page was telling the truth: nobody had ever looked.
+`AccountUsageService` was built with three doors (`beat()` for a timer,
+`readOnEdge()` for a turn that just ended, `refresh()` for a person) and on the
+day it shipped exactly one of them was wired — the bridge's own `accounts.list`.
+The page read `current()`, which never touches the network, so on a cold host
+every card drew percent -1 and resetsAt 0.
+
+- **Opening the page asks for a reading, and revealing an open one asks again.**
+  The answer lands as a fresh payload, so the figures arrive somewhere the page
+  actually redraws from.
+- **Capturing, standing up or forgetting an account asks too** — each changes
+  which accounts there are to have figures for.
+- **One timer for the page, never one per account.** The service already walks
+  the slots in turn behind a single machine-wide floor and backoff, so three
+  accounts still do not mean three times the requests. The timer is skipped
+  while the tab is hidden and cleared when the page closes.
+- The old guard "this panel schedules nothing" was a proxy for what actually
+  matters — nothing may spend a TURN on its own — and is now stated that way,
+  with an allow-list of exactly one thing a timer here may call. A usage reading
+  is a free GET; an engine test costs your plan, and still runs only from the
+  button.
+
 ## 3.382.0 - U-130 (1/n): the sessions table pays its own hover debt (2026-09-05)
 
 The first page off the budget U-128 opened. The shared Sessions table's sort box
