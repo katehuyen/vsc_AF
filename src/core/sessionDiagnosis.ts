@@ -1,0 +1,292 @@
+import { RunProgress, isLimitFailure } from './retry';
+import { slugify } from './util';
+
+/**
+ * X-174 — WHAT A FINISHED SESSION LEFT BEHIND, WITHOUT ASKING A MODEL.
+ *
+ * The sentry's first question about a session that has just ended is "can the
+ * next one pick this up, and from what". Almost all of that is MEASUREMENT: a
+ * handover note either exists or it does not, a repo is either clean or it is
+ * not, an item either closed or it did not. The precedent is `automation.ts` —
+ * asking a model a question that could have been counted burned $70.90 over
+ * five nights, and this family exists partly because of that bill.
+ *
+ * ‼️ SO THIS MODULE REASONS AND NEVER READS. Every fact is handed in. There is
+ * no `fs` here, no `child_process`, no engine call — which is what makes the
+ * "it costs nothing" claim checkable rather than promised, and what lets the
+ * whole ladder be tested without a machine in a particular state.
+ *
+ * ‼️ AND IT NEVER GUESSES. A fact that was not measured is not the same as a
+ * fact that came back empty: `answerFiles: undefined` means nobody listed the
+ * folder; `answerFiles: []` means it was listed and there was nothing in it.
+ * The first goes on `unknown`, the second is evidence. `unknown` is exactly the
+ * list X-175 reads to decide whether a model is worth calling at all, so
+ * blurring the two would put the cost back that this module exists to remove.
+ */
+
+/** One repository the session could have touched. */
+export interface RepoState {
+    path: string;
+    /** uncommitted paths, as `git status --porcelain` counts them */
+    dirty: number;
+    branch?: string;
+}
+
+/** A coded backlog item this session worked on. */
+export interface TouchedCode {
+    code: string;
+    closed: boolean;
+}
+
+/**
+ * What was MEASURED about a finished session. Every field is optional on
+ * purpose: a caller that could not measure something leaves it out, and the
+ * verdict says so rather than assuming the empty answer.
+ */
+export interface SessionFacts {
+    /** the session's own id — a handover note is found by its first 8 characters */
+    sessionId: string;
+    /** every file name in the answers folder. `undefined` = nobody listed it */
+    answerFiles?: string[];
+    /** one row per repository whose state was read */
+    repos?: RepoState[];
+    /** the coded items this session touched, and whether each of them closed */
+    codes?: TouchedCode[];
+    /** what the transcript says the session managed to do (retry.ts owns the shape) */
+    progress?: RunProgress;
+    /** the tail of the run's output — the only place an engine says "limit" */
+    output?: string;
+    /** the five-hour figure at the end, if it was read at all */
+    quotaPercent?: number;
+}
+
+/**
+ * ‼️ THE LADDER IS POLICY, NOT A RULE CARVED INTO THE CODE. These four are the
+ * defaults the user approved, and they said in the same breath that a campaign
+ * must be able to decide how strict its own sentry is. A switch here is named
+ * after the JUDGEMENT it makes, not after the branch it flips.
+ */
+export interface DiagnosisPolicy {
+    /**
+     * Does a closed item still count as finished work when the repository has
+     * uncommitted changes? Default no: work left behind with nothing explaining
+     * it is a fault, and the next agent cannot tell what is half-done.
+     */
+    closedItemNeedsCleanRepo: boolean;
+    /**
+     * Does a session that produced nothing get its own answer? Default yes.
+     * "Hit the wall" is an alarm; raising it for a session that was a question
+     * and an answer is how an alarm stops being read.
+     */
+    idleIsItsOwnOutcome: boolean;
+    /** How many uncommitted paths a repository may carry and still read clean. */
+    dirtyFloor: number;
+    /**
+     * Does a handover note outrank a closed item? Default no — an item that
+     * closed on a clean repository needs no continuation, and saying "carry on
+     * from the note" would send the next session after work that is done.
+     */
+    handoverBeatsClosedItem: boolean;
+}
+
+export const DEFAULT_DIAGNOSIS_POLICY: DiagnosisPolicy = {
+    closedItemNeedsCleanRepo: true,
+    idleIsItsOwnOutcome: true,
+    dirtyFloor: 0,
+    handoverBeatsClosedItem: false
+};
+
+/** The four answers, in the order the sentry cares about them. */
+export type SessionOutcome =
+    /** the work is done and nothing is waiting — pick the next item */
+    | 'item-done'
+    /** something is waiting AND the note that says where it is exists */
+    | 'clean-handover'
+    /** nothing was attempted, so there is nothing to carry on from */
+    | 'nothing-to-continue'
+    /** something is waiting and NOTHING says where — the state that needs a person */
+    | 'hit-the-wall';
+
+export interface HandoverNote {
+    file: string;
+    date: string;
+    /** the two-digit daily counter */
+    seq: number;
+    /** the eight-character session id the note was written for */
+    session: string;
+    topic: string;
+}
+
+export interface SessionDiagnosis {
+    outcome: SessionOutcome;
+    /** the rule that produced it, by name — a verdict you can argue with */
+    rule: string;
+    /** one line a person reads */
+    why: string;
+    /** every measured fact that bore on the verdict */
+    evidence: string[];
+    /** ‼️ what could NOT be measured. X-175 calls a model only when this is not empty */
+    unknown: string[];
+    handover?: HandoverNote;
+    /** did any engine say the plan window was spent */
+    limit: boolean;
+    /** the policy that was applied, echoed so a verdict can be read months later */
+    policy: DiagnosisPolicy;
+}
+
+/* ============ THE NOTE'S NAME, READ AND WRITTEN IN ONE PLACE ==============
+ *
+ * `YYYY-MM-DD_devir_##_<sid8>_<topic>.md`. X-175 has to BUILD this name and
+ * this module has to FIND it; a pattern held in two places drifts on the first
+ * change, and the failure is silent — a note written under one spelling and
+ * looked for under another produces "no handover note" about a session that
+ * wrote a perfectly good one.
+ */
+
+const NAME_RE = /^(\d{4}-\d{2}-\d{2})_devir_(\d{2})_([0-9a-f]{8})_(.+)\.md$/i;
+
+/** Read a handover file name apart. Anything else is not one — no near misses. */
+export function parseHandoverName(file: string): HandoverNote | undefined {
+    const m = NAME_RE.exec(String(file ?? '').trim());
+    if (!m) { return undefined; }
+    return { file, date: m[1], seq: Number(m[2]), session: m[3].toLowerCase(), topic: m[4] };
+}
+
+/** The note written FOR a session, found by the id it names rather than by
+ *  position in the folder — the newest file is somebody else's note as often
+ *  as it is this one's. */
+export function handoverFor(sessionId: string, files: string[]): HandoverNote | undefined {
+    const short = String(sessionId ?? '').replace(/-/g, '').slice(0, 8).toLowerCase();
+    if (short.length < 8) { return undefined; }
+    const mine = (files || []).map(parseHandoverName)
+        .filter((n): n is HandoverNote => !!n && n.session === short);
+    // More than one is not an error: a long session may hand over twice. The
+    // LAST one is the live instruction, so the highest counter wins.
+    return mine.sort((a, b) => a.seq - b.seq).pop();
+}
+
+/**
+ * ‼️ The topic is folded to ASCII (`slugify` maps the Turkish six by hand) so
+ * that a note written about "X172 kapandı" is findable by a shell, a glob and a
+ * git status on any machine. A file name is a machine's handle here; what a
+ * person reads is inside the note.
+ */
+export function handoverName(o: { date: string; seq: number; sessionId: string; topic: string }): string {
+    const short = String(o.sessionId ?? '').replace(/-/g, '').slice(0, 8).toLowerCase();
+    const seq = String(Math.max(1, Math.min(99, Math.round(o.seq || 1)))).padStart(2, '0');
+    const topic = slugify(o.topic || 'devir', { ascii: true, max: 48 }) || 'devir';
+    return `${o.date}_devir_${seq}_${short}_${topic}.md`;
+}
+
+/** The next counter for a calendar day. It counts THAT day only — the sequence
+ *  resets every day, so yesterday's fourteen notes do not push today's first
+ *  one to 15. */
+export function nextHandoverSeq(files: string[], date: string): number {
+    const today = (files || []).map(parseHandoverName)
+        .filter((n): n is HandoverNote => !!n && n.date === date);
+    return today.reduce((max, n) => Math.max(max, n.seq), 0) + 1;
+}
+
+/* ============ THE VERDICT ================================================= */
+
+/** `12 assistant steps · 47 tool calls`, or nothing when neither was counted. */
+function didWhat(p?: RunProgress): string {
+    if (!p || (p.assistantSteps === undefined && p.toolCalls === undefined)) { return ''; }
+    const a = p.assistantSteps ?? 0, t = p.toolCalls ?? 0;
+    return `${a} assistant step${a === 1 ? '' : 's'} · ${t} tool call${t === 1 ? '' : 's'}`;
+}
+
+/**
+ * Diagnose a finished session. `policy` is a PATCH over the defaults, so a
+ * caller that cares about one switch does not have to restate the other three
+ * — and cannot silently reset them by forgetting one.
+ */
+export function diagnoseSession(
+    facts: SessionFacts, policy?: Partial<DiagnosisPolicy>
+): SessionDiagnosis {
+    const p: DiagnosisPolicy = { ...DEFAULT_DIAGNOSIS_POLICY, ...(policy || {}) };
+    const evidence: string[] = [];
+    const unknown: string[] = [];
+
+    // ---- the note ----------------------------------------------------------
+    let handover: HandoverNote | undefined;
+    if (facts.answerFiles === undefined) {
+        unknown.push('the answers folder was not listed, so a handover note cannot be ruled out');
+    } else {
+        handover = handoverFor(facts.sessionId, facts.answerFiles);
+        evidence.push(handover
+            ? `handover note: ${handover.file}`
+            : 'no handover note names this session');
+    }
+
+    // ---- the repositories --------------------------------------------------
+    let repoClean: boolean | undefined;
+    if (facts.repos === undefined) {
+        unknown.push('no repo state was measured, so uncommitted work cannot be ruled out');
+    } else {
+        repoClean = true;
+        for (const r of facts.repos) {
+            const over = (r.dirty ?? 0) > p.dirtyFloor;
+            if (over) { repoClean = false; }
+            evidence.push(over
+                ? `${r.path}: ${r.dirty} uncommitted path${r.dirty === 1 ? '' : 's'}`
+                : `${r.path}: clean`);
+        }
+    }
+
+    // ---- the items ---------------------------------------------------------
+    let closed: TouchedCode[] = [];
+    if (facts.codes === undefined) {
+        unknown.push('the items this session touched were not read, so a close cannot be ruled out');
+    } else {
+        closed = facts.codes.filter(c => c.closed);
+        for (const c of facts.codes) {
+            evidence.push(c.closed ? `${c.code} closed` : `${c.code} touched, still open`);
+        }
+    }
+
+    // ---- what it managed to do --------------------------------------------
+    const did = didWhat(facts.progress);
+    if (!did) {
+        unknown.push('the transcript was not read, so what the session managed to do is not known');
+    } else {
+        evidence.push(did);
+    }
+    const idle = !!did && (facts.progress?.assistantSteps ?? 0) === 0
+        && (facts.progress?.toolCalls ?? 0) === 0;
+
+    // ---- the plan window ---------------------------------------------------
+    const limit = isLimitFailure(facts.output ?? '');
+    if (limit) { evidence.push('the engine said the plan window was spent'); }
+    if (typeof facts.quotaPercent === 'number' && facts.quotaPercent >= 0) {
+        evidence.push(`five-hour window at ${facts.quotaPercent}%`);
+    }
+
+    const out = (outcome: SessionOutcome, rule: string, why: string): SessionDiagnosis =>
+        ({ outcome, rule, why, evidence, unknown, handover, limit, policy: p });
+
+    // ---- the ladder --------------------------------------------------------
+    const codes = closed.map(c => c.code).join(', ');
+    const finished = closed.length > 0 && (!p.closedItemNeedsCleanRepo || repoClean === true);
+    if (handover && p.handoverBeatsClosedItem) {
+        return out('clean-handover', 'handover-first',
+            `${handover.file} says where this was left — the campaign reads a note before a close.`);
+    }
+    if (finished) {
+        return out('item-done', 'closed-item',
+            `${codes} closed${repoClean === true ? ' on a clean repository' : ''} — there is nothing here to carry on from.`);
+    }
+    if (handover) {
+        return out('clean-handover', 'handover',
+            `${handover.file} says where this was left; the next session starts from it.`);
+    }
+    // ‼️ Idle is claimed only when the transcript was actually read. Calling an
+    // unmeasured session idle is the guess this module is built not to make.
+    if (p.idleIsItsOwnOutcome && idle && closed.length === 0 && repoClean !== false) {
+        return out('nothing-to-continue', 'idle',
+            'The session produced no turn and left nothing behind — there is nothing to carry on from.');
+    }
+    return out('hit-the-wall', 'wall', limit
+        ? 'The plan window was spent and no handover note was written — what was in flight is not written down anywhere.'
+        : 'The session ended with work outstanding and no handover note — what was in flight is not written down anywhere.');
+}
