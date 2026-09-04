@@ -120,6 +120,10 @@ import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVer
 import {
     BUILT_IN_PROMPT_FILE, parsePromptSnippets, PromptSnippetsSnapshot, resolvePromptFile
 } from './core/prompts';
+import { diagnoseSession, RepoState, TouchedCode } from './core/sessionDiagnosis';
+import {
+    buildNextPrompt, resolveSentryTemplates, SENTRY_VERDICTS, SentryTemplateSet
+} from './core/sentryPrompt';
 import { QualityStore, sampleQuality } from './core/quality';
 import {
     buildCostReport, buildDailyDigest, buildFleetReport, buildOutputsDigest, buildTriggerReport
@@ -462,6 +466,25 @@ import {
  * is `core/settingsDoor.ts`, section-scoped, and that file carries the reasons.
  */
 const cfg = afConfig;
+
+/**
+ * ‼️ WHICH WORDS A SENTRY CAMPAIGN STARTS THE NEXT SESSION WITH (X-175).
+ *
+ * The templates ship INSIDE the extension and answer every verdict with
+ * nothing configured; a file named in settings replaces only the verdicts it
+ * answers, and a named path that has gone is REPORTED rather than cleared —
+ * the same rule as the saved-prompts file, for the same reason: writing into
+ * somebody's settings on their behalf is one-way.
+ *
+ * ‼️ NOTHING IS CACHED. A block added thirty seconds ago is in force without
+ * reloading anything.
+ */
+const sentryTemplateSet = (named?: string): SentryTemplateSet => {
+    const chosen = (named ?? '').trim()
+        || (cfg().get<string>('sentryTemplatesFile', '') ?? '').trim();
+    return resolveSentryTemplates(
+        chosen, p => fs.existsSync(p), p => fs.readFileSync(p, 'utf8'));
+};
 
 /**
  * ‼️ X-54 — THE DAILY BUDGETS, THROUGH ONE DOOR.
@@ -30892,6 +30915,81 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     note: done.filesRemoved ? 'The account directory was deleted too.'
                         : `The directory is still at ${s.dir} — capture it again to bring it back.`
                 };
+            }
+        },
+        {
+            op: 'sentry.templates',
+            describe: 'Which words a sentry campaign would start the NEXT session with, and where '
+                + 'they come from. ‼️ THE TEMPLATES SHIP INSIDE AGENT FARM and answer every verdict '
+                + 'with nothing configured — no file, no vault, no folder of yours anywhere. A '
+                + 'markdown file named in `agentFarm.sentryTemplatesFile` REPLACES only the verdicts '
+                + 'it answers (heading = verdict, ``` fence = the words, exactly the saved-prompts '
+                + 'shape), so adding a case is a block rather than a release. A heading naming no '
+                + 'verdict is refused BY NAME and reported here — dropping it silently is how '
+                + 'somebody spends an evening wondering why their template never fires. A named path '
+                + 'that is not on disk is reported, never cleared. args: file? (read this one instead '
+                + 'of the configured one, to see what it would do before you name it)',
+            handler: (args) => {
+                const s = sentryTemplateSet(optStr(args, 'file'));
+                return {
+                    file: s.file, source: s.source, missing: s.missing,
+                    refusals: s.refusals, covers: s.covers, verdicts: SENTRY_VERDICTS,
+                    templates: s.templates.map(t => ({
+                        when: t.when, id: t.id, source: t.source, text: t.text
+                    }))
+                };
+            }
+        },
+        {
+            op: 'sentry.prompt',
+            describe: 'The sentence the next session opens on, worked out from facts YOU measured. '
+                + 'Runs the session diagnosis (four verdicts: item-done · clean-handover · '
+                + 'nothing-to-continue · hit-the-wall) and renders the template that answers it. '
+                + '‼️ NO MODEL IS CALLED AND NOTHING IS WRITTEN — this reasons over what it is '
+                + 'handed, so asking twice costs nothing and answers the same; `assist.needed` says '
+                + 'whether a cheap turn is WORTH making and `assist.questions` says what to ask, and '
+                + 'the call itself is the caller\'s. ‼️ A FACT YOU DO NOT SEND IS UNMEASURED, never '
+                + 'measured-and-empty: omit `answerFiles` and it lands in `unknown`, send `[]` and it '
+                + 'is evidence that the folder was listed and was empty. Pass `assist` after you have '
+                + 'made such a call and its model, duration and price travel in the words the next '
+                + 'session reads. args: session, answerFiles? (the handover folder listing), repos? '
+                + '([{path,dirty,branch}]), codes? ([{code,closed}]), progress? ({assistantSteps,'
+                + 'toolCalls}), output?, quotaPercent?, policy? (the four decision keys), next? '
+                + '({code,text,effort} — projects.backlog.next), handoverPath?, project?, assist? '
+                + '({model,ms,costUsd,at,ok}), file?',
+            handler: (args) => {
+                const a = args as Record<string, any>;
+                const listed = <T,>(v: unknown): T[] | undefined => (Array.isArray(v) ? v as T[] : undefined);
+                const said = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined);
+                const counted = (v: unknown): number | undefined => {
+                    if (v === undefined || v === null || v === '') { return undefined; }
+                    const n = Number(v);
+                    return Number.isFinite(n) ? n : undefined;
+                };
+                const repos = listed<RepoState>(a.repos);
+                const diagnosis = diagnoseSession({
+                    sessionId: argStr(args, 'session'),
+                    answerFiles: listed<string>(a.answerFiles),
+                    repos,
+                    codes: listed<TouchedCode>(a.codes),
+                    progress: a.progress || undefined,
+                    output: said(a.output),
+                    quotaPercent: counted(a.quotaPercent)
+                }, a.policy || undefined);
+                const s = sentryTemplateSet(optStr(args, 'file'));
+                const built = buildNextPrompt({
+                    diagnosis,
+                    next: a.next || undefined,
+                    handoverPath: optStr(args, 'handoverPath'),
+                    project: optStr(args, 'project'),
+                    repos: (repos || []).map(r => String((r && r.path) || '')),
+                    assist: a.assist || undefined
+                }, s.templates);
+                return Object.assign({ diagnosis }, built, {
+                    templates: {
+                        file: s.file, source: s.source, missing: s.missing, refusals: s.refusals
+                    }
+                });
             }
         },
         {

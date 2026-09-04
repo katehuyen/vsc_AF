@@ -23,7 +23,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const S = require(path.join(__dirname, '..', 'out', 'core', 'sentryPrompt.js'));
 const { BUILT_IN_SENTRY_TEMPLATES, templatesFromFile, mergeTemplates, pickTemplate,
-    buildNextPrompt, modelNeeded, describeAssist } = S;
+    buildNextPrompt, modelNeeded, describeAssist, resolveSentryTemplates } = S;
 const { diagnoseSession } = require(path.join(__dirname, '..', 'out', 'core', 'sessionDiagnosis.js'));
 
 const SID = 'dc980395-1e2f-4a7b-9c33-8b21aa77c001';
@@ -159,6 +159,70 @@ const facts = (over) => Object.assign({
         model: 'claude-haiku-4-5-20251001', ms: 2400, costUsd: 0.0031, at: 1, ok: true
     }) === 'claude-haiku-4-5-20251001 · 2.4s · $0.0031');
     ok('...and no call is said plainly rather than as a zero', describeAssist() === 'no model was called');
+}
+
+// ---- ‼️ THE TEMPLATES REALLY COME FROM A FILE ------------------------------
+//
+// The item asks for templates that live as DATA, so a new case is a line rather
+// than a release. The parser was only half of that: something has to settle
+// WHICH file, read it, and fall back to the built-ins when there is none — on a
+// machine where the user has configured nothing at all.
+{
+    const FILE = 'D:/anywhere/nobet-sablonlari.md';
+    const body = [
+        '## item-done', '', '```bitti', 'Bitti: {closed}. Sirada: {nextCode}.', '```', '',
+        '## sucuk', '', '```x', 'never fires', '```'
+    ].join('\n');
+
+    const none = resolveSentryTemplates('', () => false, () => '');
+    ok('with nothing configured the built-ins ARE the answer — no file needed anywhere',
+        none.source === 'none' && none.file === '' && none.missing === ''
+        && none.templates.length === BUILT_IN_SENTRY_TEMPLATES.length && !none.refusals.length);
+
+    // ‼️ Same rule as the snippets file: a named path that has gone is REPORTED,
+    // never cleared, and never read.
+    const gone = resolveSentryTemplates(FILE, () => false, () => { throw new Error('must not read'); });
+    ok('a named file that is gone is reported and the built-ins carry on',
+        gone.missing === FILE && gone.source === 'none' && gone.file === ''
+        && gone.templates.length === BUILT_IN_SENTRY_TEMPLATES.length);
+
+    const set = resolveSentryTemplates(FILE, p => p === FILE, p => (p === FILE ? body : ''));
+    ok('the file is read and ITS template wins for the verdict it answers',
+        set.file === FILE && set.source === 'setting'
+        && pickTemplate(set.templates, 'item-done').source === 'file');
+    ok('...and every verdict it did not touch still has a built-in answer',
+        ['clean-handover', 'nothing-to-continue', 'hit-the-wall']
+            .every(w => pickTemplate(set.templates, w).source === 'built-in'));
+    ok('a heading naming no verdict is refused BY NAME rather than dropped',
+        set.refusals.some(r => /sucuk/.test(r)));
+    ok('...and what the file DID answer is named, so "why did mine not fire" is answerable',
+        set.covers.join() === 'item-done');
+    ok('a new case is one block in that file, not a release',
+        resolveSentryTemplates(FILE, () => true, () => '## hit-the-wall\n```benim\nbenim\n```')
+            .templates[0].when === 'hit-the-wall');
+}
+
+// ---- what the cheap turn cost travels WITH the prompt -----------------------
+//
+// The item asks that WHICH model was called, how long it took and what it cost
+// be recorded. The record had a shape and a sentence, but no way into the words
+// the next session reads — so nothing carried it and nothing could show it.
+{
+    const d = diagnoseSession(facts({ answerFiles: undefined, repos: undefined }));
+    const spent = { model: 'claude-haiku-4-5-20251001', ms: 2400, costUsd: 0.0031, at: 1, ok: true };
+    const withCost = buildNextPrompt({ diagnosis: d, next, assist: spent });
+    ok('the prompt can say what the model call cost',
+        withCost.vars.assist === 'claude-haiku-4-5-20251001 · 2.4s · $0.0031');
+    ok('...and one built without a call says so plainly rather than as a zero',
+        buildNextPrompt({ diagnosis: d, next }).vars.assist === 'no model was called');
+    ok('the verdicts that rest on UNMEASURED facts are the ones that carry it',
+        BUILT_IN_SENTRY_TEMPLATES.filter(t => t.text.indexOf('{assist}') >= 0)
+            .map(t => t.when).sort().join() === '*,hit-the-wall');
+    const wall = buildNextPrompt({
+        diagnosis: Object.assign({}, d, { outcome: 'hit-the-wall' }), next, assist: spent
+    });
+    ok('...and it lands in their words, filled rather than left as a placeholder',
+        /2\.4s · \$0\.0031/.test(wall.prompt) && wall.unfilled.indexOf('assist') < 0);
 }
 
 console.log(`test_sentry_prompt: ${pass} passed, ${fail} failed`);

@@ -45,6 +45,11 @@ export interface PromptInputs {
     project?: string;
     /** the repositories the campaign works in */
     repos?: string[];
+    /** ‼️ What the cheap turn ACTUALLY cost, when one was made. The item asks
+     *  that it be recorded, and the prompt the next session reads is where a
+     *  person looks for it. Absent means no model was called, and that is said
+     *  in words rather than left as a zero. */
+    assist?: ModelAssist;
 }
 
 /** What a cheap turn cost, in one shape, so two callers do not invent two. */
@@ -110,16 +115,22 @@ export const BUILT_IN_SENTRY_TEMPLATES: SentryTemplate[] = [
             + 'Before you start anything new, find out what was in flight: read the working '
             + 'tree of {repos} and the last turns of that session. Write down what you find, '
             + 'finish or revert it deliberately, and only then move on.'
+            + '\n\nWhat filled those gaps: {assist}.'
     },
     {
         when: '*', id: 'built-in/any', source: 'built-in',
         text: 'The previous session ({session}) ended: {why}\n\nWhat was measured: {evidence}\n'
             + 'What was NOT measured: {unknown}\n\nDecide what to do about it before starting '
             + 'anything new.'
+            + '\n\nWhat filled those gaps: {assist}.'
     }
 ];
 
-const VERDICTS: string[] = ['item-done', 'clean-handover', 'nothing-to-continue', 'hit-the-wall', '*'];
+/** ‼️ The headings a template file may use, in one place — the parser refuses
+ *  anything else BY NAME, and `sentry.templates` hands the same list back, so a
+ *  person writing their own file is never guessing what to call a block. */
+export const SENTRY_VERDICTS: string[] =
+    ['item-done', 'clean-handover', 'nothing-to-continue', 'hit-the-wall', '*'];
 
 /**
  * Read a user's template file. The FORMAT is the saved-prompts format, on
@@ -136,9 +147,9 @@ export function templatesFromFile(text: string): { templates: SentryTemplate[]; 
     const read = parsePromptSnippets(String(text ?? ''));
     for (const item of read.items) {
         const when = (item.group || '').trim().toLowerCase();
-        if (!VERDICTS.includes(when)) {
+        if (!SENTRY_VERDICTS.includes(when)) {
             refusals.push(`"${item.group || '(no heading)'}" is not a verdict — the headings are `
-                + `${VERDICTS.join(', ')}`);
+                + `${SENTRY_VERDICTS.join(', ')}`);
             continue;
         }
         if (!item.text.trim()) {
@@ -158,6 +169,71 @@ export function templatesFromFile(text: string): { templates: SentryTemplate[]; 
  *  answer for every verdict they did not touch. */
 export function mergeTemplates(builtIn: SentryTemplate[], fromFile: SentryTemplate[]): SentryTemplate[] {
     return [...(fromFile || []), ...(builtIn || [])];
+}
+
+/** Which templates are in force, where they came from, and what was refused. */
+export interface SentryTemplateSet {
+    /** the effective set: the user's first, the built-ins behind them */
+    templates: SentryTemplate[];
+    /** the file actually read — '' when there is none, which is the normal case */
+    file: string;
+    /** 'setting' = the user named one and it is on disk · 'none' = the built-ins */
+    source: 'setting' | 'none';
+    /** a path that was named but is not on disk — reported, never erased */
+    missing: string;
+    /** headings that name no verdict, blocks with nothing in them, a file that would not read */
+    refusals: string[];
+    /** the verdicts the file answered — so "why did mine not fire" is answerable */
+    covers: string[];
+}
+
+/**
+ * ‼️ SETTLE WHICH FILE, THEN FALL BACK TO WHAT SHIPS. The item asks for
+ * templates that live as DATA so a new case is a line rather than a release;
+ * the parser alone was half of that, because nothing settled WHICH file or read
+ * it. Reading and existence are injected, so this stays a pure function and the
+ * fallback can be tested on a machine that has no such file at all.
+ *
+ * ‼️ THE BUILT-INS ARE NOT A PATH TO SOMEWHERE. Nothing is named by default:
+ * with the setting empty, or with a named file that has gone, every verdict
+ * still has an answer and the extension needs nobody's folders. A named path
+ * that is missing is REPORTED and never erased — same rule as the snippets
+ * file, and for the same reason: writing '' into a user's settings on their
+ * behalf is one-way.
+ */
+export function resolveSentryTemplates(
+    setting: string,
+    exists: (p: string) => boolean,
+    read: (p: string) => string
+): SentryTemplateSet {
+    const builtIn = (): SentryTemplateSet => ({
+        templates: [...BUILT_IN_SENTRY_TEMPLATES], file: '', source: 'none',
+        missing: '', refusals: [], covers: []
+    });
+    const chosen = String(setting ?? '').trim();
+    if (!chosen) { return builtIn(); }
+    if (!exists(chosen)) {
+        const out = builtIn();
+        out.missing = chosen;
+        return out;
+    }
+    let text = '';
+    try {
+        text = String(read(chosen) ?? '');
+    } catch (e) {
+        const out = builtIn();
+        out.refusals.push(`${chosen} could not be read — ${e instanceof Error ? e.message : String(e)}`);
+        return out;
+    }
+    const found = templatesFromFile(text);
+    return {
+        templates: mergeTemplates(BUILT_IN_SENTRY_TEMPLATES, found.templates),
+        file: chosen,
+        source: 'setting',
+        missing: '',
+        refusals: found.refusals,
+        covers: [...new Set(found.templates.map(t => String(t.when)))]
+    };
 }
 
 /** The first template that answers this verdict, then the first catch-all. */
@@ -213,7 +289,8 @@ export function promptVars(i: PromptInputs): Record<string, string> {
         nextText: i.next?.text || '',
         nextEffort: i.next?.effort || 'unstated',
         project: i.project || 'this project',
-        repos: (i.repos || []).join(', ') || 'the project repositories'
+        repos: (i.repos || []).join(', ') || 'the project repositories',
+        assist: describeAssist(i.assist)
     };
 }
 

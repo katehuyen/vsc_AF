@@ -204,6 +204,13 @@ const CATEGORY_OF: Record<string, string> = {
     dispatchRules: 'tasks', dispatchClassifier: 'tasks', modelPolicy: 'tasks',
     quotaDowngradePercent: 'tasks', quotaDowngradeModel: 'tasks',
     judgeArgs: 'tasks', evalRunArgs: 'tasks', taskRetry: 'tasks',
+    // ‼️ X-175 — the sentry campaign's own words, filed with automation rather
+    // than with Saved prompts. Both are "a markdown file of prompts", and that
+    // is the whole of what they share: saved prompts are what a PERSON pastes
+    // into a message box, these are what an UNATTENDED campaign starts the next
+    // session with. Filed together, the reader who turns the campaign off would
+    // go looking for it under prompts (ONE SUBJECT).
+    sentryTemplatesFile: 'tasks',
     // media pipeline & browser
     mediaAuthSecret: 'media', replicateAuthSecret: 'media', replicateBaseUrl: 'media',
     mediaBaseUrl: 'media', outputsMaxMB: 'media', ingestFolders: 'media',

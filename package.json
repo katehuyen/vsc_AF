@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.374.0",
+  "version": "3.375.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9701,6 +9701,12 @@
           "default": true,
           "description": "Whether the Console page listens for a file dropped anywhere on it. Turn this off if drag-and-drop misbehaves on your machine; 📎 (Attach) and pasting a screenshot are unaffected either way."
         },
+        "agentFarm.sentryTemplatesFile": {
+          "type": "string",
+          "x-af-browse": "file",
+          "default": "",
+          "description": "A markdown file holding the words a sentry campaign starts the NEXT session with, when you want your own instead of the built-in ones. Same shape as Saved prompts: a heading names the verdict the block answers — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — and only text inside ``` fences is used. Placeholders like {nextCode}, {handoverPath}, {evidence} and {assist} are filled in; one nothing answers is left visible rather than blanked. A block replaces just that verdict, so every verdict you do not write keeps its built-in wording and this can stay empty for ever without anything being missing. A path named here that is not on disk is reported, never cleared. `sentry.templates` on the bridge shows what was read and what was refused."
+        },
         "agentFarm.promptSnippetsFile": {
           "type": "string",
           "x-af-browse": "file",
@@ -9713,7 +9719,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "package": "node test/test_encoding.js && node test/test_ctxmenu.js && node test/test_parity.js && vsce package --allow-missing-repository --out dist/vsix",
+    "package": "node test/test_encoding.js && node test/test_ctxmenu.js && node test/test_parity.js && npx --yes @vscode/vsce package --allow-missing-repository --out dist/vsix",
     "test": "tsc -p ./ && node test/run-all.js",
     "verify": "node tools/verify_vsix.js",
     "prepare": "node -e \"try{require('child_process').execSync('git config core.hooksPath .githooks')}catch(e){}\""

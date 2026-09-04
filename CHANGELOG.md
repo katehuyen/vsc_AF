@@ -2,6 +2,70 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.375.0 - X-174 · X-175: what a finished session left behind, and the sentence the next one opens on (2026-09-04)
+
+The sentry (X-167) has to answer two questions every time a session ends, and both
+of them used to be answered by asking a model: *what did that session actually
+leave behind*, and *what do I say to the next one*. Neither needs a model, and the
+precedent for what happens when you ask one anyway is on this repo's own bill —
+a question that could have been counted cost $70.90 over five nights.
+
+- **The verdict is counted, not asked.** `sessionDiagnosis` takes facts somebody
+  MEASURED and reaches one of four verdicts: the item was closed, a clean handover
+  note was left, there was nothing to carry on from, or the session hit the wall
+  with work outstanding. It reads nothing itself — no disk, no git, no model —
+  which is what makes "this is free" auditable rather than a claim.
+- **‼️ What nobody measured is not a measurement.** A folder that was never listed
+  lands in `unknown`; a folder that was listed and was empty is evidence. Collapse
+  those two and the machine invents a verdict out of its own defaults, then starts
+  the next session on it.
+- **The decision ladder is a POLICY, not a rule carved in.** Four named keys, with
+  the defaults spelled out, so a campaign can hand its own down; every verdict
+  carries which policy produced it and which rule fired.
+- **The prompt the next session opens on** is rendered from that verdict, the item
+  `projects.backlog.next` picked and the path of the handover note. A model is
+  called only while facts are missing, and the module says so as a decision —
+  `assist.needed`, plus the questions worth asking — instead of making the call
+  itself. What a call cost (which model, how long, how much) travels in the words
+  the next session reads.
+- **‼️ Every template ships INSIDE Agent Farm** and answers every verdict with
+  nothing configured — no file, no vault, no folder of yours anywhere. Name a
+  markdown file in `agentFarm.sentryTemplatesFile` (Settings → Tasks & Automation)
+  and it REPLACES only the verdicts it answers, so adding a case is a block rather
+  than a release. A heading naming no verdict is refused by name and reported: a
+  template that silently never fires is an evening nobody gets back. A path that
+  is not on disk is reported, never cleared.
+- **On the bridge:** `sentry.templates` says which words are in force and where
+  they came from, `sentry.prompt` turns measured facts into the sentence. Neither
+  calls anything and neither writes anything, so asking twice costs nothing and
+  answers the same.
+
+## 3.374.0 - X-172: the sign-ins the Engines page can capture, stand up and drop (2026-09-04)
+
+The chip slice made the Engines page SAY which account each engine is plugged
+into and left every gesture on the bridge. A page that shows a state it cannot
+change is the dead end this page exists to remove, in a new costume.
+
+- **One card per captured sign-in** — the label, the address, the plan being paid
+  for, and how much of the five-hour window is gone.
+- **A bar only where a figure was really read.** `-1` is not 0%: an account nobody
+  has read a percentage for and an account with nothing left would draw the same
+  empty bar, and one of them is ready to work. The other two states say which one
+  they are in, in words.
+- **The way back exists.** The main sign-in is the ABSENCE of a slot, so there is
+  no row to press: the standing card offers "Main account", which clears the
+  engine rather than naming one. Without it the page could put an engine on an
+  account and never take it off again.
+- **Capture is offered only where two identities can really be kept apart** —
+  three of the five engines have no verified way, and they say WHY in the
+  adapter's own words rather than being left out of the list.
+- **Both defaults are the op's, deliberately:** capturing does not become the
+  standing choice, and forgetting does not delete the directory. The page says
+  both out loud.
+- `captureAccount` / `activateAccount` / `forgetAccount` are one function each,
+  called by BOTH the page's buttons and the `accounts.*` ops — a page and its op
+  cannot drift into meaning different things.
+
 ## 3.373.0 - X-169: which sign-in pays for the session, at every door (2026-09-04)
 
 Three Claude Pro plans on one machine, switched by hand all day: `/login` in a
