@@ -339,11 +339,28 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
             + 'here — the codex CLI is not installed on this machine, only its auth.json is. Capturing a '
             + 'second Codex account is allowed and stays marked "declared" until somebody proves it.',
         readIdentity: readCodexIdentity,
-        // Codex states a plan but publishes no local quota figure to read the
-        // way Claude's credentials carry theirs. Saying so beats an empty bar.
+        /**
+         * ‼️ THIS SENTENCE WAS FALSE, AND THE FALSEHOOD IS WHY NOBODY LOOKED.
+         *
+         * It read "Codex keeps no readable quota figure on disk — its plan
+         * limits are only visible inside the CLI itself". `core/engineUsage.ts`
+         * has been reading exactly that figure since U-27: the tail of the
+         * newest rollout under `sessions/` carries `rate_limits.primary`
+         * (`used_percent`, `window_minutes`), and the status bar and the
+         * Dashboard have been drawing it — "week 72%" — the whole time. The
+         * user found it by comparing two surfaces of the same product.
+         *
+         * A stated reason is a claim about the world, and a wrong one is worse
+         * than a blank bar: it closes the question. `kind` stays `none` because
+         * the account cards genuinely do not read it yet — that plumbing is
+         * X-215 — but the words now say which of those two things is true, so
+         * the next reader is pointed at the work rather than away from it.
+         */
         quotaSource: () => ({
             kind: 'none',
-            reason: 'Codex keeps no readable quota figure on disk — its plan limits are only visible inside the CLI itself.'
+            reason: 'Codex does publish a figure — engineUsage.ts reads the weekly window out of the '
+                + 'newest rollout under sessions/, which is what the status bar and the Dashboard draw. '
+                + 'The account cards are not wired to it yet (X-215); this is not a limit of the engine.'
         })
     },
     {

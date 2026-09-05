@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.400.2 - the Codex account card said something that was not true (2026-09-06)
+
+The Codex adapter answered, whenever anybody asked why its account cards show no
+quota: *"Codex keeps no readable quota figure on disk — its plan limits are only
+visible inside the CLI itself."*
+
+That is false, and it has been false since U-27. `core/engineUsage.ts` reads the
+figure off the tail of the newest rollout under `sessions/`
+(`rate_limits.primary.used_percent`, `window_minutes`) and the status bar and the
+Dashboard have been drawing it — "week 72%" — the entire time. The user found it
+by comparing two surfaces of the same product and asking why one of them knew
+something the other said was unknowable.
+
+**A stated reason is a claim about the world, and a wrong one is worse than a
+blank bar: it closes the question.** The `kind` stays `none`, because the account
+cards genuinely are not wired to that reader yet — that is X-215, opened for it —
+but the sentence now says which of those two things is true, so the next person
+to read it is pointed at the work instead of away from it.
+
+No behaviour changed. This is the half of the fix that can be shipped honestly on
+its own; the plumbing needs the read path in `AccountUsageService` to grow a
+branch that does NOT go through the shared network budget (a figure read from
+disk must not wait behind a 5-second floor meant for an endpoint), and that is
+not a change to make halfway.
+
 ## 3.400.1 - X-203: the Engines button vanished exactly when the page became worth opening (2026-09-06)
 
 The user's report: *"Dashboard/Engines satırı sonunda buton var demiştin ama
