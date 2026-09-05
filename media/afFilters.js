@@ -233,7 +233,16 @@
         const presetHtml = presets.map(p =>
             ` · <a data-afms-preset="${esc(p.id)}" aria-label="${esc(p.title || p.label || p.id)}">${esc(p.label || p.id)}</a>`).join('');
         const style = o.width ? ` style="min-width:${Number(o.width)}px"` : '';
-        const explanation = o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT;
+        // ‼️ U-131 — THE GESTURE IS ANNOUNCED WHERE THE HAND ALREADY IS. A
+        // right-click nobody is told about is a right-click nobody uses, and
+        // the sentence is only true where there IS a preset to flip to — so it
+        // is built from the same list the listener reads, never typed twice.
+        const flipHint = presets.length
+            ? `\n\nRIGHT-CLICK flips between everything and ${presets[0].label || presets[0].id}`
+                + ' without opening this list. From any other selection, the first press '
+                + `lands on ${presets[0].label || presets[0].id}.`
+            : '';
+        const explanation = (o.title ? o.title + '\n\n' + MULTI_HINT : MULTI_HINT) + flipHint;
         // ‼️ A-14 — NO SECOND SIGNAL THAT A FILTER IS SET. The button already
         // says it, in words, in the one place a reader is looking: `state: 2/4`
         // is not `state: every state`. The inset bar and re-tinted fill that
@@ -340,6 +349,46 @@
                 menu.hidden = !willOpen;
                 if (wrap) { wrap.classList.toggle('afms-on', willOpen); }
                 openId = willOpen ? o.id : null;
+            });
+        }
+        /**
+         * ‼️ U-131 — RIGHT-CLICK IS THE SECOND POSITION OF A TWO-POSITION SWITCH.
+         *
+         * The Console's `show` box is opened, scrolled and re-ticked all day to
+         * do ONE thing: drop to the conversation and come back. That is not a
+         * choice between eight options, it is a switch — and a switch that
+         * costs a click, a read and two ticks is not a switch.
+         *
+         * It lives in the COMPONENT rather than in console.js because the box
+         * is `AFFilter.multi` on nine pages: written here once, every picker
+         * that has a named subset gets it, and one written per page would have
+         * been nine gestures that disagree.
+         *
+         * ‼️ AND A PICKER WITH NO PRESET DOES NOTHING AT ALL — no listener, no
+         * `preventDefault`, so the platform's own menu is untouched. A gesture
+         * that silently does nothing on the other pages is worse than no
+         * gesture: the reader learns it, tries it, and stops trusting it.
+         *
+         * Three states, one rule, exactly as the item asks: everything → the
+         * first preset; the first preset → everything; ANY other combination →
+         * the first preset, because that is the one somebody who reaches for a
+         * shortcut in the middle of a hand-built filter means.
+         */
+        const preset1 = (def.presets || [])[0];
+        if (btn.addEventListener && preset1) {
+            const same = (a, b) => a.length === b.length && a.every(v => b.indexOf(v) >= 0);
+            btn.addEventListener('contextmenu', ev => {
+                stop(ev);
+                if (ev && ev.preventDefault) { ev.preventDefault(); }
+                const all = def.opts.map(x => x.v);
+                // The preset is written against a VOCABULARY, not one render —
+                // a value it names that this list does not have is not missing,
+                // it is simply not here (same rule as the preset link above).
+                const want = preset1.values.filter(v => all.indexOf(v) >= 0);
+                const now = read();
+                const to = (now.length !== all.length && same(now, want)) ? all : want;
+                boxes().forEach(b => { b.checked = to.indexOf(b.dataset.afmsOpt) >= 0; });
+                emit(read());
             });
         }
         if (menu.addEventListener) { menu.addEventListener('click', stop); }

@@ -165,6 +165,20 @@ module.exports = function createAfmsDom(getHtml) {
         options: id => pick(id).boxes.map(b => b.dataset.afmsOpt),
         isOpen: id => pick(id).menu.hidden === false,
         open: id => { fire(pick(id).btn, 'click'); },
+        /**
+         * U-131 — right-click the trigger: the two-position switch between
+         * everything and the picker's first preset. Returns whether the
+         * gesture was TAKEN (a picker with no preset must not take it, and
+         * must not swallow the platform's own menu either), so a test can
+         * assert the absence as strongly as the presence.
+         */
+        rightClick(id) {
+            const btn = pick(id).btn;
+            if (!btn.listeners.contextmenu) { return false; }
+            let prevented = false;
+            btn.listeners.contextmenu({ stopPropagation() { }, preventDefault() { prevented = true; } });
+            return prevented;
+        },
         /** Tick / untick one option (omit `on` to flip it). */
         toggle(id, value, on) {
             const p = pick(id);

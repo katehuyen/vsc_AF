@@ -232,6 +232,71 @@ ok('opening the menu is not a filter change', renders === before);
     ok('pressing it ticks exactly its values', JSON.stringify(last) === '["user","agent"]');
 }
 
+// ------------------------------- U-131: right-click is the switch --------
+//
+// ‼️ THE BOX IS OPENED ALL DAY TO DO ONE THING. Dropping to the conversation
+// and coming back is not a choice between four options, it is a switch — and a
+// switch that costs a click, a read and two ticks is not a switch. It lives in
+// the component because the same box is drawn on nine pages: one gesture, or
+// nine that disagree.
+{
+    let last = 'untouched';
+    const draw = (selected) => {
+        rendered = AF.multi({
+            id: 'p9', label: 'show', options: ['user', 'agent', 'tool', 'result'],
+            selected,
+            presets: [{ id: 'dialog', label: 'Dialog', values: ['agent', 'user'] }]
+        });
+        AF.wireMulti({ id: 'p9', onChange: sel => { last = sel; } });
+    };
+
+    draw(null);
+    ok('‼️ U-131: right-clicking an unfiltered picker drops it to the first preset',
+        ms.rightClick('p9') && JSON.stringify(last) === '["user","agent"]');
+
+    // ‼️ …and back is `null`, not "all four ticked". The component's own
+    // vocabulary for unfiltered is `null` (see the header), so the flip has to
+    // land on the SAME state an untouched picker is in — a page told
+    // `[a,b,c,d]` would file that as a filter somebody set.
+    draw(['user', 'agent']);
+    ok('‼️ U-131: …and right-clicking it again comes back to unfiltered',
+        ms.rightClick('p9') && last === null && ms.ticked('p9').length === 4);
+
+    // ‼️ THE THIRD STATE IS NOT A THIRD RULE. Somebody who reaches for a
+    // shortcut in the middle of a hand-built filter means "take me to the
+    // preset" — not "take me to everything", which would throw the filter away
+    // and give them the noise they were escaping.
+    draw(['tool']);
+    ok('‼️ U-131: from ANY other combination it goes to the preset first',
+        ms.rightClick('p9') && JSON.stringify(last) === '["user","agent"]');
+
+    // A preset naming a value this list does not have is not missing — the
+    // preset is written against a vocabulary, not against one render.
+    rendered = AF.multi({
+        id: 'p10', label: 'show', options: ['agent', 'tool'], selected: null,
+        presets: [{ id: 'dialog', label: 'Dialog', values: ['agent', 'user'] }]
+    });
+    AF.wireMulti({ id: 'p10', onChange: sel => { last = sel; } });
+    ok('U-131: a preset value this list does not have is simply not there',
+        ms.rightClick('p10') && JSON.stringify(last) === '["agent"]');
+
+    // ‼️ AND THE GESTURE IS ANNOUNCED. A right-click nobody is told about is a
+    // right-click nobody uses (Principle 1).
+    ok('‼️ U-131: the hover says the gesture exists, and names what it flips to',
+        /RIGHT-CLICK flips between everything and Dialog/.test(rendered));
+
+    // ‼️ …AND A PICKER WITH NO PRESET DOES NOTHING AT ALL. No listener, so the
+    // platform's own menu is untouched: a gesture that silently does nothing on
+    // the other pages is worse than no gesture.
+    rendered = AF.multi({ id: 'p11', label: 'Agents', options: AGENTS, selected: null });
+    AF.wireMulti({ id: 'p11', onChange: sel => { last = sel; } });
+    last = 'untouched';
+    ok('‼️ U-131: a picker with no preset does not take the right-click at all',
+        ms.rightClick('p11') === false && last === 'untouched');
+    ok('…and says nothing about a gesture it does not have',
+        !/RIGHT-CLICK/.test(rendered));
+}
+
 // ------------------------------------------- U-92: a long menu finds ----
 //
 // ‼️ THE PICKER EARNS ITS FIND BOX BY BEING LONG, AND NOBODY HAS TO REMEMBER

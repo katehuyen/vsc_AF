@@ -490,6 +490,15 @@ the extension — there is nothing to opt into:
   Console's `show` box declares `Dialog` (you + the agent). The component knows
   the mechanism; only the page knows what the word means, so never put a preset
   in the component.
+- ‼️ **RIGHT-CLICKING THE TRIGGER FLIPS BETWEEN EVERYTHING AND THE FIRST PRESET**
+  (U-131) — no menu, no read, no ticks. Three states, one rule: everything → the
+  preset; the preset → unfiltered (`null`, the component's own word for it, not
+  "all of them ticked"); **any other combination → the preset**, because
+  somebody reaching for a shortcut mid-filter means "take me there", not "throw
+  my filter away". The hover names what it flips to, built from the same list
+  the listener reads. **A picker with NO preset does not take the gesture at
+  all** — no listener, so the platform's own menu is untouched: a gesture that
+  silently does nothing on the other eight pages is worse than no gesture.
   ‼️ **The bar, so a row does not fill up with decoration** (U-52): the subset
   needs a name somebody would use out loud; it must be **two options or more**,
   because a single option is already one click — on its own name; and a picker

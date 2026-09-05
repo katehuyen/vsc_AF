@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.396.0 - U-131: right-click is the second position of the switch (2026-09-05)
+
+The Console's `show` box is opened, scrolled and re-ticked all day to do one
+thing: drop to the conversation and come back. That is not a choice between
+eight options, it is a switch — and a switch that costs a click, a read and two
+ticks is not a switch.
+
+- **Right-click the trigger and it flips**, without opening the menu:
+  everything → the picker's first preset; the preset → unfiltered; **any other
+  combination → the preset first**, because somebody reaching for a shortcut in
+  the middle of a hand-built filter means "take me there", not "throw my filter
+  away".
+- **It lives in the component** (`media/afFilters.js`), so every `AFFilter.multi`
+  that declares a preset has it — the same box is drawn on nine pages, and one
+  written per page would have been nine gestures that disagree.
+- **‼️ A picker with no preset does not take the gesture at all** — no listener
+  and no `preventDefault`, so the platform's own menu is untouched. A gesture
+  that silently does nothing on the other pages is worse than no gesture: the
+  reader learns it, tries it, and stops trusting it.
+- The hover says the gesture exists and names what it flips to, built from the
+  same list the listener reads. A feature nobody is told about is a feature
+  nobody uses.
+
 ## 3.395.0 - U-130: 2 205 options that said nothing, paid off in full (2026-09-05)
 
 A `<select>` cuts its own text and the popup it opens is drawn by the operating
