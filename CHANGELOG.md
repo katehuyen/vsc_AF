@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.389.0 - X-193: the sentry gets a section, and every path says where it points (2026-09-05)
+
+Thirteen settings for one unattended campaign were scattered down a page about
+task concurrency and dispatch rules. Each of them was filed there for a reason
+that was right about that one setting and wrong about the set: somebody tuning
+an overnight run had to hunt for the words it starts on, the folders it reads,
+the leader's leash and three thresholds, one at a time, in alphabetical order.
+
+- **Its own section, and four questions instead of thirteen boxes.** *Where it
+  looks for the handover note · The words it starts the next session with · The
+  leader, and its leash · When a round is going nowhere.* Each group says what
+  the question IS, not just which keys are in it.
+- **‼️ A key the grouping has never heard of is still drawn**, under **More**.
+  The grouping is hand-written editorial and will go stale; a settings page that
+  HIDES a setting is worse than one that groups it badly.
+- **‼️ EVERY PATH ROW SAYS WHERE IT POINTS.** `${vault}\00_AGENT_AREA\…` in a
+  box tells you nothing about the folder it opens, and that gap is where an
+  unattended campaign reads the wrong place and reports "no handover note" about
+  a folder nobody ever opened. Each row now carries the real resolved path
+  underneath it — no click, no dialog (DENSITY). A path that cannot be built
+  carries the REASON instead and no path at all, because a half-built path looks
+  usable and points somewhere nobody meant.
+- **The variable legend is DRAWN from the dictionary**, not repeated on the
+  page: a variable added to `core/pathVars.ts` turns up here untouched. MIRROR —
+  each chip's panel opens on what the variable IS on this machine, then a blank
+  line, then what it means. One with nothing behind it is marked, because that
+  is the case that silently cancels a path.
+- **The order is the value, so a row can be moved.** `handoverSources` is tried
+  most-truthful-first and the instruction pool decides whose block wins;
+  reordering used to mean deleting a row and retyping it at the bottom. Rows now
+  drag, and carry ↑/↓ for the hand that would rather not drag and the keyboard
+  that cannot. Nothing is saved by moving — **Save the list** still is.
+- **Which settings get all this is DERIVED from their own schema** (`x-af-browse`),
+  never from a list of keys — the disease that key was introduced to cure.
+- **Bridge:** new `settings.paths` — where a path setting actually points on this
+  machine, through the same resolver the page and the campaign use, so all three
+  agree. With no arguments it answers for every path setting plus each variable
+  and what it is here; `templates` resolves a value you have not written yet.
+- **U-128 paid down while passing through:** the list editor's dropdown rows and
+  the setting-set picker now title their options, so six other pages' budgets
+  came down with them and `spsettings` reached zero.
+- What deliberately did NOT move: `answerDir` (where an answer is WRITTEN — that
+  belongs to the work queue) and `automation.*` (the master gate over every
+  unattended thing on this machine, not over this one).
+
 ## 3.388.0 - X-192: one pool of your own words, read twice (2026-09-05)
 
 Your saved instructions were never a second file to invent. `sentryTemplatesFile`

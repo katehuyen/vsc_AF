@@ -3,8 +3,9 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import {
     buildSettingsModel, sanitizeValue, snapshotProfile, profileApplyPlan,
-    parseImportedProfiles, SettingsProfile, SettingsCategory
+    parseImportedProfiles, pathPreviews, SettingsProfile, SettingsCategory
 } from '../core/settingsops';
+import { PreviewedPath } from '../core/pathVars';
 import {
     CC_CATALOG, buildClaudeModel, coerceClaudeValue, patchClaudeSettings,
     validateRawClaudeSettings
@@ -42,6 +43,22 @@ export interface FarmSettingsDeps {
         type?: unknown; enum?: unknown; default?: unknown;
         description?: string; markdownDescription?: string; 'x-af-browse'?: unknown;
     }>;
+    /**
+     * ‼️ X-193 — THE PATH VARIABLES, AND WHAT EACH IS ON THIS MACHINE.
+     *
+     * The dictionary lives in `core/pathVars.ts` and is exported so this page
+     * DRAWS it rather than repeating it — a variable added there turns up here
+     * without the page being touched. The value is sent with the name because
+     * of MIRROR: the reader's question about `${vault}` is what it is, not what
+     * it means, and a legend of definitions answers the question nobody asked.
+     * A variable with nothing behind it says so; that is the honest half.
+     */
+    pathVarValues?(): { name: string; describe: string; value: string }[];
+    /**
+     * Resolve a whole path setting's entries at once (X-193). One call per
+     * setting, not one per row — see `pathPreviews` in core/settingsops.ts.
+     */
+    previewPaths?(templates: string[]): PreviewedPath[];
     getProfiles(): SettingsProfile[];
     setProfiles(list: SettingsProfile[]): Thenable<void>;
     /** Claude Code's own ~/.claude/settings.json (honors agentFarm.claudeDir). */
@@ -455,6 +472,10 @@ export class FarmSettingsPanel {
 
     private buildData(): Record<string, unknown> {
         const cc = this.readClaude();
+        // Built once: the path previews are derived from these same items, and
+        // rebuilding the model to ask it a second question would be two answers
+        // to one draw.
+        const cats = this.categories();
         return {
             // the user's model-name knowledge base — feeds every model picker
             modelAliases: vscode.workspace.getConfiguration()
@@ -467,7 +488,13 @@ export class FarmSettingsPanel {
             // held on the host so it survives the refresh after every write).
             agentDefaultsEngine: this.defaultsEngine,
             folders: this.foldersWithDefaults(),
-            categories: this.categories(),
+            categories: cats,
+            // ‼️ X-193 — read on every draw, like the folders above: `${today}`
+            // changes at midnight under an open page, and a vault the user just
+            // configured is exactly the change they came back here to confirm.
+            pathVars: this.deps.pathVarValues?.() ?? null,
+            pathPreview: this.deps.previewPaths
+                ? pathPreviews(cats, this.deps.previewPaths.bind(this.deps)) : null,
             profiles: this.deps.getProfiles().map(p => ({
                 name: p.name, savedAt: p.savedAt, count: Object.keys(p.values).length
             })),

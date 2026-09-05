@@ -7,6 +7,7 @@
  * home; unknown ones land in "Other". No setting is ever listed here by hand
  * twice: this file only maps keys to groups and validates values.
  */
+import { PreviewedPath } from './pathVars';
 import { SchemaNode, SettingShape, shapeOf } from './settingShape';
 export type { SchemaNode, SettingShape, ShapeField, ShapeKind } from './settingShape';
 export { exampleText, shapeOf } from './settingShape';
@@ -208,40 +209,32 @@ const CATEGORY_OF: Record<string, string> = {
     dispatchRules: 'tasks', dispatchClassifier: 'tasks', modelPolicy: 'tasks',
     quotaDowngradePercent: 'tasks', quotaDowngradeModel: 'tasks',
     judgeArgs: 'tasks', evalRunArgs: 'tasks', taskRetry: 'tasks',
-    // ‼️ X-175 — the sentry campaign's own words, filed with automation rather
-    // than with Saved prompts. Both are "a markdown file of prompts", and that
-    // is the whole of what they share: saved prompts are what a PERSON pastes
-    // into a message box, these are what an UNATTENDED campaign starts the next
-    // session with. Filed together, the reader who turns the campaign off would
-    // go looking for it under prompts (ONE SUBJECT).
-    sentryTemplatesFile: 'tasks',
-    // ‼️ X-192 — the same subject as the line above, because it is the same
-    // pool: the single file and this list are ASSEMBLED into one set of blocks,
-    // read once as templates the mechanical round fills and once as material
-    // the leader blends. Two settings that feed one thing are filed together or
-    // the reader finds half of it (ONE SUBJECT).
-    sentryInstructionFiles: 'tasks',
-    // ‼️ X-189 — where the campaign LOOKS for the note the last session left,
-    // filed with the campaign rather than with the folder settings. `answerDir`
-    // is where an answer is WRITTEN and belongs to the work queue; these two
-    // govern an unattended runner's reading of a finished session, which is the
-    // same subject as its brakes and its templates (ONE SUBJECT).
-    handoverSources: 'tasks',
-    handoverFolders: 'tasks',
-    // ‼️ X-176 — the campaign's two brakes. Tasks & Automation for the same
-    // reason the templates are there: what they govern is an UNATTENDED RUNNER
-    // opening task rows, not a prompt somebody pastes into a box (ONE SUBJECT).
-    // ‼️ X-191 — the leader's leash. Filed with the campaign's other brakes
-    // rather than under models: what these govern is an UNATTENDED RUNNER's
-    // spending, not which model a person picks in a launcher (ONE SUBJECT).
-    sentryLeaderModel: 'tasks',
-    sentryLeaderBudgetUsd: 'tasks',
-    sentryLeaderMaxSeconds: 'tasks',
-    sentryLeaderMaxUsd: 'tasks',
-    sentryLeaderFailLimit: 'tasks',
-    sentryFailureLimit: 'tasks',
-    sentryIdlePollMin: 'tasks',
-    sentryStallMin: 'tasks',
+    /**
+     * ‼️ X-193 — THE SENTRY IS ITS OWN SECTION, and thirteen settings is the
+     * argument. They were filed under Tasks & Automation because each of them,
+     * one at a time, governs "an unattended runner rather than a prompt somebody
+     * pastes into a box" — which was right about each one and wrong about the
+     * set: a reader tuning an overnight campaign had to find the words it
+     * starts on, the folders it reads, the leader's leash and three thresholds
+     * scattered down a page about task concurrency and dispatch rules.
+     *
+     * ONE SUBJECT cuts the other way once a subject is big enough to be one.
+     * What stays behind is deliberate: `answerDir` is where an answer is
+     * WRITTEN and belongs to the work queue, and `automation.*` is the master
+     * gate over every unattended thing on this machine, not over this one.
+     */
+    sentryTemplatesFile: 'sentry',
+    sentryInstructionFiles: 'sentry',
+    handoverSources: 'sentry',
+    handoverFolders: 'sentry',
+    sentryLeaderModel: 'sentry',
+    sentryLeaderBudgetUsd: 'sentry',
+    sentryLeaderMaxSeconds: 'sentry',
+    sentryLeaderMaxUsd: 'sentry',
+    sentryLeaderFailLimit: 'sentry',
+    sentryFailureLimit: 'sentry',
+    sentryIdlePollMin: 'sentry',
+    sentryStallMin: 'sentry',
     // media pipeline & browser
     mediaAuthSecret: 'media', replicateAuthSecret: 'media', replicateBaseUrl: 'media',
     mediaBaseUrl: 'media', outputsMaxMB: 'media', ingestFolders: 'media',
@@ -327,6 +320,7 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['live', 'Live Monitoring & Alerts'],
     ['cost', 'Cost & Budgets'],
     ['tasks', 'Tasks & Automation'],
+    ['sentry', 'Sentry — unattended campaigns'],
     ['media', 'Media & Browser'],
     ['search', 'Search & Semantic'],
     ['cli', 'Multi-CLI'],
@@ -338,6 +332,43 @@ export const CATEGORY_LABELS: [string, string][] = [
     ['access', 'Access (web view · messaging)'],
     ['other', 'Other']
 ];
+
+/**
+ * ‼️ X-193 — WHAT A PATH SETTING ACTUALLY OPENS, beside the row that holds it.
+ *
+ * DENSITY: a box holding `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR` tells
+ * the reader nothing about the folder it opens, and the one question they have
+ * — *where is that, on THIS machine* — used to cost them a Browse dialog or a
+ * campaign that quietly looked in the wrong place.
+ *
+ * ‼️ WHICH settings get it is DERIVED FROM THEIR OWN SCHEMA, never listed here.
+ * A hand-written list of keys goes stale the first time somebody adds a path
+ * setting and forgets, which is the disease `x-af-browse` was introduced to
+ * cure; so the rule is simply "the schema says what to browse for". A setting
+ * holding nothing is not asked about — an empty box has nothing to resolve, and
+ * a row of reasons under an empty list is noise the reader learns to skip.
+ *
+ * The resolver is handed ALL of one setting's templates at once, so a list of
+ * twelve folders is one call rather than twelve.
+ */
+export function pathPreviews(
+    categories: SettingsCategory[],
+    resolve: (templates: string[]) => PreviewedPath[]
+): Record<string, PreviewedPath[]> {
+    const out: Record<string, PreviewedPath[]> = {};
+    for (const cat of categories ?? []) {
+        for (const it of cat.items ?? []) {
+            const takesPaths = !!it.browse || !!it.shape?.itemBrowse;
+            if (!takesPaths) { continue; }
+            const templates = Array.isArray(it.value)
+                ? it.value.map(v => String(v ?? ''))
+                : (typeof it.value === 'string' && it.value.trim() ? [it.value] : []);
+            if (!templates.length) { continue; }
+            out[it.key] = resolve(templates);
+        }
+    }
+    return out;
+}
 
 /** Deep-enough equality for setting values (JSON-shaped data only). */
 export function sameValue(a: unknown, b: unknown): boolean {

@@ -711,5 +711,56 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
         && ext.indexOf('installSettingsDoor(context)') < ext.indexOf('let agents: AgentInfo[]'));
 }
 
+// ---- X-193 — which settings take PATHS, and what those paths really are -----
+//
+// DENSITY: a row that holds `${vault}/00_AGENT_AREA/…` must show the folder it
+// actually opens, in the row, without a click. Two rules make that safe to
+// build: WHICH settings get the treatment is derived from their own schema (a
+// hand-written list of keys goes stale the first time somebody adds one — the
+// disease `x-af-browse` was introduced to cure), and the resolver is asked ONCE
+// per setting rather than once per row.
+{
+    const cats = [{
+        id: 'sentry', label: 'Sentry — unattended campaigns', items: [
+            {
+                key: 'agentFarm.sentryTemplatesFile', type: 'string', browse: 'file',
+                value: '${vault}/nobet.md', default: '', modified: true, description: ''
+            },
+            {
+                key: 'agentFarm.handoverFolders', type: 'array',
+                shape: { kind: 'list', itemType: 'string', itemBrowse: 'folder' },
+                value: ['${vault}/x', '${nope}/y'], default: [], modified: true, description: ''
+            },
+            {
+                key: 'agentFarm.sentryLeaderModel', type: 'string',
+                value: 'haiku', default: '', modified: true, description: ''
+            }
+        ]
+    }];
+    const asked = [];
+    const out = SO.pathPreviews(cats, (ts) => {
+        asked.push(ts);
+        return ts.map(t => ({ template: t, path: t ? 'R:' + t : '', ok: !!t, why: '' }));
+    });
+    ok('a setting whose schema names a browse target is a path setting',
+        !!out['agentFarm.sentryTemplatesFile'] && !!out['agentFarm.handoverFolders']);
+    ok('...and one that does not is left alone — no hand-written list of keys',
+        !out['agentFarm.sentryLeaderModel']);
+    ok('a scalar path is previewed as one row',
+        out['agentFarm.sentryTemplatesFile'].length === 1
+        && out['agentFarm.sentryTemplatesFile'][0].path === 'R:${vault}/nobet.md');
+    ok('a list is previewed row by row, in the order it is drawn',
+        out['agentFarm.handoverFolders'].map(r => r.template).join('|') === '${vault}/x|${nope}/y');
+    ok('‼️ the resolver is asked ONCE per setting, never once per row',
+        asked.length === 2);
+    ok('a path setting that is empty asks nothing rather than asking for nothing',
+        !SO.pathPreviews([{
+            id: 'sentry', label: 'S', items: [{
+                key: 'agentFarm.sentryTemplatesFile', type: 'string', browse: 'file',
+                value: '', default: '', modified: false, description: ''
+            }]
+        }], () => { throw new Error('must not be asked'); })['agentFarm.sentryTemplatesFile']);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

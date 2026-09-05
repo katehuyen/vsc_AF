@@ -27,7 +27,7 @@
 'use strict';
 const path = require('path');
 const {
-    PATH_VARS, resolvePathVars, resolvePathList
+    PATH_VARS, resolvePathVars, resolvePathList, previewPathList
 } = require(path.resolve(__dirname, '../out/core/pathVars.js'));
 
 let pass = 0, fail = 0;
@@ -127,6 +127,29 @@ const CTX = {
         && /not a variable/i.test(r.skipped[0].why));
     ok('an empty entry is skipped as nothing, not as a fault',
         resolvePathList(['', '   ', 'D:/x'], CTX).paths.join('|') === 'D:/x');
+}
+
+// ---- the ROW-ALIGNED form: what a settings row shows beside itself ---------
+//
+// X-193 draws one row per entry and each row must say what THAT entry resolves
+// to. `resolvePathList` cannot answer it: it returns the paths in one array and
+// the skips in another, so a page pairing them back up has to re-derive which
+// row was which — the guess this module exists to refuse. One entry in, one
+// answer out, in the same order, including the empty ones.
+{
+    const r = previewPathList(['${vault}/a', '${nope}/b', '', 'D:/plain'], CTX);
+    ok('one row in, one row out, in the same order — nothing is dropped',
+        r.length === 4 && r.map(x => x.template).join('|') === '${vault}/a|${nope}/b||D:/plain');
+    ok('a row that resolves carries the REAL path, so it costs no click to see',
+        r[0].ok === true && r[0].path === 'D:/vault/a' && r[0].why === '');
+    ok('a row that cannot resolve carries the REASON and no path at all',
+        r[1].ok === false && r[1].path === '' && /not a variable/i.test(r[1].why));
+    ok('an empty row is neither resolved nor a fault — it is an empty row',
+        r[2].ok === false && r[2].path === '' && r[2].why === '');
+    ok('a plain path is its own answer rather than a fault',
+        r[3].ok === true && r[3].path === 'D:/plain');
+    ok('nothing to preview is an empty list, not a thrown error',
+        previewPathList(undefined, CTX).length === 0);
 }
 
 // ---- the dictionary is exported so a page can draw it ----------------------

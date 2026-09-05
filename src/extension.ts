@@ -214,7 +214,9 @@ import {
     normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel, slotsFor
 } from './core/accountStore';
 import { AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotIsUsable } from './core/accountUsage';
-import { PathVarContext, resolvePathList, resolvePathVars } from './core/pathVars';
+import {
+    PATH_VARS, PathVarContext, PreviewedPath, previewPathList, resolvePathList, resolvePathVars
+} from './core/pathVars';
 import {
     DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, HandoverListing, HandoverSource, discoverHandover
 } from './core/handoverDiscovery';
@@ -14057,6 +14059,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
 
     /**
+     * ‼️ X-193 — THE VARIABLES AND WHAT THEY ARE HERE, THROUGH ONE DOOR.
+     *
+     * The settings page draws these in every path row, and the bridge answers
+     * `settings.paths` with them. Three readers of one fact is how three
+     * careful copies come to disagree about where `${vault}` points, so there
+     * is one pair of functions and both surfaces are handed it. A variable with
+     * nothing behind it comes back with an empty value rather than being left
+     * out: "this machine has no such thing" is the case that cancels a path,
+     * and hiding it is the silence X-174 exists to refuse.
+     */
+    const pathVarValues = (): { name: string; describe: string; value: string }[] => {
+        const ctx = pathCtx();
+        return PATH_VARS.map(v => ({
+            name: v.name, describe: v.describe,
+            value: resolvePathVars(`\${${v.name}}`, ctx).value
+        }));
+    };
+    const previewPaths = (templates: string[]): PreviewedPath[] =>
+        previewPathList(templates, pathCtx());
+
+    /**
      * ‼️ X-192 — THE POOL, WITH ITS PATHS RESOLVED.
      *
      * Two settings feed one pool: `sentryTemplatesFile` (the single file that
@@ -20118,6 +20141,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerSettingsOps(bridge, {
         getAgents: () => agents,
         categories: settingsCategories,
+        // ‼️ X-193 — the SAME two functions the settings page is handed.
+        pathVarValues, previewPaths,
         writeSetting: async (key, value) => {
             try {
                 await vscode.workspace.getConfiguration().update(key, value, vscode.ConfigurationTarget.Global);
@@ -30449,6 +30474,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                      *  Read at draw time, so an agent added since the window
                      *  opened is in the list. */
                     agentNames: () => agents.map(a => a.name),
+                    /**
+                     * ‼️ X-193 — the variables, DRAWN from the dictionary rather
+                     * than repeated on the page, each beside what it is on this
+                     * machine, and one setting's entries resolved in one call.
+                     * The bridge is handed the same pair.
+                     */
+                    pathVarValues, previewPaths,
                     // Which editor a .md document opens in — reports and answers
                     // (Notices, Work Queue) AND the project documents.
                     docOpen: () => ({ ...docOpenStore.get(), modes: [...DOC_OPEN_MODES] }),

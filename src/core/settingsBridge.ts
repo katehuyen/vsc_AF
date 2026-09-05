@@ -5,8 +5,9 @@ import { AgentEngineDefault } from './agentDefaults';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import { CCItem } from './claudesettings';
 import { ENGINE_ENUM } from './consoleEngine';
+import { PreviewedPath } from './pathVars';
 import {
-    parseImportedProfiles, sanitizeValue, SettingsCategory, SettingsProfile
+    parseImportedProfiles, pathPreviews, sanitizeValue, SettingsCategory, SettingsProfile
 } from './settingsops';
 
 /**
@@ -62,6 +63,15 @@ export interface SettingsBridgeDeps {
     writeSetting(key: string, value: unknown): Promise<void>;
     /** read one Agent Farm config value */
     readSetting<T>(key: string, fallback: T): T;
+    /**
+     * ‼️ X-193 — the path variables and what each is on THIS machine, plus the
+     * resolver for a list of templates. The settings page shows this in every
+     * path row; an agent asked to fix an overnight campaign that "found no
+     * handover note" needs the same answer, and deriving it a second way over
+     * the bridge is how the two come to disagree.
+     */
+    pathVarValues?(): { name: string; describe: string; value: string }[];
+    previewPaths?(templates: string[]): PreviewedPath[];
     /** saved setting sets */
     getProfiles(): SettingsProfile[];
     setProfiles(list: SettingsProfile[]): Promise<void>;
@@ -142,6 +152,49 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
             op: 'settings.get',
             describe: 'One setting in full — its schema type, its allowed values if it has an enum, its default, what it is now and whether a reload is needed. The `agentFarm.` prefix is optional. args: key',
             handler: (args) => itemOut(specOf(argStr(args, 'key')))
+        },
+        {
+            op: 'settings.paths',
+            describe: '‼️ WHERE A PATH SETTING ACTUALLY POINTS ON THIS MACHINE (X-193). A path '
+                + 'setting is written open-ended — `${vault}/00_AGENT_AREA/…`, `${projectNotes}`, '
+                + '`${today}` — so the value in the box is not the folder, and the difference is '
+                + 'where an unattended campaign silently reads the wrong place. This resolves them '
+                + 'with the SAME resolver the settings page and the campaign use, so all three '
+                + 'agree. ‼️ AN UNRESOLVED VARIABLE CANCELS THE PATH rather than becoming an empty '
+                + 'string: `ok:false` with the reason, and no path at all — a half-built path looks '
+                + 'usable and points somewhere nobody meant. Which settings are path settings is '
+                + 'derived from their own schema (`x-af-browse`), never from a list. With no args '
+                + 'it answers for every path setting this build has, plus `vars`: each variable and '
+                + 'what it is here (empty = this machine has no such thing, so every path using it '
+                + 'is skipped). args: key? (one setting), templates? (resolve these instead, to see '
+                + 'what a value WOULD open before writing it)',
+            handler: (args) => {
+                need(!!deps.previewPaths, 'this build cannot resolve path variables');
+                const resolve = deps.previewPaths as (t: string[]) => PreviewedPath[];
+                const vars = deps.pathVarValues?.() ?? [];
+                const given = Array.isArray(args.templates) ? args.templates : undefined;
+                if (given) { return { vars, templates: resolve(given.map(v => String(v ?? ''))) }; }
+                const key = optStr(args, 'key');
+                const cats = key
+                    ? [{
+                        id: '', label: '',
+                        items: [specOf(key)]
+                    } as SettingsCategory]
+                    : deps.categories();
+                const found = pathPreviews(cats, resolve);
+                if (key) {
+                    const full = specOf(key).key;
+                    need(!!found[full], `${full} is not a path setting — its schema names nothing `
+                        + 'to browse for, so there is nothing to resolve');
+                    return { vars, key: full, rows: found[full] };
+                }
+                return {
+                    vars,
+                    settings: Object.keys(found).map(k => ({ key: k, rows: found[k] })),
+                    note: 'Only settings that HOLD something are listed — an empty box has no path '
+                        + 'to resolve.'
+                };
+            }
         },
         {
             op: 'settings.set',

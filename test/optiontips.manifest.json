@@ -1,28 +1,27 @@
 {
   "_": "U-128 — how many options each page still draws with no usable title. A page missing from this list must be at ZERO. A number may only SHRINK: test/test_option_tips.js fails the build when a page draws more than its budget, so a defect can be paid down page by page but never come back. Console was brought to 0 when the gate was written.",
-  "measured": 2639,
-  "bare": 2225,
+  "measured": 2673,
+  "bare": 2205,
   "pages": {
-    "alertsettings": 581,
+    "alertsettings": 577,
     "backlog": 108,
     "dashboard": 33,
-    "engines": 54,
+    "engines": 51,
     "enginespanel": 2,
-    "jsonsettings": 118,
+    "jsonsettings": 116,
     "missions": 533,
     "notices": 44,
     "parts": 27,
     "planusage": 132,
     "queue": 50,
     "search": 8,
-    "spsettings": 3,
     "tasks": 341,
     "templates": 48,
-    "tgsettings": 31,
+    "tgsettings": 26,
     "timeline": 10,
     "toolbox": 40,
     "track": 16,
     "turns": 7,
-    "wikisettings": 39
+    "wikisettings": 36
   }
 }

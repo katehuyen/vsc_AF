@@ -198,6 +198,45 @@ export interface ResolvedList {
  * settings list means "not this one", and reporting it as a broken path would
  * teach them to ignore the report.
  */
+/** One entry of a path list, beside what it actually resolves to. */
+export interface PreviewedPath {
+    /** the entry exactly as the user typed it */
+    template: string;
+    /** the real path it builds — '' when it builds none */
+    path: string;
+    /** false = this row must not be used */
+    ok: boolean;
+    /** one sentence a person can act on — '' when there is nothing to say */
+    why: string;
+}
+
+/**
+ * ‼️ ROW-ALIGNED, WHICH `resolvePathList` DELIBERATELY IS NOT.
+ *
+ * A settings page draws one row per entry and each row has to say what THAT
+ * entry resolves to (X-193, DENSITY: a fact the reader can see must not cost a
+ * click). `resolvePathList` answers the caller's question — "which of these can
+ * I use, and what went wrong with the rest" — by returning two arrays, so a page
+ * pairing them back up would have to re-derive which row was which. One entry
+ * in, one answer out, in the same order, empty ones included.
+ *
+ * An EMPTY row is neither resolved nor a fault: a cleared row is a row somebody
+ * is about to type in, and shouting at it would teach them to ignore the column.
+ */
+export function previewPathList(
+    templates: string[] | undefined, ctx: PathVarContext = {}
+): PreviewedPath[] {
+    return (templates ?? []).map(t => {
+        const template = String(t ?? '');
+        if (!template.trim()) { return { template, path: '', ok: false, why: '' }; }
+        // `value` is already '' on a refusal — deliberately unusable, and pinned
+        // where that promise is made. Re-blanking it here would be a second
+        // opinion about the same rule.
+        const r = resolvePathVars(template, ctx);
+        return { template, path: r.value, ok: r.ok, why: r.why };
+    });
+}
+
 export function resolvePathList(templates: string[], ctx: PathVarContext = {}): ResolvedList {
     const paths: string[] = [];
     const skipped: { template: string; why: string }[] = [];

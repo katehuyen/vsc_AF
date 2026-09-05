@@ -33,6 +33,7 @@
      * follows redraws from what was really stored.
      */
     const listDraft = {};          // key -> the rows being edited
+    let dragging = null;           // X-193 — { key, i } while a row is in hand
     /**
      * ‼️ U-109 — and the same draft for the two shapes whose FIELDS the
      * manifest declares: one object with named fields is a form, a list of
@@ -168,6 +169,39 @@
     }
 
     /**
+     * ‼️ X-193 — WHERE A PATH ACTUALLY POINTS, IN THE ROW THAT HOLDS IT.
+     *
+     * DENSITY: `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR` in a box tells the
+     * reader nothing about the folder it opens, and the one question they have
+     * — *where is that, on THIS machine* — used to cost a Browse dialog or an
+     * overnight campaign quietly reading the wrong folder.
+     *
+     * ‼️ LOOKED UP BY THE TEXT, NOT BY THE ROW NUMBER. The host resolves what is
+     * SAVED; the rows on screen may be a draft with an entry added or dropped,
+     * so an index would pair a row with somebody else's answer — which is worse
+     * than saying nothing. A row whose text is unchanged still shows its real
+     * path; one just typed shows nothing until it is saved, and that is honest.
+     */
+    function pathAnswer(key, template) {
+        const t = String(template ?? '');
+        if (!t.trim()) { return null; }
+        const rows = (DATA.pathPreview || {})[key];
+        if (!Array.isArray(rows)) { return null; }
+        return rows.find(r => String(r.template) === t) || null;
+    }
+
+    function pathLine(key, template) {
+        const a = pathAnswer(key, template);
+        if (!a) { return ''; }
+        // A path with no variable in it resolves to itself; repeating it under
+        // the box would be the same fact twice (ONE SUBJECT).
+        if (a.ok && a.path === String(template)) { return ''; }
+        return a.ok
+            ? `<div class="setpath">→ ${C.esc(a.path)}</div>`
+            : `<div class="setpath bad">⚠ ${C.esc(a.why || 'this path cannot be built on this machine')}</div>`;
+    }
+
+    /**
      * ‼️ U-108 — READ THE BOXES BEFORE ANYTHING STRUCTURAL HAPPENS.
      *
      * Adding, removing or applying redraws the list, and a row typed into but
@@ -213,20 +247,43 @@
         const s = it.shape;
         const numeric = s.itemType === 'number' || s.itemType === 'integer';
         const one = (v, i) => {
+            // U-128 — an option in a narrow box says its own name. A `<select>`
+            // cuts its text and the popup belongs to the operating system, so
+            // the native title is the only place the whole value can be read.
+            const optTip = (o) => `${o}\n\nOne value ${shortKey(it.key)} accepts. `
+                + 'The ORDER of the rows is part of this setting.';
             const box = s.itemAllowed && s.itemAllowed.length
                 ? `<select id="l-${id}-${i}" data-lrow="${C.esc(it.key)}">${
                     (s.itemAllowed.indexOf(v) < 0 && v ? [v] : []).concat(s.itemAllowed).map(o =>
-                        `<option value="${C.esc(o)}"${o === v ? ' selected' : ''}>${C.esc(o)}</option>`).join('')
+                        `<option value="${C.esc(o)}"${o === v ? ' selected' : ''}
+                            title="${C.esc(optTip(o))}">${C.esc(o)}</option>`).join('')
                 }</select>`
                 : `<input type="${numeric ? 'number' : 'text'}" id="l-${id}-${i}"
                         data-lrow="${C.esc(it.key)}" value="${C.esc(v)}"
                         placeholder="${C.esc(numeric ? 'a number' : 'one entry')}">`;
-            return `<div class="setlrow">${box}${s.itemBrowse
+            // ‼️ X-193 — ORDER IS THE VALUE in these lists: `handoverSources` is
+            // read most-truthful-first and `sentryInstructionFiles` decides
+            // whose block wins. Reordering used to mean deleting a row and
+            // retyping it at the bottom, which is how an order gets typed
+            // wrong. Drag moves it; the arrows do the same thing for a hand
+            // that would rather not drag and for a keyboard that cannot.
+            const arrows = rows.length > 1
+                ? `<button class="mini secondary" data-lmove="${C.esc(it.key)}" data-li="${i}" data-ldir="-1"
+                        ${i === 0 ? 'disabled' : ''}
+                        title="Move this entry one place earlier. The order is the setting — nothing is saved until you press Save the list.">↑</button>
+                    <button class="mini secondary" data-lmove="${C.esc(it.key)}" data-li="${i}" data-ldir="1"
+                        ${i === rows.length - 1 ? 'disabled' : ''}
+                        title="Move this entry one place later. The order is the setting — nothing is saved until you press Save the list.">↓</button>`
+                : '';
+            return `<div class="setlrow" draggable="true" data-ldrag="${C.esc(it.key)}" data-li="${i}">
+                <span class="setlgrip" title="Drag to reorder — the order is the setting.">⠿</span>
+                ${box}${s.itemBrowse
                 ? `<button class="secondary small" data-lbrowse="${C.esc(it.key)}" data-li="${i}"
                         data-lkind="${C.esc(s.itemBrowse)}"
                         title="Pick ${s.itemBrowse === 'folder' ? 'a folder' : 'a file'} — it is written into THIS row. Nothing is saved until you press Save the list.">Browse…</button>`
-                : ''}<button class="mini secondary" data-ldel="${C.esc(it.key)}" data-li="${i}"
-                    title="Remove this entry. Nothing is saved until you press Save the list.">✕</button></div>`;
+                : ''}${arrows}<button class="mini secondary" data-ldel="${C.esc(it.key)}" data-li="${i}"
+                    title="Remove this entry. Nothing is saved until you press Save the list.">✕</button>
+                ${pathLine(it.key, v)}</div>`;
         };
         return `<div class="setlist">
             ${rows.length ? rows.map(one).join('')
@@ -860,6 +917,10 @@
             </div>
             <div class="setdesc">${C.esc(it.description || '')}</div>
             <div class="setctl">${controlHtml(it)}</div>
+            ${/* X-193 — a scalar path says where it points, for the same reason
+                  each row of a list does. A list draws its own lines per row, so
+                  drawing one here as well would be the fact twice. */
+            it.browse && !it.shape ? pathLine(it.key, it.value) : ''}
             ${err ? `<div class="seterr">⚠ ${C.esc(err)}</div>` : ''}
             ${!err && it.refusal ? `<div class="seterr">⚠ An entry for this key in your settings file is being ignored — ${C.esc(it.refusal)}</div>` : ''}
         </div>`;
@@ -1217,12 +1278,20 @@
     }
 
     function profileBar() {
+        // U-128 — a `<select>` cuts its own text and the popup is drawn by the
+        // operating system, so the option's native title is the only surface
+        // there is. MIRROR: the set's own name first, then what it holds.
         const opts = DATA.profiles.map(p =>
-            `<option value="${C.esc(p.name)}">${C.esc(p.name)} (${p.count})</option>`).join('');
+            `<option value="${C.esc(p.name)}" title="${C.esc(`${p.name}\n\n${p.count} setting(s)`
+                + `${p.savedAt ? `, saved ${new Date(p.savedAt).toLocaleString()}` : ''}`
+                + '. Applying it sets these and returns every other changed setting to its default.')}"
+                >${C.esc(p.name)} (${p.count})</option>`).join('');
         return `<div class="profbar">
             <span class="muted small">Setting sets:</span>
             <select id="profsel" ${DATA.profiles.length ? '' : 'disabled'}>
-                ${opts || '<option>none saved yet</option>'}
+                ${opts || `<option title="${C.esc('No setting set saved yet.\n\n'
+                + 'Save current as… stores every setting you have changed under a name, so a machine '
+                + 'can be put back the way it was in one press.')}">none saved yet</option>`}
             </select>
             <button class="secondary" id="profapply" ${DATA.profiles.length ? '' : 'disabled'}
                 title="Apply the selected set: its values are set, other modified settings return to default">Apply</button>
@@ -1396,6 +1465,98 @@
      */
     const WIKI_TERMS = 'wiki knowledge base kb 00_WIKI vault obsidian anayasa constitution rules '
         + 'index log compile candidate category categories portable path root';
+
+    /**
+     * ‼️ X-193 — THE SENTRY, AS FOUR QUESTIONS RATHER THAN THIRTEEN BOXES.
+     *
+     * Thirteen settings in one alphabetical run is a list nobody reads: the
+     * words a campaign starts on, the folders it reads, the leader's leash and
+     * three thresholds all look the same in a column. Grouped, the page answers
+     * the questions somebody actually arrives with — where does it look, what
+     * does it say, what may the leader spend, when does it give up.
+     *
+     * ‼️ A KEY THIS LIST HAS NEVER HEARD OF STILL APPEARS. The grouping is
+     * editorial and hand-written, which means it goes stale the moment somebody
+     * adds a setting and forgets this file — so whatever is left over is drawn
+     * under its own heading rather than silently dropped. A settings page that
+     * hides a setting is worse than one that groups it badly.
+     */
+    const SENTRY_GROUPS = [
+        {
+            title: 'Where it looks for the handover note',
+            why: 'The note the last session left is what the next one is started on. The sources are tried IN ORDER and the first that answers wins, so the order is the setting — drag a row to change it.',
+            keys: ['handoverSources', 'handoverFolders']
+        },
+        {
+            title: 'The words it starts the next session with',
+            why: 'One pool, read twice: a block whose heading names a verdict is a template the mechanical round fills, and every block is material the leader blends. Empty is normal — the built-in templates answer every verdict with no file of yours anywhere.',
+            keys: ['sentryTemplatesFile', 'sentryInstructionFiles']
+        },
+        {
+            title: 'The leader, and its leash',
+            why: 'The leader is woken only when one of the campaign\'s own conditions fires, so a routine night costs nothing. These are what it may spend when it is: a cheap model by default, a ceiling per turn, a budget per day, and a number of failures after which it stops being asked.',
+            keys: ['sentryLeaderModel', 'sentryLeaderBudgetUsd', 'sentryLeaderMaxUsd',
+                'sentryLeaderMaxSeconds', 'sentryLeaderFailLimit']
+        },
+        {
+            title: 'When a round is going nowhere',
+            why: 'A session that has produced nothing for N minutes is probably waiting for a permission nobody is there to give. These decide how long the campaign waits before it ends that round and opens the next.',
+            keys: ['sentryFailureLimit', 'sentryIdlePollMin', 'sentryStallMin']
+        }
+    ];
+
+    /**
+     * The variable dictionary, DRAWN from what the host sent rather than
+     * repeated here — a variable added to core/pathVars.ts turns up in this
+     * legend without this file being touched.
+     *
+     * MIRROR: each chip's panel opens on what the variable IS on this machine,
+     * then a blank line, then what it means. A name with nothing behind it says
+     * so plainly, because that is the case that silently cancels a path.
+     */
+    function pathVarLegend() {
+        const vars = DATA.pathVars;
+        if (!Array.isArray(vars) || !vars.length) { return ''; }
+        return `<div class="pathvars">
+            <span class="muted small">Every path box below takes these:</span>
+            ${vars.map(v => window.AFTip.wrap(
+            `<code class="pathvar${v.value ? '' : ' empty'}">\${${C.esc(v.name)}}</code>`,
+            `\${${v.name}}`,
+            window.AFTip.lines([
+                v.value || 'Nothing on this machine — a path using it is SKIPPED rather than pointed somewhere wrong.',
+                '',
+                v.describe
+            ]),
+            'tip-pathvar')).join('')}
+        </div>`;
+    }
+
+    function sentrySection(cat) {
+        const items = (cat && cat.items) || [];
+        const short = (it) => String(it.key).replace(/^agentFarm\./, '');
+        const taken = {};
+        const groups = SENTRY_GROUPS.map(g => {
+            const mine = g.keys
+                .map(k => items.find(it => short(it) === k))
+                .filter(Boolean);
+            mine.forEach(it => { taken[it.key] = true; });
+            return { title: g.title, why: g.why, items: mine };
+        }).filter(g => g.items.length);
+        const left = items.filter(it => !taken[it.key]);
+        if (left.length) {
+            groups.push({
+                title: 'More',
+                why: 'Settings this page has not been told where to file yet — shown here so nothing is hidden.',
+                items: left
+            });
+        }
+        return `${pathVarLegend()}
+            ${groups.map(g => `<div class="setgroup">
+                <h3 class="setgrouph">${C.esc(g.title)}</h3>
+                <div class="setgroupwhy">${C.esc(g.why)}</div>
+                ${g.items.map(itemHtml).join('')}
+            </div>`).join('')}`;
+    }
 
     function wikiSection(cat) {
         const w = DATA.wiki;
@@ -2163,8 +2324,31 @@
                    flex:1 with min-width:0, because an input in a flex row
                    otherwise keeps its default width and squeezes the row. */
                 .setlist { display:flex; flex-direction:column; gap:5px; }
-                .setlrow { display:flex; align-items:center; gap:6px; }
+                .setlrow { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
                 .setlrow input, .setlrow select { flex:1 1 auto; min-width:0; }
+                /* X-193 — the order is the value, so the row can be picked up. */
+                .setlgrip { cursor:grab; opacity:.45; font-size:12px; user-select:none; flex:0 0 auto; }
+                .setlrow:hover .setlgrip { opacity:.85; }
+                .setlrow.dragging { opacity:.5; }
+                .setlrow button[disabled] { opacity:.35; cursor:default; }
+                /* Where a path actually points — a whole row of its own, because
+                   it is as long as a path and must not squeeze the box. */
+                .setpath { flex:1 0 100%; font-size:11px; font-family:var(--vscode-editor-font-family);
+                    color:var(--vscode-descriptionForeground); opacity:.9;
+                    overflow-wrap:anywhere; margin:1px 0 0 18px; }
+                .setpath.bad { color:var(--vscode-editorWarning-foreground, var(--vscode-errorForeground)); opacity:1; }
+                .setgroup { margin:14px 0 0; padding-left:10px;
+                    border-left:2px solid var(--vscode-widget-border, #3333); }
+                .setgrouph { margin:0 0 2px; font-size:12px; letter-spacing:.02em; }
+                .setgroupwhy { font-size:11px; color:var(--vscode-descriptionForeground);
+                    margin:0 0 6px; max-width:760px; }
+                .pathvars { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:6px 0 2px; }
+                .pathvar { font-size:11px; padding:1px 6px; border-radius:9px; cursor:help;
+                    border:1px solid var(--vscode-widget-border, #4444);
+                    font-family:var(--vscode-editor-font-family); }
+                /* A variable with nothing behind it cancels any path that uses
+                   it — the one case worth marking, so it is marked. */
+                .pathvar.empty { opacity:.5; border-style:dashed; }
                 .setljson { font-size:11px; opacity:.85; }
                 /* U-110 — a pair reads left to right: the name, the arrow that
                    says which way it points, the value, the ✕. The name box is
@@ -2373,7 +2557,8 @@
                         : c.id === 'superpowers' ? superpowersSection(c)
                             : c.id === 'live' ? alertsSection(c)
                                 : c.id === 'access' ? accessSection(c)
-                                    : c.items.map(itemHtml).join('')}`).join('')
+                                    : c.id === 'sentry' ? sentrySection(c)
+                                        : c.items.map(itemHtml).join('')}`).join('')
             || (claudeHtml || foldersHtml || docOpenHtml || enginesHtml ? '' : '<p class="muted">No settings match the filter.</p>')}
             ${claudeHtml}
         `;
@@ -2675,6 +2860,45 @@
                 if (i >= 0 && i < rows.length) { rows.splice(i, 1); }
                 render();
             }));
+        /**
+         * ‼️ X-193 — MOVING A ROW IS EDITING THE VALUE, not decorating the page.
+         * `readList` first for U-108's reason: a row typed into and not yet
+         * committed lives only in the DOM, and reordering around it would throw
+         * the typing away. Both gestures land here so there is one move, not two.
+         */
+        const moveRow = (key, from, to) => {
+            const rows = readList(key);
+            if (from < 0 || from >= rows.length || to < 0 || to >= rows.length || from === to) { return; }
+            rows.splice(to, 0, rows.splice(from, 1)[0]);
+            render();
+        };
+        document.querySelectorAll('[data-lmove]').forEach(btn =>
+            btn.addEventListener('click', () => {
+                const i = Number(btn.dataset.li);
+                moveRow(btn.dataset.lmove, i, i + Number(btn.dataset.ldir));
+            }));
+        document.querySelectorAll('[data-ldrag]').forEach(row => {
+            row.addEventListener('dragstart', (e) => {
+                dragging = { key: row.dataset.ldrag, i: Number(row.dataset.li) };
+                if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; }
+                row.classList.add('dragging');
+            });
+            row.addEventListener('dragend', () => { row.classList.remove('dragging'); dragging = null; });
+            // A row only accepts a row from ITS OWN list; dragging between two
+            // settings would be a move nobody asked for and could not undo.
+            row.addEventListener('dragover', (e) => {
+                if (!dragging || dragging.key !== row.dataset.ldrag) { return; }
+                e.preventDefault();
+                if (e.dataTransfer) { e.dataTransfer.dropEffect = 'move'; }
+            });
+            row.addEventListener('drop', (e) => {
+                if (!dragging || dragging.key !== row.dataset.ldrag) { return; }
+                e.preventDefault();
+                const from = dragging.i, to = Number(row.dataset.li);
+                dragging = null;
+                moveRow(row.dataset.ldrag, from, to);
+            });
+        });
         document.querySelectorAll('[data-lapply]').forEach(btn =>
             btn.addEventListener('click', () => {
                 const key = btn.dataset.lapply;
