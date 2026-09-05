@@ -86,6 +86,31 @@
             + inner + panel(head, body) + '</td>';
     }
 
+    /**
+     * ‼️ X-196 — A FORM LABEL WHOSE WHOLE AREA IS THE TRIGGER, and which stays
+     * the element its row is laid out with.
+     *
+     * The same reason `cell` exists, one element along. Wrapping a `<label>` in
+     * `wrap` puts a `<span>` between it and the flex row it sits in, and the
+     * row then lays out the span instead — measured on the sentry form, where
+     * one wrapped label pushed the box beside it out of line with the rest of
+     * its row. So the label CARRIES the positioning class and the panel, and
+     * nothing is inserted into the layout at all.
+     *
+     *   cls   — the label's own classes ('' for none); the positioning class is added
+     *   attrs — everything else the `<label>` needs (already escaped by the caller)
+     *   inner — what the label draws, control included
+     */
+    function label(cls, attrs, inner, head, body) {
+        const a = String(attrs || '').trim();
+        const c = String(cls || '').trim();
+        if (!String(body || '').trim()) {
+            return '<label' + (c ? ' class="' + c + '"' : '') + (a ? ' ' + a : '') + '>' + inner + '</label>';
+        }
+        return '<label class="' + (c ? c + ' ' : '') + 'af-tipw"' + (a ? ' ' + a : '') + '>'
+            + inner + panel(head, body) + '</label>';
+    }
+
     /* ------------------------------------------------------------------
        ‼️ THE PANEL MUST SURVIVE A REPAINT UNDER A STATIONARY POINTER.
 
@@ -647,5 +672,5 @@
         }
     }
 
-    window.AFTip = { wrap: wrap, cell: cell, lines: lines, sizeNote: sizeNote, esc: esc };
+    window.AFTip = { wrap: wrap, cell: cell, label: label, lines: lines, sizeNote: sizeNote, esc: esc };
 })();

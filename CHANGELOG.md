@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.399.2 - X-196 (part 1): the sweep reaches the sentry block and the account cards (2026-09-06)
+
+The user's own instruction behind the item: read the finished backlog, see what
+we have complained about, and take the interface out of it. Three of those
+complaints were still true of this family's own surfaces.
+
+- **‼️ A SHORTHAND WORD WITH NOTHING BEHIND IT.** Six state words came out of the
+  sentry chip — OFF · PAUSED · STOPPED · RUNNING · SLEEPING · WAITING — and not
+  one had a panel. WAITING and SLEEPING are the same picture to a reader who
+  does not already know that one is between rounds and the other is sitting out
+  a quota wall; BLOCKED said nothing about what was blocking it. Each now opens
+  with its long form and then the campaign's own figures — what it works
+  through, as whom, how many rounds, the last decision and when, and for
+  SLEEPING the clock that is the whole difference.
+- **‼️ PROSE IN A NATIVE `title`.** Five labels on the campaign form carried two
+  and three sentences inside a platform tooltip: cut at a length nobody
+  controls, unscrollable, and gone the moment the pointer reaches for it. They
+  are AFTips now. **And MIRROR:** Ceiling %, Safety min and Failure brake are
+  empty BY DESIGN and empty means "the setting decides" — so each panel opens
+  with the figure in force and where it comes from, because an unset ceiling and
+  a ceiling typed at the same number are not the same answer.
+- **A thin cell is a bug, and an undefined column is one too.** Status, Opened
+  and Took had no `<th>` definition at all; Took drew `20m` and nothing else. The
+  columns are defined once, on their headers, and the cell carries the figures
+  the row already implies — opened, ended, took, status. A round still on the
+  board says so rather than drawing a figure that is stale as it is painted.
+- **‼️ THE BLOCK THE ACCOUNT CARD IS FOR HAD NO PANEL.** A bar, a percentage and
+  one line about the reset — and how much is LEFT, which is the figure somebody
+  is actually after, was nowhere: 38% used and 62% left are the same fact and
+  only one of them answers the question being asked. The window block now
+  carries used, left, the reset, how old the reading is and whose plan it is; an
+  account with no figure says WHICH of the two silences it is in.
+- `AFTip.label` joins `AFTip.cell`: a form label whose whole area is the trigger
+  and which stays the element its row is laid out with. Wrapping a `<label>`
+  puts a span between it and its flex row, and the row then lays out the span.
+
 ## 3.399.1 - X-195 closed: and WHICH handover note the words were built on (2026-09-06)
 
 The last line of the item, and the one a reader cannot check for themselves. A

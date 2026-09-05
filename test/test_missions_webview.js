@@ -2229,5 +2229,86 @@ ok('Collapse all folds the whole list', detailCount() === 0);
         !html().includes('leader $0.42'));
 }
 
+// ---------- ‼️ X-196 — THE SWEEP: FIVE PRINCIPLES ON THIS FAMILY'S SURFACES ----------
+//
+// The user's own instruction behind the item: read the finished backlog, see
+// what we have complained about, and take the interface out of it. What is
+// pinned here is the three complaints that were true of the sentry block —
+// a SHORTHAND word with nothing behind it, prose stuffed into a native
+// `title`, and a control that draws less than it means with no MIRROR.
+{
+    const paint = (s) => msgHandler({ data: { type: 'data', data: { ...DATA, sentry: s } } });
+    const base = {
+        defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 },
+        idlePollMin: 10,
+        permissionModes: [{ id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'everything' }],
+        projectName: 'AgentFarm', agentName: 'developer', rounds: []
+    };
+    const CAMP = {
+        id: 'sc-3', project: 'p', agent: 'a1', status: 'running', rounds: 9, engine: 'claude',
+        lastAction: 'start', lastRule: 'has-room', lastAt: 1, lastWhy: 'slot-2 has the most room'
+    };
+
+    // ‼️ SHORTHAND WITHOUT A PANEL IS JUST A WORD NOBODY CAN LOOK UP. WAITING and
+    // SLEEPING were the same picture to a reader who did not already know that
+    // one is between rounds and the other is sitting out a quota wall.
+    paint(Object.assign({}, base, { campaign: CAMP, running: false }));
+    const waiting = html();
+    ok('‼️ X-196: WAITING says what it means, rather than being a word on its own',
+        waiting.includes('>WAITING<')
+        && waiting.includes('Between rounds: nothing is on the board and nothing is in the way'));
+
+    paint(Object.assign({}, base, {
+        campaign: { ...CAMP, lastAction: 'sleep', wakeAt: 4102444800000 }, running: false
+    }));
+    const sleeping = html();
+    ok('…and SLEEPING is told apart from it by the one fact that separates them: the clock',
+        sleeping.includes('>SLEEPING<')
+        && sleeping.includes('sitting the wall out')
+        && sleeping.includes('wakes '));
+    ok('…and says it needs no pressing, which is what a reader at midnight is asking',
+        sleeping.includes('standing, not stopped'));
+
+    paint(Object.assign({}, base, { campaign: null }));
+    ok('even OFF answers, instead of leaving the reader to press something to find out',
+        html().includes('>OFF<') && html().includes('takes the next item off a project backlog'));
+
+    // ‼️ THE FORM'S EXPLANATIONS ARE AFTips, NOT `title` ATTRIBUTES, and every
+    // box that can be left empty says what is in force while it is.
+    paint(Object.assign({}, base, { campaign: null }));
+    getEl('s-new').listeners.click();
+    const form = html();
+    ok('‼️ X-196: the form carries no multi-sentence native tooltip any more',
+        !form.includes('title="Barren rounds IN A ROW')
+        && !form.includes('title="Five-hour percentage at or above which'));
+    ok('…the same words are an AFTip instead, where they can be read and scrolled',
+        form.includes('Barren rounds IN A ROW that switch the campaign off'));
+    ok('‼️ MIRROR — an empty box says WHICH figure is in force and where it comes from',
+        form.includes("Now: 95% — the setting's default, because this box is empty")
+        && form.includes("Now: 3 min — the setting's default, because this box is empty"));
+    ok('…and the engine box says whether accounts rotate at all, which is what it decides',
+        form.includes('Now: no engine named, so every round runs on the main sign-in'));
+
+    // Every column defined once, on its own `th`; every cell a figure.
+    paint(Object.assign({}, base, {
+        campaign: CAMP, running: true,
+        rounds: [
+            { id: 'r1', title: 'Sentry R1', status: 'done', createdAt: 1000, endedAt: 1000 + 95 * 60000, account: '' },
+            { id: 'r2', title: 'Sentry R2', status: 'running', createdAt: Date.now() - 60000, endedAt: null, account: '' }
+        ]
+    }));
+    const tbl = html();
+    ok('‼️ X-196: Status, Opened and Took are DEFINED, once, on their own th',
+        tbl.includes('<th title="Where the round&#039;s own task row got to')
+        || tbl.includes('<th title="Where the round\'s own task row got to'));
+    ok('…Opened and Took too, so no column has to be inferred from its examples',
+        tbl.includes('which is the moment the campaign decided on it')
+        && tbl.includes('Wall-clock minutes from the row being opened'));
+    ok('‼️ a thin cell is a bug: Took carries the figures the row already implies',
+        tbl.includes('took: 1h 35m') && tbl.includes('ended: '));
+    ok('…and a round still on the board says so rather than drawing a stale figure',
+        tbl.includes('Not finished') && tbl.includes('running for: '));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

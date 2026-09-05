@@ -221,5 +221,23 @@ const sec = () => {
         && !/ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN|refreshToken|accessToken|credentials.json/.test(h));
 }
 
+// ---------- ‼️ X-196 — THE BLOCK THE WHOLE CARD IS FOR ----------
+//
+// A bar, a percentage and a reset line, and no panel at all: HOW MUCH IS LEFT —
+// the figure the reader is actually after — was nowhere, and 38% used and 62%
+// left are the same fact with only one of them answering the question.
+{
+    const h = sec();
+    ok('‼️ X-196: the five-hour block answers with what is LEFT, not only what is used',
+        h.includes('used: 91%') && h.includes('left: 9%'));
+    ok('…and how old the figure is, beside the figure rather than on the footer',
+        h.includes('this figure was read 40s ago'));
+    ok('…and whose plan it is, so the percentage has an owner',
+        h.includes('plan: max20x'));
+    ok('‼️ …and an account with NO figure says which of the two silences it is',
+        h.includes('The stored credential no longer refreshes')
+        && h.includes('Nothing has asked for it yet'));
+}
+
 console.log(`test_engines_page_accounts: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

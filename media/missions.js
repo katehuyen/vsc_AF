@@ -3164,15 +3164,79 @@
     };
 
     /** SHORTHAND: one word for the whole state, and the panel carries the rest. */
+    /**
+     * ‼️ X-196 — THE STATE, IN ONE WORD, WITH THE WORD'S MEANING BEHIND IT.
+     *
+     * Six words came out of here and not one of them had a panel: WAITING and
+     * SLEEPING are the same picture to a reader who does not already know the
+     * difference (one is between rounds, the other is sitting out a quota wall
+     * and knows when it wakes), and BLOCKED said nothing at all about what is
+     * blocking it. SHORTHAND is the word on the chip; the panel is the rest of
+     * it, opening with the long form and then the campaign's OWN figures —
+     * which is the DENSITY test, because none of them costs a click now.
+     */
     function sentryChip(s) {
         const c = s.campaign;
-        if (!c) { return '<span class="mchip">OFF</span>'; }
-        if (c.status === 'paused') { return '<span class="mchip wait">PAUSED</span>'; }
-        if (c.status !== 'running') { return '<span class="mchip">STOPPED</span>'; }
-        if (s.running) { return '<span class="mchip live">RUNNING</span>'; }
-        if (c.lastAction === 'sleep') { return '<span class="mchip wait">SLEEPING</span>'; }
-        if (c.lastAction === 'blocked') { return '<span class="mchip bad">BLOCKED</span>'; }
-        return '<span class="mchip live">WAITING</span>';
+        const mark = (cls, word, long, extra) => {
+            const body = window.AFTip.lines([long, ''].concat(extra || []).concat(
+                c ? [
+                    `${s.projectName || c.project || ''} · as ${s.agentName || c.agent || ''}`
+                        + ` · ${c.rounds || 0} round(s)`,
+                    c.lastRule ? `last decision: ${c.lastAction || 'plan'} — ${c.lastRule}` : '',
+                    c.lastAt ? `decided ${sentryWhen(c.lastAt)}` : ''
+                ] : []));
+            return window.AFTip.wrap(
+                `<span class="mchip ${cls}">${word}</span>`, `Sentry — ${word.toLowerCase()}`, body);
+        };
+        if (!c) {
+            return mark('', 'OFF', 'No campaign has ever been set up on this machine.', [
+                'A campaign takes the next item off a project backlog, opens a clean unattended '
+                + 'session on it as an ordinary task row, and when that row ends it reads what the '
+                + 'session left behind and opens the next one — until you stop it.'
+            ]);
+        }
+        if (c.status === 'paused') {
+            return mark('wait', 'PAUSED', 'You paused it. Nothing will be opened until you resume.', [
+                'A round already running was left to finish — pausing stops the NEXT one.',
+                c.pausedAt ? `paused ${sentryWhen(c.pausedAt)}` : ''
+            ]);
+        }
+        if (c.status !== 'running') {
+            return mark('', 'STOPPED', 'It is over — by your own hand or by the failure brake.', [
+                c.stoppedWhy || '',
+                c.stoppedAt ? `stopped ${sentryWhen(c.stoppedAt)}` : ''
+            ]);
+        }
+        if (s.running) {
+            return mark('live', 'RUNNING', 'A round is on the board right now.', [
+                s.live ? `${s.live.title || ''}${s.live.account ? ' on ' + s.live.account : ' on the main sign-in'}` : '',
+                s.live && typeof s.live.accountPercent === 'number'
+                    ? `${Math.max(0, 100 - s.live.accountPercent)}% of that account's five-hour window is left` : ''
+            ]);
+        }
+        if (c.lastAction === 'sleep') {
+            return mark('wait', 'SLEEPING',
+                'Every account it may use is at or above its ceiling, so it is sitting the wall out.', [
+                // ‼️ THE DIFFERENCE BETWEEN THIS AND *WAITING* IS THE CLOCK, so
+                // the clock is the first figure — a reader at midnight cannot
+                // tell a sleeping campaign from a broken one without it.
+                c.wakeAt ? `wakes ${sentryWhen(c.wakeAt)}` : 'no wake time was measured',
+                'It is standing, not stopped: nothing needs pressing.'
+            ]);
+        }
+        if (c.lastAction === 'blocked') {
+            return mark('bad', 'BLOCKED',
+                'It wanted to open a round and could not, so it is waiting rather than guessing.', [
+                c.lastWhy || '',
+                'A block is not a stop — it tries again on the next beat.'
+            ]);
+        }
+        return mark('live', 'WAITING',
+            'Between rounds: nothing is on the board and nothing is in the way.', [
+            s.nextWords && s.nextWords.code
+                ? `the next round already has its words, for ${s.nextWords.code}` : '',
+            'The next beat opens it — see the idle poll setting.'
+        ]);
     }
 
     function sentryWhen(t) {
@@ -3262,21 +3326,44 @@
             const cls = r.status === 'done' ? 'ok' : (r.status === 'failed' ? 'bad'
                 : (r.status === 'cancelled' ? 'wait' : 'live'));
             const mins = r.endedAt && r.createdAt ? Math.round((r.endedAt - r.createdAt) / 60000) : null;
+            /**
+             * ‼️ X-196 — A THIN CELL IS A BUG. `20m` and a full date each imply
+             * three or four figures the row already knows, and every one of
+             * them was a click away on the task row. A CELL HOVER IS FIGURES,
+             * never an explanation — the column is defined once, on its `<th>`.
+             */
+            const took = mins === null
+                ? window.AFTip.cell('', '', '<span class="dim">—</span>', 'Not finished',
+                    window.AFTip.lines([
+                        'status: ' + r.status,
+                        'opened: ' + sentryWhen(r.createdAt),
+                        'running for: ' + Math.max(0, Math.round((Date.now() - r.createdAt) / 60000)) + 'm'
+                    ]))
+                : window.AFTip.cell('', '', mins + 'm', 'How long this round ran',
+                    window.AFTip.lines([
+                        'opened: ' + sentryWhen(r.createdAt),
+                        'ended: ' + sentryWhen(r.endedAt),
+                        'took: ' + (mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm'),
+                        'status: ' + r.status
+                    ]));
             return `<tr class="mrow" data-sround="${C.esc(r.id)}">
                 <td>${C.esc(r.title)}</td>
                 ${sentryWhyCell(r)}
                 <td><span class="mchip ${cls}">${C.esc(r.status)}</span></td>
                 <td>${r.account ? C.esc(r.account) : '<span class="dim">main sign-in</span>'}</td>
                 <td>${C.esc(sentryWhen(r.createdAt))}</td>
-                <td>${mins === null ? '' : mins + 'm'}</td>
+                ${took}
             </tr>`;
         }).join('');
+        // ‼️ X-196 — EVERY COLUMN IS DEFINED ONCE, HERE. A `<th>` with no title
+        // is a column the reader has to infer from four rows of examples.
         return `<table class="mtable"><thead><tr>
             <th title="The row this round ran as. A sentry round is an ORDINARY task: the same runner opens it, the same terminal watches it, the same cancel button ends it.">Round</th>
             <th title="Why this round opened on the words it did. L = a leader turn chose them. M = a template filled itself in and no model was asked. M! = the leader WAS asked and gave nothing usable, which is the only case that spends money without buying words. Hover the cell for the conditions that fired, the diagnosis and what the turn cost.">Why</th>
-            <th>Status</th>
+            <th title="Where the round's own task row got to. A sentry round is an ordinary task, so these are the ordinary task words: queued, running, done, failed, cancelled. FAILED is not the same as barren — a round can finish cleanly and still change nothing, and it is the barren ones that feed the failure brake.">Status</th>
             <th title="The captured sign-in the round spent. Empty means the main sign-in — the absence of a slot IS the main account.">Account</th>
-            <th>Opened</th><th>Took</th></tr></thead><tbody>${rows}</tbody></table>`;
+            <th title="When the round's task row was created, which is the moment the campaign decided on it. The session itself starts a beat later.">Opened</th>
+            <th title="Wall-clock minutes from the row being opened to it ending — not model time, and not time spent working. A round still on the board says so instead of showing a running figure that would be stale the moment it was drawn.">Took</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
     /**
@@ -3636,6 +3723,50 @@
         </div>`;
     }
 
+    /**
+     * ‼️ X-196 — A FORM LABEL WHOSE EXPLANATION IS AN AFTip, NOT A `title`.
+     *
+     * Every one of these carried two or three sentences inside a native
+     * `title`: a tooltip that arrives after a second, cannot be scrolled, is
+     * cut by the platform at a length nobody controls, and vanishes if the
+     * pointer travels into it. The rule has a name for exactly this — anything
+     * that IS text, or could grow into text, is an AFTip; a native `title`
+     * carries a handful of figures and nothing else.
+     */
+    const tipLabel = (inner, head, body, cls) => window.AFTip.label(
+        cls || '', '', inner, head, Array.isArray(body) ? window.AFTip.lines(body) : body);
+
+    /**
+     * ‼️ X-196 — MIRROR, ON A BOX WHOSE EMPTINESS MEANS SOMETHING.
+     *
+     * These boxes are empty BY DESIGN and empty means "the setting decides", so
+     * the reader cannot tell an unset ceiling from a ceiling they typed at the
+     * same number — and only one of those two is a choice they made. The
+     * panel's first line is therefore the figure in force AND where it comes
+     * from, which is what MIRROR asks of any control that draws less than it
+     * means.
+     */
+    const mirrorNum = (val, dflt, unit, long) => {
+        const own = String(val === undefined || val === null ? '' : val).trim();
+        const d = String(dflt === undefined || dflt === null ? '' : dflt).trim();
+        return window.AFTip.lines([
+            own
+                ? `Now: ${own}${unit} — this campaign's own`
+                : (d
+                    ? `Now: ${d}${unit} — the setting's default, because this box is empty`
+                    : 'Now: nothing — neither this box nor the setting names a figure'),
+            '',
+            long
+        ]);
+    };
+
+    const engineName = (id) =>
+        ((DATA.engines || []).find(e => e.id === id) || {}).label || id || '';
+    const permName = (s, id) => {
+        const m = (s.permissionModes || []).find(x => x.id === id);
+        return m ? m.label : '';
+    };
+
     function sentryFormHtml(s) {
         // U-130 — four of these boxes share one row and every one of them cuts
         // the name inside it, so the name goes on the option itself.
@@ -3651,23 +3782,62 @@
                     ${opt(DATA.projects, sentryForm.project, 'id', 'name')}</select></label>
                 <label>Runs as<select id="s-agent">${C.option('', '— pick one —', { selected: !sentryForm.agent, detail: 'Every round of this campaign opens in that agent\'s own folder, under its own rules.' })}
                     ${opt(DATA.agents, sentryForm.agent, 'id', 'name')}</select></label>
-                <label title="Naming an engine is what turns account rotation on: without one every round runs on the main sign-in, because choosing an account would mean assuming an engine.">Engine
-                    <select id="s-engine">${C.option('', 'main sign-in only', { selected: !sentryForm.engine, detail: 'No engine named, so no account rotation: every round runs on the main sign-in, because choosing an account would mean assuming an engine.' })}
-                    ${opt((DATA.engines || []).map(e => ({ id: e.id, name: e.label })), sentryForm.engine, 'id', 'name')}</select></label>
+                ${tipLabel(
+                    `Engine<select id="s-engine">${C.option('', 'main sign-in only', { selected: !sentryForm.engine, detail: 'No engine named, so no account rotation: every round runs on the main sign-in, because choosing an account would mean assuming an engine.' })}
+                    ${opt((DATA.engines || []).map(e => ({ id: e.id, name: e.label })), sentryForm.engine, 'id', 'name')}</select>`,
+                    'Engine — and therefore whether accounts rotate at all',
+                    [
+                        sentryForm.engine
+                            ? `Now: ${engineName(sentryForm.engine)} — rounds rotate across its captured sign-ins`
+                            : 'Now: no engine named, so every round runs on the main sign-in',
+                        '',
+                        'Naming an engine is what turns account rotation ON: without one, choosing an '
+                        + 'account would mean assuming an engine, so nothing is chosen and every round '
+                        + 'opens as the identity this machine is signed in as.'
+                    ])}
                 <label>Model<input id="s-model" value="${C.esc(sentryForm.model)}" placeholder="engine default" list="s-models"></label>
                 <datalist id="s-models">${(DATA.modelAliases || []).map(m => `<option value="${C.esc(m)}">`).join('')}</datalist>
             </div>
             <div class="srow">
-                <label title="What a round may do without asking. ‼️ An unattended round that stops to ask has nobody to answer it and never ends.">Permissions
-                    <select id="s-perm">${(s.permissionModes || []).map(m =>
-                        C.option(m.id, m.label, { selected: m.id === sentryForm.permissionMode, detail: m.detail || '' })).join('')}</select></label>
-                <label class="scheck"><input type="checkbox" id="s-sp"${sentryForm.superpowers ? ' checked' : ''}> Superpowers</label>
-                <label title="Five-hour percentage at or above which an account is a wall and is not worth starting a round on.">Ceiling %
-                    <input id="s-ceiling" type="number" min="1" max="100" placeholder="${C.esc(String((s.defaults || {}).ceiling || ''))}" value="${C.esc(sentryForm.ceiling)}"></label>
-                <label title="Minutes to wait past a measured reset before trying that account again.">Safety min
-                    <input id="s-buffer" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).safetyBufferMin || ''))}" value="${C.esc(sentryForm.safetyBufferMin)}"></label>
-                <label title="Barren rounds IN A ROW that switch the campaign off. Not a round budget — a working campaign runs until you stop it — but the one alarm no quota can raise: a broken setup opening empty sessions all night spends nothing and would never stop. 0 switches it off.">Failure brake
-                    <input id="s-fail" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).failLimit || ''))}" value="${C.esc(sentryForm.failLimit)}"></label>
+                ${tipLabel(
+                    `Permissions<select id="s-perm">${(s.permissionModes || []).map(m =>
+                        C.option(m.id, m.label, { selected: m.id === sentryForm.permissionMode, detail: m.detail || '' })).join('')}</select>`,
+                    'What a round may do without asking',
+                    [
+                        'Now: ' + (permName(s, sentryForm.permissionMode) || 'the CLI\'s own default'),
+                        '',
+                        '‼️ An unattended round that stops to ask has nobody to answer it and never ends, '
+                        + 'so this is the one setting a campaign cannot afford to leave narrow.'
+                    ])}
+                ${tipLabel(
+                    `<input type="checkbox" id="s-sp"${sentryForm.superpowers ? ' checked' : ''}> Superpowers`,
+                    'Superpowers, on every round of this campaign',
+                    [
+                        'Now: ' + (sentryForm.superpowers ? 'on' : 'off'),
+                        '',
+                        'The skills discipline is loaded into every session the campaign opens, exactly '
+                        + 'as if the box on a hand-started session were ticked.'
+                    ], 'scheck')}
+                ${tipLabel(
+                    `Ceiling %<input id="s-ceiling" type="number" min="1" max="100" placeholder="${C.esc(String((s.defaults || {}).ceiling || ''))}" value="${C.esc(sentryForm.ceiling)}">`,
+                    'The five-hour percentage that counts as a wall',
+                    mirrorNum(sentryForm.ceiling, (s.defaults || {}).ceiling, '%',
+                        'At or above it an account is not worth starting a round on: the round would open, '
+                        + 'run into the limit and end barren. Every account walled is what makes the '
+                        + 'campaign sleep instead of spending the night on nothing.'))}
+                ${tipLabel(
+                    `Safety min<input id="s-buffer" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).safetyBufferMin || ''))}" value="${C.esc(sentryForm.safetyBufferMin)}">`,
+                    'Minutes to wait PAST a measured reset',
+                    mirrorNum(sentryForm.safetyBufferMin, (s.defaults || {}).safetyBufferMin, ' min',
+                        'The reset time is the endpoint\'s own and the clocks are not the same clock. '
+                        + 'Waking on the dot means waking into the wall again; this is the margin.'))}
+                ${tipLabel(
+                    `Failure brake<input id="s-fail" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).failLimit || ''))}" value="${C.esc(sentryForm.failLimit)}">`,
+                    'Barren rounds IN A ROW that switch the campaign off',
+                    mirrorNum(sentryForm.failLimit, (s.defaults || {}).failLimit, '',
+                        'Not a round budget — a working campaign runs until you stop it. This is the one '
+                        + 'alarm no quota can raise: a broken setup opening empty sessions all night '
+                        + 'spends nothing and would never stop itself. 0 switches the brake off.'))}
             </div>
             ${sentryPolicyHtml(s)}
             ${sentryLeaderHtml(s)}

@@ -369,15 +369,62 @@
         const T = window.AFTip;
         const read = a.percent >= 0;
         const hot = a.percent >= 90 ? 'hot' : a.percent >= 75 ? 'warn' : '';
+        /**
+         * ‼️ X-206 — WHEN THE FIGURE WAS READ, BESIDE THE FIGURE.
+         *
+         * The card used to print `captured 6d ago` next to a percentage, and
+         * the two answer different questions: one is how long this sign-in has
+         * been on the machine, the other is whether the number is worth acting
+         * on. A percentage with no age is a percentage the reader has to trust.
+         */
+        const readAge = a.fetchedAt
+            ? 'read ' + age(a.fetchedAt, DATA.now)
+            : 'never read';
+        /**
+         * ‼️ X-196 — THE BLOCK THE WHOLE CARD IS FOR, AND IT CARRIED NO PANEL.
+         *
+         * A bar, a percentage and one line about the reset: everything else the
+         * reader needs to decide *can I start something on this now* was on the
+         * card's technical footer or nowhere. How much is LEFT is the figure
+         * they are actually after and it was never written — 62% left and 38%
+         * used are the same fact, and only one of them is the answer to the
+         * question being asked. DENSITY: none of this costs a click now.
+         */
         const window5 = read
-            ? '<div class="acwin">'
-            + '<div class="acwt"><span>five-hour window</span><strong>' + a.percent + '%</strong></div>'
-            + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>'
-            + '<div class="acsub">' + esc(accountTurns(a) || 'no reset time was read') + '</div></div>'
-            : '<div class="acnone">five-hour window — '
-            + (a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired'
-                ? 'needs signing in again, so nothing was read'
-                : 'not read yet') + '</div>';
+            ? T.wrap('<div class="acwin">'
+                + '<div class="acwt"><span>five-hour window</span><strong>' + a.percent + '%</strong></div>'
+                + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>'
+                + '<div class="acsub">' + esc(accountTurns(a) || 'no reset time was read') + '</div></div>',
+                'Five-hour window — ' + (a.label || a.id),
+                T.lines([
+                    'used: ' + a.percent + '%',
+                    'left: ' + Math.max(0, 100 - a.percent) + '%',
+                    accountTurns(a) || 'reset: no time was read, so nothing is claimed about when it turns over',
+                    'this figure was ' + readAge,
+                    a.plan ? 'plan: ' + a.plan : '',
+                    '',
+                    'The percentage is Anthropic\'s own — the same figure /usage prints — and not a '
+                    + 'total worked out of the transcripts. A campaign compares it against the '
+                    + 'ceiling to decide whether this sign-in is worth opening a round on.'
+                ]), 'acwinw')
+            : T.wrap('<div class="acnone">five-hour window — '
+                + (a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired'
+                    ? 'needs signing in again, so nothing was read'
+                    : 'not read yet') + '</div>',
+                'No figure for this window',
+                T.lines([
+                    'state: ' + (a.usageState || 'unread'),
+                    'read: ' + readAge,
+                    '',
+                    // ‼️ -1 IS NOT 0%. The card refuses to draw an empty bar for
+                    // an unread account, and the panel says which of the two
+                    // silences this is rather than leaving it to the wording.
+                    a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired'
+                        ? 'The stored credential no longer refreshes, so there is nothing to read a '
+                        + 'figure from. Sign in again in a terminal and capture it once more.'
+                        : 'Nothing has asked for it yet. Press ⟳ to read this one account now — '
+                        + 'accounts are read one at a time and never less than five seconds apart.'
+                ]), 'acwinw');
         /**
          * ‼️ X-205 — A SWITCH, NOT A SENTENCE. "Use next" reads as *hand the
          * next one to whoever is next*, which is the opposite of what it does:
@@ -405,17 +452,6 @@
                 + 'session. An account is deliberately not remembered per agent: it is a state (how much '
                 + 'of a plan is left, which changes hourly), not a preference, so this one place holds it '
                 + 'and a launch that names its own account still wins.');
-        /**
-         * ‼️ X-206 — WHEN THE FIGURE WAS READ, BESIDE THE FIGURE.
-         *
-         * The card used to print `captured 6d ago` next to a percentage, and
-         * the two answer different questions: one is how long this sign-in has
-         * been on the machine, the other is whether the number is worth acting
-         * on. A percentage with no age is a percentage the reader has to trust.
-         */
-        const readAge = a.fetchedAt
-            ? 'read ' + age(a.fetchedAt, DATA.now)
-            : 'never read';
         /**
          * ‼️ …AND THE BUTTON SAYS WHERE IT IS IN THE LINE. A press that will act
          * in twenty seconds with no sign it was heard is indistinguishable from
@@ -764,6 +800,10 @@
                     padding-bottom:3px; border-bottom:1px solid var(--vscode-widget-border,#4443); }
                 .acgrpn { font-size:12px; font-weight:600; }
                 .acwin { margin-top:6px; max-width:420px; }
+                /* X-196 — the window block is the card's own paragraph, so the
+                   AFTip wrapper around it has to be one too: an inline wrapper
+                   would collapse the block it holds. */
+                .acwinw { display:block; }
                 .acwt { display:flex; justify-content:space-between; align-items:baseline;
                     gap:8px; font-size:12px; }
                 .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
