@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.392.0 - X-205: the standing account is a switch, not a sentence (2026-09-05)
+
+`Use next` read as *hand the next one to whoever is next* — the opposite of what
+it did. It makes THIS account the one every new session of that engine opens as,
+and the state is binary and exclusive per engine, which is what a switch is for.
+
+- The two text buttons (`Use next` / `Main account`) are now **one control in its
+  two positions**: a switch, ON in the same blue the standing badge and the card's
+  left rule already wear — one colour for one fact, read down a column of cards
+  without stopping to parse a label.
+- **MIRROR** — a control with no words opens its tooltip with the position it is
+  IN (`ON — the standing Claude Code account` / `OFF — switch to this account`),
+  then the whole consequence: that turning one on turns the other off, and that
+  nothing already running moves either way.
+- `role="switch"` and `aria-checked`, so the state is not only a colour.
+- The Console account box and the launcher dimension no longer point at a button
+  by a name that no longer exists.
+
 ## 3.391.0 - X-204: an expired access token is not a signed-out account (2026-09-05)
 
 MEASURED, and it cost an account to learn. Two things were true at once and only

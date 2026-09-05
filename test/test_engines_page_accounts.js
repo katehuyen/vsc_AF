@@ -100,6 +100,29 @@ const sec = () => {
     back[0].click();
     ok('…and it clears the engine rather than naming an account',
         JSON.stringify(r.last()) === JSON.stringify({ type: 'accountActivate', id: '', engine: 'claude' }));
+
+    // ---- X-205: it is a SWITCH, and its state is drawn rather than spelled ----
+    //
+    // ‼️ "Use next" read as *hand the next one to whoever is next* — the
+    // opposite of what it does. The state is binary and exclusive per engine,
+    // so the control is one switch with two positions and the words move into
+    // the AFTip, where the whole consequence fits.
+    ok('‼️ both directions are the SAME control, in its two positions',
+        /class="actog on"[^>]*data-acmain/.test(h)
+        && (h.match(/class="actog"[^>]*data-acuse/g) || []).length === 3);
+    ok('…exactly one switch is ON, and it is the standing account\'s',
+        (h.match(/class="actog on"/g) || []).length === 1);
+    ok('…and it announces itself as a switch to anything not looking at pixels',
+        (h.match(/role="switch"/g) || []).length === 4
+        && /aria-checked="true"/.test(h) && /aria-checked="false"/.test(h));
+    ok('‼️ …while the misleading words are gone from the section entirely',
+        !/Use next|Main account<\/button>/.test(h));
+
+    // MIRROR — a control with no words at all opens its tooltip with the state
+    // it is IN, before it says what pressing it would do.
+    ok('…and the hover names the position first, then the whole consequence',
+        /ON — the standing/.test(h) && /hands the engine back to the main sign-in/.test(h)
+        && /OFF — switch to this account/.test(h) && /goes off in the same act/.test(h));
 }
 
 // ---- dropping one ----------------------------------------------------------

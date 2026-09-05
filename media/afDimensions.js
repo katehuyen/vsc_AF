@@ -77,8 +77,8 @@
             why: 'X-169 - WHICH SIGN-IN of that engine runs it. NOT remembered, and that is the '
                 + 'decision rather than an omission: a model is a preference, an account is a '
                 + 'STATE (how much of a plan is left, which changes hourly). Remembered per agent '
-                + 'it would pin an agent to an exhausted plan and outrank the "use this next" '
-                + 'gesture on the Engines page, which would then visibly do nothing.'
+                + 'it would pin an agent to an exhausted plan and outrank the account switch '
+                + 'on the Engines page, which would then visibly do nothing.'
         },
         {
             id: 'providerId', owner: 'user', remembered: true, perEngine: true, redraws: true,

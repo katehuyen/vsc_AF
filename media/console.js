@@ -3435,7 +3435,7 @@
             }));
             const tip = 'Which sign-in of this engine pays for the new session. '
                 + 'Blank is the main account — the identity signed in on this machine. '
-                + 'A dot marks the standing choice (Engines page → use this next); '
+                + 'A dot marks the standing choice — the account whose switch is ON on the Engines page; '
                 + 'this box overrules it for THIS session only, because an account is a '
                 + 'state and not a preference and nothing here is remembered.';
             const shown = withCurrent(rows, cur);

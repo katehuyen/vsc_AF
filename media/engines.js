@@ -378,15 +378,30 @@
             + (a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired'
                 ? 'needs signing in again, so nothing was read'
                 : 'not read yet') + '</div>';
+        /**
+         * ‼️ X-205 — A SWITCH, NOT A SENTENCE. "Use next" reads as *hand the
+         * next one to whoever is next*, which is the opposite of what it does:
+         * it makes THIS account the one the next session opens as. The state is
+         * binary and exclusive per engine — exactly what a switch is for — so
+         * the control says it by its shape, and the words move into the AFTip
+         * where there is room for the whole consequence (MIRROR: the first line
+         * is this switch's CURRENT state).
+         */
         const stand = a.active
-            ? T.wrap('<button class="secondary small" data-acmain="' + esc(a.engine) + '">Main account</button>',
-                'Stand this one down',
-                'The next ' + engineLabel(a.engine) + ' session goes back to the main sign-in — the identity this '
-                + 'machine is logged in as, for which nothing is injected at all. It changes nothing that '
-                + 'is already running: an account is fixed for a session the way a route is.')
-            : T.wrap('<button class="small" data-acuse="' + esc(a.id) + '" data-acengine="' + esc(a.engine) + '">Use next</button>',
-                'The next ' + engineLabel(a.engine) + ' session opens as ' + (a.label || a.id),
-                'Nothing already running moves — starting on another account means starting another '
+            ? T.wrap('<button class="actog on" role="switch" aria-checked="true" '
+                + 'data-acmain="' + esc(a.engine) + '"><i></i></button>',
+                'ON — the standing ' + engineLabel(a.engine) + ' account',
+                'Every new ' + engineLabel(a.engine) + ' session opens as ' + (a.label || a.id) + '.\n\n'
+                + 'Switching it OFF hands the engine back to the main sign-in — the identity this machine '
+                + 'is logged in as, for which nothing is injected at all. Either way nothing already '
+                + 'running moves: an account is fixed for a session the way a route is.')
+            : T.wrap('<button class="actog" role="switch" aria-checked="false" '
+                + 'data-acuse="' + esc(a.id) + '" data-acengine="' + esc(a.engine) + '"><i></i></button>',
+                'OFF — switch to this account',
+                'Turning it on makes ' + (a.label || a.id) + ' the account every new ' + engineLabel(a.engine)
+                + ' session opens as. The one that is on now goes off in the same act: one engine, one '
+                + 'standing account.\n\n'
+                + 'Nothing already running moves — starting on another account means starting another '
                 + 'session. An account is deliberately not remembered per agent: it is a state (how much '
                 + 'of a plan is left, which changes hourly), not a preference, so this one place holds it '
                 + 'and a launch that names its own account still wins.');
@@ -624,6 +639,22 @@
                    the held verdict and the keyless route wear. */
                 .acbad { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
                     border-color:transparent; cursor:help; }
+                /* ‼️ X-205 — the standing account is a SWITCH. Two states of one
+                   control, drawn rather than spelled: a button whose label has
+                   to be read is a button the eye has to stop at, and this one
+                   is read at a glance down a column of cards. The ON colour is
+                   the SAME blue the standing badge and the card's left rule
+                   wear — one colour for one fact, across the page. */
+                .actog { width:34px; height:18px; padding:0; border-radius:9px; flex:none;
+                    border:1px solid var(--vscode-widget-border,#4446);
+                    background:var(--vscode-input-background,#2224); cursor:pointer;
+                    position:relative; transition:background .12s ease, border-color .12s ease; }
+                .actog i { position:absolute; top:2px; left:2px; width:12px; height:12px;
+                    border-radius:50%; background:var(--vscode-descriptionForeground,#999);
+                    transition:left .12s ease, background .12s ease; }
+                .actog:hover { border-color:var(--vscode-focusBorder,#3794ff); }
+                .actog.on { background:var(--vscode-charts-blue,#3794ff); border-color:transparent; }
+                .actog.on i { left:18px; background:#fff; }
                 .acwin { margin-top:6px; max-width:420px; }
                 .acwt { display:flex; justify-content:space-between; align-items:baseline;
                     gap:8px; font-size:12px; }
