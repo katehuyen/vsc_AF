@@ -9,6 +9,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const CC = require(path.join(__dirname, '..', 'out', 'core', 'claudesettings.js'));
+const { charts } = require('./lib_charts_stub.js');
 
 // ---------- model building ----------
 {
@@ -94,7 +95,7 @@ const CC = require(path.join(__dirname, '..', 'out', 'core', 'claudesettings.js'
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
         window: {
-            AFCharts: { esc: (s) => String(s) },
+            AFCharts: charts({ esc: (s) => String(s) }),
             __DATA__: {
                 focus: '', profiles: [],
                 categories: [{

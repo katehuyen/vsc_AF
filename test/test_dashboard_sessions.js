@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { charts } = require('./lib_charts_stub.js');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -540,13 +541,13 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
             setState: (s) => { savedState = s; }
         }),
         window: {
-            AFCharts: {
+            AFCharts: charts({
                 esc: (s) => String(s === undefined || s === null ? '' : s), fmtTok: (n) => String(n || 0),
             fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
             fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
             WEIGHTED_TIP: 'weighted', fmtUSD: (n) => '$' + (n || 0),
                 stackedBars: () => '', donut: () => '', hbars: () => '', heatmap: () => '', sparkline: () => ''
-            },
+            }),
             __DATA__: {
                 generatedAt: now, today: '2026-07-15', agents: [],
                 modelTotals: {}, tokenTypes: { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 },

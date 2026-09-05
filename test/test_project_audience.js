@@ -199,7 +199,7 @@ const seed = { project, roles, repos: project.repos, decisions, now: Date.UTC(20
     ok('…offering this window\'s project as the visible default',
         /this window's project: \$\{winProject\.name\}/.test(page));
     ok('‼️ …and a deliberate "none", which the old implicit behaviour could not say',
-        /value="--none--"/.test(page));
+        /C\.option\('--none--'/.test(page) || /value="--none--"/.test(page));
     ok('‼️ an untouched box posts NO project key — the message it always posted',
         /if \(form\.projectId === '--none--'\) \{ input\.project = ''; \}/.test(page)
         && /else if \(form\.projectId\) \{ input\.project = form\.projectId; \}/.test(page));

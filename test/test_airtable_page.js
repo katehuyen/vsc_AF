@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const { charts } = require('./lib_charts_stub.js');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -66,7 +67,7 @@ const DATA = {
 const sandbox = {
     acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
     window: {
-        AFCharts: { esc: (s) => String(s) },
+        AFCharts: charts({ esc: (s) => String(s) }),
         __DATA__: DATA,
         addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } }
     },

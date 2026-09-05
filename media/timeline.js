@@ -223,8 +223,12 @@
             + `(stalled · ended · error) still ring here, so their tone can be judged before the `
             + `fleet-wide switch is turned on for them.`;
         return `<select id="testevent" title="${C.esc(tip)}">${evs.map(e =>
-            `<option value="${C.esc(e.event)}"${e.event === testEvent ? ' selected' : ''}>`
-            + `${C.esc(e.label)}${armed.indexOf(e.event) >= 0 ? '' : ' (fleet switch only)'}</option>`
+            C.option(e.event, e.label + (armed.indexOf(e.event) >= 0 ? '' : ' (fleet switch only)'), {
+                selected: e.event === testEvent,
+                detail: armed.indexOf(e.event) >= 0
+                    ? 'Armed: a session can raise this one itself.'
+                    : 'No session can arm itself on this one — it rings here so its tone can be judged before the fleet-wide switch is turned on for it.'
+            })
         ).join('')}</select>`;
     }
 

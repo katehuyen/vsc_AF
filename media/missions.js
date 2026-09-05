@@ -428,9 +428,16 @@
         // SHORTHAND: the box is ~150px, so the off-catalog value gets a mark it
         // can carry and the sentence goes in the tooltip above it.
         if (sel && !list.some(m => m.id === sel)) { list.unshift({ id: sel, label: '⚠ ' + sel }); }
-        return [`<option value="">${C.esc(emptyLabel || '— agent default —')}</option>`]
-            .concat(list.map(m =>
-                `<option value="${C.esc(m.id)}"${sel === m.id ? ' selected' : ''}>${C.esc(m.label)}</option>`))
+        // U-130 — the ~150px box cuts every one of these, and the option's own
+        // native title is the only surface the OS popup lets us reach.
+        return [C.option('', emptyLabel || '— agent default —',
+            { detail: 'Nothing is named here, so the model is resolved at launch.' })]
+            .concat(list.map(m => C.option(m.id, m.label, {
+                selected: sel === m.id,
+                detail: m.label.startsWith('⚠ ')
+                    ? 'This engine does not publish that model — the launch will refuse it.'
+                    : (m.detail || (m.label === m.id ? '' : m.id))
+            })))
             .join('');
     };
     /**
@@ -693,20 +700,35 @@
         // is decided by a rule (`resolveLead`) the page can run itself. So it
         // says which agent that is, and it re-says it when the pool changes.
         const auto = form.mode === 'adaptive' ? autoLead() : null;
-        const agentOpts = [`<option value="">${C.esc(form.mode === 'adaptive'
+        const agentOpts = [C.option('', form.mode === 'adaptive'
             ? (auto ? 'Automatic → ' + auto.name : 'Automatic — no agent in the fleet')
-            : '— pick the lead —')}</option>`]
-            .concat(DATA.agents.map(a =>
-                `<option value="${C.esc(a.id)}"${form.leadAgentId === a.id ? ' selected' : ''}>${C.esc(a.name)}</option>`))
+            : '— pick the lead —', {
+            selected: !form.leadAgentId,
+            detail: form.mode === 'adaptive'
+                ? 'Left empty, resolveLead picks the lead — and it re-picks when the pool changes.'
+                : 'A mechanical run needs a lead named by hand.'
+        })]
+            .concat(DATA.agents.map(a => C.option(a.id, a.name, {
+                selected: form.leadAgentId === a.id,
+                detail: a.dir || a.role || ''
+            })))
             .join('');
         // The engines this machine can actually run, from the same matrix every
         // other picker reads — an engine that is not installed is offered with
         // the reason it cannot be picked rather than silently missing.
         const engines = DATA.engines || [];
-        const engineOpts = (sel, blank) => ['<option value="">' + blank + '</option>']
-            .concat(engines.map(e =>
-                `<option value="${C.esc(e.id)}"${sel === e.id ? ' selected' : ''}${e.ready ? '' : ' disabled'}>`
-                + `${C.esc(e.label)}${e.ready ? '' : ' — not ready on this machine'}</option>`))
+        const engineOpts = (sel, blank) => [C.option('', blank,
+            { selected: !sel, detail: 'No engine named here — the run uses whatever the agent resolves to.' })]
+            .concat(engines.map(e => C.option(e.id,
+                e.label + (e.ready ? '' : ' — not ready on this machine'), {
+                selected: sel === e.id,
+                disabled: !e.ready,
+                detail: [
+                    e.ready ? '' : (e.reason || 'Not installed or not signed in here, so it cannot be picked.'),
+                    e.reportsCost ? 'States a price on every turn, so a dollar ceiling binds it.'
+                        : 'Reports no price, so only the turn ceiling binds it.'
+                ].filter(Boolean).join('\n\n')
+            })))
             .join('');
         /**
          * ‼️ U-59 — WHICH ENGINES A DOLLAR CEILING CAN ACTUALLY BIND, ASKED OF
@@ -726,9 +748,12 @@
         // ‼️ The permission vocabulary comes from the host's one list, the same
         // constant the Tasks and Console launchers read — never a copy here.
         const perms = DATA.permissions || [];
-        const permOpts = (sel) => ['<option value="">— engine default —</option>']
+        const permOpts = (sel) => [C.option('', '— engine default —', {
+            selected: !sel,
+            detail: 'Nothing is spent up front; the engine\'s own default decides what a headless delegation may do.'
+        })]
             .concat(perms.filter(p => p.id).map(p =>
-                `<option value="${C.esc(p.id)}"${sel === p.id ? ' selected' : ''}>${C.esc(p.label)}</option>`))
+                C.option(p.id, p.label, { selected: sel === p.id, detail: p.detail || '' })))
             .join('');
         // MIRROR: the control is too narrow to say what it means, so its tooltip
         // opens with what it is set to RIGHT NOW, then explains the field.
@@ -756,9 +781,12 @@
         // the CLI. On the PLANNER nothing resolves it: no `--effort` reaches that
         // command line, so the box has to say the CLI chooses rather than borrow
         // a promise that belongs to a different ladder.
-        const effortOpts = (sel, rows, emptyLabel) => [`<option value="">${C.esc(emptyLabel || '— resolved —')}</option>`]
+        const effortOpts = (sel, rows, emptyLabel) => [C.option('', emptyLabel || '— resolved —', {
+            selected: !sel,
+            detail: 'Left empty, effort is resolved the way a launch resolves it: this agent\'s own default for the engine it lands on, then agentFarm.launchDefaults, then the CLI.'
+        })]
             .concat((rows || efforts).filter(e => e.id).map(e =>
-                `<option value="${C.esc(e.id)}"${sel === e.id ? ' selected' : ''}>${C.esc(e.label)}</option>`))
+                C.option(e.id, e.label, { selected: sel === e.id, detail: e.detail || '' })))
             .join('');
         // MIRROR: too narrow to say what it is, so the tooltip opens with the
         // value it holds RIGHT NOW and then explains the field.
@@ -837,7 +865,7 @@
                         // SHORTHAND: the box is narrow and the engine's name does
                         // not fit in it. The short form goes on the control, the
                         // long one is already in the tooltip above.
-                        ? '<option value="">— no effort —</option>'
+                        ? C.option('', '— no effort —', { selected: true, detail: engLabel + ' has no effort setting, so this member runs at whatever that CLI thinks is normal.' })
                         : effortOpts(form.efforts[a.id] || '', eRows)}</select>
                 <select id="pm-${i}" class="mdl${ovr(form.perms[a.id])}" data-perm="${C.esc(a.id)}"
                     title="${C.esc(mirror(pv, 'permissionMode', permTitle(form.perms[a.id] || '')))}"
@@ -899,8 +927,8 @@
                 <button type="button" class="chip" id="cr-add" title="Add another criterion line">+ criterion</button></div>
             <div class="frow"><label>Autonomy
                 <select id="f-autonomy">
-                    <option value="ask-when-unsure"${form.autonomy !== 'decide-alone' ? ' selected' : ''}>ask when unsure — the lead stops and asks you rather than guessing</option>
-                    <option value="decide-alone"${form.autonomy === 'decide-alone' ? ' selected' : ''}>decide alone — the lead never asks; it decides and records why</option>
+                    ${C.option('ask-when-unsure', 'ask when unsure — the lead stops and asks you rather than guessing', { selected: form.autonomy !== 'decide-alone', detail: 'Only about JUDGEMENT calls. A run waiting on you spends no budget — and makes no progress — until you answer.' })}
+                    ${C.option('decide-alone', 'decide alone — the lead never asks; it decides and records why', { selected: form.autonomy === 'decide-alone', detail: 'Only about JUDGEMENT calls. The hard limits and the approval gate below still apply, so this does not make the run unattended.' })}
                 </select></label>
                 <span class="muted small">Only about JUDGEMENT calls. The hard limits and the approval gate below still apply either way.</span></div>`;
         // Everything the adaptive user is not being asked to decide. Classic
@@ -1001,12 +1029,15 @@
         const profDim = (key, label, opts, hint) => `
             <label title="${C.esc(hint)}">${label}
                 <select id="pf-${key}">
-                    <option value="keep"${profile[key] === 'keep' ? ' selected' : ''}>don't change</option>
-                    <option value="clear"${profile[key] === 'clear' ? ' selected' : ''}>inherit — clear the override</option>
+                    ${C.option('keep', "don't change", { selected: profile[key] === 'keep', detail: `Every row keeps what it holds now — Apply does not touch ${label.toLowerCase()}.` })}
+                    ${C.option('clear', 'inherit — clear the override', { selected: profile[key] === 'clear', detail: `Drops the override on every row, so ${label.toLowerCase()} is resolved at launch instead of being written here.` })}
                     ${opts}
                 </select></label>`;
         const profOpts = (key, rows) => rows.filter(r => r.id).map(r =>
-            `<option value="${C.esc(r.id)}"${profile[key] === r.id ? ' selected' : ''}>${C.esc(r.label || r.id)}</option>`).join('');
+            C.option(r.id, r.label || r.id, {
+                selected: profile[key] === r.id,
+                detail: r.detail || (r.label && r.label !== r.id ? r.id : '')
+            })).join('');
         // The profile's own model/effort lists follow the engine the profile is
         // SETTING, not any one row's — otherwise the tool would offer a value it
         // is about to make invalid on every row it touches.
@@ -1125,9 +1156,9 @@
                     + ' every planning call and every delegation.'
                     + '\n\nLeft on the first option this follows the window, which is what every mission'
                     + ' started before this control existed did.')}">
-                    <option value=""${form.projectId === '' ? ' selected' : ''}>${C.esc(projInherit)}</option>
-                    <option value="--none--"${form.projectId === '--none--' ? ' selected' : ''}>None — deliberately file this run nowhere</option>
-                    ${projects.map(p => `<option value="${C.esc(p.id)}"${form.projectId === p.id ? ' selected' : ''}>${C.esc(p.name)}</option>`).join('')}
+                    ${C.option('', projInherit, { selected: form.projectId === '', detail: 'Follows this window — which is what every mission started before this control existed did.' })}
+                    ${C.option('--none--', 'None — deliberately file this run nowhere', { selected: form.projectId === '--none--', detail: 'The run, the planner\'s own session and every delegation it makes land on no project Work tab, and the lead is told about no project at all.' })}
+                    ${projects.map(p => C.option(p.id, p.name, { selected: form.projectId === p.id, detail: p.summary || p.folder || '' })).join('')}
                 </select></label>
                 <span class="muted small">${projName
                     ? (projOrigin === 'window'
@@ -1164,8 +1195,8 @@
             <div class="frow"><span class="muted small" title="A delegation is a launch, so it resolves the same way one does (M-18). Per field, highest first: what the member's row says · that agent's own default for the engine it lands on (Settings › per-agent, per-engine) · agentFarm.launchDefaults · the CLI's own choice. Claude's model and effort skip the per-agent layer on purpose: Claude Code reads that agent's .claude/settings.local.json itself, so passing it back would be a second source of truth over a file you may have edited by hand. Each step's Agent cell says what it ended up with and who decided it.">Who runs on what: planner = the Orchestrator block above · each delegation = the member's own row, then that agent's own default for the engine it lands on, then your fleet defaults, then the CLI.</span></div>
             <div class="frow"><label>Approval
                 <select id="f-approval">
-                    <option value="each-round"${form.approvalMode !== 'auto' ? ' selected' : ''}>each round — approve every delegation round (recommended)</option>
-                    <option value="auto"${form.approvalMode === 'auto' ? ' selected' : ''}>auto — run without gates (hard limits still apply)</option>
+                    ${C.option('each-round', 'each round — approve every delegation round (recommended)', { selected: form.approvalMode !== 'auto', detail: 'The run stops before every delegation round and waits for you. Nothing is spent while it waits.' })}
+                    ${C.option('auto', 'auto — run without gates (hard limits still apply)', { selected: form.approvalMode === 'auto', detail: 'No round waits for you. The round ceiling and the dollar ceiling are the only fences left, so set them before you pick this.' })}
                 </select></label></div>`;
         return `<div class="card" id="mform">
             <h2 style="margin-top:0">New Mission</h2>
@@ -2824,7 +2855,7 @@
         return `<div class="chiprow">
             <span class="muted small">Sort by:</span>
             <select id="m-sort">${RUN_SORTS.map(s =>
-                `<option value="${s.id}"${s.id === runSort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
+                C.option(s.id, s.label, { selected: s.id === runSort, detail: s.detail || '' })).join('')}</select>
             <button class="chip" id="m-sortdir" title="Flip the sort direction">${runSortAsc ? '▲ asc' : '▼ desc'}</button>
             <button class="chip${nf ? ' on' : ''}" id="m-filters" title="Filter the list by status, verdict, agents, ranges and dates${nf ? ` — ${nf} active` : ''}">Filters</button>
             <span class="muted small">Runs:</span>
@@ -3097,17 +3128,22 @@
     }
 
     function sentryFormHtml(s) {
+        // U-130 — four of these boxes share one row and every one of them cuts
+        // the name inside it, so the name goes on the option itself.
         const opt = (list, sel, idKey, nameKey) => (list || []).map(x =>
-            `<option value="${C.esc(x[idKey])}"${x[idKey] === sel ? ' selected' : ''}>${C.esc(x[nameKey])}</option>`).join('');
+            C.option(x[idKey], x[nameKey], {
+                selected: x[idKey] === sel,
+                detail: x.detail || x.dir || (x[nameKey] === x[idKey] ? '' : x[idKey])
+            })).join('');
         return `<div class="sform">
             ${sentryErr ? `<div class="formerr">${C.esc(sentryErr)}</div>` : ''}
             <div class="srow">
-                <label>Project<select id="s-project"><option value="">— pick one —</option>
+                <label>Project<select id="s-project">${C.option('', '— pick one —', { selected: !sentryForm.project, detail: 'A sentry campaign is filed under a project; nothing runs until one is named.' })}
                     ${opt(DATA.projects, sentryForm.project, 'id', 'name')}</select></label>
-                <label>Runs as<select id="s-agent"><option value="">— pick one —</option>
+                <label>Runs as<select id="s-agent">${C.option('', '— pick one —', { selected: !sentryForm.agent, detail: 'Every round of this campaign opens in that agent\'s own folder, under its own rules.' })}
                     ${opt(DATA.agents, sentryForm.agent, 'id', 'name')}</select></label>
                 <label title="Naming an engine is what turns account rotation on: without one every round runs on the main sign-in, because choosing an account would mean assuming an engine.">Engine
-                    <select id="s-engine"><option value="">main sign-in only</option>
+                    <select id="s-engine">${C.option('', 'main sign-in only', { selected: !sentryForm.engine, detail: 'No engine named, so no account rotation: every round runs on the main sign-in, because choosing an account would mean assuming an engine.' })}
                     ${opt((DATA.engines || []).map(e => ({ id: e.id, name: e.label })), sentryForm.engine, 'id', 'name')}</select></label>
                 <label>Model<input id="s-model" value="${C.esc(sentryForm.model)}" placeholder="engine default" list="s-models"></label>
                 <datalist id="s-models">${(DATA.modelAliases || []).map(m => `<option value="${C.esc(m)}">`).join('')}</datalist>
@@ -3115,7 +3151,7 @@
             <div class="srow">
                 <label title="What a round may do without asking. ‼️ An unattended round that stops to ask has nobody to answer it and never ends.">Permissions
                     <select id="s-perm">${(s.permissionModes || []).map(m =>
-                        `<option value="${C.esc(m.id)}"${m.id === sentryForm.permissionMode ? ' selected' : ''}>${C.esc(m.label)}</option>`).join('')}</select></label>
+                        C.option(m.id, m.label, { selected: m.id === sentryForm.permissionMode, detail: m.detail || '' })).join('')}</select></label>
                 <label class="scheck"><input type="checkbox" id="s-sp"${sentryForm.superpowers ? ' checked' : ''}> Superpowers</label>
                 <label title="Five-hour percentage at or above which an account is a wall and is not worth starting a round on.">Ceiling %
                     <input id="s-ceiling" type="number" min="1" max="100" placeholder="${C.esc(String((s.defaults || {}).ceiling || ''))}" value="${C.esc(sentryForm.ceiling)}"></label>

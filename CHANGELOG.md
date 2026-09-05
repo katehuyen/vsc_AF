@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.395.0 - U-130: 2 205 options that said nothing, paid off in full (2026-09-05)
+
+A `<select>` cuts its own text and the popup it opens is drawn by the operating
+system, so no hover panel of ours can reach into it — the option's native
+`title` is the only surface there is. U-128 measured the damage and fixed the
+Console; the other twenty-two pages were left on a budget. That budget is now
+**zero**, on every page.
+
+- **One emitter, not twenty-three copies.** `C.option(value, label, { selected,
+  disabled, detail })` and `C.optionTip(label, detail)` live in `media/charts.js`
+  — already on every page as `window.AFCharts`. The option's own text comes
+  first, then a blank line, then the detail: the same order MIRROR puts a
+  control's current value before its explanation.
+- **And the detail is a FACT, not a restatement.** A settings enum says which of
+  its values is the default; an alert tone says where the file lives and why a
+  greyed row is greyed; a voice says which language it reads and what picking it
+  writes into the setting; a queue position says how many items it jumps; a
+  project says the same `Label: value` readout its own row hover carries. The
+  three shared components (`afProject`, `afForm`, `afTelegram`) were fixed once
+  and paid for six pages at a time.
+- **The gate is now a ban rather than a budget.** `test/optiontips.manifest.json`
+  is empty and `bare` is `0`, so a page missing from it must be at zero — a new
+  picker cannot arrive silent. A `<datalist>` option is no longer counted: it is
+  a suggestion behind a text box, it opens no popup, and no browser shows a
+  `title` on it, so counting it invited markup nobody can ever see.
+- **‼️ And a test that hand-wrote its own `window.AFCharts` now borrows the real
+  one** (`test/lib_charts_stub.js`). Thirteen sandboxes each carried a partial
+  copy, so the day a shared helper was added every one of them died with `C.<new
+  thing> is not a function` while the extension itself was fine — a false alarm
+  on one side and no alarm at all on the other.
+
 ## 3.394.0 - X-197: one atomic writer, and a failure you can retry (2026-09-05)
 
 A `projects.backlog.add` call fell over with `EPERM: rename Backlog.md.af.tmp ->

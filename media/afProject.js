@@ -93,15 +93,28 @@
      */
     function options(projects, selected, opts) {
         const o = opts || {};
-        const out = ['<option value=""' + (selected ? '' : ' selected') + '>'
-            + esc(o.anyLabel || 'Any project') + '</option>'];
+        // ‼️ U-130 — A PROJECT'S NAME IS THE LONGEST TEXT ON THESE PAGES and the
+        // picker is the narrowest box on them: `PRS.MuratVural_DEV_VSC.Agen…`
+        // is what six surfaces showed. The popup a `<select>` opens is drawn by
+        // the operating system, so no AFTip reaches into it and the option's
+        // own `title` is the only surface there is. The detail is the SAME
+        // readout the row's hover carries (`tip`), so a project is described
+        // one way everywhere — which is why this lives in the component.
+        const C = window.AFCharts;
+        const out = [C.option('', o.anyLabel || 'Any project', {
+            selected: !selected,
+            detail: o.anyDetail || 'Every row, whichever project it is filed under — and the unfiled ones too.'
+        })];
         if (o.withNone) {
-            out.push('<option value="' + NONE + '"' + (selected === NONE ? ' selected' : '') + '>'
-                + esc(o.noneLabel || 'No project') + '</option>');
+            out.push(C.option(NONE, o.noneLabel || 'No project', {
+                selected: selected === NONE,
+                detail: o.noneDetail || 'Only the rows that name no project at all.'
+            }));
         }
         (projects || []).forEach(function (p) {
-            out.push('<option value="' + esc(p.id) + '"' + (selected === p.id ? ' selected' : '') + '>'
-                + esc((p.icon ? p.icon + ' ' : '') + p.name) + '</option>');
+            out.push(C.option(p.id, (p.icon ? p.icon + ' ' : '') + p.name, {
+                selected: selected === p.id, detail: tip(p).body
+            }));
         });
         return out.join('');
     }

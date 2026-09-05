@@ -193,9 +193,13 @@ CONVERTED.forEach(cmd => {
 // ------------------------------------------------------------------ AFForm
 const AFF = (() => {
     const code = fs.readFileSync(path.resolve(__dirname, '..', 'media', 'afForm.js'), 'utf8');
+    // ‼️ charts.js FIRST, exactly as htmlShell ships it: afForm.js draws its
+    // options through ` + '`' + `window.AFCharts.option` + '`' + ` (U-130), so a sandbox without it is
+    // not a smaller page — it is a page that could not exist.
     const sandbox = { window: {}, document: {} };
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
+    vm.runInContext(fs.readFileSync(path.resolve(__dirname, '..', 'media', 'charts.js'), 'utf8'), sandbox);
     vm.runInContext(code, sandbox);
     return sandbox.window.AFForm;
 })();
@@ -219,7 +223,13 @@ const AFF = (() => {
 
     const s = AFF.sel('cadence', 'How often', [{ id: 'daily', label: 'daily', title: 'each day' }], 'daily');
     ok('a picker selects the current value', s.indexOf('value="daily" selected') >= 0);
-    ok('an option carries its own hint', s.indexOf('title="each day"') >= 0);
+    // ‼️ U-130 — the hint is still there, but it is now the DETAIL under the
+    // option's own name rather than instead of it. A box cuts its label, so a
+    // hover that explains a word the reader cannot read answers the wrong
+    // question; `C.option` puts the name first, a blank line, then this.
+    ok('an option carries its own hint, under its own name',
+        s.indexOf('title="daily&#10;&#10;each day"') >= 0
+        || s.indexOf('title="daily\n\neach day"') >= 0);
 
     const p = AFF.path('watch', 'Watched', 'D:/x', { kind: 'file' });
     ok('a path field keeps the OS picker beside it', p.indexOf('data-afbrowse="watch"') >= 0);

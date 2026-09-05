@@ -199,8 +199,10 @@ function fakeState() {
     ok('…and changing it actually tells the draft',
         /'interactiveTarget', 'interactiveClose', 'finishSound',/.test(pageJs));
     // ‼️ AN UNPLAYABLE TONE IS SHOWN AND DISABLED, NEVER DROPPED (A-25's rule).
+    // U-130 moved the row through `C.option`, which emits `disabled` and the
+    // hover together — a refused choice now also says WHY it is refused.
     ok('a choice can be drawn and refused at once',
-        /\$\{c\.off \? ' disabled' : ''\}/.test(pageJs));
+        /disabled: !!c\.off/.test(pageJs));
     ok('the list is built with "say nothing" first and quiet last',
         /finishSounds: \[[\s\S]{0,200}id: '', label: 'Default[\s\S]{0,400}FINISH_SOUND_SILENT/.test(panelTs));
     ok('…and an unplayable sound keeps its name and loses its click',

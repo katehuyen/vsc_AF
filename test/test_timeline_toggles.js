@@ -9,6 +9,7 @@ const fs = require('fs');
 const vm = require('vm');
 
 const shared = require(require('path').join(__dirname, 'lib_shared_media.js'));
+const { charts } = require('./lib_charts_stub.js');
 const code = shared.sharedMedia() + fs.readFileSync(require('path').resolve(__dirname, '../media/timeline.js'), 'utf8');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -43,7 +44,7 @@ function boot(data) {
     const box = {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
         window: {
-            AFCharts: { esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') },
+            AFCharts: charts({ esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }),
             __DATA__: data,
             addEventListener(_t, fn) { box.window._onMessage = fn; }
         },
@@ -370,9 +371,9 @@ ok('a refused test says so', /not run/.test(three.html) && /nothing selected/.te
     // ---- the ⏱'s subject ----
     ok('every event is offered, the id never shown as a second name',
         /<select id="testevent"/.test(mine.html)
-        && /value="turn-ready" selected>Turn finished/.test(mine.html)
-        && /value="question">Asking you/.test(mine.html)
-        && /value="error">Error \(fleet switch only\)/.test(mine.html));
+        && /value="turn-ready" selected[^>]*>Turn finished/.test(mine.html)
+        && /value="question"[^>]*>Asking you/.test(mine.html)
+        && /value="error"[^>]*>Error \(fleet switch only\)/.test(mine.html));
     ok('MIRROR — the picker\'s own tooltip opens with what it is set to',
         /Testing as: Turn finished/.test(mine.html));
     mine.posted.length = 0;

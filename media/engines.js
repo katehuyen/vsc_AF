@@ -542,8 +542,9 @@
         const form = can.length
             ? '<div class="poform">'
             + T.wrap('<select id="ac-engine">'
-                + can.map(e => '<option value="' + esc(e.engine) + '">' + esc(engineLabel(e.engine))
-                    + (e.support === 'declared' ? ' (unproven here)' : '') + '</option>').join('')
+                + can.map(e => C.option(e.engine,
+                    engineLabel(e.engine) + (e.support === 'declared' ? ' (unproven here)' : ''),
+                    { detail: (e.variable || 'no variable') + ' · ' + e.support + '\n\n' + (e.why || '') })).join('')
                 + '</select>', 'Whose sign-in is being sealed',
                 can.map(e => engineLabel(e.engine) + ' — ' + (e.variable || 'no variable') + ' · ' + e.support
                     + '\n' + e.why).join('\n\n'))

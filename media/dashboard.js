@@ -238,10 +238,13 @@
     function cmpControls(defs) {
         return `<span class="cmpctl">
             <select id="cmp-window" title="The period the comparison covers">${CMP_WINDOWS.map(x =>
-                `<option value="${x.id}"${x.id === cmpWin ? ' selected' : ''}>${x.label}</option>`).join('')}</select>
+                C.option(x.id, x.label, {
+                    selected: x.id === cmpWin,
+                    detail: x.ms ? 'Everything since ' + new Date(Date.now() - x.ms).toLocaleString() + '.' : ''
+                })).join('')}</select>
             ${cmpWin === 'custom' ? `<input type="date" id="cmp-from" value="${C.esc(cmpFrom)}"> – <input type="date" id="cmp-to" value="${C.esc(cmpTo)}">` : ''}
             <select id="cmp-sort" title="Sort the comparison rows">${defs.map(s =>
-                `<option value="${s.id}"${s.id === cmpSort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
+                C.option(s.id, s.label, { selected: s.id === cmpSort, detail: s.detail || s.full || '' })).join('')}</select>
             <button class="chip" id="cmp-dir" title="Flip the sort direction">${cmpAsc ? '▲' : '▼'}</button>
             <span class="muted small">Show:</span>
             <input type="number" id="cmp-count" min="1" step="1" value="${cmpShow > 0 ? cmpShow : ''}" placeholder="all" title="How many agents to list after sorting — empty means all">

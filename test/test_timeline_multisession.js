@@ -3,6 +3,7 @@
 // belong to each of those sessions rather than to the agent (U-66).
 const fs = require('fs');
 const vm = require('vm');
+const { charts } = require('./lib_charts_stub.js');
 
 const code = require(require('path').join(__dirname, 'lib_shared_media.js')).sharedMedia()
     + fs.readFileSync(require('path').resolve(__dirname, '../media/timeline.js'), 'utf8');
@@ -51,14 +52,14 @@ const MIN = 60000;
 const sandbox = {
     acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
     window: {
-        AFCharts: {
+        AFCharts: charts({
             esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
             fmtUSD: (v) => '$' + Number(v).toFixed(2),
             fmtTok: (n) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n),
             fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
             fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
             WEIGHTED_TIP: 'weighted',
-        },
+        }),
         __DATA__: {
             listener: { state: 'listening', port: 1 },
             ownersKnown: true,

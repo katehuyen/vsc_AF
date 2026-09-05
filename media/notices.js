@@ -52,6 +52,13 @@
         question:   { icon: '❓', label: 'Question' }
     };
     const LEVELS = { 1: 'Routine', 2: 'Medium', 3: 'Important', 4: 'Ultra' };
+    /** U-130 — what the number DOES, which "L2 · Medium" cannot say. */
+    const LEVEL_WHY = {
+        1: 'Arrives quietly. Read it when you get to it.',
+        2: 'The ordinary level: worth reading today, nothing stops for it.',
+        3: 'Something happened you would want to know about now.',
+        4: 'The loudest there is. Reserve it, or it stops meaning anything.'
+    };
     const SORTS = [
         ['newest', 'Newest first'], ['oldest', 'Oldest first'],
         ['level', 'Importance'], ['stars', 'My stars'],
@@ -244,8 +251,14 @@
 
     function editForm(n) {
         const d = editDrafts[n.id];
-        const typeOpts = Object.keys(TYPES).map(k => `<option value="${k}" ${d.type === k ? 'selected' : ''}>${TYPES[k].icon} ${TYPES[k].label}</option>`).join('');
-        const lvlOpts = [1, 2, 3, 4].map(k => `<option value="${k}" ${Number(d.level) === k ? 'selected' : ''}>L${k} · ${LEVELS[k]}</option>`).join('');
+        const typeOpts = Object.keys(TYPES).map(k => C.option(k, TYPES[k].icon + ' ' + TYPES[k].label, {
+            selected: d.type === k, detail: TYPES[k].desc || TYPES[k].why || ''
+        })).join('');
+        // U-130 — L1…L4 is a SHORTHAND and the box cuts even that. What the
+        // number actually changes is how loudly the notice arrives.
+        const lvlOpts = [1, 2, 3, 4].map(k => C.option(String(k), 'L' + k + ' · ' + LEVELS[k], {
+            selected: Number(d.level) === k, detail: LEVEL_WHY[k]
+        })).join('');
         const secs = (d.sections || []).map((s, i) => `<div class="nt-esec">
             <input class="nt-ef" data-ef="sectitle" data-i="${i}" value="${esc(s.title)}" placeholder="Section title">
             <textarea class="nt-ef" data-ef="secbody" data-i="${i}" rows="3" placeholder="Section body">${esc(s.body)}</textarea></div>`).join('');
@@ -409,7 +422,7 @@
 
     function controls() {
         const total = (DATA.notices || []).length, unread = DATA.unread || 0, q = DATA.openQuestions || 0;
-        const sortOpts = SORTS.map(([k, l]) => `<option value="${k}" ${sortKey === k ? 'selected' : ''}>Sort: ${l}</option>`).join('');
+        const sortOpts = SORTS.map(([k, l]) => C.option(k, 'Sort: ' + l, { selected: sortKey === k })).join('');
         return `<div class="nt-controls">
             <input id="nt-search" type="search" placeholder="🔍 search (text or #tag)" value="${esc(query)}"
                 title="${esc(window.AFQuery.tip('Searched against the title, the body, every section, the tags and the agent. A query that STARTS with # searches the tags only.'))}">
@@ -472,9 +485,9 @@
     function fileUnderHtml() {
         const projects = DATA.projects || [];
         const trigger = `<select id="nt-bulkproj" class="nt-fileunder">
-                <option value="" selected>File under…</option>
-                <option value="__clear__">— take out of any project</option>
-                ${projects.map(p => `<option value="${esc(p.id)}">${esc((p.icon ? p.icon + ' ' : '') + p.name)}</option>`).join('')}
+                ${C.option('', 'File under…', { selected: true, detail: 'Nothing chosen yet — picking a project files every selected notice under it.' })}
+                ${C.option('__clear__', '— take out of any project', { detail: 'Unfiles the selected notices. They are not deleted; they simply name no project.' })}
+                ${projects.map(p => C.option(p.id, (p.icon ? p.icon + ' ' : '') + p.name, { detail: p.summary || '' })).join('')}
             </select>`;
         return window.AFTip.wrap(trigger,
             `File under · ${projects.length} project${projects.length === 1 ? '' : 's'}`,

@@ -288,7 +288,7 @@
             });
         }).join(' ');
         const sorts = (SORTS[kind] || []).map(s =>
-            `<option value="${esc(s.v)}"${sortOf(kind) === s.v ? ' selected' : ''}>${esc(s.t)}</option>`).join('');
+            C.option(s.v, s.t, { selected: sortOf(kind) === s.v, detail: s.full || '' })).join('');
         const clear = anyActive(kind)
             ? `<button class="mini" data-tbclear="${esc(kind)}"
                  title="Drop the text and every facet on this tab — the other tabs keep theirs">✕ clear</button>`

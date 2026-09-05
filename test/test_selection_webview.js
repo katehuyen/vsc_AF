@@ -1,6 +1,7 @@
 // DOM-stub test for selection.js: min/max enforcement + confirm/cancel.
 const fs = require('fs');
 const vm = require('vm');
+const { charts } = require('./lib_charts_stub.js');
 
 const code = fs.readFileSync(require('path').resolve(__dirname, '../media/selection.js'), 'utf8');
 let pass = 0, fail = 0;
@@ -33,7 +34,7 @@ function run(data) {
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m) }),
         window: {
-            AFCharts: { esc: s => String(s).replace(/</g, '&lt;'), fmtUSD: v => '$' + v },
+            AFCharts: charts({ esc: s => String(s).replace(/</g, '&lt;'), fmtUSD: v => '$' + v }),
             __DATA__: data
         },
         document: {

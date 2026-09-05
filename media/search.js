@@ -247,7 +247,7 @@
                 ${tip(badge('data-flag="pinnedOnly"', '★ Pinned', flt.pinnedOnly), 'Pinned only', 'Only sessions on your shelf.')}
                 ${tip(badge('data-flag="errorsOnly"', '⚠ Errors', flt.errorsOnly), 'Has errors', 'Only sessions with at least one tool error.')}
                 <span class="date-range${meaning ? ' unavailable' : ''}"><span>When</span><input id="f-from" type="date" value="${C.esc(flt.from)}"${meaning ? ' disabled' : ''}><span>–</span><input id="f-to" type="date" value="${C.esc(flt.to)}"${meaning ? ' disabled' : ''}></span>
-                <label class="sortbox"><span>Sort</span><select id="f-sort">${SORTS.map(s => `<option value="${s.id}"${flt.sort === s.id ? ' selected' : ''}>${s.label}</option>`).join('')}</select></label>
+                <label class="sortbox"><span>Sort</span><select id="f-sort">${SORTS.map(s => C.option(s.id, s.label, { selected: flt.sort === s.id, detail: s.detail || '' })).join('')}</select></label>
             </div>
         </div>`;
     }

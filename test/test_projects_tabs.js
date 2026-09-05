@@ -29,6 +29,7 @@ const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'u
 // BOTH directions. A hand-written copy is a reason not to share the next
 // component: X-105 left its route pill page-local rather than break this file.
 const shared = require(path.resolve(__dirname, 'lib_shared_media.js')).sharedMedia();
+const { charts } = require('./lib_charts_stub.js');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -89,7 +90,7 @@ function run(data) {
         window: {
             __DATA__: data,
             addEventListener: (ev, fn) => { if (ev === 'message') { messageHandlers.push(fn); } },
-            AFCharts: {
+            AFCharts: charts({
                 esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;').replace(/"/g, '&quot;'),
                 fmtUSD: v => '$' + Number(v || 0).toFixed(2),
                 fmtTok: v => String(v),
@@ -99,7 +100,7 @@ function run(data) {
                 stackedBars: () => '<svg id="bars"></svg>',
                 hbars: () => '<svg id="hbars"></svg>',
                 donut: () => '', sparkline: () => '', PALETTE: ['#000']
-            },
+            }),
             AFHeader: { html: () => '<header></header>', wire: () => { } },
             AFSessionsTable: {
                 create: () => ({
@@ -523,7 +524,7 @@ const docsData = (selected) => ({
     // gone by the next spawn. Offering it as a destination is offering to lose
     // the user's writing.
     ok('a folder the user owns is offered as somewhere to put a new note',
-        /<option value="10_Notes">/.test(h));
+        /<option value="10_Notes"[^>]*>/.test(h));
     ok('‼️ …and the machine folder is NOT, because a note in it does not survive',
         !/<option value="_AF">/.test(h));
 }

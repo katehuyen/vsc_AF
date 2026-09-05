@@ -262,6 +262,49 @@
         done: { label: 'Done', icon: '✔' },
         archived: { label: 'Archived', icon: '📦' }
     };
+    /**
+     * U-130 — WHAT EACH OF THESE WORDS ACTUALLY DOES, on the option itself.
+     *
+     * A `<select>` cuts its own text and the popup it opens belongs to the
+     * operating system, so an AFTip cannot reach into it: the option's native
+     * `title` is the only surface there is. `Planned` and `On hold` sit two
+     * rows apart in the same box and differ in exactly one thing nobody can
+     * see — whether the project is counted as running.
+     */
+    const STATUS_WHY = {
+        planned: 'Written down, not started. It is in the fleet but nothing is running on it.',
+        active: 'Being worked on now. This is what the dashboards and the briefs count.',
+        paused: 'Started and deliberately stopped. It keeps everything it has; it is simply not counted as running.',
+        done: 'Finished. It stays where it is and stays readable — the folder is not moved by this.',
+        archived: 'Closed and out of the way. Moving the FOLDER is a separate act, never implied by the status.'
+    };
+    const KIND_WHY = {
+        '': 'Unclassified — it still works, the portfolio just cannot group it.',
+        product: 'Something shipped to users and maintained after it ships.',
+        customer: 'Work done for somebody else, with their deadline on it.',
+        internal: 'Built for this desk — tooling, systems, the way the work gets done.',
+        research: 'The deliverable is an answer, not a thing: a measurement, a report, a decision.',
+        personal: 'The user\'s own, outside the work ledger.',
+        ops: 'Keeping the lights on — the recurring, the routine and the machine.'
+    };
+    const EFFORT_WHY = {
+        XS: 'Minutes. One edit and its test.',
+        S: 'An hour or so. One session, no plan needed.',
+        M: 'A session or two. Worth a plan, not worth breaking up.',
+        L: 'Several sessions. Expect a handover in the middle of it.',
+        XL: 'Big enough to break into parts — an umbrella, not a task.'
+    };
+    const PEOPLE_WHY = {
+        owner: 'Answers for the project. There is normally exactly one.',
+        client: 'The work is FOR them; their deadline is the deadline.',
+        sponsor: 'Pays for it or clears the way — not in it day to day.',
+        contributor: 'Does some of the work.',
+        contact: 'Somebody to ask. No responsibility implied.',
+        vendor: 'Supplies something the project depends on.',
+        person: 'A human being.',
+        company: 'An organisation, not a person.',
+        self: 'The user themselves.'
+    };
     const GROUPS = [
         { key: 'open', label: 'Active', statuses: ['active'] },
         { key: 'hold', label: 'On hold', statuses: ['paused', 'planned'] },
@@ -344,12 +387,18 @@
     /** The projects a new one — or this one — could be PART OF. Only the ones
      *  that are not parts themselves: the model is a project and its components,
      *  not a tree nobody prunes. */
+    // U-130 — a project's name is the one thing these narrow boxes cut, and
+    // "—" needs saying out loud: it is not an empty project, it is no parent.
+    const PJ_NONE = 'Not a part of anything — it stands on its own.';
     function parentOptions(current, exceptId) {
         return [{ id: '', name: '—' }]
             .concat((DATA.projects || [])
                 .filter(x => x.id !== exceptId && !x.parentId)
                 .map(x => ({ id: x.id, name: x.name })))
-            .map(x => `<option value="${C.esc(x.id)}"${(current || '') === x.id ? ' selected' : ''}>${C.esc(x.name)}</option>`)
+            .map(x => C.option(x.id, x.name, {
+                selected: (current || '') === x.id,
+                detail: x.id ? 'This project becomes a PART of ' + x.name + '.' : PJ_NONE
+            }))
             .join('');
     }
 
@@ -369,8 +418,14 @@
                 asks what should travel.</div>`;
         }
         const chosen = list.filter(t => t.name === c.template)[0];
-        const opts = [`<option value="">— start from nothing —</option>`].concat(
-            list.map(t => `<option value="${C.esc(t.name)}"${c.template === t.name ? ' selected' : ''}>${C.esc(t.name)}</option>`)
+        const opts = [C.option('', '— start from nothing —', {
+            selected: !c.template,
+            detail: 'The empty skeleton: the six role files and the standard folders, and nothing in them.'
+        })].concat(
+            list.map(t => C.option(t.name, t.name, {
+                selected: c.template === t.name,
+                detail: 'carries ' + t.carries + (t.description ? '\n\n' + t.description : '')
+            }))
         ).join('');
         return `<label class="pj-wide">Template
                 <select id="n-template">${opts}</select>
@@ -388,9 +443,11 @@
         const c = creating;
         const kinds = ['', 'product', 'customer', 'internal', 'research', 'personal', 'ops'];
         const kindOpts = kinds
-            .map(k => `<option value="${k}"${c.kind === k ? ' selected' : ''}>${k || '—'}</option>`).join('');
+            .map(k => C.option(k, k || '—', { selected: c.kind === k, detail: KIND_WHY[k] || '' })).join('');
         const statusOpts = Object.keys(STATUS_META)
-            .map(s => `<option value="${s}"${c.status === s ? ' selected' : ''}>${STATUS_META[s].label}</option>`).join('');
+            .map(s => C.option(s, STATUS_META[s].label, {
+                selected: c.status === s, detail: STATUS_META[s].icon + ' — ' + (STATUS_WHY[s] || '')
+            })).join('');
         const taken = DATA.projects.some(p => p.name.toLowerCase() === c.name.trim().toLowerCase());
         const problem = !c.name.trim() ? 'A project needs a name.'
             : (taken ? `"${c.name.trim()}" already exists.` : '');
@@ -478,7 +535,8 @@
         if (people === null) { people = (p.people || []).map(x => Object.assign({}, x)); }
         const roles = ['owner', 'client', 'sponsor', 'contributor', 'contact', 'vendor'];
         const kinds = ['person', 'company', 'self'];
-        const opt = (list, v) => list.map(o => `<option value="${o}"${o === v ? ' selected' : ''}>${o}</option>`).join('');
+        const opt = (list, v) => list.map(o =>
+            C.option(o, o, { selected: o === v, detail: PEOPLE_WHY[o] || '' })).join('');
         return people.map((x, i) => `<tr>
             <td><input data-p="name" data-i="${i}" value="${C.esc(x.name || '')}" placeholder="name"></td>
             <td><select data-p="role" data-i="${i}">${opt(roles, x.role || 'contact')}</select></td>
@@ -538,14 +596,19 @@
 
     function settingsHtml(p) {
         const statusOpts = Object.keys(STATUS_META)
-            .map(s => `<option value="${s}"${p.status === s ? ' selected' : ''}>${STATUS_META[s].label}</option>`).join('');
+            .map(s => C.option(s, STATUS_META[s].label, {
+                selected: p.status === s, detail: STATUS_META[s].icon + ' — ' + (STATUS_WHY[s] || '')
+            })).join('');
         const kinds = ['', 'product', 'customer', 'internal', 'research', 'personal', 'ops'];
         const kindOpts = kinds
-            .map(k => `<option value="${k}"${(p.kind || '') === k ? ' selected' : ''}>${k || '—'}</option>`).join('');
+            .map(k => C.option(k, k || '—', { selected: (p.kind || '') === k, detail: KIND_WHY[k] || '' })).join('');
         const parents = [{ id: '', name: '—' }].concat(
             DATA.projects.filter(x => x.id !== p.id && !x.parentId).map(x => ({ id: x.id, name: x.name })));
         const parentOpts = parents
-            .map(x => `<option value="${C.esc(x.id)}"${(p.parentId || '') === x.id ? ' selected' : ''}>${C.esc(x.name)}</option>`).join('');
+            .map(x => C.option(x.id, x.name, {
+                selected: (p.parentId || '') === x.id,
+                detail: x.id ? 'This project becomes a PART of ' + x.name + '.' : PJ_NONE
+            })).join('');
         const agentBoxes = (DATA.agents || []).map(a => `
             <label class="pj-chk"><input type="checkbox" data-agent="${C.esc(a)}" ${p.agentRules.indexOf(a) >= 0 ? 'checked' : ''}> ${C.esc(a)}</label>`).join('');
 
@@ -2732,9 +2795,11 @@
                         ${i.completed ? `<span class="pj-plan-m" title="completed">✅ ${C.esc(i.completed)}</span>` : ''}
                     </label>`).join('')}
             </div>`).join('');
-        const sectionOpts = ['<option value="">end of the file</option>']
+        const sectionOpts = [C.option('', 'end of the file', {
+            selected: true, detail: 'Appended after everything already in the document.'
+        })]
             .concat(sections.filter(s => s.title)
-                .map(s => `<option value="${C.esc(s.title)}">${C.esc(s.title)}</option>`)).join('');
+                .map(s => C.option(s.title, s.title, { detail: 'Written at the end of this heading, before the next one.' }))).join('');
         return `
         <div class="pj-docbar">
             <span><b>${d.open}</b> open · <b>${d.done}</b> done</span>
@@ -3363,9 +3428,16 @@
      */
     function blAtHtml(cap, queueLen) {
         const n = Math.max(0, Number(queueLen) || 0);
-        const opts = ['<option value=""' + (cap.at ? '' : ' selected') + '>— # —</option>'];
+        const opts = [C.option('', '— # —', {
+            selected: !cap.at, detail: 'No position asked for — it goes wherever a new item normally goes.'
+        })];
         for (let i = 1; i <= n + 1; i++) {
-            opts.push(`<option value="${i}"${String(i) === String(cap.at) ? ' selected' : ''}>${i}${i === 1 ? ' · top' : i === n + 1 ? ' · last' : ''}</option>`);
+            opts.push(C.option(String(i), i + (i === 1 ? ' · top' : i === n + 1 ? ' · last' : ''), {
+                selected: String(i) === String(cap.at),
+                detail: i === 1 ? 'Straight to the top of the queue, ahead of everything.'
+                    : i === n + 1 ? 'At the very end, behind all ' + n + ' item(s) already queued.'
+                        : 'Behind ' + (i - 1) + ' item(s), ahead of ' + (n - i + 1) + '.'
+            }));
         }
         const base = `Where in the queue it lands: 1 puts it at the very top, ${n + 1} at the end. `
             + 'Leave it on — # — and it goes wherever a new item normally goes.';
@@ -3666,8 +3738,14 @@
         // constantly — including which axes were picked, so filing a run of
         // items into one area costs one choice rather than one per item.
         const cap = blCapture();
-        const areaOpts = [`<option value=""${cap.area ? '' : ' selected'}>— area —</option>`]
-            .concat(areas.map(a => `<option value="${C.esc(a.code)}"${a.code === cap.area ? ' selected' : ''}>${C.esc(a.code)} · ${C.esc(a.label)}</option>`))
+        const areaOpts = [C.option('', '— area —', {
+            selected: !cap.area,
+            detail: 'No area, so the item lands in the inbox WITHOUT a code — and an uncoded item is not in the queue.'
+        })]
+            .concat(areas.map(a => C.option(a.code, a.code + ' · ' + a.label, {
+                selected: a.code === cap.area,
+                detail: 'The item is coded ' + a.code + '-n and filed under ' + a.label + '.'
+            })))
             .join('');
         // What the new item is PART OF — a box you TYPE INTO, see blParentBoxHtml.
         const parentPicks = blParentChoices(all, '');
@@ -3736,8 +3814,8 @@
                     <select id="bl-area" title="Leave empty and it lands in the inbox, uncoded">${areaOpts}</select>
                     ${window.AFTip.wrap(
                         `<select id="bl-type">
-                            <option value=""${cap.type ? '' : ' selected'}>— type —</option>
-                            ${BL_TYPES.map(t => `<option value="${t.id}"${t.id === cap.type ? ' selected' : ''} title="${C.esc(t.desc)}">${C.esc(t.label)}</option>`).join('')}
+                            ${C.option('', '— type —', { selected: !cap.type, detail: 'Optional — the item carries no canonical #tag and reads as unclassified.' })}
+                            ${BL_TYPES.map(t => C.option(t.id, t.label, { selected: t.id === cap.type, detail: t.desc + '\n\nTags it #' + t.id + '.' })).join('')}
                         </select>`,
                         'Work type · Canonical #tags',
                         BL_TYPES_TIP_BODY + '\n\nOptional. Leave empty for inbox / unclassified.',
@@ -3746,10 +3824,10 @@
                     )}
                     <select id="bl-prio" title="Priority">
                         ${PRIO_ORDER.slice().reverse().map(p =>
-            `<option value="${p}"${p === (cap.prio || 'normal') ? ' selected' : ''}>${PRIO_ICON[p]} ${p}</option>`).join('')}
+            C.option(p, PRIO_ICON[p] + ' ' + p, { selected: p === (cap.prio || 'normal'), detail: 'Written on the line as ' + (PRIO_ICON[p] === '·' ? 'no priority mark at all' : PRIO_ICON[p]) + '.' })).join('')}
                     </select>
                     <select id="bl-effort" title="Effort">
-                        ${EFFORT_ORDER.map(e => `<option value="${e}"${e === cap.effort ? ' selected' : ''}>${e || '— size —'}</option>`).join('')}
+                        ${EFFORT_ORDER.map(e => C.option(e, e || '— size —', { selected: e === cap.effort, detail: e ? EFFORT_WHY[e] : 'No estimate. The item is still queued, but score sorting cannot rank it.' })).join('')}
                     </select>
                     ${blParentBoxHtml(cap, parentPicks, parentGone)}
                     <span class="pj-bl-capr">
@@ -3825,8 +3903,7 @@
             </span>
             ${blPickHtml('bar')}
             <select id="bl-sort" title="${C.esc(blSortTip())}">
-                ${BL_SORTS.map(s => `<option value="${s.v}"${blSort === s.v ? ' selected' : ''}
-                    title="${C.esc(s.full)}">${C.esc(s.t)}</option>`).join('')}
+                ${BL_SORTS.map(s => C.option(s.v, s.t, { selected: blSort === s.v, detail: s.full })).join('')}
             </select>
             <button class="pj-bl-badge" data-act="blDir"
                 title="${blDesc ? 'Descending — click for ascending' : 'Ascending — click for descending'}">${blDesc ? '↓' : '↑'}</button>
@@ -5422,7 +5499,7 @@
             ? `<select id="trk-sort" title="${C.esc('Ordering, for the ' + trkView + ' view.'
                 + '\n\nOnly the axes THIS view can answer are listed: a session card has a first and a last moment and a turn count, but no single code or state, and the Gaps view is a list of codes with no history to measure. The Items view offers all nine.'
                 + '\n\n\'last worked\' is the default because the question this tab is opened with is almost always what happened recently; \'turns spent\' and \'span\' are the two that answer how expensive something actually was.')}">
-                ${here.map(o => `<option value="${o.id}"${axis === o.id ? ' selected' : ''}>${C.esc(o.label)}</option>`).join('')}
+                ${here.map(o => C.option(o.id, o.label, { selected: axis === o.id, detail: o.full || o.detail || '' })).join('')}
             </select>`
             // The Timeline is chronological by definition — it has day headings.
             // Saying so beats a dropdown that cannot change anything.
@@ -6432,7 +6509,9 @@
         // the next spawn — offering it is offering to lose the user's writing.
         const folders = ['']
             .concat(entries.filter(e => e.dir && !e.managed).map(e => e.path))
-            .map(f => `<option value="${C.esc(f)}">${C.esc(f || '(project root)')}</option>`).join('');
+            .map(f => C.option(f, f || '(project root)', {
+                detail: f ? '' : 'The root holds the six role files only — everything else belongs in a folder.'
+            })).join('');
 
         const pane = !sel
             ? '<p class="muted small">Pick a document on the left.</p>'

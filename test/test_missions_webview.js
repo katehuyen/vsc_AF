@@ -11,6 +11,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
     + fs.readFileSync(path.resolve(__dirname, '../media/missions.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
+const { charts } = require('./lib_charts_stub.js');
 
 let posted = [];
 // ‼️ A LIST, not one handler. The page now listens twice: once for its own host
@@ -151,14 +152,14 @@ const DATA = {
 const sandbox = {
     acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
     window: {
-        AFCharts: {
+        AFCharts: charts({
             esc: (s) => String(s),
             fmtTok: (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)),
             fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
             fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
             WEIGHTED_TIP: 'weighted',
             fmtUSD: (v) => '$' + v.toFixed(2)
-        },
+        }),
         __DATA__: DATA,
         addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } }
     },

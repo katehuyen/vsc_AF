@@ -40,6 +40,7 @@ const code = fs.readFileSync(path.resolve(__dirname, '../media/projects.js'), 'u
 // take a shortcut.
 const shared = require(path.resolve(__dirname, 'lib_shared_media.js')).sharedMedia();
 const createAfmsDom = require(path.resolve(__dirname, 'lib_afms_dom.js'));
+const { charts } = require('./lib_charts_stub.js');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -192,7 +193,7 @@ function run(data) {
             innerHeight: 1000,
             addEventListener: (ev, fn) => { if (ev === 'message') { onMessage.push(fn); } },
             removeEventListener: () => { },
-            AFCharts: {
+            AFCharts: charts({
                 esc: s => String(s === undefined || s === null ? '' : s)
                     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
                 fmtUSD: v => '$' + Number(v || 0).toFixed(2),
@@ -201,7 +202,7 @@ function run(data) {
                 fmtTokWText(n, w) { return this.fmtTok(n || 0); },
                 WEIGHTED_TIP: 'weighted',
                 stackedBars: () => '', hbars: () => '', donut: () => '', sparkline: () => '', PALETTE: ['#000']
-            },
+            }),
             AFHeader: { html: () => '<header></header>', wire() { } },
             AFSessionsTable: { create: () => ({ setRows() { }, onMessage: () => false, setProjectFilter() { } }) }
         },
@@ -704,10 +705,14 @@ const codesIn = html => (html.match(/data-key="[^"]*" data-code="([A-Z]-\d+)"/g)
     ok('with an area there is nothing to warn about', !/<span class="pj-bl-atwarn"/.test(r.html()));
     // The queue holds three items, so the offer is 1..4 — the positions that
     // exist, plus the end. It is rebuilt on every paint, so it cannot go stale.
+    // U-130 put a hover on every option, so the tag carries a title now —
+    // the offer itself is unchanged, and that is what this measures.
     ok('the numbers on offer are as many as the queue, plus the end',
-        /<option value="1">1 · top<\/option>/.test(r.html())
-        && /<option value="4">4 · last<\/option>/.test(r.html())
+        /<option value="1"[^>]*>1 · top<\/option>/.test(r.html())
+        && /<option value="4"[^>]*>4 · last<\/option>/.test(r.html())
         && !/<option value="5"/.test(r.html()));
+    ok('‼️ U-130: …and each of them says what that position DOES',
+        /<option value="1" title="1 · top&#10;&#10;Straight to the top|<option value="1" title="1 · top\n\nStraight to the top/.test(r.html()));
 
     const box = r.byId('bl-new');
     box.value = 'this one goes second';
@@ -2229,8 +2234,10 @@ function pickParent(r, code) {
     const opts = [...box[1].matchAll(/<option[^>]*>([^<]+)<\/option>/g)].map(m => m[1].trim());
     ok('‼️ every ordering is named in a word or two, not a clause',
         opts.length >= 10 && opts.every(t => t.length <= 14 && !/[—–]/.test(t)));
+    // The clause is still on the option — under the option's own name now,
+    // because the box cuts the LABEL and that is what the reader is missing.
     ok('…and the clause rides on the option itself, for the open list',
-        /title="Family — each parent followed by its parts"/.test(box[1]));
+        /title="family(\n|&#10;){2}Family — each parent followed by its parts"/.test(box[1]));
 
     const title = (/<select id="bl-sort" title="([^"]*)"/.exec(r.html()) || [, ''])[1];
     ok('‼️ the box\'s hover opens on what is CHOSEN, then explains',

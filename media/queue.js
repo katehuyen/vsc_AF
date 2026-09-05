@@ -208,9 +208,20 @@
         return h + '</div>';
     }
 
+    // U-130 — three bare words in a narrow box, drawn in two places. What
+    // each one DOES to the item's place in the queue is the fact nobody could
+    // see, and the box is far too small to say it.
+    const URGENCY_WHY = {
+        normal: 'Takes its turn. Nothing jumps it and it jumps nothing.',
+        soon: 'Sorted ahead of the normal items, behind the urgent ones.',
+        urgent: 'Goes to the front and stays visible until it is done.'
+    };
+    const urgencyOpts = cur => ['normal', 'soon', 'urgent'].map(k =>
+        C.option(k, k, { selected: cur === k, detail: URGENCY_WHY[k] })).join('');
+
     function editForm(n) {
         const d = editDrafts[n.id];
-        const urgOpts = ['normal', 'soon', 'urgent'].map(k => `<option value="${k}" ${d.urgency === k ? 'selected' : ''}>${k}</option>`).join('');
+        const urgOpts = urgencyOpts(d.urgency);
         return `<div class="q-edit">
             <label>Text</label><textarea class="q-ef" data-ef="text" rows="3">${esc(d.text)}</textarea>
             <div class="q-erow"><span><label>Target</label><input class="q-ef" data-ef="target" value="${esc(d.target)}" placeholder="repo or agent"></span>
@@ -370,23 +381,23 @@
         const L = DATA.launch || {};
         const engines = (L.engines || []);
         if (!engines.length) { return ''; }
-        const opt = (v, t, cur) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(t)}</option>`;
+        const opt = (v, t, cur, detail) => C.option(v, t, { selected: v === cur, detail });
         const eng = d.engine || '';
         const models = eng ? window.AFEngine.models(L, eng) : [];
         const efforts = eng ? window.AFEngine.efforts(L, eng, d.model || '') : [];
         const at = `data-kind="${esc(kind)}" data-item="${esc(itemId || '')}"`;
         let h = `<span><select id="${prefix}-engine" data-route="engine" ${at}
             title="${esc(routeTitle('engine', eng ? window.AFEngine.label(eng) : ''))}">
-            ${opt('', '— engine —', eng)}${engines.map(e => opt(e.id, e.label, eng)).join('')}</select></span>`;
+            ${opt('', '— engine —', eng, 'No engine asked for — the item runs on whatever its agent resolves to.')}${engines.map(e => opt(e.id, e.label, eng, e.detail || '')).join('')}</select></span>`;
         if (eng && models.length) {
             h += `<span><select id="${prefix}-model" data-route="model" ${at}
                 title="${esc(routeTitle('model', d.model || ''))}">
-                ${opt('', '— model —', d.model || '')}${models.map(m => opt(m.id, m.label || m.id, d.model || '')).join('')}</select></span>`;
+                ${opt('', '— model —', d.model || '', 'No model asked for — the engine picks its own.')}${models.map(m => opt(m.id, m.label || m.id, d.model || '', m.detail || (m.label && m.label !== m.id ? m.id : ''))).join('')}</select></span>`;
         }
         if (eng && efforts.length) {
             h += `<span><select id="${prefix}-effort" data-route="effort" ${at}
                 title="${esc(routeTitle('effort', d.effort || ''))}">
-                ${opt('', '— effort —', d.effort || '')}${efforts.filter(e => e.id).map(e => opt(e.id, e.label || e.id, d.effort || '')).join('')}</select></span>`;
+                ${opt('', '— effort —', d.effort || '', 'No effort asked for — resolved at launch.')}${efforts.filter(e => e.id).map(e => opt(e.id, e.label || e.id, d.effort || '', e.detail || '')).join('')}</select></span>`;
         }
         return h;
     }
@@ -443,7 +454,7 @@
         if (!addOpen) { return `<div class="q-addbar"><button data-add="open">＋ Add to queue</button></div>`; }
         const targets = (DATA.targets || []);
         const dl = targets.map(t => `<option value="${esc(t)}"></option>`).join('');
-        const urgOpts = ['normal', 'soon', 'urgent'].map(k => `<option value="${k}" ${addDraft.urgency === k ? 'selected' : ''}>${k}</option>`).join('');
+        const urgOpts = urgencyOpts(addDraft.urgency);
         return `<div class="q-add">
             <textarea id="q-add-text" rows="2" placeholder="What needs doing? (one line is enough — friction-free)">${esc(addDraft.text)}</textarea>
             <div class="q-erow">

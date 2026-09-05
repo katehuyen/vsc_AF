@@ -12,6 +12,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const PU = require(path.join(__dirname, '..', 'out', 'core', 'planusage.js'));
+const { charts } = require('./lib_charts_stub.js');
 
 // A real response body, trimmed to the fields the card uses.
 const LIVE_PAYLOAD = {
@@ -449,14 +450,14 @@ const LIVE_PAYLOAD = {
         const sandbox = {
             acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState: () => null, setState: () => { } }),
             window: {
-                AFCharts: {
+                AFCharts: charts({
                     esc: (s) => String(s === undefined || s === null ? '' : s),
                     fmtTok: (n) => String(n || 0),
             fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
             fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
             WEIGHTED_TIP: 'weighted', fmtUSD: (n) => '$' + (n || 0),
                     stackedBars: () => '', donut: () => '', hbars: () => '', heatmap: () => '', sparkline: () => ''
-                },
+                }),
                 __DATA__: DATA,
                 addEventListener: (ev, fn) => { if (ev === 'message') { msgHandlers.push(fn); } }
             },

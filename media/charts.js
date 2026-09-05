@@ -17,6 +17,36 @@
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    /**
+     * U-130 — AN OPTION IN A NARROW BOX SAYS ITS OWN NAME.
+     *
+     * A `<select>` CUTS its own text and the popup it opens is drawn by the
+     * operating system, so an AFTip cannot reach into it: the option's native
+     * `title` is the only surface there is. U-128 proved the shape on the
+     * Console; it lived there as a page-local helper, which is why the other
+     * twenty-two pages drew 2 205 options that said nothing at all.
+     *
+     * The name comes FIRST and always, then a blank line, then the detail —
+     * the same order MIRROR puts a control's current value before its standing
+     * explanation. `option()` emits the whole tag so a new list cannot be
+     * written without one; `optionTip()` builds the text alone for the sites
+     * that already have their own markup. `test/test_option_tips.js` holds
+     * the budget and only ever lets it shrink.
+     */
+    function optionTip(label, detail) {
+        return [String(label == null ? '' : label), String(detail == null ? '' : detail)]
+            .map(x => x.trim()).filter(Boolean).join('\n\n');
+    }
+
+    /** `<option>` with its hover already on it. `o`: {selected, disabled, detail, value}. */
+    function option(value, label, o) {
+        o = o || {};
+        const val = o.value !== undefined ? o.value : value;
+        return '<option value="' + esc(val) + '"' + (o.selected ? ' selected' : '')
+            + (o.disabled ? ' disabled' : '')
+            + ' title="' + esc(optionTip(label, o.detail)) + '">' + esc(label) + '</option>';
+    }
+
     function fmtUSD(v) {
         if (v >= 100) return '$' + v.toFixed(0);
         if (v >= 1) return '$' + v.toFixed(2);
@@ -389,5 +419,5 @@
         return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, WEIGHTED_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
+    window.AFCharts = { optionTip, option, stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, WEIGHTED_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();

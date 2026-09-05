@@ -147,9 +147,14 @@
                 <label class="svc-lbl">Default agent</label>
                 <div class="svc-val">
                     <select id="svc-agent" class="svc-in">
-                        <option value=""${t.defaultAgent ? '' : ' selected'}>— none —</option>
-                        ${(agents || []).map(a =>
-            `<option value="${esc(a.name)}"${a.name === t.defaultAgent ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}
+                        ${window.AFCharts.option('', '— none —', {
+                selected: !t.defaultAgent,
+                detail: 'A chat has to name an agent with /agent before it can say anything to one.'
+            })}
+                        ${(agents || []).map(a => window.AFCharts.option(a.name, a.name, {
+                selected: a.name === t.defaultAgent,
+                detail: a.dir || a.role || 'A chat that has not picked an agent talks to this one.'
+            })).join('')}
                     </select>
                     <span class="muted small">the agent a chat talks to before it picks one with <code>/agent</code></span>
                 </div>

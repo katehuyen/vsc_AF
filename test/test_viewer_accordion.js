@@ -8,6 +8,7 @@
 // one delegated #msgs click handler the accordion uses.
 const fs = require('fs');
 const vm = require('vm');
+const { charts } = require('./lib_charts_stub.js');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -59,7 +60,7 @@ function makeSandbox(opts) {
             setState: (s) => { state.saved = s; }
         }),
         window: {
-            AFCharts: {
+            AFCharts: charts({
                 esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
                 fmtTok: (n) => String(n || 0),
             STEP_KIND: {},
@@ -80,7 +81,7 @@ function makeSandbox(opts) {
                 fmtSteps: realCharts.fmtSteps,
                 STEPS_TIP: realCharts.STEPS_TIP,
                 aiLabel: (m, u) => { const n = /^claude/i.test(m || '') ? 'claude' : /^gemini/i.test(m || '') ? 'gemini' : /^gpt|codex/i.test(m || '') ? 'codex' : 'agent'; return u ? n.toUpperCase() : n; }
-            },
+            }),
             __DATA__: {
                 title: 't', sessionId: 'sess', cwd: '', permissionMode: '',
                 firstTs: 500, lastTs: 6000, models: [],

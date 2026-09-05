@@ -478,10 +478,10 @@
             <div class="ntgrid">
                 <label class="ntf" title="How long the pause lasts."><span>For</span>
                     <select id="gt-mins">
-                        <option value="0"${gateMins === '0' ? ' selected' : ''}>until I resume it</option>
-                        <option value="60"${gateMins === '60' ? ' selected' : ''}>1 hour</option>
-                        <option value="480"${gateMins === '480' ? ' selected' : ''}>8 hours</option>
-                        <option value="1440"${gateMins === '1440' ? ' selected' : ''}>24 hours</option>
+                        ${C.option('0', 'until I resume it', { selected: gateMins === '0', detail: 'The hold has no end. Nothing runs again until you lift it by hand.' })}
+                        ${C.option('60', '1 hour', { selected: gateMins === '60', detail: 'The hold lifts itself an hour from when you press it.' })}
+                        ${C.option('480', '8 hours', { selected: gateMins === '480', detail: 'Long enough for a working day, so a queue paused this morning is running again tonight.' })}
+                        ${C.option('1440', '24 hours', { selected: gateMins === '1440', detail: 'A full day. The longest hold that still ends on its own.' })}
                     </select></label>
                 <label class="ntf wide" title="Shown on this strip and on the Living page for as long as the pause lasts."><span>Reason</span>
                     <input type="text" id="gt-reason" value="${C.esc(gateReason)}" placeholder="e.g. reviewing what last night cost"></label>
@@ -982,9 +982,9 @@
                 <span class="spacer"></span>
                 <label class="grp">group
                     <select data-f="group">
-                        <option value="kind"${v.group === 'kind' ? ' selected' : ''}>by kind</option>
-                        <option value="agent"${v.group === 'agent' ? ' selected' : ''}>by agent</option>
-                        <option value=""${v.group === '' ? ' selected' : ''}>flat</option>
+                        ${C.option('kind', 'by kind', { selected: v.group === 'kind', detail: 'One section per task kind — tasks, schedules, chains.' })}
+                        ${C.option('agent', 'by agent', { selected: v.group === 'agent', detail: 'One section per agent, so a fleet\'s worth of work reads as who is carrying it.' })}
+                        ${C.option('', 'flat', { selected: v.group === '', detail: 'No sections at all: one list in the sort order alone.' })}
                     </select>
                 </label>
                 <span class="btngroup">
@@ -1304,8 +1304,9 @@
     function conversationHtml(c) {
         if (c.kind !== 'task') { return ''; }
         const rows = (DATA.launch || {}).resumable || [];
+        // U-130 — the form's boxes are one column wide and cut every label.
         const sel = (id, value, list) => `<select id="nt-${id}">${list.map(o =>
-            `<option value="${C.esc(o[0])}"${o[0] === value ? ' selected' : ''}>${C.esc(o[1])}</option>`
+            C.option(o[0], o[1], { selected: o[0] === value, detail: o[2] || '' })
         ).join('')}</select>`;
         // Interactive: the same rule the host enforces, said where the box is.
         if (c.mode === 'interactive') {
@@ -1315,7 +1316,7 @@
                 + 'Sessions page, or ⏵ in the Console) is the right door for that — it also warns you when '
                 + 'something else already has the conversation open. Set Mode to headless and this becomes '
                 + 'editable.')}"><span>Conversation</span>
-                <select disabled><option>a new session — interactive runs cannot resume here</option></select></label>`;
+                <select disabled>${C.option('', 'a new session — interactive runs cannot resume here', { detail: 'Continuing a conversation is a HEADLESS argument. Set Mode to headless and this becomes editable.' })}</select></label>`;
         }
         const head = `<label class="ntf wide" title="${C.esc(
             'A new session starts with nothing but this prompt. "Continue an existing conversation" resumes a '
@@ -1351,11 +1352,19 @@
             const m = Math.max(0, Math.round((Date.now() - (ts || 0)) / 60000));
             return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago';
         };
-        const opts = hits.slice(0, 60).map(r =>
-            `<option value="${C.esc(r.sessionId)}"${r.sessionId === c.resumeSessionId ? ' selected' : ''}>`
-            + C.esc(`${r.busy ? '● ' : ''}${r.title} · ${r.agent || '—'} · ${r.engine}`
-                + `${r.project ? ' · ' + r.project : ''} · ${ago(r.ts)} · #${r.sessionId.slice(0, 8)}`)
-            + '</option>').join('');
+        // U-130 — this row is the longest text on the page and the box cuts it
+        // at the title. The hover hands the whole of it back, plus the full id
+        // the SHORTHAND `#${8 chars}` stands in for.
+        const opts = hits.slice(0, 60).map(r => C.option(r.sessionId,
+            `${r.busy ? '● ' : ''}${r.title} · ${r.agent || '—'} · ${r.engine}`
+            + `${r.project ? ' · ' + r.project : ''} · ${ago(r.ts)} · #${r.sessionId.slice(0, 8)}`,
+            {
+                selected: r.sessionId === c.resumeSessionId,
+                detail: [
+                    r.busy ? 'Something has this conversation open right now.' : '',
+                    r.sessionId
+                ].filter(Boolean).join('\n')
+            })).join('');
         // ‼️ MIRROR — the picker is narrow and cuts its own text, so the whole
         // truth about the chosen row (its full id, its owner, what this task
         // will be) goes on the tip, current value first.
@@ -1381,7 +1390,7 @@
                     placeholder="name, agent, project, engine or a session id"></label>
             ${window.AFTip.wrap(`<label class="ntf wide"><span>Continue</span>
                 <select id="nt-resumeid">
-                    <option value="">— pick a conversation —</option>
+                    ${C.option('', '— pick a conversation —', { selected: !c.resumeSessionId, detail: 'Nothing chosen, so the run opens a NEW session rather than continuing one.' })}
                     ${opts}
                 </select></label>`,
             chosen ? `${chosen.title} — ${chosen.engine}` : 'Which conversation this run continues',
@@ -1414,8 +1423,9 @@
             ['off', 'never retry it'],
             ['custom', 'set it here…']
         ];
+        // U-130 — the form's boxes are one column wide and cut every label.
         const sel = (id, value, list) => `<select id="nt-${id}">${list.map(o =>
-            `<option value="${C.esc(o[0])}"${o[0] === value ? ' selected' : ''}>${C.esc(o[1])}</option>`
+            C.option(o[0], o[1], { selected: o[0] === value, detail: o[2] || '' })
         ).join('')}</select>`;
         /**
          * ‼️ M-3 (V3) — A POLICY THE RUN WILL NOT USE IS NOT OFFERED AS IF IT WILL.
@@ -1438,7 +1448,7 @@
                 + 'front of it: the process exiting is how you normally end one, so "it failed" is not a fact the '
                 + 'extension can read from it, and a policy acting on that would relaunch sessions you closed on '
                 + 'purpose. Set Mode to headless above and this becomes editable.')}"><span>If it fails</span>
-                <select disabled><option>not used for an interactive run</option></select></label>`;
+                <select disabled>${C.option('', 'not used for an interactive run', { detail: 'Automatic retry acts on HEADLESS runs only — closing an interactive session is the ordinary way to end it, not a failure. Set Mode to headless above and this becomes editable.' })}</select></label>`;
         }
         const head = `<label class="ntf wide" title="${C.esc(
             'What happens when this run FAILS. "use my default" follows agentFarm.taskRetry, which is six '
@@ -1599,8 +1609,10 @@
         // visible: dropping it would leave the box showing the first option and
         // reporting a decision nobody made. `selected` still wins on a disabled
         // option, which is exactly the pair of behaviours this needs.
-        const opts = (list || []).map(c =>
-            `<option value="${C.esc(c.id)}"${c.id === value ? ' selected' : ''}${c.off ? ' disabled' : ''}>${C.esc(c.label)}</option>`).join('');
+        const opts = (list || []).map(c => C.option(c.id, c.label, {
+            selected: c.id === value, disabled: !!c.off,
+            detail: c.detail || (c.off ? (c.why || 'Not available here — it is still listed so a value already set is not silently swapped.') : '')
+        })).join('');
         return `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
             <select id="nt-${id}">${opts}</select></label>`;
     }
@@ -1739,7 +1751,7 @@
     /** A plain <select> over `{id,label}` rows — the kind-specific fields. */
     function pickSel(id, label, list, value, title) {
         const opts = list.map(o =>
-            `<option value="${C.esc(o.id)}"${o.id === value ? ' selected' : ''}>${C.esc(o.label)}</option>`).join('');
+            C.option(o.id, o.label, { selected: o.id === value, detail: o.detail || '' })).join('');
         return `<label class="ntf" title="${C.esc(title || '')}"><span>${C.esc(label)}</span>
             <select id="nt-${id}">${opts}</select></label>`;
     }
@@ -2004,7 +2016,7 @@
         const isNew = c.stepIdx === -1;
         const n = isNew ? c.steps.length + 1 : c.stepIdx + 1;
         const agentOpts = (DATA.agents || []).map(a =>
-            `<option value="${C.esc(a)}"${a === s.agent ? ' selected' : ''}>${C.esc(a)}</option>`).join('');
+            C.option(a, a, { selected: a === s.agent, detail: 'This step runs in ' + a + '\'s own folder, under its own rules.' })).join('');
         const wantsAgent = s.stype === 'agent' || s.stype === 'browser';
         const wantsVerify = s.stype === 'agent' || s.stype === 'media';
         const scenes = DATA.scenes || [];
@@ -2024,8 +2036,8 @@
                     <select id="nt-st-agent">${agentOpts}</select></label>` : ''}
                 ${s.stype === 'agent' ? `<label class="ntf" title="Headless is the mode a chain normally runs in: the output is archived and handed to the next step."><span>Mode</span>
                     <select id="nt-st-smode">
-                        <option value="headless"${s.smode === 'headless' ? ' selected' : ''}>headless — runs and exits</option>
-                        <option value="interactive"${s.smode === 'interactive' ? ' selected' : ''}>interactive — opens a session</option>
+                        ${C.option('headless', 'headless — runs and exits', { selected: s.smode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never — and the step can be retried automatically.' })}
+                        ${C.option('interactive', 'interactive — opens a session', { selected: s.smode === 'interactive', detail: 'Opens a terminal with you in front of it. Closing that window is how you end it, so "it failed" is not a fact anything can read from it.' })}
                     </select></label>` : ''}
             </div>
             ${s.stype === 'agent' ? `<div class="ntgrid">
@@ -2333,18 +2345,21 @@
         // here it is one more entry in the same picker every other kind uses.
         const anyAgent = c.kind === 'template';
         const agentOpts = (anyAgent
-            ? ['<option value=""' + (c.agent ? '' : ' selected') + '>— any agent: you pick when you launch it —</option>']
+            ? [C.option('', '— any agent: you pick when you launch it —', { selected: !c.agent, detail: 'The run is written now and the agent is chosen at the moment you launch it.' })]
             : [])
             .concat((DATA.agents || []).map(a =>
-                `<option value="${C.esc(a)}"${a === c.agent ? ' selected' : ''}>${C.esc(a)}</option>`))
+                C.option(a, a, { selected: a === c.agent, detail: 'The run opens in ' + a + "'s own folder, under its own rules." })))
             .join('');
-        const projOpts = ['<option value=""' + (c.project ? '' : ' selected') + '>— no project —</option>']
+        const projOpts = [C.option('', '— no project —', { selected: !c.project, detail: 'The run is filed under nothing and is told about no project.' })]
             .concat((L.projects || []).map(p =>
-                `<option value="${C.esc(p.id)}"${p.id === c.project ? ' selected' : ''}>${p.icon ? C.esc(p.icon) + ' ' : ''}${C.esc(p.name)}</option>`))
+                C.option(p.id, (p.icon ? p.icon + ' ' : '') + p.name, {
+                    selected: p.id === c.project,
+                    detail: p.summary || p.folder || 'The run lands on this project\'s Work tab and is told where its documents live.'
+                })))
             .join('');
-        const cliOpts = ['<option value=""' + (c.cli ? '' : ' selected') + '>claude — the default executor</option>']
+        const cliOpts = [C.option('', 'claude — the default executor', { selected: !c.cli, detail: 'The run is executed by plain claude, which is what every run written before this box existed used.' })]
             .concat((L.clis || []).map(p =>
-                `<option value="${C.esc(p.name)}"${p.name === c.cli ? ' selected' : ''}>${C.esc(p.name)}</option>`))
+                C.option(p.name, p.name, { selected: p.name === c.cli, detail: p.path || p.detail || '' })))
             .join('');
         /**
          * ‼️ X-106 — WHICH ROUTE THE RUN IS SERVED BY, and it matters MORE here
@@ -2372,10 +2387,12 @@
         const routeRow = (() => {
             if (!routeForm) { return ''; }
             const noun = String(routeForm.noun || 'Route');
-            const opts = ['<option value=""' + (c.providerId ? '' : ' selected')
-                + '>— none: nothing injected, nothing cleared —</option>']
+            const opts = [C.option('', '— none: nothing injected, nothing cleared —', {
+                selected: !c.providerId,
+                detail: 'The run takes whichever ' + noun.toLowerCase() + ' the agent happens to be set to when it fires — and nobody is watching when it does.'
+            })]
                 .concat(routeForm.providers.map(p =>
-                    `<option value="${C.esc(p.id)}"${p.id === c.providerId ? ' selected' : ''}>${C.esc(p.label)}</option>`))
+                    C.option(p.id, p.label, { selected: p.id === c.providerId, detail: p.detail || p.baseUrl || '' })))
                 .join('');
             const row = `<label class="ntf" title="${C.esc(noun
                 + ': the endpoint this run really talks to, which the engine itself never says. '
@@ -2386,9 +2403,12 @@
                     <select id="nt-route">${opts}</select></label>`;
             const tiers = (routeForm.providers.find(p => p.id === c.providerId) || {}).tiers || [];
             if (!tiers.length) { return row; }
-            const topts = ['<option value=""' + (c.tier ? '' : ' selected') + '>— the route\'s own choice —</option>']
+            const topts = [C.option('', '— the route\'s own choice —', { selected: !c.tier, detail: 'No tier named, so the route serves whatever it serves by default.' })]
                 .concat(tiers.map(t =>
-                    `<option value="${C.esc(t.id)}"${t.id === c.tier ? ' selected' : ''}>${C.esc(t.label)}${t.detail ? ' — ' + C.esc(t.detail) : ''}</option>`))
+                    C.option(t.id, t.label + (t.detail ? ' — ' + t.detail : ''), {
+                        selected: t.id === c.tier,
+                        detail: 'A tier is not a model: this name is served by a different model on every route, which is why it is asked here and not in the model box.'
+                    })))
                 .join('');
             return row + `<label class="ntf" title="Which model this route serves for that name. A tier is not a model: &quot;opus&quot; is one model on one route and another on the next, which is why it is asked here and not in the model box."><span>Tier</span>
                     <select id="nt-tier">${topts}</select></label>`;
@@ -2407,11 +2427,18 @@
         const accountRow = (() => {
             const rows = ntAccounts(c.engine);
             if (!rows.length) { return ''; }
-            const opts = ['<option value=""' + (c.account ? '' : ' selected')
-                + '>— the standing choice, else the main sign-in —</option>']
-                .concat(rows.map(a =>
-                    `<option value="${C.esc(a.id)}"${a.id === c.account ? ' selected' : ''}>`
-                    + `${a.health === 'ready' ? '' : '⚠ '}${C.esc(a.label)}${a.active ? ' •' : ''}</option>`))
+            const opts = [C.option('', '— the standing choice, else the main sign-in —', {
+                selected: !c.account,
+                detail: 'The ACTIVE account of this engine answers when the run fires — the one the Engines page points at — and failing that the main sign-in, which is what every run written before this took.'
+            })]
+                .concat(rows.map(a => C.option(a.id,
+                    (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''), {
+                    selected: a.id === c.account,
+                    detail: [
+                        a.active ? 'The standing choice for this engine right now.' : '',
+                        a.health === 'ready' ? '' : (a.next || 'This slot needs signing in again before it can pay for a run.')
+                    ].filter(Boolean).join('\n\n')
+                })))
                 .join('');
             return `<label class="ntf" title="${C.esc('Which sign-in of this engine pays for the run. '
                 + 'Leave it empty and the ACTIVE account of that engine answers when the run fires — the '
@@ -2439,9 +2466,10 @@
             const list = L.engines || [];
             if (list.length < 2) { return ''; }
             const chosen = cur || L.defaults?.engine || 'claude';
-            const opts = list.map(e => `<option value="${e.id === 'claude' ? '' : C.esc(e.id)}"${
-                e.id === chosen ? ' selected' : ''}${e.ready ? '' : ' disabled'} title="${C.esc(e.next)}"
-                >${C.esc(e.label)}${e.ready ? '' : ' — cannot run here'}</option>`).join('');
+            const opts = list.map(e => C.option(e.id === 'claude' ? '' : e.id,
+                e.label + (e.ready ? '' : ' — cannot run here'), {
+                selected: e.id === chosen, disabled: !e.ready, detail: e.next || ''
+            })).join('');
             return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine the permission mode below is spent UP FRONT because the engine cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on Antigravity a request its own app can overrule — and the run states no dollar figure, counting tokens instead (whether that is billed against a plan or a key is what its sign-in says, on the Engines page). ‼️ OpenCode breaks that sentence at both ends: it CAN stop and ask, which is exactly why an unattended run of it needs the auto-approve mode — with nobody to answer, the request comes back REFUSED rather than waiting — and it states the price of every turn itself. An engine with no reasoning-effort setting of its own (Gemini has none, OpenCode has none) is not given that box at all. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
                 <select id="nt-engine">${opts}</select></label>`;
         };
@@ -2506,7 +2534,7 @@
             ? ''
             : `<label class="ntf wide" title="A task and a schedule are the same object with one difference: whether a clock starts it. Change this and everything you have already typed stays — only the part below that depends on the kind is redrawn. (Changing the kind of something already saved is not offered: that would be deleting one thing and making another, which is a decision to make on purpose.)"><span>This is a…</span>
                 <select id="nt-kind">${KIND_PICK.map(k =>
-                `<option value="${k.id}"${k.id === c.kind ? ' selected' : ''}>${C.esc(k.label)}</option>`).join('')}</select></label>`;
+                C.option(k.id, k.label, { selected: k.id === c.kind, detail: k.detail || '' })).join('')}</select></label>`;
         return `<div class="ntbox${ro ? ' ro' : ''}" id="ntbox">
             <div class="ctl-row">
                 <span class="ctl-title">${ro ? 'How this run was made' : retry ? 'Retry' : editing ? 'Edit' : 'New'} ${ro ? '' : C.esc(spec.label)}</span>
@@ -2538,8 +2566,8 @@
                     <select id="nt-agent">${agentOpts}</select></label>` : ''}
                 ${wantsRun ? `<label class="ntf" title="Headless is claude -p: it runs the prompt, writes its output to an archived file and exits — the mode an unattended run is normally in. Interactive opens a real session in a terminal with the prompt already sent."><span>Mode</span>
                     <select id="nt-mode">
-                        <option value="headless"${c.mode === 'headless' ? ' selected' : ''}>headless — runs and exits</option>
-                        <option value="interactive"${c.mode === 'interactive' ? ' selected' : ''}>interactive — opens a session</option>
+                        ${C.option('headless', 'headless — runs and exits', { selected: c.mode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never. Continuing a conversation and automatic retry both need this.' })}
+                        ${C.option('interactive', 'interactive — opens a session', { selected: c.mode === 'interactive', detail: 'Opens a terminal with you in front of it. Closing that window is how you end it, so retry and resume are switched off for it.' })}
                     </select></label>` : ''}
                 ${/**
                     * ‼️ M-26 — AND, FOR AN INTERACTIVE RUN, THE TWO THINGS THAT
@@ -3273,9 +3301,9 @@
                 + 'clear the finished ones, or the list grows past its cap.')}">⌛ Archive</button>`;
         }
         return `<select id="arch-month" title="Which month of the archive to read. Every month is the default: a run is remembered by what it was, not by when it left the list.">
-                <option value=""${a.month ? '' : ' selected'}>archive · all months</option>
+                ${C.option('', 'archive · all months', { selected: !a.month, detail: 'A run is remembered by what it was, not by when it left the list.' })}
                 ${months.slice().reverse().map(mo =>
-            `<option value="${C.esc(mo)}"${mo === a.month ? ' selected' : ''}>archive · ${C.esc(mo)}</option>`).join('')}
+            C.option(mo, 'archive · ' + mo, { selected: mo === a.month, detail: 'Runs that left the live list in ' + mo + '.' })).join('')}
             </select>
             <button class="secondary" data-archoff="1" title="Back to the live list only.">✕ archive</button>`;
     }

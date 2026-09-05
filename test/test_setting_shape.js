@@ -325,7 +325,7 @@ const PROPS = manifest.contributes.configuration.properties;
     ok('‼️ a boolean field is a three-way picker and not a checkbox, because'
         + ' "not set" and "false" are different answers',
         /f\.type === 'boolean'/.test(page)
-        && /opt\('', '\(not set\)', text\)\}\$\{opt\('true', 'yes', text\)/.test(page.replace(/\s*\n\s*/g, '')));
+        && /opt\('', '\(not set\)', text, unset\)\}\$\{opt\('true', 'yes', text,/.test(page.replace(/\s*\n\s*/g, '')));
     ok('…a closed set is a picker rather than a box that accepts anything',
         /f\.allowed && f\.allowed\.length/.test(page));
     ok('‼️ …and a value already stored that the enum no longer names is KEPT and'

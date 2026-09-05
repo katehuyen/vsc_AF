@@ -115,6 +115,22 @@ short readout of figures that will never grow.
 Say **"put an AFTip on it"**; the component ships to every page from
 `htmlShell`, so there is nothing to wire and no excuse to hand-roll one.
 
+**‼️ The one place a `title` is not a compromise: an `<option>` (U-128, U-130).**
+A `<select>` cuts its own text and the popup it opens is drawn by the operating
+system — no `AFTip` can reach into it, so the option's native `title` is the
+only surface there is, and an option without one is a fact the reader cannot get
+to at all. **Never write an `<option>` tag by hand: call `C.option(value,
+label, { selected, disabled, detail })`** (`media/charts.js`, on every page as
+`window.AFCharts`), which puts the option's own text on the first line, a blank
+line, then the detail — the same order MIRROR puts a control's current value
+before its explanation. `C.optionTip(label, detail)` builds that text alone for
+a site that already has its own markup. `test/test_option_tips.js` measures
+every page against `test/optiontips.manifest.json`, which is now at **zero and
+empty**: a page missing from it must be at zero, so the gate is a ban rather
+than a budget and a new picker cannot arrive silent. A `<datalist>` option is
+NOT one of these — it is a suggestion behind a text box, it opens no popup, and
+no browser shows a `title` on it; the gate skips them and so should you.
+
 ### 1. A cell hover is a READOUT, not a paragraph
 
 `Label: value`, one per line, the way a spreadsheet says it. You understand a

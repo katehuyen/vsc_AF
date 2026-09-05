@@ -9,6 +9,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
+const { charts } = require('./lib_charts_stub.js');
 
 // ---------- category coverage against the REAL manifest ----------
 {
@@ -181,7 +182,7 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
         window: {
-            AFCharts: { esc: (s) => String(s) },
+            AFCharts: charts({ esc: (s) => String(s) }),
             __DATA__: {
                 focus: '',
                 profiles: [{ name: 'work', savedAt: 1, count: 2 }],
@@ -277,7 +278,7 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
         window: {
-            AFCharts: { esc: (s) => String(s) },
+            AFCharts: charts({ esc: (s) => String(s) }),
             __DATA__: {
                 focus: '', profiles: [], categories: [],
                 folders: {
@@ -407,7 +408,7 @@ const SO = require(path.join(__dirname, '..', 'out', 'core', 'settingsops.js'));
         return {
             acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
             window: {
-                AFCharts: { esc: (s) => String(s) },
+                AFCharts: charts({ esc: (s) => String(s) }),
                 __DATA__: { focus: '', profiles: [], categories: [cat], prompts },
                 addEventListener() { }
             },

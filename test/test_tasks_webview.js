@@ -41,6 +41,7 @@ const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afRepaint.js'), 'utf8')
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
+const { charts } = require('./lib_charts_stub.js');
 
 // ---------------------------------------------------------------- DOM shim
 let posted = [];
@@ -203,12 +204,12 @@ const sandbox = {
         setState: (s) => { state = s; }
     }),
     window: {
-        AFCharts: {
+        AFCharts: charts({
             esc: (s) => String(s == null ? '' : s),
             fmtUSD: (v) => '$' + Number(v).toFixed(2),
             // X-35: a plan-billed engine's run shows tokens instead of a dollar
             fmtTok: (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(n))
-        },
+        }),
         AFHeader: { html: (o) => `<header data-page="${o.page}">${o.title}</header>`, wire: () => { } },
         __DATA__: null,
         // The right-click relay arrives as a window message; the page listens
@@ -1774,8 +1775,11 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     ok('the form has an engine row', /<select id="nt-engine">/.test(page));
     ok('…drawn only when there is more than one engine to choose between',
         /if \(list\.length < 2\) \{ return ''; \}/.test(page));
+    // U-130 moved the whole row through `C.option`, which emits `disabled` and
+    // the hover together — the pair is what this has always been about.
     ok('‼️ …offering one that cannot run as disabled, with the reason on the row',
-        /\$\{e\.ready \? '' : ' disabled'\}/.test(page) && /cannot run here/.test(page));
+        /disabled: !e\.ready/.test(page) && /cannot run here/.test(page)
+        && /detail: e\.next/.test(page));
     // ‼️ …AND IT NAMES EACH ENGINE'S OWN MECHANISM (X-35). "a SANDBOX" was said
     // for all of them, which told the user that Gemini and Antigravity have a
     // Codex sandbox. And "because it goes against a plan" asserted a billing

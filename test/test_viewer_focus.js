@@ -2,6 +2,7 @@
 // nearest message, and the filter box clear (✕) button works (real page handlers).
 const fs = require('fs');
 const vm = require('vm');
+const { charts } = require('./lib_charts_stub.js');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -37,7 +38,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
         window: {
-            AFCharts: { esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') },
+            AFCharts: charts({ esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') }),
             __DATA__: {
                 listener: { state: 'listening', port: 1 },
                 sessions: [{ agentName: 'dev', status: 'working', prompts: 1, toolCalls: 1, compactions: 0, subagentStops: 0, lastEventTs: T }],
@@ -103,7 +104,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage: (m) => posted.push(m), getState() { }, setState() { } }),
         window: {
-            AFCharts: {
+            AFCharts: charts({
                 esc: (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
                 fmtTok: (n) => String(n || 0),
             STEP_KIND: {},
@@ -119,7 +120,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
             WEIGHTED_TIP: 'weighted',
                 fmtUSD: (n) => '$' + (n || 0),
                 aiLabel: (m, u) => { const n = /^claude/i.test(m || '') ? 'claude' : /^gemini/i.test(m || '') ? 'gemini' : /^gpt|codex/i.test(m || '') ? 'codex' : 'agent'; return u ? n.toUpperCase() : n; }
-            },
+            }),
             __DATA__: {
                 title: 't', sessionId: 'sess', cwd: '', permissionMode: '',
                 firstTs: 1000, lastTs: 9000, models: [],

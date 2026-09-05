@@ -57,6 +57,12 @@ function measure(name) {
         } catch { continue; }
         let h = '';
         try { h = markup(r); } catch { continue; }
+        // ‼️ U-130 — A `<datalist>` OPTION IS NOT ONE OF THESE. It is not in a
+        // `<select>`, it opens no popup of its own, and no browser shows a
+        // `title` on it — it is a SUGGESTION behind a text box the reader can
+        // type anything into. Counting it made the debt look bigger than it
+        // was and, worse, invited dead markup: a title nobody can ever see.
+        h = h.replace(/<datalist\b[\s\S]*?<\/datalist>/gi, '');
         for (const o of (h.match(/<option\b[^>]*>[^<]*/g) || [])) {
             total++;
             const t = /title="([^"]*)"/.exec(o);

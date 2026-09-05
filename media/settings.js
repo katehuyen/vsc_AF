@@ -342,19 +342,29 @@
             : `This field is ${f.type}, which has no single box: write its JSON here.`;
         const mirror = [text, f.description, note].filter(Boolean).join('\n\n');
         const a = `id="${id}" ${dataAttr}${mirror ? ` title="${C.esc(mirror)}"` : ''}`;
-        const opt = (v, label, cur) =>
-            `<option value="${C.esc(v)}"${v === cur ? ' selected' : ''}>${C.esc(label)}</option>`;
+        // U-130 — the field's own hover is on the BOX (MIRROR, above); each
+        // option carries its own name plus the one thing that option means
+        // here, because the popup is drawn by the OS and no panel reaches it.
+        const unset = f.default !== undefined
+            ? `${f.name} falls back to its default, ${f.default}.`
+            : `${f.name} is left out of the JSON altogether.`;
+        const opt = (v, label, cur, detail) =>
+            C.option(v, label, { selected: v === cur, detail });
         if (f.allowed && f.allowed.length) {
             // A value already stored that the enum no longer names is kept and
             // shown — dropping it on redraw would delete it without a word.
             const known = f.allowed.indexOf(text) >= 0 || text === '';
-            return `<select ${a}>${opt('', '(not set)', text)
+            return `<select ${a}>${opt('', '(not set)', text, unset)
                 }${(known ? [] : [text]).concat(f.allowed.filter(v => v !== '')).map(v =>
-                    opt(v, v, text)).join('')}</select>`;
+                    opt(v, v, text, f.allowed.indexOf(v) < 0
+                        ? `Stored in the JSON, but ${f.name} no longer names this value.`
+                        : (String(f.default ?? '') === String(v) ? `The default for ${f.name}.` : '')
+                    )).join('')}</select>`;
         }
         if (f.type === 'boolean') {
-            return `<select ${a}>${opt('', '(not set)', text)}${opt('true', 'yes', text)
-                }${opt('false', 'no', text)}</select>`;
+            return `<select ${a}>${opt('', '(not set)', text, unset)
+                }${opt('true', 'yes', text, `${f.name} is on.`)
+                }${opt('false', 'no', text, `${f.name} is off.`)}</select>`;
         }
         // ‼️ AN EMPTY BOX SAYS WHAT WILL HAPPEN IF IT STAYS EMPTY (MIRROR).
         // Leaving a field out is not "nothing" — the field's own default stays
@@ -836,8 +846,15 @@
             return `<input type="checkbox" id="${id}" data-set="${C.esc(it.key)}"${it.value ? ' checked' : ''}>`;
         }
         if (it.enum && it.enum.length) {
+            // U-130 — the box CUTS a long enum value and the popup belongs to
+            // the OS, so the name goes on the option itself. The one fact the
+            // list already implies and nobody can see: which of them is the
+            // value this setting falls back to when it is left alone.
             return `<select id="${id}" data-set="${C.esc(it.key)}">${it.enum.map(o =>
-                `<option value="${C.esc(o)}"${String(it.value) === o ? ' selected' : ''}>${C.esc(o)}</option>`).join('')}</select>`;
+                C.option(o, o, {
+                    selected: String(it.value) === o,
+                    detail: String(it.default ?? '') === o ? `The default for ${shortKey(it.key)}.` : ''
+                })).join('')}</select>`;
         }
         /**
          * ‼️ U-84 (d) — A PICKER WHOSE OPTIONS ARE NOT IN THE MANIFEST.
@@ -857,9 +874,13 @@
             const cur = String(it.value ?? '');
             const names = cur && src.indexOf(cur) < 0 ? [cur].concat(src) : src;
             return `<select id="${id}" data-set="${C.esc(it.key)}">
-                <option value=""${cur ? '' : ' selected'}>— none —</option>
-                ${names.map(o => `<option value="${C.esc(o)}"${cur === o ? ' selected' : ''}>${C.esc(o)}${
-                src.indexOf(o) < 0 ? ' (not on this machine)' : ''}</option>`).join('')}</select>`;
+                ${C.option('', '— none —', { selected: !cur, detail: `Leave ${shortKey(it.key)} unset.` })}
+                ${names.map(o => C.option(o, o + (src.indexOf(o) < 0 ? ' (not on this machine)' : ''), {
+                selected: cur === o,
+                detail: src.indexOf(o) < 0
+                    ? 'Stored in the setting, but nothing here answers to that name — kept so redrawing the page cannot quietly swap it for the first entry in the list.'
+                    : ''
+            })).join('')}</select>`;
         }
         if (it.type === 'number') {
             return `<input type="number" id="${id}" data-set="${C.esc(it.key)}" value="${C.esc(String(it.value ?? ''))}" style="width:110px">`;
@@ -1026,9 +1047,12 @@
         const zero = res.value ? `Default \u2192 ${res.value}` : 'Default (the CLI decides)';
         return `<select class="agmodel" data-agmodel="${C.esc(c.dir)}"
             title="${C.esc('Default model for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
-            <option value=""${cur ? '' : ' selected'}>${C.esc(zero)}</option>
-            ${opts.map(m => `<option value="${C.esc(m)}"${cur === m ? ' selected' : ''}>${C.esc(m)}</option>`).join('')}
-            <option value="__custom__">custom…</option>
+            ${C.option('', zero, { selected: !cur, detail: res.note || 'This agent names no model of its own.' })}
+            ${opts.map(m => C.option(m, m, {
+                selected: cur === m,
+                detail: aliases.indexOf(m) < 0 ? 'Set by hand — this engine does not list this model.' : ''
+            })).join('')}
+            ${C.option('__custom__', 'custom…', { detail: 'Type a model id this engine is not offering here.' })}
         </select>`;
     }
 
@@ -1046,8 +1070,8 @@
         const zero = res.value ? `effort \u2192 ${res.value}` : 'effort: default';
         return `<select class="agmodel" data-ageffort="${C.esc(c.dir)}"
             title="${C.esc('Default reasoning effort for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
-            <option value=""${cur ? '' : ' selected'}>${C.esc(zero)}</option>
-            ${list.map(e => `<option value="${C.esc(e.id)}"${cur === e.id ? ' selected' : ''}>${C.esc(e.label || e.id)}</option>`).join('')}
+            ${C.option('', zero, { selected: !cur, detail: res.note || 'This agent names no effort of its own.' })}
+            ${list.map(e => C.option(e.id, e.label || e.id, { selected: cur === e.id, detail: e.detail || '' })).join('')}
         </select>`;
     }
 
@@ -1122,8 +1146,14 @@
         }
         if (it.kind === 'enum') {
             return `<select id="${id}" data-ccset="${it.id}">
-                <option value=""${it.set ? '' : ' selected'}>(not set — Claude default)</option>
-                ${it.enum.map(o => `<option value="${C.esc(o)}"${String(it.value) === o ? ' selected' : ''}>${C.esc(o)}</option>`).join('')}
+                ${C.option('', '(not set — Claude default)', {
+                selected: !it.set,
+                detail: `${it.id} is left out of the config and Claude Code decides it.`
+            })}
+                ${it.enum.map(o => C.option(o, o, {
+                selected: String(it.value) === o,
+                detail: String(it.default ?? '') === o ? `The value Claude Code uses when ${it.id} is not set.` : ''
+            })).join('')}
             </select>`;
         }
         const t = it.kind === 'number' ? 'number' : 'text';
@@ -1327,7 +1357,14 @@
         if (filter && !DOCOPEN_TERMS.includes(filter)) { return ''; }
         const LBL = { vscode: 'VS Code (raw markdown)', preview: 'Markdown preview (rendered)', obsidian: 'Obsidian (rendered in your vault)', custom: 'Custom external app (e.g. Notepad)' };
         const modes = d.modes && d.modes.length ? d.modes : ['vscode', 'preview', 'obsidian', 'custom'];
-        const opts = modes.map(m => `<option value="${C.esc(m)}"${m === d.defaultMode ? ' selected' : ''}>${C.esc(LBL[m] || m)}</option>`).join('');
+        const DOCOPEN_WHY = {
+            vscode: 'The file opens in this window as plain markdown, ready to edit.',
+            preview: 'VS Code renders it read-only; the source is one click away.',
+            obsidian: 'Handed to Obsidian, so backlinks, tasks and the graph work.',
+            custom: 'Runs the command below with the file path — anything on this machine.'
+        };
+        const opts = modes.map(m => C.option(m, LBL[m] || m,
+            { selected: m === d.defaultMode, detail: DOCOPEN_WHY[m] || '' })).join('');
         const showCustom = d.defaultMode === 'custom';
         return `
             <h2 class="cat" id="cat-docopen">Open documents with <span class="muted small">${C.esc(LBL[d.defaultMode] || d.defaultMode)}</span></h2>
@@ -1806,7 +1843,23 @@
      * op will refuse (U-123).
      */
     function alertToneGroups(al, chosen) {
-        const opt = v => `<option value="${C.esc(v.id)}"${v.id === chosen ? ' selected' : ''}${v.playable ? '' : ' disabled'}>${C.esc(v.label)}${v.playable ? '' : (v.exists ? ' — not playable here' : ' — file missing')}</option>`;
+        // U-130 — the row is narrow and every one of these tones is a FILE the
+        // reader may need to find. The hover carries the one thing the label
+        // cannot: where the sound actually comes from, and why a greyed row is
+        // greyed.
+        const opt = v => C.option(v.id,
+            v.label + (v.playable ? '' : (v.exists ? ' — not playable here' : ' — file missing')),
+            {
+                selected: v.id === chosen,
+                disabled: !v.playable,
+                detail: [
+                    v.builtin ? 'Ships with Agent Farm.' : 'Your own sound.',
+                    v.path || '',
+                    v.playable ? '' : (v.exists
+                        ? 'This machine cannot play that format, so it cannot be chosen — the file is still there.'
+                        : 'The file this points at has gone. It is still listed so a setting that names it is not silently changed.')
+                ].filter(Boolean).join('\n')
+            });
         const modern = (al.voices || []).filter(v => v.builtin && v.family !== 'classic');
         const classic = (al.voices || []).filter(v => v.builtin && v.family === 'classic');
         const mine = (al.voices || []).filter(v => !v.builtin);
@@ -1824,7 +1877,10 @@
             (row.chosen ? `Set to: ${alertVoiceName(al, row.chosen)}` : `Not set — falls back to ${alertVoiceName(al, row.fallback)}`)
             + `\n\nWhich sound this event plays for every session. Clearing it does not mute the event: it falls back to the built-in default.`);
         return `<select data-alertvoice="${C.esc(row.event)}" title="${C.esc(tip)}">
-            <option value=""${row.chosen ? '' : ' selected'}>Default — ${C.esc(alertVoiceName(al, row.fallback))}</option>
+            ${C.option('', `Default — ${alertVoiceName(al, row.fallback)}`, {
+            selected: !row.chosen,
+            detail: 'Nothing chosen for this event, so the built-in default plays. This is NOT silence — turn the event off to mute it.'
+        })}
             ${alertToneGroups(al, row.chosen)}
         </select>`;
     }
@@ -2087,21 +2143,43 @@
         // exists to end. Picking a row writes the FULL name, which is the
         // user's own act and not a silent rewrite of what they typed.
         const at = String(sp.resolvedName || chosen);
-        const opt = v => `<option value="${C.esc(v.name)}"${v.name === at ? ' selected' : ''}>${C.esc(v.label)}</option>`;
+        // U-130 — the box cuts `name · culture · engine` long before the engine,
+        // and the engine is exactly what explains why a voice is missing from
+        // the shorter list. The hover carries the whole row plus what picking
+        // it WRITES, since the setting stores the full name and not the label.
+        const opt = v => C.option(v.name, v.label, {
+            selected: v.name === at,
+            detail: [
+                `Reads ${v.culture || 'no language it declares'}.`,
+                v.engine === 'sapi5'
+                    ? 'SAPI 5 — the short classic list every Windows has.'
+                    : 'OneCore — installed with a language pack.',
+                `Picking this writes “${v.name}” into the setting.`
+            ].join('\n')
+        });
         // The setting is ALWAYS shown, whether or not the list could confirm it
         // — a picker that silently drops the value it is set to is the box this
         // strip replaced. Only the ⚠ is conditional.
         const unknown = chosen && !sp.resolvedName
-            ? `<option value="${C.esc(chosen)}" selected>${bad ? '⚠ ' : ''}${C.esc(chosen)}${bad ? ' — no voice answers to that' : ' — set by hand'}</option>`
+            ? C.option(chosen, `${bad ? '⚠ ' : ''}${chosen}${bad ? ' — no voice answers to that' : ' — set by hand'}`, {
+                selected: true,
+                detail: bad
+                    ? 'Nothing on this machine answers to that name, so the announcement will FAIL rather than read out in the wrong voice. Pick a row below, or clear it.'
+                    : 'This platform cannot list its voices, so whether the name is answered is only known when it speaks.'
+            })
             : '';
         const box = !sp.voicesLoaded
             // ‼️ NOT ASKED YET IS NOT "NO VOICES". The list costs a PowerShell
             // process, so it is fetched once when the card first draws; an
             // empty box in the meantime would read as "this machine cannot
             // speak", which is the opposite of the truth.
-            ? `<select id="alertspeakvoice" disabled><option>reading this machine's voices…</option></select>`
+            ? `<select id="alertspeakvoice" disabled>${C.option('', "reading this machine's voices…",
+                { detail: 'The list costs a PowerShell process and is fetched once when this card first draws. Not asked yet is not "no voices".' })}</select>`
             : `<select id="alertspeakvoice" title="${C.esc(voiceTip)}">
-                <option value=""${chosen ? '' : ' selected'}>System default — whichever voice Windows reads with</option>
+                ${C.option('', 'System default — whichever voice Windows reads with', {
+                selected: !chosen,
+                detail: 'No name is written into the setting, so whatever this machine reads with speaks — and it changes if that default changes.'
+            })}
                 ${unknown}
                 ${voices.map(opt).join('')}
             </select>`;

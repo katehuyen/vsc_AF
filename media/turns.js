@@ -660,7 +660,7 @@
         return `
         <div class="chiprow">
             <span class="muted small">Sort by:</span>
-            <select class="af-sort">${SORTS.map(s => `<option value="${s.id}"${s.id === sort ? ' selected' : ''}>${s.label}</option>`).join('')}</select>
+            <select class="af-sort">${SORTS.map(s => C.option(s.id, s.label, { selected: s.id === sort, detail: s.detail || '' })).join('')}</select>
             <span class="muted small">List:</span>
             <input type="number" class="af-count" min="1" step="1" value="${tableN > 0 ? tableN : ''}" placeholder="all" title="How many turns to list after sorting — empty means all">
             <button class="chip af-allrows${tableN === 0 ? ' on' : ''}" title="List every turn (click again to go back to ${DEFAULT_N})">All</button>

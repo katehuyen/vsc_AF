@@ -47,12 +47,22 @@
         return `<label class="${cls}"${opt.tip ? ` title="${esc(opt.tip)}"` : ''}>${head}${inner}</label>`;
     }
 
+    // ‼️ U-130 — EVERY OPTION THIS COMPONENT DRAWS SAYS ITS OWN NAME. A row
+    // that already carries a `title` keeps it, but it is now the DETAIL under
+    // the name rather than instead of it: the box cuts the label, and a hover
+    // that explains a word the reader cannot read is answering the wrong
+    // question. Rows may also pass `detail`, which reads better at the call.
     function options(list, value) {
+        const C = window.AFCharts;
         return (list || []).map(o => {
-            const id = o && typeof o === 'object' ? o.id : o;
-            const label = o && typeof o === 'object' ? (o.label === undefined ? o.id : o.label) : o;
-            const title = o && typeof o === 'object' && o.title ? ` title="${esc(o.title)}"` : '';
-            return `<option value="${esc(id)}"${String(id) === String(value === undefined || value === null ? '' : value) ? ' selected' : ''}${title}>${esc(label)}</option>`;
+            const obj = o && typeof o === 'object';
+            const id = obj ? o.id : o;
+            const label = obj ? (o.label === undefined ? o.id : o.label) : o;
+            return C.option(id, label, {
+                selected: String(id) === String(value === undefined || value === null ? '' : value),
+                disabled: obj && !!o.disabled,
+                detail: obj ? (o.detail || o.title || '') : ''
+            });
         }).join('');
     }
 
