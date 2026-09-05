@@ -1,5 +1,5 @@
 import { AutomationState, gateBlock } from './automation';
-import { mostRoom, nextResetAt, SlotUsage } from './accountUsage';
+import { nextResetAt, pickAccount, SlotUsage } from './accountUsage';
 import { RETRY_DEFAULT_SAFETY_MIN } from './retry';
 
 /**
@@ -13,7 +13,7 @@ import { RETRY_DEFAULT_SAFETY_MIN } from './retry';
  * ‼️ NO SECOND SCHEDULER, WHICH THE ITEM IS EMPHATIC ABOUT. Permission is
  * `gateBlock` (the same master switch, pause and quiet hours every other
  * automation obeys), the sleep is a measured reset plus retry.ts's safety
- * buffer, and the account is `mostRoom` / `nextResetAt`. This file COMPOSES
+ * buffer, and the account is `pickAccount` / `nextResetAt`. This file COMPOSES
  * them; it reimplements none of them, because a second copy of "may we act
  * right now" is how a paused farm comes to mean two different things.
  *
@@ -54,6 +54,28 @@ export interface SentryCampaign {
     safetyBufferMin?: number;
     engine?: string;
     model?: string;
+    /**
+     * ‼️ X-207 — THE ACCOUNTS THIS CAMPAIGN IS ALLOWED TO SPEND, in the order
+     * the user picked them. ABSENT is the old answer and stays the old answer:
+     * every account of `engine`. That is not laziness about defaults — a record
+     * written before this field existed must plan identically to the day it was
+     * written, and the only way to guarantee that is for "no pool" to be a
+     * distinct value rather than an empty list somebody has to interpret.
+     *
+     * ‼️ THE ORDER IS THE PRIORITY. `rotation: 'tiered'` walks engines in the
+     * order they first appear here, so no second field states a preference the
+     * list already states — two fields for one question disagree the first time
+     * somebody reorders one of them.
+     */
+    pool?: string[];
+    /**
+     * ‼️ X-207 — HOW THE POOL IS WALKED. `free` (the default, and what every
+     * campaign did before this) takes the most room anywhere in the pool;
+     * `tiered` keeps to one engine until that whole engine is walled, and only
+     * then crosses — which is the difference between "spend whatever is
+     * cheapest" and "this is my main engine, use the others when it is out".
+     */
+    rotation?: 'free' | 'tiered';
 }
 
 export interface SentryInputs {
@@ -162,11 +184,29 @@ export function planSentry(i: SentryInputs): SentryPlan {
         };
     }
 
-    const pick = mostRoom(i.usage, ceiling);
+    /**
+     * ‼️ X-207 — THE STRATEGY IS THE CAMPAIGN'S, and the pool is already the one
+     * the user allowed: `sentryTick` filters it before this is called, so a slot
+     * reaching here is a slot with permission. `pickAccount` decides only WHICH.
+     */
+    const pick = pickAccount(i.usage, {
+        ceiling,
+        ...(c.rotation ? { rotation: c.rotation } : {}),
+        ...(c.engine ? { engine: c.engine } : {})
+    });
     if (pick) {
+        // ‼️ A ROUND THAT CROSSED ENGINES SAYS SO. It is the one fact a reader
+        // cannot derive from the slot id, and it is the whole behaviour this
+        // campaign was configured for — silence here would make the fallback
+        // look like the ordinary turn.
+        const crossed = !!c.engine && !!pick.engine
+            && pick.engine.trim().toLowerCase() !== c.engine.trim().toLowerCase();
         return {
-            action: 'start', rule: 'has-room', slotId: pick.slotId, prompt,
-            why: `${pick.slotId} has the most room left, so ${i.next.code} starts there`
+            action: 'start', rule: crossed ? 'engine-fallback' : 'has-room', slotId: pick.slotId, prompt,
+            why: crossed
+                ? `every ${c.engine} account is at or above ${ceiling}%, so ${i.next.code} falls back `
+                    + `to ${pick.slotId} on ${pick.engine} rather than sleeping`
+                : `${pick.slotId} has the most room left, so ${i.next.code} starts there`
         };
     }
 

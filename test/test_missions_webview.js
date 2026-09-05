@@ -2310,5 +2310,67 @@ ok('Collapse all folds the whole list', detailCount() === 0);
         tbl.includes('Not finished') && tbl.includes('running for: '));
 }
 
+// ---------- ‼️ X-207 — WHOSE ACCOUNTS THE NIGHT IS SPENDING, on the strip ----
+//
+// The chip used to say "rotates claude accounts", which stopped being the whole
+// truth the moment a pool could name a SUBSET of them and could cross engines.
+// A campaign that is fenced to two of five sign-ins and says "rotates claude
+// accounts" is telling the user the opposite of what they configured.
+{
+    const paint = (s) => msgHandler({ data: { type: 'data', data: { ...DATA, sentry: s } } });
+    const POOL = [
+        { id: 'slot-1', label: 'first@x.com', engine: 'claude', percent: 23, state: 'ok' },
+        { id: 'slot-2', label: 'second@x.com', engine: 'claude', percent: 4, state: 'ok' },
+        { id: 'slot-x2', label: 'third@x.com', engine: 'codex', percent: null, state: 'no-source' }
+    ];
+    const base = {
+        defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 },
+        idlePollMin: 10, permissionModes: [], rounds: [],
+        projectName: 'AgentFarm', agentName: 'developer', accountPool: POOL
+    };
+    const camp = (over) => Object.assign({
+        id: 'sc-7', project: 'p', agent: 'a1', status: 'running', rounds: 9, engine: 'claude',
+        lastAction: 'start', lastRule: 'has-room', lastAt: 1, lastWhy: 'slot-2 has the most room'
+    }, over || {});
+
+    paint(Object.assign({}, base, {
+        campaign: camp({ pool: ['slot-2', 'slot-x2'], rotation: 'tiered' }),
+        running: false, rotatesAccounts: true, poolMissing: []
+    }));
+    const h1 = html();
+    ok('‼️ X-207: the strip says how many accounts are ALLOWED, not which engine',
+        h1.includes('2 account(s)') && !h1.includes('rotates claude accounts'));
+    ok('…and that the pool crosses two engines, and how it is walked',
+        h1.includes('claude+codex') && h1.includes('tiered'));
+    // SHORTHAND: the chip is short, and the panel carries the list with each
+    // account's room — the figure that explains which one goes next.
+    ok('…with the accounts, their engines and their rooms in the panel',
+        h1.includes('second@x.com') && h1.includes('4% used')
+        && h1.includes('nobody has read its window'));
+    ok('…and what tiered actually promises, where the choice is read',
+        /crossing to the next only when/.test(h1));
+
+    // ‼️ THE ONE FACT NOTHING ELSE ON THE PAGE CAN EXPLAIN: a pool of three
+    // running on two, because a sign-in was forgotten on the Engines page.
+    paint(Object.assign({}, base, {
+        campaign: camp({ pool: ['slot-2', 'slot-gone'], rotation: 'tiered' }),
+        running: false, rotatesAccounts: true, poolMissing: ['slot-gone']
+    }));
+    const h2 = html();
+    ok('‼️ X-207: an allowed account that is no longer captured is NAMED, not skipped',
+        h2.includes('slot-gone') && /no longer captured/.test(h2));
+    ok('…and the chip marks it, because a pool running short is not the normal state',
+        /class="mchip bad"/.test(h2));
+    ok('…and the panel says the pool is NOT widened to cover it',
+        /pool is NOT widened/.test(h2));
+
+    // No pool at all is the old campaign, and it must read exactly as before.
+    paint(Object.assign({}, base, {
+        campaign: camp(), running: false, rotatesAccounts: true, poolMissing: []
+    }));
+    ok('a campaign with no pool still says what it always said',
+        html().includes('rotates claude accounts'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

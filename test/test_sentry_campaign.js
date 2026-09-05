@@ -318,5 +318,55 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
         newSentry(Object.assign({ leaderMaxUsd: -4 }, asked), NOW).leaderCaps === undefined);
 }
 
+// ---------- X-207: the accounts the campaign is ALLOWED to spend ------------
+/*
+ * ‼️ THE WHOLE POINT IS THE WORD "ALLOWED". Until this item the pool was every
+ * account of the campaign's engine — the user could not say "not that one", and
+ * a sentry running all night on an account they were keeping for their own work
+ * was not a bug anybody could point at, because nothing in the record even
+ * expressed the idea of permission.
+ */
+{
+    const base = { project: 'P', agent: 'dev', engine: 'claude' };
+
+    // Backward compatibility is the first assertion, not the last: every record
+    // already on disk has no pool, and none of them may change behaviour.
+    ok('a campaign with no pool carries no pool field at all',
+        newSentry({ ...base }, 1).pool === undefined);
+    ok('…and no rotation either, so the planner falls to the free pool',
+        newSentry({ ...base }, 1).rotation === undefined);
+
+    ok('a pool given as an array is kept, in the order it was given',
+        JSON.stringify(newSentry({ ...base, pool: ['b', 'a', 'c'] }, 1).pool) === '["b","a","c"]');
+    // ‼️ IT TRAVELS ON A COMMAND LINE. `sentry.start` is called by agents with
+    // `pool=a,b`, so a comma string and an array are the same request — the
+    // same reasoning that keeps `leaderDailyUsd` flat.
+    ok('‼️ a comma string and an array reach the same pool',
+        JSON.stringify(newSentry({ ...base, pool: 'b, a ,c' }, 1).pool) === '["b","a","c"]');
+    ok('blanks and duplicates are dropped rather than stored as choices',
+        JSON.stringify(newSentry({ ...base, pool: ['a', '', 'a', ' b '] }, 1).pool) === '["a","b"]');
+    ok('an empty pool is no pool, not a pool of nobody',
+        newSentry({ ...base, pool: [] }, 1).pool === undefined
+        && newSentry({ ...base, pool: '  ' }, 1).pool === undefined);
+
+    ok('the rotation strategy is kept when it is one of the two',
+        newSentry({ ...base, rotation: 'tiered' }, 1).rotation === 'tiered');
+    ok('…and an unknown word is not stored as a strategy nobody implements',
+        newSentry({ ...base, rotation: 'clever' }, 1).rotation === undefined);
+    ok('free is the default and so is not written onto the record',
+        newSentry({ ...base, rotation: 'free' }, 1).rotation === undefined);
+
+    // ‼️ AN ID THAT IS NOT CAPTURED IS REFUSED AT THE START, at 21:00, rather
+    // than discovered as "no usable account" at 03:00.
+    ok('‼️ a pool naming an account that is not captured is refused, by name',
+        /nope/.test(refuseSentry(undefined, { ...base, pool: ['a', 'nope'] }, ['a', 'b']) || ''));
+    ok('…and a pool of captured accounts is not refused',
+        refuseSentry(undefined, { ...base, pool: ['a', 'b'] }, ['a', 'b']) === undefined);
+    // The known list is optional: a caller that cannot say which accounts exist
+    // must not have its campaign refused for accounts it never claimed about.
+    ok('a caller that names no captured accounts does not get a refusal it cannot fix',
+        refuseSentry(undefined, { ...base, pool: ['a'] }) === undefined);
+}
+
 console.log(`test_sentry_campaign: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -12,7 +12,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const {
-    AccountUsageService, mostRoom, nextResetAt, slotIsUsable, usageFrom,
+    AccountUsageService, mostRoom, pickAccount, nextResetAt, slotIsUsable, usageFrom,
     unreadUsage, fiveHourBar, FIVE_HOUR
 } = require(path.join(__dirname, '..', 'out', 'core', 'accountUsage.js'));
 
@@ -446,6 +446,70 @@ async function main() {
         ok('a row shows the five-hour window, not the weekly one',
             usageFrom(slot('a'), snap).percent === 33 && fiveHourBar(snap).percent === 33);
         ok('…and carries the reset the countdown needs', usageFrom(slot('a'), snap).resetsAt === t);
+    }
+
+    // ---------- X-207: the pool the user allowed, and how it is walked --------
+    /*
+     * ‼️ `mostRoom` answers one question — who has the most room — and the
+     * campaign now has a second: WHOSE TURN IS IT, given that the user picked
+     * these accounts in this order and asked for one of two strategies. The two
+     * are separate functions rather than a flag on one, because the free pool
+     * IS `mostRoom` and a strategy that reimplemented it would drift from it.
+     */
+    {
+        const at = (id, pct, engine = 'claude', resets = 0, state = 'ok') => ({
+            slotId: id, engine, state, percent: pct, resetsAt: resets, plan: 'pro', fetchedAt: NOW
+        });
+        // Two engines, and the fullest account happens to be on the primary.
+        const mixed = [at('c1', 70), at('c2', 40), at('x1', 5, 'codex'), at('x2', 60, 'codex')];
+
+        ok('the free pool ignores the engine and takes the most room anywhere',
+            pickAccount(mixed, { rotation: 'free' }).slotId === 'x1');
+        ok('…which is what an unset strategy does, because that is the old behaviour',
+            pickAccount(mixed, {}).slotId === 'x1');
+
+        // ‼️ TIERED IS A PROMISE NOT TO WANDER. The whole point of the second
+        // strategy is that a usable primary account is spent BEFORE a roomier
+        // secondary one — otherwise it is the free pool with extra words.
+        ok('‼️ tiered stays in the first tier while anything there is usable',
+            pickAccount(mixed, { rotation: 'tiered' }).slotId === 'c2');
+        ok('…and picks the most room WITHIN that tier, not merely the first listed',
+            pickAccount([at('c1', 70), at('c2', 40), at('x1', 5, 'codex')],
+                { rotation: 'tiered' }).slotId === 'c2');
+
+        // The fallback the item exists for: the primary is walled, so rather
+        // than sleeping the night away the campaign moves to the next engine.
+        const walled = [at('c1', 95), at('c2', 97), at('x1', 20, 'codex'), at('x2', 8, 'codex')];
+        ok('‼️ the whole first tier being walled is what moves it to the second',
+            pickAccount(walled, { rotation: 'tiered', ceiling: 90 }).slotId === 'x2');
+        ok('…and every tier walled offers nothing, so the campaign can sleep',
+            pickAccount([at('c1', 95), at('x1', 99, 'codex')],
+                { rotation: 'tiered', ceiling: 90 }) === undefined);
+
+        // ‼️ THE ORDER OF THE POOL IS THE ORDER OF THE TIERS. The user picks
+        // accounts in a list; that list is the priority, so no second field
+        // states it and the two can never disagree.
+        ok('‼️ tier order is first-appearance order in the list',
+            pickAccount([at('x1', 60, 'codex'), at('c1', 5)], { rotation: 'tiered' }).slotId === 'x1');
+        ok('…and a named primary engine outranks that order',
+            pickAccount([at('x1', 60, 'codex'), at('c1', 5)],
+                { rotation: 'tiered', engine: 'claude' }).slotId === 'c1');
+        // A primary that is not in the pool at all is not a tier — it is a
+        // campaign whose engine the user simply did not include.
+        ok('a primary engine with no account in the pool does not invent a tier',
+            pickAccount([at('x1', 60, 'codex'), at('x2', 20, 'codex')],
+                { rotation: 'tiered', engine: 'claude' }).slotId === 'x2');
+
+        ok('one engine makes tiered a free pool over that engine, not a refusal',
+            pickAccount([at('c1', 70), at('c2', 40)], { rotation: 'tiered' }).slotId === 'c2');
+        ok('an empty pool offers nothing under either strategy',
+            pickAccount([], { rotation: 'tiered' }) === undefined
+            && pickAccount([], { rotation: 'free' }) === undefined);
+        // Same rule as `mostRoom`: a measured account beats a guess, and it must
+        // hold inside a tier too or the fallback would jump on an unread slot.
+        ok('a measured account still beats an unread one inside a tier',
+            pickAccount([{ ...at('unread', -1), state: 'no-source' }, at('known', 44)],
+                { rotation: 'tiered' }).slotId === 'known');
     }
 
     console.log(`${pass} passed, ${fail} failed`);

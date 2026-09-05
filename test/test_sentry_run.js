@@ -208,5 +208,50 @@ const plan = (over) => planSentry(Object.assign({
         every.every(p => !/claude|codex|gemini|opencode|antigravity/i.test(p.why + p.rule)));
 }
 
+// ---- X-207: the strategy the campaign was given decides the account --------
+/*
+ * The planner does not build the pool — `sentryTick` hands it in, already
+ * filtered to what the user allowed. What the planner owns is the CHOICE
+ * inside it, and the campaign's `rotation` is the field that changes it.
+ */
+{
+    const mixed = [
+        slot('c1', { percent: 70 }), slot('c2', { percent: 40 }),
+        slot('x1', { engine: 'codex', percent: 5 })
+    ];
+    ok('a campaign with no rotation spends the roomiest account anywhere',
+        plan({ usage: mixed }).slotId === 'x1');
+    ok('‼️ a tiered campaign stays on its own engine while it has room',
+        plan({ campaign: campaign({ engine: 'claude', rotation: 'tiered' }), usage: mixed })
+            .slotId === 'c2');
+
+    // ‼️ THE FALLBACK IS THE ITEM. Every Claude account walled used to mean
+    // sleeping until a reset; now it means the round runs on Codex tonight.
+    const walled = [
+        slot('c1', { percent: 96 }), slot('c2', { percent: 99 }),
+        slot('x1', { engine: 'codex', percent: 12 })
+    ];
+    const fb = plan({
+        campaign: campaign({ engine: 'claude', rotation: 'tiered', ceiling: 90 }), usage: walled
+    });
+    ok('‼️ …and crosses to the next engine rather than sleeping when its own is walled',
+        fb.action === 'start' && fb.slotId === 'x1');
+
+    // With every engine walled the old answer stands — and the wake-up is the
+    // earliest reset in the WHOLE pool, which is sooner than one engine's.
+    const soon = NOW + 20 * MIN;
+    const allWalled = plan({
+        campaign: campaign({ engine: 'claude', rotation: 'tiered', ceiling: 90, safetyBufferMin: 0 }),
+        usage: [
+            slot('c1', { percent: 96, resetsAt: NOW + 90 * MIN }),
+            slot('x1', { engine: 'codex', percent: 99, resetsAt: soon })
+        ]
+    });
+    ok('every engine walled still sleeps rather than failing',
+        allWalled.action === 'sleep');
+    ok('‼️ …and wakes at the earliest reset across the whole pool, not just its own engine',
+        allWalled.wakeAt === soon);
+}
+
 console.log(`test_sentry_run: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -3107,6 +3107,15 @@
         preset: null,
         conditions: [],
         /**
+         * ‼️ X-207 — THE ACCOUNTS THIS CAMPAIGN MAY SPEND, IN TICK ORDER, and
+         * how to walk them. Both empty by default and both stay empty on the
+         * wire: an empty pool is not a pool of nobody, and `free` is what a
+         * record with no field does — sending either would freeze today's
+         * default onto a campaign, the same mistake the mode chips avoid.
+         */
+        pool: [],
+        rotation: '',
+        /**
          * ‼️ X-194 — THE LEADER'S OWN LEASH, and empty is not zero. An empty
          * box means "the setting decides", so nothing is sent for it; sending
          * today's setting back would FREEZE it onto the campaign, and changing
@@ -3589,6 +3598,117 @@
     }
 
     /**
+     * ‼️ X-207 — WHICH ACCOUNTS THIS CAMPAIGN IS ALLOWED TO SPEND.
+     *
+     * The user's complaint in their own words: a campaign rotated across EVERY
+     * account of its engine, and there was nowhere to say "not that one". The
+     * control is therefore a permission list, not a preference: with anything
+     * ticked, no other account is touched for as long as the campaign runs.
+     *
+     * ‼️ EVERY ENGINE'S ACCOUNTS ARE OFFERED TOGETHER, because a pool may cross
+     * engines by design — three Claude sign-ins and two Codex ones are ONE pool
+     * of five, and the round opens on whichever engine the chosen account
+     * belongs to. Filtering this list by the campaign's engine would hide the
+     * choice the item exists to offer.
+     *
+     * ‼️ AND THE ORDER IS PART OF THE ANSWER. `tiered` walks engines in the
+     * order they first appear in the pool, so the tick order is drawn (1. 2. 3.)
+     * rather than left invisible: an input the user cannot see is not an input.
+     */
+    function sentryPoolHtml(s) {
+        const all = s.accountPool || [];
+        if (!all.length) { return ''; }
+        const picked = sentryForm.pool || [];
+        // ‼️ AN ACCOUNT NOBODY HAS READ IS USABLE, so it must not be drawn as a
+        // zero — `slotIsUsable` lets it run and the ceiling never rules it out.
+        // "not read" and "0%" are opposite facts and would read as the same one.
+        const room = (a) => (a.percent === null || a.percent === undefined
+            ? 'not read' : a.percent + '%');
+        const engines = [];
+        for (const a of all) { if (!engines.includes(a.engine)) { engines.push(a.engine); } }
+        const chip = (a) => {
+            const at = picked.indexOf(a.id);
+            const on = at >= 0;
+            return window.AFTip.wrap(
+                `<button type="button" class="chip spool-chip${on ? ' on' : ''}" data-spool="${C.esc(a.id)}">`
+                + (on ? `<b class="spool-n">${at + 1}.</b> ` : '')
+                + `${C.esc(a.label || a.id)} <span class="spool-pct">${C.esc(room(a))}</span></button>`,
+                `${a.label || a.id} — ${engineName(a.engine) || a.engine}`,
+                (on
+                    ? `Picked ${at + 1}${at === 0 ? 'st' : at === 1 ? 'nd' : at === 2 ? 'rd' : 'th'} in the pool. `
+                        + 'Under the tiered strategy the pool order decides which engine is tried first.'
+                    : 'Not in the pool. While the pool has anything in it, this account is never touched.')
+                + '\n\nFive-hour window: ' + (a.percent === null || a.percent === undefined
+                    ? 'nobody has read it. That does NOT block it — an allowance this engine does not '
+                        + 'publish is not an allowance that is spent, so the account stays usable.'
+                    : a.percent + '% used, ' + (100 - a.percent) + '% left.')
+            );
+        };
+        const groups = engines.map(e => `<div class="spool-eng">`
+            + `<span class="spool-engname">${C.esc(engineName(e) || e)}</span>`
+            + all.filter(a => a.engine === e).map(chip).join('')
+            + '</div>').join('');
+
+        // ‼️ MIRROR — the control is empty by design and empty means something
+        // specific. A reader who cannot tell "no pool" from "a pool I chose"
+        // cannot tell whether tonight will touch the account they were keeping.
+        const crossing = new Set(picked
+            .map(id => (all.find(a => a.id === id) || {}).engine).filter(Boolean));
+        const head = window.AFTip.wrap(
+            '<span class="flabel">Account pool</span>',
+            picked.length
+                ? `Now: ${picked.length} account${picked.length === 1 ? '' : 's'} allowed`
+                    + (crossing.size > 1 ? ` across ${crossing.size} engines` : '')
+                : 'Now: no account ticked',
+            (picked.length
+                ? 'ONLY these accounts are spent, in this order. Nothing else on this machine is '
+                    + 'touched by the campaign, whatever room it has.\n\n'
+                    + picked.map((id, i) => {
+                        const a = all.find(x => x.id === id);
+                        return `${i + 1}. ${a ? (a.label || a.id) + ' — ' + (engineName(a.engine) || a.engine)
+                            + ', ' + room(a) : id + ' — not captured any more'}`;
+                    }).join('\n')
+                : 'Now: no account ticked, so every account of the campaign\'s engine is in play — '
+                    + 'which is exactly what campaigns did before this control existed.\n\n'
+                    + 'Tick accounts to turn the pool into a WHITELIST: the campaign then spends those '
+                    + 'and nothing else. They may belong to different engines; each round opens on the '
+                    + 'engine of the account it picked.'));
+
+        const rot = sentryForm.rotation || '';
+        const rotChip = (id, label, why) => window.AFTip.wrap(
+            `<button type="button" class="chip${rot === id || (!rot && id === 'free') ? ' on' : ''}" `
+            + `data-srot="${C.esc(id)}">${C.esc(label)}</button>`,
+            label + ((rot === id || (!rot && id === 'free')) ? ' — this is what will run' : ''), why);
+        const oneEngine = crossing.size < 2;
+        const rotHead = window.AFTip.wrap(
+            '<span class="flabel">Rotation</span>',
+            'Now: ' + (rot === 'tiered' ? 'tiered' : 'free pool')
+                + (rot ? '' : ' — the default, because nothing was asked for'),
+            oneEngine
+                ? 'The pool holds one engine, so the two strategies do the same thing: the account with '
+                    + 'the most room goes next either way. Tick accounts of a second engine and the '
+                    + 'choice starts to matter.'
+                : 'With two engines in the pool this is the difference between spending whatever is '
+                    + 'cheapest and keeping to your main engine until it is actually walled.');
+
+        return `<div class="spool">
+            <div class="srow spool-head">${head}${groups}</div>
+            <div class="srow spool-rot">
+                ${rotHead}
+                ${rotChip('free', 'Free pool',
+            'Whichever account has the most room goes next, whatever engine it belongs to. A measured '
+            + 'account always beats one nobody has read.')}
+                ${rotChip('tiered', 'Tiered',
+            'One engine at a time, in the pool\'s own order with the campaign\'s engine first. The '
+            + 'campaign crosses to the next engine only when EVERY account of the current one is at or '
+            + 'above the ceiling — instead of sleeping until a reset while a signed-in account sits '
+            + 'idle. Every engine walled still sleeps, and it wakes at the earliest reset in the whole '
+            + 'pool, which is sooner than one engine\'s.')}
+            </div>
+        </div>`;
+    }
+
+    /**
      * ‼️ THE MODE SELECTOR AND WHAT IT ACTUALLY DOES.
      *
      * Three buttons, not three code paths: pressing one FILLS the condition set
@@ -3839,6 +3959,7 @@
                         + 'alarm no quota can raise: a broken setup opening empty sessions all night '
                         + 'spends nothing and would never stop itself. 0 switches the brake off.'))}
             </div>
+            ${sentryPoolHtml(s)}
             ${sentryPolicyHtml(s)}
             ${sentryLeaderHtml(s)}
             <label class="sprompt">First round opens with
@@ -3911,13 +4032,70 @@
         // with every other round, which is where history keeps it. What stays
         // here is the campaign's own SENTENCE (`Why`), which is the decision
         // rather than the clock.
+        /**
+         * ‼️ X-207 — WHOSE ACCOUNTS THIS NIGHT IS SPENDING, on the strip.
+         *
+         * "rotates claude accounts" stopped being the whole truth the moment a
+         * pool could name a SUBSET, and could cross engines. SHORTHAND: the
+         * chip carries the count, the engines and the strategy; the panel
+         * carries the list, each account's room, and the tier order that
+         * decides which of them is tried first.
+         */
+        const poolChip = (() => {
+            // The strip only draws with a campaign; with none there is no pool
+            // to name, and this is computed above the branch that knows that.
+            if (!c) { return ''; }
+            const ids = (c.pool || []);
+            const known = s.accountPool || [];
+            const gone = s.poolMissing || [];
+            if (!ids.length) {
+                return s.rotatesAccounts
+                    ? `<span class="mchip prov">rotates ${C.esc(c.engine)} accounts</span>`
+                    : '<span class="mchip prov" title="No engine and no pool were named, so every round '
+                        + 'runs on the main sign-in — choosing an account would mean assuming an engine.'
+                        + '">main sign-in</span>';
+            }
+            const of = (id) => known.find(a => a.id === id);
+            const engines = [];
+            for (const id of ids) {
+                const e = (of(id) || {}).engine;
+                if (e && !engines.includes(e)) { engines.push(e); }
+            }
+            const tiered = c.rotation === 'tiered';
+            const line = (id, i) => {
+                const a = of(id);
+                if (!a) { return `${i + 1}. ${id} — NOT CAPTURED ANY MORE`; }
+                return `${i + 1}. ${a.label || a.id} · ${engineName(a.engine) || a.engine} · `
+                    + (a.percent === null || a.percent === undefined
+                        ? 'nobody has read its window' : a.percent + '% used');
+            };
+            return window.AFTip.wrap(
+                `<span class="mchip ${gone.length ? 'bad' : 'prov'}">${ids.length} account(s)`
+                + (engines.length > 1 ? ' · ' + C.esc(engines.join('+')) : '')
+                + (tiered ? ' · tiered' : '') + '</span>',
+                `${ids.length} account${ids.length === 1 ? '' : 's'} allowed`
+                + (engines.length > 1 ? ` across ${engines.length} engines` : ''),
+                'ONLY these accounts are spent — nothing else on this machine is touched, whatever '
+                + 'room it has.\n\n' + ids.map(line).join('\n')
+                + (tiered
+                    ? '\n\nTiered: one engine at a time, in this order, crossing to the next only when '
+                        + 'every account of the current one is walled.'
+                    : '\n\nFree pool: whichever of these has the most room goes next, whatever engine '
+                        + 'it belongs to.')
+                // ‼️ A FORGOTTEN ACCOUNT IS WHY A POOL OF FIVE RUNS ON THREE,
+                // and it is the one fact nothing else on this page can explain.
+                + (gone.length
+                    ? '\n\n‼️ ' + gone.join(', ') + ' — allowed, but no longer captured on this '
+                        + 'machine. The pool is NOT widened to cover it: capture it again on the '
+                        + 'Engines page, or stop the campaign and start it on a pool that exists.'
+                    : ''));
+        })();
         const body = !sentryOpen ? '' : (on
             ? `<div class="sbody">
                 <div class="provrow"><span class="plabel">Working</span>
                     <b>${C.esc(s.projectName || '')}</b> as <b>${C.esc(s.agentName || '')}</b>
                     <span class="mchip prov">${c.rounds || 0} round(s)</span>
-                    ${s.rotatesAccounts ? `<span class="mchip prov">rotates ${C.esc(c.engine)} accounts</span>`
-                        : '<span class="mchip prov" title="No engine was named, so every round runs on the main sign-in — choosing an account would mean assuming an engine.">main sign-in</span>'}
+                    ${poolChip}
                     ${s.failLimit ? `<span class="mchip ${s.failStreak ? 'bad' : 'prov'}" title="Barren rounds in a row against the brake that stops the campaign.">${s.failStreak}/${s.failLimit} barren</span>` : ''}
                     ${leaderSpend}
                     ${words}
@@ -4053,10 +4231,38 @@
                     // on any surface would say the campaign had been pinned.
                     leaderModel: sentryForm.leaderModel.trim() || undefined,
                     leaderDailyUsd: String(sentryForm.leaderDailyUsd).trim() || undefined,
-                    leaderMaxUsd: String(sentryForm.leaderMaxUsd).trim() || undefined
+                    leaderMaxUsd: String(sentryForm.leaderMaxUsd).trim() || undefined,
+                    // ‼️ X-207 — the pool travels IN TICK ORDER, because that
+                    // order is the tier priority. Nothing ticked sends nothing:
+                    // an empty pool is not a pool of nobody, and `free` is what
+                    // a record with no rotation already does.
+                    pool: sentryForm.pool.length ? sentryForm.pool.slice() : undefined,
+                    rotation: sentryForm.rotation || undefined
                 }
             });
         });
+        // ------------------------------------------------ X-207: the pool
+        /*
+         * ‼️ A TICK APPENDS AND A SECOND TICK REMOVES, which makes the ORDER the
+         * user's rather than the list's — and the order is a real input, because
+         * `tiered` walks engines in it. Re-sorting to the display order here
+         * would silently rewrite the priority they just expressed.
+         */
+        document.querySelectorAll('[data-spool]').forEach(el => el.addEventListener('click', () => {
+            readSentryForm();
+            const id = el.dataset.spool;
+            const at = sentryForm.pool.indexOf(id);
+            if (at >= 0) { sentryForm.pool.splice(at, 1); } else { sentryForm.pool.push(id); }
+            render();
+        }));
+        document.querySelectorAll('[data-srot]').forEach(el => el.addEventListener('click', () => {
+            readSentryForm();
+            // ‼️ PRESSING `free` CLEARS THE FIELD rather than storing 'free'.
+            // Absent IS free on the record, and a stored default is a campaign
+            // that cannot follow the default when it changes.
+            sentryForm.rotation = el.dataset.srot === 'tiered' ? 'tiered' : '';
+            render();
+        }));
         // ------------------------------------------------ X-194: the policy
         const sd = DATA.sentry || {};
         document.querySelectorAll('[data-spreset]').forEach(el => el.addEventListener('click', () => {
@@ -4241,6 +4447,31 @@
                 .srow label.scheck { flex-direction:row; align-items:center; gap:5px; font-size:12px;
                     color:var(--vscode-foreground); }
                 .srow input[type=number] { width:90px; }
+                /* ‼️ X-207 — the account pool. Grouped by engine because a pool
+                   may cross them, and the group is the unit a reader scans: a
+                   flat run of five addresses is five addresses, while claude(3)
+                   codex(2) is the shape of the decision. The engine name is a
+                   quiet label rather than a chip, so nothing competes with the
+                   accounts themselves for the eye. */
+                .spool { margin:10px 0 4px; padding:8px 10px; border-radius:4px;
+                    border:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); }
+                .spool-head, .spool-rot { align-items:center; gap:6px; flex-wrap:wrap; }
+                .spool-rot { margin:8px 0 0; }
+                .spool .flabel { font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+                    opacity:.65; margin-right:4px; }
+                .spool-eng { display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap;
+                    padding:2px 6px 2px 4px; border-radius:4px;
+                    background:var(--vscode-editor-inactiveSelectionBackground, rgba(128,128,128,.10)); }
+                .spool-engname { font-size:10px; text-transform:uppercase; letter-spacing:.6px;
+                    opacity:.6; margin-right:2px; }
+                /* The percentage is the figure that decides which account goes
+                   next, so it travels ON the chip - but it is a second-order
+                   fact next to whose account it is, and it is dimmed to say so. */
+                .spool-pct { opacity:.6; font-variant-numeric:tabular-nums; margin-left:3px; }
+                .spool-chip.on .spool-pct { opacity:.85; }
+                /* ‼️ The tick ORDER is a real input (tiered walks engines in it),
+                   so it is drawn. An input the reader cannot see is not an input. */
+                .spool-n { color:var(--vscode-textLink-foreground); margin-right:1px; }
                 /* X-194 — the mode strip and the condition editor. The rows are
                    a grid rather than a flex wrap on purpose: three boxes that
                    line up down the column are read as one question asked five

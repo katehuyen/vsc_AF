@@ -370,5 +370,54 @@ const step = (over) => sentryStep(Object.assign({
     ok('‼️ ...nor the failure brake', braked.plan.action === 'stopped' && braked.plan.rule === 'fail-streak');
 }
 
+// ---- X-207: the round's engine is the CHOSEN ACCOUNT'S engine --------------
+/*
+ * ‼️ THE SILENT FAILURE THIS BLOCK EXISTS TO PREVENT. Until X-207 the round
+ * spec took `c.engine` unconditionally, which was right for as long as a pool
+ * could only ever hold one engine's accounts. Let the pool cross engines and
+ * that same line opens a CLAUDE session on a Codex account: the sign-in is
+ * pointed at a directory the engine does not own, and the failure looks like a
+ * broken account rather than a round nobody built correctly.
+ */
+{
+    const claudeOnly = step({
+        campaign: rec({ engine: 'claude', model: 'opus', rotation: 'tiered' }),
+        usage: [slot('c1', { percent: 20 })], next: NEXT, opening: 'go'
+    });
+    ok('a round on the campaign\'s own engine still carries the campaign\'s engine',
+        claudeOnly.round.engine === 'claude');
+    ok('…and its model, which belongs to that engine', claudeOnly.round.model === 'opus');
+
+    const crossed = step({
+        campaign: rec({ engine: 'claude', model: 'opus', rotation: 'tiered', ceiling: 90 }),
+        usage: [slot('c1', { percent: 96 }), slot('x1', { engine: 'codex', percent: 10 })],
+        next: NEXT, opening: 'go'
+    });
+    ok('‼️ a round that fell back to another engine is OPENED on that engine',
+        crossed.round.slotId === 'x1' && crossed.round.engine === 'codex');
+    // ‼️ A MODEL NAME BELONGS TO AN ENGINE. `opus` on a Codex round is a name
+    // that engine has never heard of, and carrying it would turn a working
+    // fallback into a round that dies on its first line.
+    ok('‼️ …and the campaign\'s model is DROPPED, because a model name belongs to its engine',
+        crossed.round.model === undefined);
+
+    // A campaign that named no engine has nothing to compare against, so the
+    // slot's engine is simply the round's — the same rule, with nothing to drop.
+    const unnamed = step({
+        campaign: rec({ rotation: 'free' }),
+        usage: [slot('x1', { engine: 'codex', percent: 10 })], next: NEXT, opening: 'go'
+    });
+    ok('a campaign that named no engine takes the chosen account\'s engine',
+        unnamed.round.engine === 'codex');
+
+    // The main sign-in (no slot at all) is the case where there is no account
+    // to read an engine off, and the campaign's own engine must still stand.
+    const main = step({
+        campaign: rec({ engine: 'claude', model: 'opus' }), usage: [], next: NEXT, opening: 'go'
+    });
+    ok('with no captured account the campaign\'s own engine and model still stand',
+        main.round.engine === 'claude' && main.round.model === 'opus');
+}
+
 console.log(`test_sentry_driver: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

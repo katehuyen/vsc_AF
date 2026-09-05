@@ -191,6 +191,49 @@ export interface SentryAsk {
     leaderModel?: string;
     leaderDailyUsd?: unknown;
     leaderMaxUsd?: unknown;
+    /**
+     * ‼️ X-207 — WHICH ACCOUNTS, AND HOW TO WALK THEM.
+     *
+     * `unknown` rather than `string[]` for `leaderDailyUsd`'s reason: these
+     * travel over `sentry.start`, where an agent writes `pool=a,b` on a command
+     * line and a typed array would need a file. `normalizePool` takes both.
+     */
+    pool?: unknown;
+    rotation?: unknown;
+}
+
+/** The two strategies, and nothing else is one. */
+const ROTATIONS = ['free', 'tiered'] as const;
+
+/**
+ * ‼️ A COMMA STRING AND AN ARRAY ARE THE SAME REQUEST.
+ *
+ * Blanks and duplicates are dropped rather than stored: a pool listing the same
+ * account twice would make it two tiers of one engine under `tiered`, which is
+ * a rule nobody asked for that reads as a bug in the tier walk. Order survives,
+ * because order is the priority.
+ */
+export function normalizePool(v: unknown): string[] | undefined {
+    const raw = Array.isArray(v) ? v : String(v ?? '').split(',');
+    const out: string[] = [];
+    for (const one of raw) {
+        const id = String(one ?? '').trim();
+        if (id && !out.includes(id)) { out.push(id); }
+    }
+    // ‼️ AN EMPTY POOL IS NO POOL. A campaign whose pool is a list of nobody
+    // could only ever be blocked, and nobody means that by clearing a box —
+    // they mean "go back to the engine's accounts", which is the absent field.
+    return out.length ? out : undefined;
+}
+
+/**
+ * The strategy, or nothing. ‼️ `free` is the DEFAULT and so is not written: a
+ * record that stores the default is a record that cannot follow the default
+ * when it changes, and `undefined` already reads as the free pool everywhere.
+ */
+export function rotationOf(v: unknown): 'free' | 'tiered' | undefined {
+    const want = String(v ?? '').trim().toLowerCase();
+    return want === 'tiered' && ROTATIONS.includes(want) ? 'tiered' : undefined;
 }
 
 /** Is this row a round of that campaign, still owing an answer? */
@@ -213,7 +256,9 @@ function clamp(v: unknown, lo: number, hi: number): number | undefined {
 }
 
 /** Why this campaign cannot be started — in words, or nothing. */
-export function refuseSentry(live: SentryRecord | undefined, ask: SentryAsk): string | undefined {
+export function refuseSentry(
+    live: SentryRecord | undefined, ask: SentryAsk, known?: string[]
+): string | undefined {
     if (!String(ask.project ?? '').trim()) {
         return 'a campaign works through a project backlog, so it needs a project — none was given';
     }
@@ -232,6 +277,25 @@ export function refuseSentry(live: SentryRecord | undefined, ask: SentryAsk): st
         return `a campaign is already running on ${live.project} (as ${live.agent}) — the sentry runs `
             + 'one session at a time, so stop that one before starting another';
     }
+    /**
+     * ‼️ X-207 — AN ACCOUNT THAT IS NOT CAPTURED IS REFUSED NOW, BY NAME.
+     *
+     * The alternative is a pool that silently shrinks: the campaign starts, the
+     * unknown id is skipped every round, and at 3am the user finds "no usable
+     * account" with nothing anywhere saying which one they typed wrong. `known`
+     * is optional because a caller that cannot list the captured accounts has
+     * claimed nothing — refusing on an empty list would refuse every pool.
+     */
+    if (known && known.length) {
+        const pool = normalizePool(ask.pool) ?? [];
+        const missing = pool.filter(id => !known.includes(id));
+        if (missing.length) {
+            return `the account pool names ${missing.length === 1 ? 'an account' : 'accounts'} this `
+                + `machine has not captured — ${missing.join(', ')}; capture ${missing.length === 1
+                    ? 'it' : 'them'} on the Engines page or take ${missing.length === 1
+                        ? 'it' : 'them'} out of the pool`;
+        }
+    }
     return undefined;
 }
 
@@ -242,6 +306,8 @@ export function newSentry(ask: SentryAsk, now: number): SentryRecord {
     const failLimit = clamp(ask.failLimit, 0, 1000);
     const policy = policyOf(ask);
     const leaderCaps = leaderCapsOf(ask);
+    const pool = normalizePool(ask.pool);
+    const rotation = rotationOf(ask.rotation);
     return {
         id: `sc-${now.toString(36)}`,
         project: String(ask.project ?? '').trim(),
@@ -253,6 +319,10 @@ export function newSentry(ask: SentryAsk, now: number): SentryRecord {
         ...(failLimit !== undefined ? { failLimit } : {}),
         ...(ask.engine ? { engine: String(ask.engine) } : {}),
         ...(ask.model ? { model: String(ask.model) } : {}),
+        // X-207 — the accounts allowed, and how to walk them. Both absent by
+        // default, which is exactly what every campaign started before this did.
+        ...(pool ? { pool } : {}),
+        ...(rotation ? { rotation } : {}),
         ...(ask.permissionMode ? { permissionMode: String(ask.permissionMode) } : {}),
         ...(ask.superpowers ? { superpowers: true } : {}),
         ...(String(ask.opening ?? '').trim() ? { opening: String(ask.opening).trim() } : {}),

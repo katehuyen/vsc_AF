@@ -285,6 +285,27 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     const chosen = String(i.leader?.account ?? '').trim();
     const slotId = chosen && i.usage.some(u => u.slotId === chosen) ? chosen : plan.slotId;
 
+    /**
+     * ‼️ X-207 — THE ROUND OPENS ON THE CHOSEN ACCOUNT'S ENGINE.
+     *
+     * This line used to be `c.engine` unconditionally, which was correct for
+     * exactly as long as a pool could hold only one engine. With a cross-engine
+     * pool the same line opens a Claude session pointed at a Codex sign-in: the
+     * round dies, and it looks like a broken account rather than a round built
+     * wrong. The account already carries its engine (`SlotUsage.engine`), so the
+     * fact is read from the choice rather than assumed from the campaign.
+     *
+     * ‼️ AND THE MODEL IS DROPPED WHEN THE ENGINE CHANGES. A model name belongs
+     * to an engine — `opus` means nothing to Codex — so carrying the campaign's
+     * model across would turn a working fallback into a round that fails on its
+     * first line. Absent means that engine's own default, which is the only
+     * answer this code has any business giving.
+     */
+    const slotEngine = String(i.usage.find(u => u.slotId === slotId)?.engine ?? '').trim();
+    const roundEngine = slotEngine || String(c.engine ?? '').trim();
+    const sameEngine = !c.engine || !roundEngine
+        || roundEngine.toLowerCase() === String(c.engine).trim().toLowerCase();
+
     const n = (Number(c.rounds) || 0) + 1;
     return {
         ...base,
@@ -295,8 +316,8 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
             title: sentryRoundTitle(n, i.next.code),
             prompt: plan.prompt || prompt,
             ...(slotId ? { slotId } : {}),
-            ...(c.engine ? { engine: c.engine } : {}),
-            ...(c.model ? { model: c.model } : {}),
+            ...(roundEngine ? { engine: roundEngine } : {}),
+            ...(c.model && sameEngine ? { model: c.model } : {}),
             ...(c.permissionMode ? { permissionMode: c.permissionMode } : {}),
             ...(c.superpowers ? { superpowers: true } : {})
         }

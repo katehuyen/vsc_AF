@@ -370,5 +370,92 @@ const rows = r => qsa(r, '[data-scond]');
         && probe.hits.length === m.input.conditions.length);
 }
 
+// ---------- ‼️ X-207 — WHICH ACCOUNTS THIS CAMPAIGN IS ALLOWED TO SPEND ------
+//
+// The user's own complaint: "aynı motorun içinde bile kullanıcının izin verdiği
+// hesaplar arasında rotasyon yapmalı … izinsiz hesaba dokunmamalı". Until this
+// there was no such thing as permission — the pool was every account of the
+// engine, and no surface expressed the idea at all.
+const poolBtn = (r, id) => qsa(r, '[data-spool]').filter(e => e.dataset.spool === id)[0];
+const rotBtn = (r, id) => qsa(r, '[data-srot]').filter(e => e.dataset.srot === id)[0];
+
+{
+    const r = openForm();
+    const h = html(r);
+    ok('every captured account is offered, both engines, not just the campaign\'s',
+        qsa(r, '[data-spool]').length === 5);
+    // ‼️ DENSITY — the figure is already measured, so making the reader open the
+    // Engines page to find out which account has room, in order to come back
+    // and tick it, is a click this page has no right to charge.
+    ok('‼️ each account draws the room it has right now, so the choice is informed',
+        h.includes('23%') && h.includes('4%') && h.includes('97%'));
+    // An unread account is USABLE (`slotIsUsable`), so drawing it as 0% would
+    // invert the one distinction the ceiling turns on.
+    ok('‼️ an account nobody has read says so rather than drawing a zero',
+        /not read|unread|—%/i.test(h));
+    ok('the accounts are grouped by the engine they belong to',
+        h.toLowerCase().includes('claude') && h.toLowerCase().includes('codex'));
+}
+
+{
+    // ‼️ MIRROR — the field is empty BY DESIGN and empty means something
+    // specific. A reader who cannot tell "no pool" from "a pool I picked"
+    // cannot tell whether the campaign will touch the account they are keeping.
+    const r = openForm();
+    typeIn(r, 's-engine', 'claude');
+    press(r, poolBtn(r, 'slot-1'));   // any press re-reads and re-renders
+    press(r, poolBtn(r, 'slot-1'));   // …and off again: back to no pool
+    ok('‼️ with nothing ticked the form says what will happen instead',
+        /every account of|all .*accounts|the engine's accounts/i.test(html(r)));
+}
+
+{
+    const r = openForm();
+    press(r, poolBtn(r, 'slot-2'));
+    press(r, poolBtn(r, 'slot-x2'));
+    press(r, poolBtn(r, 'slot-1'));
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    // ‼️ THE ORDER IS THE PRIORITY, so it must survive the trip. `tiered` walks
+    // engines in the pool's own order; a form that sorted the ids would be
+    // silently reordering the tiers.
+    ok('‼️ Start carries the pool in the order the user ticked it',
+        !!m && JSON.stringify(m.input.pool) === '["slot-2","slot-x2","slot-1"]');
+    ok('…a pool that crosses engines is one pool, not two campaigns',
+        !!m && m.input.pool.length === 3);
+}
+
+{
+    const r = openForm();
+    press(r, poolBtn(r, 'slot-1'));
+    press(r, rotBtn(r, 'tiered'));
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    ok('the rotation strategy travels with the pool', !!m && m.input.rotation === 'tiered');
+}
+
+{
+    // ‼️ NOT ASKING IS NOT ASKING FOR THE DEFAULT. `free` is what the record
+    // does with no field at all, so sending it would freeze today's default
+    // onto a campaign — the same rule the mode chips already follow.
+    const r = openForm();
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    ok('‼️ a form nobody touched sends neither a pool nor a rotation',
+        !!m && m.input.pool === undefined && m.input.rotation === undefined);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

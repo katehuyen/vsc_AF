@@ -150,6 +150,64 @@ export function mostRoom(list: SlotUsage[], ceiling = 100): SlotUsage | undefine
     return usable[0];
 }
 
+/** How a campaign walks the accounts the user allowed it (X-207). */
+export interface PickAccountOptions {
+    /** the five-hour percentage at or above which an account is a wall */
+    ceiling?: number;
+    /** 'tiered' keeps to one engine at a time; anything else is the free pool */
+    rotation?: string;
+    /** the campaign's own engine, which is the first tier when it has accounts here */
+    engine?: string;
+}
+
+/**
+ * ‼️ X-207 — WHOSE TURN IT IS, given a pool the user picked and a strategy.
+ *
+ * `mostRoom` answers "who has the most room". That is the whole answer for a
+ * pool of one engine, and it stays the answer for the FREE pool — this does not
+ * reimplement it, it calls it, because a second copy of "a measured account
+ * beats an unread one" would drift from the first.
+ *
+ * The second strategy exists because the free pool has a cost the user named:
+ * with two engines in one pool it will happily spend a Codex account while a
+ * Claude account sits at 40%, and "keep to my main engine until it is actually
+ * walled" is a different intent, not a tuning of the same one.
+ *
+ * ‼️ TIERED IS A PROMISE NOT TO WANDER. It picks WITHIN the first tier that has
+ * a usable account and only moves on when that whole tier is walled — at which
+ * point moving is the entire value of the item, because the alternative is
+ * sleeping until a reset while a signed-in account sits idle.
+ *
+ * ‼️ THE ORDER OF THE LIST IS THE ORDER OF THE TIERS. The user picks accounts in
+ * an order; that order is the priority. A separate priority field would be a
+ * second answer to one question, and the two would disagree the first time
+ * somebody reordered the list without touching it.
+ */
+export function pickAccount(list: SlotUsage[], opts: PickAccountOptions = {}): SlotUsage | undefined {
+    const ceiling = typeof opts.ceiling === 'number' ? opts.ceiling : 100;
+    if (String(opts.rotation ?? '').trim().toLowerCase() !== 'tiered') {
+        return mostRoom(list, ceiling);
+    }
+    const engineOf = (u: SlotUsage): string => String(u.engine ?? '').trim().toLowerCase();
+    // First-appearance order, with the campaign's own engine promoted — but only
+    // when it is really in the pool. Promoting an engine that has no account
+    // here would invent an empty first tier and read as "the primary is walled".
+    const tiers: string[] = [];
+    for (const u of list) {
+        const e = engineOf(u);
+        if (!tiers.includes(e)) { tiers.push(e); }
+    }
+    const primary = String(opts.engine ?? '').trim().toLowerCase();
+    const order = primary && tiers.includes(primary)
+        ? [primary, ...tiers.filter(e => e !== primary)]
+        : tiers;
+    for (const e of order) {
+        const pick = mostRoom(list.filter(u => engineOf(u) === e), ceiling);
+        if (pick) { return pick; }
+    }
+    return undefined;
+}
+
 /**
  * When the first exhausted account comes back — the moment an idle runner
  * should wake up, and the reason it can sleep spending nothing until then.

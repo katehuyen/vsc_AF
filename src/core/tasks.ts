@@ -4370,8 +4370,12 @@ export class TaskManager implements vscode.Disposable {
      * a time, and it needs a project and an agent. The refusal is returned, not
      * thrown, because every door that offers this has to be able to print it.
      */
-    startSentryCampaign(ask: SentryAsk): { ok: boolean; error?: string; campaign?: SentryRecord } {
-        const refusal = refuseSentry(this.sentry, ask);
+    startSentryCampaign(
+        ask: SentryAsk, known?: string[]
+    ): { ok: boolean; error?: string; campaign?: SentryRecord } {
+        // X-207 — the accounts this machine has captured, so a pool naming one it
+        // has not is refused now rather than discovered at three in the morning.
+        const refusal = refuseSentry(this.sentry, ask, known);
         if (refusal) { return { ok: false, error: refusal }; }
         this.sentry = newSentry(ask, Date.now());
         this.save();

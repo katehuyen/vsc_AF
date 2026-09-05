@@ -15543,8 +15543,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // unreadable figure rather than storing a purse of zero.
                 ...(input.leaderModel ? { leaderModel: String(input.leaderModel) } : {}),
                 ...(input.leaderDailyUsd !== undefined ? { leaderDailyUsd: input.leaderDailyUsd } : {}),
-                ...(input.leaderMaxUsd !== undefined ? { leaderMaxUsd: input.leaderMaxUsd } : {})
-            });
+                ...(input.leaderMaxUsd !== undefined ? { leaderMaxUsd: input.leaderMaxUsd } : {}),
+                // ‼️ X-207 — WHICH ACCOUNTS THE USER TICKED, and how to walk them.
+                // Absent is the old answer: every account of the campaign's engine.
+                ...(input.pool !== undefined ? { pool: input.pool } : {}),
+                ...(input.rotation ? { rotation: String(input.rotation) } : {})
+            }, storedAccounts().map(sl => sl.id));
             if (!started.ok) { return started.error ?? 'the campaign could not be started'; }
             // Moves at once, for `sentry.start`'s reason: "did it take?" is the
             // one question a switch has to answer immediately.
@@ -24325,15 +24329,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch { next = undefined; }
 
         // ---- which accounts it may spend -----------------------------------
-        // ‼️ ENGINE-AGNOSTIC (the item says so by name). A campaign that named
-        // no engine does NOT rotate accounts: choosing one would mean assuming
-        // an engine, and the absence of a slot is already the main sign-in
-        // (X-172). `sentry.status` says this out loud rather than leaving the
-        // user to wonder why nothing rotates.
+        /**
+         * ‼️ X-207 — THE POOL IS THE USER'S PERMISSION, and it is built here
+         * because permission is a fact of this machine; the planner only
+         * chooses inside what it is handed.
+         *
+         * With a pool: those accounts, IN THE ORDER THE USER PICKED THEM,
+         * whatever engine each one belongs to. The order is not cosmetic —
+         * `rotation: 'tiered'` walks engines in first-appearance order, so
+         * rebuilding the list by filtering `current()` would silently reorder
+         * the tiers.
+         *
+         * Without one: the old answer, unchanged, for every record written
+         * before this field existed — every account of the campaign's engine.
+         * ‼️ ENGINE-AGNOSTIC (the item said so by name): a campaign that named
+         * no engine and picked no accounts does NOT rotate, because choosing
+         * would mean assuming an engine, and the absence of a slot is already
+         * the main sign-in (X-172).
+         */
         const engineId = (rec.engine ?? '').trim().toLowerCase();
-        const usage = engineId
-            ? accountUsage.current().filter(u => String(u.engine ?? '').toLowerCase() === engineId)
-            : [];
+        const allUsage = accountUsage.current();
+        const allowed = rec.pool ?? [];
+        // ‼️ AN ALLOWED ACCOUNT THAT NO LONGER EXISTS IS NEWS, NOT A GAP. The
+        // user can forget a slot on the Engines page while a campaign is
+        // running, and quietly shrinking their pool would be the extension
+        // deciding something they did not.
+        const poolMissing = allowed.filter(id => !allUsage.some(u => u.slotId === id));
+        const usage = allowed.length
+            ? allowed
+                .map(id => allUsage.find(u => u.slotId === id))
+                .filter((u): u is NonNullable<typeof u> => !!u)
+            : engineId
+                ? allUsage.filter(u => String(u.engine ?? '').toLowerCase() === engineId)
+                : [];
+
+        // ‼️ AND A POOL THAT HAS LOST EVERY ACCOUNT DOES NOT FALL BACK TO ALL OF
+        // THEM. Falling back would spend exactly the accounts the user fenced
+        // off, which is the one thing this item exists to prevent — so the
+        // campaign blocks and says which ids are gone.
+        if (allowed.length && !usage.length) {
+            taskManager.applySentry({
+                plan: {
+                    action: 'blocked', rule: 'pool-empty',
+                    why: `none of the accounts this campaign is allowed to use is captured any more `
+                        + `(${poolMissing.join(', ')}) — capture them again on the Engines page, or `
+                        + 'stop the campaign and start it on a pool that exists'
+                }
+            });
+            return;
+        }
 
         // ‼️ X-178 — AND WHETHER THE ACCOUNTS THEMSELVES ARE STILL THERE.
         //
@@ -24643,6 +24687,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * is a second copy that goes out of date the first time somebody
              * adds a fact the round can measure.
              */
+            /**
+             * ‼️ X-207 — THE ACCOUNTS THE FORM LETS THE USER TICK, and their
+             * figures with them.
+             *
+             * EVERY captured account, not just the campaign's engine: a pool may
+             * cross engines by design, so filtering here would hide exactly the
+             * choice the item exists to offer. The percentage rides along
+             * because it is already measured — sending the user to the Engines
+             * page to find out which account has room, in order to come back and
+             * tick it, is the click DENSITY says must not be charged.
+             */
+            accountPool: storedAccounts().map(sl => {
+                const u = accountUsage.current().find(x => x.slotId === sl.id);
+                return {
+                    id: sl.id,
+                    label: accountLabelOf(sl),
+                    engine: sl.engine,
+                    percent: u && u.state === 'ok' && u.percent >= 0 ? u.percent : null,
+                    state: u?.state ?? 'unread'
+                };
+            }),
             policyFields: SENTRY_FIELDS,
             policyOperators: SENTRY_OPERATORS,
             policyPresets: SENTRY_PRESETS,
@@ -24679,7 +24744,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...base,
             campaign: rec,
             running: !!live,
-            rotatesAccounts: !!rec.engine,
+            // X-207 — a pool rotates accounts whether or not an engine was named.
+            rotatesAccounts: !!rec.pool?.length || !!rec.engine,
+            /**
+             * ‼️ X-207 — AN ALLOWED ACCOUNT THAT IS NO LONGER CAPTURED.
+             *
+             * The user can forget a slot on the Engines page while a campaign is
+             * running. Silently shrinking their pool would be this extension
+             * deciding something they did not, so the fact travels to the card
+             * and the strip says it — and when the pool loses ALL of them the
+             * round blocks (`pool-empty`) rather than falling back to every
+             * account, which would spend exactly the ones they fenced off.
+             */
+            poolMissing: (rec.pool ?? []).filter(
+                id => !accountUsage.current().some(u => u.slotId === id)),
             failLimit: typeof rec.failLimit === 'number' ? rec.failLimit : failLimit,
             failStreak: rec.failStreak ?? 0,
             // ‼️ NAMED, not just identified. A campaign row that says `prj_9ujsbtzr`
@@ -32447,7 +32525,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'has none, so a campaign with no opening words refuses to start a round rather than '
                 + 'opening an empty session. ‼️ ACCOUNT ROTATION NEEDS `engine`: without one the '
                 + 'rounds run on the main sign-in, because choosing an account would mean assuming an '
-                + 'engine. args: project (id or name), agent (id or name), prompt (the words the FIRST '
+                + 'engine - UNLESS you give a pool, which may cross engines. args: project (id '
+                + 'or name), agent (id or name), prompt (the words the FIRST '
                 + 'round opens on), engine?, model?, permissionMode? (an unattended round that stops '
                 + 'to ask permission never ends), superpowers?, ceiling? (five-hour % at or above '
                 + 'which an account is a wall, default ' + String(SENTRY_DEFAULT_CEILING) + '), '
@@ -32469,7 +32548,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'refused. NOT the round\'s model or budget. Omit any of them and the '
                 + 'agentFarm.sentryLeader* setting goes on deciding, including when it is changed '
                 + 'later; an unreadable figure is left absent rather than stored as a purse of '
-                + 'zero, which would switch the leader off and look like a decision)',
+                + 'zero, which would switch the leader off and look like a decision), '
+                + '‼️ pool? (THE ACCOUNTS THIS CAMPAIGN MAY SPEND - slot ids from accounts.list, as an '
+                + 'array or a comma string, IN PRIORITY ORDER. It is a WHITELIST: with one, no other '
+                + 'account is ever touched, and it may hold accounts of DIFFERENT engines (3 Claude + '
+                + '2 Codex is one pool of 5). Each round then opens on the chosen account\'s own '
+                + 'engine, and the campaign model is dropped when that engine is not the campaign\'s, '
+                + 'because a model name belongs to an engine. An id this machine has not captured is '
+                + 'REFUSED BY NAME rather than skipped every round. Omit it and nothing changes: '
+                + 'every account of engine, which is what campaigns did before this existed), '
+                + 'rotation? (HOW the pool is walked - "free" (the default) takes whichever account '
+                + 'has the most room anywhere in the pool, ignoring engine; "tiered" keeps to one '
+                + 'engine at a time, in the pool\'s own order with engine first, and crosses to the '
+                + 'next engine only when the whole current one is at or above the ceiling - the '
+                + 'difference between "spend whatever is cheapest" and "this is my main engine, use '
+                + 'the others when it is out". Every tier walled still sleeps until the earliest '
+                + 'reset in the WHOLE pool, which is sooner than one engine\'s)',
             handler: (args) => {
                 const a = args as Record<string, unknown>;
                 const project = argStr(args, 'project');
@@ -32496,8 +32590,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // …and the leader's leash, absent when it was not asked for.
                     ...(optStr(args, 'leaderModel') ? { leaderModel: optStr(args, 'leaderModel') } : {}),
                     ...(a.leaderDailyUsd !== undefined ? { leaderDailyUsd: a.leaderDailyUsd } : {}),
-                    ...(a.leaderMaxUsd !== undefined ? { leaderMaxUsd: a.leaderMaxUsd } : {})
-                });
+                    ...(a.leaderMaxUsd !== undefined ? { leaderMaxUsd: a.leaderMaxUsd } : {}),
+                    // X-207 — the pool and the strategy, both optional, both
+                    // absent meaning exactly what every campaign did before.
+                    ...(a.pool !== undefined ? { pool: a.pool } : {}),
+                    ...(optStr(args, 'rotation') ? { rotation: optStr(args, 'rotation') } : {})
+                }, storedAccounts().map(sl => sl.id));
                 need(started.ok, started.error ?? 'the campaign could not be started');
                 // ‼️ AND IT MOVES AT ONCE. A campaign that waited for the next
                 // pump beat to open its first round would look broken for half a
@@ -32505,14 +32603,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // answer immediately.
                 void sentryTick();
                 const rec = taskManager.sentry as SentryRecord;
+                // ‼️ X-207 — A POOL ROTATES WITHOUT AN ENGINE. The pool IS the
+                // list of accounts, so the note that used to say "name an
+                // engine or nothing rotates" would now be false advice.
+                const rotates = !!rec.pool?.length || !!rec.engine;
                 return {
                     campaign: rec,
                     running: taskManager.sentryBusy(),
-                    rotatesAccounts: !!rec.engine,
-                    note: rec.engine
+                    rotatesAccounts: rotates,
+                    pool: rec.pool ?? [],
+                    rotation: rec.rotation ?? 'free',
+                    note: rotates
                         ? undefined
-                        : 'no engine was named, so every round runs on the main sign-in and no account '
-                        + 'is rotated - naming one turns the five-hour ceiling and the sleep-until-reset on'
+                        : 'no engine and no pool were named, so every round runs on the main sign-in and '
+                        + 'no account is rotated - give either one to turn the five-hour ceiling and the '
+                        + 'sleep-until-reset on'
                 };
             }
         },
@@ -32592,7 +32697,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     campaign: rec,
                     running: taskManager.sentryBusy(),
-                    rotatesAccounts: !!rec.engine,
+                    // X-207 — a pool rotates accounts with or without an engine.
+                    rotatesAccounts: !!rec.pool?.length || !!rec.engine,
+                    /**
+                     * ‼️ X-207 — WHICH ACCOUNTS THE NIGHT IS ALLOWED TO SPEND,
+                     * and how it walks them. An agent asked "why did it run on
+                     * that account" can answer it from here; without the pool
+                     * the only honest answer is "every account of the engine",
+                     * which stopped being true the moment this field existed.
+                     *
+                     * `poolMissing` is the one that cannot be worked out
+                     * anywhere else: an allowed account that has since been
+                     * forgotten on the Engines page is why a pool of five is
+                     * running on three.
+                     */
+                    pool: rec.pool ?? [],
+                    rotation: rec.rotation ?? 'free',
+                    poolMissing: (rec.pool ?? []).filter(
+                        id => !accountUsage.current().some(u => u.slotId === id)),
                     failLimit: limit,
                     failStreak: rec.failStreak ?? 0,
                     idlePollMin: cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),

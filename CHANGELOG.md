@@ -2,6 +2,68 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.400.0 - X-207: the accounts a campaign is ALLOWED to spend, and the engine it falls back to (2026-09-06)
+
+The user's own complaint, and it had two halves: *"nöbet sistemi limiti boş olan
+herhangi bir hesaba motor gözetmeden mi atlıyor? … kullanıcının izin verdiği
+hesaplar arasında rotasyon yapmalı, izinsiz hesaba dokunmamalı"* — and then
+*"peki kullanıcı şu motordan 3 hesap bu motordan 2 hesap seçip toplam 5'i
+arasında rotasyon isterse?"*
+
+Neither was expressible. The pool was every account of the campaign's engine,
+built in one line of `sentryTick`, and there was nowhere in the record, the form
+or the bridge that even held the IDEA of permission. A sentry left running all
+night on the account somebody was keeping for their own work was not a bug you
+could point at.
+
+- **‼️ THE POOL IS A WHITELIST, IN THE ORDER IT WAS PICKED.** `pool` on the
+  campaign names the accounts it may spend; with one, nothing else on the
+  machine is touched, whatever room it has. **Absent is the old answer and stays
+  the old answer** — every record already on disk plans identically to the day it
+  was written, which is why "no pool" is a distinct value rather than an empty
+  list somebody has to interpret. The order is the priority, so no second field
+  states it: two fields for one question disagree the first time one is
+  reordered.
+- **‼️ AND IT MAY CROSS ENGINES.** Three Claude sign-ins and two Codex ones are
+  ONE pool of five. `rotation` picks how it is walked: **free** (the default, and
+  what every campaign did before) takes the most room anywhere in the pool;
+  **tiered** keeps to one engine — the campaign's own first, then the pool's own
+  order — and crosses only when EVERY account of the current one is at or above
+  the ceiling. That is the fallback the item exists for: the night used to end in
+  a sleep while a signed-in Codex account sat idle. Every tier walled still
+  sleeps, and it wakes at the earliest reset in the WHOLE pool, which is sooner
+  than one engine's.
+- **‼️ THE ROUND OPENS ON THE CHOSEN ACCOUNT'S ENGINE.** The round spec took
+  `campaign.engine` unconditionally, which was right for exactly as long as a
+  pool could hold one engine. Let it cross and that same line opens a Claude
+  session pointed at a Codex sign-in — a round that dies looking like a broken
+  account. **And the campaign's model is dropped when the engine changes**,
+  because a model name belongs to an engine: `opus` means nothing to Codex, and
+  carrying it would turn a working fallback into a round that fails on its first
+  line.
+- **‼️ AN ACCOUNT THAT IS NOT CAPTURED IS REFUSED AT 21:00, BY NAME** — rather
+  than skipped every round and found as "no usable account" at 03:00. And one
+  FORGOTTEN while the campaign runs is news, not a gap: the strip names it, and a
+  pool that has lost all of them BLOCKS (`pool-empty`) rather than falling back to
+  every account — falling back would spend exactly the sign-ins the user fenced
+  off, which is the one thing this item exists to prevent.
+- **The form got the control the idea needs.** Every captured account, grouped by
+  engine, each carrying the room it has right now — because the figure is already
+  measured and sending the reader to the Engines page to look it up, in order to
+  come back and tick a box, is a click DENSITY says must not be charged. The tick
+  ORDER is drawn (1. 2. 3.), since it is a real input to the tiered walk and an
+  input nobody can see is not an input. MIRROR on both fields: empty says what
+  will happen instead. The running campaign's strip trades "rotates claude
+  accounts" for the count, the engines and the strategy, with the list and the
+  rooms in its panel.
+- **Bridge, same commit:** `sentry.start` takes `pool` (array or comma string)
+  and `rotation`; `sentry.status` answers `pool`, `rotation` and `poolMissing` —
+  the last being the only place "a pool of five running on three" can be
+  explained.
+
+Written design first, as the item itself demanded: `10_Notes/A-PLN - Nöbet Hesap
+Rotasyon Havuzu ve Çok Motorlu Yedekleme - X-207 - 260906.md`.
+
 ## 3.399.4 - the extension could not be switched on, and no test could see it (2026-09-06)
 
 **‼️ 3.399.0 through 3.399.3 DO NOT ACTIVATE.** Not a broken page — no pages.

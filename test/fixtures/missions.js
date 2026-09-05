@@ -667,7 +667,22 @@ const SENTRY_DEFAULTS = {
                 output: 'the window is spent; nothing left to continue',
                 code: { closed: false }
             }),
-            policyFactsAt: Date.now() - 12 * 60 * 1000
+            policyFactsAt: Date.now() - 12 * 60 * 1000,
+            /**
+             * ‼️ X-207 — THE ACCOUNTS THE POOL PICKER OFFERS, with the
+             * distribution the control exists for: two engines, so the picker
+             * really has to group; one account already past a sensible ceiling,
+             * so "which of these can actually run tonight" is a question the row
+             * answers; and one nobody has read, because an unread account is
+             * usable and must not be drawn as 0%.
+             */
+            accountPool: [
+                { id: 'slot-1', label: 'wmmuratvural@gmail.com', engine: 'claude', percent: 23, state: 'ok' },
+                { id: 'slot-2', label: 'aicozums@gmail.com', engine: 'claude', percent: 4, state: 'ok' },
+                { id: 'slot-3', label: 'murvietnam@gmail.com', engine: 'claude', percent: 97, state: 'ok' },
+                { id: 'slot-x1', label: 'murposta@gmail.com', engine: 'codex', percent: null, state: 'no-source' },
+                { id: 'slot-x2', label: 'murposta2@gmail.com', engine: 'codex', percent: 41, state: 'ok' }
+            ]
         };
     })()
 };
