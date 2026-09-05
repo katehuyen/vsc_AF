@@ -134,11 +134,12 @@ import {
     leaderAllowed, runLeaderTurn
 } from './core/sentryLeader';
 import {
-    Condition, PolicyFacts, SentryPolicy, evaluateSentryPolicy,
+    Condition, PolicyFacts, PolicyVerdict, SentryPolicy, evaluateSentryPolicy,
     FIELDS as SENTRY_FIELDS, OPERATORS as SENTRY_OPERATORS, PRESETS as SENTRY_PRESETS,
     factsSnapshot, probePolicy,
     presetConditions as sentryPresetConditions
 } from './core/sentryPolicy';
+import { roundWhy, whyShorthand } from './core/sentryWhy';
 import { SENTRY_DEFAULT_CEILING } from './core/sentryRun';
 import { measureSession } from './core/sentryMeasure';
 import { QualityStore, sampleQuality } from './core/quality';
@@ -16834,7 +16835,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ): Promise<string | undefined> => {
         if (!canIsolateAccounts(engine)) { return ''; }
         const slots = slotsFor(storedAccounts(), engine);
-        if (!slots.length) { return MACHINE_ACCOUNT; }
+        // ‼️ …and NOTHING STATED, not `@machine`. Nobody was asked, so nobody
+        // answered — and `@machine` is an answer that CLEARS the engine's config
+        // variable. On a machine with no slot the window's own
+        // `CLAUDE_CONFIG_DIR`, if it has one, is the only sign-in there is;
+        // removing it here would make a terminal resume run as somebody the
+        // Console's own spawn (which inherits) would not. See launchAccountEnv.
+        if (!slots.length) { return ''; }
         const standing = activeAccounts()[engine] || '';
         const usage = accountUsage.current();
         type Row = vscode.QuickPickItem & { id: string };
@@ -24347,6 +24354,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * template. Nothing here can stop the night.
          */
         let leader: LeaderOutcome | undefined;
+        /**
+         * ‼️ X-195 — WHAT THE ROUND'S WORDS ARE ACCOUNTED FOR BY, hoisted out of
+         * the block that measures it because the record is written where the
+         * round is OPENED, one scope down, and a closure that dies before then
+         * takes the only copy with it.
+         *
+         * Both stay `undefined` on the first round of a night: there was no
+         * finished session to judge, so no policy was ever evaluated. That is a
+         * FACT about the round rather than a gap in the record, which is why
+         * nothing invents an empty verdict to fill it.
+         */
+        let roundVerdict: PolicyVerdict | undefined;
+        let roundOutcome: string | undefined;
         // ‼️ X-192 — read ONCE for the whole round. The pool is several files off
         // disk and it serves both halves of the round: the leader blends it, the
         // mechanical templates below are made of it. Reading it twice would be
@@ -24390,6 +24410,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 rec.lastFacts = pf;
                 const policy: SentryPolicy = rec.policy ?? { preset: 'mechanical', conditions: [] };
                 const verdict = evaluateSentryPolicy(policy, pf);
+                // X-195 — kept for the record written where the round is opened.
+                roundVerdict = verdict;
+                roundOutcome = diagnosis.outcome;
                 // ‼️ Read ONCE, and only on a round that woke the leader — `git
                 // diff` on every repo of every routine round is a cost the
                 // mechanical preset was promised it would not pay.
@@ -24492,7 +24515,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 return;
             }
-            row = taskManager.openSentryRound(agent, step.round, doc.project.id);
+            /**
+             * ‼️ X-195 — AND THE ACCOUNT OF WHY THESE WORDS, written at the one
+             * moment both halves are in hand: the verdict that judged the round
+             * that ended, and what the leader actually DID about it.
+             *
+             * `path` is the leader's own outcome and never the verdict's wish —
+             * a verdict of `leader` whose turn timed out, refused, answered
+             * prose or ran out of budget produced a TEMPLATE round, and a record
+             * calling that a leader round would describe a decision nobody
+             * carried out. `roundWhy` reads `leader.path` for exactly that.
+             *
+             * The prompt handed in is `step.round.prompt` — the words really
+             * being opened, not the ones the decision asked for; the two differ
+             * on every fallback.
+             */
+            row = taskManager.openSentryRound(agent, {
+                ...step.round,
+                why: roundWhy({
+                    ...(roundVerdict ? { verdict: roundVerdict } : {}),
+                    ...(leader ? { leader } : {}),
+                    prompt: step.round.prompt,
+                    ...(roundOutcome ? { outcome: roundOutcome } : {})
+                })
+            }, doc.project.id);
         }
         taskManager.applySentry(step, row?.id);
 
@@ -24620,7 +24666,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             rounds: rows.map(t => ({
                 id: t.id, title: t.title, status: t.status,
                 createdAt: t.createdAt, endedAt: t.endedAt ?? null,
-                account: t.account ?? ''
+                account: t.account ?? '',
+                /**
+                 * ‼️ X-195 — WHY THIS ROUND OPENED ON THESE WORDS, on the row
+                 * that ran them. The campaign's `lastWhy` is ONE sentence for
+                 * the whole night; eight rounds sharing it is seven rounds
+                 * nobody can account for.
+                 *
+                 * The MARK is computed here rather than on the page: the rule
+                 * that separates `M` from `M!` — asked and got nothing usable —
+                 * lives in `core/sentryWhy.ts`, and a page that worked it out
+                 * for itself would be a second implementation of the one
+                 * distinction this record exists to make.
+                 */
+                ...(t.sentryWhy ? { why: t.sentryWhy, whyMark: whyShorthand(t.sentryWhy) } : {})
             }))
         };
     };
@@ -32479,7 +32538,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'last plan in its own words (`lastAction` / `lastRule` / `lastWhy`), the moment it '
                 + 'wakes if it is sleeping through a quota wall, the rounds it has opened and the codes '
                 + 'it took, the barren-round streak against its brake, and whether a round is on the '
-                + 'board right now. ‼️ "Is a round running" is DERIVED from the task rows every time '
+                + 'board right now. ‼️ X-195 — each round also carries `why`: the account of why THAT '
+                + 'round opened on the words it did (`path` leader|mechanical — the leader\'s REAL '
+                + 'outcome, not the verdict\'s wish; `fired` the conditions that woke it; `problems` '
+                + 'the ones nobody could judge; `outcome` the diagnosis; `opening` the prompt\'s first '
+                + 'line; `assist` what the leader turn cost, even a failed one) plus `whyMark`, the '
+                + 'one-letter form: L = a leader chose the words · M = a template did and nothing was '
+                + 'asked · M! = the leader WAS asked and gave nothing usable, the only case that spends '
+                + 'money without buying words. A round opened before this record existed has neither. '
+                + '‼️ "Is a round running" is DERIVED from the task rows every time '
                 + 'it is asked, never stored - a stored flag is how a campaign comes to believe it is '
                 + 'still running a round that died with the window. args: none',
             handler: () => {
@@ -32515,7 +32582,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         .map(t => ({
                             id: t.id, title: t.title, status: t.status,
                             createdAt: t.createdAt, endedAt: t.endedAt,
-                            ...(t.account ? { account: t.account } : {})
+                            ...(t.account ? { account: t.account } : {}),
+                            // ‼️ X-195 — and the account of why THIS round got
+                            // the words it did, which the campaign's single
+                            // `lastWhy` cannot give: eight rounds share that
+                            // sentence and seven of them are unexplained by it.
+                            ...(t.sentryWhy
+                                ? { why: t.sentryWhy, whyMark: whyShorthand(t.sentryWhy) } : {})
                         }))
                 };
             }

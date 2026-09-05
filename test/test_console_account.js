@@ -29,6 +29,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 let spawned = 0;
 const spawnEnvs = [];
 const spawnArgv = [];
+/** …and the children themselves, so a test can END A TURN — the only way to
+ *  reach the code that releases a HELD message (see the queued-message case). */
+const children = [];
 function fakeChild() {
     spawned++;
     const child = new EventEmitter();
@@ -43,6 +46,7 @@ function fakeChild() {
     child.stdin = { write: () => true, end: () => { } };
     child.pid = 7000 + spawned;
     child.kill = () => { };
+    children.push(child);
     return child;
 }
 const realSpawn = cp.spawn;
@@ -175,6 +179,44 @@ async function main() {
             spawnEnvs[spawnEnvs.length - 1].CLAUDE_CONFIG_DIR === undefined);
     }
 
+    // ---------- …and a HELD message keeps the promise too ----------
+    //
+    // ‼️ The gap this family shipped with: `send` kept the promise for a message
+    // said into an idle card, but a message PARKED while a turn was running is
+    // released somewhere else entirely — straight down the pipe of the process
+    // the conversation is leaving, with the card still saying the swap was
+    // pending. The reader would have been told the next message runs on the
+    // other sign-in and then watched it spend the old one, with nothing on
+    // screen saying so. A promise that fails silently is not a promise.
+    {
+        const host = newHost();
+        const id = host.start(init({ resume: 'S-D', account: 'claude-work' }));
+        const child = children[children.length - 1];
+        host.send(id, 'start a long one');
+        ok('a turn is running, so the next message is one that can be held',
+            host.get(id).status === 'working');
+        host.setAccount(id, MACHINE_ACCOUNT);
+        const r = host.send(id, 'and this one on the other account', true);
+        ok('the held message is parked rather than said into the running turn',
+            r.queued === true && host.get(id).queued.length === 1);
+        const before = spawned;
+        // the turn ends — this is the only door to the release path
+        child.stdout.emit('data', JSON.stringify({
+            type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0
+        }) + '\n');
+        await new Promise(res => setTimeout(res, 900));
+        const s = host.get(id);
+        ok('‼️ the released message RE-SEALED the session instead of spending the old account',
+            spawned > before && s.account === MACHINE_ACCOUNT && !s.accountNext);
+        ok('…on the same conversation, by --resume', s.sessionId === 'S-D');
+        ok('…and it is said exactly once — the queue is not also replayed',
+            s.messages.filter(m => m.role === 'user'
+                && m.text === 'and this one on the other account').length === 1);
+        ok('…leaving nothing held behind it', s.queued.length === 0);
+        ok('…in a process carrying the new account\'s environment',
+            spawnEnvs[spawnEnvs.length - 1].CLAUDE_CONFIG_DIR === undefined);
+    }
+
     // ---------- what it refuses, and says so ----------
     {
         const host = newHost();
@@ -257,9 +299,14 @@ async function main() {
         ok('the standing account is the first row, so Enter does what the machine would have',
             has('const first = mine.filter(r => r.id === standing);')
             && has('showQuickPick([...first, machine, ...rest]'));
+        // ‼️ …and BOTH of those answer '' — nothing STATED. `@machine` is an
+        // answer that CLEARS the config variable, and nobody was asked here, so
+        // a terminal resume would have run as an identity the Console's own
+        // spawn (which inherits) would not.
         ok('‼️ …and no question is asked where there is no choice: no axis, or nothing captured',
             has("if (!canIsolateAccounts(engine)) { return ''; }")
-            && has('if (!slots.length) { return MACHINE_ACCOUNT; }'));
+            && has("if (!slots.length) { return ''; }")
+            && !has('if (!slots.length) { return MACHINE_ACCOUNT; }'));
         ok('DENSITY — the figure the choice turns on is on the row, not a click away',
             has('% of the 5-hour window used')
             && has('nothing has measured this account'));

@@ -2,7 +2,7 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
-## Unreleased — X-211 family: the sign-in on screen is the sign-in that runs
+## 3.399.0 - X-211 family closed, and X-195: every round says why it opened on those words (2026-09-06)
 
 Three surfaces named an account and a fourth ran the process. Every item below
 closes one of those gaps; together they are the X-211 umbrella.
@@ -46,6 +46,53 @@ closes one of those gaps; together they are the X-211 umbrella.
 - **X-214 — a terminal resume names its account too.** That door passed no
   account layer at all. It asks now — the standing account first, so Enter does
   what the machine would have done — and cancelling opens nothing.
+
+Two gaps found REVIEWING that family, and fixed here rather than written down as
+caveats:
+
+- **‼️ A HELD MESSAGE KEPT NO PROMISE.** `send` re-sealed the session for a
+  message said into an idle card, but a message PARKED while a turn was running
+  is released somewhere else entirely — straight down the pipe of the process
+  the conversation is leaving, with the card still saying the swap was pending.
+  The reader was told the next message would run on the other sign-in and then
+  watched it spend the old one, with nothing on screen saying so. It re-seals
+  there too now, taking the held text out of the queue WITHOUT opening a turn so
+  the resumed session says it exactly once.
+- **‼️ THE TERMINAL RESUME CLEARED THE VARIABLE ON A MACHINE WITH NO SLOTS.**
+  Nobody was asked, so nobody answered — and `@machine` is an ANSWER, one that
+  removes the engine's config variable. On a machine with no captured account
+  the window's own `CLAUDE_CONFIG_DIR` is the only sign-in there is, and the
+  Console's own spawn inherits it: two surfaces, two identities. Nothing stated
+  is what it answers now.
+
+### X-195 — the account of why a round opened on the words it did
+
+`roundWhy` existed, was tested, and was called from NOWHERE: a record nothing
+ever built. The rounds table showed status, account and duration and nothing
+anywhere said WHY a round was given the prompt it was given, so a night of eight
+rounds left eight prompts nobody could account for and the one that cost money
+was indistinguishable from the seven that did not.
+
+- **The writer.** `sentryTick` builds the record at the one moment both halves
+  are in hand — the verdict that judged the round that ended, and what the
+  leader actually DID about it — and carries it on the round spec, so it is
+  written to the row and outlives the closure that made it. `path` is the
+  leader's REAL outcome and never the verdict's wish: a verdict of `leader`
+  whose turn timed out, refused or answered prose produced a TEMPLATE round.
+- **The mark, on the row.** `L` a leader chose the words · `M` a template did
+  and nothing was asked · **`M!`** the leader WAS asked and gave nothing usable,
+  which is the only case that spends money without buying words and is the only
+  one drawn as an alarm. The panel opens with the long form and carries the
+  conditions that fired, the ones nobody could judge, the diagnosis and the
+  bill. A round opened before this record existed says so rather than being
+  drawn as free.
+- **What the thinking cost, on the campaign's own line** — the night's total
+  with the turn-by-turn ledger as its hover, red only when the leader has
+  actually stopped waking rather than for one turn that gave nothing usable.
+- **And on the Console strip**, where the morning reader's eye already is: the
+  last round's account, in the strip's panel.
+- `sentry.status` answers with `why` and `whyMark` per round, so an unattended
+  agent reads the same account the page draws.
 
 ## 3.398.0 - X-194 closed: what every condition reads today, AND parts, and the leader's own purse (2026-09-05)
 

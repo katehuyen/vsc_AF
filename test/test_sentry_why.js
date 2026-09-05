@@ -9,6 +9,7 @@
 // leader's outcome and the words that were built, and answers with one object
 // that can sit on a task row and outlive the closure that made it.
 'use strict';
+const fs = require('fs');
 const path = require('path');
 const { roundWhy, whyShorthand } = require(path.resolve(__dirname, '../out/core/sentryWhy.js'));
 
@@ -97,6 +98,47 @@ const verdict = (over) => Object.assign({
     ok('‼️ a leader that was asked and did not deliver is marked M!',
         whyShorthand({ path: 'mechanical', fired: ['a'], assist: { ok: false } }) === 'M!');
     ok('nothing recorded is nothing claimed', whyShorthand(undefined) === '');
+}
+
+// ---- the FIRST round of a night, which no verdict ever judged --------------
+{
+    // ‼️ There is nothing to evaluate before a session has finished, so the
+    // opening round of a campaign has no verdict at all. Requiring one would
+    // have forced the writer to invent an empty verdict, and an invented
+    // verdict is indistinguishable on the row from a policy that ran and fired
+    // nothing — which is the confusion this whole record exists to remove.
+    const w = roundWhy({ prompt: 'Take X-178 and work through it.\nRead the handover first.' });
+    ok('a round with no verdict is recorded, not refused', !!w);
+    ok('…as mechanical, because no leader turn was taken', w.path === 'mechanical');
+    ok('…with nothing fired and nothing unjudged, rather than undefined',
+        Array.isArray(w.fired) && !w.fired.length
+        && Array.isArray(w.problems) && !w.problems.length);
+    ok('…and the first line of the words it opened on', w.opening === 'Take X-178 and work through it.');
+    ok('…and no assist, because nothing was spent', w.assist === undefined);
+}
+
+// ---- ‼️ THE WRITER, which is the half that was missing ---------------------
+//
+// `roundWhy` was written, tested and called from NOWHERE — a pure module that
+// produced a record nothing ever built (Principle 1). The record is made at the
+// one moment both halves are in hand, in `sentryTick`, and carried on the round
+// spec to `openSentryRound`, which is one scope down from the block that
+// measures it. That wiring is the item, so it is what is pinned here.
+{
+    const ext = fs.readFileSync(path.resolve(__dirname, '../src/extension.ts'), 'utf8');
+    const has = (t) => ext.includes(t);
+    ok('‼️ the record is BUILT, on the round that is being opened',
+        has('why: roundWhy({') && has('prompt: step.round.prompt,'));
+    ok('…and handed to the round spec, which is what writes it to the row',
+        has('row = taskManager.openSentryRound(agent, {'));
+    ok('…out of the verdict and the diagnosis, kept past the block that measured them',
+        has('roundVerdict = verdict;') && has('roundOutcome = diagnosis.outcome;'));
+    ok('‼️ …and the PATH is the leader\'s real outcome, never the verdict\'s wish',
+        has('...(leader ? { leader } : {}),'));
+    ok('the mark is derived by the core function, so the page keeps no second copy',
+        has('whyShorthand(t.sentryWhy)'));
+    ok('…and an agent can read the same account off the bridge',
+        has('why: t.sentryWhy, whyMark: whyShorthand(t.sentryWhy)'));
 }
 
 console.log(`test_sentry_why: ${pass} passed, ${fail} failed`);

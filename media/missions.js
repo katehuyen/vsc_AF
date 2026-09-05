@@ -601,6 +601,16 @@
     // The spec summary prints the ceiling as the user typed it, not padded to
     // cents — `$5`, not `$5.00`; only the spent-vs-budget bar pads both sides.
     const capUsdRaw = (v) => (v > 0 ? '$' + v : '$∞');
+    /**
+     * ‼️ X-195 — A SPEND, AND NEVER A CAP. `capUsd` answers `$∞` for zero, which
+     * is the right word for "no ceiling" and exactly the wrong one for "nothing
+     * was spent". And a leader turn costs cents, so a real spend rounded to
+     * `$0.00` would read as free — the one thing this record exists to deny.
+     */
+    const spendUsd = (n) => {
+        const v = Number(n) || 0;
+        return v > 0 && v < 0.01 ? '<$0.01' : usd(v);
+    };
     const elapsed = (since) => {
         const s = Math.max(0, Math.floor((Date.now() - since) / 1000));
         return s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + (s % 60) + 's';
@@ -3179,6 +3189,64 @@
             window.AFTip.lines([c.lastWhy, '', 'decided ' + sentryWhen(c.lastAt)]));
     }
 
+    /**
+     * ‼️ X-195 — WHY THIS ROUND OPENED ON THESE WORDS, in the width of a letter.
+     *
+     * SHORTHAND: the table has room for one mark and the panel carries the rest,
+     * opening with the long form. The mark itself is the HOST's (`whyShorthand`
+     * in `core/sentryWhy.ts`) — the rule that separates "never asked" from
+     * "asked and got nothing usable" is the whole point of the record, and a
+     * second copy of it here is the copy that would go wrong.
+     *
+     * A round opened before this record existed has no `why` at all, and says so
+     * with a dash rather than being drawn as a mechanical round nobody paid for.
+     */
+    function sentryWhyCell(r) {
+        const w = r.why;
+        if (!w || !r.whyMark) {
+            return window.AFTip.cell('swhym', '', '<span class="dim">—</span>',
+                'No account of this round',
+                window.AFTip.lines([
+                    'This round was opened before the farm kept the account of why,',
+                    'so nothing is claimed about it.'
+                ]));
+        }
+        const long = r.whyMark === 'L'
+            ? 'L — leader round: a model read the situation and chose these words'
+            : (r.whyMark === 'M!'
+                ? 'M! — mechanical round: the leader WAS asked and gave nothing usable'
+                : 'M — mechanical round: a template filled itself in, and no model was asked');
+        const body = [];
+        if (w.outcome) { body.push('diagnosis: ' + w.outcome); }
+        body.push((w.fired && w.fired.length)
+            ? 'fired: ' + w.fired.join(' · ')
+            : 'fired: nothing — the routine path');
+        // ‼️ X-190's law, on the row a person reads: a condition nobody could
+        // evaluate is NOT a condition that did not fire.
+        if (w.problems && w.problems.length) {
+            body.push('could not be judged: ' + w.problems.join(' · '));
+        }
+        if (w.assist) {
+            body.push('leader turn: ' + (w.assist.ok === false ? 'gave nothing usable' : 'answered')
+                + (w.assist.model ? ' · ' + w.assist.model : '')
+                + (typeof w.assist.costUsd === 'number' ? ' · ' + spendUsd(w.assist.costUsd) : '')
+                + (typeof w.assist.ms === 'number' ? ' · ' + Math.round(w.assist.ms / 1000) + 's' : '')
+                + (w.assist.note ? ' · ' + w.assist.note : ''));
+        }
+        if (w.why) { body.push('', w.why); }
+        if (w.opening) { body.push('', 'opened with: ' + w.opening); }
+        // ‼️ THE WEIGHT ON THE PAGE FOLLOWS WHAT THE MARK COSTS. `M!` is the only
+        // alarm (money spent, no words bought) and is red; `L` is the round a
+        // model really decided, so it carries the solid chip; `M` is the routine
+        // night and gets the quietest outline there is. Drawn the other way
+        // round — which is what the plain chip did on a light theme — the page
+        // shouts loudest about the rounds that cost nothing.
+        const cls = r.whyMark === 'M!' ? 'bad' : (r.whyMark === 'L' ? '' : 'prov');
+        return window.AFTip.cell('swhym', '',
+            `<span class="mchip ${cls}">${C.esc(r.whyMark)}</span>`,
+            long, window.AFTip.lines(body));
+    }
+
     function sentryRoundsHtml(s) {
         if (!s.rounds || !s.rounds.length) { return ''; }
         const rows = s.rounds.slice().reverse().slice(0, 12).map(r => {
@@ -3187,6 +3255,7 @@
             const mins = r.endedAt && r.createdAt ? Math.round((r.endedAt - r.createdAt) / 60000) : null;
             return `<tr class="mrow" data-sround="${C.esc(r.id)}">
                 <td>${C.esc(r.title)}</td>
+                ${sentryWhyCell(r)}
                 <td><span class="mchip ${cls}">${C.esc(r.status)}</span></td>
                 <td>${r.account ? C.esc(r.account) : '<span class="dim">main sign-in</span>'}</td>
                 <td>${C.esc(sentryWhen(r.createdAt))}</td>
@@ -3195,6 +3264,7 @@
         }).join('');
         return `<table class="mtable"><thead><tr>
             <th title="The row this round ran as. A sentry round is an ORDINARY task: the same runner opens it, the same terminal watches it, the same cancel button ends it.">Round</th>
+            <th title="Why this round opened on the words it did. L = a leader turn chose them. M = a template filled itself in and no model was asked. M! = the leader WAS asked and gave nothing usable, which is the only case that spends money without buying words. Hover the cell for the conditions that fired, the diagnosis and what the turn cost.">Why</th>
             <th>Status</th>
             <th title="The captured sign-in the round spent. Empty means the main sign-in — the absence of a slot IS the main account.">Account</th>
             <th>Opened</th><th>Took</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -3613,6 +3683,47 @@
                     'Built when the last round ended and kept through the wait, so a campaign coming '
                     + 'back from a quota wall does not fall back to the sentence the FIRST round was given.']))
             : '';
+        /**
+         * ‼️ X-195 — WHAT THE THINKING COST, ON THE CAMPAIGN'S OWN LINE.
+         *
+         * The rounds table accounts for each round one at a time; this is the
+         * figure a person actually checks before letting it run another night,
+         * and until now it existed only inside the budget record. DENSITY: the
+         * total is on the strip, the turn-by-turn ledger is the hover.
+         *
+         * The budget is a DAY's, so the day is named — a campaign that has not
+         * woken its leader since yesterday would otherwise show yesterday's
+         * spend as though it were tonight's.
+         */
+        const leaderSpend = (() => {
+            const L = (c && c.leader) || null;
+            if (!L || (!L.turns && !L.spentUsd)) { return ''; }
+            const turns = Number(L.turns) || 0;
+            const log = (L.log || []);
+            const failed = log.filter(a => a && a.ok === false).length;
+            const rows = log.slice().reverse().map(a => {
+                const when = a && a.at ? new Date(a.at).toLocaleTimeString() : '';
+                return (a && a.ok === false ? '✗ ' : '✓ ')
+                    + [when, a && a.model, spendUsd(a && a.costUsd),
+                        (a && typeof a.ms === 'number') ? Math.round(a.ms / 1000) + 's' : '',
+                        a && a.note].filter(Boolean).join(' · ');
+            });
+            // ‼️ RED IS FOR A LEADER THAT HAS STOPPED WAKING, and nothing else.
+            // One turn that gave nothing usable is an ordinary night — the
+            // campaign filled a template and carried on. Colouring the total
+            // red for it would raise an alarm about a cost the user asked for.
+            return window.AFTip.wrap(
+                `<span class="mchip ${L.failStreak ? 'bad' : 'prov'}">leader ${spendUsd(L.spentUsd)} · ${turns} turn(s)</span>`,
+                `What the leader has spent${L.day ? ' on ' + L.day : ''}`,
+                window.AFTip.lines([
+                    `${turns} turn(s) · ${spendUsd(L.spentUsd)}`
+                        + (failed ? ` · ${failed} gave nothing usable` : ''),
+                    L.failStreak ? `${L.failStreak} failed turn(s) in a row` : '',
+                    'The daily purse is agentFarm.sentryLeaderBudgetUsd; a campaign whose leader has '
+                        + 'stopped waking still runs, mechanically.',
+                    ...(rows.length ? ['', 'the turns, newest first:', ...rows] : [])
+                ]));
+        })();
         // ‼️ NO LIVE STRIP HERE, AND NO LIVE CLOCK EITHER. What is true THIS
         // SECOND — who is running on which account, how much of that account is
         // left, and the moment a sleeping campaign wakes — is the Console
@@ -3629,6 +3740,7 @@
                     ${s.rotatesAccounts ? `<span class="mchip prov">rotates ${C.esc(c.engine)} accounts</span>`
                         : '<span class="mchip prov" title="No engine was named, so every round runs on the main sign-in — choosing an account would mean assuming an engine.">main sign-in</span>'}
                     ${s.failLimit ? `<span class="mchip ${s.failStreak ? 'bad' : 'prov'}" title="Barren rounds in a row against the brake that stops the campaign.">${s.failStreak}/${s.failLimit} barren</span>` : ''}
+                    ${leaderSpend}
                     ${words}
                 </div>
                 <div class="provrow"><span class="plabel">Why</span>${sentryWhy(c)}</div>

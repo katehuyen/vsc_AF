@@ -2703,6 +2703,43 @@ const html = allHtml;
     }));
     ok('‼️ a campaign that STOPPED in the night is still drawn — that is the morning read',
         html().includes('STOPPED') && html().includes('3 rounds in a row produced nothing'));
+
+    /**
+     * ‼️ X-195 — AND WHY THE ROUND ON THE BOARD OPENED ON THE WORDS IT DID.
+     *
+     * `lastWhy` above is the campaign's PLAN, one sentence rewritten every
+     * round. The question the morning reader is really asking is about the
+     * ROUND: did a model think about this, or did a template fill itself in —
+     * and if it thought, what did that cost. The strip is one line, so the
+     * answer is in its panel (SHORTHAND) and the ledger stays on Missions.
+     */
+    push(sentry({
+        rounds: [
+            { id: 't8', title: 'Sentry R6', status: 'done', createdAt: 1, endedAt: 2, account: '' },
+            {
+                id: 't9', title: 'Sentry R7 · X-178', status: 'running', createdAt: 3, endedAt: null,
+                account: 'slot-2', whyMark: 'L',
+                why: {
+                    path: 'leader', fired: ['round.barren is true'],
+                    problems: ['quota.percent — nothing measured it'], outcome: 'barren',
+                    opening: 'Find out why nothing changed.',
+                    assist: { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: 3, ok: true },
+                    why: 'two barren rounds in a row'
+                }
+            }
+        ]
+    }));
+    ok('‼️ X-195: the strip accounts for the LAST round, not only for the campaign',
+        html().includes('Sentry R7 · X-178 — a leader turn chose its words'));
+    ok('…naming what woke it', html().includes('fired: round.barren is true'));
+    ok('…and what could not be judged, which is not the same as not firing',
+        html().includes('could not be judged: quota.percent'));
+    ok('…and what the turn cost, on the strip a person reads at nine in the morning',
+        html().includes('leader turn: answered · claude-sonnet-5 · $0.18'));
+
+    push(sentry({ rounds: [{ id: 't8', title: 'Sentry R6', status: 'running', createdAt: 1, endedAt: null, account: '' }] }));
+    ok('a round with no record claims nothing rather than being drawn as mechanical',
+        !html().includes('a template opened it and no model was asked'));
 }
 
 // ---------- X-213: WHAT THE ACCOUNT BOX SHOWS **IS** WHAT WILL RUN ----------

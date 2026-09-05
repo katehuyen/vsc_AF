@@ -2128,5 +2128,100 @@ ok('Collapse all folds the whole list', detailCount() === 0);
         !posted.length && html().includes('pick the project'));
 }
 
+// ---------- ‼️ X-195 — WHY EACH ROUND OPENED ON THE WORDS IT DID ----------
+//
+// The campaign's `lastWhy` is ONE sentence, rewritten every round: eight rounds
+// share it and seven of them are unexplained by it. So the account is kept per
+// round, and this surface has to tell the three states apart — in particular
+// the only one that is an alarm, `M!`: the leader WAS asked and gave nothing
+// usable, which spends money without buying words.
+{
+    const paint = (s) => msgHandler({ data: { type: 'data', data: { ...DATA, sentry: s } } });
+    const base = {
+        defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 },
+        idlePollMin: 10, permissionModes: [],
+        running: true, projectName: 'AgentFarm', agentName: 'developer'
+    };
+    const LEADER = {
+        day: '2026-09-06', spentUsd: 0.42, turns: 3,
+        log: [
+            { model: 'claude-sonnet-5', ms: 9100, costUsd: 0.06, at: 1, ok: false, note: 'answered prose' },
+            { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: 2, ok: true }
+        ]
+    };
+    const camp = (over) => Object.assign({
+        id: 'sc-2', project: 'p', agent: 'a1', status: 'running', rounds: 4, engine: 'claude',
+        lastAction: 'start', lastRule: 'has-room', lastAt: 1, lastWhy: 'the routine continuation',
+        leader: LEADER
+    }, over || {});
+    const ROUNDS = [
+        // a round from BEFORE the record existed — it has no `why` at all
+        { id: 't1', title: 'Sentry R1', status: 'done', createdAt: 1, endedAt: 2, account: '' },
+        {
+            id: 't2', title: 'Sentry R2', status: 'done', createdAt: 3, endedAt: 4, account: '',
+            whyMark: 'M',
+            why: { path: 'mechanical', fired: [], problems: [], outcome: 'finished', opening: 'Take X-2.', why: 'nothing fired' }
+        },
+        {
+            id: 't3', title: 'Sentry R3', status: 'failed', createdAt: 5, endedAt: 6, account: '',
+            whyMark: 'M!',
+            why: {
+                path: 'mechanical', fired: ['round.failed is true'],
+                problems: ['quota.percent — nothing measured it'], outcome: 'failed', opening: 'The last round failed.',
+                assist: { model: 'claude-sonnet-5', ms: 9100, costUsd: 0.06, at: 5, ok: false, note: 'answered prose' },
+                why: 'the leader answered prose'
+            }
+        },
+        {
+            id: 't4', title: 'Sentry R4', status: 'running', createdAt: 7, endedAt: null, account: 'slot-2',
+            whyMark: 'L',
+            why: {
+                path: 'leader', fired: ['round.barren is true'], problems: [], outcome: 'barren',
+                opening: 'Find out why nothing changed.',
+                assist: { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: 7, ok: true },
+                why: 'two barren rounds in a row'
+            }
+        }
+    ];
+    paint(Object.assign({}, base, { campaign: camp(), rounds: ROUNDS }));
+    const h = html();
+
+    ok('‼️ X-195: the rounds table has a column for WHY the round opened on its words',
+        h.includes('>Why<'));
+    ok('a leader round is marked L, and the panel opens with the long form',
+        h.includes('>L<') && h.includes('leader round: a model read the situation and chose these words'));
+    ok('a mechanical round is marked M and says no model was asked',
+        h.includes('>M<') && h.includes('a template filled itself in, and no model was asked'));
+    ok('‼️ …and the third state is NOT read as the second: asked, and gave nothing usable',
+        h.includes('>M!<') && h.includes('the leader WAS asked and gave nothing usable'));
+    ok('‼️ M! is the only mark drawn as an alarm — a routine night is not one',
+        h.includes('class="mchip bad">M!<') && !h.includes('class="mchip bad">M<'));
+    ok('a round opened before the record existed says so rather than being drawn as free',
+        h.includes('before the farm kept the account of why'));
+    ok('the conditions that fired are in the panel, in the words the policy uses',
+        h.includes('fired: round.barren is true') && h.includes('fired: nothing — the routine path'));
+    ok('‼️ X-190\'s law survives to the row: a condition nobody could judge is not one that did not fire',
+        h.includes('could not be judged: quota.percent'));
+    ok('what the leader turn cost is on the round that took it, failed or not',
+        h.includes('gave nothing usable · claude-sonnet-5 · $0.06'));
+
+    ok('‼️ the night\'s total leader spend is on the campaign line, not only in the record',
+        h.includes('leader $0.42 · 3 turn(s)'));
+    ok('…quietly, because one turn that gave nothing usable is an ordinary night',
+        h.includes('class="mchip prov">leader $0.42'));
+    ok('…and the turn-by-turn ledger is the hover, not a second row',
+        h.includes('the turns, newest first'));
+
+    paint(Object.assign({}, base, {
+        campaign: camp({ leader: Object.assign({}, LEADER, { failStreak: 2 }) }), rounds: ROUNDS
+    }));
+    ok('‼️ …and it turns red for the one thing that IS an alarm: a leader that stopped waking',
+        html().includes('class="mchip bad">leader $0.42'));
+
+    paint(Object.assign({}, base, { campaign: camp({ leader: undefined }), rounds: ROUNDS }));
+    ok('a campaign whose leader has never woken claims no spend at all',
+        !html().includes('leader $0.42'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

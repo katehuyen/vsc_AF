@@ -681,7 +681,19 @@ const SENTRY_LIVE = Object.assign({
         permissionMode: 'bypassPermissions', ceiling: 95, failLimit: 3, failStreak: 1,
         lastAction: 'start', lastRule: 'has-room', lastAt: Date.now() - 12 * 60 * 1000,
         lastWhy: 'slot-2 has the most room left, so X-178 starts there',
-        taken: ['X-174', 'X-175', 'X-176', 'X-177', 'X-178']
+        taken: ['X-174', 'X-175', 'X-176', 'X-177', 'X-178'],
+        // ‼️ X-195 — what the thinking has cost today, with the turn-by-turn
+        // ledger the strip's panel draws. A failed turn is IN it: a turn that
+        // gave nothing usable still spent money, and a log that dropped it
+        // would make the total unexplainable.
+        leader: {
+            day: '2026-09-06', spentUsd: 0.42, turns: 3, failStreak: 0,
+            log: [
+                { model: 'claude-sonnet-5', ms: 21400, costUsd: 0.18, at: Date.now() - 3 * 3600 * 1000, ok: true },
+                { model: 'claude-sonnet-5', ms: 9100, costUsd: 0.06, at: Date.now() - 2 * 3600 * 1000, ok: false, note: 'answered prose, not a decision' },
+                { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: Date.now() - 12 * 60 * 1000, ok: true }
+            ]
+        }
         // ‼️ NO `carry` HERE, and that is the honest state: this campaign has a
         // round on the board, and the words were SPENT the moment that row
         // existed. A fixture showing both would be drawing something the code
@@ -699,11 +711,46 @@ const SENTRY_LIVE = Object.assign({
         startedAt: Date.now() - 12 * 60 * 1000,
         account: 'slot-2', accountPercent: 38, accountResetsAt: Date.now() + 2 * 3600 * 1000
     },
+    // ‼️ X-195 — ALL FOUR STATES OF THE RECORD ARE HERE, because the mark is the
+    // whole point and three of the four are indistinguishable if only one is
+    // drawn: a round from BEFORE the record existed (no `why` at all, and it
+    // says so rather than being drawn as free), a mechanical round nobody
+    // asked a model about, one where the leader WAS asked and gave nothing
+    // usable, and one a leader really decided.
     rounds: [
         { id: 't5', title: 'Sentry R4 · X-175', status: 'done', createdAt: Date.now() - 4 * 3600 * 1000, endedAt: Date.now() - 3 * 3600 * 1000, account: 'slot-1' },
-        { id: 't6', title: 'Sentry R5 · X-176', status: 'done', createdAt: Date.now() - 3 * 3600 * 1000, endedAt: Date.now() - 2 * 3600 * 1000, account: 'slot-1' },
-        { id: 't7', title: 'Sentry R6 · X-177', status: 'failed', createdAt: Date.now() - 2 * 3600 * 1000, endedAt: Date.now() - 100 * 60 * 1000, account: '' },
-        { id: 't9', title: 'Sentry R7 · X-178', status: 'running', createdAt: Date.now() - 12 * 60 * 1000, endedAt: null, account: 'slot-2' }
+        {
+            id: 't6', title: 'Sentry R5 · X-176', status: 'done', createdAt: Date.now() - 3 * 3600 * 1000, endedAt: Date.now() - 2 * 3600 * 1000, account: 'slot-1',
+            whyMark: 'M',
+            why: {
+                path: 'mechanical', fired: [], problems: [], outcome: 'finished',
+                opening: 'Take the next item on PRS.MuratVural_DEV_VSC.AgentFarm: X-176.',
+                why: 'nothing fired — the routine continuation template'
+            }
+        },
+        {
+            id: 't7', title: 'Sentry R6 · X-177', status: 'failed', createdAt: Date.now() - 2 * 3600 * 1000, endedAt: Date.now() - 100 * 60 * 1000, account: '',
+            whyMark: 'M!',
+            why: {
+                path: 'mechanical', fired: ['round.failed is true'],
+                problems: ['quota.percent — nothing measured it this round'],
+                outcome: 'failed',
+                opening: 'The previous round failed. Read what it left behind before you start.',
+                assist: { model: 'claude-sonnet-5', ms: 9100, costUsd: 0.06, at: Date.now() - 2 * 3600 * 1000, ok: false, note: 'answered prose, not a decision' },
+                why: 'the leader was asked and answered prose · quota.percent could not be judged'
+            }
+        },
+        {
+            id: 't9', title: 'Sentry R7 · X-178', status: 'running', createdAt: Date.now() - 12 * 60 * 1000, endedAt: null, account: 'slot-2',
+            whyMark: 'L',
+            why: {
+                path: 'leader', fired: ['round.barren is true', 'repo.dirty is more than 0'],
+                problems: [], outcome: 'barren',
+                opening: 'The last round changed nothing. Before taking X-178, find out why.',
+                assist: { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: Date.now() - 12 * 60 * 1000, ok: true },
+                why: 'two rounds in a row left the tree dirty and produced no commit — the leader took it in hand'
+            }
+        }
     ]
 }, SENTRY_DEFAULTS);
 

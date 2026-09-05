@@ -473,7 +473,22 @@ const sentryData = () => Object.assign(data(), {
             startedAt: NOW - 12 * 60 * 1000, account: 'slot-2',
             accountPercent: 38, accountResetsAt: NOW + 2 * 3600 * 1000
         },
-        rounds: [], defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 }
+        // ‼️ X-195 — the round on the board, WITH the account of why it opened
+        // on the words it did. The strip's panel draws the last of these; a
+        // campaign sentence alone is the PLAN and says nothing about the round.
+        rounds: [{
+            id: 't9', title: 'Sentry R7 · X-178', status: 'running',
+            createdAt: NOW - 12 * 60 * 1000, endedAt: null, account: 'slot-2',
+            whyMark: 'L',
+            why: {
+                path: 'leader', fired: ['round.barren is true', 'repo.dirty is more than 0'],
+                problems: [], outcome: 'barren',
+                opening: 'The last round changed nothing. Before taking X-178, find out why.',
+                assist: { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: NOW - 12 * 60 * 1000, ok: true },
+                why: 'two rounds in a row left the tree dirty and produced no commit — the leader took it in hand'
+            }
+        }],
+        defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 }
     }
 });
 /**

@@ -2642,8 +2642,46 @@
         // The whole sentence, what it is working through and the words it is
         // holding go in the panel: the row is one line by design, and what it
         // cuts has to be a hover away rather than a click away.
+        /**
+         * ‼️ X-195 — AND WHY THE LAST ROUND OPENED ON THE WORDS IT DID.
+         *
+         * `c.lastWhy` above is the campaign's PLAN — one sentence, rewritten
+         * every round. This is the account of the round that was actually
+         * opened, which is the question somebody reading this strip at nine in
+         * the morning is really asking: did the leader think about this, or did
+         * a template fill itself in — and if it thought, what did that cost.
+         *
+         * ONE SUBJECT holds: the strip keeps the summary, the round's own row on
+         * the Missions page keeps the ledger.
+         */
+        const rounds = s.rounds || [];
+        const last = rounds[rounds.length - 1];
+        const lw = last && last.why;
+        const lastWhy = !lw ? [] : [
+            '',
+            `${last.title || 'the last round'} — ` + (last.whyMark === 'L'
+                ? 'a leader turn chose its words'
+                : (last.whyMark === 'M!'
+                    ? 'the leader WAS asked and gave nothing usable, so a template opened it'
+                    : 'a template opened it and no model was asked')),
+            (lw.fired && lw.fired.length)
+                ? 'fired: ' + lw.fired.join(' · ') : 'fired: nothing — the routine path',
+            (lw.problems && lw.problems.length)
+                ? 'could not be judged: ' + lw.problems.join(' · ') : '',
+            lw.assist
+                ? 'leader turn: ' + (lw.assist.ok === false ? 'gave nothing usable' : 'answered')
+                    + (lw.assist.model ? ' · ' + lw.assist.model : '')
+                    // a cent-sized spend rounded to $0.00 would read as free,
+                    // which is the one thing this record exists to deny
+                    + (typeof lw.assist.costUsd === 'number'
+                        ? ' · ' + (lw.assist.costUsd > 0 && lw.assist.costUsd < 0.01
+                            ? '<$0.01' : '$' + lw.assist.costUsd.toFixed(2)) : '')
+                : '',
+            lw.why || ''
+        ];
         const tip = window.AFTip.lines([
             c.lastWhy || '',
+            ...lastWhy,
             '',
             `${s.projectName || c.project || ''} · as ${s.agentName || c.agent || ''}`
                 + ` · ${c.rounds || 0} round(s)`,

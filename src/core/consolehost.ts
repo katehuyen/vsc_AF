@@ -1944,6 +1944,28 @@ export class ConsoleHost {
         if (!changed) { return; }
         // a finished turn releases the next queued message
         if (h.state.status === 'idle' && h.state.queued.length) {
+            /**
+             * ‼️ X-213 — A HELD MESSAGE IS STILL THE NEXT MESSAGE, and the
+             * account box promised the next message another sign-in.
+             *
+             * `send` keeps that promise for a message said into an idle card.
+             * One parked while a turn was running arrives HERE instead, and
+             * writing it down the pipe would spend it on the account this
+             * conversation is leaving — with the card still saying the swap is
+             * pending, which is a promise that fails silently (Principle 1).
+             *
+             * Taken out of the queue WITHOUT starting a turn: `shiftQueued`
+             * would append the user line and open a turn, and the re-seal
+             * carries the same text as the resumed session's first prompt, so
+             * the message would be said twice.
+             */
+            if (h.state.accountNext && h.state.sessionId && String(h.state.queued[0] || '').trim()) {
+                const [held, ...rest] = h.state.queued;
+                h.state = { ...h.state, queued: rest, lastTs: Date.now() };
+                this.fire(id);
+                void this.reseal(id, held.trim(), []);
+                return;
+            }
             const next = shiftQueued(h.state);
             h.state = next.state;
             if (next.text) {

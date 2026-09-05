@@ -43,7 +43,14 @@ export interface RoundWhy {
 }
 
 export interface RoundWhyInput {
-    verdict: PolicyVerdict;
+    /**
+     * ‼️ ABSENT IS A REAL ANSWER, and the commonest one: the FIRST round of a
+     * night has no finished session to judge, so no policy was ever evaluated.
+     * Requiring it here would have forced the writer to invent an empty verdict
+     * at the one call site, and an invented verdict is indistinguishable on the
+     * row from a policy that ran and fired nothing.
+     */
+    verdict?: PolicyVerdict;
     /** absent = no leader turn was taken at all */
     leader?: { path: 'mechanical' | 'leader'; assist?: ModelAssist; why: string; announce: boolean };
     /** the words the round was actually opened on */
