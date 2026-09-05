@@ -45,6 +45,9 @@ const data = () => {
                 email: 'work@studio.example', plan: 'max20x', health: 'ready', active: true,
                 percent: 91, resetsAt: NOW + 37 * 60 * 1000,
                 usageState: 'ok', note: '', capturedAt: NOW - 6 * 24 * 3600 * 1000,
+                // X-206 — the figure's own age, and the refresh line: this one
+                // is being read right now, the next is waiting behind it.
+                fetchedAt: NOW - 40 * 1000, queue: 'reading', queuePlace: 0,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/work-1'
             },
             {
@@ -52,6 +55,7 @@ const data = () => {
                 email: 'personal@gmail.com', plan: 'pro', health: 'ready', active: false,
                 percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000,
                 usageState: 'ok', note: '', capturedAt: NOW - 2 * 3600 * 1000,
+                fetchedAt: NOW - 3 * 3600 * 1000, queue: 'queued', queuePlace: 1,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
             },
             {
@@ -59,6 +63,7 @@ const data = () => {
                 email: 'spare@gmail.com', plan: 'pro', health: 'needs-signin', active: false,
                 percent: -1, resetsAt: 0,
                 usageState: 'no-auth', note: 'The refresh token was rejected.', capturedAt: NOW - 21 * 24 * 3600 * 1000,
+                fetchedAt: NOW - 26 * 3600 * 1000, queue: 'queued', queuePlace: 2,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/spare'
             },
             // Captured, and NOT standing — the chip says "main account" here,
@@ -68,6 +73,7 @@ const data = () => {
                 email: 'work@studio.example', plan: '', health: 'ready', active: false,
                 percent: -1, resetsAt: 0,
                 usageState: 'unread', note: '', capturedAt: NOW - 3 * 3600 * 1000,
+                fetchedAt: 0, queue: 'idle', queuePlace: 0,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-work'
             }
         ],

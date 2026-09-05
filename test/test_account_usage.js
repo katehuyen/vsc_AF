@@ -253,6 +253,33 @@ async function main() {
             calls.length === 1 && calls[0] === 'tok-a-r2' && service.current()[0].state === 'ok');
     }
 
+    // ---------- X-206: a person asked for THIS one ----------
+    {
+        const { service, calls, tick } = svc([slot('a'), slot('b'), slot('c')]);
+        await service.refreshSlot('c');
+        ok('‼️ the slot NAMED is the slot read — not whichever the round robin thinks is stalest',
+            calls.length === 1 && calls[0] === 'tok-c');
+        ok('…and it is the only figure that moved',
+            service.current().filter(u => u.state === 'ok').map(u => u.slotId).join(',') === 'c');
+
+        // Naming a slot buys no extra request: the floor is per MACHINE, and a
+        // queue that could ignore it would be `refreshAll` wearing a hat.
+        await service.refreshSlot('a');
+        ok('‼️ …and it still spends nothing inside the shared floor', calls.length === 1);
+        tick(6000); await service.refreshSlot('a');
+        ok('past the floor the named slot is read', calls.length === 2 && calls[1] === 'tok-a');
+
+        tick(6000); await service.refreshSlot('nobody');
+        ok('a slot that is not captured is not invented into a request', calls.length === 2);
+        tick(6000); await service.refreshSlot('');
+        ok('…and neither is an empty name', calls.length === 2);
+    }
+    {
+        const { service, calls } = svc([slot('cx', 'codex')]);
+        await service.refreshSlot('cx');
+        ok('an engine that publishes no figure is not fetched even when NAMED', calls.length === 0);
+    }
+
     // ---------- an engine with no readable allowance costs ZERO requests ----------
     {
         const { service, calls } = svc([slot('cx', 'codex'), slot('gm', 'gemini')]);

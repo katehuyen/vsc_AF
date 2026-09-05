@@ -213,6 +213,30 @@ export class AccountUsageService {
     /** A person asked. Skips the TTL and the backoff — one slot, still. */
     refresh(): Promise<SlotUsage[]> { return this.read('user'); }
 
+    /**
+     * ‼️ X-206 — A PERSON ASKED FOR **THIS** ONE.
+     *
+     * The round robin decides who is stalest; a reader looking at one card has
+     * already decided, and answering them with somebody else's figure is the
+     * control quietly doing something other than what it says. So the slot is
+     * NAMED — and nothing else changes: still one request, still the shared
+     * floor, still nothing while one is in flight. This is not `refreshAll` by
+     * another door: it reads exactly the one it was given, and the queue that
+     * calls it in turn (`accountQueue`) is what makes "all of them" a line
+     * rather than a burst.
+     */
+    refreshSlot(slotId: string): Promise<SlotUsage[]> {
+        const now = this.now();
+        const slot = this.opts.slots().find(s => s.id === slotId);
+        if (!slot || adapterFor(slot.engine).quotaSource().kind === 'none') {
+            return Promise.resolve(this.current());
+        }
+        if (now - this.lastFetchAt < MIN_FETCH_INTERVAL_MS) { return Promise.resolve(this.current()); }
+        if (this.inflight) { return this.inflight; }
+        this.inflight = this.load(slot, now).finally(() => { this.inflight = undefined; });
+        return this.inflight;
+    }
+
     /** The timer asked. */
     beat(): Promise<SlotUsage[]> { return this.read('beat'); }
 

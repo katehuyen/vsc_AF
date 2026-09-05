@@ -214,6 +214,7 @@ import {
     normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel, slotsFor
 } from './core/accountStore';
 import { AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotIsUsable } from './core/accountUsage';
+ import * as accountQueue from './core/accountQueue';
 import {
     PATH_VARS, PathVarContext, PreviewedPath, previewPathList, resolvePathList, resolvePathVars
 } from './core/pathVars';
@@ -16405,6 +16406,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         busy: accountIsBusy
     });
     /**
+     * ‼️ X-206 — "REFRESH ALL" IS A LINE, NOT A BURST.
+     *
+     * `accountUsage` has no `refreshAll()` on purpose, and this does not smuggle
+     * one in: the queue holds an ORDER and starts one read every
+     * `MIN_FETCH_INTERVAL_MS`, each through the same single-slot door the ⟳
+     * button already used. N accounts still cost N requests — what is bought is
+     * that they are never asked for at once, which is the only thing that earns
+     * a rate limit.
+     *
+     * The state is drawn (`queue` / `queuePlace` on every account), because a
+     * button that will act in twenty seconds with no sign it was heard is
+     * indistinguishable from one that does nothing.
+     */
+    let refreshQueue = accountQueue.emptyQueue();
+    let refreshTimer: NodeJS.Timeout | undefined;
+    const pumpRefreshQueue = (): void => {
+        if (refreshTimer) { clearTimeout(refreshTimer); refreshTimer = undefined; }
+        const now = Date.now();
+        const step = accountQueue.startNext(refreshQueue, now);
+        if (step.slotId) {
+            refreshQueue = step.state;
+            EnginesPanel.refreshIfOpen();
+            void accountUsage.refreshSlot(step.slotId)
+                .catch(() => undefined)
+                .then(() => {
+                    refreshQueue = accountQueue.finish(refreshQueue, step.slotId);
+                    EnginesPanel.refreshIfOpen();
+                    pumpRefreshQueue();
+                });
+            return;
+        }
+        const due = accountQueue.nextDueAt(refreshQueue);
+        if (due > now) { refreshTimer = setTimeout(pumpRefreshQueue, Math.max(50, due - now)); }
+    };
+    /**
+     * One gesture with two shapes. A single id TOGGLES — pressing a waiting card
+     * again takes it out of the line, because a queue you cannot leave is a
+     * queue you learn not to join. A list ADDS, keeping whatever was already
+     * waiting in the place it had.
+     */
+    const queueAccountRefresh = (ids: string[], gesture: 'toggle' | 'all'): void => {
+        refreshQueue = gesture === 'toggle' && ids.length === 1
+            ? accountQueue.toggle(refreshQueue, ids[0])
+            : accountQueue.enqueue(refreshQueue, ids);
+        EnginesPanel.refreshIfOpen();
+        pumpRefreshQueue();
+    };
+    /** Which slots a "refresh all" / "refresh this engine" press really means. */
+    const refreshableSlots = (engine: string): string[] => storedAccounts()
+        .filter(s => (!engine || s.engine === engine)
+            && accountAdapterFor(s.engine).quotaSource().kind !== 'none')
+        .map(s => s.id);
+    /**
      * Carry out a capture plan. The interesting half — which files, from where,
      * to where, and whether it should happen at all — was decided by
      * `planCapture`; this is the four lines of `fs` that cannot be tested
@@ -16456,6 +16510,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             percent: u?.percent ?? -1,
             resetsAt: u?.resetsAt ?? 0,
             usageState: u?.state ?? 'error',
+            // ‼️ X-206 — WHEN THE FIGURE WAS READ, not when the account was
+            // filed. The card used to carry `capturedAt` beside a percentage,
+            // and the two answer different questions: one says how long this
+            // sign-in has been on the machine, the other says whether the
+            // number next to it is worth switching on. 0 = never read.
+            fetchedAt: u?.fetchedAt ?? 0,
+            queue: accountQueue.positionOf(refreshQueue, slot.id),
+            queuePlace: accountQueue.placeOf(refreshQueue, slot.id),
             note: u?.note || ''
         };
     };
@@ -17418,7 +17480,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // nobody has read a figure for and one whose sign-in died draw
                     // the same empty bar, and one of them is ready to work.
                     usageState: pub.usageState, note: pub.note,
-                    capturedAt: pub.capturedAt, dir: pub.dir
+                    capturedAt: pub.capturedAt, dir: pub.dir,
+                    // X-206 — when the FIGURE was read, and where this card
+                    // stands in the refresh line. Both are facts about the
+                    // number beside them; neither is a fact about the account.
+                    fetchedAt: pub.fetchedAt,
+                    queue: pub.queue, queuePlace: pub.queuePlace
                 };
             });
         },
@@ -17455,6 +17522,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (await activateAccount(id, engine)).refusal,
         forgetAccount: async (id: string): Promise<string> =>
             (await forgetAccount(id, false)).refusal,
+        queueAccountRefresh: (ids: string[], gesture: 'toggle' | 'all'): void =>
+            queueAccountRefresh(ids, gesture),
         ownership: () => ownershipTable(),
         saveProfile: async (input: Record<string, unknown>): Promise<string[]> => {
             const list = providerProfiles();
@@ -31709,6 +31778,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         : (waking
                             ? 'Every account is at or past the ceiling — the first one comes back at nextResetAt.'
                             : 'No account can start a session right now; see needsSignin.'))
+                };
+            }
+        },
+        {
+            op: 'accounts.refresh',
+            describe: '‼️ READ THESE ACCOUNTS\' FIGURES — IN A LINE, NOT A BURST. accounts.list answers '
+                + 'from the cache and accounts.status spends one request on whichever slot is stalest; '
+                + 'this names the ones you actually care about and queues them, starting ONE read every '
+                + 'five seconds until the line is empty. N accounts still cost N requests — what it buys '
+                + 'is that they are never asked for at once, which is the only thing that earns a rate '
+                + 'limit. It returns as soon as the line is formed, so read accounts.list a moment later '
+                + 'for the figures. A single id you pass twice is a TOGGLE: the second call takes it back '
+                + 'out of the line (one already being read cannot be, and says so). args: id? (one slot, '
+                + 'toggles), engine? (queue every readable slot of that engine), all? (true = every '
+                + 'readable slot on the machine)',
+            handler: async (args) => {
+                const id = (optStr(args, 'id') ?? '').trim();
+                const engine = (optStr(args, 'engine') ?? '').trim();
+                const all = optBool(args, 'all', false);
+                need(!!id || !!engine || all, 'Name an `id`, an `engine`, or pass `all:true`.');
+                if (id) {
+                    need(!!findSlot(storedAccounts(), id), `No account is captured under the id ${id}.`);
+                    const wasWaiting = accountQueue.positionOf(refreshQueue, id) === 'queued';
+                    const reading = accountQueue.positionOf(refreshQueue, id) === 'reading';
+                    queueAccountRefresh([id], 'toggle');
+                    return {
+                        queued: reading ? [] : (wasWaiting ? [] : [id]),
+                        cancelled: wasWaiting ? [id] : [],
+                        waiting: refreshQueue.pending, reading: refreshQueue.reading || null,
+                        note: reading
+                            ? `${id} is being read right now — a request already in flight cannot be taken back.`
+                            : (wasWaiting ? `${id} was taken out of the line.` : `${id} is in the line.`)
+                    };
+                }
+                const ids = refreshableSlots(engine);
+                need(ids.length, engine
+                    ? `No ${engine} account on this machine publishes a readable figure.`
+                    : 'No captured account publishes a readable figure.');
+                queueAccountRefresh(ids, 'all');
+                return {
+                    queued: ids, cancelled: [],
+                    waiting: refreshQueue.pending, reading: refreshQueue.reading || null,
+                    note: `${refreshQueue.pending.length + (refreshQueue.reading ? 1 : 0)} account(s) in the line, `
+                        + 'one read every five seconds.'
                 };
             }
         },

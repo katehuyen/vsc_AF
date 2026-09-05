@@ -631,6 +631,16 @@
       ]
     },
     {
+      "capability": "base.ts#svc-connect",
+      "ui": [
+        "page:base.ts#svc-connect"
+      ],
+      "exempt": {
+        "kind": "secrets",
+        "why": "The secret vault is deliberately not on the bridge — it is managed from the panel only (`_REF/bridge.md`)."
+      }
+    },
+    {
       "capability": "base.ts#svc-set",
       "ui": [
         "page:base.ts#svc-set"
@@ -848,8 +858,7 @@
     {
       "capability": "connectTelegram",
       "ui": [
-        "cmd:agentfarm.connectTelegram",
-        "page:base.ts#svc-connect"
+        "cmd:agentfarm.connectTelegram"
       ],
       "exempt": {
         "kind": "secrets",
@@ -1801,6 +1810,15 @@
       ],
       "ops": [
         "accounts.forget"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#accountRefresh",
+      "ui": [
+        "page:enginesPanel.ts#accountRefresh"
+      ],
+      "ops": [
+        "accounts.refresh"
       ]
     },
     {

@@ -167,6 +167,48 @@ const sec = () => {
     ok('...and clears', sec().indexOf('Nothing is signed in to claude on this disk.') < 0);
 }
 
+// ---- X-206: one engine one group, and a line the reader can see -------------
+{
+    const h = sec();
+    // ‼️ ONE SUBJECT. A Claude account and a Codex account are never
+    // alternatives to each other, so a column that alternates between them
+    // makes the reader filter by eye before they can compare anything.
+    ok('‼️ accounts are grouped by the engine they belong to',
+        /class="acgrpn">Claude Code</.test(h) && /class="acgrpn">Codex</.test(h));
+    ok('…each group counting its own', /Claude Code<\/span><span class="acgrpc[^>]*>3 accounts/.test(h)
+        && /Codex<\/span><span class="acgrpc[^>]*>1 account</.test(h));
+    ok('…and only a group with something to compare gets a group-wide read',
+        (h.match(/data-acrefreshall/g) || []).length === 1
+        && /data-acrefreshall="claude"/.test(h));
+
+    // ‼️ A press that acts in twenty seconds with no sign it was heard is
+    // indistinguishable from a button that does nothing.
+    ok('‼️ a waiting card shows its PLACE in the line, not a spinner that says "soon"',
+        /class="acref queued"[^>]*data-acrefresh="personal">1</.test(h)
+        && /class="acref queued"[^>]*data-acrefresh="spare">2</.test(h));
+    ok('…and the one in flight says so, in its own state',
+        /class="acref reading"[^>]*data-acrefresh="work-1"/.test(h));
+    ok('…while a card nobody asked for offers the plain gesture',
+        /class="acref idle"[^>]*data-acrefresh="codex-work">⟳</.test(h));
+    ok('‼️ …and the one being read is told it cannot be taken back',
+        /already in flight, so it cannot be taken back/.test(h));
+
+    // X-206 — the age of the FIGURE, beside the age of the account. They answer
+    // different questions and only one of them decides a switch.
+    ok('‼️ every card says when its own figure was read, not only when it was filed',
+        /captured 6d ago · read 40s ago/.test(h) && /captured 3h ago · never read/.test(h));
+
+    const one = r.query('[data-acrefresh]').find(b => b.dataset.acrefresh === 'personal');
+    one.click();
+    ok('pressing a card asks for that one slot, as a toggle',
+        JSON.stringify(r.last()) === JSON.stringify({
+            type: 'accountRefresh', ids: ['personal'], gesture: 'toggle' }));
+    r.query('[data-acrefreshall]')[0].click();
+    ok('‼️ …and a group press names every READABLE slot of that engine, and no other engine\'s',
+        JSON.stringify(r.last()) === JSON.stringify({
+            type: 'accountRefresh', gesture: 'all', ids: ['work-1', 'personal', 'spare'] }));
+}
+
 // ---- nothing secret --------------------------------------------------------
 {
     // ‼️ Asked of the SECTION, not the page: the engine cards above name

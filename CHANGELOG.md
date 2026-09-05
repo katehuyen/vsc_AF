@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.393.0 - X-206: read them all, in a line (2026-09-05)
+
+Before switching accounts you have to see which one has room — and there was no
+way to ask. The page-wide beat reads ONE slot per turn, whichever is stalest, so
+the card you were looking at could be minutes old and nothing on the page would
+tell you: it printed  beside a percentage, which is the age of
+the ACCOUNT, not of the figure.
+
+- **‼️ "Refresh all" is a LINE, not a burst.** `accountUsage` still refuses to
+  have a `refreshAll()` — the new `core/accountQueue.ts` holds an ORDER and
+  starts one read every five seconds through the same single-slot door. N
+  accounts are still N requests; the spacing is the only thing that keeps asking
+  how much quota is left from becoming what spends it, and it is the SAME
+  constant the manual floor is built from rather than a second number.
+- **The queue is drawn, because a queue nobody can see is a hang.** A waiting
+  card wears its PLACE in the line (a number you can act on, not a spinner that
+  says soon); the one in flight spins; **pressing a waiting card takes it back
+  out** — a queue you cannot leave is one you learn not to join. A slot already
+  being read cannot be cancelled and says so: the figure will land either way.
+- **One engine, one group.** A Claude account and a Codex account are never
+  alternatives to each other, so the flat list made you filter by eye before you
+  could compare anything (ONE SUBJECT). Each group carries its own `⟳ all`,
+  which is the press somebody actually makes before switching.
+- **Every card says when its own figure was read** (`read 40s ago` / ), beside when the account was filed. The two answer different questions
+  and only one of them decides a switch.
+- New bridge op **`accounts.refresh`** (id = toggle · engine = that group · all).
+
 ## 3.392.0 - X-205: the standing account is a switch, not a sentence (2026-09-05)
 
 `Use next` read as *hand the next one to whoever is next* — the opposite of what

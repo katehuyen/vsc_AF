@@ -64,6 +64,10 @@ export interface EnginesPanelDeps {
         id: string; engine: string; label: string; email: string; plan: string;
         health: string; active: boolean; percent: number; resetsAt: number;
         usageState: string; note: string; capturedAt: number; dir: string;
+        /** X-206 — when the FIGURE was read (0 = never), not when the account was filed */
+        fetchedAt: number;
+        /** X-206 — 'idle' | 'queued' | 'reading', and the place in the line (0 = not waiting) */
+        queue: string; queuePlace: number;
     }[];
     /**
      * ‼️ X-172 — WHAT EACH ENGINE CAN DO ABOUT ACCOUNTS AT ALL, and it is the
@@ -88,6 +92,20 @@ export interface EnginesPanelDeps {
     captureAccount(engine: string, label: string): Promise<string>;
     activateAccount(id: string, engine: string): Promise<string>;
     forgetAccount(id: string): Promise<string>;
+    /**
+     * ‼️ X-206 — ASK FOR **THESE** FIGURES, IN A LINE.
+     *
+     * `readAccounts()` is the beat: one slot per turn, whichever is stalest. A
+     * reader deciding which account to switch to has a different question — *how
+     * much is left in each of these, now* — and answering it with the round
+     * robin means waiting minutes for the one they are looking at.
+     *
+     * So the page names slots and the host queues them, one read every floor
+     * interval. NOT a burst: N accounts are still N requests, spaced. A single
+     * id is a TOGGLE, so a card that is waiting can be taken back out of the
+     * line; a list is an add, and whatever was already waiting keeps its place.
+     */
+    queueAccountRefresh(ids: string[], gesture: 'toggle' | 'all'): void;
     /**
      * ‼️ X-187 — ASK FOR A LIVE READING. NOT OPTIONAL.
      *
@@ -292,6 +310,15 @@ export class EnginesPanel {
                 // sign-in — the absence of a choice, not a row.
                 await this.wroteAccount(await this.deps.activateAccount(
                     String(msg.id ?? ''), String(msg.engine ?? '')));
+                break;
+            case 'accountRefresh':
+                // ‼️ X-206 — one id is a TOGGLE (press a waiting card again and
+                // it leaves the line); a list is "all of these", spaced. The
+                // page never counts requests and never names an interval.
+                this.deps.queueAccountRefresh(
+                    Array.isArray(msg.ids) ? msg.ids.map(String).filter(Boolean) : [],
+                    msg.gesture === 'all' ? 'all' : 'toggle');
+                this.refresh();
                 break;
             case 'accountForget':
                 // Bookkeeping only: the directory is left on disk. Deleting

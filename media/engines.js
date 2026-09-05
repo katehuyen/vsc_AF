@@ -405,6 +405,41 @@
                 + 'session. An account is deliberately not remembered per agent: it is a state (how much '
                 + 'of a plan is left, which changes hourly), not a preference, so this one place holds it '
                 + 'and a launch that names its own account still wins.');
+        /**
+         * ‼️ X-206 — WHEN THE FIGURE WAS READ, BESIDE THE FIGURE.
+         *
+         * The card used to print `captured 6d ago` next to a percentage, and
+         * the two answer different questions: one is how long this sign-in has
+         * been on the machine, the other is whether the number is worth acting
+         * on. A percentage with no age is a percentage the reader has to trust.
+         */
+        const readAge = a.fetchedAt
+            ? 'read ' + age(a.fetchedAt, DATA.now)
+            : 'never read';
+        /**
+         * ‼️ …AND THE BUTTON SAYS WHERE IT IS IN THE LINE. A press that will act
+         * in twenty seconds with no sign it was heard is indistinguishable from
+         * a button that does nothing, so the queue is drawn: waiting cards carry
+         * their place, the one in flight spins, and pressing a waiting one again
+         * takes it out — a queue you cannot leave is one you learn not to join.
+         */
+        const q = a.queue || 'idle';
+        const refresh = a.percent < 0 && a.usageState === 'no-source'
+            ? ''
+            : T.wrap('<button class="acref ' + esc(q) + '" data-acrefresh="' + esc(a.id) + '">'
+                + (q === 'reading' ? '◍' : q === 'queued' ? (a.queuePlace || '·') : '⟳') + '</button>',
+                q === 'reading' ? 'Being read right now'
+                    : q === 'queued' ? 'Waiting — number ' + (a.queuePlace || 1) + ' in the line'
+                        : 'Read this account\'s figure now',
+                q === 'reading'
+                    ? 'The request is already in flight, so it cannot be taken back — the figure lands in a moment.'
+                    : q === 'queued'
+                        ? 'One account is read every five seconds, in the order they were asked for. Press again '
+                        + 'to take this one out of the line.'
+                        : 'One request, for this account alone. Accounts are read one at a time and never less '
+                        + 'than five seconds apart, however many are asked for at once — asking how much quota '
+                        + 'is left must not become the thing that spends it.\n\n'
+                        + 'This figure was ' + readAge + '.');
         return '<div class="accard' + (a.active ? ' a-now' : '') + '">'
             + '<div class="pohead">'
             + '<span class="poname">' + esc(a.label || a.id) + '</span>'
@@ -420,6 +455,7 @@
                     'The stored credential no longer refreshes, and only a person can fix it: sign in '
                     + 'again in a terminal and capture it once more. Nothing here can renew it.'))
             + '<span class="grow"></span>'
+            + refresh
             + stand
             + T.wrap('<button class="secondary small" data-acforget="' + esc(a.id) + '">Forget</button>',
                 'Drop it from this list',
@@ -430,8 +466,57 @@
             + window5
             + '<div class="pobody muted small">' + esc(a.engine)
             + (a.capturedAt ? ' · captured ' + esc(age(a.capturedAt, DATA.now)) : '')
+            // X-206 — the age of the FIGURE, which is the one the reader is
+            // deciding on. It sits next to the age of the account deliberately:
+            // seeing "captured 6d ago · read 4h ago" is what tells somebody the
+            // percentage above is stale without them having to wonder.
+            + ' · ' + esc(readAge)
             + ' · ' + esc(a.id)
             + (a.note ? ' · ' + esc(a.note) : '') + '</div></div>';
+    }
+
+    /**
+     * ‼️ X-206 — ONE ENGINE, ONE GROUP. A flat list mixes two questions: a
+     * Claude account and a Codex account are never alternatives to each other,
+     * so a column that alternates between them makes the reader filter by eye
+     * before they can compare anything (ONE SUBJECT). Grouped, the comparison
+     * that matters — *which of MY Claude sign-ins has room* — is a glance.
+     *
+     * The group heading carries the group's own gesture: read every account of
+     * this engine, in a line. That is the press somebody actually makes before
+     * switching, and putting it anywhere else would make them press N buttons.
+     */
+    function accountGroupsHtml(list) {
+        const T = window.AFTip;
+        const order = [];
+        const byEngine = {};
+        for (const a of list) {
+            if (!byEngine[a.engine]) { byEngine[a.engine] = []; order.push(a.engine); }
+            byEngine[a.engine].push(a);
+        }
+        // One engine and nothing to compare across: a heading that says
+        // "Claude Code accounts" above the only group is a line of furniture.
+        const bare = order.length < 2;
+        return order.map(function (eng) {
+            const rows = byEngine[eng];
+            const readable = rows.filter(a => a.usageState !== 'no-source');
+            const head = bare && !readable.length ? '' : '<div class="acgrp">'
+                + (bare ? '' : '<span class="acgrpn">' + esc(engineLabel(eng)) + '</span>')
+                + '<span class="acgrpc muted small">' + rows.length
+                + (rows.length === 1 ? ' account' : ' accounts') + '</span>'
+                + '<span class="grow"></span>'
+                + (readable.length > 1
+                    ? T.wrap('<button class="secondary small" data-acrefreshall="' + esc(eng) + '">⟳ all</button>',
+                        'Read all ' + readable.length + ' ' + engineLabel(eng) + ' figures',
+                        'They go into one line and are read ONE AT A TIME, five seconds apart — N accounts '
+                        + 'are still N requests, and the spacing is the only thing that keeps asking how '
+                        + 'much is left from becoming what spends it.\n\n'
+                        + 'Each card shows its place in the line while it waits, and pressing a waiting '
+                        + 'card takes it back out.')
+                    : '')
+                + '</div>';
+            return head + rows.map(accountCardHtml).join('');
+        }).join('');
     }
 
     /**
@@ -490,7 +575,7 @@
             + form
             + '<div class="pomsg" id="ac-msg">' + esc(acctMsg) + '</div>'
             + (list.length
-                ? list.map(accountCardHtml).join('')
+                ? accountGroupsHtml(list)
                 : '<div class="muted small">No sign-in has been sealed on this machine yet. Every session '
                 + 'runs as the main account — which is the ordinary answer, not a fault.</div>')
             + (cannot.length
@@ -655,6 +740,28 @@
                 .actog:hover { border-color:var(--vscode-focusBorder,#3794ff); }
                 .actog.on { background:var(--vscode-charts-blue,#3794ff); border-color:transparent; }
                 .actog.on i { left:18px; background:#fff; }
+                /* ‼️ X-206 — the refresh button IS the queue indicator. A second
+                   badge beside it would say the same thing twice and take the
+                   width the card does not have: the glyph is ⟳ at rest, the
+                   PLACE IN THE LINE while it waits (a number the reader can act
+                   on, not a spinner that says "soon"), and a filled ring while
+                   the request is in flight. */
+                .acref { width:24px; height:22px; padding:0; flex:none; font-size:12px; line-height:1;
+                    border-radius:5px; cursor:pointer;
+                    border:1px solid var(--vscode-widget-border,#4446);
+                    background:var(--vscode-button-secondaryBackground,#3a3d41);
+                    color:var(--vscode-button-secondaryForeground,#ccc); }
+                .acref:hover { border-color:var(--vscode-focusBorder,#3794ff); }
+                /* waiting wears the same yellow as every other "your move is
+                   already made, this is not done yet" state on the page */
+                .acref.queued { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
+                    border-color:transparent; font-weight:600; }
+                .acref.reading { background:var(--vscode-charts-blue,#3794ff); color:#fff;
+                    border-color:transparent; animation:acspin 1.1s linear infinite; }
+                @keyframes acspin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+                .acgrp { display:flex; align-items:center; gap:8px; margin:12px 0 5px;
+                    padding-bottom:3px; border-bottom:1px solid var(--vscode-widget-border,#4443); }
+                .acgrpn { font-size:12px; font-weight:600; }
                 .acwin { margin-top:6px; max-width:420px; }
                 .acwt { display:flex; justify-content:space-between; align-items:baseline;
                     gap:8px; font-size:12px; }
@@ -772,6 +879,17 @@
         document.querySelectorAll('[data-acmain]').forEach(b =>
             b.addEventListener('click', () => post({
                 type: 'accountActivate', id: '', engine: b.dataset.acmain })));
+        // X-206 — one id is a TOGGLE: press a waiting card again and it leaves
+        // the line. The page names slots and never counts requests or intervals.
+        document.querySelectorAll('[data-acrefresh]').forEach(b =>
+            b.addEventListener('click', () => post({
+                type: 'accountRefresh', ids: [b.dataset.acrefresh], gesture: 'toggle' })));
+        document.querySelectorAll('[data-acrefreshall]').forEach(b =>
+            b.addEventListener('click', () => post({
+                type: 'accountRefresh', gesture: 'all',
+                ids: (DATA.accounts || [])
+                    .filter(a => a.engine === b.dataset.acrefreshall && a.usageState !== 'no-source')
+                    .map(a => a.id) })));
         document.querySelectorAll('[data-acforget]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountForget', id: b.dataset.acforget })));
         document.querySelectorAll('[data-accapture]').forEach(b =>
