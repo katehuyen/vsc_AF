@@ -28,6 +28,7 @@ const {
     sentryDue, SENTRY_TAKEN_KEEP
 } = require(path.join(OUT, 'sentryCampaign.js'));
 const { planSentry, SENTRY_DEFAULT_CEILING } = require(path.join(OUT, 'sentryRun.js'));
+const { presetConditions } = require(path.join(OUT, 'sentryPolicy.js'));
 
 const NOW = Date.UTC(2026, 8, 4, 12, 0, 0);
 const MIN = 60 * 1000;
@@ -233,6 +234,51 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
     ok('...and the planner reads the copy exactly as it read the original',
         planSentry({ campaign: back, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', now: NOW }).action
         === planSentry({ campaign: rec, usage: [], next: { code: 'X', text: 'a' }, prompt: 'go', now: NOW }).action);
+}
+
+// ---- X-194 — A CAMPAIGN IS STARTED WITH A MODE, not patched into one --------
+//
+// ‼️ MEASURED (2026-09-05): the record had `policy` and the round read it, but
+// NOTHING could set it — `sentry.start` took no preset and no conditions, so
+// every campaign anybody could actually start fell to the mechanical default
+// and the leader X-191 built never woke. The three modes are ONE condition set
+// with three fillings (X-190), so starting one is choosing a preset — and a
+// preset nobody knows is refused BY NAME rather than quietly becoming
+// mechanical, which is how a night of thinking turns into a night of templates
+// without anyone being told.
+{
+    const mech = newSentry({ project: 'p', agent: 'a', preset: 'mechanical' }, 1);
+    ok('the mechanical preset is a condition set that is EMPTY, not a missing policy',
+        mech.policy && mech.policy.preset === 'mechanical' && mech.policy.conditions.length === 0);
+
+    const smart = newSentry({ project: 'p', agent: 'a', preset: 'intelligent' }, 1);
+    ok('a preset fills the conditions from the dictionary, not from the page',
+        smart.policy.preset === 'intelligent'
+        && smart.policy.conditions.length === presetConditions('intelligent').length);
+
+    const hyb = newSentry({ project: 'p', agent: 'a', preset: 'hybrid' }, 1);
+    ok('...and hybrid arrives with the set somebody can then edit',
+        hyb.policy.conditions.length === presetConditions('hybrid').length);
+
+    // The user's own words: "the conditions must be as wide and flexible as
+    // possible". Given ones win, and the preset is kept so a surface can say
+    // what they were edited FROM.
+    const own = newSentry({
+        project: 'p', agent: 'a', preset: 'hybrid',
+        conditions: [{ id: 'mine', field: 'quota.percent', operator: 'gte', value: 80 }]
+    }, 1);
+    ok('conditions given by hand win, and say which preset they came from',
+        own.policy.conditions.length === 1 && own.policy.conditions[0].id === 'mine'
+        && own.policy.preset === 'hybrid');
+
+    ok('‼️ a preset nobody knows is REFUSED BY NAME, never quietly mechanical',
+        (() => {
+            try { newSentry({ project: 'p', agent: 'a', preset: 'akilli' }, 1); return false; }
+            catch (e) { return /akilli/.test(String(e.message)) && /mechanical, intelligent, hybrid/.test(String(e.message)); }
+        })());
+
+    ok('asking for no mode at all still starts a campaign — the round has its own default',
+        newSentry({ project: 'p', agent: 'a' }, 1).policy === undefined);
 }
 
 console.log(`test_sentry_campaign: ${pass} passed, ${fail} failed`);

@@ -133,7 +133,7 @@ import {
     DEFAULT_LEADER_CAPS, LeaderBudgetState, LeaderCaps, LeaderOutcome, LeaderRunner,
     leaderAllowed, runLeaderTurn
 } from './core/sentryLeader';
-import { PolicyFacts, SentryPolicy, evaluateSentryPolicy } from './core/sentryPolicy';
+import { Condition, PolicyFacts, SentryPolicy, evaluateSentryPolicy } from './core/sentryPolicy';
 import { SENTRY_DEFAULT_CEILING } from './core/sentryRun';
 import { measureSession } from './core/sentryMeasure';
 import { QualityStore, sampleQuality } from './core/quality';
@@ -15430,7 +15430,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 safetyBufferMin: input.safetyBufferMin,
                 failLimit: input.failLimit !== undefined
                     ? input.failLimit
-                    : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT)
+                    : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT),
+                // ‼️ X-194 — the mode travels the SAME door the bridge uses.
+                // Omitted is not mechanical-by-decision: `newSentry` writes no
+                // policy at all, and the round's own default answers.
+                ...(input.preset ? { preset: String(input.preset) } : {}),
+                ...(Array.isArray(input.conditions) ? { conditions: input.conditions } : {})
             });
             if (!started.ok) { return started.error ?? 'the campaign could not be started'; }
             // Moves at once, for `sentry.start`'s reason: "did it take?" is the
@@ -31915,7 +31920,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'which an account is a wall, default ' + String(SENTRY_DEFAULT_CEILING) + '), '
                 + 'safetyBufferMin? (minutes past a reset before trying again), failLimit? (barren '
                 + 'rounds in a row that stop it; 0 = no brake, default from '
-                + 'agentFarm.sentryFailureLimit)',
+                + 'agentFarm.sentryFailureLimit), '
+                + '‼️ preset? (WHICH MODE — `mechanical` (no condition: every round is built from a '
+                + 'template, zero tokens), `intelligent` (the leader writes every round\'s words) or '
+                + '`hybrid` (a routine round stays free, the leader wakes only when something is '
+                + 'off). They are not three code paths: one condition set with three fillings, so a '
+                + 'preset FILLS `conditions` and you may then edit them. A preset nobody knows is '
+                + 'refused BY NAME rather than quietly becoming mechanical. Omit it and the '
+                + 'campaign runs mechanically, which is what it did before this existed), '
+                + 'conditions? (your own set, which WINS over the preset — `sentry.policy` lists '
+                + 'the fields, the operators and what each field is worth right now)',
             handler: (args) => {
                 const a = args as Record<string, unknown>;
                 const project = argStr(args, 'project');
@@ -31935,7 +31949,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     safetyBufferMin: a.safetyBufferMin,
                     failLimit: a.failLimit !== undefined
                         ? a.failLimit
-                        : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT)
+                        : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT),
+                    // X-194 — the mode, refused by name if it is not one.
+                    ...(optStr(args, 'preset') ? { preset: optStr(args, 'preset') } : {}),
+                    ...(Array.isArray(a.conditions) ? { conditions: a.conditions as Condition[] } : {})
                 });
                 need(started.ok, started.error ?? 'the campaign could not be started');
                 // ‼️ AND IT MOVES AT ONCE. A campaign that waited for the next

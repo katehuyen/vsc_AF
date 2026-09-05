@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.390.0 - X-194 (part): a campaign can be STARTED with a mode (2026-09-05)
+
+MEASURED: the campaign record has carried `policy` since X-190 and the round has
+read it since X-191 — and **nothing could set it**. `sentry.start` took no preset
+and no conditions, so every campaign anybody could actually start fell to the
+mechanical default and the leader X-191 built never woke once.
+
+- `sentry.start` now takes **`preset`** (`mechanical` · `intelligent` · `hybrid`)
+  and **`conditions`**. They are not three code paths: one condition set with
+  three fillings, so a preset FILLS the conditions from the dictionary and your
+  own `conditions` win over it, with the preset kept beside them so a surface can
+  say what they were edited FROM.
+- **‼️ A preset nobody knows is REFUSED BY NAME**, never quietly mechanical —
+  that silence would turn a night of thinking into a night of templates and tell
+  no one. Same rule X-190 applies to an unknown FIELD, at the other end of the
+  same dictionary.
+- **Asking for no mode still starts a campaign** and writes no policy at all: the
+  round already has its own default, and inventing one here would be this
+  function deciding something nobody asked for.
+- The Missions page's own door takes the same two arguments, so the form X-194
+  still owes has nothing left to invent on the host side.
+
+‼️ **X-194 IS NOT CLOSED BY THIS.** The mode selector and the condition editor —
+its visible half — are still to build; this is the host-side gap that made them
+impossible to wire.
+
 ## 3.389.0 - X-193: the sentry gets a section, and every path says where it points (2026-09-05)
 
 Thirteen settings for one unattended campaign were scattered down a page about

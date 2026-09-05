@@ -1,6 +1,6 @@
 import { SentryCampaign, SentryPlan } from './sentryRun';
 import type { LeaderBudgetState, LeaderCaps } from './sentryLeader';
-import type { SentryPolicy } from './sentryPolicy';
+import { Condition, PRESETS, presetConditions, SentryPolicy } from './sentryPolicy';
 
 /**
  * X-176 — THE CAMPAIGN AS A RECORD: what the user switched on, and what it did.
@@ -149,6 +149,20 @@ export interface SentryAsk {
     permissionMode?: string;
     superpowers?: boolean;
     opening?: string;
+    /**
+     * ‼️ X-194 — WHICH MODE, ASKED FOR AT THE START.
+     *
+     * MEASURED: the record has had `policy` since X-190 and the round reads it,
+     * but nothing could SET it — so every campaign anybody could actually start
+     * fell to the mechanical default and the leader X-191 built never woke.
+     *
+     * The three modes are not three code paths: they are one condition set with
+     * three fillings, so asking for a mode is naming a preset and letting the
+     * dictionary fill it. `conditions` given by hand win, and the preset is kept
+     * beside them so a surface can say what they were edited FROM.
+     */
+    preset?: string;
+    conditions?: Condition[];
 }
 
 /** Is this row a round of that campaign, still owing an answer? */
@@ -198,6 +212,7 @@ export function newSentry(ask: SentryAsk, now: number): SentryRecord {
     const ceiling = clamp(ask.ceiling, 1, 100);
     const safetyBufferMin = clamp(ask.safetyBufferMin, 0, 24 * 60);
     const failLimit = clamp(ask.failLimit, 0, 1000);
+    const policy = policyOf(ask);
     return {
         id: `sc-${now.toString(36)}`,
         project: String(ask.project ?? '').trim(),
@@ -211,7 +226,32 @@ export function newSentry(ask: SentryAsk, now: number): SentryRecord {
         ...(ask.model ? { model: String(ask.model) } : {}),
         ...(ask.permissionMode ? { permissionMode: String(ask.permissionMode) } : {}),
         ...(ask.superpowers ? { superpowers: true } : {}),
-        ...(String(ask.opening ?? '').trim() ? { opening: String(ask.opening).trim() } : {})
+        ...(String(ask.opening ?? '').trim() ? { opening: String(ask.opening).trim() } : {}),
+        ...(policy ? { policy } : {})
+    };
+}
+
+/**
+ * ‼️ A PRESET NOBODY KNOWS IS REFUSED BY NAME. Falling back to mechanical would
+ * turn a night of thinking into a night of templates and tell no one — the same
+ * silence X-190 refuses for an unknown FIELD, at the other end of the same
+ * dictionary.
+ *
+ * Asking for no mode at all is not an error and does not invent one: the round
+ * already has its own default, and writing a policy nobody chose would be this
+ * function deciding something the user did not.
+ */
+function policyOf(ask: SentryAsk): SentryPolicy | undefined {
+    const preset = String(ask.preset ?? '').trim();
+    const given = Array.isArray(ask.conditions) ? ask.conditions : undefined;
+    if (!preset && !given) { return undefined; }
+    if (preset && !PRESETS.some(p => p.id === preset)) {
+        throw new Error(`"${preset}" is not a sentry mode — the presets are `
+            + `${PRESETS.map(p => p.id).join(', ')}. Pass conditions of your own to go beyond them.`);
+    }
+    return {
+        ...(preset ? { preset } : {}),
+        conditions: given ?? presetConditions(preset)
     };
 }
 
