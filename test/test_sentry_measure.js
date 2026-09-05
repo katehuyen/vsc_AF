@@ -128,5 +128,28 @@ const measure = (over, ioOver) => measureSession(
     ok('...and is absent when nobody did', measure({}).quotaPercent === undefined);
 }
 
+// ---- X-189: the search travels the same way the folder listing does --------
+//
+// The port is optional, because a caller that cannot run a search is not
+// broken. What it must NOT do is invent one: an `io` with no `handover` leaves
+// the fact absent, and the verdict then says the folder was never listed rather
+// than that no note exists.
+{
+    const { discoverHandover } = require(path.join(__dirname, '..', 'out', 'core', 'handoverDiscovery.js'));
+    const found = discoverHandover(
+        [{ source: 'transcript', dir: 'D:/notes', files: ['878ae65b-devir.md'], authored: ['878ae65b-devir.md'] }],
+        { sessionId: SID, today: '2026-09-04', now: T0 });
+
+    const f = measureSession({ sessionId: SID, repos: [] }, io({ handover: () => found }));
+    ok('a search that ran travels into the facts whole',
+        f.handoverSearch && f.handoverSearch.hit.file === '878ae65b-devir.md');
+    ok('...and the verdict built on it reads the note',
+        diagnoseSession(f).handover.file === '878ae65b-devir.md');
+    ok('an io with no handover port invents no search', measure({}).handoverSearch === undefined);
+    ok('...and a port that answered nothing is still not a search',
+        measureSession({ sessionId: SID, repos: [] }, io({ handover: () => undefined }))
+            .handoverSearch === undefined);
+}
+
 console.log(`test_sentry_measure: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

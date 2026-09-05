@@ -209,7 +209,10 @@ import {
     normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel, slotsFor
 } from './core/accountStore';
 import { AccountUsageService, SlotUsage, mostRoom, nextResetAt } from './core/accountUsage';
-import { PathVarContext, resolvePathVars } from './core/pathVars';
+import { PathVarContext, resolvePathList, resolvePathVars } from './core/pathVars';
+import {
+    DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, HandoverListing, HandoverSource, discoverHandover
+} from './core/handoverDiscovery';
 import { EngineRunner, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
@@ -14450,9 +14453,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // (constitution §7/§13) — only the target folder differs. The empty-topic
     // fallback is forced to "cevap" (not the report word "rapor") so a title-less
     // answer still reads as an answer.
+    /**
+     * ‼️ X-189 — THE LEGACY ANSWER FOLDER, NAMED ONCE AND REACHED LAST.
+     *
+     * It survives because the user allowed exactly this much: "en fazla olsa
+     * olsa bu şimdiki klasörler fallback olarak sisteme girebilir" — no more
+     * than a fallback. Naming it in one place rather than spelling it inline
+     * wherever it is needed is what makes that claim CHECKABLE: there is one
+     * constant to grep for, and every road to it has to run out of alternatives
+     * first.
+     */
+    const LEGACY_ANSWER_DIR = path.join(
+        'D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '01_CEVAPLAR');
     const cevapDir = (): string => configuredFolder(
-        'answerDir', '${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR',
-        path.join('D:', 'zone', 'know', 'note', 'obsidian', '00_AGENT_AREA', '00_OUTPUT', '01_CEVAPLAR'));
+        'answerDir', '${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR', LEGACY_ANSWER_DIR);
     const writeAnswer = (a: { title: string; name?: string; body: string; agentName?: string }): string => {
         const dir = cevapDir();
         fs.mkdirSync(dir, { recursive: true });
@@ -14464,6 +14478,138 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         fs.writeFileSync(file, a.body.trimEnd() + footer, 'utf8');
         return file;
     };
+
+    /**
+     * ‼️ X-189 — EVERYWHERE A HANDOVER NOTE MIGHT BE, LISTED IN ORDER.
+     *
+     * What shipped read ONE folder and matched ONE millimetric name pattern, so
+     * an agent that wrote its note anywhere else — or called it anything else —
+     * was invisible, and the campaign then diagnosed `hit-the-wall` about a
+     * session that had handed over perfectly well. A false measurement, not a
+     * missing one: it sends the next round after the wrong thing.
+     *
+     * `core/handoverDiscovery` DECIDES; this only lists. The order is the whole
+     * argument (`agentFarm.handoverSources`):
+     *
+     *   transcript   — what the finished session ITSELF wrote. Every `Write` /
+     *                  `Edit` is in its transcript with the path it was called
+     *                  with, so where the agent actually wrote beats where a
+     *                  setting says it should have.
+     *   configured   — the folders the user listed (X-188 variables).
+     *   projectNotes — the campaign's own project notes folder.
+     *   fallback     — `LEGACY_ANSWER_DIR`, and only once the rest are spent.
+     *
+     * ‼️ A FOLDER THAT COULD NOT BE READ IS `skipped`, NEVER EMPTY. X-174's law
+     * survives the trip: the discovery reports it as unknown and the verdict
+     * says "nobody listed it" rather than "there is no note".
+     *
+     * A folder reached twice is listed once — the first source to name it keeps
+     * it, which is why the order runs from the most truthful to the least.
+     */
+    const handoverListings = (sid: string, projectFolder?: string): HandoverListing[] => {
+        const wanted = afConfig().get<string[]>('handoverSources');
+        const order = (Array.isArray(wanted) && wanted.length ? wanted : HANDOVER_SOURCES)
+            .map(s => String(s).trim() as HandoverSource)
+            .filter(s => HANDOVER_SOURCES.includes(s));
+        const ctx = pathCtx({
+            sessionId: sid,
+            ...(projectFolder ? {
+                projectFolder,
+                project: path.basename(projectFolder),
+                projectNotes: path.join(projectFolder, '10_Notes')
+            } : {})
+        });
+        const ws = ctx.workspace ?? '';
+        const out: HandoverListing[] = [];
+        const seen = new Set<string>();
+        const key = (d: string): string => d.replace(/[\\/]+$/, '').toLowerCase();
+
+        const listDir = (source: HandoverSource, dir: string): void => {
+            if (!dir || seen.has(key(dir))) { return; }
+            seen.add(key(dir));
+            try {
+                const files = fs.readdirSync(dir).filter(f => /\.md$/i.test(f));
+                const mtimes: Record<string, number> = {};
+                for (const f of files) {
+                    try { mtimes[f] = fs.statSync(path.join(dir, f)).mtimeMs; } catch { /* gone since the listing */ }
+                }
+                out.push({ source, dir, files, mtimes });
+            } catch (e) {
+                out.push({ source, dir, skipped: `${dir} could not be listed - ${String((e as Error)?.message ?? e)}` });
+            }
+        };
+
+        for (const source of order) {
+            if (source === 'transcript') {
+                // The index rather than `live`, because the session this is
+                // about has just ENDED — a live lookup would miss every one of
+                // them, which is the only case that matters here.
+                const s = index.allWithExternal().find(x => x.sessionId === sid);
+                if (!s?.file) {
+                    out.push({ source, skipped: 'the finished session\'s transcript is not on this machine' });
+                    continue;
+                }
+                // ‼️ Another engine's transcript is not READ, it is REFUSED.
+                // Per-file writes are recovered out of Claude's tool results;
+                // parsing a Codex or Gemini log with that reader would find
+                // nothing and report "it wrote no note", which is a false
+                // measurement about an engine nobody asked.
+                if (s.source) {
+                    out.push({
+                        source, dir: s.file,
+                        skipped: `${ENGINE_LABELS[s.source] ?? s.source} records its edits differently, `
+                            + 'so what this session wrote cannot be read back out of its transcript'
+                    });
+                    continue;
+                }
+                let raw = '';
+                try { raw = fs.readFileSync(s.file, 'utf8'); } catch {
+                    out.push({ source, dir: s.file, skipped: 'its transcript could not be read' });
+                    continue;
+                }
+                const byDir = new Map<string, { files: string[]; mtimes: Record<string, number> }>();
+                for (const e of collectEdits(raw.split('\n'))) {
+                    if (e.failed || !/\.md$/i.test(e.file)) { continue; }
+                    const dir = path.dirname(e.file), base = path.basename(e.file);
+                    const g = byDir.get(dir) ?? { files: [], mtimes: {} };
+                    if (!g.files.includes(base)) { g.files.push(base); }
+                    g.mtimes[base] = Math.max(g.mtimes[base] ?? 0, e.ts || 0);
+                    byDir.set(dir, g);
+                }
+                // Read, and it wrote no markdown anywhere: a MEASUREMENT, and
+                // the strongest possible evidence that there is no note.
+                if (!byDir.size) { out.push({ source, files: [] }); continue; }
+                for (const [dir, g] of byDir) {
+                    seen.add(key(dir));
+                    out.push({ source, dir, files: g.files, authored: g.files, mtimes: g.mtimes });
+                }
+            } else if (source === 'configured') {
+                const set = (afConfig().get<string[]>('handoverFolders') ?? []).map(String).filter(t => t.trim());
+                // With nothing listed, the folder answers are WRITTEN into is
+                // the one folder the user has already told us about — reading a
+                // second setting into existence would be inventing a preference.
+                const templates = set.length ? set : [
+                    (afConfig().get<string>('answerDir') ?? '').trim(),
+                    '${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR'
+                ].filter(t => !!t);
+                const r = resolvePathList(templates, ctx);
+                for (const p of r.paths) { listDir(source, expandUserPath(p, { workspaceRoot: ws })); }
+                for (const sk of r.skipped) { out.push({ source, skipped: sk.why }); }
+            } else if (source === 'projectNotes') {
+                if (projectFolder) { listDir(source, path.join(projectFolder, '10_Notes')); }
+                else { out.push({ source, skipped: 'the campaign named no project folder' }); }
+            } else {
+                listDir(source, LEGACY_ANSWER_DIR);
+            }
+        }
+        return out;
+    };
+
+    /** The whole search, run and decided — the one entry point both the sentry
+     *  and the bridge op use, so neither can drift from the other. */
+    const findHandover = (sid: string, projectFolder?: string) => discoverHandover(
+        handoverListings(sid, projectFolder),
+        { sessionId: sid, today: resolvePathVars('${today}').value, now: Date.now() });
 
     // Work Queue bridge ops (queue.*) — the user→agent capture channel. The
     // notices port lets queue.fromNotice cross-link the two boards without a
@@ -23624,6 +23770,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!sid) { return undefined; }
                 try { return fs.readdirSync(cevapDir()); } catch { return undefined; }
             },
+            // ‼️ X-189 — AND THE SEARCH THAT OUTRANKS THAT ONE FOLDER. `answers`
+            // stays beside it because it is what WRITES a note (the daily
+            // counter is read out of that listing); this is what FINDS one.
+            handover: () => (sid ? findHandover(sid, doc.folder) : undefined),
             dirty: (repo) => {
                 try {
                     const out = cp.execFileSync('git', ['status', '--porcelain'], {
@@ -31297,6 +31447,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     templates: s.templates.map(t => ({
                         when: t.when, id: t.id, source: t.source, text: t.text
                     }))
+                };
+            }
+        },
+        {
+            op: 'sentry.handover',
+            describe: 'WHERE A SESSION\'S HANDOVER NOTE IS, and how it was decided. Looks in every '
+                + 'source in order — `transcript` (the files that session ITSELF wrote, read out of '
+                + 'its own transcript: the most truthful source there is, because where the agent '
+                + 'actually wrote beats where a setting says it should have), `configured` '
+                + '(agentFarm.handoverFolders), `projectNotes`, then `fallback` — and scores every '
+                + 'candidate rather than demanding one exact file name: the session id in the name or '
+                + 'the session having written it (+3, and one of the two is REQUIRED — another '
+                + 'session\'s note is never adopted at any score), the word devir/handover (+2), a '
+                + 'date near today (+1), the full canonical name (+2). ‼️ READ-ONLY AND FREE: it '
+                + 'lists folders and reads one transcript, calls no model and writes nothing. ‼️ A '
+                + 'FOLDER THAT COULD NOT BE READ IS `unknown`, NOT EMPTY — `measured:false` means '
+                + 'say nothing about whether a note exists. args: session (the id of the session '
+                + 'that ended), project? (id or name — supplies ${projectNotes} and the projectNotes '
+                + 'source), threshold? (score to adopt at, default 3)',
+            handler: (args) => {
+                const sid = argStr(args, 'session');
+                const key = optStr(args, 'project');
+                const folder = key ? projectDocsFor(key).folder : undefined;
+                const listings = handoverListings(sid, folder);
+                const d = discoverHandover(listings, {
+                    sessionId: sid, today: resolvePathVars('${today}').value, now: Date.now(),
+                    threshold: optNum(args as Record<string, unknown>, 'threshold', DEFAULT_HANDOVER_THRESHOLD)
+                });
+                return {
+                    session: sid, measured: d.measured, why: d.why,
+                    ...(d.hit ? { found: d.hit } : { found: null }),
+                    considered: d.considered.map(c => ({
+                        file: c.file, source: c.source, score: c.score, parts: c.parts,
+                        ...(c.path ? { path: c.path } : {})
+                    })),
+                    unknown: d.unknown, evidence: d.evidence,
+                    looked: listings.map(l => ({
+                        source: l.source, ...(l.dir ? { dir: l.dir } : {}),
+                        ...(l.files ? { files: l.files.length } : { skipped: l.skipped ?? 'not listed' })
+                    })),
+                    order: HANDOVER_SOURCES
                 };
             }
         },

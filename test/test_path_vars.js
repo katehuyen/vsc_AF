@@ -171,9 +171,22 @@ const CTX = {
         ok(`${name} has a machine-independent built-in ahead of the legacy path`,
             ext.indexOf(`'${name}', '${tpl}'`) >= 0);
     }
-    ok('‼️ the legacy vault path appears ONLY as a last-resort argument',
-        (ext.match(/path\.join\('D:', 'zone', 'know'/g) || []).length === 3
-        && !/\|\| path\.join\('D:', 'zone', 'know'/.test(ext));
+    // ‼️ X-189 tightened this rather than loosening it. The answers folder now
+    // has TWO last-resort readers — `configuredFolder` and the `fallback`
+    // handover source — so spelling it inline at both would have been a second
+    // copy to drift. It is a named constant, and what is pinned is still its
+    // POSITION: an argument somebody else falls back TO, never a `||` default
+    // and never a value that decides anything on its own.
+    ok('‼️ the legacy vault path is spelled in as few places as it has readers',
+        // three spellings for three folders — and the answers one, which now has
+        // two readers, is spelled ONCE as a named constant rather than twice.
+        (ext.match(/'D:', 'zone', 'know'/g) || []).length === 3
+        && (ext.match(/const LEGACY_ANSWER_DIR = path\.join\(/g) || []).length === 1);
+    ok('‼️ …and every road to it is a last-resort argument, never a default',
+        !/\|\| path\.join\('D:', 'zone', 'know'/.test(ext)
+        && !/\|\| LEGACY_ANSWER_DIR/.test(ext)
+        && !/LEGACY_ANSWER_DIR \?\?/.test(ext)
+        && /'\$\{vault\}\/00_AGENT_AREA\/00_OUTPUT\/01_CEVAPLAR', LEGACY_ANSWER_DIR\)/.test(ext));
 
     ok('${vault} has a setting behind it, so it need never be reached',
         !!props['agentFarm.vaultDir'] && props['agentFarm.vaultDir'].default === '');

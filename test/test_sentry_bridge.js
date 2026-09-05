@@ -21,9 +21,12 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const OUT = path.join(__dirname, '..', 'out', 'core');
-const { BridgeRegistry, argStr, optStr } = require(path.join(OUT, 'bridge.js'));
+const { BridgeRegistry, argStr, optNum, optStr } = require(path.join(OUT, 'bridge.js'));
 const { diagnoseSession } = require(path.join(OUT, 'sessionDiagnosis.js'));
 const { resolveSentryTemplates, buildNextPrompt, SENTRY_VERDICTS } = require(path.join(OUT, 'sentryPrompt.js'));
+const {
+    DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, discoverHandover
+} = require(path.join(OUT, 'handoverDiscovery.js'));
 const {
     newSentry, refuseSentry, stopSentry, pauseSentry, resumeSentry, sentryRunning
 } = require(path.join(OUT, 'sentryCampaign.js'));
@@ -65,6 +68,33 @@ function registry(disk) {
                     file: s.file, source: s.source, missing: s.missing,
                     refusals: s.refusals, covers: s.covers, verdicts: SENTRY_VERDICTS,
                     templates: s.templates.map(t => ({ when: t.when, id: t.id, source: t.source, text: t.text }))
+                };
+            }
+        },
+        {
+            op: 'sentry.handover',
+            describe: 'Where a session handover note is, and how it was decided. Looks in every '
+                + 'source in order and scores every candidate. args: session, project?, threshold?',
+            handler: (a) => {
+                const sid = argStr(a, 'session');
+                const listings = listed(files.__listings) || [];
+                const d = discoverHandover(listings, {
+                    sessionId: sid, today: '2026-09-04', now: NOW,
+                    threshold: optNum(a, 'threshold', DEFAULT_HANDOVER_THRESHOLD)
+                });
+                return {
+                    session: sid, measured: d.measured, why: d.why,
+                    found: d.hit || null,
+                    considered: d.considered.map(c => ({
+                        file: c.file, source: c.source, score: c.score, parts: c.parts,
+                        ...(c.path ? { path: c.path } : {})
+                    })),
+                    unknown: d.unknown, evidence: d.evidence,
+                    looked: listings.map(l => ({
+                        source: l.source, ...(l.dir ? { dir: l.dir } : {}),
+                        ...(l.files ? { files: l.files.length } : { skipped: l.skipped || 'not listed' })
+                    })),
+                    order: HANDOVER_SOURCES
                 };
             }
         },
@@ -447,6 +477,59 @@ function registry(disk) {
             const again = await reg.dispatch('sentry.start', { project: 'p2', agent: 'a', prompt: 'go' });
             ok('a stopped campaign stands in nobody way', again.ok);
         }
+    }
+
+    // ---------- X-189: where the note is, and why that one ----------
+    //
+    // The op earns its place by answering a question the campaign used to answer
+    // WRONGLY and silently: a note written outside the one folder, or under a name
+    // the one pattern refused, produced `hit-the-wall` about a session that had
+    // handed over perfectly well.
+    {
+        const CANON = '2026-09-04_devir_03_878ae65b_x176-kapandi.md';
+        const OTHERS = '2026-09-04_devir_01_dc980395_baskasinin-notu.md';
+
+        ok('the op is in the catalogue like every other',
+            registry().catalog().some(c => c.op === 'sentry.handover'));
+
+        const none = await registry().dispatch('sentry.handover', {});
+        ok('a search with no session is refused by the name of what is missing',
+            !none.ok && /session/i.test(none.error));
+
+        const r = await registry({ __listings: [
+            { source: 'transcript', dir: 'D:/notes', files: ['scratch.md'], authored: ['scratch.md'] },
+            { source: 'fallback', dir: 'D:/vault/01_CEVAPLAR', files: [CANON, OTHERS] }
+        ] }).dispatch('sentry.handover', { session: SID });
+        ok('the note is found across sources and says which one it came from',
+            r.ok && r.result.found && r.result.found.file === CANON
+            && r.result.found.source === 'fallback');
+        ok('...with its full path, so the next prompt can point at it',
+            r.result.found.path === 'D:/vault/01_CEVAPLAR/' + CANON);
+        ok('...and its score, which is the field a condition reads',
+            typeof r.result.found.score === 'number' && r.result.found.score >= DEFAULT_HANDOVER_THRESHOLD);
+        ok('...and every folder it looked in, listed or not',
+            r.result.looked.length === 2 && r.result.looked.every(l => typeof l.files === 'number'));
+
+        const off = await registry({ __listings: [
+            { source: 'transcript', dir: 'D:/anywhere', files: ['gece-notu.md'], authored: ['gece-notu.md'] }
+        ] }).dispatch('sentry.handover', { session: SID });
+        ok('‼️ THE DEFECT: a note under a name the old pattern refused is now found',
+            off.ok && off.result.found && off.result.found.file === 'gece-notu.md');
+
+        const theirs = await registry({ __listings: [
+            { source: 'fallback', dir: 'D:/vault', files: [OTHERS] }
+        ] }).dispatch('sentry.handover', { session: SID });
+        ok('‼️ AND ANOTHER SESSION\'S NOTE IS STILL NEVER ADOPTED',
+            theirs.ok && theirs.result.found === null && theirs.result.measured === true);
+        ok('...and the rejection is on the record, by the session it does name',
+            theirs.result.evidence.some(e => /dc980395/.test(e)));
+
+        const blind = await registry({ __listings: [
+            { source: 'configured', skipped: '${vault} has nothing behind it on this machine.' }
+        ] }).dispatch('sentry.handover', { session: SID });
+        ok('‼️ A FOLDER NOBODY COULD READ IS UNKNOWN, NOT EMPTY',
+            blind.ok && blind.result.measured === false && blind.result.found === null
+            && blind.result.unknown.length === 1);
     }
 
     console.log(`test_sentry_bridge: ${pass} passed, ${fail} failed`);

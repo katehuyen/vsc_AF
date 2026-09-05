@@ -1,6 +1,7 @@
 import { RunProgress } from './retry';
 import { TrackRecord } from './backlogTrack';
 import { SessionFacts, shortSessionId, TouchedCode } from './sessionDiagnosis';
+import type { HandoverDiscovery } from './handoverDiscovery';
 
 /**
  * X-176 — MEASURING THE SESSION THAT JUST ENDED, and admitting what it could not.
@@ -35,6 +36,17 @@ export interface SentryMeasureIO {
     output: () => string | undefined;
     /** the five-hour figure at the end; absent or `undefined` = nobody read it */
     quotaPercent?: () => number | undefined;
+    /**
+     * ‼️ X-189 — WHERE THE HANDOVER NOTE WAS LOOKED FOR, across every source.
+     *
+     * Optional because a caller that cannot search is not broken; what it must
+     * not do is INVENT one. A port that is absent, or that answers
+     * `undefined`, leaves the fact absent — and the verdict then says nobody
+     * listed a folder, rather than that no note exists. `answers` stays beside
+     * it: it is the one-folder question, and it is still the honest answer for
+     * a caller that only has one folder.
+     */
+    handover?: () => HandoverDiscovery | undefined;
 }
 
 export interface SentryMeasureAsk {
@@ -85,6 +97,7 @@ export function measureSession(ask: SentryMeasureAsk, io: SentryMeasureIO): Sess
     const tracks = io.tracks();
     const output = io.output();
     const quota = io.quotaPercent ? io.quotaPercent() : undefined;
+    const handoverSearch = io.handover ? io.handover() : undefined;
 
     // ‼️ ALL OR NOTHING. See the header: a partial answer here is a lie about a
     // repository nobody read, and the verdict it produces reads exactly like a
@@ -99,6 +112,7 @@ export function measureSession(ask: SentryMeasureAsk, io: SentryMeasureIO): Sess
     return {
         sessionId: ask.sessionId,
         ...(answerFiles !== undefined ? { answerFiles } : {}),
+        ...(handoverSearch !== undefined ? { handoverSearch } : {}),
         ...(repos !== undefined ? { repos } : {}),
         ...(tracks !== undefined ? { codes: codesTouchedIn(tracks, ask.sessionId) } : {}),
         ...(ask.progress !== undefined ? { progress: ask.progress } : {}),

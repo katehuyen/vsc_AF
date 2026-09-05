@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.386.0 - X-189: the handover note is looked for where it was actually written (2026-09-05)
+
+The sentry looked for the last session's handover note in ONE hard-coded folder
+under ONE millimetric name pattern. An agent that wrote its note anywhere else,
+or called it anything else, was invisible — and the campaign then diagnosed
+`hit-the-wall` about a session that had handed over perfectly well. That is not
+a missing measurement, it is a false one: it sends the next round after the
+wrong thing, and you find out in the morning. New pure module
+`src/core/handoverDiscovery.ts`.
+
+- **‼️ Four sources, in order, and the order is the argument.** `transcript`
+  first — the files the finished session ITSELF wrote, read back out of its own
+  transcript, because where the agent actually wrote beats where a setting says
+  it should have. Then `configured` (`agentFarm.handoverFolders`, with X-188
+  path variables), then the project's own `10_Notes`, and only then the folder
+  this extension shipped with. A folder reached twice is listed once.
+- **‼️ Scoring replaced the all-or-nothing pattern — not the identity check.**
+  The session id in the name or the session having written the file (+3), the
+  word devir/handover (+2), a date near today (+1), the full canonical name
+  (+2). The canonical name is still preferred; it is just no longer required.
+  But one of the two identity proofs is REQUIRED at any score: adopting another
+  session's handover note is a worse failure than finding none, and "devir +
+  today + canonical" describes every note in the folder.
+- **‼️ A folder nobody could read is unknown, never empty.** X-174's law makes
+  the trip intact: `measured:false` means say nothing about whether a note
+  exists. A skipped source reports the reason in the caller's own words.
+- **The near misses are kept**, ranked, with the components that scored — so the
+  answer to "why was my note not picked up" is on the record rather than in
+  somebody's head.
+- **The legacy vault folder is now a named constant** reached last by both its
+  readers, never a `||` default. X-188's test tightened accordingly.
+- New: `sentry.handover` on the bridge (read-only, calls no model, writes
+  nothing) · settings `agentFarm.handoverSources` and
+  `agentFarm.handoverFolders`, both filed under Tasks & Automation with the
+  campaign's other brakes.
+
 ## 3.385.0 - X-190: the sentry gets a policy, and the three modes stop being three code paths (2026-09-05)
 
 The sentry that shipped was purely mechanical: measure, fill a template, open

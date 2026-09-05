@@ -161,6 +161,46 @@ const facts = (over) => Object.assign({
     ok('every verdict has one line a person can read', typeof d.why === 'string' && d.why.length > 10);
 }
 
+// ---- X-189: the search that replaced the one folder and the one pattern ----
+//
+// `answerFiles` was one folder listed under one millimetric name pattern. It
+// still works, because a caller that only has that is not wrong — it is just
+// looking in one place. What is new is that the host may hand in a whole SEARCH
+// (`handoverSearch`, from `core/handoverDiscovery`), and then the verdict says
+// where the note was found and how sure it is, which is what a condition reads.
+{
+    const { discoverHandover } = require(path.join(__dirname, '..', 'out', 'core', 'handoverDiscovery.js'));
+    const at = { sessionId: SID, today: '2026-09-04', now: new Date(2026, 8, 4, 23, 0, 0).getTime() };
+
+    const found = discoverHandover([
+        { source: 'transcript', dir: 'D:/notes', files: ['dc980395-devir.md'], authored: ['dc980395-devir.md'] }
+    ], at);
+    const d = diagnoseSession(facts({ answerFiles: undefined, handoverSearch: found }));
+    ok('a note the session wrote under a name the old pattern refused is now a clean handover',
+        d.outcome === 'clean-handover' && d.handover.file === 'dc980395-devir.md');
+    ok('...and the verdict says which source it came from and how sure it is',
+        d.handover.source === 'transcript' && typeof d.handover.score === 'number');
+    ok('...and the search does not leave the note unknown',
+        !d.unknown.some(u => /handover|answers/i.test(u)));
+    ok('...and what the search saw is evidence, not a second story',
+        found.evidence.every(e => d.evidence.includes(e)));
+
+    const nowhere = discoverHandover([{ source: 'fallback', dir: 'D:/vault', files: [OTHER] }], at);
+    ok('a search that read a folder and found nothing is a MEASUREMENT',
+        diagnoseSession(facts({ answerFiles: undefined, handoverSearch: nowhere }))
+            .unknown.every(u => !/handover|answers/i.test(u)));
+
+    const blind = discoverHandover([{ source: 'configured', skipped: '${vault} has nothing behind it' }], at);
+    ok('...and a search that could read nowhere is NOT — it goes on unknown, in its own words',
+        diagnoseSession(facts({ answerFiles: undefined, handoverSearch: blind }))
+            .unknown.some(u => /\$\{vault\}/.test(u)));
+
+    ok('the search outranks the legacy folder listing when both are handed in',
+        diagnoseSession(facts({ answerFiles: [OTHER, NOTE], handoverSearch: nowhere })).handover === undefined);
+    ok('...and the legacy listing still stands alone when there is no search',
+        diagnoseSession(facts({ answerFiles: [OTHER, NOTE] })).handover.file === NOTE);
+}
+
 // ---- the limit sentence is retry.ts', not a second copy --------------------
 {
     const R = require(path.join(__dirname, '..', 'out', 'core', 'retry.js'));

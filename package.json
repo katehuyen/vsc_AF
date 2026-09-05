@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.385.0",
+  "version": "3.386.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9705,6 +9705,18 @@
           "type": "boolean",
           "default": true,
           "description": "Whether the Console page listens for a file dropped anywhere on it. Turn this off if drag-and-drop misbehaves on your machine; 📎 (Attach) and pasting a screenshot are unaffected either way."
+        },
+        "agentFarm.handoverSources": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["transcript", "configured", "projectNotes", "fallback"] },
+          "default": [],
+          "markdownDescription": "Where a sentry campaign looks for the handover note of the session that just ended, and in which order. Empty = all four, in this order: `transcript` (the files that session ITSELF wrote — the most truthful source, because where the agent actually wrote beats where a setting says it should have), `configured` (agentFarm.handoverFolders), `projectNotes` (the project's own 10_Notes) and `fallback` (the folder this extension shipped with, reached last and only then). Drop a source to stop looking there. A folder that cannot be READ is reported as unknown rather than as empty, so the campaign never says “no handover note” about a folder nobody opened.\n\nThe name no longer has to be exact: a file scores on the session id in its name, on the session having written it, on the word `devir`/`handover`, on a date near today, and on the full `YYYY-MM-DD_devir_##_<id8>_<topic>.md` pattern. The canonical name is still preferred — it is just no longer required. What IS required is that the note belongs to this session: another session's note is never adopted, at any score."
+        },
+        "agentFarm.handoverFolders": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "The folders the `configured` handover source looks in, in order. Accepts the same path variables as agentFarm.reportDir — ${vault}, ${projectNotes}, ${projectFolder}, ${today}, ${sessionId8} … — and a template whose variable has nothing behind it on this machine is SKIPPED with its reason rather than half-built. Empty = agentFarm.answerDir, then `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR`: the folder answers are written into is the one folder you have already named."
         },
         "agentFarm.sentryTemplatesFile": {
           "type": "string",

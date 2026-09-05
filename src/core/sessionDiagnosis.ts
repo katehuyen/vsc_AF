@@ -1,5 +1,10 @@
 import { RunProgress, isLimitFailure } from './retry';
 import { slugify } from './util';
+// ‼️ TYPE-ONLY, AND IT HAS TO STAY THAT WAY. `handoverDiscovery` imports the
+// name primitives BELOW as values, so a runtime edge back would be a cycle.
+// The direction is deliberate: this module reasons about a search somebody
+// else ran, and never runs one itself.
+import type { HandoverDiscovery, HandoverHit } from './handoverDiscovery';
 
 /**
  * X-174 — WHAT A FINISHED SESSION LEFT BEHIND, WITHOUT ASKING A MODEL.
@@ -46,8 +51,23 @@ export interface TouchedCode {
 export interface SessionFacts {
     /** the session's own id — a handover note is found by its first 8 characters */
     sessionId: string;
-    /** every file name in the answers folder. `undefined` = nobody listed it */
+    /**
+     * every file name in the answers folder. `undefined` = nobody listed it.
+     *
+     * ‼️ X-189 left this in place rather than replacing it. A caller with one
+     * folder and nothing else is not wrong, it is just looking in one place —
+     * and `handoverName` / `nextHandoverSeq` still need a plain listing to
+     * WRITE a note. What changed is that a caller may now hand in a whole
+     * search instead, and that search wins when both are present.
+     */
     answerFiles?: string[];
+    /**
+     * ‼️ X-189 — everywhere a note was looked for, and what came back
+     * (`core/handoverDiscovery`). `undefined` = nobody searched, which is not
+     * the same as searching and finding nothing; the search says which of the
+     * two it was in its own `measured` flag.
+     */
+    handoverSearch?: HandoverDiscovery;
     /** one row per repository whose state was read */
     repos?: RepoState[];
     /** the coded items this session touched, and whether each of them closed */
@@ -131,7 +151,10 @@ export interface SessionDiagnosis {
     evidence: string[];
     /** ‼️ what could NOT be measured. X-175 calls a model only when this is not empty */
     unknown: string[];
-    handover?: HandoverNote;
+    /** ‼️ X-189 widened this from `HandoverNote` to the SEARCH HIT: a note that
+     *  misses the canonical name has no `date`/`seq`/`topic` to report, but it
+     *  is still the note, and it now carries where it was found and how sure. */
+    handover?: HandoverHit;
     /** did any engine say the plan window was spent */
     limit: boolean;
     /** the policy that was applied, echoed so a verdict can be read months later */
@@ -220,11 +243,26 @@ export function diagnoseSession(
     const unknown: string[] = [];
 
     // ---- the note ----------------------------------------------------------
-    let handover: HandoverNote | undefined;
-    if (facts.answerFiles === undefined) {
+    //
+    // ‼️ X-189 — A SEARCH OUTRANKS A FOLDER LISTING, and it does so completely.
+    // Falling back to `answerFiles` after a search that read four sources and
+    // found nothing would put the very defect back: the one hard-coded folder
+    // having the last word. A caller that ran a search has already looked
+    // there, because `fallback` IS that folder.
+    let handover: HandoverHit | undefined;
+    const search = facts.handoverSearch;
+    if (search) {
+        handover = search.hit;
+        for (const u of search.unknown) { unknown.push(u); }
+        for (const e of search.evidence) { evidence.push(e); }
+    } else if (facts.answerFiles === undefined) {
         unknown.push('the answers folder was not listed, so a handover note cannot be ruled out');
     } else {
-        handover = handoverFor(facts.sessionId, facts.answerFiles);
+        const note = handoverFor(facts.sessionId, facts.answerFiles);
+        // The legacy path knows one folder and one pattern, so it can only ever
+        // report the canonical source at full confidence — which is exactly
+        // what it was doing before, now said out loud.
+        handover = note ? { ...note, source: 'fallback', score: 8, parts: ['id', 'word', 'canonical'], identified: true, why: '', note } : undefined;
         evidence.push(handover
             ? `handover note: ${handover.file}`
             : 'no handover note names this session');

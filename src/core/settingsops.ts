@@ -215,6 +215,13 @@ const CATEGORY_OF: Record<string, string> = {
     // session with. Filed together, the reader who turns the campaign off would
     // go looking for it under prompts (ONE SUBJECT).
     sentryTemplatesFile: 'tasks',
+    // ‼️ X-189 — where the campaign LOOKS for the note the last session left,
+    // filed with the campaign rather than with the folder settings. `answerDir`
+    // is where an answer is WRITTEN and belongs to the work queue; these two
+    // govern an unattended runner's reading of a finished session, which is the
+    // same subject as its brakes and its templates (ONE SUBJECT).
+    handoverSources: 'tasks',
+    handoverFolders: 'tasks',
     // ‼️ X-176 — the campaign's two brakes. Tasks & Automation for the same
     // reason the templates are there: what they govern is an UNATTENDED RUNNER
     // opening task rows, not a prompt somebody pastes into a box (ONE SUBJECT).
