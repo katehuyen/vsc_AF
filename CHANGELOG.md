@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.399.4 - the extension could not be switched on, and no test could see it (2026-09-06)
+
+**‼️ 3.399.0 through 3.399.3 DO NOT ACTIVATE.** Not a broken page — no pages.
+`activate()` threw on its first surface and every command in the product
+answered "command not found":
+
+```
+ReferenceError: Cannot access 'storedAccounts' before initialization
+    at usageAccountLabel  (extension.js)
+    at PlanUsageBar.heading → tooltip → paint → new PlanUsageBar
+    at activate           (extension.js)
+```
+
+**The root cause is one of position, and one line long.** X-212 (3.399.0) gave
+the status bar the words for WHOSE plan it is showing — `usageAccountLabel`,
+declared beside the indicator it serves and reading `storedAccounts` out of the
+accounts block 470 lines further down. Ordinarily that is fine: a closure is
+allowed to name a `const` declared after it, because by the time anybody calls
+it the declaration has run. `PlanUsageBar` is the case where nobody waits — it
+paints inside its own constructor, so the very first thing that happens after
+`new` is a call back into a binding still in its temporal dead zone. The two
+readers are declared at the top of `activate()` now, with the rule written where
+they sit: **anything constructed during activation may call its dependencies
+before its constructor returns, so a reader handed to one is declared first.**
+
+**‼️ AND THE PART THAT MATTERS MORE — 18 972 assertions could not see it.**
+The suite was green, the vsix verified 16/16, the package installed, and the
+product was dead. Every file in `test/` tested a piece; not one had ever called
+`activate()`. Being able to switch the extension on is the precondition of
+everything the other assertions describe, and it was the one claim nothing
+checked — a rule that fails silently is not a rule.
+
+`test/test_activation.js` loads the COMPILED extension against a stand-in
+`vscode` whose `getConfiguration` returns every reader its own default — the
+coldest start there is, and the one a first install actually gets — then calls
+`activate()` and insists it comes back. Four claims, in the order they fail:
+it loads · it does not throw · it registers its doors · **every command id
+`package.json` declares is live afterwards**, which is the symptom the user saw
+stated as an assertion. Verified by putting the defect back: the test reproduces
+the host log stack line for line, then goes green on the fix.
+
+It sorts first in the run, so from now on the suite answers "does it turn on?"
+before it answers anything else.
+
 ## 3.399.3 - X-196 (part 2): the hover that repeated the row (2026-09-06)
 
 The Settings page's sentry section came through the audit clean — every path row

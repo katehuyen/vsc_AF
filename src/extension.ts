@@ -706,6 +706,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // the same id twice throws: two doors under one id would be two places
     // answering for one surface, which is the defect the folder exists to end.
     registerLaunchDoors();
+    /**
+     * ‼️ THE TWO ACCOUNT READERS ARE DECLARED FIRST — before any surface is built.
+     *
+     * They belong to the X-167 accounts block far below and are up here only
+     * because of WHEN they get read. `new PlanUsageBar(...)` paints inside its
+     * own constructor, and that first paint asks `usageAccountLabel`, which asks
+     * `storedAccounts`. A `const` declared after that line is in its temporal
+     * dead zone at that moment: activate() throws `Cannot access 'storedAccounts'
+     * before initialization`, NOTHING registers, and every surface in the
+     * extension answers "command not found". Not a theory — it shipped that way
+     * in 3.399.0…3.399.3 and the extension could not be opened at all.
+     *
+     * Both read a setting and nothing else, so there is nothing for them to be
+     * declared after. The rule the position carries: anything constructed during
+     * activate() may call its dependencies before its constructor returns, so a
+     * reader handed to one is declared here, not next to its subject matter.
+     */
+    const storedAccounts = (): EngineAccountSlot[] => normalizeSlots(cfg().get<unknown[]>('accounts', []));
+    const activeAccounts = (): Record<string, string> =>
+        normalizeActive(cfg().get<Record<string, string>>('activeAccounts', {}));
     let agents: AgentInfo[] = [];
     let insights: Insight[] = [];
     // Pricing history: a timestamped log of rule sets so past costs stay frozen
@@ -16433,9 +16453,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * talking to right now keeps its identity and two accounts can run at once.
      */
     const accountRoot = path.join(context.globalStorageUri.fsPath, 'accounts');
-    const storedAccounts = (): EngineAccountSlot[] => normalizeSlots(cfg().get<unknown[]>('accounts', []));
-    const activeAccounts = (): Record<string, string> =>
-        normalizeActive(cfg().get<Record<string, string>>('activeAccounts', {}));
+    // The two readers of this block — `storedAccounts` and `activeAccounts` —
+    // are declared at the TOP of activate(); the note there says why. They read
+    // the settings and nothing else, so their position is a question of when
+    // they are first called, not of what they are about.
     const writeAccounts = async (list: EngineAccountSlot[]): Promise<void> => {
         await cfg().update('accounts', list, vscode.ConfigurationTarget.Global);
         // ‼️ A CAPTURE OR A FORGET IS EXACTLY THE MOMENT THE SNAPSHOT IS WRONG,
