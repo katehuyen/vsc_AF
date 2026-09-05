@@ -110,7 +110,12 @@ const session = (o) => Object.assign({
     pendingPermission: null, pendingAsk: null, exitReason: '',
     projectId: '', projectName: '', projectIcon: '', messages: [],
     // X-105 - most cards have no route, and that is the ordinary answer.
-    route: null
+    route: null,
+    // ‼️ X-213 — and whose sign-in is paying for it. The default is the state
+    // the picture has to make ordinary: the machine's own, NAMED, on an engine
+    // that could hold another. `accountNext` empty = nothing pending.
+    account: '@machine', accountLabel: 'Machine Global',
+    accountNext: '', accountNextLabel: '', accountAxis: true, accountRows: []
 }, o);
 
 const data = () => ({
@@ -419,7 +424,25 @@ const accountComposerData = () => Object.assign(routedComposerData(), {
         { id: 'personal', label: 'personal@gmail', health: 'ready', active: false, percent: 12 },
         { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false, percent: -1 }
     ],
-    composerAccount: 'personal'
+    composerAccount: 'personal',
+    // ‼️ X-213 — the axis is a fact about the ENGINE, so it is stated rather
+    // than inferred from the length of the list above.
+    composerAccountAxis: true
+});
+
+/**
+ * ‼️ X-213 — THE STATE THAT USED TO LIE: an engine that can hold a second
+ * sign-in, and nothing captured for it yet.
+ *
+ * The box was hidden here, so the one machine with no answer on file was the
+ * one machine that was told nothing — while every session ran on the identity
+ * it happens to be signed in as. The picture has to show the box present, with
+ * the machine's own sign-in NAMED and selected.
+ */
+const machineGlobalComposerData = () => Object.assign(routedComposerData(), {
+    composerAccounts: [],
+    composerAccount: '@machine',
+    composerAccountAxis: true
 });
 
 /**
@@ -589,6 +612,40 @@ module.exports = {
             id: 'console-account',
             label: 'Console — and which sign-in pays for it, on a machine rotating three (X-169)',
             data: accountComposerData()
+        },
+        {
+            // ‼️ X-213 — the swap the whole family exists for, caught mid-promise:
+            // a live conversation whose next message moves to the other account
+            // because this one has run out. The label carries the arrow, so the
+            // picture has to show it standing out at strip width.
+            id: 'console-reseal',
+            label: 'Console — a live conversation whose NEXT message moves account (X-213)',
+            data: Object.assign(data(), {
+                selected: 'cs1',
+                sessions: [session({
+                    id: 'cs1', status: 'idle',
+                    account: 'work-1', accountLabel: 'work@studio',
+                    accountNext: 'personal', accountNextLabel: 'personal@gmail',
+                    accountAxis: true,
+                    accountRows: [
+                        { id: 'work-1', label: 'work@studio', health: 'ready', active: true, percent: 97 },
+                        { id: 'personal', label: 'personal@gmail', health: 'ready', active: false, percent: 12 }
+                    ],
+                    messages: [
+                        { id: 'm1', ts: NOW - 60000, role: 'user', text: 'devam et' },
+                        {
+                            id: 'm2', ts: NOW - 30000, role: 'system',
+                            text: 'next message runs on personal@gmail — Claude Code seals an account into '
+                                + 'the process, so this one is ended and the same conversation is resumed on it'
+                        }
+                    ]
+                })]
+            })
+        },
+        {
+            id: 'console-machine-global',
+            label: 'Console — nothing captured yet, and the box says so BY NAME (X-213)',
+            data: machineGlobalComposerData()
         },
         {
             id: 'console-sentry',

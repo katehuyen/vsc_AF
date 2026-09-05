@@ -134,6 +134,11 @@
             // so a tab can never be a beat behind the tab beside it.
             if (ev.data.engines) { DATA.planUsageEngines = ev.data.engines; }
             if (ev.data.engine) { DATA.planUsageEngine = ev.data.engine; }
+            // ‼️ X-212 — and whose sign-in they are. Assigned on `!== undefined`
+            // rather than truthiness, because '' is a real answer here (the
+            // engine cannot hold a second account) and dropping it would leave
+            // the previous engine's owner sitting over the new engine's figures.
+            if (ev.data.account !== undefined) { DATA.planUsageAccount = ev.data.account; }
             render();
             armPlanUsage();
             return;
@@ -358,6 +363,11 @@
     const PU_STYLE = `<style>
         .pucard { flex:0 1 340px; min-width:250px; }
         .pucard .pu-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+        /* X-212 — the owner takes the room between the label and the button and
+           gives it back when there is none: an address is longer than the card
+           and truncating it beats pushing ⟳ off the edge. */
+        .pu-acct { flex:1 1 auto; min-width:0; text-align:right; font-size:11px;
+            opacity:.75; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .pu-ref { font-size:12px; line-height:1; padding:2px 7px; border-radius:4px; cursor:pointer;
             background:transparent; color:var(--vscode-foreground); opacity:.6;
             border:1px solid var(--vscode-widget-border, #4444); }
@@ -463,6 +473,27 @@
     const puEngineId = () => (DATA.planUsageEngine || 'claude');
     const puEngineRow = () => (DATA.planUsageEngines || []).find(e => e.id === puEngineId());
 
+    /**
+     * ‼️ X-212 — WHOSE PLAN THIS CARD IS SHOWING, on the card.
+     *
+     * The tabs say which ENGINE and nothing said which SIGN-IN of it, so on a
+     * machine with two Claude accounts the card was a percentage with no owner —
+     * and the reader attributes an owner-less percentage to whatever they are
+     * running. It sits in the head beside "Plan usage" rather than in the
+     * footer, because it qualifies the whole card and not the last reading.
+     *
+     * '' is a real answer: the engine cannot hold a second sign-in, and then
+     * naming one would invent a choice that is not there.
+     */
+    function puOwner() {
+        const who = String(DATA.planUsageAccount || '');
+        if (!who) { return ''; }
+        const tip = 'Account: ' + who + '\n'
+            + 'The sign-in these figures belong to. Set it on the Engines page — '
+            + 'the status bar, this card and every new session follow it.';
+        return `<span class="pu-acct" title="${C.esc(tip)}">${C.esc(who)}</span>`;
+    }
+
     function planCard() {
         const eng = puEngineRow();
         // Claude keeps the endpoint-shaped snapshot (state, backoff, beat);
@@ -512,7 +543,7 @@
         return `<div class="card pucard"
             ${window.AFCtx.row('afPlanUsage', { puText: bars })}
             title="${C.esc(window.AFCtx.hint('What the subscription window has left'))}">
-            <div class="pu-head"><div class="label">Plan usage</div>${btn}</div>
+            <div class="pu-head"><div class="label">Plan usage</div>${puOwner()}${btn}</div>
             ${planTabs()}
             ${body}${foot}${planOthers()}
         </div>`;

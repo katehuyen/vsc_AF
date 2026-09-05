@@ -147,6 +147,10 @@ export function resolveAccount(
     active: Record<string, string>
 ): string {
     const own = String(stated || '').trim();
+    // ‼️ X-211 — the one answer that is a statement OF nothing. It outranks the
+    // standing account exactly as any other stated account does; what it
+    // resolves to is the absence of a slot, which is the main sign-in.
+    if (own === MACHINE_ACCOUNT) { return ''; }
     if (own) { return own; }
     return active[String(engine || 'claude').trim() || 'claude'] || '';
 }
@@ -164,7 +168,9 @@ export function accountRefusal(
     stated: string | undefined, list: EngineAccountSlot[], engine: string | undefined
 ): string {
     const id = String(stated || '').trim();
-    if (!id) { return ''; }
+    // Empty = nothing stated; `@machine` = the machine's own sign-in stated
+    // outright. Neither names a slot, and neither is a mistake.
+    if (!id || id === MACHINE_ACCOUNT) { return ''; }
     const slot = findSlot(list, id);
     if (!slot) {
         return `No account "${id}" is stored on this machine — it may have been forgotten. `
@@ -250,4 +256,92 @@ export function planCapture(args: CaptureArgs): CapturePlan {
 export function slotLabel(slot: EngineAccountSlot | undefined): string {
     if (!slot) { return ''; }
     return (slot.label || '').trim() || (slot.email || '').trim() || slot.id;
+}
+
+/**
+ * ‼️ X-211 — WHAT "NO SLOT" IS CALLED, EVERYWHERE, IN ONE STRING.
+ *
+ * The empty account id is not a gap in the answer: it is the identity this
+ * machine itself is signed in as, the one every session ran on before this
+ * family existed. Every surface that drew it as a blank taught the reader that
+ * the control was broken — and worse, a `<select>` with no row for it shows the
+ * FIRST account as selected while the session opens on the main sign-in, which
+ * is the ghost selection this family exists to kill. So the absence has a name,
+ * and the name is the same in the picker, the status bar and the terminal.
+ */
+export const MACHINE_GLOBAL = 'Machine Global';
+
+/**
+ * ‼️ X-211 — SAYING "THE MACHINE'S OWN SIGN-IN" OUT LOUD, as an answer.
+ *
+ * The empty account was two different answers wearing one face: **nobody chose**
+ * — which falls through to the standing account, and must — and **I chose the
+ * machine's own**, which must not. A picker showing Machine Global while the
+ * session opened on the standing slot is precisely the ghost this family
+ * exists to kill, and no default can fix it: the two answers have to be
+ * different VALUES before any surface can tell them apart.
+ *
+ * The `@` is what makes it collision-proof. `mintSlotId` builds every id it
+ * ever creates out of an engine name and `[a-z0-9-]`, so nothing this extension
+ * stores can be mistaken for this one.
+ *
+ * ‼️ AND IT IS KEPT, NOT RESOLVED AWAY, on a session's state: a card pinned to
+ * the machine's own sign-in must stay there when the "use this next" button is
+ * pressed for something else an hour later. Resolving it to '' at the door
+ * would put that card back on whatever the setting says at its next re-spawn.
+ */
+export const MACHINE_ACCOUNT = '@machine';
+
+/** The same, as a row in a picker — the badge is what makes it read as a
+ *  choice somebody made rather than a placeholder nobody filled in. */
+export const MACHINE_GLOBAL_ROW = '💻 Machine Global';
+
+/** The name of whoever pays for a run: the slot's, or the machine's own. */
+export function accountLabelOf(slot: EngineAccountSlot | undefined): string {
+    return slot ? slotLabel(slot) : MACHINE_GLOBAL;
+}
+
+/**
+ * ‼️ X-211 — THE ENVIRONMENT LAYER FOR A **STATED** ACCOUNT, including the
+ * statement that no slot is wanted.
+ *
+ * `accountEnv` answers for a slot and is right for everything that resolves to
+ * one. The case it cannot express is the one this family added: `@machine` is
+ * an answer, and the answer is that the engine's config variable must NOT be
+ * set — which is not the same as not adding it, because the window Agent Farm
+ * itself runs in may already carry one. Then the card would run as an account
+ * no surface named, which is the ghost with the picker fixed.
+ *
+ * `null` is how a layer removes a name (see `spawnEnvironment`), and removal is
+ * what "the identity this machine is signed in as" actually means.
+ */
+export function accountEnvFor(
+    engine: string | undefined,
+    stated: string | undefined,
+    list: EngineAccountSlot[]
+): Record<string, string | null> {
+    const name = adapterFor(engine).configEnv;
+    if (!name) { return {}; }
+    const id = String(stated || '').trim();
+    if (id === MACHINE_ACCOUNT) { return { [name]: null }; }
+    const slot = id ? findSlot(list, id) : undefined;
+    return slot?.dir ? { [name]: slot.dir } : {};
+}
+
+/**
+ * What a STATED account is called on a surface — the one translation between
+ * the value a session is pinned to and the words a reader sees.
+ *
+ * Every surface asks this rather than testing for the sentinel itself, or
+ * `@machine` leaks onto a card the day somebody forgets (Principle 1). An
+ * unstated account answers '' — the caller decides whether that reads as
+ * "inherited" or is simply not drawn.
+ */
+export function statedAccountLabel(
+    stated: string | undefined, list: EngineAccountSlot[]
+): string {
+    const id = String(stated || '').trim();
+    if (!id) { return ''; }
+    if (id === MACHINE_ACCOUNT) { return MACHINE_GLOBAL; }
+    return slotLabel(findSlot(list, id)) || id;
 }

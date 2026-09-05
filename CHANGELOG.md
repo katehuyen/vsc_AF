@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## Unreleased — X-211 family: the sign-in on screen is the sign-in that runs
+
+Three surfaces named an account and a fourth ran the process. Every item below
+closes one of those gaps; together they are the X-211 umbrella.
+
+- **‼️ X-212 — the status bar and the Dashboard read the account that is
+  STANDING.** `PlanUsageService` was pointed at `~/.claude/.credentials.json`
+  and nothing else, which was right for exactly as long as there was one
+  sign-in: make an account standing on the Engines page and every session ran on
+  it while the indicator went on reporting the main account's window. The reader
+  is dynamic now, the cached snapshot remembers WHICH file it came out of (a
+  cache that outlived an account switch would put the new name over the old
+  figures), the heading says `Claude Code (murat@…) — plan usage` /
+  `(Machine Global)`, the Dashboard card carries the same owner, and making an
+  account standing repaints and re-reads in the same gesture instead of waiting
+  up to five minutes for the next beat. `usage.plan` answers with `account` too.
+- **‼️ X-211 — "the machine's own sign-in" is a VALUE, not a blank
+  (`@machine`).** The empty account was two answers wearing one face: *nobody
+  chose*, which falls through to the standing account and must, and *I chose the
+  machine's own*, which must not. They are different values now, and the second
+  one CLEARS the engine's config variable rather than merely not setting it —
+  a window that itself carries one used to hand it to the card while every
+  surface named something else.
+- **‼️ X-213 — the ghost selection, and the lock.** The composer's box had no row
+  for the machine's own sign-in, so the browser drew the FIRST account as
+  selected while the composer stated nothing. It has a root row now, it OPENS on
+  the standing account with its dot, it is drawn on any engine that can hold a
+  second sign-in (a machine with nothing captured is the case that most needed
+  it), and what it shows is what `start` states. One layer down: three of the
+  four session-start paths never recorded the account on the card's state, so
+  Claude — the engine this family is for — re-spawned as `undefined`.
+- **‼️ X-213 — and the box no longer locks when the session starts.** A window
+  that hits its five-hour ceiling mid-task used to mean a second terminal, a
+  `/login`, and `claude --resume` by hand. Now the account box stays open on a
+  live card: pick another sign-in and the next message ends the process and
+  brings the SAME conversation back up on it with `--resume`, carrying the
+  running totals so the conversation does not get cheaper for changing account.
+  The old process is watched out of the CLI's own registry rather than assumed
+  away, and a hold-out is reported. On a per-turn engine there is no process
+  between turns, so the change is simply true and says so. New op
+  **`console.setAccount`**.
+- **X-214 — a terminal resume names its account too.** That door passed no
+  account layer at all. It asks now — the standing account first, so Enter does
+  what the machine would have done — and cancelling opens nothing.
+
 ## 3.398.0 - X-194 closed: what every condition reads today, AND parts, and the leader's own purse (2026-09-05)
 
 The editor could WRITE a rule and could not show what the rule was about. Three

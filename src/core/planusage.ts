@@ -324,8 +324,15 @@ export interface PlanUsageOptions {
     edgeFloorMs?(): number;
     /** Version of the installed CLI, for the User-Agent (see usageUserAgent). */
     cliVersion?: () => string | undefined;
-    /** Overridable for tests. */
+    /**
+     * Which file holds the sign-in to read — live, because it MOVES: an account
+     * made standing on the Engines page points this at that slot's directory
+     * (X-212). Empty string, or absent, is the main sign-in.
+     */
     credentialsFile?: () => string;
+    /** Overridable for tests — the same seam `AccountUsageService` has, so the
+     *  two readers of one credentials file can be faked the same way. */
+    readCreds?: (file: string) => OauthCredentials | undefined;
     fetchImpl?: (token: string, userAgent: string) => Promise<{ status: number; body: string }>;
     now?: () => number;
 }
@@ -343,8 +350,29 @@ export class PlanUsageService {
     private backoffMs = 0;
     /** No automatic read before this moment (see RATE_LIMIT_BACKOFF_START_MS). */
     private backoffUntil = 0;
+    /**
+     * ‼️ X-212 — WHOSE SIGN-IN THE CACHED SNAPSHOT BELONGS TO.
+     *
+     * `credentialsFile` stopped being a constant the moment an account could be
+     * made standing: the same service now reads a different file depending on
+     * which sign-in the user last pointed at. A cache that does not remember
+     * which one it read would go on serving the previous account's percentages
+     * for a whole TTL — and the indicator would say the new account's name over
+     * the old account's figures, which is worse than saying nothing at all.
+     *
+     * So the SOURCE is part of the snapshot's identity. A read whose file has
+     * moved has no cache to serve from and falls through to the endpoint, which
+     * is the same thing a first read does.
+     */
+    private snapFrom = '';
 
     constructor(private opts: PlanUsageOptions) { }
+
+    /** The credentials file this service reads right now — live, because the
+     *  standing account is a setting and may move between two reads. */
+    private credFile(): string {
+        return (this.opts.credentialsFile?.() || '').trim() || credentialsPath();
+    }
 
     /** The cached snapshot — never touches the network. */
     current(): PlanUsageSnapshot | undefined { return this.snap; }
@@ -393,6 +421,9 @@ export class PlanUsageService {
      */
     private read(reason: 'beat' | 'edge' | 'user'): Promise<PlanUsageSnapshot> {
         const now = (this.opts.now ?? Date.now)();
+        // ‼️ X-212 — the account moved under us: the cached answer is somebody
+        // else's and is dropped rather than aged out. See `snapFrom`.
+        if (this.snap && this.credFile() !== this.snapFrom) { this.snap = undefined; }
         const age = now - this.lastFetchAt;
         const floor = reason === 'edge'
             ? Math.max(MIN_FETCH_INTERVAL_MS, this.opts.edgeFloorMs?.() ?? EDGE_READ_FLOOR_MS)
@@ -409,9 +440,12 @@ export class PlanUsageService {
 
     private async load(now: number): Promise<PlanUsageSnapshot> {
         this.lastFetchAt = now;
-        const cred = (this.opts.credentialsFile
-            ? readOauthCredentials(this.opts.credentialsFile())
-            : readOauthCredentials());
+        // whatever this read answers is stamped with the file it came out of,
+        // even a failure — an unreadable slot must not look like a fresh cache
+        // for the account the user moves to next
+        const file = this.credFile();
+        this.snapFrom = file;
+        const cred = (this.opts.readCreds ?? readOauthCredentials)(file);
         if (!cred) {
             return (this.snap = unavailable('no-auth',
                 'No Claude subscription login found on this machine — this card reads the OAuth session Claude Code stores.',

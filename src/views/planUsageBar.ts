@@ -66,6 +66,22 @@ export interface PlanUsageBarOptions {
     engines?(): EngineUsage[];
     /** the engine currently on show ('claude' when nothing was chosen) */
     engine?(): string;
+    /**
+     * ‼️ X-212 — WHOSE PLAN THESE PERCENTAGES ARE.
+     *
+     * U-27 put the engine's name on the panel because a figure with no owner is
+     * attributed to whatever the reader is working in. The same argument
+     * finishes here: on a machine with two Claude sign-ins, "Claude Code — plan
+     * usage" is still not an owner, and the reader has no way to tell the
+     * account that is about to run out from the one that is not. So the heading
+     * names the sign-in, and the machine's own has a name too
+     * (`MACHINE_GLOBAL`) rather than being a gap.
+     *
+     * Empty string = this engine cannot hold a second sign-in at all, and then
+     * nothing is added: a parenthetical would imply a choice that does not
+     * exist on it.
+     */
+    accountLabel?(engine: string): string;
 }
 
 export class PlanUsageBar implements vscode.Disposable {
@@ -178,6 +194,20 @@ export class PlanUsageBar implements vscode.Disposable {
         this.item.show();
     }
 
+    /**
+     * ‼️ X-212 — `Claude Code (murat@…)` / `Claude Code (Machine Global)`.
+     *
+     * The engine and the account read as one owner, in one line, because they
+     * ARE one: the percentages belong to that sign-in of that engine and to
+     * nothing else. An engine that cannot isolate a sign-in gets the bare name
+     * it always had — see `accountLabel`.
+     */
+    private heading(shown: EngineUsage | undefined): string {
+        const name = shown ? shown.label : 'Claude Code';
+        const who = (this.opts.accountLabel?.(shown ? shown.id : 'claude') || '').trim();
+        return who ? `${name} (${who})` : name;
+    }
+
     /** Which beat is running, in words — a refresh rate you cannot see is a
      *  refresh rate you cannot trust (and "why did it not move?" has an answer).
      *  A backoff outranks the beat here, because while one is running the beat is
@@ -241,7 +271,9 @@ export class PlanUsageBar implements vscode.Disposable {
         const isClaude = !shown || shown.id === 'claude';
         // The heading names WHOSE limits these are — the whole point of U-27,
         // and the reason nothing on the strip itself has to repeat it (U-40).
-        const lines = [`**${shown ? shown.label : 'Claude Code'} — plan usage**`, ''];
+        // ‼️ X-212 — and WHICH SIGN-IN of it, because on this machine the engine
+        // is no longer the owner of the figure; the account is.
+        const lines = [`**${this.heading(shown)} — plan usage**`, ''];
 
         // ---- the figures ----
         if (isClaude) {

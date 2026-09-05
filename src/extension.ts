@@ -212,13 +212,15 @@ import {
 } from './core/engines';
 import {
     AccountFs, AccountIdentity, EngineAccountSlot, ENGINE_AUTH_ADAPTERS,
-    accountEnv, adapterFor as accountAdapterFor, describeSlotLayout, liveSource
+    accountEnv, adapterFor as accountAdapterFor, canIsolateAccounts, describeSlotLayout, liveSource
 } from './core/engineAccounts';
 import {
-    CapturePlan, accountRefusal, addSlot, findSlot, forgetActive, forgetSlot,
-    normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel, slotsFor
+    CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, accountEnvFor, accountLabelOf,
+    accountRefusal, addSlot, findSlot,
+    forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel,
+    slotsFor, statedAccountLabel
 } from './core/accountStore';
-import { AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotIsUsable } from './core/accountUsage';
+import { AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotCredentialsFile, slotIsUsable } from './core/accountUsage';
  import * as accountQueue from './core/accountQueue';
 import {
     PATH_VARS, PathVarContext, PreviewedPath, previewPathList, resolvePathList, resolvePathVars
@@ -9105,7 +9107,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'usage.plan',
-            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. Also returns `beat` — how often the farm is re-reading it (ms) and whether an agent is mid-turn, i.e. how stale a cached answer can be — and `rateLimitedUntil` (ISO, or null): the endpoint itself pushed back and no automatic read happens until then, so a cached answer is deliberately stale rather than merely old. args: force? (default false — served from the dashboard card\'s cache; force skips the cache but NOT a backoff, and not the 30s floor, so a loop of forced calls cannot become a request storm: while `rateLimitedUntil` is set you get the cached snapshot whatever you pass)',
+            describe: 'Your Claude SUBSCRIPTION rate-limit state as Anthropic reports it — the same figures /usage prints: session (5h) and weekly utilization % with reset times. This is the real quota, not the transcript-derived cost figures the rest of the farm reports. Also returns `beat` — how often the farm is re-reading it (ms) and whether an agent is mid-turn, i.e. how stale a cached answer can be — and `rateLimitedUntil` (ISO, or null): the endpoint itself pushed back and no automatic read happens until then, so a cached answer is deliberately stale rather than merely old. args: force? (default false — served from the dashboard card\'s cache; force skips the cache but NOT a backoff, and not the 30s floor, so a loop of forced calls cannot become a request storm: while `rateLimitedUntil` is set you get the cached snapshot whatever you pass). ‼️ X-212 — `account` names WHOSE sign-in these figures are: the standing Claude account (accounts.activate) or "Machine Global", the identity this machine itself is logged in as. The reader moves with that choice, so a percentage here is never the other account\'s.',
             handler: async (args) => {
                 // ‼️ An agent forcing is not a person clicking ⟳. Only a human
                 // may spend a request through a backoff (see PlanUsageService.read).
@@ -9116,6 +9118,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     state: snap.state, plan: snap.plan, fetchedAt: snap.fetchedAt,
                     note: snap.note,
+                    // ‼️ X-212 — WHOSE PLAN THIS IS. An agent deciding whether to
+                    // start a long turn reads these percentages; on a machine
+                    // with two sign-ins a figure with no owner is a figure it
+                    // may be reading for the wrong account entirely.
+                    account: usageAccountLabel('claude'),
                     beat: planBeat(),
                     // ‼️ an agent must be able to tell "nothing has changed" from
                     // "we are not allowed to look" — the two read identically
@@ -10894,6 +10901,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(consoleHost.setEffort(id, effort), 'no such live console session');
                 ConsolePanel.refreshIfOpen();
                 return { id, effort, engine: engineOf(row?.engine).id, applied: engineChangeNote(row?.engine) };
+            }
+        },
+        {
+            op: 'console.setAccount',
+            describe: '‼️ X-213 — MOVE A LIVE CONVERSATION ONTO ANOTHER SIGN-IN, without losing it. '
+                + 'The thing a person does by hand when a plan runs out mid-task: sign in as the other '
+                + 'account in a second terminal and carry on with --resume. The transcript is shared '
+                + '(the slots junction it), so nothing that was said is lost. WHAT HAPPENS DEPENDS ON '
+                + 'THE ENGINE\'S SHAPE, and the reply says which: on a PERSISTENT engine (claude) the '
+                + 'account is sealed into the running process, so this is a promise about the NEXT '
+                + 'message — `pending` comes back true, the card says so, and when that message is sent '
+                + 'the process is ended and the same session is resumed on the new account. On a '
+                + 'PER-TURN engine (codex…) there is no process between turns, so it is already true '
+                + '(`pending` false). REFUSED on a session that has not reported its id yet (there is '
+                + 'nothing to resume it by — say something in it first), on an ended card (resume it '
+                + 'instead), and on an engine whose connection is shared. args: id (the console card), '
+                + 'account (a slot id from accounts.list, or "@machine" for the identity this machine '
+                + 'itself is signed in as — ‼️ an EMPTY string is refused rather than guessed at, '
+                + 'because blank used to mean "whatever the Engines page says next" and that ambiguity '
+                + 'is the bug this item removed)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const account = argStr(args, 'account');
+                const row = consoleHost.list().find(s => s.id === id);
+                need(!!row, 'no such live console session');
+                need(!account || account === MACHINE_ACCOUNT
+                    || !accountRefusal(account, storedAccounts(), engineOf(row?.engine).id),
+                    accountRefusal(account, storedAccounts(), engineOf(row?.engine).id));
+                const done = consoleHost.setAccount(id, account);
+                need(done.ok, done.note);
+                ConsolePanel.refreshIfOpen();
+                const after = consoleHost.list().find(s => s.id === id);
+                return {
+                    id, engine: engineOf(row?.engine).id,
+                    account: statedAccountLabel(after?.account, storedAccounts()),
+                    pending: !!after?.accountNext,
+                    next: statedAccountLabel(after?.accountNext, storedAccounts())
+                };
             }
         },
         {
@@ -15885,9 +15930,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // is what made a politely configured beat irrelevant (see planusage.ts).
     const planEdgeFloorMs = () => refreshMs(
         true, 1, Math.max(0, cfg().get<number>('planUsageActiveRefreshSeconds', 60)));
+    /**
+     * ‼️ X-212 — THE INDICATOR READS THE ACCOUNT THAT IS STANDING, not the one
+     * this machine happens to be signed in as.
+     *
+     * The service was pointed at `~/.claude/.credentials.json` and nothing else,
+     * which was right for exactly as long as there was one sign-in. Make an
+     * account standing on the Engines page and every session runs on it while
+     * the status bar goes on reporting the main account's window — two numbers,
+     * one of them for a plan nobody is spending, and no way to tell which.
+     *
+     * Empty string is a real answer and the ordinary one: no standing account
+     * means the main sign-in, and the service falls back to its own path.
+     */
+    const usageCredentialsFile = (): string =>
+        slotCredentialsFile(findSlot(storedAccounts(), activeAccounts()['claude'] || ''));
     const planUsage = new PlanUsageService({
-        ttlMs: planBeatMs, edgeFloorMs: planEdgeFloorMs, cliVersion: installedCliVersion
+        ttlMs: planBeatMs, edgeFloorMs: planEdgeFloorMs, cliVersion: installedCliVersion,
+        credentialsFile: usageCredentialsFile
     });
+    /**
+     * ‼️ X-212 — WHOSE PLAN A SURFACE IS SHOWING, in words, for every surface.
+     *
+     * The status bar's heading, the Dashboard card and the bridge all ask this
+     * one function, so the three cannot name different accounts for the same
+     * figure. An engine that cannot isolate a sign-in answers '' rather than
+     * `Machine Global`: there is no second identity to be distinguished FROM
+     * there, and a parenthetical would invent a choice.
+     */
+    const usageAccountLabel = (engine: string): string => {
+        const eng = (engine || 'claude').trim().toLowerCase() || 'claude';
+        if (!canIsolateAccounts(eng)) { return ''; }
+        return accountLabelOf(findSlot(storedAccounts(), activeAccounts()[eng] || ''));
+    };
 
     /**
      * ‼️ U-27 — THE LIMIT IS PER ENGINE, AND ONLY ONE OF THEM HAS AN ENDPOINT.
@@ -15971,9 +16046,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // (or editing the setting) repaints without a reload.
         engines: engineUsageMatrix,
         engine: usageEngine,
+        // X-212 — and whose sign-in of it (see usageAccountLabel)
+        accountLabel: usageAccountLabel,
         // whatever the indicator just read goes to an open Dashboard card in
         // the same step: two surfaces on one beat can never drift apart
-        onRefresh: snap => DashboardPanel.pushPlanUsage(snap, planBeat(), engineUsageMatrix(), usageEngine())
+        onRefresh: snap => DashboardPanel.pushPlanUsage(
+            snap, planBeat(), engineUsageMatrix(), usageEngine(), usageAccountLabel(usageEngine()))
     });
     context.subscriptions.push(planUsageBar);
     /**
@@ -15993,7 +16071,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             await cfg().update('planUsageEngine', want, vscode.ConfigurationTarget.Global);
             planUsageBar.paint();
-            DashboardPanel.pushPlanUsage(planUsage.current(), planBeat(), engineUsageMatrix(), want);
+            DashboardPanel.pushPlanUsage(
+                planUsage.current(), planBeat(), engineUsageMatrix(), want, usageAccountLabel(want));
         }));
     // Every live hook event may have crossed the idle/active line; the bar acts
     // on the EDGE only — a turn starting and a turn ending each earn one
@@ -16075,6 +16154,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // U-27 — the card's mini tabs and the status bar read the same two.
         planUsageEngines: engineUsageMatrix,
         planUsageEngine: usageEngine,
+        // X-212 — …and the third: whose sign-in of it these figures are.
+        planUsageAccount: usageAccountLabel,
         // B1: the project axis — the card's rollup and the map the rows group by.
         projects: () => projectRollup(),
         agentProjects: () => agentProjectNames(
@@ -16591,7 +16672,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ CAPTURING IS NOT CHOOSING, and the default says so. Redirecting the
         // next session as a side effect of writing something down would move
         // where the money comes from without anybody asking for it.
-        if (activate) { await writeActiveAccounts({ ...activeAccounts(), [eng]: slot.id }); }
+        if (activate) {
+            await writeActiveAccounts({ ...activeAccounts(), [eng]: slot.id });
+            usageFollowedAccount(eng);
+        }
         return { refusal: '', plan, slot };
     };
     /** Which account the next session on an engine opens with. An empty id is a
@@ -16606,6 +16690,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const next = { ...active };
             delete next[eng];
             await writeActiveAccounts(next);
+            usageFollowedAccount(eng);
             return { refusal: '', engine: eng, active: null, note: `${eng} sessions will use the main sign-in.` };
         }
         const slot = findSlot(storedAccounts(), clean);
@@ -16616,10 +16701,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
         }
         await writeActiveAccounts({ ...active, [slot.engine]: slot.id });
+        usageFollowedAccount(slot.engine);
         return {
             refusal: '', engine: slot.engine, active: slot.id,
             note: `The next ${slot.engine} session opens as ${slotLabel(slot)}.`
         };
+    };
+    /**
+     * ‼️ X-212 — THE INDICATOR MOVES WITH THE CHOICE, IN THE SAME GESTURE.
+     *
+     * Making an account standing changes which file `planUsage` reads, and that
+     * alone would show up whenever the beat next came round — up to five minutes
+     * of the status bar quoting the account the user just moved away from, while
+     * the heading already carried the new one's name. That is the failure
+     * Principle 1 describes: a control that appears to do nothing.
+     *
+     * So the read is pulled forward. `get(true)` is the person's own privilege
+     * (they pressed something), and it is honest here: the cache it would have
+     * served belongs to another sign-in and is dropped by the service anyway.
+     * Only the engine whose figures are on show costs a request; switching a
+     * Codex account while Claude is displayed is a repaint.
+     */
+    const usageFollowedAccount = (engine: string): void => {
+        const eng = (engine || 'claude').trim().toLowerCase() || 'claude';
+        planUsageBar.paint();
+        DashboardPanel.pushPlanUsage(
+            planUsage.current(), planBeat(), engineUsageMatrix(), usageEngine(),
+            usageAccountLabel(usageEngine()));
+        DashboardPanel.refreshIfOpen();
+        if (eng !== 'claude' || usageEngine() !== 'claude') { return; }
+        void planUsage.get(true).then(() => {
+            planUsageBar.paint();
+            DashboardPanel.pushPlanUsage(
+                planUsage.current(), planBeat(), engineUsageMatrix(), usageEngine(),
+                usageAccountLabel(usageEngine()));
+        }, () => { /* the snapshot says why */ });
     };
     /** Drop an account from the list. The directory is left on disk unless the
      *  caller says otherwise: forgetting is a bookkeeping act, and deleting
@@ -16676,8 +16792,86 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * (`accountEnv`), never spelt out here: a door that wrote `CLAUDE_CONFIG_DIR`
      * would be a door that only works on one engine while looking general.
      */
-    const launchAccountEnv = (o: { engine?: string; account?: string }): Record<string, string> =>
-        accountEnv(launchAccountSlot(o));
+    const launchAccountEnv = (o: { engine?: string; account?: string }): Record<string, string | null> => {
+        /**
+         * ‼️ X-211 — THREE ANSWERS, NOT TWO, and the third is why this is no
+         * longer one line.
+         *
+         * A slot INJECTS the variable. Nothing stated leaves it exactly as it
+         * was, which is what every launch did before accounts existed. And the
+         * machine's own sign-in, stated outright, must CLEAR it — because the
+         * window Agent Farm runs in may itself have been started with one, and
+         * then "Machine Global" on every surface would sit over a process
+         * running as somebody's slot. Not setting a name does not unset it.
+         */
+        if ((o.account || '').trim() === MACHINE_ACCOUNT) {
+            return accountEnvFor(o.engine, MACHINE_ACCOUNT, storedAccounts());
+        }
+        return accountEnv(launchAccountSlot(o));
+    };
+    /**
+     * ‼️ X-214 — WHICH SIGN-IN A TERMINAL PICKS A CONVERSATION BACK UP ON.
+     *
+     * Resume in a terminal carried NO account layer at all: whatever the VS Code
+     * window happened to hold ran the conversation, and every surface that said
+     * otherwise was guessing. That is the same ghost the Console had, on the
+     * other surface — and it matters most exactly here, because the reason a
+     * person resumes in a terminal at all is usually that the plan they were on
+     * ran out.
+     *
+     * It ASKS rather than assuming, and the ordering is the answer: the standing
+     * account of that engine is the first row, so Enter is what the machine
+     * would have done anyway. Cancelling opens nothing — a resume that quietly
+     * went ahead on a sign-in the person was in the middle of choosing is worse
+     * than no resume at all.
+     *
+     * Two answers need no question and are not asked: an engine that cannot hold
+     * a second sign-in (nothing to choose between) and a machine with no slot
+     * captured for it (one row, already true — the control with no referent).
+     */
+    const pickResumeAccount = async (
+        engine: string, title: string
+    ): Promise<string | undefined> => {
+        if (!canIsolateAccounts(engine)) { return ''; }
+        const slots = slotsFor(storedAccounts(), engine);
+        if (!slots.length) { return MACHINE_ACCOUNT; }
+        const standing = activeAccounts()[engine] || '';
+        const usage = accountUsage.current();
+        type Row = vscode.QuickPickItem & { id: string };
+        const machine: Row = {
+            id: MACHINE_ACCOUNT, label: MACHINE_GLOBAL_ROW,
+            description: standing ? '' : '• the standing choice',
+            detail: 'The identity this machine itself is signed in as — nothing is injected, '
+                + 'which is what every session ran as before accounts existed.'
+        };
+        const rowFor = (sl: EngineAccountSlot): Row => {
+            const u = usage.find(x => x.slotId === sl.id);
+            const health = slotIdentityFresh(sl).health;
+            return {
+                id: sl.id,
+                label: (health === 'ready' ? '' : '⚠ ') + slotLabel(sl),
+                description: sl.id === standing ? '• the standing choice' : '',
+                // ‼️ THE FIGURE THE CHOICE TURNS ON, on the row rather than a
+                // click away (DENSITY) — and "nothing has measured it" is said
+                // rather than drawn as plenty of room left.
+                detail: [
+                    health === 'ready' ? '' : 'this sign-in needs attention — capture it again',
+                    u && u.percent >= 0
+                        ? `${u.percent}% of the 5-hour window used`
+                        : 'nothing has measured this account\'s window yet'
+                ].filter(Boolean).join(' · ')
+            };
+        };
+        const mine = slots.map(rowFor);
+        const first = mine.filter(r => r.id === standing);
+        const rest = mine.filter(r => r.id !== standing);
+        const pick = await vscode.window.showQuickPick([...first, machine, ...rest], {
+            title: `Resume "${title}" as…`,
+            placeHolder: 'Which sign-in pays for this conversation from here on',
+            ignoreFocusOut: true
+        });
+        return pick?.id;
+    };
     /**
      * ‼️ AN ACCOUNT ID THAT NAMES NOTHING IS REFUSED, NOT IGNORED — falling back
      * to the main sign-in for a slot that was forgotten would start the session
@@ -18434,7 +18628,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // removed. An empty map is the ordinary answer and changes nothing.
     const launchClaudeTerminal = (
         name: string, cwd: string | undefined, command: string,
-        env?: Record<string, string>, sessionId?: string, project?: string,
+        // ‼️ X-211 — a name mapped to `null` is REMOVED from the terminal's
+        // environment rather than set to a blank (see terminalEnvOverlay): the
+        // machine's own sign-in, stated outright, is the absence of the engine's
+        // config variable, and this window may already carry one.
+        env?: Record<string, string | null>, sessionId?: string, project?: string,
         /**
          * ‼️ WHICH ENGINE THIS TERMINAL IS RUNNING (X-35). Absent = Claude, which
          * fires its own hooks and needs nothing from us. Anything else gets a
@@ -21401,6 +21599,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 };
             });
         },
+        // X-213 — whether the axis exists on this engine at all, which is not
+        // the same question as whether anything has been captured for it.
+        accountAxis: (engine: string) => canIsolateAccounts(engine),
+        // …and its name, resolved once here so `@machine` never reaches a page.
+        accountLabel: (stated: string | undefined) => statedAccountLabel(stated, storedAccounts()),
         lastLaunch: (agentId: string) => lastLaunchOf(agentId),
         rememberLaunch: (agentId: string, o: LaunchOptions, surface: RunSurface) =>
             void rememberLaunch(agentId, o, surface),
@@ -27066,6 +27269,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // the switch was set, and an agent that works to a discipline
                 // silently dropping it on the second sitting is exactly the
                 // failure the every-spawn rule exists to prevent.
+                /**
+                 * ‼️ X-214 — AND ON WHOSE PLAN. This surface carried no account
+                 * layer at all, so a resumed conversation ran on whatever the
+                 * window held while the Engines page, the status bar and the
+                 * Console all named something else. Asked BEFORE anything is
+                 * built, because cancelling it opens nothing at all — see
+                 * pickResumeAccount.
+                 */
+                const account = await pickResumeAccount(engine, s.title || s.sessionId.slice(0, 8));
+                if (account === undefined) { return; }
                 const own = sessionOwnProject(s);
                 launchClaudeTerminal(`${spec.exe}: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
                     buildLaunchCommand(spec.exe, {
@@ -27077,9 +27290,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         projectContextFile: systemPromptFileFor(own || undefined, 'session',
                             superpowersOnFor(s.agentName))
                     }),
+                    launchAccountEnv({ engine, account }),
                     // '' = do not stamp. A resume does not decide where a session
                     // belongs; it already belongs somewhere, or deliberately nowhere.
-                    undefined, s.sessionId, '');
+                    s.sessionId, '');
             }),
 
         // ---------- A2: the shelf (pin + tags) ----------

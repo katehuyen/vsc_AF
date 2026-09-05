@@ -1174,6 +1174,15 @@
       }
     },
     {
+      "capability": "consolePanel.ts#setLiveAccount",
+      "ui": [
+        "page:consolePanel.ts#setLiveAccount"
+      ],
+      "ops": [
+        "console.setAccount"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#setModel",
       "ui": [
         "page:consolePanel.ts#setModel"
@@ -2638,15 +2647,6 @@
       ]
     },
     {
-      "capability": "missionsPanel.ts#sentryProbe",
-      "ui": [
-        "page:missionsPanel.ts#sentryProbe"
-      ],
-      "ops": [
-        "sentry.probe"
-      ]
-    },
-    {
       "capability": "missionsPanel.ts#refresh",
       "ui": [
         "page:missionsPanel.ts#refresh"
@@ -2684,6 +2684,15 @@
         "sentry.stop",
         "sentry.pause",
         "sentry.resume"
+      ]
+    },
+    {
+      "capability": "missionsPanel.ts#sentryProbe",
+      "ui": [
+        "page:missionsPanel.ts#sentryProbe"
+      ],
+      "ops": [
+        "sentry.probe"
       ]
     },
     {

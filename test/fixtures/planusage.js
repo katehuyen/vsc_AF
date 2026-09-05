@@ -72,7 +72,11 @@ const base = (engine) => ({
     },
     planUsageBeat: { ms: 300000, active: false },
     planUsageEngines: engines(),
-    planUsageEngine: engine
+    planUsageEngine: engine,
+    // X-212 — whose sign-in the card is showing. Claude carries an address (the
+    // long case the head has to survive); everything else answers '' because it
+    // cannot hold a second sign-in, and that must draw nothing at all.
+    planUsageAccount: engine === 'claude' ? 'murvietnam@gmail.com' : ''
 });
 
 const data = () => base('claude');
@@ -91,6 +95,14 @@ const variants = () => ([
         id: 'planusage-opencode',
         label: 'Plan usage — OpenCode (‼️ no single window to be a percentage of — five tabs on one line)',
         data: base('opencode')
+    },
+    {
+        // ‼️ X-212 — the absence of a standing account is a NAME, not a gap.
+        // Drawn beside the long-address case above so the head can be checked
+        // at both extremes in one picture.
+        id: 'planusage-global',
+        label: 'Plan usage — the machine\'s own sign-in (‼️ named, never a blank)',
+        data: { ...base('claude'), planUsageAccount: 'Machine Global' }
     }
 ]);
 

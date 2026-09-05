@@ -345,6 +345,9 @@
            horizontal scroll inside a 250px column. */
         .srow .h > .af-tipw.nw { flex:1 1 auto; min-width:0; display:block; overflow:hidden; }
         .srow .h > .af-tipw.mw { flex:none; }
+        /* X-213 — the account mark takes no room from the name: the pill caps
+           its own width (.af-acct) and this stops the wrapper stretching. */
+        .srow .m .af-tipw.acw { display:inline-block; vertical-align:bottom; }
         .srow > .af-tipw.t2w { display:block; min-width:0; }
         .dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
         .talkwrap { position:relative; display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
@@ -782,6 +785,10 @@
             font-size:11px; padding:0 3px; color:inherit; }
         .fixed.pinned .only:hover { opacity:1; }
         .permlbl { font-size:10px; opacity:.75; display:flex; align-items:center; gap:4px; }
+        /* X-213 — a promise about the next turn is not the quiet half of the
+           strip: the label comes up to full weight so the reader can see, at a
+           glance across the row, that the next message moves account. */
+        .permlbl.pend { opacity:1; color:var(--vscode-charts-yellow,#cca700); font-weight:600; }
         .owned { opacity:.5; }
         .owned .n::after { content:' · open elsewhere'; font-weight:400; opacity:.8; }
         .empty { padding:26px 12px; color:var(--vscode-descriptionForeground); font-size:12px; }
@@ -1898,6 +1905,13 @@
             // U-50 — four subjects, four panels, no fact in two of them.
             const twho = cardWhoTip(s), tname = cardNameTip(s);
             const tcost = cardCostTip(s), tstate = cardStateTip(s);
+            // ‼️ X-213 — the account mark goes on the SECOND line, beside the
+            // project badge, not up beside the name. It is the same kind of
+            // fact as the project (who this run belongs to rather than what it
+            // is), and the header line is already the name competing with the
+            // engine, the route and the token figure — measured: an address
+            // pill up there took the agent's own name down to "(#019".
+            const acct = accountBadge(s);
             return `
             <div class="srow ${p.cls}${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
                  ${ctxAttr({
@@ -1936,7 +1950,7 @@
                 ${colorDot(s.sessionId, s.color, 'live')}
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
                 <div class="m">${cardTip(`<span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>`,
-                    tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(s))}</span>`, ctxTip(s).head, ctxTip(s).body)}` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
+                    tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(s))}</span>`, ctxTip(s).head, ctxTip(s).body)}` : ''}${acct ? ` · ${acct}` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
             </div>`;
         }).join('');
         // One line above the cards, only when something is actually waiting:
@@ -2970,6 +2984,45 @@
      * `media/afRoute.js` and both read the same file, the way the engine badge
      * already does (U-26).
      */
+    /**
+     * ‼️ X-213 — WHOSE SIGN-IN THIS CARD IS SPENDING, on the card.
+     *
+     * The account has ridden on a card's state since X-169 and no surface drew
+     * it, which is the half of the ghost that survives a correct picker: the
+     * choice was right and invisible, so a person rotating three plans could
+     * not tell two cards apart. It sits beside the engine and the route because
+     * it is the third fact of the same kind — the engine is the program, the
+     * route is what that program talks to, and this is who pays.
+     *
+     * Drawn only where the engine can hold a second sign-in: elsewhere there is
+     * nothing to distinguish, and a mark that is on every card equally is a mark
+     * nobody reads.
+     */
+    function accountBadge(s) {
+        if (!s || !s.accountAxis) { return ''; }
+        const now = s.accountLabel || '';
+        if (!now) { return ''; }
+        const next = s.accountNext ? (s.accountNextLabel || s.accountNext) : '';
+        return cardTip(
+            `<span class="af-acct${next ? ' af-acct-next' : ''}">${C.esc(next ? next + ' →' : now)}</span>`,
+            // SHORTHAND — the pill is the short form, the panel opens with the
+            // long one so nobody has to already know what the arrow meant.
+            next ? `${next} — the sign-in this conversation moves to on its next message`
+                : `${now} — the sign-in this conversation is spending`,
+            window.AFTip.lines([
+                'Running as: ' + now,
+                next
+                    ? 'Next message runs as: ' + next
+                        + ' — the process is ended and the same conversation is resumed on it, '
+                        + 'so nothing that has been said is lost'
+                    : '',
+                '\nAn account is sealed into the process, so a card keeps the one it '
+                + 'started on even after the Engines page points somewhere else. '
+                + 'Change it from the account box under the conversation.'
+            ]),
+            'acw');
+    }
+
     function routeBadge(s) {
         const r = s && s.route;
         if (!r || !r.label) { return ''; }
@@ -3064,7 +3117,16 @@
      */
     const accountRows = () => DATA.composerAccounts || [];
     const accountPick = () => DATA.composerAccount || '';
-    function accountAxisOn() { return accountRows().some(a => a && a.id); }
+    /**
+     * ‼️ X-213 — the axis is a fact about the ENGINE, and the host answers it.
+     *
+     * This used to be `some(a => a.id)`, i.e. "has anybody captured one yet",
+     * and that hid the box on exactly the machine that most needed it: nothing
+     * captured, every session running on the machine's own sign-in, and no
+     * surface anywhere saying so. Whether a second sign-in is POSSIBLE is what
+     * decides whether there is a choice to draw.
+     */
+    function accountAxisOn() { return DATA.composerAccountAxis === true; }
     /**
      * ‼️ WHETHER THE BOX EXISTS AT ALL, which is a fact about what may be drawn
      * rather than an answer anybody gave — the same distinction `routeShape`
@@ -3075,6 +3137,30 @@
      * the box has to turn up without waiting for something else to move.
      */
     function accountShape() { return accountRows().length + (accountAxisOn() ? 'a' : '-'); }
+    /**
+     * ‼️ X-213 — AND THE SAME QUESTION FOR A LIVE CARD, which is a different
+     * one and had no answer at all.
+     *
+     * The composer's shape only enters the shell key when there is NO session:
+     * a live card's strip was built once and left alone, which was right while
+     * nothing on it could change shape. The account box can. Its VALUE is in
+     * here, not only its existence, because the box's selected row, its label
+     * (`account` vs `account →`) and its colour all follow the value — so a
+     * swap that did not reach this key would be a picker that appears to do
+     * nothing until something else happens to repaint the page.
+     */
+    function liveAccountShape(s) {
+        if (!s) { return ''; }
+        return '|' + (s.accountAxis ? 'a' : '-') + (s.accountRows || []).length
+            + ':' + (s.account || '') + '>' + (s.accountNext || '');
+    }
+    /** ‼️ X-211 — the machine's own sign-in, stated. The value is the sentinel
+     *  the host and the core share; drawing '' here is what let the browser
+     *  select the first account while the session opened as somebody else. */
+    const MACHINE_ACCOUNT = '@machine';
+    /** …and what it is called in a picker — the badge is what makes it read as
+     *  a choice somebody made rather than a placeholder nobody filled in. */
+    const MACHINE_GLOBAL_ROW = '💻 Machine Global';
     /** Is there actually something to choose? A picker whose only row is
      *  "Default" is a control with no referent, and the composer is not where a
      *  person learns that routes exist — Settings is. */
@@ -3417,7 +3503,21 @@
         const accountBoxHtml = () => {
             if (!accountAxisOn()) { return ''; }
             const cur = accountPick();
-            const rows = accountRows().map(a => ({
+            /**
+             * ‼️ X-213 — THE ROOT ROW, AT THE TOP, ALWAYS.
+             *
+             * The machine's own sign-in was the value the box could not show: ''
+             * had no `<option>`, so the browser fell back to the first account
+             * and the reader was told a lie the moment the panel opened. It is
+             * a row now, it is first because it is the answer everything starts
+             * from, and it carries the same badge on every surface.
+             */
+            const rows = [{
+                id: MACHINE_ACCOUNT,
+                label: MACHINE_GLOBAL_ROW,
+                detail: 'the identity this machine itself is signed in as — no slot, '
+                    + 'nothing injected, which is what every session ran as before accounts existed'
+            }].concat(accountRows().map(a => ({
                 id: a.id,
                 // ‼️ SHORTHAND — the row is a `<select>` line, so it carries the
                 // shortest unambiguous form: the label, a dot for the standing
@@ -3432,12 +3532,13 @@
                     // is the honest answer: not knowing is not "plenty left".
                     a.percent >= 0 ? a.percent + '% of the 5-hour window used' : ''
                 ].filter(Boolean).join(' · ')
-            }));
+            })));
             const tip = 'Which sign-in of this engine pays for the new session. '
-                + 'Blank is the main account — the identity signed in on this machine. '
-                + 'A dot marks the standing choice — the account whose switch is ON on the Engines page; '
-                + 'this box overrules it for THIS session only, because an account is a '
-                + 'state and not a preference and nothing here is remembered.';
+                + MACHINE_GLOBAL_ROW + ' is the identity this machine itself is signed in as. '
+                + 'A dot marks the standing choice — the account made active on the Engines page; '
+                + 'the box OPENS on it, and what you see here is what the session will really '
+                + 'run as. Changing it overrules the standing choice for THIS session only, '
+                + 'because an account is a state and not a preference and nothing here is remembered.';
             const shown = withCurrent(rows, cur);
             return `<label class="rtlbl" title="${C.esc(boxTip(shown, cur, tip))}"><span>account</span>
                     <select id="c-account">${opts(shown, cur)}</select>
@@ -3537,6 +3638,64 @@
             const row = engineRow(engineId || 'claude');
             return !row || row.takesEffort !== false;
         };
+        /**
+         * ‼️ X-213 — THE ACCOUNT BOX DOES NOT LOCK WHEN THE SESSION STARTS.
+         *
+         * This is the whole of X-211 on one control. A window hits its five-hour
+         * ceiling in the middle of a task and the answer used to be: open a
+         * second terminal, sign in as the other account, `claude --resume`, and
+         * carry on there. Everything that made that work is already here — the
+         * transcript is on disk and the slots share it by junction — so the only
+         * missing piece was a way to SAY it. It is this box.
+         *
+         * ‼️ AND IT IS HONEST ABOUT WHEN THE SWAP HAPPENS. On Claude the account
+         * is sealed into the process, so the change is a promise about the next
+         * message and the label says so out loud (`→ name`) until that message
+         * is sent. On a per-turn engine there is no process between turns and
+         * the change is simply true. Neither is a rule invented here: it is the
+         * engine's shape, and the host answers with the same distinction.
+         *
+         * Drawn only where the engine can hold a second sign-in at all — the
+         * same fact the composer's box is drawn from, so the two agree.
+         */
+        const liveAccountBoxHtml = (s) => {
+            if (!s || !s.accountAxis) { return ''; }
+            const cur = s.accountNext || s.account || MACHINE_ACCOUNT;
+            const rows = [{
+                id: MACHINE_ACCOUNT, label: MACHINE_GLOBAL_ROW,
+                detail: 'the identity this machine itself is signed in as'
+            }].concat((s.accountRows || []).map(a => ({
+                id: a.id,
+                label: (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''),
+                detail: [
+                    a.health === 'ready' ? '' : 'this sign-in needs attention — capture it again',
+                    a.active ? 'the standing choice for this engine' : '',
+                    a.percent >= 0 ? a.percent + '% of the 5-hour window used' : ''
+                ].filter(Boolean).join(' · ')
+            })));
+            const shown = withCurrent(rows, cur);
+            // MIRROR — the box is far too narrow for an address, so the first
+            // line of its hover is what is actually sealed right now, and the
+            // second says what is about to change if the two differ.
+            const nowLine = 'Running as: ' + (s.accountLabel || MACHINE_GLOBAL_ROW);
+            const nextLine = s.accountNext
+                ? 'Next message runs as: ' + (s.accountNextLabel || s.accountNext)
+                    + ' — this process is ended and the same conversation is resumed on it, '
+                    + 'so nothing that has been said is lost'
+                : '';
+            const tip = [nowLine, nextLine,
+                'Change it when a plan runs out mid-task: the conversation continues on the other '
+                + 'sign-in instead of waiting for the window to reset. '
+                + MACHINE_GLOBAL_ROW + ' is the identity this machine itself is signed in as.'
+            ].filter(Boolean).join('\n\n');
+            // The pending swap is on the LABEL, not only in the hover: a promise
+            // about the next turn that you have to hover to find is a promise
+            // the reader will not know was made.
+            const word = s.accountNext ? 'account →' : 'account';
+            return `<label class="permlbl${s.accountNext ? ' pend' : ''}" title="${C.esc(tip)}">${word}
+                    <select id="c-account-live">${opts(shown, cur)}</select>
+                </label>`;
+        };
         const effortBox = (engineId, model, cur, id, tip) => {
             if (!drawsEffort(engineId)) { return ''; }
             const rows = effortsForModel(engineId, model);
@@ -3553,6 +3712,7 @@
                     <select id="c-model-live">${opts(modelsFor(s.engine), s.model)}</select>
                 </label>
                 ${effortBox(s.engine, s.model, s.effort, 'c-effort-live', effortTip)}
+                ${liveAccountBoxHtml(s)}
                 <label class="permlbl" title="${C.esc(boxTip(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode, permTip))}">permissions
                     <select id="c-perm">${opts(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode)}</select>
                 </label>
@@ -3949,6 +4109,23 @@
             paint();
             const box = document.getElementById('c-account');
             if (box && box.focus) { box.focus(); }
+        });
+        /**
+         * ‼️ X-213 — the mid-session swap. The host owns every refusal (a card
+         * with no id yet, a shared connection), so the page states the wish and
+         * repaints from the answer rather than deciding anything itself.
+         */
+        byId('c-account-live', 'change', e => {
+            const cur = sel();
+            if (!cur) { return; }
+            // ‼️ M-33 — the echo that changes this box's shape is MY OWN answer,
+            // arriving with the hand still on the select that asked for it. The
+            // route box learned this first (see askedHost); without it the strip
+            // would only redraw once the reader had moved somewhere else.
+            askedHost = true;
+            vscode.postMessage({
+                type: 'setLiveAccount', id: cur.id, account: e.target.value || ''
+            });
         });
         byId('c-tier', 'change', e =>
             sendRoute((routePick().providerId || ''), e.target.value, 'c-tier'));
@@ -4391,7 +4568,7 @@
             engine: engineNow(), model: st.model,
             providerId: routePick().providerId, tier: routePick().tier
         }) + '|' + routeShape() + '|' + accountShape();
-        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}`;
+        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}${liveAccountShape(s)}`;
         if (shellKey !== key) {
             // ‼️ M-33 — ONLY A REBUILD NOBODY ASKED FOR WAITS.
             //

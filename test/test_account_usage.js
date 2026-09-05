@@ -299,6 +299,105 @@ async function main() {
             unreadUsage(slot('z')).state === 'error' && unreadUsage(slot('z')).percent === -1);
     }
 
+    // ---------- X-212: the indicator reads the account that is STANDING ----------
+    //
+    // ‼️ The failure this section exists to prevent is the quiet one: the status
+    // bar goes on quoting the main sign-in's window while every session runs on
+    // a standing slot, and the heading — which now carries a name — puts the new
+    // account's name over the old account's figures. Two numbers, one of them
+    // for a plan nobody is spending.
+    {
+        const { slotCredentialsFile } = require(
+            path.join(__dirname, '..', 'out', 'core', 'accountUsage.js'));
+        const { MACHINE_GLOBAL, accountLabelOf, slotLabel } = require(
+            path.join(__dirname, '..', 'out', 'core', 'accountStore.js'));
+        const { canIsolateAccounts } = require(
+            path.join(__dirname, '..', 'out', 'core', 'engineAccounts.js'));
+
+        ok('a Claude slot names the credentials file inside its own directory',
+            slotCredentialsFile(slot('a')) === path.join('D:/slots/a', '.credentials.json'));
+        ok('‼️ no slot is the MAIN sign-in and answers with nothing to read',
+            slotCredentialsFile(undefined) === '');
+        ok('…and so does an engine that keeps no readable credential',
+            slotCredentialsFile(slot('cx', 'codex')) === '');
+
+        ok('the absence of a slot has a NAME rather than being a blank',
+            accountLabelOf(undefined) === MACHINE_GLOBAL && MACHINE_GLOBAL.length > 0);
+        ok('…and a slot answers with what a person calls it',
+            accountLabelOf({ id: 'a', engine: 'claude', dir: 'x', label: 'work' }) === 'work'
+            && slotLabel({ id: 'a', engine: 'claude', dir: 'x', label: 'work' }) === 'work');
+
+        // The axis exists where a variable can move the config directory, and
+        // NOWHERE else — "no accounts captured" and "no such thing here" are
+        // different answers and only the first deserves a Machine Global row.
+        ok('‼️ the account axis is a fact about the engine, not about the list',
+            canIsolateAccounts('claude') === true && canIsolateAccounts('codex') === true
+            && canIsolateAccounts('gemini') === false && canIsolateAccounts('nosuch') === false);
+    }
+
+    // ---------- X-212: a cached percentage belongs to the sign-in it was read for ----------
+    {
+        const { PlanUsageService } = require(
+            path.join(__dirname, '..', 'out', 'core', 'planusage.js'));
+        let file = 'D:/home/.claude/.credentials.json';
+        const read = [];
+        const fetched = [];
+        let clock = NOW;
+        const service = new PlanUsageService({
+            ttlMs: () => 300_000,
+            now: () => clock,
+            credentialsFile: () => file,
+            readCreds: (f) => {
+                read.push(f);
+                // the dead slot answers the way a directory nobody signed into
+                // does — and that answer must be stamped with ITS file too
+                return /dead/.test(f)
+                    ? undefined
+                    : { token: 'tok', expiresAt: NOW + 3600_000, plan: 'max' };
+            },
+            fetchImpl: async () => {
+                fetched.push(file);
+                return { status: 200, body: payload(fetched.length * 10, NOW + 3600_000) };
+            }
+        });
+
+        const first = await service.get();
+        ok('the first read answers from the file it was pointed at', first.state === 'ok'
+            && first.bars[0].percent === 10 && fetched[0] === 'D:/home/.claude/.credentials.json');
+
+        clock += 1000;
+        await service.get();
+        ok('a second read inside the TTL costs nothing, as it always did', fetched.length === 1);
+
+        // the standing account moves — the same instant, not at the next beat
+        file = 'D:/slots/work/.credentials.json';
+        clock += 1000;
+        const after = await service.get();
+        ok('‼️ the account moved, so the cached snapshot is DROPPED rather than aged out',
+            fetched.length === 2 && fetched[1] === 'D:/slots/work/.credentials.json');
+        ok('…and what comes back is the new account\'s figure, not the old one\'s',
+            after.bars[0].percent === 20);
+
+        clock += 1000;
+        await service.get();
+        ok('the new account then caches like any other', fetched.length === 2);
+
+        // ‼️ and a FAILURE is stamped with its source too: an unreadable slot
+        // must not look like a fresh cache for whoever the user moves to next.
+        file = 'D:/slots/dead/.credentials.json';
+        clock += 1000;
+        const dead = await service.get();
+        ok('an account with no sign-in in it says so instead of showing the last one\'s bars',
+            dead.state === 'no-auth' && fetched.length === 2);
+        file = 'D:/slots/work/.credentials.json';
+        clock += 1000;
+        const back = await service.get();
+        ok('‼️ moving back off an unreadable account re-reads rather than serving its snapshot',
+            fetched.length === 3 && back.state === 'ok' && back.bars[0].percent === 30);
+        ok('every read named the file it was pointed at, in order',
+            read.length === 4 && read[3] === 'D:/slots/work/.credentials.json');
+    }
+
     // ---------- the queue is visible, because a hidden one cannot be trusted ----------
     {
         const { service, tick } = svc([slot('a'), slot('b')]);

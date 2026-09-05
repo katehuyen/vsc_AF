@@ -446,6 +446,23 @@ export interface ConsoleSessionState {
      */
     account?: string;
     /**
+     * ‼️ X-213 — THE SIGN-IN THE **NEXT** TURN WILL RUN AS, when it differs.
+     *
+     * A running Claude process is sealed to the environment it was spawned
+     * with: there is no control request that moves it to another account, and
+     * pretending otherwise would be a picker that appears to work and changes
+     * nothing (Principle 1). So the choice is recorded as a promise about the
+     * next turn, said out loud on the card, and kept until that turn is sent —
+     * at which point the process is ended and the SAME conversation is brought
+     * back up on the new sign-in with `--resume`, which is what the user was
+     * doing by hand in a second terminal.
+     *
+     * Absent means what is running is what was chosen. On a per-turn engine it
+     * is never set at all: there is no process between turns to be sealed, so
+     * `account` moves directly and the next spawn already carries it.
+     */
+    accountNext?: string;
+    /**
      * ‼️ X-102 — WHICH SPAWN THIS CARD IS, and therefore which manifest.
      *
      * The card learns its `sessionId` from the engine minutes into the
@@ -1770,6 +1787,28 @@ export function carriedTotals(s: {
         contextTokens: s.lastCtxTokens ?? 0,
         contextWindowTokens: s.ctxWindow ?? 0,
         ...(u ? { usage: { ...u } } : {})
+    };
+}
+
+/**
+ * ‼️ X-213 — WHAT A CARD HANDS TO ITS OWN NEXT PROCESS.
+ *
+ * Re-sealing a session onto another account ends one process and resumes the
+ * same conversation in another, in the same card. `carriedTotals` cannot answer
+ * for that: it reads the INDEX row, and the index has not seen the turns this
+ * window just watched happen — so the card's cost, tokens and turn count would
+ * snap back to whatever was last written to disk, and the reader would see the
+ * conversation get cheaper because they changed account.
+ *
+ * The state's own totals already include whatever it was resumed with (see
+ * `newSessionState`), so they ARE the baseline: this is one line of arithmetic
+ * written down once so nothing has to remember it.
+ */
+export function carryOn(s: ConsoleSessionState): CarriedTotals {
+    return {
+        costUSD: s.costUSD, tokens: s.tokens, wTokens: s.wTokens, turns: s.turns,
+        ...(s.contextTokens ? { contextTokens: s.contextTokens } : {}),
+        ...(s.contextWindowTokens ? { contextWindowTokens: s.contextWindowTokens } : {})
     };
 }
 

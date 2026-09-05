@@ -575,6 +575,26 @@ span.af-tipw { display: inline-block; max-width: 100%; }
 .af-route.af-route-moved {
     opacity: 1; color: var(--vscode-foreground, #ccc);
 }
+/* ‼️ X-213 - WHOSE PLAN A CARD IS SPENDING, beside the engine and the route and
+   for the same reason: the engine is the program, the route is what it talks
+   to, and the account is who pays. Three facts, three marks, ONE SUBJECT each.
+   Solid rather than dashed so it does not read as a second route, and in the
+   same neutral foreground for the same reason the route is: every hue in this
+   extension already means an engine or a state. */
+.af-acct {
+    flex: none; display: inline-block; font-size: 9px; line-height: 15px;
+    padding: 0 5px; border-radius: 7px; white-space: nowrap; max-width: 120px;
+    overflow: hidden; text-overflow: ellipsis; vertical-align: bottom;
+    border: 1px solid currentColor; opacity: .7;
+    color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+/* …and a card whose NEXT message moves to another sign-in says so on the mark
+   itself, in the same yellow the strip's label uses: a promise about the next
+   turn that you have to open a card to find is a promise the reader will not
+   know was made. */
+.af-acct.af-acct-next {
+    opacity: 1; color: var(--vscode-charts-yellow, #cca700);
+}
 /* ‼️ Antigravity is NOT green (U-49). Green is this extension's own signal —
    the live dot, an OK engine card, an assistant message, an active agent — so
    an `agy` badge in green read as "this row is fine" on every surface at once.

@@ -14,6 +14,7 @@ import {
 import {
     EngineId, engineFlagFor, engineNote, engineOf, ENGINES, engineTakesEffort, noTranscriptNote
 } from '../core/consoleEngine';
+import { MACHINE_ACCOUNT, MACHINE_GLOBAL_ROW } from '../core/accountStore';
 import { EngineOption, engineRefusal } from '../core/engines';
 import { ProviderForm, ProviderPick, ProviderTransport } from '../core/launchProvider';
 import { EngineModels, narrowLaunch } from '../core/models';
@@ -249,6 +250,20 @@ export interface ConsoleDeps {
          *  travels with the row rather than costing a click. */
         percent: number;
     }[];
+    /**
+     * ‼️ X-213 — CAN THIS ENGINE HOLD A SECOND SIGN-IN AT ALL?
+     *
+     * Separate from `accountsFor` because it answers a different question: that
+     * one says which slots exist, this one says whether the axis exists. An
+     * empty list on Claude means "capture one" and still deserves the box with
+     * Machine Global in it; an empty list on Gemini means the picker would be a
+     * control with no referent. Both used to look identical.
+     */
+    accountAxis?(engine: string): boolean;
+    /** ‼️ X-213 — a STATED account in words: a slot's label, `Machine Global`
+     *  for the machine's own, '' for nothing stated. One translation, host-side,
+     *  so the sentinel never reaches a page and no surface invents a name. */
+    accountLabel?(stated: string | undefined): string;
     /**
      * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, and where.
      *
@@ -834,6 +849,32 @@ export class ConsolePanel {
                 // is what moved; this is what it cost the window (QUOTA_WEIGHTS).
                 wTokens: Math.round(s.wTokens ?? 0),
                 model: s.model ?? '', effort: s.effort ?? '',
+                /**
+                 * ‼️ X-213 — WHOSE PLAN THIS CARD IS SPENDING, and whose the
+                 * next turn will spend when the two differ.
+                 *
+                 * The card carried the account since X-169 and said nothing
+                 * about it on any surface, which is the half of the ghost that
+                 * survives a correct picker: the choice was right and invisible.
+                 * `accountLabel` is the words (the sentinel never reaches a
+                 * page); `account` is the value the box is set to, so what is
+                 * shown and what is sealed are one field.
+                 */
+                account: s.account ?? '',
+                accountLabel: this.deps.accountLabel?.(s.account) ?? '',
+                accountNext: s.accountNext ?? '',
+                accountNextLabel: this.deps.accountLabel?.(s.accountNext) ?? '',
+                // …and whether this engine can be moved at all, which is the
+                // same fact the composer's box is drawn from.
+                accountAxis: this.deps.accountAxis?.(engineOf(s.engine).id) === true,
+                // ‼️ …and THIS card's engine's slots, not the composer's. The
+                // composer's engine is a different question and two cards on two
+                // engines are drawn from the same payload; reusing the composer's
+                // list here is how a Codex card would come to offer Claude's
+                // sign-ins. Empty on an engine with no axis, where nothing is
+                // drawn anyway.
+                accountRows: this.deps.accountAxis?.(engineOf(s.engine).id)
+                    ? (this.deps.accountsFor?.(engineOf(s.engine).id) ?? []) : [],
                 permissionMode: s.permissionMode,
                 // ‼️ K-22 — what the process is REALLY in, beside what was asked
                 // for. They are different facts and showing only the request is
@@ -999,7 +1040,21 @@ export class ConsolePanel {
              * docs/CONVENTIONS.md forbids.
              */
             composerAccounts: this.deps.accountsFor?.(engineOf(this.chosenEngine()).id) ?? [],
-            composerAccount: this.composerAccount ?? '',
+            composerAccount: this.accountShown(),
+            /**
+             * ‼️ X-213 — WHETHER THE BOX EXISTS IS A FACT ABOUT THE ENGINE, not
+             * about the length of the list.
+             *
+             * The page used to draw the account axis only when a slot had been
+             * captured, so a machine with none had no box — and therefore no
+             * statement anywhere of which sign-in it was working on. "Nothing
+             * captured yet" is not "there is nothing to know": the machine's own
+             * account is running the session either way, and the reader is
+             * entitled to see whose plan they are spending before they press
+             * Send. An engine that cannot hold a second sign-in still draws
+             * nothing, because there the picker really would have no referent.
+             */
+            composerAccountAxis: this.deps.accountAxis?.(engineOf(this.chosenEngine()).id) === true,
             // Two lists, because they are two different questions. Starting a
             // session picks a FLAG (and "Default" — pass none — is a real
             // answer). Moving a running one sends `set_permission_mode`, which
@@ -1218,9 +1273,45 @@ export class ConsolePanel {
     private prunedAccount(id: string | undefined): string | undefined {
         const want = (id ?? '').trim();
         if (!want) { return undefined; }
+        // ‼️ X-213 — the machine's own sign-in belongs to no engine and survives
+        // every engine change: it is the absence of a slot, and every engine has
+        // one of those. Pruning it would silently turn a stated choice back into
+        // an unstated one, which is the ghost the sentinel exists to prevent.
+        if (want === MACHINE_ACCOUNT) { return MACHINE_ACCOUNT; }
         const engine = engineOf(this.chosenEngine()).id;
         const mine = this.deps.accountsFor?.(engine) ?? [];
         return mine.some(a => a.id === want) ? want : undefined;
+    }
+
+    /**
+     * ‼️ X-213 — WHAT THE BOX SHOWS **IS** WHAT THE SESSION WILL RUN AS.
+     *
+     * The ghost selection was this function's absence. The box's value was ''
+     * with no row for '', so the browser drew the FIRST account as selected
+     * while the composer stated nothing — and stating nothing does not mean the
+     * main sign-in, it falls through to whatever the Engines page's "use this
+     * next" last pointed at. Three different accounts could be involved: the one
+     * shown, the one the tooltip described, and the one that ran.
+     *
+     * So the composer always has an explicit answer, and this is it:
+     *
+     *  1. what the person picked in this composer, if they picked;
+     *  2. otherwise the STANDING account of this engine — the choice they
+     *     already made, on the Engines page, and the box says so with its dot;
+     *  3. otherwise the machine's own sign-in, BY NAME (`MACHINE_ACCOUNT`),
+     *     never as a blank.
+     *
+     * '' comes back only where the engine cannot hold a second sign-in at all,
+     * and then no box is drawn and nothing is stated — which is the behaviour
+     * every engine but Claude and Codex has always had, unchanged.
+     */
+    private accountShown(): string {
+        const engine = engineOf(this.chosenEngine()).id;
+        if (!this.deps.accountAxis?.(engine)) { return ''; }
+        const own = this.prunedAccount(this.composerAccount);
+        if (own) { return own; }
+        const standing = (this.deps.accountsFor?.(engine) ?? []).find(a => a.active);
+        return standing ? standing.id : MACHINE_ACCOUNT;
     }
 
     private engineModelsFor(engine: string | undefined): EngineModels | undefined {
@@ -1551,10 +1642,13 @@ export class ConsolePanel {
                     // `str('providerId')` here would read an empty box and erase
                     // the very pick the launcher handed over.
                     ...(this.composerRoute ?? {}),
-                    // ‼️ X-169 — from the composer's carried value for the same
-                    // reason, and absent when nobody picked one: absent is what
-                    // lets the engine's active account answer at the spawn.
-                    ...(this.composerAccount ? { account: this.composerAccount } : {})
+                    // ‼️ X-213 — from the SAME function the box was drawn from,
+                    // so the answer that ran is the answer that was on screen.
+                    // Always explicit where the engine has the axis at all,
+                    // including "the machine's own" — which used to be the
+                    // absence of a statement and therefore silently became the
+                    // standing account (see accountShown).
+                    ...(this.accountShown() ? { account: this.accountShown() } : {})
                 };
                 this.selected = host.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
@@ -1947,6 +2041,23 @@ export class ConsolePanel {
                         'Agent Farm: that session cannot take an effort change right now.');
                 }
                 break;
+            /**
+             * ‼️ X-213 — MID-SESSION ACCOUNT SWITCH, which is the one live
+             * control that cannot be a control request.
+             *
+             * The refusal is SHOWN rather than swallowed: this box, unlike the
+             * others, has real reasons to say no (a session with no id yet, a
+             * shared connection), and a picker that silently snaps back is the
+             * failure Principle 1 is about.
+             */
+            case 'setLiveAccount': {
+                const done = host.setAccount(str('id'), str('account'));
+                if (!done.ok && done.note) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${done.note}`);
+                }
+                this.refresh();
+                break;
+            }
             // The answer to a parked question (see ConsoleAsk). The page sends
             // what you picked; deciding what is answerable is the host's job.
             case 'askAnswer': {

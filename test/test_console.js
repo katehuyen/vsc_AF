@@ -814,7 +814,16 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…and the pin is never a trap — it can be handed back',
         /id="c-unpin"/.test(js) && /type: 'unpinAgent'/.test(js));
     ok('…and it rebuilds the shell, because it decides which markup is drawn',
-        /\$\{DATA\.pinnedAgent \|\| ''\}\$\{composerShape\}`;/.test(js));
+        /\$\{DATA\.pinnedAgent \|\| ''\}\$\{composerShape\}\$\{liveAccountShape\(s\)\}`;/.test(js));
+    // ‼️ X-213 — AND A LIVE CARD HAS A SHAPE OF ITS OWN NOW. `composerShape`
+    // enters the key only when there is no session, which was right while
+    // nothing on a live strip could change shape. The account box can: its
+    // value decides the selected row, the label (`account` vs `account →`) and
+    // the colour, so a swap that did not reach the key would be a picker that
+    // appears to do nothing until something else repaints the page.
+    ok('‼️ a live card\'s account is in the shell key, VALUE and all',
+        /function liveAccountShape\(s\)/.test(js)
+        && /\(s\.account \|\| ''\) \+ '>' \+ \(s\.accountNext \|\| ''\)/.test(js));
     ok('…while the project box stays, which is the point of not spawning',
         (() => {
             const c = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));

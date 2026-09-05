@@ -40,6 +40,11 @@ export interface DashboardDeps {
     /** U-27 — every engine's limit state, and the one currently on show. */
     planUsageEngines?(): unknown[];
     planUsageEngine?(): string;
+    /** ‼️ X-212 — whose sign-in of that engine the figures belong to
+     *  ('Machine Global' for the machine's own; '' where the engine cannot hold
+     *  a second one). The card names it for the same reason the status bar's
+     *  heading does: an owner-less percentage is read as the reader's own. */
+    planUsageAccount?(engine: string): string;
     /** B1: per-project rollup for the Projects card (empty = no projects declared). */
     projects?(): ProjectRollup[];
     /** B1: agent name → project name, so rows can be grouped client-side. */
@@ -538,6 +543,7 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         // same two the status bar draws from (U-27)
         planUsageEngines: deps.planUsageEngines?.() ?? [],
         planUsageEngine: deps.planUsageEngine?.() ?? 'claude',
+        planUsageAccount: deps.planUsageAccount?.(deps.planUsageEngine?.() ?? 'claude') ?? '',
         // E3: external-CLI sessions (side list — excluded from every cost/usage
         // figure above; surfaced as an honest one-liner).
         externalSessions: (() => {
@@ -617,11 +623,12 @@ export class DashboardPanel {
         usage: PlanUsageSnapshot | undefined,
         beat: { ms: number; active: boolean },
         engines?: unknown[],
-        engine?: string
+        engine?: string,
+        account?: string
     ): void {
         if (!DashboardPanel.current) { return; }
         void DashboardPanel.current.panel.webview.postMessage({
-            type: 'planUsage', usage, beat, engines, engine, push: true
+            type: 'planUsage', usage, beat, engines, engine, account, push: true
         });
     }
 
@@ -727,7 +734,11 @@ export class DashboardPanel {
                     // the beat rides along: it changes with the fleet, not with
                     // a setting, so the card re-arms itself from every answer
                     void this.panel.webview.postMessage({
-                        type: 'planUsage', usage, beat: this.deps.planUsageBeat?.()
+                        type: 'planUsage', usage, beat: this.deps.planUsageBeat?.(),
+                        // X-212 — the owner rides with the figures, so a card
+                        // refreshed by its own ⟳ cannot fall behind the heading
+                        account: this.deps.planUsageAccount?.(
+                            this.deps.planUsageEngine?.() ?? 'claude') ?? ''
                     });
                 })();
                 break;

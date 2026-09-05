@@ -1427,7 +1427,9 @@ export interface TaskManagerOptions {
      * Absent, or an empty map, is the main sign-in — byte for byte what every
      * task ran as before this item.
      */
-    accountLayer?: (engine: string, account?: string) => Record<string, string> | undefined;
+    accountLayer?: (
+        engine: string, account?: string
+    ) => Record<string, string | null> | undefined;
     /**
      * ‼️ X-102 — WRITE THIS SPAWN'S MANIFEST AND HAND BACK ITS ID.
      *

@@ -288,6 +288,43 @@ function freshState() {
             adapterFor('claude').configEnv === 'CLAUDE_CONFIG_DIR');
     }
 
+    // ---------- X-211 / X-214: the machine's own sign-in, on every surface ----------
+    //
+    // ‼️ Every one of these was the SAME silent failure wearing a different
+    // coat: a surface that named an account and a process that ran as another.
+    {
+        const store = require(path.join(OUT, 'accountStore.js'));
+        const { spawnEnvironment, terminalEnvOverlay } =
+            require(path.join(OUT, 'providerRuntime.js'));
+        const state = freshState();
+
+        ok('‼️ stating the machine’s own sign-in CLEARS the variable, it does not merely omit it',
+            store.accountEnvFor('claude', store.MACHINE_ACCOUNT, state.slots).CLAUDE_CONFIG_DIR === null);
+        ok('…a slot still injects its own directory',
+            typeof store.accountEnvFor('claude', 'claude-a', state.slots).CLAUDE_CONFIG_DIR === 'string');
+        ok('…and nothing stated touches nothing at all, exactly as before',
+            Object.keys(store.accountEnvFor('claude', '', state.slots)).length === 0);
+        ok('an engine with no config variable has no layer to give',
+            Object.keys(store.accountEnvFor('gemini', store.MACHINE_ACCOUNT, state.slots)).length === 0);
+
+        // ‼️ THE POINT OF THE null: a WINDOW that already carries the variable.
+        // Not clearing it is how "Machine Global" came to sit over a process
+        // running as somebody's slot.
+        const inherited = { CLAUDE_CONFIG_DIR: 'D:/slots/whoever', PATH: 'p' };
+        const cleared = spawnEnvironment(inherited,
+            [store.accountEnvFor('claude', store.MACHINE_ACCOUNT, state.slots)], undefined);
+        ok('‼️ a window that already carries a config dir has it REMOVED for the machine’s own sign-in',
+            cleared.CLAUDE_CONFIG_DIR === undefined && cleared.PATH === 'p');
+        const kept = spawnEnvironment(inherited,
+            [store.accountEnvFor('claude', 'claude-a', state.slots)], undefined);
+        ok('…and replaced, not merged, when a slot is named',
+            kept.CLAUDE_CONFIG_DIR === state.slots.find(x => x.id === 'claude-a').dir);
+        ok('a terminal overlay carries the removal through as null, which is its own word for it',
+            terminalEnvOverlay(
+                [store.accountEnvFor('claude', store.MACHINE_ACCOUNT, state.slots)], undefined
+            ).CLAUDE_CONFIG_DIR === null);
+    }
+
     console.log(`${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

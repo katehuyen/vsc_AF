@@ -71,6 +71,22 @@ export function fiveHourBar(snap: PlanUsageSnapshot | undefined): PlanBar | unde
     return snap?.bars.find(b => b.id === FIVE_HOUR);
 }
 
+/**
+ * ‼️ X-212 — WHICH FILE HOLDS A SLOT'S SIGN-IN, and the empty string where the
+ * engine keeps none this machine can read.
+ *
+ * One implementation, because two readers of the same account are exactly how
+ * the status bar comes to show a plan the session is not spending: the account
+ * cards read it here, and so does the plan-usage indicator once an account is
+ * standing. `undefined` — no slot — is the main sign-in and answers with '',
+ * which is the caller's cue to fall back to `credentialsPath()`.
+ */
+export function slotCredentialsFile(slot: { dir: string; engine: string } | undefined): string {
+    if (!slot || !slot.dir) { return ''; }
+    const source = adapterFor(slot.engine).quotaSource();
+    return source.kind === 'oauth-credentials' ? path.join(slot.dir, source.file) : '';
+}
+
 /** A slot that has never been read yet, stated rather than left missing. */
 export function unreadUsage(slot: { id: string; engine: string }): SlotUsage {
     const source = adapterFor(slot.engine).quotaSource();
@@ -288,9 +304,8 @@ export class AccountUsageService {
 
     private async load(slot: EngineAccountSlot, now: number): Promise<SlotUsage[]> {
         this.lastFetchAt = now;
-        const source = adapterFor(slot.engine).quotaSource();
-        if (source.kind === 'none') { return this.current(); }
-        const file = path.join(slot.dir, source.file);
+        const file = slotCredentialsFile(slot);
+        if (!file) { return this.current(); }
         const cred = (this.opts.readCreds ?? readOauthCredentials)(file);
         const put = (u: SlotUsage) => { this.byId.set(slot.id, u); return this.current(); };
         const bad = (state: PlanUsageState, note: string, plan = ''): SlotUsage => ({

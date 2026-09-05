@@ -218,17 +218,29 @@ export function claudeRouteRuntime(
  */
 export function spawnEnvironment(
     inherited: Record<string, string | undefined> | undefined,
-    layers: Array<Record<string, string> | undefined>,
+    /**
+     * ‼️ X-211 — A LAYER MAY REMOVE A NAME, AND `null` IS HOW IT SAYS SO.
+     *
+     * "The machine's own sign-in" is not the absence of a layer: a window that
+     * was itself launched with the engine's config variable set would inherit
+     * it, and the card would run as an account no surface named. Saying nothing
+     * could never express that; `null` can, and it means here exactly what it
+     * has always meant in `terminalEnvOverlay` — delete, do not blank (see the
+     * ANTHROPIC_API_KEY note below: an empty string is a value the CLI finds).
+     */
+    layers: Array<Record<string, string | null> | undefined>,
     runtime: { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined
 ): Record<string, string> {
     const out: Record<string, string> = {};
     for (const source of [inherited, ...(layers || [])]) {
         if (!source) { continue; }
         for (const [k, v] of Object.entries(source)) {
+            // A layer that says `null` is REMOVING the name — see the argument.
+            if (v === null) { delete out[k]; continue; }
             // An unset inherited name must not become the string "undefined" —
             // a variable that exists holding that word is worse than an absent
             // one, because everything downstream reads it as a value.
-            if (v === undefined || v === null) { continue; }
+            if (v === undefined) { continue; }
             out[k] = String(v);
         }
     }
@@ -263,14 +275,17 @@ export function spawnEnvironment(
  * credentials file.
  */
 export function terminalEnvOverlay(
-    layers: Array<Record<string, string> | undefined>,
+    layers: Array<Record<string, string | null> | undefined>,
     runtime: { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined
 ): Record<string, string | null> {
     const out: Record<string, string | null> = {};
     for (const source of layers || []) {
         if (!source) { continue; }
         for (const [k, v] of Object.entries(source)) {
-            if (v === undefined || v === null) { continue; }
+            // X-211 — a layer's `null` already means "remove" on this side; it
+            // is passed straight through, which is what a terminal overlay is.
+            if (v === null) { out[k] = null; continue; }
+            if (v === undefined) { continue; }
             out[k] = String(v);
         }
     }

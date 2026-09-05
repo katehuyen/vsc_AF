@@ -2705,5 +2705,85 @@ const html = allHtml;
         html().includes('STOPPED') && html().includes('3 rounds in a row produced nothing'));
 }
 
+// ---------- X-213: WHAT THE ACCOUNT BOX SHOWS **IS** WHAT WILL RUN ----------
+//
+// ‼️ The ghost, in the one place it was visible: the box's value was '' and no
+// row carried '', so the browser drew the FIRST account as selected while the
+// composer stated nothing — and stating nothing falls through to whatever the
+// Engines page last pointed at. The row for the machine's own sign-in is what
+// makes the picker able to say what it means.
+{
+    const composer = (extra) => ({
+        generatedAt: 1, selected: '', presetAgent: '', sessions: [],
+        agents: [{ id: 'dev', name: 'developer', dir: 'D:/a/dev' }],
+        models: [], efforts: [], permissions: [{ id: 'default', label: 'default' }],
+        grants: [], defaults: {}, owned: [], resumable: [],
+        ...extra
+    });
+
+    // an engine that CAN hold a second sign-in, with nothing captured for it
+    push(composer({ composerAccountAxis: true, composerAccount: '@machine', composerAccounts: [] }));
+    ok('‼️ X-213: the box is drawn on a machine with NOTHING captured — that is the case it is for',
+        /id="c-account"/.test(html()));
+    ok('…with the machine own sign-in as a real row, BY NAME',
+        /<option value="@machine"[^>]*selected/.test(html())
+        && /Machine Global/.test(html()));
+
+    // …and an engine that cannot hold one at all still draws nothing
+    push(composer({ composerAccountAxis: false, composerAccount: '', composerAccounts: [] }));
+    ok('an engine with no account axis draws no box — a picker with no referent',
+        !/id="c-account"/.test(html()));
+
+    // the standing account opens the box, with the dot that marks it
+    push(composer({
+        composerAccountAxis: true, composerAccount: 'work-1',
+        composerAccounts: [
+            { id: 'work-1', label: 'work@studio', health: 'ready', active: true, percent: 91 },
+            { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false, percent: -1 }
+        ]
+    }));
+    ok('‼️ the box OPENS on the standing account, so what is shown is what will run',
+        /<option value="work-1"[^>]*selected/.test(html())
+        && !/<option value="@machine"[^>]*selected/.test(html()));
+    ok('…marked as the standing one, and a fallen-over sign-in warned about',
+        /work@studio •/.test(html()) && /⚠ spare@gmail/.test(html()));
+    ok('…and the machine own sign-in is still FIRST, so the way back is always there',
+        html().indexOf('value="@machine"') < html().indexOf('value="work-1"'));
+}
+
+// ---------- X-213: the box does NOT lock when the session starts ----------
+{
+    const live = (extra) => data(CONVO.slice(), {
+        status: 'idle', accountAxis: true, account: '@machine', accountLabel: 'Machine Global',
+        accountNext: '', accountNextLabel: '', accountRows: [
+            { id: 'work-1', label: 'work@studio', health: 'ready', active: true, percent: 97 }
+        ], ...extra
+    });
+
+    push(live());
+    if(!/id="c-account-live"/.test(html())){ const m=html().match(/permlbl[^>]*>[a-z →]*/g); console.log('DEBUG labels:', m && m.slice(0,10)); }
+    ok('‼️ a LIVE session has the account box too — the lock is what X-211 is about',
+        /id="c-account-live"/.test(html()));
+    ok('…opened on what the card is really sealed to',
+        /<option value="@machine"[^>]*selected/.test(html()));
+
+    const tipOf = re => (re.exec(html()) || [, ''])[1];
+    ok('MIRROR — the hover opens with the sign-in that is actually running',
+        /^Running as: Machine Global/.test(tipOf(/title="([^"]*)"[^>]*>account/)));
+
+    push(live({ accountNext: 'work-1', accountNextLabel: 'work@studio' }));
+    ok('‼️ a pending swap is on the LABEL, not only in the hover',
+        /class="permlbl pend"/.test(html()) && />account →/.test(html()));
+    ok('…the box shows what the NEXT message will run as',
+        /<option value="work-1"[^>]*selected/.test(html()));
+    ok('…and the hover says what happens and that nothing is lost',
+        /Next message runs as: work@studio/.test(tipOf(/title="([^"]*)"[^>]*>account →/))
+        && /nothing that has been said is lost/.test(tipOf(/title="([^"]*)"[^>]*>account →/)));
+
+    push(live({ accountAxis: false }));
+    ok('an engine that cannot hold a second sign-in has no live box either',
+        !/id="c-account-live"/.test(html()));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

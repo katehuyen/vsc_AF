@@ -722,7 +722,7 @@ const LIVE_PAYLOAD = {
         ok('a live event can flip the window without waiting for the next tick',
             /live\.onDidUpdate\(\(\) => planUsageBar\.fleetChanged\(\)\)/.test(ext));
         ok('what the indicator reads is pushed to an open card in the same step',
-            /onRefresh: snap => DashboardPanel\.pushPlanUsage\(snap, planBeat\(\)/.test(ext));
+            /onRefresh: snap => DashboardPanel\.pushPlanUsage\(\s*snap, planBeat\(\)/.test(ext));
 
         // ‼️ U-27 — THE INDICATOR HAS AN ENGINE AXIS, AND BOTH SURFACES SHARE IT.
         // The figure used to be Claude's with nothing saying so, on a machine
@@ -732,7 +732,7 @@ const LIVE_PAYLOAD = {
         ok('‼️ the indicator is handed every engine, not just Claude\'s snapshot',
             /engines: engineUsageMatrix,/.test(ext) && /engine: usageEngine,/.test(ext));
         ok('…and the card is pushed the same matrix on the same beat',
-            /pushPlanUsage\(snap, planBeat\(\), engineUsageMatrix\(\), usageEngine\(\)\)/.test(ext));
+            /pushPlanUsage\(\s*snap, planBeat\(\), engineUsageMatrix\(\), usageEngine\(\), usageAccountLabel\(usageEngine\(\)\)\)/.test(ext));
         ok('‼️ …with ONE store behind the choice: the setting both write',
             /await cfg\(\)\.update\('planUsageEngine', want, vscode\.ConfigurationTarget\.Global\)/.test(ext));
         ok('an engine this build does not know is refused, by name',
@@ -805,6 +805,45 @@ const LIVE_PAYLOAD = {
             /if \(active === this\.lastActive\) \{ return; \}[\s\S]{0,600}this\.tick\('edge'\)/.test(barSrc));
         ok('the tooltip states which beat is running, so a still figure is explainable',
             /an agent is working — re-read every/.test(barSrc) && /Automatic refresh is off/.test(barSrc));
+    }
+
+    // ---------- X-212: the figures name their OWNER, not just their engine ----------
+    {
+        const barSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'planUsageBar.ts'), 'utf8');
+        const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const pu = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'planusage.ts'), 'utf8');
+
+        ok('the heading is engine AND sign-in, built in one place',
+            /private heading\(/.test(barSrc) && /\$\{name\} \(\$\{who\}\)/.test(barSrc)
+            && /\*\*\$\{this\.heading\(shown\)\} — plan usage\*\*/.test(barSrc));
+        ok('‼️ an engine that cannot hold a second sign-in gets the bare name it always had',
+            /return who \? `\$\{name\} \(\$\{who\}\)` : name;/.test(barSrc));
+
+        ok('the service is pointed at the STANDING account\'s file, live',
+            /credentialsFile: usageCredentialsFile/.test(ext)
+            && /slotCredentialsFile\(findSlot\(storedAccounts\(\), activeAccounts\(\)\['claude'\] \|\| ''\)\)/.test(ext));
+        ok('‼️ a cached percentage is dropped when the account under it moves',
+            /private snapFrom = '';/.test(pu)
+            && /if \(this\.snap && this\.credFile\(\) !== this\.snapFrom\) \{ this\.snap = undefined; \}/.test(pu));
+        ok('…and every answer, failure included, is stamped with the file it came from',
+            /this\.snapFrom = file;/.test(pu));
+
+        ok('one function names the owner for the bar, the card and the bridge',
+            /const usageAccountLabel = \(engine: string\): string =>/.test(ext)
+            && /accountLabel: usageAccountLabel/.test(ext)
+            && /planUsageAccount: usageAccountLabel/.test(ext));
+        ok('‼️ making an account standing repaints and re-reads in the SAME gesture',
+            /usageFollowedAccount\(slot\.engine\);/.test(ext)
+            && /const usageFollowedAccount = \(engine: string\): void =>/.test(ext)
+            && /planUsage\.get\(true\)\.then/.test(ext));
+        ok('…and switching a non-shown engine\'s account costs no request',
+            /if \(eng !== 'claude' \|\| usageEngine\(\) !== 'claude'\) \{ return; \}/.test(ext));
+
+        const dash = fs.readFileSync(path.join(__dirname, '..', 'media', 'dashboard.js'), 'utf8');
+        ok('the Dashboard card carries the owner in its head, beside the label',
+            /function puOwner\(\)/.test(dash) && /\$\{puOwner\(\)\}\$\{btn\}/.test(dash));
+        ok('‼️ an empty owner is a real answer and is not dropped as falsy',
+            /ev\.data\.account !== undefined/.test(dash));
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

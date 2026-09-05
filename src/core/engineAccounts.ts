@@ -429,6 +429,21 @@ export function liveSource(engine: string | undefined, name: string): string {
     return a.liveDir ? path.posix.join(a.liveDir.replace(/\\/g, '/'), name) : name;
 }
 
+/**
+ * ‼️ X-211 — CAN THIS ENGINE HOLD MORE THAN ONE SIGN-IN AT A TIME?
+ *
+ * The answer is a variable: an account is a config directory chosen before the
+ * process starts, so an engine with no `configEnv` cannot be pointed at one
+ * however many slots are stored. Every surface that draws the account axis —
+ * the composer's box, the status bar's heading, the terminal's resume picker —
+ * asks this rather than testing `slots.length`, because "no accounts captured"
+ * and "no such thing as an account here" are different answers and only the
+ * first one deserves a picker offering Machine Global.
+ */
+export function canIsolateAccounts(engine: string | undefined): boolean {
+    return !!adapterFor(engine).configEnv;
+}
+
 /** The engines a second account can actually be captured for, right now. */
 export function accountCapableEngines(): string[] {
     return ENGINE_AUTH_ADAPTERS.filter(a => a.support !== 'unmapped').map(a => a.engine);

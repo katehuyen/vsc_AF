@@ -39,8 +39,8 @@ import {
 } from './opencodeproto';
 import {
     acceptUserText, answerAsk, AskDecision, Attachment, AttachmentNote, ATTACH_LIMITS,
-    CarriedTotals, ConsoleMessage, ConsoleSessionState, controlLine, drainAutoAnswer, editQueued,
-    hostArgs, IMAGE_MEDIA_TYPES, newSessionState, reduceEvent, shiftQueued, takeQueued,
+    CarriedTotals, ConsoleMessage, ConsoleSessionState, carryOn, controlLine, drainAutoAnswer,
+    editQueued, hostArgs, IMAGE_MEDIA_TYPES, newSessionState, reduceEvent, shiftQueued, takeQueued,
     userMessageLine
 } from './consoleproto';
 import {
@@ -554,7 +554,11 @@ export class ConsoleHost {
          */
         private accountLayer?: (
             engine: string, account?: string
-        ) => Record<string, string> | undefined
+            // ‼️ X-211 — `null` on a name REMOVES it (see spawnEnvironment):
+            // "the machine's own sign-in", stated outright, is the absence of
+            // the engine's config variable and not merely the absence of a
+            // layer, because the window this runs in may carry one already.
+        ) => Record<string, string | null> | undefined
     ) {}
 
     /** The shared OpenCode runtime, made on demand. `undefined` when this build
@@ -813,6 +817,14 @@ export class ConsoleHost {
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
             providerId: init.providerId, tier: init.tier, launchId: init.launchId,
+            // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
+            // starts a card. Only the ACP one recorded it, so on Claude — the
+            // engine this whole family exists for — the card ran as an account
+            // nothing wrote down: the badge had nothing to draw, the live strip
+            // nothing to print, and every re-spawn read `h.state.account`, found
+            // undefined and quietly put a long conversation back on the main
+            // sign-in. That is the ghost selection, one layer under the picker.
+            account: init.account,
             now: Date.now(),
             // a resumed session already HAS an id — see newSessionState
             sessionId: init.resume,
@@ -903,6 +915,14 @@ export class ConsoleHost {
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
             providerId: init.providerId, tier: init.tier, launchId: init.launchId,
+            // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
+            // starts a card. Only the ACP one recorded it, so on Claude — the
+            // engine this whole family exists for — the card ran as an account
+            // nothing wrote down: the badge had nothing to draw, the live strip
+            // nothing to print, and every re-spawn read `h.state.account`, found
+            // undefined and quietly put a long conversation back on the main
+            // sign-in. That is the ghost selection, one layer under the picker.
+            account: init.account,
             now: Date.now(),
             sessionId: init.resume,
             projectId, superpowers,
@@ -995,6 +1015,14 @@ export class ConsoleHost {
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
             providerId: init.providerId, tier: init.tier, launchId: init.launchId,
+            // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
+            // starts a card. Only the ACP one recorded it, so on Claude — the
+            // engine this whole family exists for — the card ran as an account
+            // nothing wrote down: the badge had nothing to draw, the live strip
+            // nothing to print, and every re-spawn read `h.state.account`, found
+            // undefined and quietly put a long conversation back on the main
+            // sign-in. That is the ghost selection, one layer under the picker.
+            account: init.account,
             now: Date.now(),
             sessionId: init.resume,
             projectId, superpowers,
@@ -1981,6 +2009,27 @@ export class ConsoleHost {
             ready = loaded.ready;
         }
         const notes: AttachmentNote[] = ready.map(a => ({ name: a.name, kind: a.kind, path: a.path, bytes: a.bytes }));
+        /**
+         * ‼️ X-213 — THE PROMISE MADE BY THE ACCOUNT BOX IS KEPT HERE.
+         *
+         * `setAccount` recorded which sign-in the NEXT message runs on; this is
+         * that message. The process is ended and the same conversation comes
+         * back up on the other account with `--resume`, carrying this prompt as
+         * its first — which is what the user was doing by hand in a second
+         * terminal when a window hit its ceiling.
+         *
+         * ‼️ AND NOT MID-TURN. A turn that is running is a process that is
+         * answering; killing it would throw away the answer being written. The
+         * message is held instead, exactly as any other message said into a
+         * running turn is, and the swap happens when that turn is over and the
+         * held message is sent.
+         */
+        const midTurn = h.state.status === 'working';
+        if (h.state.accountNext && !hold && !midTurn) {
+            void this.reseal(id, text.trim(), ready);
+            this.fire(id);
+            return { queued: true };
+        }
         const startedBefore = h.state.turnStartedAt;
         // ‼️ YOU CANNOT SPEAK INTO A TURN THAT IS A PROCESS. Claude's session is
         // a live pipe, so a message said mid-turn is delivered at the turn's next
@@ -2291,6 +2340,161 @@ export class ConsoleHost {
      * went out, which is all a write can honestly claim; whether the mode
      * changed is answered later, on the wire.
      */
+    /**
+     * ‼️ X-213 — CHANGE THE SIGN-IN A LIVE CONVERSATION IS SPENDING.
+     *
+     * The thing the user was doing by hand: a window hits its five-hour ceiling
+     * mid-task, so they opened a second terminal, signed in as the other
+     * account, and carried on with `--resume`. The conversation survives that
+     * because the transcript is on disk and shared by junction; what does not
+     * survive is the process, which is sealed to the environment it was spawned
+     * with. Nothing here can change an environment variable of a running
+     * process, and nothing pretends to.
+     *
+     * So the answer differs by SHAPE, and the difference is a fact about the
+     * engine rather than a policy invented here:
+     *
+     * - **per-turn** (Codex and the rest): there is no process between turns.
+     *   The next turn is a new spawn that reads `state.account`, so the change
+     *   is already true the moment it is recorded. Nothing is pending, because
+     *   there is nothing to wait for.
+     * - **persistent** (Claude): the process IS the session. The choice is kept
+     *   as `accountNext`, said on the card, and honoured at the next prompt —
+     *   `send` ends the process and brings the same conversation back up on the
+     *   new sign-in. Doing it at the moment of choosing would spend a re-spawn
+     *   on somebody browsing the list, and would end a turn that is running.
+     * - **shared** (OpenCode): refused. The connection belongs to every card on
+     *   it, and no engine of that shape can isolate a sign-in anyway.
+     *
+     * `account` is the STATED answer — a slot id, or `MACHINE_ACCOUNT` for the
+     * machine's own — never the resolved one, or a card would follow the
+     * "use this next" button the next time it re-spawned.
+     */
+    setAccount(id: string, account: string): { ok: boolean; note: string } {
+        const h = this.sessions.get(id);
+        if (!h) { return { ok: false, note: 'That session is not open here.' }; }
+        if (h.state.status === 'ended' || h.state.status === 'error') {
+            return { ok: false, note: 'This session has ended — resume it to put it on another account.' };
+        }
+        const want = String(account || '').trim();
+        if (!want) {
+            return {
+                ok: false,
+                note: 'Say which sign-in outright — the machine\'s own has a name of its own here, '
+                    + 'because leaving it blank is what used to mean "whatever the Engines page says next".'
+            };
+        }
+        if (h.engine.shape === 'sharedAcp') {
+            return {
+                ok: false,
+                note: `${h.engine.label} shares one connection between every card on it, so a card cannot be `
+                    + 'moved to another sign-in on its own.'
+            };
+        }
+        const now = (h.state.accountNext ?? h.state.account ?? '');
+        if (now === want) { return { ok: true, note: '' }; }
+        // A per-turn engine has no process to re-seal: the flags and the
+        // environment of the turn about to start ARE the control (see setModel).
+        if (h.engine.shape === 'perTurn') {
+            this.mutate(id, s => ({
+                ...s, account: want, accountNext: undefined, lastTs: Date.now(),
+                messages: [...s.messages, {
+                    id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                    text: `the next turn runs on ${want} — ${h.engine.label} starts a new process per turn, `
+                        + 'so nothing had to be interrupted'
+                }]
+            }));
+            return { ok: true, note: '' };
+        }
+        // ‼️ …and a persistent one cannot move until its process does. A session
+        // that has not reported an id yet has nothing to resume BY, and saying
+        // so now beats discovering it when the prompt is already typed.
+        if (!h.state.sessionId) {
+            return {
+                ok: false,
+                note: 'This session has not reported its id yet, so there is nothing to resume it by — '
+                    + 'say something in it first, then change the account.'
+            };
+        }
+        this.mutate(id, s => ({
+            ...s, accountNext: want, lastTs: Date.now(),
+            messages: [...s.messages, {
+                id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
+                text: `next message runs on ${want} — ${h.engine.label} seals an account into the process, `
+                    + 'so this one is ended and the same conversation is resumed on it'
+            }]
+        }));
+        return { ok: true, note: '' };
+    }
+
+    /**
+     * ‼️ X-213 — END THIS PROCESS, BRING THE SAME CONVERSATION BACK ON THE OTHER
+     * ACCOUNT, AND SAY THE WAITING MESSAGE INTO IT.
+     *
+     * The two things that make this safe rather than clever:
+     *
+     * 1. **The old process is watched out, not assumed away.** Claude Code
+     *    refuses to join a session another process holds, and `taskkill` on this
+     *    machine takes seconds — so a resume fired straight after the kill fails
+     *    with nothing on screen to explain it. The CLI's own registry says when
+     *    the id is free; this waits for that and gives up ALOUD.
+     * 2. **The card keeps its seat and its totals.** `start` reuses the seat of
+     *    an ended card with the same session id, so this is one card throughout;
+     *    `carryOn` hands the running totals forward, or the conversation would
+     *    appear to get cheaper because somebody changed account.
+     */
+    private async reseal(id: string, prompt: string, attachments: Attachment[]): Promise<void> {
+        const h = this.sessions.get(id);
+        const sessionId = h?.state.sessionId;
+        const want = h?.state.accountNext;
+        if (!h || !sessionId || !want) { return; }
+        const s = h.state;
+        const carried = carryOn(s);
+        this.close(id, { sync: true, silent: true });
+        this.mutate(id, x => ({
+            ...x, exitReason: `ended to move this conversation to ${want}`
+        }));
+        const free = await this.awaitRelease(sessionId);
+        if (!free) {
+            this.mutate(id, x => ({
+                ...x, status: 'error', lastTs: Date.now(),
+                messages: [...x.messages, {
+                    id: `err-${Date.now().toString(36)}`, ts: Date.now(), role: 'error',
+                    text: 'The old process is still holding this session, so it could not be resumed on '
+                        + `${want}. Nothing was lost — the transcript is on disk. End that process `
+                        + '(Task Manager) and resume the session from the sessions list.'
+                }]
+            }));
+            return;
+        }
+        this.start({
+            agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
+            engine: h.engine.id as EngineId,
+            model: s.model, effort: s.effort, permissionMode: s.permissionMode,
+            providerId: s.providerId, tier: s.tier,
+            // the whole point of the exercise
+            account: want,
+            // ‼️ the SAME conversation, by id — this is `--resume`, which is the
+            // one thing that makes the swap free of loss
+            resume: sessionId,
+            carried,
+            projectId: s.projectId ?? '',
+            superpowers: s.superpowers === true,
+            firstPrompt: prompt || undefined,
+            firstAttachments: attachments.length ? attachments : undefined
+        });
+    }
+
+    /** Wait for the CLI's own registry to let go of a session id. Best effort,
+     *  and its failure is REPORTED rather than turned into a silent retry. */
+    private async awaitRelease(sessionId: string, tries = 25): Promise<boolean> {
+        for (let i = 0; i < tries; i++) {
+            await new Promise(r => setTimeout(r, 200));
+            if (!this.ownerPid(sessionId)) { return true; }
+        }
+        return false;
+    }
+
     setPermissionMode(id: string, mode: string, retryMessage?: string): boolean {
         const h = this.sessions.get(id);
         if (!h) { return false; }
