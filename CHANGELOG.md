@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.400.1 - X-203: the Engines button vanished exactly when the page became worth opening (2026-09-06)
+
+The user's report: *"Dashboard/Engines satırı sonunda buton var demiştin ama
+yok."* They were right, and the reason is a one-branch mistake with a general
+lesson in it.
+
+`farmstatus.ts` put the `Engines` action on the **dormant** branch only — the
+branch that means "only Claude Code is ready here". The moment a second engine
+was installed, or any foreign session existed on disk, the row became `ready` or
+`active` and drew no button at all. So the door was offered to the machine with
+nothing to look at and withdrawn from the machine with four engines and 35
+sessions.
+
+**A row's action is a way to the SUBJECT of the row, not a fix-it prompt for a
+subsystem nobody switched on.** The action is now on the row in every state,
+under one label, because it is one door.
+
+And the reason it survived a page anybody could have screenshotted: the
+dashboard fixture carried `farmStatus: []`, so the card was never drawn in any
+render. It is now built through the REAL `buildFarmStatus` — the same rule the
+missions fixture follows for its conditions — describing a machine in the ACTIVE
+state, which is precisely the state the button used to disappear in. A fixture
+that types its own rows photographs a card the code cannot produce.
+
+**Second way in:** `agentfarm.openEngines` was in no `view/title` menu at all, so
+with the Dashboard button gone there was no click-path to the page. It sits in
+the Toolbox view's title bar now, beside Secrets — both are facts of the MACHINE
+(which CLIs are installed, which sign-ins are captured) rather than of the fleet,
+and the Agents title bar already carries eight doors. The alternative was the
+Agents bar, which is more prominent and more crowded; the Dashboard row is the
+prominent path and this is the standing one.
+
 ## 3.400.0 - X-207: the accounts a campaign is ALLOWED to spend, and the engine it falls back to (2026-09-06)
 
 The user's own complaint, and it had two halves: *"nöbet sistemi limiti boş olan

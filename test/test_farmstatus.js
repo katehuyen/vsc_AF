@@ -195,5 +195,40 @@ const dormantFarm = {
         half.chat.action.kind === 'settings' && half.chat.action.value === 'agentFarm.telegram.allowedChats');
 }
 
+// ---------- X-203: the Engines row keeps its door in EVERY state -----------
+/*
+ * ‼️ THE DOOR DISAPPEARED EXACTLY WHEN THE PAGE BECAME WORTH OPENING.
+ *
+ * The user's report: "Dashboard/Engines satırı sonunda buton var demiştin ama
+ * yok." Measured — the action was on the `dormant` branch only, so a machine
+ * with a second engine ready, or with sessions on disk, drew no button at all.
+ * A row's action is a way to the SUBJECT of the row, not a fix-it prompt for a
+ * subsystem nobody has switched on; every other row that has a page behind it
+ * offers it whatever its state.
+ */
+{
+    const withDoor = (over) => {
+        const rows = buildFarmStatus(Object.assign({}, dormantFarm, over));
+        return Object.fromEntries(rows.map(r => [r.id, r])).engines;
+    };
+    const opens = (r) => !!r.action && r.action.kind === 'command'
+        && r.action.value === 'agentfarm.openEngines';
+
+    ok('‼️ X-203: a dormant Engines row opens the page (it always did)',
+        opens(withDoor({})) && withDoor({}).state === 'dormant');
+    ok('‼️ X-203: …and so does a READY one, which is where the button vanished',
+        opens(withDoor({ enginesReady: ['claude', 'codex'] }))
+        && withDoor({ enginesReady: ['claude', 'codex'] }).state === 'ready');
+    ok('‼️ X-203: …and an ACTIVE one, the state a working machine is actually in',
+        opens(withDoor({ enginesReady: ['claude', 'codex'], externalSessions: { codex: 12 } }))
+        && withDoor({ enginesReady: ['claude', 'codex'], externalSessions: { codex: 12 } })
+            .state === 'active');
+    // The label is the page's own name in every state: a button that reads
+    // "Engines" on one machine and something else on another is two controls.
+    ok('…under one label, because it is one door',
+        withDoor({}).action.label === 'Engines'
+        && withDoor({ enginesReady: ['claude', 'codex'] }).action.label === 'Engines');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

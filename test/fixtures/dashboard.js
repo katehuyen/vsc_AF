@@ -128,7 +128,33 @@ const data = () => ({
     fleetBudget: 50, mediaCost: { today: 0.9, month: 12.4 },
     insightTotals: { error: 1, warning: 3, info: 4 },
     unknownModels: [],
-    farmStatus: [],
+    /**
+     * ‼️ X-203 — THE FARM STATUS CARD, DRAWN FROM THE REAL BUILDER.
+     *
+     * It was an empty array, so the card the user was complaining about — "you
+     * said there is a button at the end of the Engines row, but there isn't" —
+     * could not be looked at in any render at all. Built through the real
+     * `buildFarmStatus` for the same reason the missions fixture takes its
+     * conditions from the real dictionary: a fixture that typed its own rows
+     * would photograph a card the code cannot produce, which is how the missing
+     * button survived a page anybody could have shot.
+     *
+     * The machine described is this one: three engines ready and sessions of
+     * two of them on disk, which is the ACTIVE state — the exact state in which
+     * the Engines button used to disappear.
+     */
+    farmStatus: require('../../out/core/farmstatus.js').buildFarmStatus({
+        listenerState: 'listening', eventsLast24h: 4200,
+        taskCount: 6, tasksDone7d: 14, scheduleCount: 2,
+        triggerCount: 1, triggersFired7d: 3,
+        workflowCount: 0, workflowRuns7d: 0,
+        hasMediaKey: false, mediaAssetCount: 0, mediaCostMonth: 0,
+        cliProfileCount: 0, externalSessions: { codex: 31, agy: 4 },
+        enginesReady: ['claude', 'codex', 'agy'], engineCount: 4,
+        ingestFolderCount: 0, registeredAssetCount: 0,
+        oversightLoopsOn: 1, qualitySamples: 12,
+        secretCount: 3
+    }),
     // ‼️ The honest one-liner under the page: what is NOT in the money above.
     externalSessions: { codex: 31, agy: 4, gemini: 2 }
 });

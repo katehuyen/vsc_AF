@@ -194,18 +194,34 @@ export function buildFarmStatus(i: FarmStatusInput): SubsystemStatus[] {
         + (extTotal
             ? ` · ${Object.entries(i.externalSessions).map(([s, n]) => `${s} ×${n}`).join(' · ')} session(s) on disk`
             : '');
+    /**
+     * ‼️ X-203 — THE DOOR IS ON THE ROW IN EVERY STATE, and it used to vanish
+     * exactly when the page became worth opening.
+     *
+     * The action lived on the `dormant` branch alone, so the moment a second
+     * engine was ready — or any session existed on disk — the button
+     * disappeared. That is backwards twice over: a row's action is a way to the
+     * SUBJECT of the row, not a fix-it prompt for a subsystem nobody switched
+     * on, and the Engines page is most useful on the machine that has engines.
+     * The user reported it as "you said there is a button at the end of the
+     * Engines row, but there isn't".
+     */
+    const enginesDoor = {
+        label: 'Engines', kind: 'command', value: 'agentfarm.openEngines'
+    } as const;
     rows.push(ready.length || extTotal
         ? {
             id: 'engines', label: 'Engines',
             // History counts: an engine that ran here is active even if its CLI
             // has since been uninstalled, and vice versa.
             state: extTotal ? 'active' : 'ready',
-            detail: engineDetail
+            detail: engineDetail,
+            action: { ...enginesDoor }
         }
         : {
             id: 'engines', label: 'Engines', state: 'dormant',
             detail: `only Claude Code is ready here — ${engineRollCall()} are supported but not installed or not signed in`,
-            action: { label: 'Engines', kind: 'command', value: 'agentfarm.openEngines' }
+            action: { ...enginesDoor }
         });
     if (i.cliProfileCount === 0) {
         rows.push({
