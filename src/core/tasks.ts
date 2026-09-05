@@ -5,6 +5,7 @@ import * as vscode from 'vscode';
 import { sendToTerminalWhenReady } from './shellReady';
 import { spawnEnvironment, terminalEnvOverlay } from './providerRuntime';
 import { AgentInfo } from './agents';
+import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
 import {
     appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
@@ -188,6 +189,15 @@ export interface FarmTask {
      * is asked of the BOARD (`sentryRunning`) and never stored on the campaign.
      */
     sentryOf?: string;
+    /**
+     * ‼️ X-195 — WHY THIS ROUND OPENED ON THESE WORDS, AND WHAT IT COST.
+     *
+     * It lives on the ROW rather than on the campaign because the campaign keeps
+     * only its LAST plan: an account of a night is an account of every round in
+     * it, and eight rounds sharing one `lastWhy` is seven rounds nobody can
+     * explain. Written once, when the round is opened.
+     */
+    sentryWhy?: RoundWhy;
     /** Explicit model for THIS task (e.g. a mission's per-member override).
      *  Beats the model-policy engine; empty = policy/agent default. */
     model?: string;
@@ -2507,7 +2517,7 @@ export class TaskManager implements vscode.Disposable {
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
             | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits' | 'sentryOf'
-            | 'account'>>
+            | 'sentryWhy' | 'account'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -4437,6 +4447,8 @@ export class TaskManager implements vscode.Disposable {
         const row = this.addTask(agent, spec.title, spec.prompt, 'headless', {
             ...(projectId ? { projectId } : {}),
             sentryOf: this.sentry.id,
+            // X-195 — the account of why these words, written once, on the row.
+            ...(spec.why ? { sentryWhy: spec.why } : {}),
             ...(spec.slotId ? { account: spec.slotId } : {}),
             ...(spec.engine ? { engine: spec.engine } : {}),
             ...(spec.model ? { model: spec.model } : {}),

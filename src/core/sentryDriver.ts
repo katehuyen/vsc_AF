@@ -1,3 +1,4 @@
+import { RoundWhy } from './sentryWhy';
 import { RunProgress } from './retry';
 import { SlotUsage } from './accountUsage';
 import { AutomationState } from './automation';
@@ -112,6 +113,12 @@ export interface SentryRoundSpec {
     model?: string;
     permissionMode?: string;
     superpowers?: boolean;
+    /**
+     * ‼️ X-195 — the account of why these words. Built where the verdict and
+     * the leader's outcome are both in hand, and carried to the row so it
+     * outlives the closure that made it.
+     */
+    why?: RoundWhy;
 }
 
 export interface SentryStep {
