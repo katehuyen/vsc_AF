@@ -392,10 +392,17 @@ const PROPS = manifest.contributes.configuration.properties;
         /<th>\$\{window\.AFTip\.wrap\(/.test(page)
         && /function fieldTip/.test(page)
         && /one of: \$\{f\.allowed\.join/.test(page));
+    // ‼️ X-196 — and the hover it is carried in is the PANEL, not a `title`.
+    // The line is cut at the edge of the page, so a hover is right; a native
+    // tooltip repeating the identical string is the thing that component was
+    // built to replace. The wrapper takes the row's sizing (see AFTip.label for
+    // the same trap one element along).
     ok('…while the FORM keeps every sentence beside its field, because a form is'
         + ' read once and carefully rather than across — and carries the whole of'
-        + ' it in the hover, since the line is cut at the edge of the page',
-        /class="setfdesc" title="\$\{C\.esc\(f\.description \|\| ''\)\}">\$\{C\.esc\(f\.description/.test(page));
+        + ' it in an AFTip, since the line is cut at the edge of the page',
+        /<span class="setfdesc">\$\{C\.esc\(f\.description\)\}<\/span>/.test(page)
+        && /f\.name, f\.description, 'setfdescw'/.test(page)
+        && !/class="setfdesc" title=/.test(page));
     // ‼️ MIRROR (docs/CONVENTIONS.md) — a control narrow enough to cut its own
     // text puts its CURRENT value on the first line of its tooltip. A `when`
     // precondition in a sixth of a table is cut every single time.

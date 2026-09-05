@@ -358,5 +358,27 @@ const btn = (p, attr, key) =>
         && el(p, 'm-budgets-0-v').value === '5');
 }
 
+// ---------- ‼️ X-196 — THE HOVER THAT REPEATED THE ROW ----------
+//
+// A declared field's description is drawn on one ellipsised line, so a hover
+// is right — but it was a native `title` carrying the IDENTICAL string, which
+// is the exact thing the panel component was built to replace: the platform
+// tooltip repeats what is already on the row and then stops wherever it feels
+// like stopping. The cut line is the SHORTHAND; the panel is the sentence.
+{
+    const p = open();
+    const h = p.sandbox.document.getElementById('app').innerHTML;
+    ok('‼️ X-196: a field description is no longer a native title repeating its own row',
+        !/class="setfdesc" title=/.test(h));
+    ok('…it is an AFTip, which can be read whole and scrolled',
+        h.includes('setfdescw') && h.includes('af-tipb'));
+    // ‼️ THE WRAPPER TAKES THE SIZING. Wrapping the line makes the WRAPPER the
+    // flex child, so a column sized by the line's own rule silently stops
+    // being sized at all — the same trap `AFTip.label` exists for.
+    ok('…and the wrapper is what the row lays out, so the column keeps its width',
+        /class="setfdescw af-tipw"|class="af-tipw setfdescw"/.test(h)
+        || h.includes('af-tipw setfdescw') || h.includes('setfdescw af-tipw'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

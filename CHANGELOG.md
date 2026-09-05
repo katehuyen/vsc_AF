@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.399.3 - X-196 (part 2): the hover that repeated the row (2026-09-06)
+
+The Settings page's sentry section came through the audit clean — every path row
+already shows what its variables resolve to, every box holds its own value, and
+no description is cut. One thing on the same page did not: a declared object's
+field description is drawn on an ellipsised line, so a hover is right — but it
+was a native `title` carrying the IDENTICAL string. That is the exact complaint
+the panel component was built for: the platform tooltip repeats what is already
+on the row and then stops wherever it feels like stopping. The cut line is the
+SHORTHAND now and the panel is the sentence, whole and scrollable. The wrapper
+takes the row's sizing, because wrapping a line makes the wrapper the flex child
+and a column sized by the line's own rule silently stops being sized.
+
 ## 3.399.2 - X-196 (part 1): the sweep reaches the sentry block and the account cards (2026-09-06)
 
 The user's own instruction behind the item: read the finished backlog, see what

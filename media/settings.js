@@ -649,7 +649,21 @@
             `<span class="setfname">${C.esc(f.name)}${f.required ? '<b class="req">*</b>' : ''}</span>`,
             f.name, fieldTip(f), 'tip-field')}
                 ${fieldBox(f, `f-${id}-${f.name}`, cells[f.name] || '', `data-frow="${C.esc(it.key)}"`)}
-                <span class="setfdesc" title="${C.esc(f.description || '')}">${C.esc(f.description || '')}</span>
+                ${/**
+                  * ‼️ X-196 — THE ONE HOVER THAT REPEATED WHAT WAS ALREADY DRAWN.
+                  *
+                  * This line is `text-overflow: ellipsis`, so the sentence IS
+                  * cut and a hover is right — but it was a native `title`
+                  * carrying the identical string, which is the exact complaint
+                  * this component was built for: the platform tooltip repeats
+                  * the row and then stops wherever it feels like stopping. The
+                  * cut line is the SHORTHAND; the panel is the sentence, whole.
+                  */''}
+                ${f.description
+                ? window.AFTip.wrap(
+                    `<span class="setfdesc">${C.esc(f.description)}</span>`,
+                    f.name, f.description, 'setfdescw')
+                : '<span class="setfdesc"></span>'}
             </div>`).join('')}
             <div class="setjrow">
                 <button class="secondary small" data-fapply="${C.esc(it.key)}"
@@ -2447,8 +2461,13 @@
                 .setfname { font-family:var(--vscode-editor-font-family); font-size:11px;
                     flex:0 0 168px; cursor:help; border-bottom:1px dotted var(--vscode-widget-border, #4444); }
                 .setfrow input, .setfrow select { flex:0 0 170px; min-width:0; }
+                /* X-196 — the WRAPPER is the flex child now (the panel lives on
+                   it), so it takes the sizing; the line inside it still has to
+                   be a block or text-overflow has nothing to clip. */
+                .setfdescw { flex:1 1 auto; min-width:0; }
                 .setfdesc { font-size:10px; color:var(--vscode-descriptionForeground);
-                    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+                    display:block; flex:1 1 auto; min-width:0;
+                    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
                 .req { color:var(--vscode-errorForeground); font-weight:600; }
                 .setrows { display:flex; flex-direction:column; gap:6px; }
                 .settbl { border-collapse:collapse; font-size:11px; width:100%; table-layout:fixed; }
