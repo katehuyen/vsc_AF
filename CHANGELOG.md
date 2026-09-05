@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.394.0 - X-197: one atomic writer, and a failure you can retry (2026-09-05)
+
+A `projects.backlog.add` call fell over with `EPERM: rename Backlog.md.af.tmp ->
+Backlog.md` because Obsidian had the file open. The real damage was not the
+failure — it was that the caller could not tell a refusal from a half-applied
+batch, retried, and wrote six items TWICE, spending their codes for ever.
+
+- Both writers (`reportBridge.atomicWrite`, `projectDocs.safeWriteDoc`) now go
+  through the one `core/atomicFile.ts` introduced with X-204, instead of each
+  keeping its own copy of temp+rename.
+- **The rename is retried** through a short backoff (150/300/600/900 ms) while
+  the target looks locked — EPERM, EACCES, EBUSY. On Windows those locks are
+  measured in milliseconds, so waiting is the honest answer. A fault that will
+  never clear (a missing directory, a read-only volume) is reported at ONCE
+  rather than after two seconds of hoping.
+- **‼️ And the failure carries the guarantee that makes a retry safe:** the error
+  states that NOTHING WAS WRITTEN, names the file, and names the kind of process
+  that is probably holding it. The temp file is swept up, so nothing is left
+  behind that could be mistaken for the document.
+
 ## 3.393.0 - X-206: read them all, in a line (2026-09-05)
 
 Before switching accounts you have to see which one has room — and there was no

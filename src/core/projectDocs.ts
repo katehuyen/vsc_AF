@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { writeAtomicSync } from './atomicFile';
 import { BacklogItem, nextBacklog } from './projectBacklog';
 import { openPlanItems } from './projectPlan';
 import { folderNameFor, Project } from './projects';
@@ -716,16 +717,16 @@ export function safeWriteDoc(file: string, content: string, expectedMtimeMs?: nu
             };
         }
     }
-    const tmp = `${file}.af.tmp`;
-    try {
-        fs.mkdirSync(path.dirname(file), { recursive: true });
-        fs.writeFileSync(tmp, content, 'utf8');
-        fs.renameSync(tmp, file);
-        return { ok: true, mtimeMs: docMtime(file) };
-    } catch (e) {
-        try { if (fs.existsSync(tmp)) { fs.unlinkSync(tmp); } } catch { /* best effort */ }
-        return { ok: false, error: String(e) };
-    }
+    // ‼️ X-197 — THESE FILES ARE OPEN IN OBSIDIAN WHILE WE WORK, which is
+    // exactly the condition that makes a rename come back `EPERM` on Windows.
+    // The lock lasts milliseconds, so `writeAtomicSync` waits it out instead of
+    // handing the caller an error for a condition that has already passed — and
+    // when the attempts are spent it says NOTHING WAS WRITTEN, which is the
+    // guarantee that makes retrying safe. Without it the caller cannot tell a
+    // refusal from a half-done batch, and that is how `projects.backlog.add`
+    // wrote six items twice.
+    const r = writeAtomicSync(file, content);
+    return r.ok ? { ok: true, mtimeMs: docMtime(file) } : { ok: false, error: r.error };
 }
 
 /**

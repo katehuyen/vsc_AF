@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { writeAtomicSync } from './atomicFile';
 import * as path from 'path';
 import { AgentInfo } from './agents';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
@@ -71,12 +72,18 @@ export interface SessionRef {
  * Write through a temp file and rename. A report is read by whatever is
  * watching the folder, and a reader that catches a half-written markdown file
  * has been given something worse than nothing.
+ *
+ * ‼️ X-197 — THE RENAME IS THE PART THAT FAILS, AND IT IS SURVIVABLE. On Windows
+ * a target another process has open comes back `EPERM` for a lock measured in
+ * milliseconds, so `writeAtomicSync` waits it out; and when the attempts really
+ * are spent, the error it raises states that NOTHING WAS WRITTEN. That sentence
+ * is the point of routing this through one writer rather than keeping a second
+ * copy of the same four lines: a caller that cannot tell a failed write from a
+ * half-done one retries, and the retry is what wrote six backlog items twice.
  */
 export function atomicWrite(file: string, content: string): void {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = `${file}.aftmp`;
-    fs.writeFileSync(tmp, content, 'utf8');
-    fs.renameSync(tmp, file);
+    const r = writeAtomicSync(file, content);
+    if (!r.ok) { throw new Error(r.error); }
 }
 
 /** Days → ms, with the op's own default and a refusal for nonsense. */

@@ -104,5 +104,58 @@ for (const code of LOCK_ERRNOS) {
         && !isLockError(new Error('plain')));
 }
 
+
+// ---- X-197: the two real writers now carry the same promise ----------------
+//
+// ‼️ THE POINT IS NOT THAT THEY RETRY, it is that they say what happened. Both
+// used to hold their own copy of temp+rename; a locked Backlog.md therefore
+// reached the caller as a bare "EPERM ... rename" with no statement about what
+// had and had not been written, so the caller retried a batch it had already
+// half-applied — six items, twice, and their codes spent for ever.
+{
+    const path = require('path');
+    const realFs = require('fs');
+    const dir = realFs.mkdtempSync(path.join(require('os').tmpdir(), 'af-x197-'));
+    const target = path.join(dir, 'Backlog.md');
+    realFs.writeFileSync(target, 'before', 'utf8');
+
+    const { safeWriteDoc } = require(path.join(__dirname, '..', 'out', 'core', 'projectDocs.js'));
+    const { atomicWrite } = require(path.join(__dirname, '..', 'out', 'core', 'reportBridge.js'));
+
+    // The lock: rename refuses twice, the way an editor holding the file does.
+    const realRename = realFs.renameSync;
+    let refusals = 2;
+    realFs.renameSync = (from, to) => {
+        if (refusals > 0 && String(to) === target) {
+            refusals--;
+            const e = new Error('EPERM: operation not permitted, rename'); e.code = 'EPERM'; throw e;
+        }
+        return realRename(from, to);
+    };
+    try {
+        const r = safeWriteDoc(target, 'after');
+        ok('‼️ a document write survives a lock that clears — the write that used to fail now lands',
+            r.ok && realFs.readFileSync(target, 'utf8') === 'after' && refusals === 0);
+
+        refusals = 99;
+        const dead = safeWriteDoc(target, 'never');
+        ok('…and a lock that never clears fails with the promise that makes a retry safe',
+            !dead.ok && /NOTHING WAS WRITTEN/.test(dead.error)
+            && realFs.readFileSync(target, 'utf8') === 'after');
+        ok('…naming the file and the kind of process that is probably holding it',
+            /Backlog.md/.test(dead.error) && /Obsidian|backup|virus/i.test(dead.error));
+        ok('…and leaving no temp file behind to be mistaken for the document',
+            !realFs.existsSync(target + '.af.tmp'));
+
+        let threw = '';
+        try { atomicWrite(path.join(dir, 'Backlog.md'), 'report'); } catch (e) { threw = String(e.message); }
+        ok('‼️ the report writer carries the SAME promise — one writer, not two copies of four lines',
+            /NOTHING WAS WRITTEN/.test(threw));
+    } finally {
+        realFs.renameSync = realRename;
+        try { realFs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
