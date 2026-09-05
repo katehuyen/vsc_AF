@@ -262,6 +262,39 @@ function read(field: string, f: PolicyFacts): unknown {
     }
 }
 
+/**
+ * How much of a text field a READING carries. `output` is the tail of a whole
+ * session; a row that has to sit next to a `<select>` cannot hold it and does
+ * not need to. The evaluator keeps the untouched facts — this is the reading,
+ * not the fact.
+ */
+export const SNAPSHOT_TEXT_MAX = 200;
+
+/**
+ * ‼️ X-194 — WHAT EVERY FIELD READS RIGHT NOW.
+ *
+ * A condition editor whose rows do not say what the field holds today makes the
+ * user write rules against numbers they cannot see, which is exactly the click
+ * DENSITY forbids. So the reading is derived by running the evaluator's OWN
+ * `read()` over the dictionary: a field added to `FIELDS` turns up on the row
+ * without this function being touched, and a row can never show a figure the
+ * verdict disagrees with — the two come out of one reader or the row is a lie.
+ *
+ * The text reading keeps the END of the value, because `output` is already a
+ * tail and the last thing an engine said is what a `contains` rule is written
+ * about; a cut one opens with `…` so nobody reads it as the whole.
+ */
+export function factsSnapshot(facts: PolicyFacts): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const spec of FIELDS) {
+        const v = read(spec.field, facts);
+        out[spec.field] = typeof v === 'string' && v.length > SNAPSHOT_TEXT_MAX
+            ? '…' + v.slice(-(SNAPSHOT_TEXT_MAX - 1))
+            : v;
+    }
+    return out;
+}
+
 const num = (v: unknown): number => {
     const n = typeof v === 'number' ? v : Number(String(v ?? '').trim());
     return Number.isFinite(n) ? n : NaN;
@@ -369,5 +402,55 @@ export function evaluateSentryPolicy(policy: SentryPolicy, facts: PolicyFacts): 
             ? 'No condition fired, so this round was built from a template and cost nothing.'
             : 'There is no condition on this campaign, so every round is built from a template.')
             + tail
+    };
+}
+
+/**
+ * ‼️ X-194 — WOULD THIS SET FIRE TONIGHT?
+ *
+ * One implementation, two callers: the Missions condition editor asks it on
+ * every repaint of the draft, and an agent asks it over `sentry.probe`. Neither
+ * is allowed to work the answer out for itself — operator semantics live in
+ * this file, and a surface carrying its own copy is the copy that goes out of
+ * date and marks a row the round will disagree with.
+ *
+ * ‼️ AND WITH NOTHING MEASURED THERE IS NO ANSWER. A campaign that has never
+ * finished a round has no readings; saying "mechanical" for it would be the
+ * guess this system refuses everywhere else, because "nothing fired" and
+ * "nothing was read" are opposite answers.
+ */
+export interface PolicyProbe {
+    /** was there anything to judge against at all */
+    measured: boolean;
+    conditions: Condition[];
+    verdict?: 'mechanical' | 'leader';
+    fired: string[];
+    /** per condition, IN THE ORDER GIVEN — see below for why not by id */
+    hits: boolean[];
+    problems: string[];
+    why: string;
+    /** the readings it judged against, so a surface shows the same figures */
+    facts?: Record<string, unknown>;
+}
+
+export function probePolicy(conditions: Condition[], facts?: PolicyFacts): PolicyProbe {
+    const list = Array.isArray(conditions) ? conditions : [];
+    if (!facts) {
+        return {
+            measured: false, conditions: list, fired: [], hits: [], problems: [],
+            why: 'No round has been measured yet, so there is nothing to judge these conditions '
+                + 'against. They are read for the first time when a round finishes.'
+        };
+    }
+    const whole = evaluateSentryPolicy({ conditions: list }, facts);
+    return {
+        measured: true, conditions: list,
+        verdict: whole.verdict, fired: whole.fired, why: whole.why, problems: whole.problems,
+        // ‼️ JUDGED ONE AT A TIME AS WELL, because a row is marked by its
+        // POSITION while the verdict names conditions by their handle — and two
+        // rows are free to carry the same handle. Conditions are ORed, so
+        // judging one alone is exactly the question "does this row hold".
+        hits: list.map(c => evaluateSentryPolicy({ conditions: [c] }, facts).fired.length > 0),
+        facts: factsSnapshot(facts)
     };
 }

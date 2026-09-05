@@ -25,7 +25,8 @@
 'use strict';
 const path = require('path');
 const {
-    FIELDS, OPERATORS, PRESETS, presetConditions, evaluateSentryPolicy
+    FIELDS, OPERATORS, PRESETS, presetConditions, evaluateSentryPolicy,
+    factsSnapshot, SNAPSHOT_TEXT_MAX, probePolicy
 } = require(path.resolve(__dirname, '../out/core/sentryPolicy.js'));
 
 let pass = 0, fail = 0;
@@ -187,6 +188,100 @@ const facts = (over = {}) => Object.assign({
         r.verdict === 'leader' && r.fired.length > 0 && r.why.length > 10);
     ok('…and the sentence names a condition rather than a rule number',
         r.fired.every(id => r.why.includes(id) || r.why.length > 20));
+}
+
+// ---- X-194 — WHAT EVERY FIELD READS RIGHT NOW ------------------------------
+//
+// The editor's rows must each say what that field holds TODAY, or the user is
+// writing rules against numbers they cannot see (DENSITY, and the item's own
+// words: "kullanıcı koşulun bugün ateşleyip ateşlemeyeceğini görsün"). The
+// reading is derived by running the evaluator's OWN reader over the dictionary,
+// so a row can never show a figure the verdict disagrees with.
+{
+    ok('every field in the dictionary has a reading — no row can be left blank',
+        FIELDS.every(f => Object.prototype.hasOwnProperty.call(factsSnapshot(facts()), f.field)));
+    ok('…and nothing that is NOT a field sneaks in',
+        Object.keys(factsSnapshot(facts())).length === FIELDS.length);
+
+    const snap = factsSnapshot(facts({ quota: { percent: 41 }, repo: { dirty: 2, untracked: 0 } }));
+    ok('a number reads as the number the evaluator compares',
+        snap['quota.percent'] === 41 && snap['repo.dirty'] === 2);
+    ok('a boolean reads as a boolean, not as the word',
+        snap['handover.found'] === true && snap['round.failed'] === false);
+    ok('an enum reads as the value its picker offers',
+        snap['outcome'] === 'clean-handover' && snap['handover.source'] === 'transcript');
+
+    // ‼️ THE READING AND THE VERDICT ARE ONE ANSWER. If a row says 2 and a
+    // condition "is at least 2" does not fire, the row has lied — and this is
+    // the only test that can catch that, because the two come from one reader.
+    ok('‼️ a condition written against the reading fires',
+        FIELDS.filter(f => f.type === 'number').every(f =>
+            evaluateSentryPolicy(
+                { conditions: [{ id: 'c', field: f.field, operator: 'gte', value: snap[f.field] }] },
+                facts({ quota: { percent: 41 }, repo: { dirty: 2, untracked: 0 } })
+            ).fired.length === 1));
+
+    // A fact nobody measured reads as the evaluator's OWN default rather than
+    // as blank: the row has to show -1 for a quota that was never read, because
+    // -1 is what the condition will be compared against tonight.
+    const bare = factsSnapshot({ diagnosis: diagnosis() });
+    ok('an unmeasured fact reads as what the evaluator will compare, not as empty',
+        bare['quota.percent'] === -1 && bare['repo.dirty'] === 0
+        && bare['handover.source'] === '');
+
+    // Text is the one field that can be a whole session's tail. The row shows
+    // its END — the last thing the engine said is what a `contains` rule is
+    // usually written about — and says that it was cut.
+    const long = 'x'.repeat(SNAPSHOT_TEXT_MAX + 50) + 'THE-END';
+    const cut = factsSnapshot(facts({ output: long }))['output'];
+    ok('a long text reading is clamped and says so',
+        typeof cut === 'string' && cut.length <= SNAPSHOT_TEXT_MAX + 1
+        && cut.startsWith('…') && cut.endsWith('THE-END'));
+    ok('…and a short one is left exactly as it is',
+        factsSnapshot(facts({ output: 'short' }))['output'] === 'short');
+}
+
+// ---- X-194 — WOULD THIS SET FIRE TONIGHT? ---------------------------------
+//
+// One implementation, two callers: the Missions editor asks it on every repaint
+// of the draft and an agent asks it over `sentry.probe`. Both need the same
+// answer, so neither is allowed to work it out for itself.
+{
+    const f = facts({ handover: { found: false, source: '', score: 0 }, repo: { dirty: 3, untracked: 0 } });
+    const set = presetConditions('hybrid');
+    const p = probePolicy(set, f);
+    ok('the probe answers with the verdict the round would reach',
+        p.measured === true && p.verdict === evaluateSentryPolicy({ conditions: set }, f).verdict);
+
+    // ‼️ PER CONDITION, IN THE ORDER GIVEN — not by id. A row is marked by its
+    // POSITION, and two rows are free to carry the same handle; answering by id
+    // would mark whichever row happened to share a name.
+    ok('…and per condition, in the order they were handed in',
+        Array.isArray(p.hits) && p.hits.length === set.length);
+    ok('…marking exactly the ones that hold',
+        p.hits[0] === true && p.hits[1] === true && p.hits[2] === false);
+    ok('‼️ …and the marks agree with the verdict, always',
+        p.hits.some(Boolean) === (p.verdict === 'leader'));
+
+    // A condition nobody can evaluate is never quietly a condition that did not
+    // fire — X-190's law, carried to the surface that is about to save it.
+    const bad = probePolicy([{ id: 'x', field: 'nope.nothing', operator: 'isTrue' }], f);
+    ok('a condition nobody can evaluate comes back BY NAME rather than as a false',
+        bad.problems.length === 1 && bad.problems[0].includes('nope.nothing')
+        && bad.hits[0] === false);
+
+    // ‼️ WITH NOTHING MEASURED THERE IS NO ANSWER, and saying "mechanical"
+    // would be the guess this system refuses: a campaign that has never run a
+    // round has no readings, not readings that all came back false.
+    const none = probePolicy(set, undefined);
+    ok('‼️ with no round measured it says so rather than answering "mechanical"',
+        none.measured === false && none.verdict === undefined
+        && !none.hits.length && none.why.length > 10);
+
+    ok('the readings it judged against travel with the answer',
+        p.facts && p.facts['repo.dirty'] === 3);
+    ok('an empty set is a real answer, not a missing one',
+        probePolicy([], f).measured === true && probePolicy([], f).verdict === 'mechanical');
 }
 
 console.log(`test_sentry_policy: ${pass} passed, ${fail} failed`);

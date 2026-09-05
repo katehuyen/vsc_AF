@@ -3099,6 +3099,51 @@
     };
     /** The three the dictionary declares, plus what an EDITED one is called. */
     const CUSTOM = 'custom';
+    /**
+     * ‼️ X-194 — WHETHER THIS DRAFT WOULD FIRE TONIGHT, ANSWERED BY THE REAL
+     * EVALUATOR. Operator semantics live in `core/sentryPolicy.ts`; a second
+     * copy on this page would be the copy that goes out of date, and a row
+     * marked "holds" by a page the host disagrees with is worse than no mark at
+     * all. So the page ASKS, debounced, exactly the way the mission draft asks
+     * what it would launch with (U-103).
+     */
+    let PROBE = null;
+    let probeSeq = 0;
+    let probeFp = '';
+    let probeTimer = 0;
+    /**
+     * Debounced from `render`, on the same rule the mission draft's preview
+     * follows (U-103): a repaint that changed NOTHING must not restart the
+     * clock, or a form being typed into never gets round to asking. Hooked to
+     * the repaint rather than to each of the controls that edit a condition,
+     * because a control added later would silently not have it.
+     */
+    const scheduleSentryProbe = () => {
+        if (!sentryFormOpen) { return; }
+        const list = sentryForm.conditions;
+        // The same normalisation the mode strip compares by: a read-back that
+        // only changed `0` into `"0"` is not a new question, and asking again
+        // for it would throw the answer away on every repaint.
+        let fp;
+        try { fp = condNorm(list); } catch (e) { fp = 'draft-' + Date.now(); }
+        if (fp === probeFp) {
+            if (probeTimer) { return; }
+        } else {
+            probeSeq += 1;
+            probeFp = fp;
+            // ‼️ The answer on the board is about a draft that no longer exists.
+            // Keeping it would leave a mark on a row that has since moved or
+            // changed field; dropping it costs one unmarked repaint, which is
+            // the honest state — nobody has judged this set yet.
+            PROBE = null;
+        }
+        clearTimeout(probeTimer);
+        const gen = probeSeq;
+        probeTimer = setTimeout(() => {
+            probeTimer = 0;
+            vscode.postMessage({ type: 'sentryProbe', seq: gen, conditions: list });
+        }, 220);
+    };
 
     /** SHORTHAND: one word for the whole state, and the panel carries the rest. */
     function sentryChip(s) {
@@ -3169,12 +3214,16 @@
 
     /** Are two condition sets the same question? Compared by VALUE, because the
      *  page must be able to say "hybrid" again when an edit is undone. */
-    function sameConditions(a, b) {
-        const norm = (c) => JSON.stringify((c || []).map(x => [
-            x.field || '', x.operator || '', x.value === undefined ? null : x.value
-        ]));
-        return norm(a) === norm(b);
-    }
+    // ‼️ THE VALUE IS COMPARED AS A WORD, not as its type. A box hands back a
+    // string, so the `0` a preset declares and the `"0"` the same untouched box
+    // reads back are ONE question — and comparing them by type made the strip
+    // say "custom · from hybrid" the first time anything on the form was typed
+    // into, which is the label lying about a set nobody had edited.
+    const condNorm = (list) => JSON.stringify((list || []).map(x => [
+        x.field || '', x.operator || '',
+        (x.value === undefined || x.value === null) ? '' : String(x.value)
+    ]));
+    function sameConditions(a, b) { return condNorm(a) === condNorm(b); }
 
     /** ‼️ WHICH MODE THIS REALLY IS — worked out, never remembered. The preset
      *  the user pressed is only a label; what runs tonight is the condition
@@ -3198,6 +3247,41 @@
             + (f ? '\n\n' + f.describe : '');
     }
 
+    /**
+     * ‼️ X-194 — WHAT THIS FIELD READS RIGHT NOW.
+     *
+     * The host sends one flat map, derived by running the evaluator's own
+     * reader over the dictionary (`factsSnapshot`), so the figure on the row is
+     * the figure the verdict is compared against — the two cannot drift because
+     * there is only one reader. `null` here is not "zero": it is a form opened
+     * before any round has ever been measured, and the row says so, because a
+     * blank next to `repo.dirty` reads as a clean repository.
+     */
+    function policyFacts(s) {
+        const f = s.policyFacts;
+        return (f && typeof f === 'object') ? f : null;
+    }
+    /**
+     * ‼️ A NAME NOBODY ELSE IS USING. The verdict NAMES the conditions that
+     * fired and the row's mark is looked up by that name, so two rows sharing a
+     * handle answer for each other. A count is not a name: drop the third of
+     * five and the next one added would be `c5` all over again.
+     */
+    function freeConditionId() {
+        const used = {};
+        sentryForm.conditions.forEach(c => { used[String(c.id || '')] = 1; });
+        let n = sentryForm.conditions.length + 1;
+        while (used['c' + n]) { n += 1; }
+        return 'c' + n;
+    }
+    /** SHORTHAND: the shortest unambiguous form on the row; the panel has the rest. */
+    function readingShort(v) {
+        if (v === true || v === false) { return String(v); }
+        if (typeof v === 'number') { return String(v); }
+        const t = String(v ?? '');
+        if (!t.length) { return '(empty)'; }
+        return t.length > 24 ? t.slice(0, 23) + '…' : t;
+    }
     function conditionRowHtml(s, c, i) {
         const ops = opsFor(s, c.field);
         const o = policyOps(s).find(x => x.id === c.operator);
@@ -3227,10 +3311,41 @@
                     C.option(v, v === '' ? '(empty)' : v, { selected: String(c.value ?? '') === v })).join('')}</select>`
                 : `<input class="scond-v" data-si="${i}" type="${f && f.type === 'number' ? 'number' : 'text'}"
                         value="${C.esc(c.value === undefined ? '' : c.value)}" placeholder="value">`);
-        return `<div class="scond" data-scond="${i}">
+        // ‼️ WHAT THIS FIELD HOLDS TODAY, ON THE ROW. Without it the user is
+        // writing a rule against a number they cannot see, and the click that
+        // would show it is the click DENSITY forbids. The mark beside it is the
+        // HOST's answer — this page never works out whether a condition holds.
+        const facts = policyFacts(s);
+        const known = !!facts && f && Object.prototype.hasOwnProperty.call(facts, c.field);
+        const now = known ? facts[c.field] : undefined;
+        const holds = PROBE && Array.isArray(PROBE.hits) ? PROBE.hits[i] === true : false;
+        const asOf = s.policyFactsAt ? elapsed(Number(s.policyFactsAt)) + ' ago' : 'the last round';
+        const reading = !known
+            ? `<span class="scond-now muted" data-snow="${i}">not measured yet</span>`
+            : `<span class="scond-now${holds ? ' scond-hit' : ''}" data-snow="${i}"`
+                + ` data-snowv="${C.esc(String(now))}"${holds ? ' data-sholds="1"' : ''}>`
+                // ‼️ "now" IS PART OF THE SHORTEST UNAMBIGUOUS FORM. A bare `3`
+                // beside a value box holding `0` reads as a second field, and a
+                // second field on that row looks editable.
+                + `now ${C.esc(readingShort(now))}</span>`;
+        const readTip = !known
+            ? window.AFTip.wrap(reading, 'Nothing measured yet',
+                'No round has ended since this campaign was set up, so there is no reading to '
+                + 'compare against. The condition is still valid — it is judged the first time a '
+                + 'round finishes.')
+            : window.AFTip.wrap(reading,
+                `${c.field} = ${readingShort(now)}`,
+                `Measured ${asOf}, on the round that ended last.\n\n`
+                + (String(now ?? '').length > 24 ? `Full reading:\n${String(now)}\n\n` : '')
+                + (holds
+                    ? '‼️ This condition HOLDS against that reading — a round ending like the last one wakes the leader on this line.'
+                    : 'This condition does not hold against that reading.')
+                + (f ? '\n\n' + f.describe : ''));
+        return `<div class="scond" data-scond="${i}" data-scondid="${C.esc(c.id || '')}">
             <select class="scond-f" data-si="${i}" title="${C.esc('Which measured fact this asks about.')}">${fieldOpts}</select>
             <select class="scond-o" data-si="${i}" title="${C.esc('How it is compared. Only the operators this field\'s type admits are offered.')}">${opOpts}</select>
             ${valBox}
+            ${readTip}
             <button type="button" class="chip" data-sup="${i}"${i === 0 ? ' disabled' : ''} title="Move this line up. Conditions are ORed, so the order is what the verdict NAMES first.">↑</button>
             <button type="button" class="chip" data-sdn="${i}"${i === sentryForm.conditions.length - 1 ? ' disabled' : ''} title="Move this line down.">↓</button>
             <button type="button" class="chip" data-sdel="${i}" title="Drop this condition.">✕</button>
@@ -3279,6 +3394,25 @@
             ? `Any ONE of these ${sentryForm.conditions.length} wakes the leader for that round; `
                 + 'none of them and the round is built from a template.'
             : '';
+        // ‼️ AND WHAT THAT MEANS TONIGHT, in the one sentence the whole editor
+        // is for. The verdict is the HOST's — the same `evaluateSentryPolicy`
+        // the round will run — read against the readings on the rows above, so
+        // the user can see the answer before spending a night finding it out.
+        const facts = policyFacts(s);
+        const asOf = facts && s.policyFactsAt
+            ? `<span class="spolicy-asof muted small" title="${C.esc('Every reading on the rows above comes from the round that ended last, '
+                + 'measured by the same reader the verdict uses. A campaign that has never run a round has nothing to read.')}"
+                >readings from the round that ended ${C.esc(elapsed(Number(s.policyFactsAt)))} ago</span>`
+            : (facts ? '<span class="spolicy-asof muted small">readings from the round that ended last</span>' : '');
+        const tonight = (PROBE && sentryForm.conditions.length)
+            ? `<span class="spolicy-verdict${PROBE.verdict === 'leader' ? ' on' : ''}" title="${C.esc(
+                (PROBE.why || '') + (PROBE.problems && PROBE.problems.length
+                    ? '\n\nCould not be judged: ' + PROBE.problems.join(' · ') : ''))}">${
+                PROBE.verdict === 'leader'
+                    ? 'A round ending like the last one would wake the leader'
+                        + (PROBE.fired && PROBE.fired.length ? ' — ' + C.esc(PROBE.fired.join(', ')) : '')
+                    : 'A round ending like the last one would stay mechanical'}</span>`
+            : '';
         return `<div class="spolicy">
             <div class="srow spolicy-head">
                 <span class="flabel">Mode</span>
@@ -3289,6 +3423,7 @@
                 <button type="button" class="chip" id="s-condadd"${policyFields(s).length ? '' : ' disabled'}
                     title="Add one more condition. They are ORed: any one of them holding wakes the leader.">+ condition</button>
                 <span class="muted small">${C.esc(summary)}</span>
+                ${tonight}${asOf}
             </div>
         </div>`;
     }
@@ -3406,17 +3541,27 @@
         // is, so a repaint (and this page repaints on every tick) cannot lose
         // a half-typed value. The row index is on each control.
         const s2 = DATA.sentry || {};
-        document.querySelectorAll('.scond').forEach(row => {
-            const i = Number(row.dataset.scond);
-            const c = sentryForm.conditions[i];
-            if (!c) { return; }
-            const g = (cls) => row.querySelector(cls);
-            const f = g('.scond-f'), o = g('.scond-o'), val = g('.scond-v');
-            if (f) { c.field = f.value; }
-            if (o) { c.operator = o.value; }
+        // ‼️ READ FLAT, BY THE ROW'S OWN NUMBER. Every control already carries
+        // `data-si`, so nothing here has to walk inside a row — and a read that
+        // walked inside one was a read no page test could measure: the harness
+        // has a single document and an element's query is the page's query, so
+        // every row came back holding the FIRST row's boxes and the test that
+        // was meant to prove the editor round-trips proved nothing.
+        const at = (el) => sentryForm.conditions[Number(el.dataset.si)];
+        document.querySelectorAll('.scond-f').forEach(el => {
+            const c = at(el); if (c) { c.field = el.value; }
+        });
+        document.querySelectorAll('.scond-o').forEach(el => {
+            const c = at(el); if (c) { c.operator = el.value; }
+        });
+        document.querySelectorAll('.scond-v').forEach(el => {
+            const c = at(el); if (c) { c.value = el.value; }
+        });
+        // An operator that takes no value carries none — a stored one would be
+        // reported to the host for a condition that cannot use it.
+        sentryForm.conditions.forEach(c => {
             const spec = policyOps(s2).find(x => x.id === c.operator);
             if (spec && !spec.takesValue) { delete c.value; }
-            else if (val) { c.value = val.value; }
         });
     }
 
@@ -3518,7 +3663,7 @@
                 readSentryForm();
                 const f = policyFields(sd)[0];
                 if (!f) { return; }
-                const c = { id: 'c' + (sentryForm.conditions.length + 1), field: f.field };
+                const c = { id: freeConditionId(), field: f.field };
                 repairCondition(sd, c);
                 sentryForm.conditions.push(c);
                 render();
@@ -3556,6 +3701,10 @@
         // it, and a resolution the form has stopped asking for is a form back
         // to guessing.
         schedulePreview();
+        // ‼️ X-194 — and the same question for the sentry draft: would this
+        // condition set fire against what the last round measured? Same hook,
+        // same reason — a control added to the editor later inherits it.
+        scheduleSentryProbe();
         // after Start: the freshly created run (newest row) opens itself once
         if (openNewest && DATA.runs.length) {
             openNewest = false;
@@ -3648,10 +3797,34 @@
                    The slack belongs to nothing, so it is given to nothing. */
                 .scond { display:grid; gap:6px; align-items:center;
                     grid-template-columns:200px 130px minmax(120px,220px)
-                        max-content max-content max-content 1fr; }
+                        108px max-content max-content max-content 1fr; }
                 .scond select, .scond input { font-size:11px; padding:2px 4px; min-width:0; }
                 .scond .chip { padding:1px 7px; }
                 .scond-nov { font-style:italic; }
+                /* ‼️ X-194 — THE READING SITS AGAINST THE VALUE IT IS COMPARED
+                   WITH. "is more than 0 · now 3" is read as one sentence; the
+                   same two numbers a hand's width apart are read as two fields,
+                   and the second one looks editable. ‼️ ITS COLUMN IS A FIXED
+                   WIDTH, not max-content: every row is its OWN grid, so a
+                   content-sized column makes ↑ ↓ ✕ land somewhere different on
+                   each line — the exact shuffle the trailing 1fr above exists
+                   to stop. A long reading ellipses; the panel has it in full. */
+                .scond > .af-tipw { min-width:0; }
+                .scond-now { display:inline-block; max-width:100%; font-size:11px; opacity:.75;
+                    padding:1px 6px; border-radius:9px; white-space:nowrap;
+                    overflow:hidden; text-overflow:ellipsis; vertical-align:middle;
+                    border:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); }
+                /* …and one that HOLDS right now is the whole point of the row:
+                   this is the line that would wake the leader tonight. */
+                .scond-now.scond-hit { opacity:1;
+                    border-color:var(--vscode-textLink-foreground);
+                    color:var(--vscode-textLink-foreground); }
+                .spolicy-verdict { font-size:11px; padding:1px 7px; border-radius:9px;
+                    border:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); opacity:.8; }
+                .spolicy-verdict.on { opacity:1;
+                    border-color:var(--vscode-textLink-foreground);
+                    color:var(--vscode-textLink-foreground); }
+                .spolicy-asof { margin-left:auto; }
                 .scond-empty { padding:2px 0 4px; }
                 .scond-tools { margin:6px 0 0; align-items:center; }
                 .sprompt { margin:6px 0; }
@@ -4540,6 +4713,19 @@
             if (next === JSON.stringify(PREVIEW)) { return; }
             PREVIEW = m.preview || null;
             if (formOpen) { readForm(); render(); }
+        } else if (m.type === 'sentryProbe') {
+            // ‼️ X-194 — THE LATEST DRAFT ONLY, on `preview`'s own rule: an
+            // answer whose token is behind the draft was judged against rows
+            // that have since moved, and painting it would mark the wrong line.
+            if (m.seq !== probeSeq) { return; }
+            const shape = (p) => p && JSON.stringify([p.verdict, p.hits, p.fired, p.problems]);
+            const next = shape(m);
+            if (next === shape(PROBE)) { return; }
+            PROBE = {
+                verdict: m.verdict, hits: m.hits || [], fired: m.fired || [],
+                problems: m.problems || [], why: m.why || ''
+            };
+            if (sentryFormOpen) { readSentryForm(); render(); }
         } else if (m.type === 'formError') {
             readForm();
             formErr = m.error;

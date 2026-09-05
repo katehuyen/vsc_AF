@@ -2638,6 +2638,15 @@
       ]
     },
     {
+      "capability": "missionsPanel.ts#sentryProbe",
+      "ui": [
+        "page:missionsPanel.ts#sentryProbe"
+      ],
+      "ops": [
+        "sentry.probe"
+      ]
+    },
+    {
       "capability": "missionsPanel.ts#refresh",
       "ui": [
         "page:missionsPanel.ts#refresh"

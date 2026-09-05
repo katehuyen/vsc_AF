@@ -96,13 +96,13 @@ const rows = r => qsa(r, '[data-scond]');
     // `handover.found` is a boolean, so the row must not be offered "is more
     // than": an operator the field's type cannot take is a condition that can
     // never hold, and the host refuses it by name.
-    const firstRow = (/<div class="scond" data-scond="0">[\s\S]*?<\/div>/.exec(h) || [''])[0];
+    const firstRow = (/<div class="scond" data-scond="0"[^>]*>[\s\S]*?<\/div>/.exec(h) || [''])[0];
     ok('‼️ a row offers only the operators its FIELD TYPE admits',
         firstRow.indexOf('value="isFalse"') >= 0 && firstRow.indexOf('value="gt"') < 0);
     ok('…and an operator that takes no value draws no value box at all',
         firstRow.indexOf('scond-nov') >= 0 && firstRow.indexOf('class="scond-v"') < 0);
 
-    const numRow = (/<div class="scond" data-scond="1">[\s\S]*?<\/div>/.exec(h) || [''])[0];
+    const numRow = (/<div class="scond" data-scond="1"[^>]*>[\s\S]*?<\/div>/.exec(h) || [''])[0];
     ok('…while a number field gets a number box and the operators for one',
         numRow.indexOf('type="number"') >= 0 && numRow.indexOf('value="gt"') >= 0);
 
@@ -171,6 +171,100 @@ const rows = r => qsa(r, '[data-scond]');
     const m = r.posted.find(x => x.type === 'sentryStart');
     ok('‼️ asking for no mode sends neither preset nor conditions',
         !!m && m.input.preset === undefined && m.input.conditions === undefined);
+}
+
+// ------------------------------------------- what every row reads TODAY
+//
+// ‼️ The item's own words: "her satırda o alanın ŞU ANKİ değeri gösterilir ki
+// kullanıcı koşulun bugün ateşleyip ateşlemeyeceğini görsün". A rule written
+// against a number nobody can see is a rule written blind, and the click that
+// would show it is the click DENSITY forbids.
+{
+    const r = openForm();
+    press(r, presetBtn(r, 'hybrid'));
+    const H = html(r);
+    ok('every condition row carries a reading',
+        rows(r).length > 0 && qsa(r, '[data-snow]').length === rows(r).length);
+    // The hybrid set's second row asks about `repo.dirty`, and the fixture's
+    // last round measured 3 — the row must say 3, not a placeholder.
+    ok('‼️ …and the reading is the LAST ROUND\'s measured value',
+        /data-snow="1" data-snowv="3"/.test(H));
+    ok('…a boolean reads as the word the picker uses, not as 0/1',
+        /data-snow="0" data-snowv="false"/.test(H));
+    ok('…and the reading says WHEN it was measured, once, where the set is summed up',
+        /spolicy-asof/.test(H));
+
+    // A form opened before any round has ever run has nothing to read, and says
+    // so — a blank next to every row would read as "zero", which is a lie.
+    const bare = fixture.data();
+    // copied, never stripped in place: `data()` hands back the shared defaults
+    // and a delete on them would blind every test that runs after this one.
+    bare.sentry = Object.assign({}, bare.sentry);
+    delete bare.sentry.policyFacts;
+    const r2 = runPage(fixture.script, bare, fixture.window || {});
+    press(r2, 's-new');
+    press(r2, presetBtn(r2, 'hybrid'));
+    ok('with nothing measured yet the rows say so rather than showing a zero',
+        /not measured yet/.test(html(r2)) && !/data-snowv=/.test(html(r2)));
+}
+
+// ------------------------------------- and whether it would fire TONIGHT
+//
+// The mark is not worked out on this page. Operator semantics live in
+// `core/sentryPolicy.ts` and a second copy here would be the copy that goes out
+// of date — so the page ASKS, debounced, exactly the way the mission draft asks
+// what it would launch with (U-103), and paints what the real evaluator said.
+{
+    // A window whose timer fires at once, so the debounced ask really goes out
+    // and the test can read the token it was sent with.
+    const now = { setTimeout: (fn) => { fn(); return 1; }, clearTimeout: () => { } };
+    const r = runPage(fixture.script, fixture.data(), now);
+    press(r, 's-new');
+    press(r, presetBtn(r, 'hybrid'));
+    const asked = r.posted.filter(m => m && m.type === 'sentryProbe');
+    ok('‼️ the page ASKS the host whether this draft would fire tonight',
+        asked.length > 0 && Array.isArray(asked[asked.length - 1].conditions));
+    const last = asked[asked.length - 1];
+    ok('…carrying the draft it is asking about, and a token to answer it with',
+        last.conditions.length === P.presetConditions('hybrid').length
+        && typeof last.seq === 'number');
+
+    r.send({
+        type: 'sentryProbe', seq: last.seq, verdict: 'leader',
+        hits: [true, true, false, false, false],
+        fired: ['no-handover', 'dirty-repo'], problems: [], why: 'two conditions hold'
+    });
+    const H = html(r);
+    ok('a condition that holds right now is marked on its row',
+        /class="scond-now scond-hit" data-snow="0" data-snowv="false" data-sholds="1"/.test(H));
+    ok('…and one that does not is left unmarked',
+        /class="scond-now" data-snow="2"/.test(H) && !/data-snow="2"[^>]*data-sholds/.test(H));
+    ok('‼️ …and the set says, in one sentence, what tonight would do',
+        /would wake the leader/i.test(H));
+
+    // A stale answer is dropped rather than painted over a newer draft.
+    r.send({
+        type: 'sentryProbe', seq: last.seq - 1, verdict: 'mechanical',
+        hits: [false, false, false, false, false], fired: [], problems: [], why: 'nothing'
+    });
+    ok('an answer about a draft the user has since edited is dropped',
+        /would wake the leader/i.test(html(r)));
+}
+
+// --------------------------------------------- a new row gets a free name
+{
+    const r = openForm();
+    press(r, presetBtn(r, 'hybrid'));
+    press(r, 's-condadd');
+    press(r, qsa(r, '[data-sdel]')[0]);
+    press(r, 's-condadd');
+    // ‼️ The verdict NAMES the conditions that fired, so two rows sharing a
+    // handle answer for each other. Deleting one and adding another must not
+    // hand out a name that is already on the board.
+    const ids = (html(r).match(/data-scondid="([^"]*)"/g) || [])
+        .map(m => m.slice(14, -1));
+    ok('‼️ adding a row after a delete never reuses a name already on the board',
+        ids.length === rows(r).length && new Set(ids).size === ids.length);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

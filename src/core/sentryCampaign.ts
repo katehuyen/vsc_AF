@@ -1,6 +1,6 @@
 import { SentryCampaign, SentryPlan } from './sentryRun';
 import type { LeaderBudgetState, LeaderCaps } from './sentryLeader';
-import { Condition, PRESETS, presetConditions, SentryPolicy } from './sentryPolicy';
+import { Condition, PolicyFacts, PRESETS, presetConditions, SentryPolicy } from './sentryPolicy';
 
 /**
  * X-176 — THE CAMPAIGN AS A RECORD: what the user switched on, and what it did.
@@ -88,6 +88,18 @@ export interface SentryRecord extends SentryCampaign {
      * over this one field.
      */
     policy?: SentryPolicy;
+    /**
+     * ‼️ X-194 — WHAT THE LAST ROUND MEASURED, kept so a surface can put each
+     * field's CURRENT reading on the condition that asks about it. Without it
+     * the editor asks the user to write rules against numbers they cannot see,
+     * and the round's own facts are thrown away the moment the verdict is read.
+     *
+     * The whole facts object rather than a display copy: `sentryPayload` derives
+     * the readings from it with `factsSnapshot` and `sentry.probe` re-evaluates
+     * a draft against it, and two stored shapes would be two answers to one
+     * question. `output` is already a 4 KB tail where it is measured.
+     */
+    lastFacts?: PolicyFacts;
     /** the leash on the leader, where this campaign overrides the settings */
     leaderCaps?: Partial<LeaderCaps>;
     /** why it stopped, when it was not simply switched off */

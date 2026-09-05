@@ -640,7 +640,28 @@ const SENTRY_DEFAULTS = {
             policyOperators: P.OPERATORS,
             policyPresets: P.PRESETS,
             policyPresetConditions: Object.fromEntries(
-                P.PRESETS.map(p => [p.id, P.presetConditions(p.id)]))
+                P.PRESETS.map(p => [p.id, P.presetConditions(p.id)])),
+            // ‼️ X-194 — WHAT THE LAST ROUND MEASURED, taken through the real
+            // `factsSnapshot` for the same reason: the row shows the figure the
+            // verdict will be compared against, so a fixture that typed its own
+            // would photograph a reading the evaluator disagrees with. This one
+            // is a round that ended badly — no handover, a dirty repo — which is
+            // the state the hybrid set exists to catch.
+            policyFacts: P.factsSnapshot({
+                diagnosis: {
+                    sessionId: '2280dda6-a2ec', session: '2280dda6',
+                    outcome: 'nothing-to-continue', rule: 'no-note', why: '',
+                    evidence: [], unknown: ['code'], limit: false, policy: {}
+                },
+                handover: { found: false, source: '', score: 0 },
+                repo: { dirty: 3, untracked: 0 },
+                round: { index: 7, failed: false, barren: true, consecutiveBarren: 1 },
+                quota: { percent: 62 },
+                accounts: { usable: 2 },
+                output: 'the window is spent; nothing left to continue',
+                code: { closed: false }
+            }),
+            policyFactsAt: Date.now() - 12 * 60 * 1000
         };
     })()
 };

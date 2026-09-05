@@ -136,6 +136,7 @@ import {
 import {
     Condition, PolicyFacts, SentryPolicy, evaluateSentryPolicy,
     FIELDS as SENTRY_FIELDS, OPERATORS as SENTRY_OPERATORS, PRESETS as SENTRY_PRESETS,
+    factsSnapshot, probePolicy,
     presetConditions as sentryPresetConditions
 } from './core/sentryPolicy';
 import { SENTRY_DEFAULT_CEILING } from './core/sentryRun';
@@ -6628,6 +6629,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /** The looking door: the same plan, with nothing written anywhere. */
+    /**
+     * ‼️ X-194 — WOULD THIS CONDITION SET WAKE THE LEADER TONIGHT?
+     *
+     * ONE function behind two doors: the Missions condition editor asks it on
+     * every repaint of its draft, and an agent asks it as `sentry.probe`. Both
+     * land here, and here lands in `core/sentryPolicy.ts` — the page is never
+     * allowed to judge a condition for itself, because operator semantics live
+     * in the core and a surface carrying its own copy is the copy that comes to
+     * disagree with the round.
+     */
+    const sentryProbe = (input: Record<string, unknown>): Record<string, unknown> => {
+        const rec = taskManager.sentry;
+        const preset = String(input.preset ?? '').trim();
+        const raw = input.conditions;
+        const given: Condition[] = Array.isArray(raw)
+            ? raw as Condition[]
+            : preset
+                ? sentryPresetConditions(preset)
+                : (rec?.policy?.conditions ?? []);
+        return {
+            ...probePolicy(given, rec?.lastFacts),
+            ...(preset ? { preset } : {}),
+            at: rec?.lastRoundAt
+        };
+    };
+
     const previewMission = (input: Record<string, unknown>): MissionPreview => {
         const plan = planMissionLaunch(input);
         if (typeof plan !== 'string') { return plan.preview; }
@@ -15419,6 +15446,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ X-177 — the page's two sentry doors. Both go through the SAME
         // manager methods the bridge ops use: a surface that started a campaign
         // its own way would be a second definition of what a campaign is.
+        // ‼️ X-194 — the editor's live "would this fire tonight?": the SAME
+        // function `sentry.probe` is, against the SAME stored facts.
+        sentryProbe,
         sentryStart: (input: Record<string, unknown>): string | undefined => {
             const agentKey = String(input.agent ?? '').trim();
             const agent = agents.find(a => a.id === agentKey || a.name === agentKey);
@@ -24142,6 +24172,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(facts.output !== undefined ? { output: facts.output } : {}),
                     ...(facts.codes ? { code: { closed: facts.codes.some(c => c.closed) } } : {})
                 };
+                // ‼️ X-194 — KEPT, not read once and thrown away. The condition
+                // editor puts each field's CURRENT reading on the row that asks
+                // about it, and `sentry.probe` re-judges a draft against these
+                // same facts — both of which are impossible if the only copy of
+                // what the round measured dies with this closure.
+                rec.lastFacts = pf;
                 const policy: SentryPolicy = rec.policy ?? { preset: 'mechanical', conditions: [] };
                 const verdict = evaluateSentryPolicy(policy, pf);
                 // ‼️ Read ONCE, and only on a round that woke the leader — `git
@@ -24310,7 +24346,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             /** What each preset FILLS IN — so the page can say "hybrid (edited)"
              *  by comparing, rather than by keeping its own copy of the sets. */
             policyPresetConditions: Object.fromEntries(
-                SENTRY_PRESETS.map(p => [p.id, sentryPresetConditions(p.id)]))
+                SENTRY_PRESETS.map(p => [p.id, sentryPresetConditions(p.id)])),
+            /**
+             * ‼️ X-194 — AND WHAT EVERY ONE OF THOSE FIELDS READS RIGHT NOW.
+             *
+             * The item asks for it by name: each row shows the field's current
+             * value "ki kullanıcı koşulun bugün ateşleyip ateşlemeyeceğini
+             * görsün". Derived from the last round's facts through the
+             * evaluator's OWN reader, so the figure on the row is the figure
+             * the verdict compares — a page that worked it out for itself would
+             * be a second reader, and the second one is the one that lies.
+             * Absent = no round has ever been measured, and the row says so
+             * rather than showing a zero.
+             */
+            ...(rec?.lastFacts ? { policyFacts: factsSnapshot(rec.lastFacts) } : {}),
+            ...(rec?.lastRoundAt ? { policyFactsAt: rec.lastRoundAt } : {})
         };
         if (!rec) { return { ...base, campaign: null, running: false, rounds: [] }; }
         const proj = projectStore.get(rec.project);
@@ -32224,6 +32274,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         }))
                 };
             }
+        },
+        {
+            op: 'sentry.probe',
+            describe: 'WOULD THIS CONDITION SET WAKE THE LEADER TONIGHT? Judges a policy against '
+                + 'what the campaign\'s last finished round actually MEASURED, through the same '
+                + 'evaluator the round itself runs - so the answer can be had before a night is '
+                + 'spent finding it out. Returns the verdict, the ids that fired, `hits` (one '
+                + 'boolean per condition IN THE ORDER GIVEN, because a row is marked by its '
+                + 'position and two conditions may share a handle), `facts` (what every field in '
+                + 'the dictionary reads right now) and `problems` - a condition nobody can '
+                + 'evaluate is NEVER quietly reported as one that did not fire. ‼️ With no round '
+                + 'measured yet `measured` is false and there is no verdict at all: "nothing '
+                + 'fired" and "nothing was read" are opposite answers. args: conditions? (array '
+                + 'of {id, field, operator, value} or {id, all:[...]}; omitted = the campaign\'s '
+                + 'own saved policy), preset? (mechanical | intelligent | hybrid - judge that '
+                + 'preset\'s set instead)',
+            handler: (args) => sentryProbe((args ?? {}) as Record<string, unknown>)
         },
         {
             op: 'engines.status',

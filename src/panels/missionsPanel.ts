@@ -36,6 +36,14 @@ export interface MissionsDeps {
      * agent and the words the first round opens on.
      */
     sentryStart(input: Record<string, unknown>): string | undefined;
+    /**
+     * ‼️ X-194 — would this DRAFT condition set fire against what the last
+     * round measured? The same core call `sentry.probe` makes: the page must
+     * never work out for itself whether a condition holds, because operator
+     * semantics live in `core/sentryPolicy.ts` and the second copy is the one
+     * that goes out of date.
+     */
+    sentryProbe(input: Record<string, unknown>): Record<string, unknown>;
     sentryControl(action: 'stop' | 'pause' | 'resume'): void;
     pickFolder(): Thenable<string | undefined>;
     /** Live-tail of an archived task output (last KBs only) for the expanded
@@ -142,6 +150,19 @@ export class MissionsPanel {
                 const error = this.deps.sentryStart(msg.input as Record<string, unknown>);
                 void this.panel.webview.postMessage({ type: 'sentryError', error: error ?? '' });
                 this.refresh();
+                break;
+            }
+            // ‼️ X-194 — answered with the token the page sent, on `preview`'s
+            // own rule: the editor repaints on every keystroke and an answer
+            // about a draft the user has since edited would mark the wrong row.
+            case 'sentryProbe': {
+                void this.panel.webview.postMessage({
+                    type: 'sentryProbe',
+                    seq: typeof msg.seq === 'number' ? msg.seq : 0,
+                    ...this.deps.sentryProbe({
+                        conditions: Array.isArray(msg.conditions) ? msg.conditions : []
+                    })
+                });
                 break;
             }
             case 'sentryControl': {
