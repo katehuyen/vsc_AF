@@ -627,7 +627,22 @@ const SENTRY_DEFAULTS = {
         { id: 'plan', label: 'plan', detail: 'plans only' },
         { id: 'dontAsk', label: 'dontAsk', detail: 'stops instead of asking' },
         { id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'EVERY action auto-approved' }
-    ]
+    ],
+    // ‼️ X-194 — THE DICTIONARY, READ OUT OF THE REAL ONE. A fixture that typed
+    // its own fields would photograph a form nobody will ever see: the page
+    // draws whatever `core/sentryPolicy.ts` declares, so that is what the
+    // picture has to be taken against. `presetConditions` is called, not
+    // copied, for the same reason.
+    ...(() => {
+        const P = require('../../out/core/sentryPolicy.js');
+        return {
+            policyFields: P.FIELDS,
+            policyOperators: P.OPERATORS,
+            policyPresets: P.PRESETS,
+            policyPresetConditions: Object.fromEntries(
+                P.PRESETS.map(p => [p.id, P.presetConditions(p.id)]))
+        };
+    })()
 };
 
 const SENTRY_OFF = Object.assign({ campaign: null, running: false, rounds: [] }, SENTRY_DEFAULTS);
@@ -792,6 +807,22 @@ module.exports = {
             id: 'sentry-form', label: 'Sentry — the campaign setup form',
             data: data({}),
             act: (r) => { fire(r.sandbox.document.getElementById('s-new'), 'click'); }
+        },
+        {
+            // ‼️ X-194 — the same form with a MODE PICKED, which is the state
+            // the condition editor exists for. `sentry-form` above draws it
+            // empty and proves the block explains itself with nothing in it;
+            // this one is the picture the five rows have to stay readable in,
+            // including the row whose operator takes no value at all.
+            id: 'sentry-policy', label: 'Sentry — the hybrid mode, with its conditions open',
+            data: data({}),
+            act: (r) => {
+                const d = r.sandbox.document;
+                fire(d.getElementById('s-new'), 'click');
+                const hybrid = d.querySelectorAll('[data-spreset]')
+                    .filter(e => e.dataset.spreset === 'hybrid')[0];
+                if (hybrid) { fire(hybrid, 'click'); }
+            }
         },
         {
             // A campaign really working: the live strip, the chips and the round

@@ -3077,8 +3077,28 @@
         // which is a spent account and no work. The picker is right there to
         // say otherwise.
         permissionMode: 'bypassPermissions',
-        superpowers: false, prompt: '', ceiling: '', safetyBufferMin: '', failLimit: ''
+        superpowers: false, prompt: '', ceiling: '', safetyBufferMin: '', failLimit: '',
+        /**
+         * ‼️ X-194 — A MODE IS A PRESET, NOT A CODE PATH.
+         *
+         * Mechanical, intelligent and hybrid are three FILLED-IN STATES of one
+         * condition set (X-184), so the form keeps a preset name and a list of
+         * conditions rather than a switch. Picking a preset REPLACES the
+         * conditions; touching a condition makes the mode `custom` and the page
+         * goes on saying which preset it came from — the alternative, silently
+         * keeping the preset's name over edited conditions, is a label that
+         * lies about what will run tonight.
+         *
+         * `null` is not "mechanical": it is NOTHING ASKED FOR, and the host
+         * writes no policy at all for it (v11.244). The round's own default
+         * then decides, which is what every campaign started before this form
+         * existed did.
+         */
+        preset: null,
+        conditions: []
     };
+    /** The three the dictionary declares, plus what an EDITED one is called. */
+    const CUSTOM = 'custom';
 
     /** SHORTHAND: one word for the whole state, and the panel carries the rest. */
     function sentryChip(s) {
@@ -3127,6 +3147,152 @@
             <th>Opened</th><th>Took</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
 
+    /**
+     * ‼️ X-194 — THE CONDITION EDITOR, FED BY THE DICTIONARY.
+     *
+     * Every list in here comes from `core/sentryPolicy.ts` over `DATA.sentry`
+     * (`policyFields`, `policyOperators`, `policyPresets`). Nothing about a
+     * field is written on this page, so a fact the round learns to measure
+     * turns up in the editor the day it is added and this function does not
+     * change — which is what "the conditions must not be a narrow mould" means
+     * in code rather than in a promise.
+     */
+    function policyFields(s) { return (s.policyFields || []); }
+    function policyOps(s) { return (s.policyOperators || []); }
+    function fieldSpec(s, name) { return policyFields(s).find(f => f.field === name) || null; }
+    /** The operators this field's TYPE admits — never the whole list. Offering
+     *  "is more than" on a boolean is offering a condition that cannot hold. */
+    function opsFor(s, name) {
+        const f = fieldSpec(s, name);
+        return policyOps(s).filter(o => !f || (o.types || []).indexOf(f.type) >= 0);
+    }
+
+    /** Are two condition sets the same question? Compared by VALUE, because the
+     *  page must be able to say "hybrid" again when an edit is undone. */
+    function sameConditions(a, b) {
+        const norm = (c) => JSON.stringify((c || []).map(x => [
+            x.field || '', x.operator || '', x.value === undefined ? null : x.value
+        ]));
+        return norm(a) === norm(b);
+    }
+
+    /** ‼️ WHICH MODE THIS REALLY IS — worked out, never remembered. The preset
+     *  the user pressed is only a label; what runs tonight is the condition
+     *  set, so the label is derived from it on every paint. */
+    function sentryMode(s) {
+        if (sentryForm.preset === null) { return { id: null, from: null }; }
+        const sets = s.policyPresetConditions || {};
+        for (const p of (s.policyPresets || [])) {
+            if (sameConditions(sentryForm.conditions, sets[p.id])) { return { id: p.id, from: null }; }
+        }
+        return { id: CUSTOM, from: sentryForm.preset };
+    }
+
+    /** A condition's own words, for the row's hover and for the summary. */
+    function conditionLine(s, c) {
+        const f = fieldSpec(s, c.field);
+        const o = policyOps(s).find(x => x.id === c.operator);
+        return [c.field || '(no field)', o ? o.label : (c.operator || '?'),
+            (o && o.takesValue) ? String(c.value === undefined ? '' : c.value) : '']
+            .filter(x => String(x).length).join(' ')
+            + (f ? '\n\n' + f.describe : '');
+    }
+
+    function conditionRowHtml(s, c, i) {
+        const ops = opsFor(s, c.field);
+        const o = policyOps(s).find(x => x.id === c.operator);
+        const f = fieldSpec(s, c.field);
+        // ‼️ A FIELD THE DICTIONARY NO LONGER NAMES IS KEPT AND SAID. Dropping
+        // it would leave the box showing whatever sits first in the list and
+        // report a condition nobody wrote — the same rule the settings page
+        // applies to a stored value its enum has forgotten.
+        const gone = c.field && !f;
+        const fieldOpts = (gone ? [C.option(c.field, '⚠ ' + c.field, {
+            selected: true,
+            detail: 'Nothing measures this any more, so the condition can never hold. Pick another field or drop the row.'
+        })] : []).concat(policyFields(s).map(x =>
+            C.option(x.field, x.field, { selected: x.field === c.field, detail: x.describe }))).join('');
+        const opOpts = ops.map(x => C.option(x.id, x.label, {
+            selected: x.id === c.operator,
+            detail: x.takesValue ? '' : 'Takes no value — the field itself is the whole question.'
+        })).join('');
+        // The value box follows the FIELD's type: a closed set gets a picker,
+        // a number gets a number box, and an operator that takes no value gets
+        // no box at all rather than one that is ignored.
+        const takes = !o || o.takesValue;
+        const valBox = !takes
+            ? '<span class="scond-nov muted small">no value</span>'
+            : (f && f.type === 'enum' && (f.values || []).length
+                ? `<select class="scond-v" data-si="${i}">${(f.values || []).map(v =>
+                    C.option(v, v === '' ? '(empty)' : v, { selected: String(c.value ?? '') === v })).join('')}</select>`
+                : `<input class="scond-v" data-si="${i}" type="${f && f.type === 'number' ? 'number' : 'text'}"
+                        value="${C.esc(c.value === undefined ? '' : c.value)}" placeholder="value">`);
+        return `<div class="scond" data-scond="${i}">
+            <select class="scond-f" data-si="${i}" title="${C.esc('Which measured fact this asks about.')}">${fieldOpts}</select>
+            <select class="scond-o" data-si="${i}" title="${C.esc('How it is compared. Only the operators this field\'s type admits are offered.')}">${opOpts}</select>
+            ${valBox}
+            <button type="button" class="chip" data-sup="${i}"${i === 0 ? ' disabled' : ''} title="Move this line up. Conditions are ORed, so the order is what the verdict NAMES first.">↑</button>
+            <button type="button" class="chip" data-sdn="${i}"${i === sentryForm.conditions.length - 1 ? ' disabled' : ''} title="Move this line down.">↓</button>
+            <button type="button" class="chip" data-sdel="${i}" title="Drop this condition.">✕</button>
+        </div>`;
+    }
+
+    /**
+     * ‼️ THE MODE SELECTOR AND WHAT IT ACTUALLY DOES.
+     *
+     * Three buttons, not three code paths: pressing one FILLS the condition set
+     * from the dictionary. Touching a condition afterwards makes the mode
+     * `custom` and the strip goes on saying which preset it came from, because
+     * "hybrid" over five edited conditions is a label that lies about what will
+     * run tonight.
+     */
+    function sentryPolicyHtml(s) {
+        const presets = s.policyPresets || [];
+        if (!presets.length) { return ''; }
+        const mode = sentryMode(s);
+        const chip = (p) => window.AFTip.wrap(
+            `<button type="button" class="chip${mode.id === p.id ? ' on' : ''}" data-spreset="${C.esc(p.id)}">${C.esc(p.label)}</button>`,
+            `${p.label}${mode.id === p.id ? ' — this is what will run' : ''}`,
+            p.describe + '\n\nPressing this REPLACES the conditions below with its own set. '
+            + 'Edit any of them afterwards and the mode becomes "custom", still saying which preset it grew out of.');
+        const none = window.AFTip.wrap(
+            `<button type="button" class="chip${mode.id === null ? ' on' : ''}" data-spreset="">Not set</button>`,
+            mode.id === null ? 'Nothing asked for — this is what will run' : 'Ask for no mode at all',
+            'No policy is written for the campaign at all, so the round\'s own default decides — which is what '
+            + 'every campaign started before this control existed did. It is NOT the same as Mechanical: '
+            + 'mechanical is a decision, this is the absence of one.');
+        const custom = mode.id === CUSTOM
+            ? `<span class="schip-custom" title="${C.esc('Edited by hand, from the ' + (mode.from || '?')
+                + ' set. The label is derived from the conditions on every paint, so undoing an edit says '
+                + (mode.from || '?') + ' again by itself.')}">custom · from ${C.esc(mode.from || '?')}</span>`
+            : '';
+        const rows = sentryForm.conditions.length
+            ? sentryForm.conditions.map((c, i) => conditionRowHtml(s, c, i)).join('')
+            : `<div class="muted small scond-empty">${mode.id === 'mechanical'
+                ? 'No condition — every round\'s prompt is built from a template. Zero tokens, zero thinking.'
+                : 'No condition yet: with none of them holding, every round stays mechanical.'}</div>`;
+        // ‼️ WHAT THIS SET MEANS, IN ONE SENTENCE, WHERE THE DECISION IS MADE.
+        // Conditions are ORed and each row's own `all` group is ANDed — a rule
+        // nobody can infer from a stack of rows, and the one thing that decides
+        // whether a night is a thinking night or a template night.
+        const summary = sentryForm.conditions.length
+            ? `Any ONE of these ${sentryForm.conditions.length} wakes the leader for that round; `
+                + 'none of them and the round is built from a template.'
+            : '';
+        return `<div class="spolicy">
+            <div class="srow spolicy-head">
+                <span class="flabel">Mode</span>
+                ${none}${presets.map(chip).join('')}${custom}
+            </div>
+            <div class="scond-list">${rows}</div>
+            <div class="srow scond-tools">
+                <button type="button" class="chip" id="s-condadd"${policyFields(s).length ? '' : ' disabled'}
+                    title="Add one more condition. They are ORed: any one of them holding wakes the leader.">+ condition</button>
+                <span class="muted small">${C.esc(summary)}</span>
+            </div>
+        </div>`;
+    }
+
     function sentryFormHtml(s) {
         // U-130 — four of these boxes share one row and every one of them cuts
         // the name inside it, so the name goes on the option itself.
@@ -3160,6 +3326,7 @@
                 <label title="Barren rounds IN A ROW that switch the campaign off. Not a round budget — a working campaign runs until you stop it — but the one alarm no quota can raise: a broken setup opening empty sessions all night spends nothing and would never stop. 0 switches it off.">Failure brake
                     <input id="s-fail" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).failLimit || ''))}" value="${C.esc(sentryForm.failLimit)}"></label>
             </div>
+            ${sentryPolicyHtml(s)}
             <label class="sprompt">First round opens with
                 <textarea id="s-prompt" rows="3" placeholder="Every continuation sentence is built on &quot;the previous session&quot; — the first round has none, so these words are yours.">${C.esc(sentryForm.prompt)}</textarea></label>
             <div class="srow">
@@ -3235,6 +3402,42 @@
         sentryForm.failLimit = v('s-fail');
         const sp = document.getElementById('s-sp');
         sentryForm.superpowers = !!(sp && sp.checked);
+        // ‼️ X-194 — the conditions are read back the same way every other box
+        // is, so a repaint (and this page repaints on every tick) cannot lose
+        // a half-typed value. The row index is on each control.
+        const s2 = DATA.sentry || {};
+        document.querySelectorAll('.scond').forEach(row => {
+            const i = Number(row.dataset.scond);
+            const c = sentryForm.conditions[i];
+            if (!c) { return; }
+            const g = (cls) => row.querySelector(cls);
+            const f = g('.scond-f'), o = g('.scond-o'), val = g('.scond-v');
+            if (f) { c.field = f.value; }
+            if (o) { c.operator = o.value; }
+            const spec = policyOps(s2).find(x => x.id === c.operator);
+            if (spec && !spec.takesValue) { delete c.value; }
+            else if (val) { c.value = val.value; }
+        });
+    }
+
+    /**
+     * ‼️ X-194 — A ROW THE FIELD CANNOT ANSWER IS REPAIRED, NOT LEFT BROKEN.
+     *
+     * Changing the field can strand the operator ("is more than" on a boolean)
+     * and the value (a number typed against a closed set). Silently keeping
+     * either would hand the host a condition that can never hold, and the host
+     * refuses it by name — so the page fixes it here, at the moment the reader
+     * can still see what happened, instead of at the moment they press Start.
+     */
+    function repairCondition(s, c) {
+        const ops = opsFor(s, c.field);
+        if (!ops.some(o => o.id === c.operator)) { c.operator = ops.length ? ops[0].id : ''; }
+        const o = policyOps(s).find(x => x.id === c.operator);
+        const f = fieldSpec(s, c.field);
+        if (o && !o.takesValue) { delete c.value; return; }
+        if (f && f.type === 'enum' && (f.values || []).length
+            && (f.values || []).indexOf(String(c.value ?? '')) < 0) { c.value = f.values[0]; }
+        if (c.value === undefined) { c.value = ''; }
     }
 
     function wireSentry() {
@@ -3265,10 +3468,71 @@
                     permissionMode: sentryForm.permissionMode || undefined,
                     superpowers: sentryForm.superpowers,
                     ceiling: num(sentryForm.ceiling), safetyBufferMin: num(sentryForm.safetyBufferMin),
-                    failLimit: num(sentryForm.failLimit)
+                    failLimit: num(sentryForm.failLimit),
+                    // ‼️ X-194 — the mode and the conditions, as the host has
+                    // taken them since v11.244. Both are left out when no mode
+                    // was asked for, because `sentry.start` writes NO policy
+                    // for that and inventing one here would be this form
+                    // deciding something nobody asked it to.
+                    preset: sentryForm.preset || undefined,
+                    conditions: sentryForm.preset ? sentryForm.conditions : undefined
                 }
             });
         });
+        // ------------------------------------------------ X-194: the policy
+        const sd = DATA.sentry || {};
+        document.querySelectorAll('[data-spreset]').forEach(el => el.addEventListener('click', () => {
+            readSentryForm();
+            const id = el.dataset.spreset;
+            // ‼️ EMPTY MEANS "NOTHING ASKED FOR", which is not mechanical: the
+            // host writes no policy at all for it and the round's own default
+            // decides. Mechanical is a decision; this is the absence of one.
+            sentryForm.preset = id || null;
+            sentryForm.conditions = id
+                ? JSON.parse(JSON.stringify((sd.policyPresetConditions || {})[id] || []))
+                : [];
+            render();
+        }));
+        document.querySelectorAll('[data-sdel]').forEach(el => el.addEventListener('click', () => {
+            readSentryForm();
+            sentryForm.conditions.splice(Number(el.dataset.sdel), 1);
+            render();
+        }));
+        // ‼️ THE ORDER IS NOT COSMETIC. Conditions are ORed, and the verdict
+        // names the ones that fired IN THE ORDER THEY WERE WRITTEN — so the row
+        // a reader wants to see first belongs first.
+        const move = (attr, by) => document.querySelectorAll('[data-' + attr.toLowerCase() + ']').forEach(el =>
+            el.addEventListener('click', () => {
+                readSentryForm();
+                const i = Number(el.dataset[attr]), j = i + by;
+                const list = sentryForm.conditions;
+                if (j < 0 || j >= list.length) { return; }
+                const t = list[i]; list[i] = list[j]; list[j] = t;
+                render();
+            }));
+        move('sup', -1);
+        move('sdn', 1);
+        const condAdd = document.getElementById('s-condadd');
+        if (condAdd) {
+            condAdd.addEventListener('click', () => {
+                readSentryForm();
+                const f = policyFields(sd)[0];
+                if (!f) { return; }
+                const c = { id: 'c' + (sentryForm.conditions.length + 1), field: f.field };
+                repairCondition(sd, c);
+                sentryForm.conditions.push(c);
+                render();
+            });
+        }
+        // A field or an operator changing can strand the row's other two boxes,
+        // so the repaint is what redraws them — see repairCondition.
+        document.querySelectorAll('.scond-f, .scond-o').forEach(el =>
+            el.addEventListener('change', () => {
+                readSentryForm();
+                const c = sentryForm.conditions[Number(el.dataset.si)];
+                if (c) { repairCondition(sd, c); }
+                render();
+            }));
         document.querySelectorAll('[data-sround]').forEach(el => el.addEventListener('click', () =>
             vscode.postMessage({ type: 'consoleAgent', agentId: (DATA.sentry.campaign || {}).agent })));
     }
@@ -3365,6 +3629,31 @@
                 .srow label.scheck { flex-direction:row; align-items:center; gap:5px; font-size:12px;
                     color:var(--vscode-foreground); }
                 .srow input[type=number] { width:90px; }
+                /* X-194 — the mode strip and the condition editor. The rows are
+                   a grid rather than a flex wrap on purpose: three boxes that
+                   line up down the column are read as one question asked five
+                   times, and three that shuffle per row are read as five
+                   different forms. */
+                .spolicy { margin:10px 0 4px; padding:8px 10px; border-radius:4px;
+                    border:1px solid var(--vscode-panel-border, rgba(128,128,128,.35)); }
+                .spolicy-head { margin:0 0 6px; align-items:center; gap:6px; }
+                .spolicy-head .flabel { font-size:11px; text-transform:uppercase; letter-spacing:.5px;
+                    opacity:.65; margin-right:4px; }
+                .schip-custom { font-size:11px; opacity:.75; padding:2px 6px; border-radius:9px;
+                    border:1px dashed var(--vscode-panel-border, rgba(128,128,128,.45)); }
+                .scond-list { display:flex; flex-direction:column; gap:4px; }
+                /* ‼️ The trailing 1fr is the point: without it the three row
+                   buttons absorb the slack and stretch to a third of the page
+                   each, which reads as three more fields rather than as ↑ ↓ ✕.
+                   The slack belongs to nothing, so it is given to nothing. */
+                .scond { display:grid; gap:6px; align-items:center;
+                    grid-template-columns:200px 130px minmax(120px,220px)
+                        max-content max-content max-content 1fr; }
+                .scond select, .scond input { font-size:11px; padding:2px 4px; min-width:0; }
+                .scond .chip { padding:1px 7px; }
+                .scond-nov { font-style:italic; }
+                .scond-empty { padding:2px 0 4px; }
+                .scond-tools { margin:6px 0 0; align-items:center; }
                 .sprompt { margin:6px 0; }
                 .sprompt textarea { width:100%; max-width:760px; padding:5px 8px; }
                 .swhy { font-size:12px; }

@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.397.0 - X-194 (part 2): the sentry form gets a mode and its conditions (2026-09-05)
+
+The host has taken `preset` and `conditions` since 3.390.0 and the round has
+read the policy since X-191 — but no surface could SET one, so every campaign
+anybody actually started fell to the mechanical default and the leader never
+woke. This is the half that was missing. **‼️ X-194 is not closed:** each row
+still has to show that field's CURRENT value (so you can see whether the
+condition would fire today), and the lead settings — model, daily budget, round
+ceiling — are still to come.
+
+- **A mode strip above the conditions:** Not set · Mechanical · Intelligent ·
+  Hybrid. They are not code paths — pressing one FILLS the condition set from
+  `core/sentryPolicy.ts`. "Not set" is a fourth position and not the absence of
+  one: no policy is written at all and the round's own default decides, which is
+  what every campaign started before this control existed did.
+- **‼️ The mode is READ OFF THE CONDITIONS on every paint, never remembered.**
+  Edit a row and the strip says `custom · from hybrid`; undo the edit and it
+  says Hybrid again by itself. A preset name printed over five edited conditions
+  is a label that lies about what will run tonight.
+- **A condition editor fed by the dictionary.** Fields, operators and presets
+  all come from `sentryPolicy.ts` over the page's data, so a fact the round
+  learns to measure turns up in the editor the day it is added and the page does
+  not change. A row offers only the operators its field's TYPE admits, a closed
+  set gets a picker, an operator that takes no value gets no value box, and a
+  field the dictionary no longer names is kept, marked and explained rather than
+  silently swapped for whatever sits first in the list.
+- Rows can be added, dropped and reordered, and the order is not cosmetic: the
+  conditions are ORed and the verdict names the ones that fired in the order
+  they were written. The block says that in one sentence, where the decision is
+  made.
+
 ## 3.396.0 - U-131: right-click is the second position of the switch (2026-09-05)
 
 The Console's `show` box is opened, scrolled and re-ticked all day to do one

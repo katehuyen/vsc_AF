@@ -133,7 +133,11 @@ import {
     DEFAULT_LEADER_CAPS, LeaderBudgetState, LeaderCaps, LeaderOutcome, LeaderRunner,
     leaderAllowed, runLeaderTurn
 } from './core/sentryLeader';
-import { Condition, PolicyFacts, SentryPolicy, evaluateSentryPolicy } from './core/sentryPolicy';
+import {
+    Condition, PolicyFacts, SentryPolicy, evaluateSentryPolicy,
+    FIELDS as SENTRY_FIELDS, OPERATORS as SENTRY_OPERATORS, PRESETS as SENTRY_PRESETS,
+    presetConditions as sentryPresetConditions
+} from './core/sentryPolicy';
 import { SENTRY_DEFAULT_CEILING } from './core/sentryRun';
 import { measureSession } from './core/sentryMeasure';
 import { QualityStore, sampleQuality } from './core/quality';
@@ -24289,7 +24293,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ THE VOCABULARY IS SENT, NOT RETYPED. A form that spelled the
             // permission modes itself would be a second copy of a list the CLI
             // owns, and the copy is the one that goes out of date.
-            permissionModes: PERMISSION_MODES_LIVE
+            permissionModes: PERMISSION_MODES_LIVE,
+            /**
+             * ‼️ X-194 — THE CONDITION EDITOR IS FED BY THE DICTIONARY, so the
+             * form is not a narrow mould. `core/sentryPolicy.ts` owns FIELDS,
+             * OPERATORS and PRESETS; the page DRAWS them. A field added there
+             * turns up in the editor without the editor being touched, which is
+             * the whole of "the conditions must be as wide and flexible as
+             * possible" — and the alternative, a list typed into missions.js,
+             * is a second copy that goes out of date the first time somebody
+             * adds a fact the round can measure.
+             */
+            policyFields: SENTRY_FIELDS,
+            policyOperators: SENTRY_OPERATORS,
+            policyPresets: SENTRY_PRESETS,
+            /** What each preset FILLS IN — so the page can say "hybrid (edited)"
+             *  by comparing, rather than by keeping its own copy of the sets. */
+            policyPresetConditions: Object.fromEntries(
+                SENTRY_PRESETS.map(p => [p.id, sentryPresetConditions(p.id)]))
         };
         if (!rec) { return { ...base, campaign: null, running: false, rounds: [] }; }
         const proj = projectStore.get(rec.project);
