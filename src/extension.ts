@@ -24536,7 +24536,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(roundVerdict ? { verdict: roundVerdict } : {}),
                     ...(leader ? { leader } : {}),
                     prompt: step.round.prompt,
-                    ...(roundOutcome ? { outcome: roundOutcome } : {})
+                    ...(roundOutcome ? { outcome: roundOutcome } : {}),
+                    // ‼️ …and WHICH note the continuation was built on. `measured`
+                    // is what separates "looked and found nothing" — the answer
+                    // that explains a thin prompt — from "never went looking",
+                    // which is simply the first round of a night.
+                    ...(search?.measured ? {
+                        handover: {
+                            found: !!search.hit,
+                            source: String(search.hit?.source ?? ''),
+                            ...(search.hit?.path || search.hit?.file
+                                ? { path: search.hit.path ?? search.hit.file } : {}),
+                            ...(typeof search.hit?.score === 'number' ? { score: search.hit.score } : {})
+                        }
+                    } : {})
                 })
             }, doc.project.id);
         }

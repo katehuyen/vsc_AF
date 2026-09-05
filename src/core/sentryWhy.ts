@@ -36,6 +36,20 @@ export interface RoundWhy {
      * that goes stale.
      */
     opening: string;
+    /**
+     * ‼️ WHICH HANDOVER NOTE THE WORDS WERE BUILT ON, AND WHERE IT CAME FROM.
+     *
+     * The prompt of a continuation round is largely somebody else's note, and
+     * "the previous session left this behind" is the single claim in it that a
+     * reader cannot check: the file lives in a folder the round searched, and
+     * two sources can offer a note for the same session. Naming the source and
+     * the file is what turns that claim into something falsifiable.
+     *
+     * Absent = the round never went looking (there was no finished session).
+     * `found: false` = it looked and there was nothing, which is a different
+     * answer and the one that explains a thin prompt.
+     */
+    handover?: { found: boolean; source: string; path?: string; score?: number };
     /** what the leader turn cost, when one was taken — even a failed one */
     assist?: ModelAssist;
     /** one sentence a person reads on the row's panel */
@@ -56,6 +70,11 @@ export interface RoundWhyInput {
     /** the words the round was actually opened on */
     prompt: string;
     outcome?: string;
+    /**
+     * What the search for a handover note answered — absent when it was never
+     * run, `found:false` when it ran and there was nothing. See RoundWhy.
+     */
+    handover?: { found: boolean; source: string; path?: string; score?: number };
 }
 
 export function roundWhy(i: RoundWhyInput): RoundWhy {
@@ -65,6 +84,7 @@ export function roundWhy(i: RoundWhyInput): RoundWhy {
         fired: i.verdict?.fired ?? [],
         problems: i.verdict?.problems ?? [],
         ...(i.outcome ? { outcome: i.outcome } : {}),
+        ...(i.handover ? { handover: i.handover } : {}),
         opening: first,
         ...(i.leader?.assist ? { assist: i.leader.assist } : {}),
         why: i.leader?.why || i.verdict?.why || ''

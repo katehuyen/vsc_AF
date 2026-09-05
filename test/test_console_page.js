@@ -2722,6 +2722,7 @@ const html = allHtml;
                 why: {
                     path: 'leader', fired: ['round.barren is true'],
                     problems: ['quota.percent — nothing measured it'], outcome: 'barren',
+                    handover: { found: true, source: 'vault', path: '01_CEVAPLAR/devir_07.md', score: 92 },
                     opening: 'Find out why nothing changed.',
                     assist: { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: 3, ok: true },
                     why: 'two barren rounds in a row'
@@ -2734,6 +2735,8 @@ const html = allHtml;
     ok('…naming what woke it', html().includes('fired: round.barren is true'));
     ok('…and what could not be judged, which is not the same as not firing',
         html().includes('could not be judged: quota.percent'));
+    ok('…and WHICH note it was built on, named with its source',
+        html().includes('handover: 01_CEVAPLAR/devir_07.md · from vault'));
     ok('…and what the turn cost, on the strip a person reads at nine in the morning',
         html().includes('leader turn: answered · claude-sonnet-5 · $0.18'));
 

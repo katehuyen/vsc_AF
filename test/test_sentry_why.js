@@ -115,6 +115,28 @@ const verdict = (over) => Object.assign({
         && Array.isArray(w.problems) && !w.problems.length);
     ok('…and the first line of the words it opened on', w.opening === 'Take X-178 and work through it.');
     ok('…and no assist, because nothing was spent', w.assist === undefined);
+    ok('…and it never went looking for a handover, which is not the same as finding none',
+        w.handover === undefined);
+}
+
+// ---- ‼️ WHICH NOTE THE CONTINUATION WAS BUILT ON --------------------------
+{
+    // The prompt of a continuation round is largely somebody else's note, and
+    // that is the one claim in it a reader cannot check for themselves.
+    const found = roundWhy({
+        verdict: verdict(), prompt: 'Continue X-194.',
+        handover: { found: true, source: 'vault', path: '01_CEVAPLAR/devir_07.md', score: 92 }
+    });
+    ok('a round names the note its words were built on, and where it came from',
+        found.handover.found === true && found.handover.source === 'vault'
+        && /devir_07/.test(found.handover.path));
+    // ‼️ AND "LOOKED, FOUND NOTHING" IS ITS OWN ANSWER. It is what explains a
+    // thin prompt, and reading it as "never looked" hides a search that failed.
+    const missed = roundWhy({
+        verdict: verdict(), prompt: 'Continue.', handover: { found: false, source: '' }
+    });
+    ok('‼️ …and a search that found nothing is recorded as a search, not as silence',
+        missed.handover && missed.handover.found === false);
 }
 
 // ---- ‼️ THE WRITER, which is the half that was missing ---------------------
@@ -135,6 +157,8 @@ const verdict = (over) => Object.assign({
         has('roundVerdict = verdict;') && has('roundOutcome = diagnosis.outcome;'));
     ok('‼️ …and the PATH is the leader\'s real outcome, never the verdict\'s wish',
         has('...(leader ? { leader } : {}),'));
+    ok('…including WHICH handover note the words were built on, from the same search the facts used',
+        has('found: !!search.hit,') && has('...(search?.measured ? {'));
     ok('the mark is derived by the core function, so the page keeps no second copy',
         has('whyShorthand(t.sentryWhy)'));
     ok('…and an agent can read the same account off the bridge',

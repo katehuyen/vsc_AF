@@ -483,6 +483,7 @@ const sentryData = () => Object.assign(data(), {
             why: {
                 path: 'leader', fired: ['round.barren is true', 'repo.dirty is more than 0'],
                 problems: [], outcome: 'barren',
+                handover: { found: true, source: 'vault', path: '00_OUTPUT/01_CEVAPLAR/2026-09-05_devir_07_bf9a77b6.md', score: 92 },
                 opening: 'The last round changed nothing. Before taking X-178, find out why.',
                 assist: { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: NOW - 12 * 60 * 1000, ok: true },
                 why: 'two rounds in a row left the tree dirty and produced no commit — the leader took it in hand'

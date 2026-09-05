@@ -2668,6 +2668,12 @@
                 ? 'fired: ' + lw.fired.join(' · ') : 'fired: nothing — the routine path',
             (lw.problems && lw.problems.length)
                 ? 'could not be judged: ' + lw.problems.join(' · ') : '',
+            lw.handover
+                ? (lw.handover.found
+                    ? 'handover: ' + (lw.handover.path || '(unnamed)')
+                        + (lw.handover.source ? ' · from ' + lw.handover.source : '')
+                    : 'handover: looked, and there was none')
+                : '',
             lw.assist
                 ? 'leader turn: ' + (lw.assist.ok === false ? 'gave nothing usable' : 'answered')
                     + (lw.assist.model ? ' · ' + lw.assist.model : '')

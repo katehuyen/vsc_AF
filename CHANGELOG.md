@@ -2,6 +2,17 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.399.1 - X-195 closed: and WHICH handover note the words were built on (2026-09-06)
+
+The last line of the item, and the one a reader cannot check for themselves. A
+continuation prompt is largely somebody else's note: "the previous session left
+this behind" is a claim, and until now nothing said which file it was or which
+source offered it. The round's record carries `handover` now — the note's path,
+the source that found it and the score it was chosen by — and both panels draw
+it. **A search that found nothing is its own answer** (`found: false`) and says
+so: it is what explains a thin prompt, and reading it as "never looked" hides a
+search that failed.
+
 ## 3.399.0 - X-211 family closed, and X-195: every round says why it opened on those words (2026-09-06)
 
 Three surfaces named an account and a fourth ran the process. Every item below

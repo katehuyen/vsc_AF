@@ -3226,6 +3226,15 @@
         if (w.problems && w.problems.length) {
             body.push('could not be judged: ' + w.problems.join(' · '));
         }
+        // ‼️ The one claim in a continuation prompt a reader cannot otherwise
+        // check: WHICH note it was built on, and which source offered it.
+        if (w.handover) {
+            body.push(w.handover.found
+                ? 'handover: ' + (w.handover.path || '(unnamed)')
+                    + (w.handover.source ? ' · from ' + w.handover.source : '')
+                    + (typeof w.handover.score === 'number' ? ' · score ' + w.handover.score : '')
+                : 'handover: looked, and there was none — the words are the template\'s alone');
+        }
         if (w.assist) {
             body.push('leader turn: ' + (w.assist.ok === false ? 'gave nothing usable' : 'answered')
                 + (w.assist.model ? ' · ' + w.assist.model : '')

@@ -2168,6 +2168,7 @@ ok('Collapse all folds the whole list', detailCount() === 0);
             why: {
                 path: 'mechanical', fired: ['round.failed is true'],
                 problems: ['quota.percent — nothing measured it'], outcome: 'failed', opening: 'The last round failed.',
+                handover: { found: false, source: '' },
                 assist: { model: 'claude-sonnet-5', ms: 9100, costUsd: 0.06, at: 5, ok: false, note: 'answered prose' },
                 why: 'the leader answered prose'
             }
@@ -2177,6 +2178,7 @@ ok('Collapse all folds the whole list', detailCount() === 0);
             whyMark: 'L',
             why: {
                 path: 'leader', fired: ['round.barren is true'], problems: [], outcome: 'barren',
+                handover: { found: true, source: 'vault', path: '01_CEVAPLAR/devir_07.md', score: 92 },
                 opening: 'Find out why nothing changed.',
                 assist: { model: 'claude-sonnet-5', ms: 26800, costUsd: 0.18, at: 7, ok: true },
                 why: 'two barren rounds in a row'
@@ -2202,6 +2204,10 @@ ok('Collapse all folds the whole list', detailCount() === 0);
         h.includes('fired: round.barren is true') && h.includes('fired: nothing — the routine path'));
     ok('‼️ X-190\'s law survives to the row: a condition nobody could judge is not one that did not fire',
         h.includes('could not be judged: quota.percent'));
+    ok('‼️ …and WHICH note the continuation was built on — the one claim a reader cannot check alone',
+        h.includes('handover: 01_CEVAPLAR/devir_07.md · from vault · score 92'));
+    ok('…while a search that found nothing says so, rather than going quiet',
+        h.includes('looked, and there was none'));
     ok('what the leader turn cost is on the round that took it, failed or not',
         h.includes('gave nothing usable · claude-sonnet-5 · $0.06'));
 
