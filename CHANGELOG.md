@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.391.0 - X-204: an expired access token is not a signed-out account (2026-09-05)
+
+MEASURED, and it cost an account to learn. Two things were true at once and only
+one of them was in the code that decided whether a session could start:
+
+- `engineAccounts.readClaudeIdentity` has always said an expired access token is
+  routine and only a dead REFRESH token needs a person.
+- `accountUsage` read HTTP 401 from the usage endpoint as `expired`,
+  `slotIsUsable` refuses an expired slot, and the sentry's own fleet filter
+  (`extension.ts`, `sentryWatch`) drops it. So an account whose token had simply
+  aged out of its few hours **left the fleet**, and the user was sent to a browser
+  to fix nothing. Not a cosmetic alarm: the account could not be switched to.
+
+- **The grant's short half is now refreshed** the way the CLI refreshes it in the
+  same directory — `platform.claude.com/v1/oauth/token`, endpoint, client id and
+  body shape READ OUT OF THE INSTALLED CLI rather than invented (`oauthRefresh.ts`).
+  A 401 is refreshed and retried once; a token already expired on the clock is
+  refreshed **before** the request, so the machine's shared budget is not spent on
+  a call that is known to fail.
+- **‼️ A REFRESH IS NOT A READ.** Measured against the live endpoint: Anthropic
+  ROTATES the refresh token on every exchange and REVOKES the access token that
+  was in force. Two rules follow, and both are in the code rather than in a note:
+  - a slot with a **session running on it is never exchanged** — that would take
+    the credential out from under somebody's turn. It is re-READ instead, because
+    the engine using it refreshes the grant itself and has usually already
+    written the answer to disk;
+  - the rotated grant is parked in a **sidecar** (`.credentials.json.rotated.json`)
+    BEFORE the real file is replaced, and a sidecar found on the next read is
+    adopted. The window between "the server rotated" and "the file says so" is
+    where an account is lost, and it is now survivable.
+- **Weather is never reported as a sign-out.** An unreachable endpoint, an HTTP
+  500, a locked file: the slot stays USABLE with an honest sentence. `expired`
+  now means only what it says — the refresh grant itself is gone, or a token
+  minted seconds ago was refused.
+- **One atomic writer, and its failure carries a guarantee** (`atomicFile.ts`).
+  The rename is retried through a short backoff while the target looks locked
+  (EPERM/EACCES/EBUSY — Windows, an editor or a scanner, milliseconds), and when
+  the attempts are spent the error states that NOTHING WAS WRITTEN, which is what
+  makes the caller's retry safe. A fault that will never clear is reported at
+  once rather than after two seconds of waiting.
+
 ## 3.390.0 - X-194 (part): a campaign can be STARTED with a mode (2026-09-05)
 
 MEASURED: the campaign record has carried `policy` since X-190 and the round has

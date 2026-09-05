@@ -16374,13 +16374,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * slot, which would multiply every ceiling in planusage.ts by the number of
      * accounts and make asking how much quota is left the thing that burns it.
      */
+    /**
+     * ‼️ X-204 — IS A LIVE ENGINE PROCESS HOLDING THIS ACCOUNT'S GRANT.
+     *
+     * MEASURED: an OAuth refresh ROTATES the refresh token and REVOKES the
+     * access token that was in force. Refreshing a slot merely to read a
+     * percentage would therefore pull the credential out from under whatever is
+     * running as it, mid-turn — a figure nobody asked for, paid for with
+     * somebody's work. So a slot that is in use is never exchanged.
+     *
+     * A console session counts whatever its status is: the CLI process is alive
+     * and holding the grant in memory between turns, which is exactly when the
+     * damage would be invisible. Sessions started from a plain terminal are not
+     * visible here and cannot be — the honest limit of this guard, and the
+     * reason the sidecar in `oauthRefresh` exists as the second line.
+     */
+    const accountIsBusy = (slotId: string): boolean => {
+        if (!slotId) { return false; }
+        if (consoleHost.list().some(s => s.account === slotId)) { return true; }
+        return taskManager.tasks.some(t => t.account === slotId
+            && (t.status === 'running' || t.status === 'queued'));
+    };
     const accountUsage = new AccountUsageService({
         slots: () => storedAccounts(),
         // The same interval the single-account card is tuned to, deliberately:
         // two refresh policies in one codebase is how one of them ends up wrong.
         ttlMs: planBeatMs,
         edgeFloorMs: planEdgeFloorMs,
-        cliVersion: installedCliVersion
+        cliVersion: installedCliVersion,
+        busy: accountIsBusy
     });
     /**
      * Carry out a capture plan. The interesting half — which files, from where,

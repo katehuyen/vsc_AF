@@ -28,21 +28,40 @@ const payload = (pct, resetsAt) => JSON.stringify({
 /** A service wired to counted fakes — no disk, no network, no clock. */
 function svc(slots, opts = {}) {
     const calls = [];
+    const refreshes = [];
+    const reads = [];
     let clock = NOW;
     const service = new AccountUsageService({
         slots: () => slots,
         ttlMs: () => (opts.ttlMs === undefined ? 60_000 : opts.ttlMs),
         now: () => clock,
-        readCreds: (file) => (opts.creds === false ? undefined
-            : { token: 'tok-' + path.basename(path.dirname(file)), expiresAt: clock + 3600_000, plan: 'pro' }),
+        readCreds: (file) => {
+            if (opts.creds === false) { return undefined; }
+            reads.push(file);
+            const life = opts.credLife ? opts.credLife(reads.length)
+                : (opts.credLifeMs === undefined ? 3600_000 : opts.credLifeMs);
+            return {
+                token: 'tok-' + path.basename(path.dirname(file)) + (opts.credLife ? '-r' + reads.length : ''),
+                expiresAt: clock + life, plan: 'pro'
+            };
+        },
         fetchImpl: async (token) => {
             calls.push(token);
             return opts.reply
                 ? opts.reply(token, calls.length)
                 : { status: 200, body: payload(10, clock + 3600_000) };
-        }
+        },
+        // X-204 — the default is the harsh answer, so a suite that says nothing
+        // about refreshing still measures the state a person has to fix.
+        refreshImpl: async (file) => {
+            refreshes.push(file);
+            return opts.refresh
+                ? opts.refresh(file, refreshes.length)
+                : { kind: 'rejected', reason: 'the stored sign-in carries no refresh token' };
+        },
+        busy: opts.busy
     });
-    return { service, calls, tick: (ms) => { clock += ms; } };
+    return { service, calls, refreshes, reads, tick: (ms) => { clock += ms; } };
 }
 
 async function main() {
@@ -114,6 +133,124 @@ async function main() {
         await empty.service.refresh();
         ok('a slot directory with no sign-in in it says so without asking the endpoint',
             empty.service.current()[0].state === 'no-auth' && empty.calls.length === 0);
+    }
+
+    // ---------- X-204: an aged-out access token is NOT a signed-out account ----------
+    //
+    // ‼️ THE INVERSION THIS BLOCK EXISTS TO PREVENT. Until X-204 the 401 above
+    // was the ONLY reading of an expired access token, `slotIsUsable` refused
+    // the slot, and a healthy account left the fleet while the user was sent to
+    // a browser to fix nothing. The grant has two halves and only the long one
+    // is a person's job.
+    {
+        const live = () => ({ kind: 'refreshed', token: 'tok-fresh' });
+        const { service, calls, refreshes } = svc([slot('a')], {
+            refresh: live,
+            reply: (token) => (token === 'tok-fresh'
+                ? { status: 200, body: payload(37, NOW + 3600_000) }
+                : { status: 401, body: '' })
+        });
+        await service.refresh();
+        const u = service.current()[0];
+        ok('‼️ a 401 is refreshed and retried, not reported as a signed-out account',
+            u.state === 'ok' && u.percent === 37);
+        ok('…which cost exactly one refresh and one extra read', refreshes.length === 1 && calls.length === 2);
+        ok('…and the account stays usable, which is the damage the bug actually did',
+            slotIsUsable(u));
+    }
+    {
+        // The clock already says the token is gone, so a request that is KNOWN
+        // to come back 401 is never spent from the machine's shared budget.
+        const { service, calls, refreshes } = svc([slot('a')], {
+            credLifeMs: -1000,
+            refresh: () => ({ kind: 'refreshed', token: 'tok-fresh' })
+        });
+        await service.refresh();
+        ok('‼️ a token that is expired ON THE CLOCK is refreshed BEFORE the endpoint is asked',
+            refreshes.length === 1 && calls.length === 1 && calls[0] === 'tok-fresh');
+        ok('…and the figure is live', service.current()[0].state === 'ok');
+    }
+    {
+        // Somebody else — a CLI session in the same slot — refreshed it first.
+        const { service, calls } = svc([slot('a')], {
+            credLifeMs: -1000,
+            refresh: () => ({ kind: 'live', token: 'tok-someone-elses' })
+        });
+        await service.refresh();
+        ok('a grant another process already refreshed is used as it stands',
+            calls[0] === 'tok-someone-elses' && service.current()[0].state === 'ok');
+    }
+    {
+        // ‼️ WEATHER IS NOT A SIGN-OUT. The endpoint being unreachable says
+        // nothing about the account, so the slot must stay in the fleet.
+        const { service } = svc([slot('a')], {
+            reply: () => ({ status: 401, body: '' }),
+            refresh: () => ({ kind: 'unavailable', reason: 'the token endpoint could not be reached (ENOTFOUND)' })
+        });
+        await service.refresh();
+        const u = service.current()[0];
+        ok('‼️ a refresh that FAILED for machine reasons leaves the slot usable, not expired',
+            u.state === 'error' && slotIsUsable(u));
+        ok('…and the note says the account is fine and will refresh itself',
+            /account is fine/.test(u.note || '') && /aged out/.test(u.note || ''));
+    }
+    {
+        // A token minted seconds ago and still refused: now it really is a
+        // person's job, and saying so is the whole value of the state.
+        const { service, refreshes } = svc([slot('a')], {
+            reply: () => ({ status: 401, body: '' }),
+            refresh: () => ({ kind: 'refreshed', token: 'tok-fresh' })
+        });
+        await service.refresh();
+        const u = service.current()[0];
+        ok('a FRESHLY refreshed token that is still refused is a real sign-out',
+            u.state === 'expired' && !slotIsUsable(u) && /freshly refreshed/.test(u.note || ''));
+        ok('…and it is not retried for ever — one refresh, then the verdict', refreshes.length === 1);
+    }
+    {
+        const { service, calls } = svc([slot('a')], {
+            credLifeMs: -1000,
+            refresh: () => ({ kind: 'rejected', reason: 'the refresh token expired on 2026-08-01' })
+        });
+        await service.refresh();
+        const u = service.current()[0];
+        ok('a dead refresh token is the sign-out — and the endpoint is never asked',
+            u.state === 'expired' && calls.length === 0 && /expired on 2026-08-01/.test(u.note || ''));
+    }
+
+    // ---------- ‼️ X-204: a percentage is never bought with somebody's session ----------
+    //
+    // MEASURED against the live endpoint: an exchange ROTATES the refresh token
+    // and REVOKES the access token in force. Refreshing a slot to read a figure
+    // would therefore take the token away from a session running on it, mid
+    // turn. A busy slot is left alone — and loses nothing, because the engine
+    // using it refreshes the grant itself.
+    {
+        const { service, refreshes, calls } = svc([slot('a')], {
+            credLifeMs: -1000,
+            busy: () => true,
+            refresh: () => ({ kind: 'refreshed', token: 'tok-fresh' })
+        });
+        await service.refresh();
+        ok('‼️ a slot with a session running on it is NEVER exchanged',
+            refreshes.length === 0);
+        ok('…and the stale figure is reported as unknown-but-fine, not as a sign-out',
+            service.current()[0].state !== 'expired' && slotIsUsable(service.current()[0]));
+        ok('…having still tried the stored token once, in case it works', calls.length === 1);
+    }
+    {
+        // The running session refreshes the grant itself, so a busy slot is
+        // RE-READ rather than exchanged — and very often that is enough: the
+        // second read finds the token the CLI in that slot wrote a moment ago.
+        const { service, refreshes, calls, reads } = svc([slot('a')], {
+            credLife: (n) => (n === 1 ? -1000 : 3600_000),
+            busy: () => true
+        });
+        await service.refresh();
+        ok('‼️ a busy slot is re-READ from disk, which costs nothing and revokes nothing',
+            refreshes.length === 0 && reads.length === 2);
+        ok('…and the token the running session wrote is the one that gets used',
+            calls.length === 1 && calls[0] === 'tok-a-r2' && service.current()[0].state === 'ok');
     }
 
     // ---------- an engine with no readable allowance costs ZERO requests ----------

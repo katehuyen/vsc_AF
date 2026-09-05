@@ -6,6 +6,7 @@ import {
     buildBars, fetchUsage, readOauthCredentials, usageUserAgent
 } from './planusage';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
+import { ensureAccessToken, EXPIRY_SKEW_MS, RefreshOutcome } from './oauthRefresh';
 
 /**
  * X-170 — HOW MUCH ROOM IS LEFT, PER ACCOUNT.
@@ -156,6 +157,20 @@ export interface AccountUsageOptions {
     /** overridable for tests */
     readCreds?(file: string): OauthCredentials | undefined;
     fetchImpl?(token: string, userAgent: string): Promise<{ status: number; body: string }>;
+    /** X-204 — turn an aged-out access token back into a live one. Overridable for tests. */
+    refreshImpl?(credentialsFile: string): Promise<RefreshOutcome>;
+    /**
+     * ‼️ X-204 — IS SOMETHING RUNNING AS THIS ACCOUNT RIGHT NOW.
+     *
+     * MEASURED: an OAuth refresh rotates the grant and REVOKES the access token
+     * that was in force. So refreshing a slot to read a percentage would pull
+     * the token out from under a session that is mid-turn on it — a figure
+     * nobody asked for, bought with somebody's running work. A busy slot is
+     * therefore left alone, and it loses nothing by that: the engine using it
+     * refreshes the grant itself, which is why its figure is the freshest on
+     * the page in the first place.
+     */
+    busy?(slotId: string): boolean;
     now?(): number;
 }
 
@@ -262,17 +277,74 @@ export class AccountUsageService {
             return put(bad('no-auth',
                 'No sign-in is stored in this account\'s directory — capture it again, or sign in once with it selected.'));
         }
+        const fetch = this.opts.fetchImpl ?? fetchUsage;
+        const refresh = this.opts.refreshImpl ?? ensureAccessToken;
+        const ua = usageUserAgent(this.opts.cliVersion?.());
+        // ‼️ X-204 — AN AGED-OUT ACCESS TOKEN IS NOT A SIGNED-OUT ACCOUNT, and
+        // until this was written it was recorded as one: the 401 below became
+        // `expired`, `slotIsUsable` refuses an expired slot, and a healthy
+        // account left the fleet while the user was told to open a browser.
+        // The grant's short half is refreshed here the way the CLI refreshes it
+        // in the same directory; only the long half's death is a person's job.
+        const signedOut = (reason: string): SlotUsage => bad('expired',
+            `Anthropic rejected this account's stored login — ${reason}. It needs signing in again before it can run.`,
+            cred.plan);
+        const busy = this.opts.busy?.(slot.id) ?? false;
+        const rekey = async (): Promise<RefreshOutcome> => {
+            if (!busy) { return refresh(file); }
+            // ‼️ A BUSY SLOT IS READ AGAIN, NEVER MINTED FROM. The session on it
+            // refreshes the grant itself and writes the file, so the token we
+            // need is usually already there — and reading costs nothing and
+            // revokes nothing. Exchanging would take that session's token away.
+            const fresh = (this.opts.readCreds ?? readOauthCredentials)(file);
+            if (fresh && fresh.expiresAt > now + EXPIRY_SKEW_MS) {
+                return { kind: 'live', token: fresh.token };
+            }
+            return {
+                kind: 'unavailable',
+                reason: 'a session is running as this account and refreshing the grant would revoke the token it is using'
+            };
+        };
         try {
-            const res = await (this.opts.fetchImpl ?? fetchUsage)(
-                cred.token, usageUserAgent(this.opts.cliVersion?.()));
+            let token = cred.token;
+            let minted = false;
+            // Expired on the clock? Then the request is known to fail, and
+            // spending the machine's shared budget on it is pure waste.
+            if (!cred.expiresAt || cred.expiresAt <= now + EXPIRY_SKEW_MS) {
+                const out = await rekey();
+                if (out.kind === 'rejected') { return put(signedOut(out.reason)); }
+                if (out.kind === 'live' || out.kind === 'refreshed') {
+                    token = out.token;
+                    minted = out.kind === 'refreshed';
+                }
+                // 'unavailable' falls through: the stored token may still work,
+                // and a machine that cannot reach one endpoint has said nothing
+                // about the account.
+            }
+            let res = await fetch(token, ua);
             if (res.status === 401 || res.status === 403) {
-                // ‼️ THE ONE STATE A PERSON HAS TO FIX. Everything else here is
-                // this machine's problem; a rejected grant is the user's, and
-                // X-178 turns exactly this into a notice rather than a silent
-                // account that never gets picked.
-                return put(bad('expired',
-                    'Anthropic rejected this account\'s stored login — it needs signing in again before it can run.',
-                    cred.plan));
+                if (minted) {
+                    // A token minted seconds ago was refused: the grant really
+                    // is gone, and this is the one state a person has to fix.
+                    // X-178 turns exactly this into a notice.
+                    return put(signedOut('a freshly refreshed token was refused'));
+                }
+                const out = await rekey();
+                if (out.kind === 'rejected') { return put(signedOut(out.reason)); }
+                if (out.kind === 'unavailable') {
+                    // ‼️ NOT `expired`. The slot stays usable, because nothing
+                    // here says the account is bad — only that we could not
+                    // find out. Claude Code will refresh this grant itself the
+                    // next time a session runs in the slot.
+                    return put(bad('error',
+                        `The stored access token has aged out and ${out.reason} — the figure is unknown, `
+                        + 'but the account is fine and refreshes itself the next time it runs.',
+                        cred.plan));
+                }
+                res = await fetch(out.token, ua);
+                if (res.status === 401 || res.status === 403) {
+                    return put(signedOut('a freshly refreshed token was refused'));
+                }
             }
             if (res.status === 429) {
                 this.backoffMs = this.backoffMs
