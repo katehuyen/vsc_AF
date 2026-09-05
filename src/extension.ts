@@ -122,7 +122,7 @@ import {
 } from './core/prompts';
 import { diagnoseSession, RepoState, TouchedCode } from './core/sessionDiagnosis';
 import {
-    buildNextPrompt, resolveSentryTemplates, SENTRY_VERDICTS, SentryTemplateSet
+    buildNextPrompt, InstructionPool, materialFor, resolveInstructionPool, SENTRY_VERDICTS
 } from './core/sentryPrompt';
 import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
@@ -484,23 +484,25 @@ import {
 const cfg = afConfig;
 
 /**
- * ‼️ WHICH WORDS A SENTRY CAMPAIGN STARTS THE NEXT SESSION WITH (X-175).
+ * ‼️ THE SENTRY'S POOL OF THE USER'S OWN WORDS (X-175 templates, X-192 pool).
  *
- * The templates ship INSIDE the extension and answer every verdict with
- * nothing configured; a file named in settings replaces only the verdicts it
- * answers, and a named path that has gone is REPORTED rather than cleared —
- * the same rule as the saved-prompts file, for the same reason: writing into
- * somebody's settings on their behalf is one-way.
+ * ONE POOL, TWO USES. A block whose heading names a verdict is a TEMPLATE and
+ * the mechanical round fills it; every block, whatever its heading says, is
+ * MATERIAL the leader may blend. Before X-192 a heading naming no verdict was
+ * refused and then thrown away, so the user's standing instructions had nowhere
+ * to live but their own hands and a right-click menu.
+ *
+ * The templates ship INSIDE the extension and answer every verdict with nothing
+ * configured; a file listed in settings replaces only the verdicts it answers,
+ * and a named path that has gone is REPORTED rather than cleared — the same
+ * rule as the saved-prompts file, for the same reason: writing into somebody's
+ * settings on their behalf is one-way.
  *
  * ‼️ NOTHING IS CACHED. A block added thirty seconds ago is in force without
  * reloading anything.
  */
-const sentryTemplateSet = (named?: string): SentryTemplateSet => {
-    const chosen = (named ?? '').trim()
-        || (cfg().get<string>('sentryTemplatesFile', '') ?? '').trim();
-    return resolveSentryTemplates(
-        chosen, p => fs.existsSync(p), p => fs.readFileSync(p, 'utf8'));
-};
+const sentryPoolOf = (paths: string[]): InstructionPool => resolveInstructionPool(
+    paths, p => fs.existsSync(p), p => fs.readFileSync(p, 'utf8'));
 
 /**
  * ‼️ X-54 — THE DAILY BUDGETS, THROUGH ONE DOOR.
@@ -14055,6 +14057,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
 
     /**
+     * ‼️ X-192 — THE POOL, WITH ITS PATHS RESOLVED.
+     *
+     * Two settings feed one pool: `sentryTemplatesFile` (the single file that
+     * already existed, still first so nobody's wording changes precedence
+     * under them) and `sentryInstructionFiles` (the list, with the X-188
+     * variables). They are ASSEMBLED, not chosen between — which is why the
+     * resolver reads a path named twice only once.
+     *
+     * A path whose variables cannot be filled is SKIPPED and the reason is
+     * carried out, never resolved to an empty string and looked for in the
+     * wrong folder: X-182's rule, and the same one X-174 states about facts.
+     */
+    const sentryPool = (named?: string): InstructionPool & { skipped: { template: string; why: string }[] } => {
+        const ctx = pathCtx();
+        const ws = ctx.workspace ?? '';
+        const one = (named ?? '').trim() || (afConfig().get<string>('sentryTemplatesFile') ?? '').trim();
+        const many = (afConfig().get<string[]>('sentryInstructionFiles') ?? []).map(String);
+        const r = resolvePathList([one, ...many], ctx);
+        const pool = sentryPoolOf(r.paths.map(p => expandUserPath(p, { workspaceRoot: ws })));
+        return { ...pool, skipped: r.skipped };
+    };
+
+    /**
      * ‼️ X-188 — A CONFIGURED FOLDER, RESOLVED RATHER THAN HARD-CODED.
      *
      * Three folders in this file used to end in one person's Obsidian vault
@@ -23957,6 +23982,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * template. Nothing here can stop the night.
          */
         let leader: LeaderOutcome | undefined;
+        // ‼️ X-192 — read ONCE for the whole round. The pool is several files off
+        // disk and it serves both halves of the round: the leader blends it, the
+        // mechanical templates below are made of it. Reading it twice would be
+        // two answers to one question on a file the user may be editing.
+        const pool = sentryPool();
         if (finishedTask && facts) {
             try {
                 const diagnosis = diagnoseSession(facts);
@@ -24004,6 +24034,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         slotId: u.slotId, percent: Number(u.percent) || 0,
                         usable: slotIsUsable(u, rec.ceiling)
                     })),
+                    // ‼️ X-192 — the user's own words, as MATERIAL. Not the whole
+                    // pool: `materialFor` drops the other verdicts' templates, so
+                    // the leader is not paying for wording that does not apply and
+                    // is not being handed something to copy.
+                    ...(() => {
+                        const mat = materialFor(pool, diagnosis.outcome);
+                        return mat.length ? {
+                            instructions: mat.map(b => ({
+                                label: b.label, text: b.text, ...(b.when ? { when: b.when } : {})
+                            }))
+                        } : {};
+                    })(),
                     ...(rec.leader ? { budget: rec.leader } : {})
                 }, leaderCapsFor(rec), sentryLeaderRunner((doc.project.repos ?? [])[0] || os.homedir()),
                 { today: resolvePathVars('${today}').value, now: () => Date.now() });
@@ -24058,7 +24100,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             usage,
             automation: taskManager.automation,
             ...(next ? { next } : {}),
-            templates: sentryTemplateSet().templates,
+            templates: pool.templates,
             ...(rec.opening ? { opening: rec.opening } : {}),
             project: doc.project.name,
             running: taskManager.sentryBusy(),
@@ -31640,16 +31682,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'it answers (heading = verdict, ``` fence = the words, exactly the saved-prompts '
                 + 'shape), so adding a case is a block rather than a release. A heading naming no '
                 + 'verdict is refused BY NAME and reported here — dropping it silently is how '
-                + 'somebody spends an evening wondering why their template never fires. A named path '
-                + 'that is not on disk is reported, never cleared. args: file? (read this one instead '
-                + 'of the configured one, to see what it would do before you name it)',
+                + 'somebody spends an evening wondering why their template never fires — but since '
+                + 'X-192 that block is NOT thrown away: it is material for the leader, and '
+                + '`sentry.instructions` shows it. The pool is a LIST (`agentFarm.sentryTemplatesFile` '
+                + 'first, then `agentFarm.sentryInstructionFiles`, X-188 variables allowed); a named '
+                + 'path that is not on disk is reported, never cleared. args: file? (read this one '
+                + 'first, to see what it would do before you name it)',
             handler: (args) => {
-                const s = sentryTemplateSet(optStr(args, 'file'));
+                const s = sentryPool(optStr(args, 'file'));
                 return {
-                    file: s.file, source: s.source, missing: s.missing,
+                    file: s.files[0] ?? '', files: s.files,
+                    source: s.files.length ? 'setting' : 'none',
+                    missing: s.missing[0] ?? '', missingPaths: s.missing, skipped: s.skipped,
                     refusals: s.refusals, covers: s.covers, verdicts: SENTRY_VERDICTS,
                     templates: s.templates.map(t => ({
                         when: t.when, id: t.id, source: t.source, text: t.text
+                    }))
+                };
+            }
+        },
+        {
+            op: 'sentry.instructions',
+            describe: 'THE USER\'S OWN SAVED INSTRUCTIONS, AS THE LEADER RECEIVES THEM (X-192). One '
+                + 'pool, two uses: a block whose heading names a verdict is a TEMPLATE the mechanical '
+                + 'round fills (`sentry.templates`), and EVERY block — including the ones whose '
+                + 'heading names no verdict, which used to be refused and then discarded — is '
+                + 'MATERIAL the leader blends into the next session\'s opening words. It is material, '
+                + 'never a template to copy. The pool is a LIST of files: '
+                + '`agentFarm.sentryTemplatesFile` first, then `agentFarm.sentryInstructionFiles`, '
+                + 'both taking the X-188 path variables; a path named twice is read once, a path '
+                + 'whose variables will not resolve is SKIPPED with its reason rather than pointed at '
+                + 'the wrong folder, and a path that is gone is reported while the rest of the pool '
+                + 'still reads. With nothing configured the pool is empty and the campaign runs on '
+                + 'the built-in templates — no file of yours is needed anywhere. args: outcome? (show '
+                + 'only what a leader woken on THIS verdict would be given: the standing instructions '
+                + 'plus that verdict\'s block and any catch-all), file? (read this one first)',
+            handler: (args) => {
+                const s = sentryPool(optStr(args, 'file'));
+                const outcome = optStr(args, 'outcome');
+                const blocks = outcome ? materialFor(s, outcome) : s.instructions;
+                return {
+                    files: s.files, missing: s.missing, skipped: s.skipped, refusals: s.refusals,
+                    verdicts: SENTRY_VERDICTS,
+                    ...(outcome ? { outcome, of: s.instructions.length } : {}),
+                    instructions: blocks.map(b => ({
+                        label: b.label, when: b.when, template: b.template, file: b.file, text: b.text
                     }))
                 };
             }
@@ -31767,7 +31844,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     output: said(a.output),
                     quotaPercent: counted(a.quotaPercent)
                 }, a.policy || undefined);
-                const s = sentryTemplateSet(optStr(args, 'file'));
+                const s = sentryPool(optStr(args, 'file'));
                 const built = buildNextPrompt({
                     diagnosis,
                     next: a.next || undefined,
@@ -31778,7 +31855,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }, s.templates);
                 return Object.assign({ diagnosis }, built, {
                     templates: {
-                        file: s.file, source: s.source, missing: s.missing, refusals: s.refusals
+                        file: s.files[0] ?? '', files: s.files,
+                        source: s.files.length ? 'setting' : 'none',
+                        missing: s.missing[0] ?? '', refusals: s.refusals
                     }
                 });
             }

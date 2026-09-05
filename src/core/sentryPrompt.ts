@@ -137,36 +137,81 @@ export const SENTRY_VERDICTS: string[] =
     ['item-done', 'clean-handover', 'nothing-to-continue', 'hit-the-wall', '*'];
 
 /**
- * Read a user's template file. The FORMAT is the saved-prompts format, on
+ * ‼️ X-192 — ONE POOL, TWO USES.
+ *
+ * A block of the user's own words, as it comes off the page. The same block is
+ * read twice and for two different jobs: if its heading names a verdict it is a
+ * TEMPLATE and the mechanical path fills it; whatever its heading says, it is
+ * MATERIAL the leader may blend. Before this, a heading naming no verdict was
+ * refused and then thrown away — which is why the user's standing instructions
+ * ("always give the session id", "after 3am keep it short") had nowhere to live
+ * but their own hands.
+ */
+export interface InstructionBlock {
+    /** what it is called — the fence's info string, the line above it, or its first words */
+    label: string;
+    /** the user's words, verbatim */
+    text: string;
+    /** the verdict its heading named, or that heading kept as a free-form "when" hint */
+    when: string;
+    /** which file it came from, so "why is this in my prompt" has an answer */
+    file: string;
+    /** true when `when` is one of the verdicts — i.e. it is ALSO a template */
+    template: boolean;
+}
+
+/**
+ * Read a user's file into blocks. The FORMAT is the saved-prompts format, on
  * purpose: this codebase already has one shape for "a file of prompts a person
  * edits", and a second parser would be a second set of rules about fences,
  * headings and blank blocks for somebody to learn.
- *
- * ‼️ A HEADING NAMING NO VERDICT IS REFUSED BY NAME. Dropping it silently is
- * how somebody spends an evening wondering why their template never fires.
  */
-export function templatesFromFile(text: string): { templates: SentryTemplate[]; refusals: string[] } {
+export function instructionsFromFile(text: string, file = ''): InstructionBlock[] {
+    const out: InstructionBlock[] = [];
+    for (const item of parsePromptSnippets(String(text ?? '')).items) {
+        if (!item.text.trim()) { continue; }     // a block with no words is nothing
+        const heading = String(item.group ?? '').trim();
+        const verdict = SENTRY_VERDICTS.includes(heading.toLowerCase());
+        out.push({
+            label: item.label || heading || 'snippet',
+            text: item.text,
+            when: verdict ? heading.toLowerCase() : heading,
+            file,
+            template: verdict
+        });
+    }
+    return out;
+}
+
+/**
+ * ‼️ A HEADING NAMING NO VERDICT IS STILL REFUSED BY NAME — dropping it silently
+ * is how somebody spends an evening wondering why their template never fires —
+ * but the refusal now SAYS the block was kept. A refusal that reads as a loss
+ * teaches people to stop writing the blocks this item exists to collect.
+ */
+function blocksToTemplates(
+    blocks: InstructionBlock[]
+): { templates: SentryTemplate[]; refusals: string[] } {
     const templates: SentryTemplate[] = [];
     const refusals: string[] = [];
-    const read = parsePromptSnippets(String(text ?? ''));
-    for (const item of read.items) {
-        const when = (item.group || '').trim().toLowerCase();
-        if (!SENTRY_VERDICTS.includes(when)) {
-            refusals.push(`"${item.group || '(no heading)'}" is not a verdict — the headings are `
-                + `${SENTRY_VERDICTS.join(', ')}`);
-            continue;
-        }
-        if (!item.text.trim()) {
-            refusals.push(`the block under "${item.group}" is empty — a template with no words `
-                + 'would replace the built-in one with silence');
+    for (const b of blocks) {
+        if (!b.template) {
+            refusals.push(`${b.file ? `${b.file}: ` : ''}"${b.when || '(no heading)'}" is not a `
+                + `verdict — the headings are ${SENTRY_VERDICTS.join(', ')}. It fills nothing `
+                + 'mechanically; it is kept as material for the leader.');
             continue;
         }
         templates.push({
-            when: when as SentryTemplate['when'],
-            id: `file/${item.label || when}`, text: item.text, source: 'file'
+            when: b.when as SentryTemplate['when'],
+            id: `file/${b.label || b.when}`, text: b.text, source: 'file'
         });
     }
     return { templates, refusals };
+}
+
+/** The template half of one file, for callers that only want that. */
+export function templatesFromFile(text: string): { templates: SentryTemplate[]; refusals: string[] } {
+    return blocksToTemplates(instructionsFromFile(text));
 }
 
 /** The user's templates first, so theirs win and the built-ins stay as the
@@ -210,34 +255,102 @@ export function resolveSentryTemplates(
     exists: (p: string) => boolean,
     read: (p: string) => string
 ): SentryTemplateSet {
-    const builtIn = (): SentryTemplateSet => ({
-        templates: [...BUILT_IN_SENTRY_TEMPLATES], file: '', source: 'none',
-        missing: '', refusals: [], covers: []
-    });
     const chosen = String(setting ?? '').trim();
-    if (!chosen) { return builtIn(); }
-    if (!exists(chosen)) {
-        const out = builtIn();
-        out.missing = chosen;
-        return out;
+    const pool = resolveInstructionPool(chosen ? [chosen] : [], exists, read);
+    return {
+        templates: pool.templates,
+        file: pool.files[0] ?? '',
+        source: pool.files.length ? 'setting' : 'none',
+        missing: pool.missing[0] ?? '',
+        refusals: pool.refusals,
+        covers: pool.covers
+    };
+}
+
+/** What the whole pool holds, where each part came from, and what it refused. */
+export interface InstructionPool {
+    /** the effective templates: the user's first, the built-ins behind them */
+    templates: SentryTemplate[];
+    /** every block of the user's own words, in the order the files were listed */
+    instructions: InstructionBlock[];
+    /** the files actually read, in order — empty is the normal case */
+    files: string[];
+    /** paths that were named but are not on disk — reported, never erased */
+    missing: string[];
+    /** headings that name no verdict, and files that would not read */
+    refusals: string[];
+    /** the verdicts the pool answered — so "why did mine not fire" is answerable */
+    covers: string[];
+}
+
+/**
+ * ‼️ THE POOL IS A LIST OF PATHS, NOT A FILE. One file was the defect X-192 was
+ * written for: the user keeps standing instructions in one place, per-project
+ * wording in another, and a single setting made them choose. Reading and
+ * existence are injected, so this stays pure and the "nothing configured at
+ * all" case can be tested on a machine that has none of those folders.
+ *
+ * ‼️ AND THE BUILT-INS ARE NOT A PATH TO SOMEWHERE (X-179). With the list empty
+ * every verdict still has an answer and the extension needs nobody's folders.
+ * A named path that has gone is REPORTED and never cleared, and the rest of the
+ * list still reads — one missing file does not silence the pool.
+ *
+ * ‼️ A PATH NAMED TWICE IS READ ONCE. The list is assembled out of two settings,
+ * so the same file lands in it by accident; a doubled instruction would be a
+ * doubled prompt on a model that is metered by the word.
+ */
+export function resolveInstructionPool(
+    paths: string[],
+    exists: (p: string) => boolean,
+    read: (p: string) => string
+): InstructionPool {
+    const files: string[] = [];
+    const missing: string[] = [];
+    const refusals: string[] = [];
+    const instructions: InstructionBlock[] = [];
+    const seen = new Set<string>();
+    for (const raw of paths ?? []) {
+        const p = String(raw ?? '').trim();
+        // An EMPTY entry is nothing rather than a fault — a user who clears a
+        // row in a settings list means "not this one".
+        if (!p) { continue; }
+        const key = p.replace(/[\\/]+/g, '/').toLowerCase();
+        if (seen.has(key)) { continue; }
+        seen.add(key);
+        if (!exists(p)) { missing.push(p); continue; }
+        let text = '';
+        try {
+            text = String(read(p) ?? '');
+        } catch (e) {
+            refusals.push(`${p} could not be read — ${e instanceof Error ? e.message : String(e)}`);
+            continue;
+        }
+        files.push(p);
+        instructions.push(...instructionsFromFile(text, p));
     }
-    let text = '';
-    try {
-        text = String(read(chosen) ?? '');
-    } catch (e) {
-        const out = builtIn();
-        out.refusals.push(`${chosen} could not be read — ${e instanceof Error ? e.message : String(e)}`);
-        return out;
-    }
-    const found = templatesFromFile(text);
+    const found = blocksToTemplates(instructions);
+    refusals.push(...found.refusals);
     return {
         templates: mergeTemplates(BUILT_IN_SENTRY_TEMPLATES, found.templates),
-        file: chosen,
-        source: 'setting',
-        missing: '',
-        refusals: found.refusals,
+        instructions, files, missing, refusals,
         covers: [...new Set(found.templates.map(t => String(t.when)))]
     };
+}
+
+/**
+ * The blocks worth waking the leader with.
+ *
+ * ‼️ NOT THE WHOLE POOL. The leader runs on a cheap model under a per-round cost
+ * ceiling; handing it all four verdicts' wording is noise it pays for and, worse,
+ * an invitation to copy the one that does not apply. It gets the standing
+ * instructions — the blocks that name no verdict, which is exactly the user's
+ * "give it the session id, keep it short after 3am" — plus the one block that
+ * answers the round that actually happened, and the catch-all that answers any.
+ */
+export function materialFor(pool: InstructionPool, outcome: string): InstructionBlock[] {
+    const want = String(outcome ?? '');
+    return (pool?.instructions ?? []).filter(
+        b => !b.template || b.when === want || b.when === '*');
 }
 
 /** The first template that answers this verdict, then the first catch-all. */

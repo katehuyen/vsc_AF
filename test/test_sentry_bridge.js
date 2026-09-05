@@ -23,7 +23,9 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const OUT = path.join(__dirname, '..', 'out', 'core');
 const { BridgeRegistry, argStr, optNum, optStr } = require(path.join(OUT, 'bridge.js'));
 const { diagnoseSession } = require(path.join(OUT, 'sessionDiagnosis.js'));
-const { resolveSentryTemplates, buildNextPrompt, SENTRY_VERDICTS } = require(path.join(OUT, 'sentryPrompt.js'));
+const {
+    resolveInstructionPool, materialFor, buildNextPrompt, SENTRY_VERDICTS
+} = require(path.join(OUT, 'sentryPrompt.js'));
 const {
     DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, discoverHandover
 } = require(path.join(OUT, 'handoverDiscovery.js'));
@@ -58,7 +60,12 @@ function registry(disk) {
         const n = Number(v);
         return Number.isFinite(n) ? n : undefined;
     };
-    const set = (a) => resolveSentryTemplates(optStr(a, 'file') || setting, exists, read);
+    // ‼️ X-192 — one POOL, assembled out of the single-file setting and the list
+    // behind it, exactly as extension.ts assembles it. A file named in both is
+    // read once, which is why the two are concatenated rather than chosen
+    // between here too.
+    const set = (a) => resolveInstructionPool(
+        [optStr(a, 'file') || setting].concat(files.__pool || []), exists, read);
 
     reg.register([
         {
@@ -68,9 +75,30 @@ function registry(disk) {
             handler: (a) => {
                 const s = set(a);
                 return {
-                    file: s.file, source: s.source, missing: s.missing,
+                    file: s.files[0] || '', files: s.files,
+                    source: s.files.length ? 'setting' : 'none',
+                    missing: s.missing[0] || '', missingPaths: s.missing,
                     refusals: s.refusals, covers: s.covers, verdicts: SENTRY_VERDICTS,
                     templates: s.templates.map(t => ({ when: t.when, id: t.id, source: t.source, text: t.text }))
+                };
+            }
+        },
+        {
+            op: 'sentry.instructions',
+            describe: 'The user\'s own saved instructions as the LEADER receives them — material to '
+                + 'blend, never a template to copy. args: outcome? (only what a leader woken on this '
+                + 'verdict would be given), file? (read this one first)',
+            handler: (a) => {
+                const s = set(a);
+                const outcome = optStr(a, 'outcome');
+                const blocks = outcome ? materialFor(s, outcome) : s.instructions;
+                return {
+                    files: s.files, missing: s.missing, refusals: s.refusals,
+                    verdicts: SENTRY_VERDICTS,
+                    ...(outcome ? { outcome, of: s.instructions.length } : {}),
+                    instructions: blocks.map(b => ({
+                        label: b.label, when: b.when, template: b.template, file: b.file, text: b.text
+                    }))
                 };
             }
         },
@@ -163,7 +191,7 @@ function registry(disk) {
         const cat = registry().catalog();
         const ops = cat.map(c => c.op);
         ok('both sentry ops are in farm.ops',
-            ['sentry.templates', 'sentry.prompt'].every(o => ops.includes(o)));
+            ['sentry.templates', 'sentry.prompt', 'sentry.instructions'].every(o => ops.includes(o)));
         ok('...and each says what it does and what it takes',
             cat.filter(c => c.op.indexOf('sentry.') === 0)
                 .every(c => c.describe.length > 20 && /args:/.test(c.describe)));
@@ -179,6 +207,48 @@ function registry(disk) {
                 .every(v => r.result.templates.some(t => t.when === v)));
         ok('...none of which is a path to anybody folders',
             r.result.templates.every(t => !/[A-Za-z]:[\\/]|obsidian|Users/i.test(t.text)));
+    }
+
+    // ---------- X-192 — the pool the LEADER is handed ----------
+    //
+    // One pool, two uses. The single-file setting and the list behind it are
+    // ASSEMBLED; a block under a verdict heading fills the mechanical round, and
+    // EVERY block — including the ones the template path refuses by name — is
+    // material the leader blends. Before this, the refused block was discarded,
+    // which is why the user's standing instructions lived in a right-click menu.
+    {
+        const POOL = 'D:/anywhere/tembihler.md';
+        const disk = {
+            __setting: FILE, __pool: [POOL],
+            [FILE]: FILE_BODY,
+            [POOL]: ['## Genel tembihler', '', '```oturum kimligi',
+                'Oturum kimligini her zaman yaz.', '```'].join('\n')
+        };
+        const r = await registry(disk).dispatch('sentry.instructions', {});
+        ok('the pool is a LIST — both files are read', r.ok && r.result.files.length === 2);
+        ok('...and a block whose heading names no verdict is MATERIAL rather than lost',
+            r.result.instructions.some(b => b.label === 'oturum kimligi' && b.template === false));
+        ok('...while a verdict block is BOTH, and says which it is',
+            r.result.instructions.some(b => b.when === 'item-done' && b.template === true));
+        ok('...and every block says which file it came from',
+            r.result.instructions.every(b => !!b.file));
+
+        // The leader is metered by the word: it is given the standing
+        // instructions and this round's block, never the other verdicts'.
+        const woken = await registry(disk).dispatch('sentry.instructions', { outcome: 'hit-the-wall' });
+        ok('a leader woken on a verdict gets the standing instructions, not the other verdicts',
+            woken.ok && woken.result.of === 3 && woken.result.instructions.length === 2
+            && woken.result.instructions.every(b => b.template === false));
+
+        const t = await registry(disk).dispatch('sentry.templates', {});
+        ok('the same pool still fills the mechanical templates — one source, two uses',
+            t.ok && t.result.templates.some(x => x.when === 'item-done' && x.source === 'file'));
+        ok('...and the refusal SAYS the block was kept, so a refusal is not read as a loss',
+            t.result.refusals.some(x => /Genel tembihler/.test(x) && /material/i.test(x)));
+
+        const bare = await registry().dispatch('sentry.instructions', {});
+        ok('with nothing configured the pool is empty and no folder of anybody is needed',
+            bare.ok && bare.result.instructions.length === 0 && bare.result.files.length === 0);
     }
 
     // ---------- a session id is REQUIRED, and refused by name ----------

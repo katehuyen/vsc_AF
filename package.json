@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.387.0",
+  "version": "3.388.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9722,7 +9722,13 @@
           "type": "string",
           "x-af-browse": "file",
           "default": "",
-          "description": "A markdown file holding the words a sentry campaign starts the NEXT session with, when you want your own instead of the built-in ones. Same shape as Saved prompts: a heading names the verdict the block answers — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — and only text inside ``` fences is used. Placeholders like {nextCode}, {handoverPath}, {evidence} and {assist} are filled in; one nothing answers is left visible rather than blanked. A block replaces just that verdict, so every verdict you do not write keeps its built-in wording and this can stay empty for ever without anything being missing. A path named here that is not on disk is reported, never cleared. `sentry.templates` on the bridge shows what was read and what was refused."
+          "description": "A markdown file holding the words a sentry campaign starts the NEXT session with, when you want your own instead of the built-in ones. Same shape as Saved prompts: a heading names the verdict the block answers — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — and only text inside ``` fences is used. Placeholders like {nextCode}, {handoverPath}, {evidence} and {assist} are filled in; one nothing answers is left visible rather than blanked. A block replaces just that verdict, so every verdict you do not write keeps its built-in wording and this can stay empty for ever without anything being missing. A path named here that is not on disk is reported, never cleared. `sentry.templates` on the bridge shows what was read and what was refused, and it is the FIRST file of the pool rather than the whole of it: `agentFarm.sentryInstructionFiles` lists the rest, and a heading of your own that names no verdict is no longer discarded — it becomes material the sentry leader blends (`sentry.instructions`)."
+        },
+        "agentFarm.sentryInstructionFiles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "The POOL of your own saved instructions a sentry campaign draws on, as an ordered list of markdown files (the X-188 path variables are allowed: `${vault}`, `${workspace}`, `${projectNotes}`, `${today}` …). Same shape as Saved prompts, and read TWICE for two jobs: a block whose heading names a verdict — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — is a TEMPLATE and fills mechanically; every block, including the ones whose heading names something of your own (`Genel tembihler`, `Sabaha karşı`), is MATERIAL the leader blends into the next session's opening words. It is material, never a template it copies.\n\n`agentFarm.sentryTemplatesFile` is read first and this list follows it — they are assembled, not chosen between, so a file named in both is read once. A path whose variables cannot be filled is skipped WITH ITS REASON rather than pointed at the wrong folder; a path that is gone is reported and the rest of the pool still reads. Empty is the normal case: the built-in templates answer every verdict with no file of yours anywhere. `sentry.instructions` on the bridge shows what was read, what was refused, and what a leader woken on a given verdict would actually be given."
         },
         "agentFarm.sentryLeaderModel": {
           "type": "string",

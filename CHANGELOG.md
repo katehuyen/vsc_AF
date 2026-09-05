@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.388.0 - X-192: one pool of your own words, read twice (2026-09-05)
+
+Your saved instructions were never a second file to invent. `sentryTemplatesFile`
+already held blocks you had written; the campaign just refused every heading that
+did not name a verdict and then **threw the block away**. So "always give it the
+session id", "after 3am keep it short" — the things you actually type by hand out
+of the right-click menu — had nowhere in the machine to live.
+
+- **One pool, two uses.** A block whose heading names a verdict (`item-done`,
+  `clean-handover`, `nothing-to-continue`, `hit-the-wall`, `*`) is a TEMPLATE and
+  the mechanical round fills it, exactly as before. **Every** block — including
+  the ones under a heading of your own — is MATERIAL the leader blends into the
+  next session's opening words. Same file, same format, read twice.
+- **‼️ A refusal is no longer a loss, and it says so.** A heading naming no
+  verdict is still refused BY NAME (dropping it silently is how somebody spends
+  an evening wondering why their template never fires), but the sentence now
+  ends "it is kept as material for the leader" — because a refusal that reads as
+  a loss teaches people to stop writing the blocks this exists to collect.
+- **The pool is a LIST, not a file.** New `agentFarm.sentryInstructionFiles`,
+  taking the X-188 path variables (`${vault}`, `${projectNotes}`, `${today}` …).
+  `sentryTemplatesFile` is read first and the list follows it — they are
+  **assembled**, not chosen between, so nobody's precedence changes and a file
+  named in both is **read once**: a doubled instruction would be a doubled prompt
+  on a model metered by the word.
+- **The leader is not handed the whole pool.** `materialFor` gives it your
+  standing instructions plus the ONE block that answers the round that actually
+  happened, and the catch-all. The other verdicts' wording is noise it pays for
+  and, worse, something to copy.
+- **Still self-contained (X-179).** With nothing configured the pool is empty,
+  every verdict still has a built-in answer, and no folder of yours is needed
+  anywhere. A path whose variables will not resolve is SKIPPED **with its
+  reason** rather than pointed at the wrong folder (X-182); a path that is gone
+  is reported and the rest of the pool still reads.
+- **Bridge:** new `sentry.instructions` (what the leader receives, and with
+  `outcome` what a leader woken on that verdict would receive); `sentry.templates`
+  now reports `files`, `missingPaths` and `skipped` alongside what it already said.
+
 ## 3.387.0 - X-191: the leader wakes, takes the situation in hand, and goes back to sleep (2026-09-05)
 
 This is the defect the whole X-167 family was reopened for. `ModelAssist` and

@@ -215,6 +215,12 @@ const CATEGORY_OF: Record<string, string> = {
     // session with. Filed together, the reader who turns the campaign off would
     // go looking for it under prompts (ONE SUBJECT).
     sentryTemplatesFile: 'tasks',
+    // ‼️ X-192 — the same subject as the line above, because it is the same
+    // pool: the single file and this list are ASSEMBLED into one set of blocks,
+    // read once as templates the mechanical round fills and once as material
+    // the leader blends. Two settings that feed one thing are filed together or
+    // the reader finds half of it (ONE SUBJECT).
+    sentryInstructionFiles: 'tasks',
     // ‼️ X-189 — where the campaign LOOKS for the note the last session left,
     // filed with the campaign rather than with the folder settings. `answerDir`
     // is where an answer is WRITTEN and belongs to the work queue; these two

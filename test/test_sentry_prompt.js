@@ -23,7 +23,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const S = require(path.join(__dirname, '..', 'out', 'core', 'sentryPrompt.js'));
 const { BUILT_IN_SENTRY_TEMPLATES, templatesFromFile, mergeTemplates, pickTemplate,
-    buildNextPrompt, modelNeeded, describeAssist, resolveSentryTemplates } = S;
+    buildNextPrompt, modelNeeded, describeAssist, resolveSentryTemplates,
+    resolveInstructionPool, materialFor } = S;
 const { diagnoseSession } = require(path.join(__dirname, '..', 'out', 'core', 'sessionDiagnosis.js'));
 
 const SID = 'dc980395-1e2f-4a7b-9c33-8b21aa77c001';
@@ -223,6 +224,85 @@ const facts = (over) => Object.assign({
     });
     ok('...and it lands in their words, filled rather than left as a placeholder',
         /2\.4s · \$0\.0031/.test(wall.prompt) && wall.unfilled.indexOf('assist') < 0);
+}
+
+// ---- X-192 — ONE POOL, TWO USES ---------------------------------------------
+//
+// The user's saved instructions were never a second file to invent: they are
+// the SAME file read a second way. A block whose heading names a verdict is a
+// template and fills mechanically; a block whose heading names anything else is
+// no longer thrown away by name — it is the material the leader blends. And the
+// pool is a LIST of paths, because one file was the defect the item names.
+{
+    const A = 'D:/anywhere/nobet-sablonlari.md';
+    const B = 'D:/baska/tembihler.md';
+    const a = [
+        '## item-done', '', '```bitti', 'Bitti: {closed}. Sirada: {nextCode}.', '```', '',
+        '## hit-the-wall', '', '```duvar', 'Duvara tosladi.', '```'
+    ].join('\n');
+    const b = [
+        '## Genel tembihler', '', '```oturum kimligi', 'Oturum kimligini her zaman yaz.', '```', '',
+        '## Sabaha karsi', '', '```sessiz', 'Saat 03:00 sonrasi kisa yaz.', '```'
+    ].join('\n');
+    const disk = { [A]: a, [B]: b };
+    const pool = resolveInstructionPool([A, B], p => p in disk, p => disk[p]);
+
+    ok('the pool is a LIST of files, read in the order it was given',
+        pool.files.join() === [A, B].join());
+    ok('every block in every file is material for the leader',
+        pool.instructions.length === 4);
+    ok('...and each one says which file it came from',
+        pool.instructions.filter(x => x.file === B).length === 2);
+    ok('a block under a verdict heading is BOTH a template and material',
+        pickTemplate(pool.templates, 'item-done').source === 'file'
+        && pool.instructions.some(x => x.when === 'item-done' && x.template));
+    ok('a heading naming no verdict is still refused BY NAME as a template',
+        pool.refusals.some(r => /Genel tembihler/.test(r)));
+    ok('...but the block is KEPT as material rather than dropped — that is the item',
+        pool.instructions.some(x => x.label === 'oturum kimligi' && !x.template
+            && x.when === 'Genel tembihler'));
+    ok('...and the refusal SAYS it was kept, so nobody reads a refusal as a loss',
+        pool.refusals.some(r => /Genel tembihler/.test(r) && /material/i.test(r)));
+
+    // The pool concatenates settings, so the single-file setting is easily in
+    // the list twice. Twice named is read ONCE: a doubled instruction is a
+    // doubled prompt on a model with a ceiling.
+    const twice = resolveInstructionPool(
+        [A, 'd:\\anywhere\\nobet-sablonlari.md'],
+        p => p.toLowerCase().replace(/\\/g, '/') === A.toLowerCase(), () => a);
+    ok('a file named twice is read once',
+        twice.files.length === 1 && twice.instructions.length === 2);
+
+    // Same rule as everywhere else in this file: reported, never cleared. The
+    // gone one is named FIRST on purpose — a list that stops at the first
+    // missing path passes a test where the missing path is last.
+    const gone = resolveInstructionPool([B, A], p => p === A, p => (p === A ? a : ''));
+    ok('a path in the list that is gone is reported and the REST of the pool still reads',
+        gone.missing.join() === B && gone.files.join() === A && gone.instructions.length === 2);
+
+    const none = resolveInstructionPool([], () => false, () => '');
+    ok('with nothing listed the built-ins are still the whole answer and there is no material',
+        none.templates.length === BUILT_IN_SENTRY_TEMPLATES.length
+        && !none.instructions.length && !none.files.length && !none.missing.length);
+
+    // ‼️ The leader runs on a cheap model with a ceiling; handing it all four
+    // verdicts' words is noise it pays for. It gets the standing instructions
+    // and the ONE block that answers the round that actually happened.
+    const mat = materialFor(pool, 'hit-the-wall');
+    ok('the leader gets the standing instructions plus the block for THIS verdict',
+        mat.length === 3 && mat.some(x => x.when === 'hit-the-wall')
+        && !mat.some(x => x.when === 'item-done'));
+    const anyPool = resolveInstructionPool([A], p => p === A,
+        () => '## *\n```her\nHer durumda kisa yaz.\n```');
+    ok('...and a catch-all block answers every round, so it is always material',
+        materialFor(anyPool, 'item-done').length === 1);
+
+    // One implementation, two doors: the single-file setting still opens the
+    // same way it did before the pool existed.
+    const one = resolveSentryTemplates(A, p => p === A, () => a);
+    ok('the single-file setting still behaves exactly as it did',
+        one.source === 'setting' && one.file === A && !one.missing
+        && one.covers.slice().sort().join() === 'hit-the-wall,item-done');
 }
 
 console.log(`test_sentry_prompt: ${pass} passed, ${fail} failed`);
