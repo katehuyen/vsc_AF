@@ -3227,10 +3227,15 @@
     // reads back are ONE question — and comparing them by type made the strip
     // say "custom · from hybrid" the first time anything on the form was typed
     // into, which is the label lying about a set nobody had edited.
-    const condNorm = (list) => JSON.stringify((list || []).map(x => [
-        x.field || '', x.operator || '',
-        (x.value === undefined || x.value === null) ? '' : String(x.value)
-    ]));
+    // ‼️ AND A GROUP IS COMPARED BY ITS PARTS. Reading only field/operator/value
+    // would make every group normalise to the same empty triple, so two
+    // different groups would be "the same question" and the strip would go on
+    // saying Hybrid over a set nobody could recognise.
+    const condOne = (x) => Array.isArray(x.all)
+        ? ['&'].concat(x.all.map(condOne))
+        : [x.field || '', x.operator || '',
+            (x.value === undefined || x.value === null) ? '' : String(x.value)];
+    const condNorm = (list) => JSON.stringify((list || []).map(condOne));
     function sameConditions(a, b) { return condNorm(a) === condNorm(b); }
 
     /** ‼️ WHICH MODE THIS REALLY IS — worked out, never remembered. The preset
@@ -3277,10 +3282,29 @@
      */
     function freeConditionId() {
         const used = {};
-        sentryForm.conditions.forEach(c => { used[String(c.id || '')] = 1; });
+        eachCondition(c => { used[String(c.id || '')] = 1; });
         let n = sentryForm.conditions.length + 1;
         while (used['c' + n]) { n += 1; }
         return 'c' + n;
+    }
+    /** Every condition on the form, parts included — one walk, one meaning. */
+    function eachCondition(fn) {
+        sentryForm.conditions.forEach(c => {
+            if (Array.isArray(c.all)) { c.all.forEach(fn); } else { fn(c); }
+        });
+    }
+    /**
+     * ‼️ A PATH, NOT AN INDEX. `"2"` is the third line; `"2.1"` is the second
+     * part of its AND group. Every control on a row carries this string, so
+     * reading the form back, repairing a row and marking one are the same code
+     * whether the row is a plain condition or a part.
+     */
+    function condAt(path) {
+        const p = String(path === undefined ? '' : path).split('.');
+        const top = sentryForm.conditions[Number(p[0])];
+        if (!top) { return null; }
+        if (p.length < 2) { return Array.isArray(top.all) ? null : top; }
+        return (top.all || [])[Number(p[1])] || null;
     }
     /** SHORTHAND: the shortest unambiguous form on the row; the panel has the rest. */
     function readingShort(v) {
@@ -3290,9 +3314,22 @@
         if (!t.length) { return '(empty)'; }
         return t.length > 24 ? t.slice(0, 23) + '…' : t;
     }
-    function conditionRowHtml(s, c, i) {
+    /**
+     * ‼️ X-194 — ONE ROW, WHEREVER IT SITS.
+     *
+     * `i` is a PATH, not an index: `"2"` is the third condition and `"2.1"` is
+     * the second part of its AND group. One string addresses both, so the field
+     * box, the reading, the read-back and the repair are the same code for a
+     * plain condition and for a part — and a group cannot quietly grow a second
+     * kind of row that behaves differently.
+     *
+     * `o.own` is the group's own controls (↑ ↓ ✕) — a part does not get them,
+     * because moving a part above the row it is ANDed with means nothing.
+     */
+    function conditionRowHtml(s, c, i, o0) {
+        const o = o0 || {};
         const ops = opsFor(s, c.field);
-        const o = policyOps(s).find(x => x.id === c.operator);
+        const opSpec = policyOps(s).find(x => x.id === c.operator);
         const f = fieldSpec(s, c.field);
         // ‼️ A FIELD THE DICTIONARY NO LONGER NAMES IS KEPT AND SAID. Dropping
         // it would leave the box showing whatever sits first in the list and
@@ -3311,7 +3348,7 @@
         // The value box follows the FIELD's type: a closed set gets a picker,
         // a number gets a number box, and an operator that takes no value gets
         // no box at all rather than one that is ignored.
-        const takes = !o || o.takesValue;
+        const takes = !opSpec || opSpec.takesValue;
         const valBox = !takes
             ? '<span class="scond-nov muted small">no value</span>'
             : (f && f.type === 'enum' && (f.values || []).length
@@ -3326,7 +3363,12 @@
         const facts = policyFacts(s);
         const known = !!facts && f && Object.prototype.hasOwnProperty.call(facts, c.field);
         const now = known ? facts[c.field] : undefined;
-        const holds = PROBE && Array.isArray(PROBE.hits) ? PROBE.hits[i] === true : false;
+        // ‼️ THE MARK BELONGS TO THE WHOLE LINE, so a part never carries one:
+        // the host judges top-level conditions, and a group holds only when
+        // EVERY part does. A tick on part two of a group that does not hold
+        // would be a true fact read as the wrong answer.
+        const holds = o.markable !== false && PROBE && Array.isArray(PROBE.hits)
+            ? PROBE.hits[Number(String(i).split('.')[0])] === true : false;
         const asOf = s.policyFactsAt ? elapsed(Number(s.policyFactsAt)) + ' ago' : 'the last round';
         const reading = !known
             ? `<span class="scond-now muted" data-snow="${i}">not measured yet</span>`
@@ -3349,14 +3391,34 @@
                     ? '‼️ This condition HOLDS against that reading — a round ending like the last one wakes the leader on this line.'
                     : 'This condition does not hold against that reading.')
                 + (f ? '\n\n' + f.describe : ''));
-        return `<div class="scond" data-scond="${i}" data-scondid="${C.esc(c.id || '')}">
+        // The line's own controls. A part is offered only its own ✕; the empty
+        // spans keep the grid's columns lined up, because every row is its own
+        // grid and a missing cell moves every button after it.
+        const top = o.top === undefined ? Number(i) : o.top;
+        const tools = o.markable === false
+            ? `<span></span><span></span><span></span>
+               <button type="button" class="chip" data-sdelp="${i}" title="${C.esc('Drop this AND part. '
+                + 'Take the last one away and the line goes back to being a plain condition.')}">✕</button>`
+            : `<button type="button" class="chip" data-sand="${top}" title="${C.esc('Add an AND part to this line. '
+                + 'Conditions are ORed; the parts of ONE line are ANDed, so a line with parts holds only when every '
+                + 'one of them does — "the repo is dirty AND the item did not close" is a real night, either half '
+                + 'alone is an ordinary one.')}">+ and</button>
+               <button type="button" class="chip" data-sup="${top}"${top === 0 ? ' disabled' : ''} title="Move this line up. Conditions are ORed, so the order is what the verdict NAMES first.">↑</button>
+               <button type="button" class="chip" data-sdn="${top}"${top === sentryForm.conditions.length - 1 ? ' disabled' : ''} title="Move this line down.">↓</button>
+               <button type="button" class="chip" data-sdel="${top}" title="${o.group ? 'Drop this line and every part of it.' : 'Drop this condition.'}">✕</button>`;
+        return `<div class="scond${o.markable === false ? ' scond-part' : ''}" data-scond="${i}" data-scondid="${C.esc(c.id || '')}">
+            ${o.markable === false
+                ? `<span class="scond-amp" title="${C.esc('Every part of this line must hold. The lines '
+                    + 'themselves are ORed — any ONE of them wakes the leader.')}">and</span>`
+                // ‼️ The cell is drawn EMPTY rather than left out: every row is
+                // its own grid, so a missing first cell shifts every control on
+                // that line and the columns stop being columns.
+                : '<span class="scond-amp"></span>'}
             <select class="scond-f" data-si="${i}" title="${C.esc('Which measured fact this asks about.')}">${fieldOpts}</select>
             <select class="scond-o" data-si="${i}" title="${C.esc('How it is compared. Only the operators this field\'s type admits are offered.')}">${opOpts}</select>
             ${valBox}
             ${readTip}
-            <button type="button" class="chip" data-sup="${i}"${i === 0 ? ' disabled' : ''} title="Move this line up. Conditions are ORed, so the order is what the verdict NAMES first.">↑</button>
-            <button type="button" class="chip" data-sdn="${i}"${i === sentryForm.conditions.length - 1 ? ' disabled' : ''} title="Move this line down.">↓</button>
-            <button type="button" class="chip" data-sdel="${i}" title="Drop this condition.">✕</button>
+            ${tools}
         </div>`;
     }
 
@@ -3389,8 +3451,16 @@
                 + ' set. The label is derived from the conditions on every paint, so undoing an edit says '
                 + (mode.from || '?') + ' again by itself.')}">custom · from ${C.esc(mode.from || '?')}</span>`
             : '';
+        // ‼️ A LINE IS EITHER ONE CONDITION OR AN AND GROUP, and both draw the
+        // same row. The group's own controls live on its FIRST part, because
+        // that row IS the line; the parts after it carry nothing but their own
+        // ✕, since moving a part above the row it is ANDed with means nothing.
         const rows = sentryForm.conditions.length
-            ? sentryForm.conditions.map((c, i) => conditionRowHtml(s, c, i)).join('')
+            ? sentryForm.conditions.map((c, i) => Array.isArray(c.all)
+                ? `<div class="scondg" data-scondg="${i}">` + c.all.map((p, k) =>
+                    conditionRowHtml(s, p, i + '.' + k, { top: i, group: true, markable: k === 0 })).join('')
+                    + '</div>'
+                : conditionRowHtml(s, c, String(i), { top: i })).join('')
             : `<div class="muted small scond-empty">${mode.id === 'mechanical'
                 ? 'No condition — every round\'s prompt is built from a template. Zero tokens, zero thinking.'
                 : 'No condition yet: with none of them holding, every round stays mechanical.'}</div>`;
@@ -3398,9 +3468,11 @@
         // Conditions are ORed and each row's own `all` group is ANDed — a rule
         // nobody can infer from a stack of rows, and the one thing that decides
         // whether a night is a thinking night or a template night.
+        const grouped = sentryForm.conditions.filter(c => Array.isArray(c.all)).length;
         const summary = sentryForm.conditions.length
             ? `Any ONE of these ${sentryForm.conditions.length} wakes the leader for that round; `
                 + 'none of them and the round is built from a template.'
+                + (grouped ? ' A line with AND parts holds only when every part of it does.' : '')
             : '';
         // ‼️ AND WHAT THAT MEANS TONIGHT, in the one sentence the whole editor
         // is for. The verdict is the HOST's — the same `evaluateSentryPolicy`
@@ -3608,7 +3680,7 @@
         // has a single document and an element's query is the page's query, so
         // every row came back holding the FIRST row's boxes and the test that
         // was meant to prove the editor round-trips proved nothing.
-        const at = (el) => sentryForm.conditions[Number(el.dataset.si)];
+        const at = (el) => condAt(el.dataset.si);
         document.querySelectorAll('.scond-f').forEach(el => {
             const c = at(el); if (c) { c.field = el.value; }
         });
@@ -3619,8 +3691,9 @@
             const c = at(el); if (c) { c.value = el.value; }
         });
         // An operator that takes no value carries none — a stored one would be
-        // reported to the host for a condition that cannot use it.
-        sentryForm.conditions.forEach(c => {
+        // reported to the host for a condition that cannot use it. Applied to
+        // the PARTS as well, because a part is a condition like any other.
+        eachCondition(c => {
             const spec = policyOps(s2).find(x => x.id === c.operator);
             if (spec && !spec.takesValue) { delete c.value; }
         });
@@ -3743,10 +3816,40 @@
         document.querySelectorAll('.scond-f, .scond-o').forEach(el =>
             el.addEventListener('change', () => {
                 readSentryForm();
-                const c = sentryForm.conditions[Number(el.dataset.si)];
+                const c = condAt(el.dataset.si);
                 if (c) { repairCondition(sd, c); }
                 render();
             }));
+        // ‼️ X-194 — AND PARTS. Giving a plain condition its first part turns
+        // the line INTO a group and keeps the condition as part one: a "+ and"
+        // that threw away what the row already said would be a button nobody
+        // dares press. The parts are ANDed; the lines themselves stay ORed.
+        document.querySelectorAll('[data-sand]').forEach(el => el.addEventListener('click', () => {
+            readSentryForm();
+            const i = Number(el.dataset.sand);
+            const line = sentryForm.conditions[i];
+            const f = policyFields(sd)[0];
+            if (!line || !f) { return; }
+            const part = { id: freeConditionId(), field: f.field };
+            repairCondition(sd, part);
+            if (Array.isArray(line.all)) { line.all.push(part); }
+            else { sentryForm.conditions[i] = { id: line.id, all: [line, part] }; }
+            render();
+        }));
+        document.querySelectorAll('[data-sdelp]').forEach(el => el.addEventListener('click', () => {
+            readSentryForm();
+            const p = String(el.dataset.sdelp).split('.');
+            const line = sentryForm.conditions[Number(p[0])];
+            if (!line || !Array.isArray(line.all)) { return; }
+            line.all.splice(Number(p[1]), 1);
+            // ‼️ A GROUP OF ONE IS NOT A GROUP. The core calls an empty one a
+            // problem by name, and a one-part group is a plain condition
+            // wearing a box — so the line goes back to being what it is.
+            if (line.all.length === 1) {
+                sentryForm.conditions[Number(p[0])] = Object.assign({}, line.all[0], { id: line.id });
+            }
+            render();
+        }));
         document.querySelectorAll('[data-sround]').forEach(el => el.addEventListener('click', () =>
             vscode.postMessage({ type: 'consoleAgent', agentId: (DATA.sentry.campaign || {}).agent })));
     }
@@ -3865,8 +3968,17 @@
                    each, which reads as three more fields rather than as ↑ ↓ ✕.
                    The slack belongs to nothing, so it is given to nothing. */
                 .scond { display:grid; gap:6px; align-items:center;
-                    grid-template-columns:200px 130px minmax(120px,220px)
-                        108px max-content max-content max-content 1fr; }
+                    grid-template-columns:28px 200px 130px minmax(120px,220px)
+                        108px 50px 26px 26px 26px 1fr; }
+                /* ‼️ X-194 — the AND gutter is drawn on EVERY line, empty where
+                   there is no group: every row is its own grid, so a first cell
+                   that is sometimes there and sometimes not moves every control
+                   after it and the columns stop being columns. */
+                .scond-amp { font-size:10px; text-transform:uppercase; letter-spacing:.5px;
+                    opacity:.65; text-align:right; }
+                .scondg { border-left:2px solid var(--vscode-panel-border, rgba(128,128,128,.45));
+                    padding-left:4px; margin-left:-6px;
+                    display:flex; flex-direction:column; gap:4px; }
                 .scond select, .scond input { font-size:11px; padding:2px 4px; min-width:0; }
                 .scond .chip { padding:1px 7px; }
                 .scond-nov { font-style:italic; }

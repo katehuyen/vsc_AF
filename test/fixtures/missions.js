@@ -852,6 +852,24 @@ module.exports = {
             }
         },
         {
+            // ‼️ X-194 — AN AND GROUP, which is the shape the flat list could
+            // never draw. The gutter, the "and" on the part and the group's own
+            // controls sitting on its FIRST row are all things a string test
+            // passes on and an eye does not: this is the picture that says
+            // whether a grouped line still reads as one line.
+            id: 'sentry-group', label: 'Sentry — a line whose parts are ANDed',
+            data: data({}),
+            act: (r) => {
+                const d = r.sandbox.document;
+                fire(d.getElementById('s-new'), 'click');
+                const hybrid = d.querySelectorAll('[data-spreset]')
+                    .filter(e => e.dataset.spreset === 'hybrid')[0];
+                if (hybrid) { fire(hybrid, 'click'); }
+                const and = d.querySelectorAll('[data-sand]')[1];
+                if (and) { fire(and, 'click'); }
+            }
+        },
+        {
             // A campaign really working: the live strip, the chips and the round
             // table side by side — the picture that has to stay readable.
             id: 'sentry-live', label: 'Sentry — a campaign on its seventh round',

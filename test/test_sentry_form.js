@@ -304,5 +304,71 @@ const rows = r => qsa(r, '[data-scond]');
         !!m && m.input.leaderMaxUsd === undefined);
 }
 
+// ------------------------------------------------------- AND groups
+//
+// The core has read `Condition.all` since X-190 — every part must hold — and the
+// editor drew a flat OR list, so the only policy anybody could actually build
+// was "any one of these". The item asks for groups by name ("VE/VEYA grupları"),
+// and the reason is not symmetry: "the repo is dirty AND the item did not close"
+// is a real night, while either half alone is an ordinary one.
+{
+    const r = openForm();
+    press(r, presetBtn(r, 'hybrid'));
+    const was = rows(r).length;
+    press(r, qsa(r, '[data-sand]')[1]);
+    ok('‼️ a condition can be given an AND part, and becomes a group',
+        rows(r).length === was + 1 && /data-scond="1\.0"/.test(html(r))
+        && /data-scond="1\.1"/.test(html(r)));
+    ok('…and the group says AND on the part, because ORed rows are the default',
+        /scond-amp/.test(html(r)));
+    ok('…the part it grew from is kept, not replaced',
+        /data-scond="1\.0"[\s\S]*?value="repo.dirty" selected/.test(html(r)));
+    // ‼️ A GROUP IS NOT A PRESET'S SET. The strip is derived from the conditions
+    // on every paint, so grouping one of them has to show up there.
+    ok('‼️ …and grouping a condition makes the mode custom',
+        /custom · from hybrid/.test(html(r)));
+
+    // Only the row that OWNS the group carries the group's ↑ ↓ ✕; a part
+    // carries its own ✕ and nothing else, because moving a part above the row
+    // it is ANDed with is not a thing that means anything.
+    ok('a part carries its own drop button and not the group\'s controls',
+        qsa(r, '[data-sdelp]').length === 1
+        && qsa(r, '[data-sup]').length === rows(r).length - 1);
+
+    press(r, qsa(r, '[data-sdelp]')[0]);
+    ok('‼️ dropping the last part collapses the group back to a plain condition',
+        rows(r).length === was && !/data-scond="1\.0"/.test(html(r))
+        && /class="chip on" data-spreset="hybrid"/.test(html(r)));
+}
+
+// ------------------------------------------- what Start sends for a group
+{
+    const r = openForm();
+    press(r, presetBtn(r, 'hybrid'));
+    press(r, qsa(r, '[data-sand]')[1]);
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    const g = m && m.input.conditions[1];
+    ok('‼️ Start carries the group in the shape the CORE reads, not a shape of its own',
+        !!g && Array.isArray(g.all) && g.all.length === 2
+        && g.all.every(p => !!p.field && !!p.operator) && g.field === undefined);
+    // The whole point of the round trip: the real evaluator has to accept it.
+    const P2 = require(path.join(__dirname, '..', 'out', 'core', 'sentryPolicy.js'));
+    const probe = P2.probePolicy(m.input.conditions, {
+        diagnosis: { outcome: 'hit-the-wall', unknown: [], limit: false },
+        handover: { found: true, source: 'transcript', score: 5 },
+        repo: { dirty: 4, untracked: 0 },
+        round: { index: 2, failed: false, barren: false, consecutiveBarren: 0 },
+        quota: { percent: 10 }, accounts: { usable: 2 }, output: '', code: { closed: true }
+    });
+    ok('…and the evaluator judges it without a single problem',
+        probe.measured === true && probe.problems.length === 0
+        && probe.hits.length === m.input.conditions.length);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.398.0 - X-194 closed: what every condition reads today, AND parts, and the leader's own purse (2026-09-05)
+
+The editor could WRITE a rule and could not show what the rule was about. Three
+things finish it.
+
+- **‼️ Every condition row says what its field reads TODAY** — `repo.dirty | is
+  more than | 0 | now 3`. The reading comes from the round that ended last,
+  through the evaluator's OWN reader (`factsSnapshot` runs `read()` over the
+  field dictionary), so the figure on the row is by construction the figure the
+  condition will be compared against. A field added to the dictionary turns up
+  with a reading without either side being touched. With nothing measured yet
+  the row says "not measured yet" rather than showing a zero — "nothing fired"
+  and "nothing was read" are opposite answers.
+- **And whether it would fire tonight, ASKED rather than guessed.** The page
+  posts a debounced probe on every repaint of the draft and paints what the real
+  evaluator answered: the rows that hold are marked, and the set says in one
+  sentence whether "a round ending like the last one would wake the leader",
+  naming which conditions did it. New op **`sentry.probe`** is the same function
+  behind the bridge, so an agent can ask before a night is spent finding out.
+- **‼️ AND groups.** `Condition.all` has been in the core since X-190 and the
+  editor drew a flat OR list, so the only policy anybody could build was "any one
+  of these". A line can now be given AND parts: the lines are ORed, the parts of
+  one line are ANDed. "The repo is dirty AND the item did not close" is a real
+  night; either half alone is an ordinary one. Take the last part away and the
+  line goes back to being a plain condition.
+- **The leader's own leash, per campaign.** `leaderCaps` has been on the record
+  since X-191 with no writer anywhere, so every campaign spent the machine-wide
+  settings. Three boxes — the model its short deciding turn runs on, the dollars
+  per calendar day, and what one turn may cost before the next is refused (not
+  the round's model or budget). All three empty by default, and empty means the
+  setting decides: **MIRROR** puts the figure in force on the first line of each
+  panel, because an empty purse and a purse of zero look identical and one of
+  them switches the leader off. An untouched box sends nothing, so changing the
+  setting later still changes this campaign. Also on `sentry.start` as
+  `leaderModel` / `leaderDailyUsd` / `leaderMaxUsd`.
+- **Three defects found on the way.** The mode strip said `custom · from hybrid`
+  over a set nobody had edited (a value was compared by TYPE, so `0` and `"0"`
+  were two questions); reading the form back walked inside each row and so
+  measured nothing in the page harness, leaving every row holding the first
+  row's boxes; and `+ condition` named a new row by the count, handing out a
+  name already on the board after a delete — and the verdict names conditions by
+  their handle.
+
 ## 3.397.0 - X-194 (part 2): the sentry form gets a mode and its conditions (2026-09-05)
 
 The host has taken `preset` and `conditions` since 3.390.0 and the round has
