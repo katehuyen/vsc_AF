@@ -175,6 +175,22 @@ export interface SentryAsk {
      */
     preset?: string;
     conditions?: Condition[];
+    /**
+     * ‼️ X-194 — THE LEADER'S LEASH, FOR THIS CAMPAIGN.
+     *
+     * MEASURED, like the policy before it: `leaderCaps` has been on the record
+     * since X-191 and `leaderCapsFor` has read it, but nothing anywhere could
+     * WRITE one — so every campaign ran the leader on the machine-wide settings
+     * and a campaign nobody wanted to spend on could not be given a smaller
+     * purse without changing it for all of them.
+     *
+     * Flat rather than a nested object because these travel over `sentry.start`,
+     * where an agent writes `leaderDailyUsd=5` on a command line and a nested
+     * shape would need a file. Absent means the setting still decides.
+     */
+    leaderModel?: string;
+    leaderDailyUsd?: unknown;
+    leaderMaxUsd?: unknown;
 }
 
 /** Is this row a round of that campaign, still owing an answer? */
@@ -225,6 +241,7 @@ export function newSentry(ask: SentryAsk, now: number): SentryRecord {
     const safetyBufferMin = clamp(ask.safetyBufferMin, 0, 24 * 60);
     const failLimit = clamp(ask.failLimit, 0, 1000);
     const policy = policyOf(ask);
+    const leaderCaps = leaderCapsOf(ask);
     return {
         id: `sc-${now.toString(36)}`,
         project: String(ask.project ?? '').trim(),
@@ -239,8 +256,41 @@ export function newSentry(ask: SentryAsk, now: number): SentryRecord {
         ...(ask.permissionMode ? { permissionMode: String(ask.permissionMode) } : {}),
         ...(ask.superpowers ? { superpowers: true } : {}),
         ...(String(ask.opening ?? '').trim() ? { opening: String(ask.opening).trim() } : {}),
-        ...(policy ? { policy } : {})
+        ...(policy ? { policy } : {}),
+        ...(leaderCaps ? { leaderCaps } : {})
     };
+}
+
+/**
+ * ‼️ MONEY IS NOT ROUNDED. `clamp` above rounds because a percentage and a
+ * minute count are whole numbers; a per-turn ceiling of $0.25 rounded to $0
+ * would switch the leader off for ever and look like a figure the user chose.
+ */
+function money(v: unknown, hi: number): number | undefined {
+    if (v === undefined || v === null || v === '') { return undefined; }
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) { return undefined; }
+    return Math.min(hi, n);
+}
+
+/**
+ * ‼️ ASKING FOR NOTHING IS NOT ASKING FOR ZERO. A campaign with no caps of its
+ * own leaves `leaderCaps` ABSENT, so `leaderCapsFor` falls through to the
+ * settings and then to the defaults — which is what every campaign started
+ * before this existed did. Writing a purse nobody chose would be this function
+ * deciding something the user did not, and a zero purse is a leader that never
+ * wakes: the loudest possible way to fail silently.
+ */
+function leaderCapsOf(ask: SentryAsk): Partial<LeaderCaps> | undefined {
+    const model = String(ask.leaderModel ?? '').trim();
+    const dailyUsd = money(ask.leaderDailyUsd, 10000);
+    const maxUsd = money(ask.leaderMaxUsd, 10000);
+    const caps: Partial<LeaderCaps> = {
+        ...(model ? { model } : {}),
+        ...(dailyUsd !== undefined ? { dailyUsd } : {}),
+        ...(maxUsd !== undefined ? { maxUsd } : {})
+    };
+    return Object.keys(caps).length ? caps : undefined;
 }
 
 /**

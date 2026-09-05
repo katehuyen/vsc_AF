@@ -619,7 +619,13 @@ const OUTCOMES = {
  * to stay readable side by side.
  */
 const SENTRY_DEFAULTS = {
-    defaults: { ceiling: 95, safetyBufferMin: 3, failLimit: 3 },
+    // ‼️ X-194 — `leader` is what the SETTINGS say, not what the campaign asked
+    // for: the three leader boxes are empty until somebody types in one, and
+    // MIRROR needs a figure to put on the first line of each panel.
+    defaults: {
+        ceiling: 95, safetyBufferMin: 3, failLimit: 3,
+        leader: { model: 'haiku', dailyUsd: 2, maxUsd: 0.25 }
+    },
     idlePollMin: 10,
     permissionModes: [
         { id: 'default', label: 'default', detail: 'asks before anything that is not read-only' },

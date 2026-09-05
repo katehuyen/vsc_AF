@@ -267,5 +267,42 @@ const rows = r => qsa(r, '[data-scond]');
         ids.length === rows(r).length && new Set(ids).size === ids.length);
 }
 
+// ------------------------------------------------- the leader's own leash
+//
+// `leaderCaps` has been on the record since X-191 and nothing could write one,
+// so every campaign spent the machine-wide settings. These three boxes are the
+// writer — and each of them cuts its own text, so MIRROR applies: the value IN
+// FORCE goes on the first line of its own panel.
+{
+    const r = openForm();
+    const H = html(r);
+    ok('the form carries the leader\'s model, its daily purse and its per-turn ceiling',
+        !!byId(r, 's-lmodel') && !!byId(r, 's-lday') && !!byId(r, 's-lmax'));
+    // ‼️ MIRROR — an empty box is not an empty setting: it is the settings'
+    // own figure, and the reader must be able to see WHICH without leaving.
+    ok('‼️ …and each one says, on the first line of its panel, what is in force now',
+        /Now: haiku/.test(H) && /Now: \$2 a day/.test(H) && /Now: \$0\.25 a turn/.test(H));
+    ok('…and the empty box shows that same figure as its placeholder',
+        /id="s-lday"[^>]*placeholder="2"/.test(H) && /id="s-lmax"[^>]*placeholder="0.25"/.test(H));
+    ok('the model box offers the same aliases the round\'s model box does',
+        /id="s-lmodel"[^>]*list="s-models"/.test(H));
+
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    typeIn(r, 's-lmodel', 'sonnet');
+    typeIn(r, 's-lday', '5');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    ok('Start carries what was typed…',
+        !!m && m.input.leaderModel === 'sonnet' && m.input.leaderDailyUsd === '5');
+    // ‼️ AN UNTOUCHED BOX SENDS NOTHING. Sending the placeholder back would
+    // FREEZE today's setting onto the campaign: change the setting tomorrow and
+    // this campaign would go on spending yesterday's figure, silently.
+    ok('‼️ …and an untouched one sends nothing, so the setting still decides',
+        !!m && m.input.leaderMaxUsd === undefined);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

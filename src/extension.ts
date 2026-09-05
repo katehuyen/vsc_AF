@@ -15470,7 +15470,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Omitted is not mechanical-by-decision: `newSentry` writes no
                 // policy at all, and the round's own default answers.
                 ...(input.preset ? { preset: String(input.preset) } : {}),
-                ...(Array.isArray(input.conditions) ? { conditions: input.conditions } : {})
+                ...(Array.isArray(input.conditions) ? { conditions: input.conditions } : {}),
+                // ‼️ AND THE LEADER'S LEASH, absent when the form's box was
+                // left empty — the setting then goes on deciding, including
+                // when it is changed tomorrow. `newSentry` refuses an
+                // unreadable figure rather than storing a purse of zero.
+                ...(input.leaderModel ? { leaderModel: String(input.leaderModel) } : {}),
+                ...(input.leaderDailyUsd !== undefined ? { leaderDailyUsd: input.leaderDailyUsd } : {}),
+                ...(input.leaderMaxUsd !== undefined ? { leaderMaxUsd: input.leaderMaxUsd } : {})
             });
             if (!started.ok) { return started.error ?? 'the campaign could not be started'; }
             // Moves at once, for `sentry.start`'s reason: "did it take?" is the
@@ -24323,7 +24330,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             defaults: {
                 ceiling: SENTRY_DEFAULT_CEILING,
                 safetyBufferMin: RETRY_DEFAULT_SAFETY_MIN,
-                failLimit
+                failLimit,
+                /**
+                 * ‼️ X-194 — WHAT THE LEADER MAY SPEND WHEN NOBODY SAYS
+                 * OTHERWISE. The form's three leader boxes are empty by design
+                 * and empty means "the setting decides" — so MIRROR needs these
+                 * figures or the reader cannot tell an unset purse from a purse
+                 * of zero, and one of those two switches the leader off. Read
+                 * through the SAME fallback chain the round uses, so the number
+                 * on the label is the number that will be spent.
+                 */
+                leader: (() => {
+                    const c = leaderCapsFor({} as SentryRecord);
+                    return { model: c.model, dailyUsd: c.dailyUsd, maxUsd: c.maxUsd };
+                })()
             },
             idlePollMin: cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),
             // ‼️ THE VOCABULARY IS SENT, NOT RETYPED. A form that spelled the
@@ -32135,7 +32155,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'refused BY NAME rather than quietly becoming mechanical. Omit it and the '
                 + 'campaign runs mechanically, which is what it did before this existed), '
                 + 'conditions? (your own set, which WINS over the preset — `sentry.policy` lists '
-                + 'the fields, the operators and what each field is worth right now)',
+                + 'the fields, the operators and what each field is worth right now), '
+                + '‼️ leaderModel? / leaderDailyUsd? / leaderMaxUsd? (THE LEADER\'S OWN LEASH for '
+                + 'this campaign only - the model its short deciding turn runs on, the dollars it '
+                + 'may spend per calendar day, and what one turn may cost before the NEXT is '
+                + 'refused. NOT the round\'s model or budget. Omit any of them and the '
+                + 'agentFarm.sentryLeader* setting goes on deciding, including when it is changed '
+                + 'later; an unreadable figure is left absent rather than stored as a purse of '
+                + 'zero, which would switch the leader off and look like a decision)',
             handler: (args) => {
                 const a = args as Record<string, unknown>;
                 const project = argStr(args, 'project');
@@ -32158,7 +32185,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT),
                     // X-194 — the mode, refused by name if it is not one.
                     ...(optStr(args, 'preset') ? { preset: optStr(args, 'preset') } : {}),
-                    ...(Array.isArray(a.conditions) ? { conditions: a.conditions as Condition[] } : {})
+                    ...(Array.isArray(a.conditions) ? { conditions: a.conditions as Condition[] } : {}),
+                    // …and the leader's leash, absent when it was not asked for.
+                    ...(optStr(args, 'leaderModel') ? { leaderModel: optStr(args, 'leaderModel') } : {}),
+                    ...(a.leaderDailyUsd !== undefined ? { leaderDailyUsd: a.leaderDailyUsd } : {}),
+                    ...(a.leaderMaxUsd !== undefined ? { leaderMaxUsd: a.leaderMaxUsd } : {})
                 });
                 need(started.ok, started.error ?? 'the campaign could not be started');
                 // ‼️ AND IT MOVES AT ONCE. A campaign that waited for the next

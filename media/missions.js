@@ -3095,7 +3095,15 @@
          * existed did.
          */
         preset: null,
-        conditions: []
+        conditions: [],
+        /**
+         * ‼️ X-194 — THE LEADER'S OWN LEASH, and empty is not zero. An empty
+         * box means "the setting decides", so nothing is sent for it; sending
+         * today's setting back would FREEZE it onto the campaign, and changing
+         * the setting tomorrow would leave this campaign spending yesterday's
+         * figure with nothing on any surface saying so.
+         */
+        leaderModel: '', leaderDailyUsd: '', leaderMaxUsd: ''
     };
     /** The three the dictionary declares, plus what an EDITED one is called. */
     const CUSTOM = 'custom';
@@ -3428,6 +3436,55 @@
         </div>`;
     }
 
+    /**
+     * ‼️ X-194 — WHAT THE LEADER MAY SPEND, FOR THIS CAMPAIGN.
+     *
+     * Three boxes, all optional, all empty by default — and empty is the honest
+     * state, because it means "whatever the settings say". So MIRROR is not a
+     * nicety here but the only way the row is readable at all: a box showing
+     * nothing has to say, on the first line of its own panel, the figure that is
+     * IN FORCE right now. Without it the reader cannot tell an unset purse from
+     * a purse of zero, and one of those two switches the leader off.
+     *
+     * Drawn only when the host says what the settings hold; a MIRROR with
+     * nothing to mirror would be three boxes that mean nothing.
+     */
+    function sentryLeaderHtml(s) {
+        const d = (s.defaults || {}).leader;
+        if (!d) { return ''; }
+        const usd = (v) => '$' + String(v);
+        const box = (id, key, head, body, extra) => window.AFTip.wrap(
+            `<label class="lcap">${C.esc(head.label)}<input id="${id}"${extra || ''}
+                placeholder="${C.esc(String(head.now))}"
+                value="${C.esc(sentryForm[key])}"></label>`,
+            // MIRROR: the value in force, first, before any explanation.
+            `Now: ${head.mirror}`,
+            (String(sentryForm[key]).trim()
+                ? 'This campaign will use what you have typed, whatever the setting says later.\n\n'
+                : 'Empty, so the setting decides — including when you change it tomorrow.\n\n')
+            + body);
+        return `<div class="srow sleader">
+            <span class="flabel" title="${C.esc('What the LEADER turn may spend on this campaign. '
+                + 'It is not the round\'s own model or budget: the leader is the short, cheap turn that '
+                + 'decides what the next round should say, and it only runs at all when a condition above holds.')}">Leader</span>
+            ${box('s-lmodel', 'leaderModel',
+                { label: 'Model', now: d.model || 'engine default', mirror: d.model || 'the engine default' },
+                'The leader turn is short and mechanical work — the constitution\'s own cost rule is that '
+                + 'an unattended loop does not run on an expensive model. Raise it deliberately, having read the figure beside it.',
+                ' list="s-models"')}
+            ${box('s-lday', 'leaderDailyUsd',
+                { label: 'Daily $', now: d.dailyUsd, mirror: usd(d.dailyUsd) + ' a day' },
+                'Dollars per calendar day, for THIS campaign. When it is gone the leader stops waking and '
+                + 'the campaign carries on mechanically — it is never a reason to stop the night.',
+                ' type="number" min="0" step="0.5"')}
+            ${box('s-lmax', 'leaderMaxUsd',
+                { label: 'Per turn $', now: d.maxUsd, mirror: usd(d.maxUsd) + ' a turn' },
+                'What one leader turn may cost before the NEXT one is refused. A turn already running is '
+                + 'never cut off half way: the ceiling is read before the money is spent, not during.',
+                ' type="number" min="0" step="0.05"')}
+        </div>`;
+    }
+
     function sentryFormHtml(s) {
         // U-130 — four of these boxes share one row and every one of them cuts
         // the name inside it, so the name goes on the option itself.
@@ -3462,6 +3519,7 @@
                     <input id="s-fail" type="number" min="0" placeholder="${C.esc(String((s.defaults || {}).failLimit || ''))}" value="${C.esc(sentryForm.failLimit)}"></label>
             </div>
             ${sentryPolicyHtml(s)}
+            ${sentryLeaderHtml(s)}
             <label class="sprompt">First round opens with
                 <textarea id="s-prompt" rows="3" placeholder="Every continuation sentence is built on &quot;the previous session&quot; — the first round has none, so these words are yours.">${C.esc(sentryForm.prompt)}</textarea></label>
             <div class="srow">
@@ -3535,6 +3593,9 @@
         sentryForm.ceiling = v('s-ceiling');
         sentryForm.safetyBufferMin = v('s-buffer');
         sentryForm.failLimit = v('s-fail');
+        sentryForm.leaderModel = v('s-lmodel');
+        sentryForm.leaderDailyUsd = v('s-lday');
+        sentryForm.leaderMaxUsd = v('s-lmax');
         const sp = document.getElementById('s-sp');
         sentryForm.superpowers = !!(sp && sp.checked);
         // ‼️ X-194 — the conditions are read back the same way every other box
@@ -3620,7 +3681,15 @@
                     // for that and inventing one here would be this form
                     // deciding something nobody asked it to.
                     preset: sentryForm.preset || undefined,
-                    conditions: sentryForm.preset ? sentryForm.conditions : undefined
+                    conditions: sentryForm.preset ? sentryForm.conditions : undefined,
+                    // ‼️ AN UNTOUCHED BOX SENDS NOTHING, and that is the whole
+                    // meaning of empty here: the setting goes on deciding, so
+                    // changing it tomorrow changes this campaign too. Sending
+                    // today's placeholder back would freeze it on and nothing
+                    // on any surface would say the campaign had been pinned.
+                    leaderModel: sentryForm.leaderModel.trim() || undefined,
+                    leaderDailyUsd: String(sentryForm.leaderDailyUsd).trim() || undefined,
+                    leaderMaxUsd: String(sentryForm.leaderMaxUsd).trim() || undefined
                 }
             });
         });

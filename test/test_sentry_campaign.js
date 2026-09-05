@@ -281,5 +281,42 @@ const asked = { project: 'prj_9ujsbtzr', agent: 'developer' };
         newSentry({ project: 'p', agent: 'a' }, 1).policy === undefined);
 }
 
+// ---- X-194 — THE LEADER'S LEASH, PER CAMPAIGN ------------------------------
+//
+// `leaderCaps` has been on the record since X-191 and `leaderCapsFor` has read
+// it, but nothing anywhere could WRITE one — so every campaign ran the leader on
+// the machine-wide settings and a campaign nobody wanted to spend on could not
+// be given a smaller purse. This is the writer.
+{
+    const rec = newSentry(Object.assign({
+        leaderModel: 'haiku', leaderDailyUsd: 5, leaderMaxUsd: 0.25
+    }, asked), NOW);
+    ok('a campaign given a leader model, a daily purse and a per-turn ceiling keeps all three',
+        rec.leaderCaps.model === 'haiku' && rec.leaderCaps.dailyUsd === 5
+        && rec.leaderCaps.maxUsd === 0.25);
+
+    // ‼️ MONEY IS NOT ROUNDED. The ceiling and the buffer are whole numbers and
+    // are rounded; a per-turn ceiling of $0.25 rounded to $0 would switch the
+    // leader off for ever and look like a setting the user chose.
+    ok('‼️ …and the cents survive — a rounded purse is a leader that never wakes',
+        newSentry(Object.assign({ leaderMaxUsd: 0.25 }, asked), NOW).leaderCaps.maxUsd === 0.25);
+
+    // ‼️ ASKING FOR NOTHING IS NOT ASKING FOR ZERO. No caps at all means the
+    // settings decide, which is what every campaign started before this did;
+    // writing a purse nobody chose would be this function deciding for them.
+    ok('‼️ a campaign that asked for nothing carries NO caps at all',
+        newSentry(asked, NOW).leaderCaps === undefined);
+    ok('…and one that named only a model carries only that',
+        JSON.stringify(newSentry(Object.assign({ leaderModel: 'sonnet' }, asked), NOW).leaderCaps)
+        === '{"model":"sonnet"}');
+
+    // An unreadable figure leaves the field absent so the setting still applies
+    // — the same rule the ceiling follows, for the same reason.
+    ok('an unreadable purse is not a purse of zero',
+        newSentry(Object.assign({ leaderDailyUsd: 'soon' }, asked), NOW).leaderCaps === undefined);
+    ok('…and a negative one is refused rather than stored',
+        newSentry(Object.assign({ leaderMaxUsd: -4 }, asked), NOW).leaderCaps === undefined);
+}
+
 console.log(`test_sentry_campaign: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
