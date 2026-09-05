@@ -28,6 +28,9 @@ const {
     DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, discoverHandover
 } = require(path.join(OUT, 'handoverDiscovery.js'));
 const {
+    DEFAULT_LEADER_CAPS, leaderAllowed, buildLeaderBrief
+} = require(path.join(OUT, 'sentryLeader.js'));
+const {
     newSentry, refuseSentry, stopSentry, pauseSentry, resumeSentry, sentryRunning
 } = require(path.join(OUT, 'sentryCampaign.js'));
 
@@ -68,6 +71,27 @@ function registry(disk) {
                     file: s.file, source: s.source, missing: s.missing,
                     refusals: s.refusals, covers: s.covers, verdicts: SENTRY_VERDICTS,
                     templates: s.templates.map(t => ({ when: t.when, id: t.id, source: t.source, text: t.text }))
+                };
+            }
+        },
+        {
+            op: 'sentry.leader',
+            describe: 'What the sentry LEADER would be asked, and whether it may be woken at all. '
+                + 'Read-only and FREE: it renders the brief and reads the ledger, and it never runs a '
+                + 'turn. args: campaign?, session?',
+            handler: (a) => {
+                const rec = files.__campaign;
+                if (!rec) { throw new Error('there is no campaign to report on'); }
+                const caps = Object.assign({}, DEFAULT_LEADER_CAPS, files.__caps || {});
+                const allow = leaderAllowed(rec.leader, caps, '2026-09-04');
+                return {
+                    allowed: allow.allowed, why: allow.why, remainingUsd: allow.remainingUsd,
+                    spentUsd: (rec.leader && rec.leader.spentUsd) || 0,
+                    turns: (rec.leader && rec.leader.turns) || 0,
+                    failStreak: (rec.leader && rec.leader.failStreak) || 0,
+                    caps,
+                    log: (rec.leader && rec.leader.log) || [],
+                    brief: files.__brief ? buildLeaderBrief(files.__brief) : ''
                 };
             }
         },
@@ -530,6 +554,49 @@ function registry(disk) {
         ok('‼️ A FOLDER NOBODY COULD READ IS UNKNOWN, NOT EMPTY',
             blind.ok && blind.result.measured === false && blind.result.found === null
             && blind.result.unknown.length === 1);
+    }
+
+    // ---------- X-191: the leader, reported without being run ----------
+    //
+    // The op exists so a person (or an agent) can ask what the campaign would
+    // spend BEFORE the night, and read afterwards what it did spend. ‼️ Asking
+    // must be free: an op that runs a model in order to answer a question about
+    // running a model is the automation.ts bill with an extra step.
+    {
+        const CAMPAIGN = { project: 'p', agent: 'a', status: 'running',
+            leader: { day: '2026-09-04', spentUsd: 0.62, turns: 4, failStreak: 0,
+                log: [{ model: 'haiku', ms: 900, costUsd: 0.02, at: NOW, ok: true }] } };
+
+        ok('the op is in the catalogue and says what it takes',
+            registry().catalog().some(c => c.op === 'sentry.leader' && /args:/.test(c.describe)));
+
+        const none = await registry().dispatch('sentry.leader', {});
+        ok('with no campaign it refuses by the name of what is missing',
+            !none.ok && /campaign/i.test(none.error));
+
+        const r = await registry({ __campaign: CAMPAIGN }).dispatch('sentry.leader', {});
+        ok('it reports what has been spent today and what is left',
+            r.ok && r.result.spentUsd === 0.62
+            && Math.abs(r.result.remainingUsd - (DEFAULT_LEADER_CAPS.dailyUsd - 0.62)) < 1e-9);
+        ok('...and the caps actually in force, not the defaults by assumption',
+            r.result.caps.model === DEFAULT_LEADER_CAPS.model && r.result.caps.dailyUsd > 0);
+        ok('...and the turns it has already taken, so a bill has lines',
+            r.result.log.length === 1 && r.result.log[0].costUsd === 0.02);
+        ok('...and that it may still be woken', r.result.allowed === true);
+
+        const spent = { ...CAMPAIGN, leader: { day: '2026-09-04', spentUsd: DEFAULT_LEADER_CAPS.dailyUsd } };
+        const s2 = await registry({ __campaign: spent }).dispatch('sentry.leader', {});
+        ok('‼️ a campaign out of budget says so, and says the work carries on',
+            s2.result.allowed === false && /budget/i.test(s2.result.why)
+            && /mechanical/i.test(s2.result.why));
+
+        const b = await registry({ __campaign: CAMPAIGN, __brief: {
+            diagnosis: { session: 'abcd1234', outcome: 'hit-the-wall', rule: 'wall',
+                why: 'no note was written', evidence: [], unknown: [] },
+            verdict: { verdict: 'leader', fired: ['no-handover'], why: 'x', problems: [] }
+        } }).dispatch('sentry.leader', {});
+        ok('‼️ the brief can be READ before a night, which is the point of the op',
+            b.result.brief.includes('no-handover') && b.result.brief.includes('"prompt"'));
     }
 
     console.log(`test_sentry_bridge: ${pass} passed, ${fail} failed`);

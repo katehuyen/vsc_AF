@@ -2,6 +2,48 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.387.0 - X-191: the leader wakes, takes the situation in hand, and goes back to sleep (2026-09-05)
+
+This is the defect the whole X-167 family was reopened for. `ModelAssist` and
+`modelNeeded()` were WRITTEN and never wired: `sentryStep({…})` had never once
+been handed an `assist`, so the sleeping leader you designed did not exist. What
+shipped filled a template and could not think.
+
+And the reason it was not built is the thing to get right. The `automation.ts`
+precedent burned $70.90 over five nights asking a model something that could
+have been counted, and the agent that wrote this family over-corrected into
+"never call a model". ‼️ The answer was never "do not call" — it is **govern
+when, and how much**. New pure module `src/core/sentryLeader.ts`.
+
+- **Six leashes, each of them tested as a leash.** The leader wakes only when a
+  condition fires, so a routine night costs nothing at all · the model is cheap
+  by default (`haiku`) and the default is named in one place · a turn has a time
+  ceiling and a cost ceiling · a campaign has a DAILY budget · every turn is
+  recorded as a `ModelAssist` (model, ms, $, ok) · N failures in a row drop the
+  mode to mechanical and say so.
+- **‼️ Not one of them is a brake on the WORK.** Budget spent, brake tripped,
+  turn cut, answer unreadable, runner missing — every path opens the round
+  anyway, on the template. A leader that could halt the night is a worse failure
+  mode than a leader that is occasionally wrong, so nothing thrown inside a
+  leader turn leaves it.
+- **What the leader may do is deliberately narrow:** replace the WORDS, pick the
+  ACCOUNT, or say WAIT. It cannot overrule your hand, the failure brake, the
+  automation gate or the quota wall — all of which are decided around it, never
+  by it. Waiting is `idle`, not stopped, and the words it wrote are carried to
+  the round that does open.
+- **The brief tells the truth about what is not known.** X-174's law travels
+  into the prompt: a fact nobody measured is presented as unmeasured, because an
+  absent fact is an invitation to invent one.
+- **The reply is read with a string-aware brace scanner**, not a regular
+  expression — the thing the leader writes is a PROMPT, and prompts here are
+  full of `{placeholders}` and stray braces.
+- New: `sentry.leader` on the bridge (read-only and free — an op that spent
+  money to answer a question about spending money would be the same bill with an
+  extra step) · five settings under Tasks & Automation with the campaign's other
+  brakes · `SentryRecord.leader` / `.policy` / `.leaderCaps`.
+- `sentryTick` is now async, and its port settles the promise rather than
+  letting a rejection walk past the `try`/`catch` into the extension host.
+
 ## 3.386.0 - X-189: the handover note is looked for where it was actually written (2026-09-05)
 
 The sentry looked for the last session's handover note in ONE hard-coded folder

@@ -129,6 +129,11 @@ import {
 } from './core/sentryCampaign';
 import { SENTRY_DEFAULT_STALL_MIN } from './core/sentryWatch';
 import { SENTRY_DEFAULT_FAIL_LIMIT, sentryStep } from './core/sentryDriver';
+import {
+    DEFAULT_LEADER_CAPS, LeaderBudgetState, LeaderCaps, LeaderOutcome, LeaderRunner,
+    leaderAllowed, runLeaderTurn
+} from './core/sentryLeader';
+import { PolicyFacts, SentryPolicy, evaluateSentryPolicy } from './core/sentryPolicy';
 import { SENTRY_DEFAULT_CEILING } from './core/sentryRun';
 import { measureSession } from './core/sentryMeasure';
 import { QualityStore, sampleQuality } from './core/quality';
@@ -208,7 +213,7 @@ import {
     CapturePlan, accountRefusal, addSlot, findSlot, forgetActive, forgetSlot,
     normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel, slotsFor
 } from './core/accountStore';
-import { AccountUsageService, SlotUsage, mostRoom, nextResetAt } from './core/accountUsage';
+import { AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotIsUsable } from './core/accountUsage';
 import { PathVarContext, resolvePathList, resolvePathVars } from './core/pathVars';
 import {
     DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, HandoverListing, HandoverSource, discoverHandover
@@ -14611,6 +14616,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         handoverListings(sid, projectFolder),
         { sessionId: sid, today: resolvePathVars('${today}').value, now: Date.now() });
 
+    /** ‼️ X-191 — the OPENING of a note, not the whole of it. The leader gets
+     *  one bounded turn; handing it a 400-line handover would spend that turn's
+     *  budget on reading rather than on deciding. */
+    const headOf = (file?: string, lines = 60): string => {
+        if (!file) { return ''; }
+        try { return fs.readFileSync(file, 'utf8').split('\n').slice(0, lines).join('\n').trim(); }
+        catch { return ''; }
+    };
+
+    /** What is uncommitted, as `git diff --stat` puts it, across a project's
+     *  repositories. Failure is silence: a folder that is not a repository is
+     *  not a fault, it is a folder. */
+    const diffStatOf = (repos: string[]): string => {
+        const out: string[] = [];
+        for (const r of (repos || []).filter(x => !!String(x || '').trim())) {
+            try {
+                const t = cp.execFileSync('git', ['diff', '--stat'], {
+                    cwd: r, encoding: 'utf8', windowsHide: true, timeout: 20000
+                }).trim();
+                if (t) { out.push(`${r}:\n${t.split('\n').slice(-12).join('\n')}`); }
+            } catch { /* not a repository, or git is not on this machine */ }
+        }
+        return out.join('\n\n');
+    };
+
     // Work Queue bridge ops (queue.*) — the user→agent capture channel. The
     // notices port lets queue.fromNotice cross-link the two boards without a
     // hard module dependency. Panel refresh is added once QueuePanel exists.
@@ -15357,13 +15387,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (!started.ok) { return started.error ?? 'the campaign could not be started'; }
             // Moves at once, for `sentry.start`'s reason: "did it take?" is the
             // one question a switch has to answer immediately.
-            sentryTick();
+            void sentryTick();
             return undefined;
         },
         sentryControl: (action: 'stop' | 'pause' | 'resume') => {
             if (action === 'stop') { taskManager.endSentryCampaign('stopped from the Missions page'); return; }
             taskManager.holdSentryCampaign(action === 'pause');
-            if (action === 'resume') { sentryTick(); }
+            if (action === 'resume') { void sentryTick(); }
         },
         pickFolder: async () => {
             const picked = await vscode.window.showOpenDialog({
@@ -23729,7 +23759,78 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * Called from exactly two places, both inside the manager: a round of the
      * campaign ended, or the pump found the campaign due. No timer of its own.
      */
-    const sentryTick = (finishedTask?: FarmTask): void => {
+    /**
+     * ‼️ X-191 — THE ONE IMPURE ACT OF THE LEADER, and the only place a model is
+     * called by the sentry at all.
+     *
+     * `--output-format json` rather than bare `-p`, for `distill.ts`'s reason
+     * (B-6): a model call that cannot say what it cost is a bill with no line,
+     * and the entire cost governance above it would be reporting zeroes. The
+     * prompt goes down STDIN rather than into the command line — it is several
+     * kilobytes of the user's own words and quotation marks, and a shell that
+     * mangles it produces a leader turn that answers the wrong question.
+     */
+    const sentryLeaderRunner = (cwd: string): LeaderRunner => (o) => new Promise(resolve => {
+        let done = false;
+        const finish = (r: { text: string; costUsd?: number; error?: string }): void => {
+            if (!done) { done = true; resolve(r); }
+        };
+        let child: cp.ChildProcess;
+        try {
+            child = cp.spawn('claude', ['--model', o.model, '--output-format', 'json', '-p'],
+                { cwd, windowsHide: true, shell: process.platform === 'win32' });
+        } catch (e) { finish({ text: '', error: String((e as Error)?.message ?? e) }); return; }
+
+        // The cut is ours, not the CLI's: a turn that hangs is a campaign that
+        // stops for the night, and the caller has already been promised a cap.
+        const timer = setTimeout(() => {
+            try { child.kill(); } catch { /* already gone */ }
+            finish({ text: '', error: `the leader turn passed its ${Math.round(o.timeoutMs / 1000)}s ceiling and was cut` });
+        }, Math.max(1000, o.timeoutMs));
+
+        let out = '', err = '';
+        child.stdout?.on('data', d => { out += String(d); });
+        child.stderr?.on('data', d => { err += String(d); });
+        child.on('error', e => { clearTimeout(timer); finish({ text: '', error: String(e?.message ?? e) }); });
+        child.on('close', () => {
+            clearTimeout(timer);
+            const env = parsePlannerEnvelope(out.trim());
+            if (!env) {
+                // Not an envelope: still hand the prose over. The parser above
+                // will refuse it and record the fault — reporting "no output"
+                // for an answer that exists would hide what actually happened.
+                finish(out.trim()
+                    ? { text: out.trim() }
+                    : { text: '', error: outputExcerpt(err) || 'the leader turn produced nothing' });
+                return;
+            }
+            finish({
+                text: env.result,
+                ...(typeof env.costUSD === 'number' ? { costUsd: env.costUSD } : {}),
+                ...(env.isError ? { error: `the engine reported an error (${env.subtype ?? 'unknown'})` } : {})
+            });
+        });
+        try { child.stdin?.end(o.prompt); } catch { /* the close handler will report it */ }
+    });
+
+    /** The leash in force for one campaign: its own overrides above the
+     *  settings, the settings above the built-in defaults. */
+    const leaderCapsFor = (rec: SentryRecord): LeaderCaps => {
+        const n = (v: unknown, or: number): number => {
+            const x = Number(v);
+            return Number.isFinite(x) && x >= 0 ? x : or;
+        };
+        const cfg = afConfig();
+        return {
+            model: String(rec.leaderCaps?.model ?? cfg.get<string>('sentryLeaderModel') ?? '').trim(),
+            maxSeconds: n(rec.leaderCaps?.maxSeconds ?? cfg.get<number>('sentryLeaderMaxSeconds'), DEFAULT_LEADER_CAPS.maxSeconds),
+            maxUsd: n(rec.leaderCaps?.maxUsd ?? cfg.get<number>('sentryLeaderMaxUsd'), DEFAULT_LEADER_CAPS.maxUsd),
+            dailyUsd: n(rec.leaderCaps?.dailyUsd ?? cfg.get<number>('sentryLeaderBudgetUsd'), DEFAULT_LEADER_CAPS.dailyUsd),
+            failLimit: n(rec.leaderCaps?.failLimit ?? cfg.get<number>('sentryLeaderFailLimit'), DEFAULT_LEADER_CAPS.failLimit)
+        };
+    };
+
+    const sentryTick = async (finishedTask?: FarmTask): Promise<void> => {
         const rec = taskManager.sentry;
         // ‼️ X-177 — A PAUSED CAMPAIGN IS STILL DRIVEN, and opens nothing. The
         // verdict on the round that just ended and the sentence that answers it
@@ -23758,6 +23859,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         // ---- what the round that just ended left behind --------------------
         const sid = String(finishedTask?.runSessionId ?? '').trim();
+        // ‼️ X-189 — run ONCE and held, because both the facts and the leader's
+        // brief need it and listing four folders twice per round is two answers
+        // that can disagree about the same night.
+        const search = sid && finishedTask ? findHandover(sid, doc.folder) : undefined;
         const facts = finishedTask ? measureSession({
             sessionId: sid,
             repos: (doc.project.repos ?? []).filter(r => !!(r || '').trim()),
@@ -23773,7 +23878,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ X-189 — AND THE SEARCH THAT OUTRANKS THAT ONE FOLDER. `answers`
             // stays beside it because it is what WRITES a note (the daily
             // counter is read out of that listing); this is what FINDS one.
-            handover: () => (sid ? findHandover(sid, doc.folder) : undefined),
+            handover: () => search,
             dirty: (repo) => {
                 try {
                     const out = cp.execFileSync('git', ['status', '--porcelain'], {
@@ -23839,8 +23944,107 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
         }
 
+        /* ---- ‼️ X-191 — AND WHETHER THE LEADER IS WOKEN AT ALL ----------------
+         *
+         * The defect this closes is the one the family was reopened for:
+         * `sentryStep` has never once been handed an `assist`, so the "sleeping
+         * leader that wakes, takes the situation in hand and goes back to sleep"
+         * was written into the types and never built.
+         *
+         * ‼️ EVERY BRANCH BELOW ENDS IN A ROUND BEING OPENED. A campaign with no
+         * policy is the mechanical preset and costs nothing; a leader that
+         * failed, timed out, answered prose or ran out of budget falls to the
+         * template. Nothing here can stop the night.
+         */
+        let leader: LeaderOutcome | undefined;
+        if (finishedTask && facts) {
+            try {
+                const diagnosis = diagnoseSession(facts);
+                const dirty = (facts.repos ?? []).reduce((n, r) => n + (r.dirty ?? 0), 0);
+                const pf: PolicyFacts = {
+                    diagnosis,
+                    ...(search?.measured ? {
+                        handover: {
+                            found: !!search.hit,
+                            source: search.hit?.source ?? '',
+                            score: search.hit?.score ?? 0
+                        }
+                    } : {}),
+                    // `untracked` is not measured separately: `git status
+                    // --porcelain` counts it INTO `dirty`, and reporting a zero
+                    // for it would be the guess X-174 exists to refuse.
+                    ...(facts.repos ? { repo: { dirty, untracked: 0 } } : {}),
+                    round: {
+                        index: Number(rec.rounds) || 0,
+                        failed: finishedTask.status === 'failed',
+                        barren: (facts.progress?.assistantSteps ?? 0) === 0
+                            && (facts.progress?.toolCalls ?? 0) === 0,
+                        consecutiveBarren: Number(rec.failStreak) || 0
+                    },
+                    ...(typeof facts.quotaPercent === 'number' && facts.quotaPercent >= 0
+                        ? { quota: { percent: facts.quotaPercent } } : {}),
+                    accounts: { usable: usage.filter(u => slotIsUsable(u, rec.ceiling)).length },
+                    ...(facts.output !== undefined ? { output: facts.output } : {}),
+                    ...(facts.codes ? { code: { closed: facts.codes.some(c => c.closed) } } : {})
+                };
+                const policy: SentryPolicy = rec.policy ?? { preset: 'mechanical', conditions: [] };
+                const verdict = evaluateSentryPolicy(policy, pf);
+                // ‼️ Read ONCE, and only on a round that woke the leader — `git
+                // diff` on every repo of every routine round is a cost the
+                // mechanical preset was promised it would not pay.
+                const diffStat = verdict.verdict === 'leader' ? diffStatOf(doc.project.repos ?? []) : '';
+                leader = await runLeaderTurn({
+                    diagnosis, verdict,
+                    ...(next ? { next } : {}),
+                    ...(search?.hit ? { handover: { path: search.hit.path ?? search.hit.file, head: headOf(search.hit.path) } } : {}),
+                    ...(diffStat ? { diffStat } : {}),
+                    project: doc.project.name,
+                    repos: doc.project.repos ?? [],
+                    accounts: usage.map(u => ({
+                        slotId: u.slotId, percent: Number(u.percent) || 0,
+                        usable: slotIsUsable(u, rec.ceiling)
+                    })),
+                    ...(rec.leader ? { budget: rec.leader } : {})
+                }, leaderCapsFor(rec), sentryLeaderRunner((doc.project.repos ?? [])[0] || os.homedir()),
+                { today: resolvePathVars('${today}').value, now: () => Date.now() });
+                rec.leader = leader.budget;
+                if (verdict.problems.length) {
+                    // A condition nobody can evaluate is not a condition that did
+                    // not fire — X-190's law, carried to where a person reads it.
+                    leader = { ...leader, why: `${leader.why} · ${verdict.problems.join(' · ')}` };
+                }
+            } catch (e) {
+                // ‼️ Belt and braces. `runLeaderTurn` catches its own runner, but
+                // this whole block reads a repo and a project on a machine at
+                // three in the morning. A campaign is not worth a crash.
+                leader = undefined;
+                console.warn('Agent Farm: the leader turn could not be attempted —', e);
+            }
+        }
+        if (leader?.announce && leader.why) {
+            noticesStore.add({
+                title: 'Sentry - the leader has stopped waking',
+                type: 'alert', level: 2,
+                body: `${leader.why}\n\nThe campaign is NOT stopped: it carries on mechanically, `
+                    + 'filling the continuation templates, and starts thinking again tomorrow. '
+                    + 'agentFarm.sentryLeaderBudgetUsd is the daily figure.',
+                agentName: rec.agent,
+                projectId: doc.project.id,
+                tags: ['sentry']
+            });
+        }
+
         const step = sentryStep({
             campaign: rec,
+            ...(leader?.assist ? { assist: leader.assist } : {}),
+            ...(leader?.decision ? {
+                leader: {
+                    prompt: leader.decision.prompt,
+                    account: leader.decision.account,
+                    hold: leader.decision.hold,
+                    why: leader.decision.why
+                }
+            } : {}),
             ...(finishedTask && facts ? {
                 finished: {
                     status: finishedTask.status,
@@ -31451,6 +31655,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'sentry.leader',
+            describe: 'THE LEADER\'S LEASH AND ITS LEDGER: whether the sentry leader may be woken '
+                + 'right now, what it has already spent today, what is left of the daily budget, the '
+                + 'caps actually in force, and the last turns it took (model, ms, $, ok). ‼️ '
+                + 'READ-ONLY AND FREE — it reads the record and renders the brief; it never runs a '
+                + 'turn, because an op that spends money to answer a question ABOUT spending money '
+                + 'is the $70.90 automation bill with an extra step. Running one belongs to the '
+                + 'campaign, and only when a condition fires (sentry.status shows the policy). ‼️ '
+                + 'A CAMPAIGN OUT OF BUDGET IS NOT A STOPPED CAMPAIGN: it fills templates instead '
+                + 'and starts thinking again tomorrow. args: none',
+            handler: () => {
+                const rec = taskManager.sentry;
+                if (!rec) { return { campaign: null, allowed: false, why: 'no campaign is running' }; }
+                const caps = leaderCapsFor(rec);
+                const today = resolvePathVars('${today}').value;
+                const allow = leaderAllowed(rec.leader, caps, today);
+                const led: LeaderBudgetState = rec.leader ?? {};
+                return {
+                    campaign: rec.id,
+                    day: led.day ?? today,
+                    allowed: allow.allowed,
+                    why: allow.why || 'the leader may be woken when a condition fires',
+                    remainingUsd: allow.remainingUsd,
+                    spentUsd: led.spentUsd ?? 0,
+                    turns: led.turns ?? 0,
+                    failStreak: led.failStreak ?? 0,
+                    caps: { ...caps, model: caps.model || DEFAULT_LEADER_CAPS.model },
+                    // The policy is what decides whether it is asked at all — a
+                    // leash report that does not say "and nothing wakes it" would
+                    // read like a leader that is simply expensive.
+                    policy: rec.policy ?? { preset: 'mechanical', conditions: [] },
+                    log: (led.log ?? []).slice(-10)
+                };
+            }
+        },
+        {
             op: 'sentry.handover',
             describe: 'WHERE A SESSION\'S HANDOVER NOTE IS, and how it was decided. Looks in every '
                 + 'source in order — `transcript` (the files that session ITSELF wrote, read out of '
@@ -31591,7 +31831,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // pump beat to open its first round would look broken for half a
                 // minute, and "did it take?" is the one question a switch has to
                 // answer immediately.
-                sentryTick();
+                void sentryTick();
                 const rec = taskManager.sentry as SentryRecord;
                 return {
                     campaign: rec,
@@ -31650,7 +31890,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const back = taskManager.holdSentryCampaign(false);
                 // The same reason `sentry.start` moves at once: "did it take?"
                 // is the one question a switch has to answer immediately.
-                sentryTick();
+                void sentryTick();
                 return { campaign: back, running: taskManager.sentryBusy() };
             }
         },

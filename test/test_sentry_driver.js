@@ -324,5 +324,51 @@ const step = (over) => sentryStep(Object.assign({
         s.plan.action === 'stopped' && !s.round);
 }
 
+// ---- X-191: the leader's words outrank the template, and its hold is obeyed ----
+//
+// The driver is where the leader stops being an idea. What matters here is the
+// narrowness of what it may do: it may replace the WORDS, it may pick the
+// ACCOUNT, and it may say WAIT. It may not stop the campaign, and it cannot
+// reach anything else — everything the driver already decided (the brake, the
+// gate, the quota wall, the user's hand) still decides first.
+{
+    const LEAD = { prompt: 'Carry on from the note at line 40.', account: 'b', hold: false, why: 'the note says where it stopped' };
+
+    const s = step({ finished: goodRound(), usage: [slot('a'), slot('b')], leader: LEAD });
+    ok('the leader\'s own words are what the next round opens on',
+        s.plan.action === 'start' && s.round.prompt === LEAD.prompt);
+    ok('...and the record says they came from the leader, not from a template',
+        s.words.source === 'leader' && s.words.templateId === 'leader');
+    ok('...and the template it replaced is still readable, so nothing is lost',
+        typeof s.words.vars === 'object' && !!s.words.when);
+    ok('...and the account it picked is the one the round runs on', s.round.slotId === 'b');
+    ok('...and the words CARRIED for a later round are the leader\'s too',
+        s.carry && s.carry.prompt === LEAD.prompt);
+
+    const held = step({ finished: goodRound(), usage: [slot('a')], leader: { ...LEAD, hold: true, why: 'the quota resets in an hour' } });
+    ok('‼️ the leader may say WAIT, and no round is opened',
+        held.plan.action === 'idle' && !held.round);
+    ok('...naming the leader as the rule, with its own sentence',
+        held.plan.rule === 'leader-hold' && /quota resets/.test(held.plan.why));
+    ok('...and the campaign is NOT stopped — waiting is not finishing', !held.stop);
+    ok('...and the words it wrote are kept for when the wait is over',
+        held.carry && held.carry.prompt === LEAD.prompt);
+
+    const bare = step({ finished: goodRound(), usage: [slot('a')], leader: { prompt: '   ', account: null } });
+    ok('a leader that said nothing usable leaves the template in charge',
+        bare.words.source !== 'leader' && bare.plan.action === 'start');
+
+    const gone = stopSentry(rec(), NOW);
+    ok('‼️ AND THE LEADER CANNOT OVERRULE THE USER\'S HAND',
+        sentryStep({ campaign: gone, usage: [slot('a')], next: NEXT, leader: LEAD, now: NOW })
+            .plan.action === 'stopped');
+
+    const r = rec({ failStreak: SENTRY_DEFAULT_FAIL_LIMIT - 1 });
+    const braked = sentryStep({ campaign: r, usage: [slot('a')], next: NEXT,
+        finished: { status: 'failed', code: 'X-1', taskId: 't', facts: { sessionId: SID, answerFiles: [], repos: [{ path: 'D:/r', dirty: 0 }], codes: [], progress: { assistantSteps: 0, toolCalls: 0 }, output: '' } },
+        leader: LEAD, now: NOW });
+    ok('‼️ ...nor the failure brake', braked.plan.action === 'stopped' && braked.plan.rule === 'fail-streak');
+}
+
 console.log(`test_sentry_driver: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

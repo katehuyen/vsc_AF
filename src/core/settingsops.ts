@@ -225,6 +225,14 @@ const CATEGORY_OF: Record<string, string> = {
     // ‼️ X-176 — the campaign's two brakes. Tasks & Automation for the same
     // reason the templates are there: what they govern is an UNATTENDED RUNNER
     // opening task rows, not a prompt somebody pastes into a box (ONE SUBJECT).
+    // ‼️ X-191 — the leader's leash. Filed with the campaign's other brakes
+    // rather than under models: what these govern is an UNATTENDED RUNNER's
+    // spending, not which model a person picks in a launcher (ONE SUBJECT).
+    sentryLeaderModel: 'tasks',
+    sentryLeaderBudgetUsd: 'tasks',
+    sentryLeaderMaxSeconds: 'tasks',
+    sentryLeaderMaxUsd: 'tasks',
+    sentryLeaderFailLimit: 'tasks',
     sentryFailureLimit: 'tasks',
     sentryIdlePollMin: 'tasks',
     sentryStallMin: 'tasks',

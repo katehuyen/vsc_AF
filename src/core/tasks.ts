@@ -1355,7 +1355,15 @@ export interface TaskManagerOptions {
      *
      * `task` is the round that just ended, or undefined for a pump tick.
      */
-    sentryTick?: (task?: FarmTask) => void;
+    /**
+     * ‼️ X-191 MADE THIS ASYNC, and the two call sites below had to change
+     * with it. The tick may now run one bounded leader turn, which is a child
+     * process; a rejected promise walks straight past a `try`/`catch` around a
+     * synchronous call and becomes an unhandled rejection that takes the
+     * extension host with it. The campaign is not worth a crash — so the
+     * result is settled, and swallowed, at the call site.
+     */
+    sentryTick?: (task?: FarmTask) => void | Promise<void>;
     /** How often an idling campaign looks again (`agentFarm.sentryIdlePollMin`). */
     sentryPollMin?: () => number;
     /** X-178 — how long a round may say nothing before the watchdog ends it
@@ -2868,7 +2876,8 @@ export class TaskManager implements vscode.Disposable {
         if (this.sentry && sentryDue(
             this.sentry, sentryRunning(this.tasks, this.sentry.id),
             this.opts.sentryPollMin?.() ?? SENTRY_DEFAULT_POLL_MIN, now)) {
-            try { this.opts.sentryTick?.(); } catch { /* the campaign is not worth a crash */ }
+            try { void Promise.resolve(this.opts.sentryTick?.()).catch(() => { /* see the port */ }); }
+            catch { /* the campaign is not worth a crash */ }
         }
         // ‼️ X-178 — AND THE OTHER QUESTION THE SAME BEAT ASKS. `sentryDue` is
         // false precisely while a round is on the board, so nothing above ever
@@ -4340,7 +4349,8 @@ export class TaskManager implements vscode.Disposable {
     private driveSentry(task: FarmTask): void {
         if (!task.sentryOf || !this.sentry || this.sentry.id !== task.sentryOf) { return; }
         if (!this.runner()) { return; }
-        try { this.opts.sentryTick?.(task); } catch { /* the campaign is not worth a crash */ }
+        try { void Promise.resolve(this.opts.sentryTick?.(task)).catch(() => { /* see the port */ }); }
+        catch { /* the campaign is not worth a crash */ }
     }
 
     /**

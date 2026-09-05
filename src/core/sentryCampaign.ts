@@ -1,4 +1,6 @@
 import { SentryCampaign, SentryPlan } from './sentryRun';
+import type { LeaderBudgetState, LeaderCaps } from './sentryLeader';
+import type { SentryPolicy } from './sentryPolicy';
 
 /**
  * X-176 — THE CAMPAIGN AS A RECORD: what the user switched on, and what it did.
@@ -71,6 +73,23 @@ export interface SentryRecord extends SentryCampaign {
     failLimit?: number;
     /** barren rounds in a row. Wiped by the first round that achieves something. */
     failStreak?: number;
+    /**
+     * ‼️ X-191 — WHAT THE LEADER HAS ALREADY SPENT, and how many of its turns
+     * failed in a row. It lives on the RECORD rather than in a timer for the
+     * same reason `wakeAt` does: a reload throws a timer away and this has to
+     * survive one, or a restart hands the campaign a fresh daily budget it has
+     * already spent.
+     */
+    leader?: LeaderBudgetState;
+    /**
+     * ‼️ X-190 — WHEN THE LEADER WAKES. Absent = the mechanical preset, which
+     * is the empty condition set: no condition, no leader, no tokens. This is
+     * the switch itself, not a mode flag — the three modes are three presets
+     * over this one field.
+     */
+    policy?: SentryPolicy;
+    /** the leash on the leader, where this campaign overrides the settings */
+    leaderCaps?: Partial<LeaderCaps>;
     /** why it stopped, when it was not simply switched off */
     stoppedWhy?: string;
     /**

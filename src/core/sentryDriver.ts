@@ -80,6 +80,19 @@ export interface SentryStepInputs {
     handoverPath?: string;
     /** what a cheap model turn cost, if the caller made one */
     assist?: ModelAssist;
+    /**
+     * ‼️ X-191 — WHAT THE LEADER DECIDED, when one was woken.
+     *
+     * Deliberately NARROW. The leader may replace the WORDS, pick the ACCOUNT,
+     * and say WAIT. It may do nothing else, and it reaches nothing else: every
+     * rule this driver already applies — the user's hand, the failure brake, the
+     * automation gate, the quota wall — is decided before this is consulted or
+     * after it, never by it. A leader that could stop the night is a worse
+     * failure mode than a leader that is occasionally wrong.
+     *
+     * Absent, or carrying no usable prompt, leaves the template in charge.
+     */
+    leader?: { prompt?: string; account?: string | null; hold?: boolean; why?: string };
     /** is a round of this campaign already on the board? (`sentryRunning`) */
     running?: boolean;
     now: number;
@@ -182,7 +195,7 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     // say "the last round closed X-176" while the farm is paused is worth more
     // than one that only says "paused".
     const diagnosis = fin ? diagnoseSession(fin.facts, i.policy) : undefined;
-    const words = fin && diagnosis
+    const built = fin && diagnosis
         ? buildNextPrompt({
             diagnosis,
             next: i.next,
@@ -192,6 +205,17 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
             assist: i.assist
         }, i.templates)
         : undefined;
+
+    // ‼️ X-191 — THE LEADER'S OWN WORDS OUTRANK THE TEMPLATE, and say so.
+    //
+    // The template is still BUILT, and its `vars`, `when` and `unfilled` survive
+    // on the record — a surface has to be able to show what the leader replaced,
+    // or "the leader wrote this" is an unfalsifiable claim. Only the sentence
+    // that actually opens the session changes.
+    const spoken = String(i.leader?.prompt ?? '').trim();
+    const words = built && spoken
+        ? { ...built, prompt: spoken, templateId: 'leader', source: 'leader' as const }
+        : built;
 
     const streak = fin
         ? (barren(fin, diagnosis) ? (Number(c.failStreak) || 0) + 1 : 0)
@@ -227,11 +251,32 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
 
     // ---- and then the ordinary decision -----------------------------------
     const prompt = words ? words.prompt : (carry?.prompt ?? String(i.opening ?? ''));
+
+    // ‼️ X-191 — THE LEADER MAY SAY WAIT, and waiting is not finishing. It is
+    // `idle`, the same standing-still the driver already has: the campaign is
+    // alive, the words it wrote are carried, and the next poll asks again.
+    // Reached HERE, after the user's hand and the failure brake, so it can
+    // never keep a campaign that should have stopped alive.
+    if (i.leader?.hold === true) {
+        return {
+            ...base,
+            plan: {
+                action: 'idle', rule: 'leader-hold',
+                why: String(i.leader.why ?? '').trim() || 'the leader decided this round should wait'
+            }
+        };
+    }
+
     const plan = planSentry({
         campaign: c, usage: i.usage, automation: i.automation,
         next: i.next, prompt, running: i.running, now: i.now
     });
     if (plan.action !== 'start' || !i.next) { return { ...base, plan }; }
+    // The account the leader named, only when it named one and only on a round
+    // that is actually starting — `planSentry` has already refused every slot
+    // that is walled, and a leader cannot spend an account the quota rules out.
+    const chosen = String(i.leader?.account ?? '').trim();
+    const slotId = chosen && i.usage.some(u => u.slotId === chosen) ? chosen : plan.slotId;
 
     const n = (Number(c.rounds) || 0) + 1;
     return {
@@ -242,7 +287,7 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
             round: n,
             title: sentryRoundTitle(n, i.next.code),
             prompt: plan.prompt || prompt,
-            ...(plan.slotId ? { slotId: plan.slotId } : {}),
+            ...(slotId ? { slotId } : {}),
             ...(c.engine ? { engine: c.engine } : {}),
             ...(c.model ? { model: c.model } : {}),
             ...(c.permissionMode ? { permissionMode: c.permissionMode } : {}),

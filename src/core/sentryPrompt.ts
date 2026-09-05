@@ -74,7 +74,11 @@ export interface NextPrompt {
     prompt: string;
     templateId: string;
     when: string;
-    source: 'built-in' | 'file';
+    /** ‼️ X-191 added `leader`: the words were not rendered from a template at
+     *  all, they were written by a leader turn. The template that WOULD have
+     *  answered is still on the record beside them (`vars`, `when`), because
+     *  "the leader wrote this" has to be something a reader can check. */
+    source: 'built-in' | 'file' | 'leader';
     vars: Record<string, string>;
     /** placeholders the template asked for and nothing answered */
     unfilled: string[];

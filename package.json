@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.386.0",
+  "version": "3.387.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9723,6 +9723,35 @@
           "x-af-browse": "file",
           "default": "",
           "description": "A markdown file holding the words a sentry campaign starts the NEXT session with, when you want your own instead of the built-in ones. Same shape as Saved prompts: a heading names the verdict the block answers — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — and only text inside ``` fences is used. Placeholders like {nextCode}, {handoverPath}, {evidence} and {assist} are filled in; one nothing answers is left visible rather than blanked. A block replaces just that verdict, so every verdict you do not write keeps its built-in wording and this can stay empty for ever without anything being missing. A path named here that is not on disk is reported, never cleared. `sentry.templates` on the bridge shows what was read and what was refused."
+        },
+        "agentFarm.sentryLeaderModel": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The model a sentry LEADER turn runs on. The leader is woken only when one of the campaign's conditions fires (agentFarm settings do not decide that — the campaign's own condition set does), and it gets ONE bounded turn to write the next session's opening words. Cheap on purpose: an unattended loop is not where an expensive model belongs, and the whole reason this family was rewritten is a $70.90 bill from asking a model something that could have been counted. Raise it deliberately, having read the budget below. Empty = haiku."
+        },
+        "agentFarm.sentryLeaderBudgetUsd": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "markdownDescription": "Dollars of leader turns one campaign may spend per calendar day. ‼️ WHEN IT IS GONE THE CAMPAIGN DOES NOT STOP — it carries on mechanically, filling templates, and you are told once on Notices. A leash, not a brake. 0 = no daily budget, which is the setting to think twice about."
+        },
+        "agentFarm.sentryLeaderMaxSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 5,
+          "markdownDescription": "Seconds one leader turn may take before it is cut. A cut turn falls back to the mechanical template and is recorded as a fault."
+        },
+        "agentFarm.sentryLeaderMaxUsd": {
+          "type": "number",
+          "default": 0.25,
+          "minimum": 0,
+          "markdownDescription": "Dollars one leader turn may cost. A turn that goes over is still USED — it is paid for either way — but the NEXT one is refused and the campaign runs mechanically until tomorrow. A ceiling cannot un-spend money; what it can do is stop the second one."
+        },
+        "agentFarm.sentryLeaderFailLimit": {
+          "type": "number",
+          "default": 3,
+          "minimum": 0,
+          "markdownDescription": "Failed leader turns in a row after which the campaign drops to the mechanical path AND SAYS SO. A leader that cannot produce readable JSON is a leader nobody should keep paying for. 0 switches the brake off, the same convention agentFarm.sentryFailureLimit uses."
         },
         "agentFarm.sentryFailureLimit": {
           "type": "number",
