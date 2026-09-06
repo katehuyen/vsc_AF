@@ -704,4 +704,74 @@ const variants = () => ([
     }
 ]);
 
-module.exports = { script: 'tasksPage.js', data, variants, runs };
+/**
+ * ‼️ X-226 — THE RUN THAT CHANGED PLANS AT A WALL, with its row open.
+ *
+ * Two things are being looked at and neither of them is drawn in any other
+ * state. The setup grid is the only place a run says whose sign-in it spends —
+ * a line this list did not have at all until this item — and it only exists
+ * with the expander pressed. And the row above it is the pair: the run that met
+ * the limit, and the retry that carries the SAME work on another account a
+ * minute later. A picture of one without the other says nothing about a
+ * handover; the two together are the whole feature.
+ */
+const handoverData = () => {
+    const d = data();
+    const walled = {
+        id: 'h1', title: 'gece devir turu (retry 1)', agentName: 'developer',
+        mode: 'headless', status: 'queued', source: 'you', sourceKind: 'manual',
+        when: min(1), detail: 'waiting until 03:04:12 — retry 1 (account handover · '
+            + 'work@studio is walled until 07:50:00, and personal@gmail has room (8%) — '
+            + 'the work carries on there rather than sleeping)',
+        costUSD: 0, engine: 'claude', reportsCost: true, tokens: 0,
+        hasOutput: false, sessionFile: '',
+        setup: [
+            { label: 'Agent', value: 'developer · headless' },
+            { label: 'Started by', value: 'you' },
+            { label: 'Engine', value: 'Claude Code' },
+            { label: 'Model', value: 'opus' },
+            {
+                label: 'Account',
+                value: 'personal@gmail — handed over from work@studio at a usage limit'
+            },
+            { label: 'If it fails', value: '6 attempts, 40 min apart, on a usage limit' },
+            { label: 'Attempt', value: 'retry 1 after a failure' }
+        ],
+        prompt: 'devir notundaki kalan maddeleri sırayla kapat ve testleri çalıştır'
+    };
+    const met = {
+        id: 'h0', title: 'gece devir turu', agentName: 'developer',
+        mode: 'headless', status: 'failed', source: 'you', sourceKind: 'manual',
+        when: min(2), durMin: 51, detail: '', costUSD: 4.02,
+        engine: 'claude', reportsCost: true, tokens: 3_120_000,
+        hasOutput: true, outputFile: 'D:\\out\\h0.md',
+        sessionFile: 'C:\\Users\\x\\.claude\\projects\\vsc_AgentFarm\\5a1c0e77.jsonl',
+        setup: [
+            { label: 'Agent', value: 'developer · headless' },
+            { label: 'Started by', value: 'you' },
+            { label: 'Engine', value: 'Claude Code' },
+            { label: 'Account', value: 'work@studio' }
+        ],
+        prompt: 'devir notundaki kalan maddeleri sırayla kapat ve testleri çalıştır'
+    };
+    d.runs = [dress(walled), dress(met), ...d.runs.slice(1)];
+    return d;
+};
+
+const handoverVariant = {
+    id: 'tasks-account-handover',
+    label: 'Tasks → Runs — the retry that was handed to another sign-in at a wall',
+    data: handoverData(),
+    // ‼️ BY `[data-expand]`, NOT BY THE CLASS. The shim's `html()` concatenates
+    // every element it has ever handed out, so `.expand`[0] can be a cell from
+    // an earlier paint whose click toggles nothing that is still on the page —
+    // measured here: the picture came back with every row shut.
+    act: (r) => {
+        (r.query('[data-expand]').find(e => e.dataset.expand === 'run:h1')
+            || r.query('[data-expand]')[0]).click();
+    }
+};
+module.exports = {
+    script: 'tasksPage.js', data, runs,
+    variants: () => [...variants(), handoverVariant]
+};

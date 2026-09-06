@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.404.0",
+  "version": "3.405.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8173,32 +8173,55 @@
           "description": "Agent a new chat talks to before it picks one with /agent. Empty = a chat must bind an agent first."
         },
         "agentFarm.accounts": {
-      "type": "array",
-      "default": [],
-      "markdownDescription": "The engine accounts captured on this machine. An account is a CONFIG DIRECTORY, not a copied file: starting a session with one set points the engine at that directory with its own variable (CLAUDE_CONFIG_DIR for Claude Code), so the identity of the session you are talking to right now is never touched and two accounts can run at the same time. Captured from the Engines page — sign in normally once, press Capture, and the address and plan are read off the disk. No token is ever stored here; the credentials stay in the account's own directory.",
-      "items": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "string", "description": "Folder-safe id, minted from the address." },
-          "engine": { "type": "string", "description": "Which engine this sign-in belongs to. An account belongs to one engine." },
-          "label": { "type": "string", "description": "What you call it. The address is the fallback." },
-          "dir": { "type": "string", "description": "The config directory this account IS." },
-          "email": { "type": "string", "description": "The address this sign-in belongs to, read off the disk when it was captured. Empty is normal on engines that do not record one." },
-          "subscriptionType": { "type": "string", "description": "The plan the sign-in states (pro, max, chatgpt...). What the account is entitled to is between you and the vendor; this is only what the file said." },
-          "capturedAt": { "type": "number", "description": "When it was sealed, epoch ms." }
-        }
-      },
-      "scope": "application"
-    },
-    "agentFarm.activeAccounts": {
-      "type": "object",
-      "default": {},
-      "markdownDescription": "Which account the NEXT session on each engine uses, keyed by engine id. Set by 'Use this next' on the Engines page. An account is deliberately not remembered per agent: it is a STATE (how much of a plan is left, which changes hourly), not a preference, so one place holds it and one gesture moves it. Empty means the main sign-in — no variable is set and the session inherits exactly what it always did.",
-      "additionalProperties": { "type": "string" },
-      "x-af-keys": "engine",
-      "scope": "application"
-    },
-    "agentFarm.providerProfiles": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "The engine accounts captured on this machine. An account is a CONFIG DIRECTORY, not a copied file: starting a session with one set points the engine at that directory with its own variable (CLAUDE_CONFIG_DIR for Claude Code), so the identity of the session you are talking to right now is never touched and two accounts can run at the same time. Captured from the Engines page — sign in normally once, press Capture, and the address and plan are read off the disk. No token is ever stored here; the credentials stay in the account's own directory.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Folder-safe id, minted from the address."
+              },
+              "engine": {
+                "type": "string",
+                "description": "Which engine this sign-in belongs to. An account belongs to one engine."
+              },
+              "label": {
+                "type": "string",
+                "description": "What you call it. The address is the fallback."
+              },
+              "dir": {
+                "type": "string",
+                "description": "The config directory this account IS."
+              },
+              "email": {
+                "type": "string",
+                "description": "The address this sign-in belongs to, read off the disk when it was captured. Empty is normal on engines that do not record one."
+              },
+              "subscriptionType": {
+                "type": "string",
+                "description": "The plan the sign-in states (pro, max, chatgpt...). What the account is entitled to is between you and the vendor; this is only what the file said."
+              },
+              "capturedAt": {
+                "type": "number",
+                "description": "When it was sealed, epoch ms."
+              }
+            }
+          },
+          "scope": "application"
+        },
+        "agentFarm.activeAccounts": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Which account the NEXT session on each engine uses, keyed by engine id. Set by 'Use this next' on the Engines page. An account is deliberately not remembered per agent: it is a STATE (how much of a plan is left, which changes hourly), not a preference, so one place holds it and one gesture moves it. Empty means the main sign-in — no variable is set and the session inherits exactly what it always did.",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "x-af-keys": "engine",
+          "scope": "application"
+        },
+        "agentFarm.providerProfiles": {
           "type": "array",
           "default": [],
           "markdownDescription": "X-100 — the Anthropic-compatible ROUTES Agent Farm holds for Claude Code: which provider, which endpoint, and which model each tier resolves to. Managed on the Engines page (`Agent Farm: Open Engines` → Providers); this key is the same list in its raw form.\n\n‼️ **No credential is ever written here.** A route's key lives in the OS keychain (SecretStorage), filed under the profile's `id` — which is why the id is permanent and a copy deliberately starts with no key. Anything you type into this array that is not one of the fields below is DROPPED on the way in, so a key pasted here does not become a stored one; it just does not work.\n\n‼️ **This list is Claude's alone.** OpenCode owns its own providers, `auth.json` and `opencode.json` (`opencode auth login`, `/connect`), and a second copy here would make two vaults where the stale one wins silently — so a profile naming another engine is refused rather than ignored.\n\n`revision` counts up whenever the ROUTE changes (provider, endpoint, auth kind, tier mapping) or its key is replaced — never on a rename. A launch records the revision it ran on, so a route edited afterwards cannot silently rewrite what a past session was served by.",
@@ -9713,13 +9736,24 @@
         },
         "agentFarm.handoverSources": {
           "type": "array",
-          "items": { "type": "string", "enum": ["transcript", "configured", "projectNotes", "fallback"] },
+          "items": {
+            "type": "string",
+            "enum": [
+              "transcript",
+              "configured",
+              "projectNotes",
+              "fallback"
+            ]
+          },
           "default": [],
           "markdownDescription": "Where a sentry campaign looks for the handover note of the session that just ended, and in which order. Empty = all four, in this order: `transcript` (the files that session ITSELF wrote — the most truthful source, because where the agent actually wrote beats where a setting says it should have), `configured` (agentFarm.handoverFolders), `projectNotes` (the project's own 10_Notes) and `fallback` (the folder this extension shipped with, reached last and only then). Drop a source to stop looking there. A folder that cannot be READ is reported as unknown rather than as empty, so the campaign never says “no handover note” about a folder nobody opened.\n\nThe name no longer has to be exact: a file scores on the session id in its name, on the session having written it, on the word `devir`/`handover`, on a date near today, and on the full `YYYY-MM-DD_devir_##_<id8>_<topic>.md` pattern. The canonical name is still preferred — it is just no longer required. What IS required is that the note belongs to this session: another session's note is never adopted, at any score."
         },
         "agentFarm.handoverFolders": {
           "type": "array",
-          "items": { "type": "string", "x-af-browse": "folder" },
+          "items": {
+            "type": "string",
+            "x-af-browse": "folder"
+          },
           "default": [],
           "markdownDescription": "The folders the `configured` handover source looks in, in order. Accepts the same path variables as agentFarm.reportDir — ${vault}, ${projectNotes}, ${projectFolder}, ${today}, ${sessionId8} … — and a template whose variable has nothing behind it on this machine is SKIPPED with its reason rather than half-built. Empty = agentFarm.answerDir, then `${vault}/00_AGENT_AREA/00_OUTPUT/01_CEVAPLAR`: the folder answers are written into is the one folder you have already named."
         },
@@ -9731,7 +9765,10 @@
         },
         "agentFarm.sentryInstructionFiles": {
           "type": "array",
-          "items": { "type": "string", "x-af-browse": "file" },
+          "items": {
+            "type": "string",
+            "x-af-browse": "file"
+          },
           "default": [],
           "markdownDescription": "The POOL of your own saved instructions a sentry campaign draws on, as an ordered list of markdown files (the X-188 path variables are allowed: `${vault}`, `${workspace}`, `${projectNotes}`, `${today}` …). Same shape as Saved prompts, and read TWICE for two jobs: a block whose heading names a verdict — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — is a TEMPLATE and fills mechanically; every block, including the ones whose heading names something of your own (`Genel tembihler`, `Sabaha karşı`), is MATERIAL the leader blends into the next session's opening words. It is material, never a template it copies.\n\n`agentFarm.sentryTemplatesFile` is read first and this list follows it — they are assembled, not chosen between, so a file named in both is read once. A path whose variables cannot be filled is skipped WITH ITS REASON rather than pointed at the wrong folder; a path that is gone is reported and the rest of the pool still reads. Empty is the normal case: the built-in templates answer every verdict with no file of yours anywhere. `sentry.instructions` on the bridge shows what was read, what was refused, and what a leader woken on a given verdict would actually be given."
         },
@@ -9768,13 +9805,13 @@
           "type": "number",
           "default": 3,
           "minimum": 0,
-          "description": "How many BARREN rounds in a row switch a sentry campaign off. A round is barren when the run failed, or when it \"succeeded\" and left nothing behind at all. This is not a round budget \u2014 a campaign that is WORKING runs until you stop it \u2014 it is an alarm for the case no quota can catch: a broken setup opening empty sessions all night, each one failing instantly and therefore spending nothing. The streak is wiped by the first round that achieves something. 0 switches the brake off entirely. A campaign may carry its own limit (sentry.start { failLimit })."
+          "description": "How many BARREN rounds in a row switch a sentry campaign off. A round is barren when the run failed, or when it \"succeeded\" and left nothing behind at all. This is not a round budget — a campaign that is WORKING runs until you stop it — it is an alarm for the case no quota can catch: a broken setup opening empty sessions all night, each one failing instantly and therefore spending nothing. The streak is wiped by the first round that achieves something. 0 switches the brake off entirely. A campaign may carry its own limit (sentry.start { failLimit })."
         },
         "agentFarm.sentryIdlePollMin": {
           "type": "number",
           "default": 10,
           "minimum": 1,
-          "description": "How often, in minutes, an IDLING sentry campaign looks at the backlog again. An empty backlog is a wait rather than a finish, so something has to notice the item you write tomorrow morning \u2014 and that something is the beat the farm already keeps, not a timer of the sentry's own. It does not apply while a round is on the board (that round ending is what drives the next one) and it never shortens a measured sleep: a three-hour quota wall is waited out, not poked every ten minutes."
+          "description": "How often, in minutes, an IDLING sentry campaign looks at the backlog again. An empty backlog is a wait rather than a finish, so something has to notice the item you write tomorrow morning — and that something is the beat the farm already keeps, not a timer of the sentry's own. It does not apply while a round is on the board (that round ending is what drives the next one) and it never shortens a measured sleep: a three-hour quota wall is waited out, not poked every ten minutes."
         },
         "agentFarm.sentryStallMin": {
           "type": "number",

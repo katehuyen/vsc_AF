@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.405.0 - X-226: the run that slept until 07:50 while three accounts sat at 4% (2026-09-06)
+
+The X-211 family promised one thing: *when the quota runs out mid-work, change
+account and carry on.* It was built into the Console window (X-213) — the
+surface that needs it **least**, because a person is sitting in front of it and
+can move the card by hand. The surface that needs it most had none of it: a
+headless run at 03:00 meets a usage limit, `retryDecision` reads **one** plan's
+reset (M-10) and parks the retry until that window reopens. Three signed-in
+accounts can sit at 4% for four hours while the work sleeps.
+
+‼️ And the commonest case is worse than the documented one. `resetAware` ships
+**off**, so an unconfigured run does not wait for a window at all — it waits its
+policy's forty minutes, on a plan that is walled for four hours, and fails
+again. Six times. There was never a reset to be aware of; there was another
+account.
+
+`carryOnAccount` (`core/accountUsage.ts`) answers the one question the Console
+answers with a person: **which sign-in should carry this work on.** It does not
+decide *which* — `pickAccount` does, X-207's own answer to whose turn it is,
+because a second rotation rule is how the campaign and the queue come to
+disagree about the same night. What it adds is who may be asked at all, and it
+refuses more often than it agrees:
+
+* never the account that just refused the work, whatever its last read says —
+  the refusal is fresher than the figure;
+* never another engine. The sentry may cross engines because it opens a NEW
+  round; a carried-on run resumes a transcript, and a transcript belongs to one
+  CLI;
+* never out of an empty pool — the absence of a slot is the main sign-in
+  (X-172), and it cannot be asked how much room it has;
+* never a run pinned to `@machine`. *"Nothing is injected"* is an instruction
+  the user typed into the form, and a handover would inject one;
+* never for a failure that was not a limit. A broken script breaks the same way
+  on every sign-in, and moving it spends a second plan to prove it.
+
+A handover starts as soon as the pump can take it: the wait it replaces existed
+to outlast a wall this run has just stepped around. `resetAt` is deliberately
+**not** written on a handed-over row — it would label a run "waiting for 07:50"
+that is about to start on a plan whose window is already open.
+
+‼️ **And two surfaces could not say whose plan a run spent.** The run's own
+setup list — engine, model, effort, permissions, route, tier, folder, priority
+— never carried the **account**, and neither did `bridgeDimsOut`, so neither a
+person reading the board nor an agent calling `tasks.get` could answer "which
+sign-in was billed for last night". Both say it now, and both say when it
+**moved**.
+
 ## 3.404.0 - X-225: the mission that was not allowed to say whose plan it spends (2026-09-06)
 
 `missionDoor` declared the account **exempt**, with the reason written on the

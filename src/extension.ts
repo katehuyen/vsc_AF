@@ -2978,6 +2978,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!future.length) { return undefined; }
                 return future.sort((a, b) => (b.percent - a.percent) || (a.resetsAt - b.resetsAt))[0].resetsAt;
             },
+            // ‼️ X-226 — AND WHO ELSE COULD HAVE RUN IT. The line above answers
+            // "when does this plan reopen"; on its own that is a run sleeping
+            // until 07:50 while two signed-in accounts sit at 4%. These are the
+            // same figures the account cards and the sentry pool read — no
+            // second reader, so the queue and the campaign cannot disagree about
+            // how much room a plan has — and asking for them costs nothing: the
+            // service answers from what it has already measured and never
+            // fetches to answer a question.
+            measuredAccounts: () => accountUsage.current(),
             // ‼️ M-26 — the two doors to the Console, forwarded. The queue
             // decides WHAT to run and never learns how to open a panel; the
             // panel owns its process, its engine refusals and its own report.
@@ -13588,6 +13597,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // own conversation rather than starting the work again.
                     continuationOf: task.continuationOf ?? null,
                     resetAt: task.resetAt ?? null,
+                    // ‼️ X-226 — AND WHETHER THIS RUN CHANGED PLANS MID-WORK.
+                    // `account` above says whose sign-in it spends; only this
+                    // says the answer MOVED, which is the fact an agent reading
+                    // last night's board cannot derive from anything else — the
+                    // run that met the wall and the run that finished the work
+                    // are two rows with two different accounts and nothing
+                    // between them.
+                    accountHandover: task.accountHandover ?? null,
                     deferredReason: task.deferredReason ?? null,
                     // ‼️ M-11 — …AND WHICH CEILING THAT SENTENCE IS ABOUT. The
                     // reason quotes today's spend, so two readings of one budget

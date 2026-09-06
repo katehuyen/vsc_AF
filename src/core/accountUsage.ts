@@ -6,6 +6,7 @@ import {
     buildBars, fetchUsage, readOauthCredentials, usageUserAgent
 } from './planusage';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
+import { MACHINE_ACCOUNT } from './accountStore';
 import { ensureAccessToken, EXPIRY_SKEW_MS, RefreshOutcome } from './oauthRefresh';
 
 /**
@@ -206,6 +207,95 @@ export function pickAccount(list: SlotUsage[], opts: PickAccountOptions = {}): S
         if (pick) { return pick; }
     }
     return undefined;
+}
+
+/** ‼️ X-226 — the shortest wait a handover can be worth. It is the floor the
+ *  retry itself starts on, so a wait under it buys the work nothing. */
+export const CARRY_ON_FLOOR_MS = 60_000;
+
+/** What a run that met a wall knows about itself when it asks to be carried on. */
+export interface CarryOnInput {
+    /** the sign-in it was running as; empty = whichever one was active */
+    from?: string;
+    /** the engine it is bound to. Empty = claude, as every other reader reads it. */
+    engine?: string;
+    /** the accounts this machine has measured, as they were measured */
+    usage: SlotUsage[];
+    /** at or above this five-hour percentage an account is a wall */
+    ceiling?: number;
+    /** the moment the run would otherwise start again, epoch ms */
+    waitUntil?: number;
+    now?: number;
+}
+
+/** The answer, and always the sentence for it — a handover nobody can read is
+ *  a run that changed plans on its own. */
+export interface CarryOn {
+    slotId?: string;
+    why: string;
+}
+
+/**
+ * ‼️ X-226 — WHICH SIGN-IN SHOULD CARRY THIS WORK ON, when the one it was
+ * running as has hit its wall.
+ *
+ * The X-211 family promised "the quota runs out mid-work, so change account and
+ * carry on" and built it into the Console window only — the surface where a
+ * person is sitting and can move the card by hand. The surface that needs it is
+ * the unattended one: a headless run meets a limit at 03:00, `retryDecision`
+ * (M-10) reads ONE plan's reset and parks the retry until it reopens, and three
+ * signed-in accounts sit at 4% for four hours while the work sleeps.
+ *
+ * ‼️ IT DOES NOT DECIDE WHICH ACCOUNT. `pickAccount` does — X-207's answer to
+ * "whose turn is it", already shipped for the sentry pool. A second rotation
+ * rule here is how the campaign and the queue would come to disagree about the
+ * same night. What THIS adds is who may be asked at all, and it refuses more
+ * often than it agrees:
+ *
+ *   · never the account that just refused the work, whatever its last read
+ *     says — the refusal is fresher than the figure;
+ *   · never another engine. The sentry may cross engines because it opens a NEW
+ *     round; a carried-on run resumes a transcript, and a transcript belongs to
+ *     one CLI;
+ *   · never out of an empty pool. The absence of a slot is the main sign-in
+ *     (X-172), and it cannot be asked how much room it has;
+ *   · never a run PINNED to `@machine`. "Nothing is injected" is an instruction
+ *     the user typed into the form, and a handover would inject one;
+ *   · never for a wait shorter than the handover's own floor, which would move
+ *     a plan to buy nothing.
+ */
+export function carryOnAccount(i: CarryOnInput): CarryOn {
+    const now = typeof i.now === 'number' ? i.now : Date.now();
+    const ceiling = typeof i.ceiling === 'number' ? i.ceiling : 100;
+    const from = String(i.from ?? '').trim();
+    const engine = (String(i.engine ?? '').trim() || 'claude').toLowerCase();
+    const wait = typeof i.waitUntil === 'number' ? i.waitUntil : 0;
+
+    if (from === MACHINE_ACCOUNT) {
+        return { why: 'this run is pinned to the identity the machine itself is signed in as, so '
+            + 'nothing is injected — it waits rather than being moved onto a plan it did not name' };
+    }
+    if (wait - now <= CARRY_ON_FLOOR_MS) {
+        return { why: 'the wait is shorter than the minute a handover would itself take, so moving '
+            + 'the work to another plan would buy it nothing' };
+    }
+    const pool = (i.usage ?? []).filter(u =>
+        u.slotId !== from && String(u.engine ?? '').trim().toLowerCase() === engine);
+    if (!pool.length) {
+        return { why: `no other ${engine} account is captured on this machine, so there is nobody `
+            + 'to hand the work to' };
+    }
+    const pick = pickAccount(pool, { ceiling, engine });
+    if (!pick) {
+        return { why: `every other ${engine} account is at or above ${ceiling}% of its five-hour `
+            + 'window too, so the wait stands' };
+    }
+    return {
+        slotId: pick.slotId,
+        why: `${from || 'the active sign-in'} is walled until ${new Date(wait).toLocaleTimeString()}, `
+            + `and ${pick.slotId} has room (${pick.percent}%) — the work carries on there rather `
+            + 'than sleeping'
+    };
 }
 
 /**

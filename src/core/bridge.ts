@@ -679,7 +679,7 @@ export const DIMS_OUT_NOTE =
 export function bridgeDimsOut(
     o: {
         engine?: string; model?: string; effort?: string; permissionMode?: string;
-        providerId?: string; tier?: string;
+        providerId?: string; tier?: string; account?: string;
         cli?: string; workDir?: string; priority?: number; projectId?: string;
         interactiveTarget?: string; interactiveClose?: string;
         finishSound?: string;
@@ -725,6 +725,16 @@ export function bridgeDimsOut(
         // Claude routes only; null on every other engine and on every launch
         // that named no route, because a tier has no referent without one.
         tier: o.tier ?? null,
+        // ‼️ X-226 — AND WHICH SIGN-IN SERVES IT, which this serializer has never
+        // said. `account` travels INTO every door (X-169) and came back out of
+        // none, so the reader of a night's work — as often an agent as a person
+        // — could learn the route and the tier of a run and not whose plan paid
+        // for it. That is the same round-trip erasure the route comment above
+        // describes, and it is worse here: an unattended run may now be HANDED
+        // OVER to another account at a wall (see `carryOnAccount`), so the
+        // answer is not even constant for the life of one piece of work. null is
+        // "no account named" — the active sign-in answered, exactly as before.
+        account: o.account ?? null,
         cli: o.cli ?? null,
         // ‼️ M-26 — the DEFAULTS are named rather than left null, for the same
         // reason the engine is: "where does this open, and does it stay?" has an

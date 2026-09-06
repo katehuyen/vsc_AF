@@ -673,6 +673,25 @@ function runSetup(
     if (t.model) { out.push({ label: 'Model', value: t.model }); }
     if (t.effort) { out.push({ label: 'Effort', value: t.effort }); }
     if (t.permissionMode) { out.push({ label: 'Permissions', value: t.permissionMode }); }
+    /**
+     * ‼️ X-226 — WHOSE PLAN THIS RUN SPENDS, which this list has never said.
+     *
+     * Every other dimension of a run was drawn here and the account was not, so
+     * a board full of night work could not answer "which sign-in was billed for
+     * that". It is the line the handover needs most: when a walled run is moved
+     * to another account, the row has to say it MOVED — an account that changed
+     * quietly between a failure and its retry reads as the same run, and the
+     * plan that paid for it is the one fact nobody could recover afterwards.
+     */
+    if (t.account || t.accountHandover) {
+        out.push({
+            label: 'Account',
+            value: t.accountHandover
+                ? `${t.account || 'the active sign-in'} — handed over from `
+                    + `${t.accountHandover.from || 'the sign-in that was active'} at a usage limit`
+                : (t.account ?? '')
+        });
+    }
     if (t.cli) { out.push({ label: 'CLI profile', value: t.cli }); }
     if (t.workDir) { out.push({ label: 'Working folder', value: t.workDir }); }
     if (t.priority) { out.push({ label: 'Priority', value: String(t.priority) }); }

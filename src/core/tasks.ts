@@ -29,8 +29,8 @@ import {
 } from './opencoderun';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import {
-    classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, normalizeRetry,
-    resolveRetry, RetryPolicy, retryDecision, RunProgress
+    classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, isLimitFailure,
+    normalizeRetry, resolveRetry, RetryPolicy, retryDecision, RunProgress
 } from './retry';
 import { opencodeSpawnEnv } from './opencodesync';
 import {
@@ -39,7 +39,8 @@ import {
 } from './sentryCampaign';
 import { applySentryStep, SentryRoundSpec, SentryStep } from './sentryDriver';
 import { SENTRY_DEFAULT_STALL_MIN, SlotHealth, slotHealth, stalledRound } from './sentryWatch';
-import { SlotUsage } from './accountUsage';
+import { carryOnAccount, CARRY_ON_FLOOR_MS, SlotUsage } from './accountUsage';
+import { SENTRY_DEFAULT_CEILING } from './sentryRun';
 import {
     normalizeRounds, planNextRound, refuseNextRound, ROUND_BINDING_CODE, roundBindingReason,
     TaskRound, totalRounds
@@ -435,6 +436,17 @@ export interface FarmTask {
      * the row says only when.
      */
     notBeforeWhy?: string;
+    /**
+     * ‼️ X-226 — THIS RUN WAS MOVED TO ANOTHER SIGN-IN AT A WALL.
+     *
+     * `account` says whose plan the run spends; on its own it cannot say that
+     * the answer CHANGED, and a night that quietly moved from one plan to
+     * another is exactly the fact a person comes to the board for. `from` is
+     * empty where the run named no account — the active sign-in answered — and
+     * that is a fact rather than a gap. The sentence is `carryOnAccount`'s own,
+     * so the row and the decision cannot drift apart.
+     */
+    accountHandover?: { from: string; why: string };
     /**
      * ‼️ S-19 — CONTINUE AN EXISTING CONVERSATION AS A TASK.
      *
@@ -1337,6 +1349,19 @@ export interface TaskManagerOptions {
      * to the ordinary interval, saying which on the run's record.
      */
     limitResetAt?: (engine?: string) => number | undefined;
+    /**
+     * ‼️ X-226 — THE ACCOUNTS THIS MACHINE HAS MEASURED, so a walled run can be
+     * handed to one that still has room instead of sleeping until a reset.
+     *
+     * Read through a function and never held: the figures age, slots are
+     * captured and forgotten while a window stays open, and a list snapshotted
+     * at construction would send tonight's work to an account the user removed
+     * on Tuesday. The manager still owns no account READING — this hands it the
+     * measurements and `carryOnAccount` makes the decision (see
+     * `maybeScheduleRetry`). Undefined = nothing captured, which is the main
+     * sign-in (X-172) and behaves exactly as it did before this existed.
+     */
+    measuredAccounts?: () => SlotUsage[];
     /**
      * ‼️ S-19 — IS SOMETHING ELSE WRITING TO THAT CONVERSATION RIGHT NOW?
      *
@@ -2519,7 +2544,7 @@ export class TaskManager implements vscode.Disposable {
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
             | 'rounds' | 'round' | 'roundsTotal' | 'roundOf' | 'roundAwaits' | 'sentryOf'
-            | 'sentryWhy' | 'account'>>
+            | 'sentryWhy' | 'account' | 'accountHandover'>>
     ): FarmTask {
         // The window's active project is stamped on the task HERE, at creation —
         // a dozen call sites make tasks, and a project that depended on all of
@@ -4065,6 +4090,39 @@ export class TaskManager implements vscode.Disposable {
          */
         const resumeId = (task.runSessionId ?? '').trim();
         const continuing = d.continueRun === true && !!resumeId;
+        /**
+         * ‼️ X-226 — A WALLED RUN DOES NOT SLEEP WHILE ANOTHER SIGN-IN IS FREE.
+         *
+         * The moment the retry would otherwise start, worked out once here
+         * because it is now two things: the wait itself, and the WAIT THIS
+         * HANDOVER REPLACES. `d.notBefore` is the reset-aware answer (M-10) and
+         * the fallback is the ordinary interval — which is the case that
+         * matters most, because `resetAware` ships OFF: an unconfigured run
+         * sleeps forty minutes on a plan that is walled for four hours.
+         *
+         * ‼️ ONLY A LIMIT MOVES A RUN. A script that failed for its own reasons
+         * fails the same way on every sign-in, and moving it would spend a
+         * second plan to prove it. `isLimitFailure` is the same rule the
+         * decision above used to decide there was anything to retry — asked
+         * here rather than re-derived, so the two cannot disagree about what
+         * kind of failure this was.
+         */
+        const wait = d.notBefore ?? Date.now() + Math.max(60_000, d.delayMs);
+        const carry = isLimitFailure(out)
+            ? carryOnAccount({
+                ...(task.account ? { from: task.account } : {}),
+                ...(task.engine ? { engine: task.engine } : {}),
+                usage: this.opts.measuredAccounts?.() ?? [],
+                ceiling: SENTRY_DEFAULT_CEILING,
+                waitUntil: wait
+            })
+            : undefined;
+        // ‼️ AND THE HANDOVER STARTS AS SOON AS THE PUMP CAN TAKE IT. The wait
+        // it replaces existed to outlast a wall this run has just stepped
+        // around; keeping it would be the extension waiting for a window it is
+        // no longer going to use. The floor is the pump's own, so nothing here
+        // starts a run inside the same second it decided to.
+        const startAt = carry?.slotId ? Date.now() + CARRY_ON_FLOOR_MS : wait;
         if (d.continueRun && !resumeId) {
             noteTaskEvent(task, 'retried',
                 'smart continue wanted to resume this run\'s own conversation and no session is bound to it '
@@ -4111,7 +4169,10 @@ export class TaskManager implements vscode.Disposable {
         // exists only until the window closes.
         try {
             const wrote = this.inOneWrite(() => {
-                noteTaskEvent(task, 'retried', d.why);
+                // ‼️ X-226 — and on the record of the run that was refused, so
+                // the question "whose plan is the night being billed to now" is
+                // answered where it is asked: on the row that met the wall.
+                noteTaskEvent(task, 'retried', d.why + (carry?.slotId ? ` — ${carry.why}` : ''));
                 const t = this.addTask(agent, nextTitle, prompt, mode, {
                     projectId: task.projectId,
                     /**
@@ -4188,14 +4249,27 @@ export class TaskManager implements vscode.Disposable {
                     // stays on the ordinary path only, where it protects against
                     // a policy of zero; a reset that has already passed is meant
                     // to go as soon as the buffer allows.
-                    notBefore: d.notBefore ?? Date.now() + Math.max(60_000, d.delayMs),
-                    ...(d.notBefore
+                    notBefore: startAt,
+                    // ‼️ X-226 — AND WHEN THE WORK WAS HANDED OVER, THE RESET IS
+                    // NOT THE STORY. `resetAt` is deliberately NOT written on a
+                    // handover: it would label a row "waiting for 07:50" that is
+                    // about to start on a plan whose window is already open, and
+                    // the board would say the opposite of what is happening. The
+                    // account fields come last of all, after `runExtras`, because
+                    // they are the retry's OWN and must beat the original's.
+                    ...(carry?.slotId
                         ? {
-                            resetAt: d.notBefore,
-                            notBeforeWhy: `limit reset · ${d.resetSource === 'engine' ? 'the engine published it'
-                                : d.resetSource === 'output' ? 'read from the output' : 'no reset time — ordinary wait'}`
+                            account: carry.slotId,
+                            accountHandover: { from: task.account ?? '', why: carry.why },
+                            notBeforeWhy: `account handover · ${carry.why}`
                         }
-                        : {})
+                        : d.notBefore
+                            ? {
+                                resetAt: d.notBefore,
+                                notBeforeWhy: `limit reset · ${d.resetSource === 'engine' ? 'the engine published it'
+                                    : d.resetSource === 'output' ? 'read from the output' : 'no reset time — ordinary wait'}`
+                            }
+                            : {})
                 });
                 // ‼️ M-10 — HELD BECAUSE NOBODY CAN SAY WHETHER WORK HAPPENED.
                 // The row exists and is visible, and it is NOT launched: the one
