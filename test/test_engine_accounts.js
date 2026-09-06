@@ -25,6 +25,8 @@ const {
     mintSlotId, slotHealth, describeSlotLayout, adapterFor, ENGINE_AUTH_ADAPTERS,
     accountCapableEngines, captureRefusal, readSlotIdentity, slotQuotaSource
 } = require(path.join(__dirname, '..', 'out', 'core', 'engineAccounts.js'));
+// X-219 — a slot's own decisions live with the slots, beside accountRefusal.
+const { planReauth } = require(path.join(__dirname, '..', 'out', 'core', 'accountStore.js'));
 
 /** A reader built from a plain map — no home directory, no disk. */
 const fsOf = (files) => ({
@@ -178,6 +180,53 @@ const config = (email) => JSON.stringify({
         && !accountCapableEngines().includes('agy'));
     ok('every adapter states its evidence — a support level with no reason is a guess',
         ENGINE_AUTH_ADAPTERS.every(a => a.evidence.length > 40));
+    // ---------- ‼️ X-219 — AND WHERE THE OFFER MAY BE MADE AT ALL ----------
+    //
+    // The command is half the answer; the other half is refusing to offer it
+    // where it would do damage. `planReauth` is that half, and it refuses more
+    // often than it agrees:
+    //
+    //   · never over the LIVE directory — X-168's rule. Renewing the sign-in the
+    //     machine itself is logged in as is not a slot's business, and the
+    //     session being talked to right now runs as it;
+    //   · never for an engine that cannot keep two identities apart, because the
+    //     login would land in the one directory both of them read;
+    //   · never for a slot that is not there.
+    //
+    // ‼️ AND IT NEVER SAYS "READY". A plan hands back the command and the way to
+    // MEASURE the result; nothing here may declare a sign-in fixed, because the
+    // browser flow it starts can be abandoned halfway and the card would then be
+    // lying about the one fact it exists to state.
+    {
+        const slots = [
+            { id: 'work-1', engine: 'claude', dir: 'D:/slots/work-1' },
+            { id: 'codex-1', engine: 'codex', dir: 'D:/slots/codex-1' },
+            { id: 'agy-1', engine: 'agy', dir: 'D:/slots/agy-1' }
+        ];
+        const ok1 = planReauth('work-1', slots);
+        ok('‼️ X-219: a stored slot of an isolatable engine may be signed in again',
+            !ok1.refusal && ok1.command === 'claude' && ok1.args.join(' ') === 'auth login');
+        ok('‼️ …in ITS OWN directory, through the one seam every launch goes through',
+            ok1.env.CLAUDE_CONFIG_DIR === 'D:/slots/work-1');
+        ok('…and the plan carries how to READ THE RESULT BACK, so nothing has to assume it',
+            ok1.statusArgs.join(' ') === 'auth status' && ok1.dir === 'D:/slots/work-1');
+        ok('‼️ …and it never declares the outcome itself',
+            !('health' in ok1) && !('ready' in ok1));
+        ok('each engine gets its own command and its own variable',
+            planReauth('codex-1', slots).command === 'codex'
+            && planReauth('codex-1', slots).env.CODEX_HOME === 'D:/slots/codex-1');
+
+        ok('‼️ the MAIN sign-in is refused by name — it is the absence of a slot, not one',
+            /main sign-in|machine/i.test(planReauth('@machine', slots).refusal || ''));
+        ok('‼️ …an engine that cannot keep two identities apart is refused, and says why',
+            (planReauth('agy-1', slots).refusal || '').length > 30);
+        ok('…and a slot that is not stored is refused rather than guessed at',
+            /no account|not stored|forgotten/i.test(planReauth('ghost', slots).refusal || ''));
+        ok('…every refusal comes with no command at all, so a caller cannot run one anyway',
+            [planReauth('@machine', slots), planReauth('agy-1', slots), planReauth('ghost', slots)]
+                .every(r => !!r.refusal && !r.command));
+    }
+
     // ---------- ‼️ X-219 — THE CARD SAYS "ONLY A PERSON CAN FIX IT", AND MEANS IT ----------
     //
     // A dead sign-in reads "sign in again in a terminal and capture it once more.

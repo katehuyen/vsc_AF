@@ -1,6 +1,6 @@
 import * as path from 'path';
 import {
-    EngineAccountSlot, AccountIdentity, adapterFor, captureRefusal,
+    EngineAccountSlot, AccountIdentity, accountEnv, adapterFor, canIsolateAccounts, captureRefusal,
     liveSource, mintSlotId, slotDir
 } from './engineAccounts';
 
@@ -164,6 +164,64 @@ export function resolveAccount(
  * means the main account; a NAME that resolves to nothing is a mistake worth
  * stopping for.
  */
+/**
+ * ‼️ X-219 — WHETHER THIS SIGN-IN MAY BE RENEWED FROM ITS CARD, and how.
+ *
+ * A stored credential that stops refreshing can only be fixed by a person at
+ * a browser. The extension's honest part is to open the ENGINE'S OWN command
+ * in the SLOT'S OWN directory — and this decides where that may be offered.
+ * It refuses more often than it agrees:
+ *
+ *   · never for the MAIN sign-in. It is the absence of a slot (X-172), the
+ *     identity this machine is logged in as, and the session being talked to
+ *     right now runs as it — a login there is not a card's business (X-168);
+ *   · never for an engine that cannot keep two identities apart, because the
+ *     login would land in the one directory both of them read;
+ *   · never for a slot that is not stored, rather than guessing which was meant.
+ *
+ * ‼️ AND IT NEVER DECLARES THE OUTCOME. It hands back `statusArgs` — the way
+ * to MEASURE the result — because the browser flow it starts can be abandoned
+ * halfway, and a card that assumed success would be lying about the one fact
+ * it exists to state. Every refusal comes with no command at all, so a caller
+ * that ignores the sentence still cannot run anything.
+ */
+export interface ReauthPlan {
+    refusal?: string;
+    command?: string;
+    args?: string[];
+    /** how to read the result back, so "ready" is measured and not hoped for */
+    statusArgs?: string[];
+    /** the one seam every launch already goes through — no variable is spelt out here */
+    env?: Record<string, string>;
+    dir?: string;
+}
+
+export function planReauth(stated: string | undefined, list: EngineAccountSlot[]): ReauthPlan {
+    const id = String(stated || '').trim();
+    if (!id || id === MACHINE_ACCOUNT) {
+        return { refusal: 'This is the main sign-in — the identity this machine is logged in '
+            + 'as, which is the ABSENCE of a slot rather than one. Renewing it is done where '
+            + 'you normally sign in; nothing is injected for it and no directory of its own '
+            + 'would be touched.' };
+    }
+    const slot = findSlot(list, id);
+    if (!slot) {
+        return { refusal: `No account "${id}" is stored on this machine — it may have been '
+            + 'forgotten. Capture it again before asking it to sign in.` };
+    }
+    const a = adapterFor(slot.engine);
+    const how = a.signIn ? a.signIn() : undefined;
+    if (!canIsolateAccounts(slot.engine) || !how) {
+        return { refusal: `${slot.engine} has no verified way to keep two sign-ins apart on '
+            + 'this machine, so a login started here would land in the one directory both of '
+            + 'them read — and would replace the sign-in you are using rather than this row.` };
+    }
+    return {
+        command: how.command, args: how.args, statusArgs: how.statusArgs,
+        env: accountEnv(slot), dir: slot.dir
+    };
+}
+
 export function accountRefusal(
     stated: string | undefined, list: EngineAccountSlot[], engine: string | undefined
 ): string {
