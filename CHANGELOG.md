@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.410.0 - X-232: the console sessions that survive the restart (2026-09-06)
+
+*"Even when I am at the desk working in the Console — I would rather not press
+F1 and restart it myself; let the agent do it, and let our conversation carry
+on where it left off."*
+
+X-230 had measured the loss and drawn the only conclusion available then: a
+Console card's handle lives in the extension host's memory, so a restart
+loses every live one — therefore wait for the window to go quiet, or `force`
+and lose the conversation. This is the third way.
+
+`farm.restartExtensionHost { resume: true }` writes what is running into the
+stamp the cooldown already lives in — the same synchronous write, for the same
+reason: it has to survive the death it is about. On the other side every row
+is started again by the id its engine gave it, in its own seat, with its
+scrollback read back from the transcript and what it already spent restored.
+
+**And a resume changes the decision, not just the aftermath.** A session that
+will be taken up again was never a reason to wait, so it stops being a blocker
+and the restart happens at once. A session the engine never NAMED still is one:
+there is nothing to resume it by, so it is reported as lost rather than quietly
+dropped — the reader saw a card there. A terminal is never saved by any of
+this, so a window reload still waits for the terminals.
+
+Two refusals to fake anything. The row that travels is DERIVED from
+`RunDimensions` — add a dimension there and the build fails until a revived
+session carries it too, because a session brought back on another account or
+route is not that session, it is a new one wearing its transcript. And a
+session killed MID-TURN says so in its own first line: the transcript has what
+was said, nothing has what was being said, and a reader who is not told waits
+for a reply nobody is writing.
+
+The plan is consumed before it is acted on. A plan left in the stamp is a plan
+the next activation obeys as well, and the same session spawned twice is worse
+than not spawned at all.
+
 ## 3.409.0 - X-217: the account cards stop drawing a promise the code refuses to keep (2026-09-06)
 
 *"The On/Off switch on the cards is MISLEADING — it looks as though more than

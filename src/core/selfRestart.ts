@@ -76,6 +76,10 @@ export interface ArmedRestart {
     armedAt: number;
     delayMs: number;
     waitingFor: RestartBlocker[];
+    /** ‼️ X-232 — this plan was asked to TAKE ITS CONSOLE SESSIONS UP AGAIN, and
+     *  it fires by that rule: what a resume can save was never a reason to wait,
+     *  so re-asking the question at firing time would be a different question. */
+    resume?: boolean;
 }
 
 export interface RestartWorld {
@@ -83,7 +87,7 @@ export interface RestartWorld {
     /** Live-or-dead console sessions as the host lists them; the dead ones are
      *  filtered here rather than by the caller, so every surface agrees on what
      *  "live" means. */
-    sessions: { id: string; agentName?: string; status: string }[];
+    sessions: { id: string; agentName?: string; status: string; sessionId?: string }[];
     /** The window's integrated terminals, by name. */
     terminals: { name: string }[];
     /** When this window last restarted itself, read back from disk. */
@@ -96,6 +100,8 @@ export interface RestartAsk {
     when?: RestartWhen;
     force?: boolean;
     delayMs?: unknown;
+    /** X-232 — bring the live console sessions back on the other side (consoleRevive.ts). */
+    resume?: boolean;
 }
 
 export type RestartPlan =
@@ -122,9 +128,14 @@ export function clampRestartDelay(v: unknown): number {
  * What this command would take down, right now. The terminals are counted for a
  * window reload only — see the header: they are not the extension host's.
  */
-export function liveBlockers(world: RestartWorld, kind: RestartKind): RestartBlocker[] {
+export function liveBlockers(world: RestartWorld, kind: RestartKind, resume = false): RestartBlocker[] {
     const out: RestartBlocker[] = (world.sessions ?? [])
         .filter(s => !SESSION_DEAD.has(String(s.status)))
+        // ‼️ X-232 — A SESSION THE ENGINE HAS NAMED IS TAKEN UP AGAIN on the
+        // other side, so it is not a loss to weigh against the restart. One it
+        // never named has nothing to be resumed BY, and is still every bit the
+        // loss it was.
+        .filter(s => !(resume && s.sessionId))
         .map(s => ({
             kind: 'console' as const,
             id: s.id,
@@ -181,7 +192,7 @@ export function planRestart(ask: RestartAsk, world: RestartWorld): RestartPlan {
         };
     }
 
-    const blockers = liveBlockers(world, kind);
+    const blockers = liveBlockers(world, kind, ask.resume === true);
 
     if (ask.force) {
         return { decision: 'restarting', kind, command, delayMs, killed: blockers };
@@ -213,5 +224,5 @@ export function planRestart(ask: RestartAsk, world: RestartWorld): RestartPlan {
 
 /** The event an armed plan waits for — nothing else, and no clock. */
 export function armedReady(armed: ArmedRestart, world: RestartWorld): boolean {
-    return liveBlockers(world, armed.kind).length === 0;
+    return liveBlockers(world, armed.kind, armed.resume === true).length === 0;
 }

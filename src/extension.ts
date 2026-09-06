@@ -127,6 +127,7 @@ import {
 import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
 } from './core/sentryCampaign';
+import { planRevive, reviveInit, RevivePlan, ReviveRow, ReviveSkip } from './core/consoleRevive';
 import {
     ArmedRestart, armedReady, liveBlockers, planRestart, RESTART_COMMANDS,
     RESTART_COOLDOWN_MS, RestartKind, RestartWhen
@@ -15174,20 +15175,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const bootId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     const bootAt = Date.now();
     const restartStampFile = path.join(context.globalStorageUri.fsPath, 'selfRestart.json');
-    interface RestartStamp { at: number; kind: string; fromBootId: string; fromVersion: string }
+    interface RestartStamp {
+        at: number; kind: string; fromBootId: string; fromVersion: string;
+        /** X-232 — the sessions to take up on the other side, and the ones that could not be */
+        revive?: ReviveRow[]; skipped?: ReviveSkip[];
+    }
     const readRestartStamp = (): RestartStamp | null => {
         try { return JSON.parse(fs.readFileSync(restartStampFile, 'utf8')) as RestartStamp; }
         catch { return null; }
     };
     /** ‼️ SYNCHRONOUS, AND BEFORE THE TIMER. This stamp is the boot-loop guard,
      *  and a guard that is written after the process is asked to die is not
-     *  there on the boot it exists for. */
-    const writeRestartStamp = (kind: RestartKind): void => {
+     *  there on the boot it exists for. X-232 hangs the revive plan on the same
+     *  write for the same reason: it has to survive the death it is about. */
+    const writeRestartStamp = (kind: RestartKind, plan?: RevivePlan): void => {
         try {
             fs.mkdirSync(path.dirname(restartStampFile), { recursive: true });
-            fs.writeFileSync(restartStampFile, JSON.stringify(
-                { at: Date.now(), kind, fromBootId: bootId, fromVersion: extVersion }, null, 2), 'utf8');
+            fs.writeFileSync(restartStampFile, JSON.stringify({
+                at: Date.now(), kind, fromBootId: bootId, fromVersion: extVersion,
+                revive: plan?.rows, skipped: plan?.skipped
+            }, null, 2), 'utf8');
         } catch { /* the cooldown is a guard, not a precondition */ }
+    };
+    /** Take the plan OUT of the stamp without touching what the stamp is for:
+     *  the cooldown's own reading (`at`) is about the restart, not about this. */
+    const clearRestartRevive = (): void => {
+        try {
+            const s = readRestartStamp();
+            if (!s) { return; }
+            delete s.revive;
+            delete s.skipped;
+            fs.writeFileSync(restartStampFile, JSON.stringify(s, null, 2), 'utf8');
+        } catch { /* best effort */ }
     };
     let armedRestart: ArmedRestart | null = null;
     let armTimer: NodeJS.Timeout | null = null;
@@ -15198,8 +15217,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         lastRestartAt: readRestartStamp()?.at ?? null,
         armed: armedRestart
     });
-    const fireRestart = (kind: RestartKind, delayMs: number): void => {
-        writeRestartStamp(kind);
+    const fireRestart = (kind: RestartKind, delayMs: number, resume = false): void => {
+        // ‼️ X-232 — WHAT IS RUNNING IS WRITTEN DOWN BEFORE THE PROCESS DIES.
+        // Same stamp, same synchronous write, same reason.
+        writeRestartStamp(kind, resume ? planRevive(consoleHost.list()) : undefined);
         armedRestart = null;
         if (armTimer) { clearInterval(armTimer); armTimer = null; }
         setTimeout(() => { void vscode.commands.executeCommand(RESTART_COMMANDS[kind]); }, delayMs);
@@ -15212,7 +15233,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (armTimer) { clearInterval(armTimer); armTimer = null; }
                 return;
             }
-            if (armedReady(a, restartWorld())) { fireRestart(a.kind, a.delayMs); }
+            if (armedReady(a, restartWorld())) { fireRestart(a.kind, a.delayMs, a.resume === true); }
         }, 5000);
     };
     context.subscriptions.push({ dispose: () => { if (armTimer) { clearInterval(armTimer); } } });
@@ -15223,11 +15244,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (typeof args.when === 'string' && !RESTART_WHENS.has(args.when)) {
             throw new Error(`Unknown when "${args.when}" — one of auto | now | idle | cancel.`);
         }
+        const resume = args.resume === true;
         const plan = planRestart({
             kind,
             when: typeof args.when === 'string' ? args.when as RestartWhen : undefined,
             force: args.force === true,
-            delayMs: args.delayMs
+            delayMs: args.delayMs,
+            resume
         }, restartWorld());
         if (plan.decision === 'refused') { throw new Error(plan.reason); }
         if (plan.decision === 'cancelled') {
@@ -15236,13 +15259,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } else if (plan.decision === 'armed') {
             armedRestart = {
                 kind: plan.kind, armedAt: plan.armedAt,
-                delayMs: plan.delayMs, waitingFor: plan.waitingFor
+                delayMs: plan.delayMs, waitingFor: plan.waitingFor, resume
             };
             watchArmed();
         } else {
-            fireRestart(plan.kind, plan.delayMs);
+            fireRestart(plan.kind, plan.delayMs, resume);
         }
-        return { ...plan, bootId, version: extVersion };
+        return {
+            ...plan, bootId, version: extVersion,
+            // X-232 — what a resume would take with it, said BEFORE the death
+            // rather than discovered after it.
+            revive: resume ? planRevive(consoleHost.list()) : undefined
+        };
     };
     bridge.register([
         {
@@ -15280,8 +15308,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'and the answer says what it is waiting for. Refused inside a 20s cooldown (a request that '
                 + 'outlived a restart would otherwise loop). args: when? (auto=default | now = refuse rather '
                 + 'than wait | idle = always wait for quiet | cancel = call off what is armed), force? '
-                + '(restart through live sessions and lose them), delayMs?. Then poll farm.health until '
-                + 'bootId changes and version is the new one.',
+                + '(restart through live sessions and lose them), resume? (X-232 — take the live console '
+                + 'sessions up again on the other side, in their own seats, by the id their engine gave '
+                + 'them: what a resume saves stops being a reason to wait, and a session the engine never '
+                + 'named is still reported as lost), delayMs?. Then poll farm.health until bootId changes '
+                + 'and version is the new one.',
             handler: (args) => askRestart('extensionHost', args)
         },
         {
@@ -21876,6 +21907,71 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + ' it was.');
         }
     };
+    /**
+     * ‼️ X-232 — TAKING THE CONSOLE UP WHERE THE RESTART LEFT IT.
+     *
+     * `farm.restartExtensionHost { resume: true }` wrote what was running into
+     * the same stamp the cooldown lives in, because that write is synchronous
+     * and therefore survives the death it is about. This is the other side of
+     * it: every row is started again by the id its engine gave it, in its own
+     * seat (`ConsoleHost.start` reuses the seat on a resume, S-29), with its
+     * scrollback read back from the transcript and what it already spent
+     * restored — so the card the reader was looking at is the card that comes
+     * back, and not a new one wearing its words.
+     *
+     * ‼️ THE PLAN IS CONSUMED BEFORE IT IS ACTED ON. A plan left in the stamp is
+     * a plan the NEXT activation obeys too, and the same session spawned twice
+     * is worse than not spawned at all.
+     *
+     * ‼️ AND THE READER IS TOLD. A session that quietly reappears is a session
+     * somebody will talk to without knowing what happened to it — so the first
+     * line of the restored scrollback says the build changed, and a session that
+     * was killed MID-TURN says that its answer in flight was lost, because
+     * otherwise the reader waits for a reply nobody is writing.
+     */
+    const reviveAfterRestart = (): void => {
+        const stamp = readRestartStamp();
+        const rows = stamp?.revive ?? [];
+        const lost = [...(stamp?.skipped ?? [])];
+        if (!rows.length && !lost.length) { return; }
+        clearRestartRevive();
+        const back: string[] = [];
+        for (const row of rows) {
+            try {
+                const init = reviveInit(row);
+                const past = index.byId(row.sessionId);
+                consoleHost.start({
+                    ...init,
+                    engine: init.engine as EngineId | undefined,
+                    history: [
+                        ...consoleHistory(row.sessionId),
+                        {
+                            id: 'xr-revived', ts: Date.now(), role: 'system',
+                            text: `⚡ Agent Farm restarted on ${extVersion} and took this session up where `
+                                + 'it left off — same conversation, same id.'
+                                + (row.midTurn
+                                    ? ' It was ANSWERING when the host went down, so that one reply was'
+                                    + ' lost on the way: ask again, nothing before it is missing.'
+                                    : '')
+                        }
+                    ],
+                    carried: past ? carriedTotals(past) : undefined
+                });
+                back.push(row.agentName);
+            } catch (e) {
+                lost.push({
+                    id: row.id, agentName: row.agentName,
+                    reason: `could not be started again — ${String((e as Error)?.message ?? e)}`
+                });
+            }
+        }
+        void vscode.window.showInformationMessage(
+            `Agent Farm ${extVersion}: ${back.length} console session(s) taken up where they left off`
+            + (back.length ? ` (${back.join(', ')})` : '')
+            + (lost.length ? ` · ${lost.length} could not be: ${lost.map(s => s.agentName).join(', ')}` : ''));
+    };
+    reviveAfterRestart();
+
     /**
      * The prompt snippets file, read and parsed — or an honest reason why not.
      *

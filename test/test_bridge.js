@@ -5142,6 +5142,26 @@ const { opencodeStatus, syncToOpencode } =
         ok('‼️ …and the kill is deferred, so the bridge response is written first',
             /setTimeout\(/.test(fire) && /delayMs/.test(fire));
 
+        // ---- X-232: the sessions that survive the restart ----
+        ok('the restart op takes the promise to bring the sessions back',
+            /resume\?/.test(restart) && /askRestart\('extensionHost'/.test(restart));
+        ok('‼️ …and the snapshot is written by the SHARED plan, not a second field list',
+            /planRevive\(/.test(fire));
+        ok('‼️ …into the stamp that already survives the death, before the timer',
+            fire.indexOf('planRevive') < fire.indexOf('setTimeout'));
+
+        const revive = win('const reviveAfterRestart', 'ConsolePanel');
+        ok('the other side takes them up through the same shared core',
+            /reviveInit\(/.test(revive) && /consoleHost\.start\(/.test(revive));
+        ok('‼️ …and the plan is CONSUMED before it is acted on — a plan left in the stamp '
+            + 'spawns the same sessions again on the next activation, and twice is worse than none',
+            revive.indexOf('clearRestartRevive') > -1
+            && revive.indexOf('clearRestartRevive') < revive.indexOf('consoleHost.start'));
+        ok('‼️ …the reader is told what happened rather than finding a session mysteriously alive',
+            /role: 'system'/.test(revive) && /midTurn/.test(revive));
+        ok('…and the transcript and the spend come from the index, which the core refuses to invent',
+            /consoleHistory\(/.test(revive) && /carriedTotals\(/.test(revive));
+
         const ask = win('const askRestart', "op: 'farm.health'");
         ok('the decision is the core\'s, not the wiring\'s', /planRestart\(/.test(ask));
         ok('a refusal reaches the caller as an error rather than a cheerful ok',

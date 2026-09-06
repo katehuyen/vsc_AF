@@ -174,6 +174,38 @@ const working = (id, agentName) => ({ id, agentName, status: 'working' });
         planRestart({ kind: 'extensionHost', force: true }, busy).decision === 'restarting');
 }
 
+// ---------- X-232: a session that will be TAKEN UP AGAIN is not a loss ----------
+{
+    const withId = { id: 'h1', agentName: 'developer', status: 'working', sessionId: 'sess-1' };
+    const noId = { id: 'h2', agentName: 'basit', status: 'idle' };
+
+    ok('without resume, a live session blocks whether or not the engine named it',
+        liveBlockers(world({ sessions: [withId, noId] }), 'extensionHost').length === 2);
+
+    const saved = liveBlockers(world({ sessions: [withId, noId] }), 'extensionHost', true);
+    ok('‼️ with resume, a session the engine HAS named is no longer a blocker — it comes back',
+        !saved.some(b => b.id === 'h1'));
+    ok('‼️ …but one it never named still is: there is nothing to resume it by',
+        saved.length === 1 && saved[0].id === 'h2');
+
+    ok('so a window full of resumable sessions restarts at once instead of waiting',
+        planRestart({ kind: 'extensionHost', resume: true },
+            world({ sessions: [withId] })).decision === 'restarting');
+    ok('…and one holding an unnamed session still arms',
+        planRestart({ kind: 'extensionHost', resume: true },
+            world({ sessions: [noId] })).decision === 'armed');
+    ok('‼️ a terminal is never saved by resume — a window reload still waits for it',
+        planRestart({ kind: 'window', resume: true },
+            world({ sessions: [withId], terminals: [{ name: 'claude' }] })).decision === 'armed');
+
+    const armed = {
+        kind: 'extensionHost', armedAt: NOW, delayMs: RESTART_DELAY_MS, waitingFor: [], resume: true
+    };
+    ok('an armed plan waits by its OWN rule — resume was asked once, not re-asked at firing',
+        armedReady(armed, world({ sessions: [withId] }))
+        && !armedReady(armed, world({ sessions: [noId] })));
+}
+
 // ---------- armedReady: the event the firing waits for ----------
 {
     const armed = { kind: 'extensionHost', armedAt: NOW, delayMs: RESTART_DELAY_MS, waitingFor: [] };
