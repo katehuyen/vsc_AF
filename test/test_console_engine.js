@@ -168,5 +168,28 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         E.engineNote('nonsense') === E.engineNote('claude'));
 }
 
+{
+    // ‼️ X-259 — `runArgs('claude', …)` USED TO HAND BACK CODEX'S COMMAND LINE.
+    //
+    // Measured before the fix: it returned ["exec","--skip-git-repo-check",
+    // "-c","sandbox_mode=…","-m","haiku","-"] — another engine's vocabulary
+    // wearing Claude's name, because `case 'claude'` fell through to
+    // `codexRunArgs`. Nothing broke, and that is the danger: Claude is the
+    // persistent engine, so `spawnHeadless` builds its line as a string and no
+    // live caller ever reached the branch. `engineFlagFor` even guards against
+    // it BY NAME. The next caller to take an engine as a parameter — the sentry
+    // leader runner is exactly that — would have got a plausible, working,
+    // wrong command line instead of an error.
+    //
+    // The function's own doctrine, written at `unknownEngine`: "it must never
+    // fall through to another engine's". Claude was the one exception to it.
+    let threw = '';
+    try { E.runArgs('claude', { model: 'haiku' }); } catch (e) { threw = String(e && e.message); }
+    ok('‼️ runArgs refuses claude rather than answering as another engine', !!threw);
+    ok('‼️ …and a refusal is prose: it names the engine and where the line IS built',
+        /claude/i.test(threw) && /spawnHeadless|persistent/i.test(threw));
+    ok('…while the per-turn engines still answer', E.runArgs('codex', { model: 'x' }).includes('exec'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -3246,7 +3246,9 @@
          * the setting tomorrow would leave this campaign spending yesterday's
          * figure with nothing on any surface saying so.
          */
-        leaderModel: '', leaderDailyUsd: '', leaderMaxUsd: ''
+        // ‼️ X-249 — and whose plan pays for that turn. Empty is not the
+        // machine's sign-in: it is the campaign's own pool answering.
+        leaderModel: '', leaderAccount: '', leaderDailyUsd: '', leaderMaxUsd: ''
     };
     /** The three the dictionary declares, plus what an EDITED one is called. */
     const CUSTOM = 'custom';
@@ -3931,6 +3933,56 @@
      * Drawn only when the host says what the settings hold; a MIRROR with
      * nothing to mirror would be three boxes that mean nothing.
      */
+    /**
+     * ‼️ X-249 — THE SIGN-INS THE LEADER TURN MAY BE PINNED TO.
+     *
+     * Read from `s.accountPool`, the SAME list the pool chips above are drawn
+     * from, so the two controls on one card cannot name different accounts.
+     * Narrowed to the engine the leader runner actually spawns (`d.engine`),
+     * because an account belongs to one engine and a slot of another names a
+     * directory that engine never reads.
+     *
+     * ‼️ THE MACHINE'S OWN SIGN-IN IS DELIBERATELY NOT OFFERED. It is what the
+     * turn used to reach by accident, and it is by definition outside the pool
+     * the campaign was given — putting it back under a nicer name would reopen
+     * the hole this item closed. Empty means the pool decides, which is an
+     * answer inside the pool.
+     *
+     * No accounts for that engine draws no box: a control with no referent is
+     * not drawn.
+     */
+    function leaderAccountRows(s, d) {
+        const eng = String((d && d.engine) || '').trim().toLowerCase();
+        return (s.accountPool || []).filter(a => a && a.id
+            && (!eng || String(a.engine || '').trim().toLowerCase() === eng));
+    }
+    function leaderAccountOpts(s, d) {
+        const rows = leaderAccountRows(s, d);
+        if (!rows.length) { return ''; }
+        const sel = sentryForm.leaderAccount;
+        return [C.option('', '— the pool decides —', {
+            selected: !sel,
+            detail: 'The account the campaign\'s next round would open on answers. That keeps the '
+                + 'deciding turn inside the accounts you allowed, where the ceiling applies and the '
+                + 'rotation can see what it spent.'
+        })].concat(rows.map(a => C.option(a.id,
+            (a.health && a.health !== 'ready' ? '⚠ ' : '') + (a.label || a.id), {
+            selected: a.id === sel,
+            detail: (a.percent === null || a.percent === undefined
+                ? 'Nobody has read this account\'s window yet.'
+                : a.percent + '% of its five-hour window is used.')
+                + (a.health && a.health !== 'ready'
+                    ? '\n\nThis slot needs signing in again before it can pay for a turn.' : '')
+        }))).join('');
+    }
+    /** MIRROR: what the box holds now, in the first line of its own panel. */
+    function leaderAccountMirror(s, d) {
+        const sel = sentryForm.leaderAccount;
+        if (!sel) { return 'the pool decides — the account the next round would open on'; }
+        const row = leaderAccountRows(s, d).find(a => a.id === sel);
+        return row ? (row.label || row.id) : sel + ' — not captured any more';
+    }
+
     function sentryLeaderHtml(s) {
         const d = (s.defaults || {}).leader;
         if (!d) { return ''; }
@@ -3972,6 +4024,15 @@
                 // select has no placeholder and the reader must not have to open it.
                 modelOptsFor(d.engine || '', sentryForm.leaderModel,
                     '— setting: ' + (d.model || 'engine default') + ' —'))}
+            ${leaderAccountOpts(s, d) ? box('s-laccount', 'leaderAccount',
+                { label: 'Account', now: 'the pool decides', mirror: leaderAccountMirror(s, d) },
+                'The leader is the turn that decides WHERE the next round runs, and until X-249 it ran '
+                + 'nowhere in particular: the process was spawned with no environment, so it went to '
+                + 'whatever sign-in this machine happened to be holding — outside the pool you allowed, '
+                + 'invisible to the rotation, and able to wall the very account it was about to choose.\n\n'
+                + 'Empty means the CAMPAIGN\'S POOL answers: the same account the next round would open '
+                + 'on. Name one only when you want the deciding turn kept off the account doing the work.',
+                '', leaderAccountOpts(s, d)) : ''}
             ${box('s-lday', 'leaderDailyUsd',
                 { label: 'Daily $', now: d.dailyUsd, mirror: usd(d.dailyUsd) + ' a day' },
                 'Dollars per calendar day, for THIS campaign. When it is gone the leader stops waking and '
@@ -4277,6 +4338,7 @@
         sentryForm.safetyBufferMin = v('s-buffer');
         sentryForm.failLimit = v('s-fail');
         sentryForm.leaderModel = v('s-lmodel');
+        sentryForm.leaderAccount = v('s-laccount');
         sentryForm.leaderDailyUsd = v('s-lday');
         sentryForm.leaderMaxUsd = v('s-lmax');
         const sp = document.getElementById('s-sp');
@@ -4386,6 +4448,7 @@
                     // today's placeholder back would freeze it on and nothing
                     // on any surface would say the campaign had been pinned.
                     leaderModel: sentryForm.leaderModel.trim() || undefined,
+                    leaderAccount: sentryForm.leaderAccount.trim() || undefined,
                     leaderDailyUsd: String(sentryForm.leaderDailyUsd).trim() || undefined,
                     leaderMaxUsd: String(sentryForm.leaderMaxUsd).trim() || undefined,
                     // ‼️ X-207 — the pool travels IN TICK ORDER, because that

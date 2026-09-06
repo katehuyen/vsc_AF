@@ -414,6 +414,58 @@ const rotBtn = (r, id) => qsa(r, '[data-srot]').filter(e => e.dataset.srot === i
 }
 
 {
+    // ‼️ X-249 — WHOSE PLAN PAYS FOR THE LEADER TURN.
+    //
+    // The runner spawned with no environment, so the turn that decides which
+    // account the NEXT round opens on ran on whatever sign-in the machine was
+    // holding — outside the pool, invisible to the rotation. The box is the
+    // writer; empty is the pool's own answer, and the machine's own sign-in is
+    // deliberately NOT on offer, because reaching it is the defect.
+    const r = openForm();
+    const H = html(r);
+    ok('‼️ the leader row carries an Account box', !!byId(r, 's-laccount'));
+    ok('‼️ …whose empty option says the pool decides, not "the standing choice"',
+        /<select id="s-laccount"[\s\S]*?— the pool decides —/.test(H));
+    const acct = /<select id="s-laccount"[\s\S]*?<\/select>/.exec(H);
+    ok('‼️ …and the machine sign-in is not on offer', !!acct && !acct[0].includes('@machine'));
+    // ‼️ AN ACCOUNT BELONGS TO ONE ENGINE. The leader runner spawns
+    // LEADER_ENGINE, so a slot of any other engine names a directory that
+    // engine never reads — offering it would draw a choice that cannot work.
+    const claudeIds = (fixture.data().sentry.accountPool || [])
+        .filter(a => a.engine === 'claude').map(a => a.id);
+    const otherIds = (fixture.data().sentry.accountPool || [])
+        .filter(a => a.engine !== 'claude').map(a => a.id);
+    ok('the box offers this engine\'s captured sign-ins',
+        !!acct && claudeIds.length > 0 && claudeIds.every(id => acct[0].includes('"' + id + '"')));
+    ok('‼️ …and no other engine\'s',
+        !!acct && otherIds.length > 0 && otherIds.every(id => !acct[0].includes('"' + id + '"')));
+
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    typeIn(r, 's-laccount', 'slot-2');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    ok('Start carries the account that was picked', !!m && m.input.leaderAccount === 'slot-2');
+}
+
+{
+    // An untouched box sends NOTHING, on the same rule as the leader's purse:
+    // sending an empty string back would record a choice nobody made, and the
+    // resolution belongs to the campaign's pool at the moment the turn fires.
+    const r = openForm();
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    ok('‼️ an untouched Account box sends nothing at all',
+        !!m && m.input.leaderAccount === undefined);
+}
+
+{
     // ‼️ X-250 — AND THE LIST BELONGS TO THE ENGINE THE CAMPAIGN NAMED.
     //
     // The box offered the flat alias vocabulary (`DATA.modelAliases`) whatever

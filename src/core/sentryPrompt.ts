@@ -55,6 +55,14 @@ export interface PromptInputs {
 /** What a cheap turn cost, in one shape, so two callers do not invent two. */
 export interface ModelAssist {
     model: string;
+    /**
+     * ‼️ X-249 — THE SLOT WHOSE PLAN PAID FOR THIS TURN; '' = nobody named one.
+     *
+     * Optional because records written before the field existed are still valid
+     * readings — they are simply silent about an account, which is honest: the
+     * turn they describe really did run on whatever the machine was holding.
+     */
+    account?: string;
     ms: number;
     costUsd: number;
     at: number;

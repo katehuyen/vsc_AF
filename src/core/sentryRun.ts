@@ -109,6 +109,28 @@ export interface SentryPlan {
 
 const MIN = 60 * 1000;
 
+/**
+ * ‼️ X-249 — THE ACCOUNT THIS CAMPAIGN WOULD OPEN ITS NEXT ROUND ON.
+ *
+ * `pickAccount` is the authority and this second-guesses none of it. What lives
+ * here is the one place that turns a CAMPAIGN into that function's options, so
+ * that the round and the leader turn which chooses for the round cannot answer
+ * differently — the leader is a turn ABOUT the pool, so it belongs inside it,
+ * and before this it ran on whatever sign-in the machine happened to hold.
+ *
+ * Pure and engine-agnostic, like everything else in this file: it never writes
+ * an engine's name and never touches a disk.
+ */
+export function campaignPick(
+    c: { rotation?: string; engine?: string }, usage: SlotUsage[], ceiling: number
+): SlotUsage | undefined {
+    return pickAccount(usage, {
+        ceiling,
+        ...(c.rotation ? { rotation: c.rotation } : {}),
+        ...(c.engine ? { engine: c.engine } : {})
+    });
+}
+
 /** The one decision the campaign makes, over and over. */
 export function planSentry(i: SentryInputs): SentryPlan {
     const c = i.campaign;
@@ -189,11 +211,7 @@ export function planSentry(i: SentryInputs): SentryPlan {
      * the user allowed: `sentryTick` filters it before this is called, so a slot
      * reaching here is a slot with permission. `pickAccount` decides only WHICH.
      */
-    const pick = pickAccount(i.usage, {
-        ceiling,
-        ...(c.rotation ? { rotation: c.rotation } : {}),
-        ...(c.engine ? { engine: c.engine } : {})
-    });
+    const pick = campaignPick(c, i.usage, ceiling);
     if (pick) {
         // ‼️ A ROUND THAT CROSSED ENGINES SAYS SO. It is the one fact a reader
         // cannot derive from the slot id, and it is the whole behaviour this

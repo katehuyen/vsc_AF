@@ -719,7 +719,25 @@ export function runArgs(engine: string | undefined, o: CodexRunInit): string[] {
         case 'agy': return agyRunArgs(o);
         case 'gemini': return geminiRunArgs(o);
         case 'codex': return codexRunArgs(o);
-        case 'claude': return codexRunArgs(o);
+        /**
+         * ‼️ X-259 — REFUSED, NOT FALLEN THROUGH. This line used to be
+         * `return codexRunArgs(o)`, so asking for Claude's headless argv handed
+         * back Codex's — `exec --skip-git-repo-check -c sandbox_mode=… -m …` —
+         * which is precisely what `unknownEngine` below exists to forbid.
+         *
+         * Nothing broke, and that was the danger. Claude is the PERSISTENT
+         * engine, so `TaskManager.spawnHeadless` builds its line as a string and
+         * no live caller ever reached this branch; `engineFlagFor` guards
+         * against it by name for the same reason. A caller that takes the engine
+         * as a PARAMETER would have got a plausible, working, wrong command
+         * line instead of an error — and the sentry leader runner (X-249) is
+         * exactly such a caller.
+         */
+        case 'claude': throw new Error(
+            'runArgs: engine "claude" has no headless argument vocabulary here. It is the persistent '
+            + 'engine and its one-shot line is built by TaskManager.spawnHeadless; falling through to '
+            + 'another engine\'s flags would look like it worked.'
+        );
         // ‼️ A HEADLESS RUN IS NOT THE ACP CONNECTION. `opencode run --format
         // json` is its own transport with its own vocabulary — `-s` to resume,
         // the prompt on stdin — and it is the ONLY form that puts a `sessionID`

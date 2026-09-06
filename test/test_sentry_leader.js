@@ -279,6 +279,32 @@ const clock = { today: TODAY, now: () => NOW };
             && run.calls[0].prompt.includes('no-handover'));
     }
     {
+        // ‼️ X-249 — WHOSE PLAN PAYS FOR THE LEADER TURN.
+        //
+        // The runner used to be handed a prompt, a model and a clock and
+        // nothing else, so it spawned with no environment: the turn that
+        // COMMANDS an account rotation ran as whatever sign-in the machine
+        // happened to be holding, outside the pool the user allowed, invisible
+        // to `pickAccount` — and it could wall the very account the campaign
+        // was about to open its next round on.
+        const run = runner({ text: JSON.stringify(GOOD), costUsd: 0.02 });
+        const r = await runLeaderTurn(BRIEF, { ...CAPS, account: 'slot-2' }, run, clock);
+        ok('‼️ the account travels to the runner, which is the only thing that can isolate it',
+            run.calls.length === 1 && run.calls[0].account === 'slot-2');
+        ok('‼️ …and the turn RECORDS which account it spent, or the burn is unattributable',
+            r.assist && r.assist.account === 'slot-2');
+    }
+    {
+        // An empty account is a real answer and it is not "the machine's own
+        // sign-in": it means nobody named one here, so the caller's own
+        // resolution stands. What must never happen is the field going missing.
+        const run = runner({ text: JSON.stringify(GOOD), costUsd: 0.01 });
+        const r = await runLeaderTurn(BRIEF, { ...CAPS, account: '' }, run, clock);
+        ok('an unnamed account travels as empty rather than as absent',
+            run.calls.length === 1 && run.calls[0].account === '');
+        ok('…and the record says so too', r.assist && r.assist.account === '');
+    }
+    {
         const run = runner({ text: 'I think you should carry on.', costUsd: 0.01 });
         const r = await runLeaderTurn(BRIEF, CAPS, run, clock);
         ok('‼️ PROSE FALLS TO THE MECHANICAL PATH — the leader never stops the campaign',

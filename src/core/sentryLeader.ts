@@ -281,6 +281,23 @@ export interface LeaderCaps {
     dailyUsd: number;
     /** failed turns in a row that drop the campaign to mechanical; 0 = no brake */
     failLimit: number;
+    /**
+     * ‼️ X-249 — WHOSE PLAN PAYS FOR THE TURN.
+     *
+     * The leader is the turn that decides which account the NEXT round opens
+     * on, and it used to run on none: the runner spawned with no environment,
+     * so it went to whatever sign-in the machine was holding — outside the pool
+     * the user allowed, invisible to `pickAccount`, and able to wall the very
+     * account the round it was choosing for was about to use.
+     *
+     * ‼️ EMPTY IS A REAL ANSWER AND IT IS NOT "THE MACHINE'S SIGN-IN". It means
+     * nobody named one HERE, so the caller's own resolution stands — and the
+     * caller's resolution is the campaign's pool, because a turn about the pool
+     * belongs inside it. It is a slot id, not a directory: the variable's name
+     * is the engine adapter's business (`engineAccounts.accountEnv`) and this
+     * module has no disk.
+     */
+    account: string;
 }
 
 /**
@@ -303,7 +320,12 @@ export const DEFAULT_LEADER_CAPS: LeaderCaps = {
     maxSeconds: 120,
     maxUsd: 0.25,
     dailyUsd: 2,
-    failLimit: 3
+    failLimit: 3,
+    // ‼️ There is no machine-wide default account, on purpose. The other four
+    // are policy — a model and three numbers that mean the same thing on every
+    // campaign — while an account belongs to the POOL a campaign was given, so
+    // a farm-wide setting would answer a question nobody asked here.
+    account: ''
 };
 
 /** What one campaign has already spent. Lives on the campaign record, so it
@@ -408,9 +430,17 @@ export function recordLeaderTurn(
 
 /* --------------------------------------------------------------- the turn */
 
-/** The one impure act, injected. A second engine is a second port. */
+/**
+ * The one impure act, injected. A second engine is a second port.
+ *
+ * ‼️ X-249 — AND `account` IS PART OF THE ASK, not of the runner's own memory.
+ * It is a slot id and nothing more: what variable isolates that slot is the
+ * engine adapter's answer, given where the process is actually spawned. A
+ * runner that fetched the account itself would be a second place deciding whose
+ * plan pays, and the two would disagree the first time a campaign named one.
+ */
 export type LeaderRunner = (o: {
-    prompt: string; model: string; timeoutMs: number;
+    prompt: string; model: string; account: string; timeoutMs: number;
 }) => Promise<{ text: string; costUsd?: number; error?: string }>;
 
 export interface LeaderOutcome {
@@ -457,11 +487,16 @@ export async function runLeaderTurn(
     }
 
     const model = (caps.model || '').trim() || DEFAULT_LEADER_CAPS.model;
+    // ‼️ X-249 — NOT `|| DEFAULT`, unlike the model. An unnamed account is not a
+    // missing answer waiting for a fallback, it is the caller saying "you
+    // decide"; substituting anything here would make this module a second place
+    // that chooses whose plan pays.
+    const account = String(caps.account ?? '').trim();
     const t0 = o.now();
     let text = '', costUsd = 0, error = '';
     try {
         const res = await run({
-            prompt: buildLeaderBrief(i), model,
+            prompt: buildLeaderBrief(i), model, account,
             timeoutMs: Math.max(1, num(caps.maxSeconds, DEFAULT_LEADER_CAPS.maxSeconds)) * 1000
         });
         text = String(res?.text ?? '');
@@ -471,8 +506,12 @@ export async function runLeaderTurn(
         error = String((e as Error)?.message ?? e);
     }
 
+    // ‼️ X-249 — `account` is written on EVERY assist, including the failed
+    // ones. A turn that spent a purse and produced nothing still spent it out of
+    // somebody's five-hour window, and a record that only names the account on
+    // success is a record that hides exactly the burns worth finding.
     const assist = (okTurn: boolean, note: string): ModelAssist => ({
-        model, ms: Math.max(0, o.now() - t0), costUsd, at: o.now(), ok: okTurn,
+        model, account, ms: Math.max(0, o.now() - t0), costUsd, at: o.now(), ok: okTurn,
         ...(note ? { note } : {})
     });
 

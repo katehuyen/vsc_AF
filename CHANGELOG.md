@@ -2,6 +2,54 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.418.0 - X-249 (1/n) + X-259: the turn that commands the rotation now runs inside it (2026-09-07)
+
+**The leader turn spawned with no environment at all.** It is the short, cheap
+turn that reads how the last session ended and decides what the next round says
+and *which account it opens on* — and `cp.spawn` was called with `{ cwd,
+windowsHide, shell }` and nothing else. So it ran as whatever sign-in the
+machine happened to be holding: **outside the pool the user allowed, invisible
+to `pickAccount`, and able to wall the very account it was about to choose.**
+It is the only place in the extension that spawns an engine directly, which is
+exactly why the account layer had never reached it.
+
+**`LeaderCaps` takes an account, and the runner takes an environment.** The
+slot id travels as part of the ask; what variable isolates it stays the engine
+adapter's business (`accountEnv`), and `spawnEnvironment` is where a layer's
+`null` means REMOVE rather than blank — both already solved once for every
+other spawn in the farm. Every `ModelAssist` now records the account it spent,
+**including the failed turns**: a turn that burnt somebody's five-hour window
+and produced nothing is exactly the burn worth finding.
+
+**‼️ An unnamed account is the POOL's answer, not the machine's sign-in.** That
+distinction is the whole item. `campaignPick` is new in `core/sentryRun.ts`
+— the one place that turns a campaign into `pickAccount`'s options — and both
+`planSentry` and the leader call site go through it, so the round and the turn
+that chooses for the round cannot answer differently. There is deliberately **no
+machine-wide setting** behind it: the other four caps are policy, an account
+belongs to the pool a campaign was given.
+
+**The form grew an Account box on the Leader row** (`leaderAccount`, also on
+`sentry.start`), narrowed to the engine the runner actually spawns. **The
+machine's own sign-in is not on offer** — reaching it is the defect, and putting
+it back under a nicer name would reopen the hole.
+
+**‼️ X-259 — `runArgs('claude', …)` was handing back Codex's command line.**
+Measured: `["exec","--skip-git-repo-check","-c","sandbox_mode=…","-m","haiku","-"]`,
+because `case 'claude'` fell through to `codexRunArgs` — the one exception to
+this function's own written doctrine that an engine "must never fall through to
+another engine's". Nothing broke, and that was the danger: Claude is the
+persistent engine, so its one-shot line is built as a string in `spawnHeadless`
+and no live caller ever reached the branch (`engineFlagFor` even guards against
+it by name). The next caller to take an engine as a *parameter* would have got a
+plausible, working, wrong command line — and the leader runner is exactly such a
+caller. It now refuses, in prose, naming where the line really is built.
+
+**Still open on X-249:** the leader's ENGINE. `LEADER_ENGINE` remains a
+constant because the runner spawns one engine; making it a choice means a
+one-shot adapter per engine (each publishes its own envelope, and
+`parsePlannerEnvelope` reads Claude's), which is the item's other half.
+
 ## 3.417.0 - X-250: the model box the user was pressing (2026-09-07)
 
 **The popup drew itself at the far left of the row, and the reason was already

@@ -146,7 +146,7 @@ import {
     presetConditions as sentryPresetConditions
 } from './core/sentryPolicy';
 import { roundWhy, whyShorthand } from './core/sentryWhy';
-import { SENTRY_DEFAULT_CEILING } from './core/sentryRun';
+import { SENTRY_DEFAULT_CEILING, campaignPick } from './core/sentryRun';
 import { measureSession } from './core/sentryMeasure';
 import { QualityStore, sampleQuality } from './core/quality';
 import {
@@ -15923,6 +15923,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // when it is changed tomorrow. `newSentry` refuses an
                 // unreadable figure rather than storing a purse of zero.
                 ...(input.leaderModel ? { leaderModel: String(input.leaderModel) } : {}),
+                // ‼️ X-249 — …and whose plan pays for that turn. Absent is not the
+                // machine's sign-in: it is the campaign's own pool answering.
+                ...(input.leaderAccount ? { leaderAccount: String(input.leaderAccount) } : {}),
                 ...(input.leaderDailyUsd !== undefined ? { leaderDailyUsd: input.leaderDailyUsd } : {}),
                 ...(input.leaderMaxUsd !== undefined ? { leaderMaxUsd: input.leaderMaxUsd } : {}),
                 // ‼️ X-207 — WHICH ACCOUNTS THE USER TICKED, and how to walk them.
@@ -24768,8 +24771,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
         let child: cp.ChildProcess;
         try {
-            child = cp.spawn('claude', ['--model', o.model, '--output-format', 'json', '-p'],
-                { cwd, windowsHide: true, shell: process.platform === 'win32' });
+            /**
+             * ‼️ X-249 — AND IT SPAWNS WITH AN ENVIRONMENT, which it did not.
+             *
+             * This process had no `env` at all, so the turn that decides WHICH
+             * ACCOUNT the next round opens on ran as whatever sign-in the
+             * machine was holding: outside the pool the user allowed, invisible
+             * to `pickAccount`, and able to wall the very account it was about
+             * to choose. It is the one place in this extension that spawns an
+             * engine directly, which is exactly why it was the one place the
+             * account layer never reached.
+             *
+             * ‼️ The variable's NAME is not written here. `launchAccountEnv`
+             * asks the engine's own adapter, and `spawnEnvironment` is where a
+             * layer's `null` means REMOVE rather than blank — both already
+             * solved once, for every other spawn in the farm.
+             */
+            child = cp.spawn(LEADER_ENGINE, ['--model', o.model, '--output-format', 'json', '-p'], {
+                cwd, windowsHide: true, shell: process.platform === 'win32',
+                // No provider route: the leader turn is a plain engine call on a
+                // plan, and inventing a route here would put a key in front of a
+                // turn nobody asked to bill that way.
+                env: spawnEnvironment(process.env,
+                    [launchAccountEnv({ engine: LEADER_ENGINE, account: o.account })], undefined)
+            });
         } catch (e) { finish({ text: '', error: String((e as Error)?.message ?? e) }); return; }
 
         // The cut is ours, not the CLI's: a turn that hangs is a campaign that
@@ -24817,7 +24842,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             maxSeconds: n(rec.leaderCaps?.maxSeconds ?? cfg.get<number>('sentryLeaderMaxSeconds'), DEFAULT_LEADER_CAPS.maxSeconds),
             maxUsd: n(rec.leaderCaps?.maxUsd ?? cfg.get<number>('sentryLeaderMaxUsd'), DEFAULT_LEADER_CAPS.maxUsd),
             dailyUsd: n(rec.leaderCaps?.dailyUsd ?? cfg.get<number>('sentryLeaderBudgetUsd'), DEFAULT_LEADER_CAPS.dailyUsd),
-            failLimit: n(rec.leaderCaps?.failLimit ?? cfg.get<number>('sentryLeaderFailLimit'), DEFAULT_LEADER_CAPS.failLimit)
+            failLimit: n(rec.leaderCaps?.failLimit ?? cfg.get<number>('sentryLeaderFailLimit'), DEFAULT_LEADER_CAPS.failLimit),
+            /**
+             * ‼️ X-249 — AND THIS ONE HAS NO SETTING BEHIND IT, deliberately.
+             *
+             * The other four are POLICY: a cheap model and three numbers that
+             * mean the same thing on every campaign, so a farm-wide default is
+             * the right shape for them. An account is not policy — it belongs
+             * to the POOL this campaign was given, and a machine-wide "the
+             * leader always runs on slot-3" would answer a question no campaign
+             * asked and would quietly spend an account outside its own pool.
+             *
+             * Empty therefore means "nobody named one HERE", and the caller
+             * resolves it against the campaign's pool (`campaignPick`).
+             */
+            account: String(rec.leaderCaps?.account ?? '').trim()
         };
     };
 
@@ -25075,7 +25114,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         } : {};
                     })(),
                     ...(rec.leader ? { budget: rec.leader } : {})
-                }, leaderCapsFor(rec), sentryLeaderRunner((doc.project.repos ?? [])[0] || os.homedir()),
+                }, (() => {
+                    /**
+                     * ‼️ X-249 — AN UNNAMED LEADER ACCOUNT IS THE POOL'S OWN ANSWER,
+                     * not the machine's sign-in.
+                     *
+                     * The leader is the turn that decides what the next round says and
+                     * where it runs, so charging it to the account that round would
+                     * open on keeps the burn INSIDE the pool the user allowed — where
+                     * `pickAccount` can see it, where the ceiling applies, and where
+                     * the reader looking at the account cards can find it. Before
+                     * this it went to whatever `~/.claude` held, which no surface in
+                     * the farm was even watching.
+                     *
+                     * `campaignPick` is not a second decision: it is the same call
+                     * `planSentry` makes, in the one place that turns a campaign into
+                     * that function's options.
+                     */
+                    const caps = leaderCapsFor(rec);
+                    if (caps.account) { return caps; }
+                    const ceiling = typeof rec.ceiling === 'number' ? rec.ceiling : SENTRY_DEFAULT_CEILING;
+                    return {
+                        ...caps,
+                        account: campaignPick(
+                            {
+                                ...(rec.rotation ? { rotation: String(rec.rotation) } : {}),
+                                ...(rec.engine ? { engine: String(rec.engine) } : {})
+                            }, usage, ceiling)?.slotId ?? ''
+                    };
+                })(), sentryLeaderRunner((doc.project.repos ?? [])[0] || os.homedir()),
                 { today: resolvePathVars('${today}').value, now: () => Date.now() });
                 rec.leader = leader.budget;
                 if (verdict.problems.length) {
@@ -33147,6 +33214,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'campaign runs mechanically, which is what it did before this existed), '
                 + 'conditions? (your own set, which WINS over the preset — `sentry.policy` lists '
                 + 'the fields, the operators and what each field is worth right now), '
+                + '‼️ leaderAccount? (WHOSE PLAN PAYS FOR THE LEADER TURN, a slot id. Omit it and '
+                + 'the campaign\'s own pool answers - the same account the next round would open '
+                + 'on. It is NOT the machine sign-in: that is what the turn used to run on by '
+                + 'accident, outside the pool and invisible to the rotation), '
                 + '‼️ leaderModel? / leaderDailyUsd? / leaderMaxUsd? (THE LEADER\'S OWN LEASH for '
                 + 'this campaign only - the model its short deciding turn runs on, the dollars it '
                 + 'may spend per calendar day, and what one turn may cost before the NEXT is '
@@ -33194,6 +33265,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(Array.isArray(a.conditions) ? { conditions: a.conditions as Condition[] } : {}),
                     // …and the leader's leash, absent when it was not asked for.
                     ...(optStr(args, 'leaderModel') ? { leaderModel: optStr(args, 'leaderModel') } : {}),
+                    ...(optStr(args, 'leaderAccount') ? { leaderAccount: optStr(args, 'leaderAccount') } : {}),
                     ...(a.leaderDailyUsd !== undefined ? { leaderDailyUsd: a.leaderDailyUsd } : {}),
                     ...(a.leaderMaxUsd !== undefined ? { leaderMaxUsd: a.leaderMaxUsd } : {}),
                     // X-207 — the pool and the strategy, both optional, both

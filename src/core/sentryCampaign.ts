@@ -189,6 +189,16 @@ export interface SentryAsk {
      * shape would need a file. Absent means the setting still decides.
      */
     leaderModel?: string;
+    /**
+     * ‼️ X-249 — WHOSE PLAN PAYS FOR THE LEADER TURN, as a slot id.
+     *
+     * Absent is not "the machine's sign-in": it means the campaign's own pool
+     * answers, which is the whole point — the turn that decides where the next
+     * round runs belongs inside the accounts the user allowed. It ran outside
+     * them by accident until this field existed, because the runner spawned
+     * with no environment at all.
+     */
+    leaderAccount?: string;
     leaderDailyUsd?: unknown;
     leaderMaxUsd?: unknown;
     /**
@@ -353,10 +363,15 @@ function money(v: unknown, hi: number): number | undefined {
  */
 function leaderCapsOf(ask: SentryAsk): Partial<LeaderCaps> | undefined {
     const model = String(ask.leaderModel ?? '').trim();
+    const account = String(ask.leaderAccount ?? '').trim();
     const dailyUsd = money(ask.leaderDailyUsd, 10000);
     const maxUsd = money(ask.leaderMaxUsd, 10000);
     const caps: Partial<LeaderCaps> = {
         ...(model ? { model } : {}),
+        // Same rule as the rest of this function: an account nobody named is
+        // left ABSENT rather than written as empty, so the resolution stays
+        // with the caller and the campaign records only what was chosen.
+        ...(account ? { account } : {}),
         ...(dailyUsd !== undefined ? { dailyUsd } : {}),
         ...(maxUsd !== undefined ? { maxUsd } : {})
     };
