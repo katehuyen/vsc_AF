@@ -283,6 +283,18 @@ export interface LeaderCaps {
     failLimit: number;
 }
 
+/**
+ * ‼️ THE ENGINE THE LEADER RUNNER CAN ACTUALLY SPAWN TODAY — named here so that
+ * exactly one place knows it, and so a surface asking "which models may the
+ * leader be set to" has somewhere honest to ask.
+ *
+ * It is a CONSTANT rather than a choice because the runner is one
+ * (`sentryLeaderRunner` in `src/extension.ts` spawns this engine and no other),
+ * and a settable field over a runner that ignores it would be a box that lies.
+ * X-249 turns it into a real axis; until then this is the truth, in one place.
+ */
+export const LEADER_ENGINE = 'claude';
+
 /** ‼️ CHEAP BY DEFAULT, AND NAMED ONCE. The constitution's own test and cost
  *  policy: expensive models are not what an unattended loop runs on. The user
  *  can raise it from the settings, deliberately, having read the number. */

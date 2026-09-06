@@ -624,7 +624,10 @@ const SENTRY_DEFAULTS = {
     // MIRROR needs a figure to put on the first line of each panel.
     defaults: {
         ceiling: 95, safetyBufferMin: 3, failLimit: 3,
-        leader: { model: 'haiku', dailyUsd: 2, maxUsd: 0.25 }
+        // ‼️ X-250 — `engine` is which catalogue the leader's model box offers.
+        // The host answers it from `LEADER_ENGINE`, the one place that knows
+        // what the leader runner can actually spawn.
+        leader: { model: 'haiku', dailyUsd: 2, maxUsd: 0.25, engine: 'claude' }
     },
     idlePollMin: 10,
     permissionModes: [

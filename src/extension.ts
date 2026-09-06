@@ -136,7 +136,7 @@ import {
 import { SENTRY_DEFAULT_STALL_MIN } from './core/sentryWatch';
 import { SENTRY_DEFAULT_FAIL_LIMIT, sentryStep } from './core/sentryDriver';
 import {
-    DEFAULT_LEADER_CAPS, LeaderBudgetState, LeaderCaps, LeaderOutcome, LeaderRunner,
+    DEFAULT_LEADER_CAPS, LEADER_ENGINE, LeaderBudgetState, LeaderCaps, LeaderOutcome, LeaderRunner,
     leaderAllowed, runLeaderTurn
 } from './core/sentryLeader';
 import {
@@ -25238,7 +25238,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  */
                 leader: (() => {
                     const c = leaderCapsFor({} as SentryRecord);
-                    return { model: c.model, dailyUsd: c.dailyUsd, maxUsd: c.maxUsd };
+                    // ‼️ X-250 — AND WHICH ENGINE'S CATALOGUE THE MODEL BOX SHOULD OFFER.
+                    // The page must not spell an engine name; it asks, and the answer
+                    // comes from the one place that knows what the runner spawns.
+                    return { model: c.model, dailyUsd: c.dailyUsd, maxUsd: c.maxUsd, engine: LEADER_ENGINE };
                 })()
             },
             idlePollMin: cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),

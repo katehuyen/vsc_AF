@@ -3935,8 +3935,18 @@
         const d = (s.defaults || {}).leader;
         if (!d) { return ''; }
         const usd = (v) => '$' + String(v);
-        const box = (id, key, head, body, extra) => window.AFTip.wrap(
-            `<label class="lcap">${C.esc(head.label)}<input id="${id}"${extra || ''}
+        /**
+         * ‼️ X-250 — `opts` MAKES IT A SELECT. A model is chosen from a list an
+         * engine publishes, not typed; the box that let it be typed sat over a
+         * `<datalist>`, and U-97 measured what that costs (Chromium anchors the
+         * popup on the flex PARENT, so the second press draws the list at the
+         * far left of the row). The money boxes stay inputs — a purse is a
+         * number nobody publishes a catalog for.
+         */
+        const box = (id, key, head, body, extra, opts) => window.AFTip.wrap(
+            opts !== undefined
+                ? `<label class="lcap">${C.esc(head.label)}<select id="${id}">${opts}</select></label>`
+                : `<label class="lcap">${C.esc(head.label)}<input id="${id}"${extra || ''}
                 placeholder="${C.esc(String(head.now))}"
                 value="${C.esc(sentryForm[key])}"></label>`,
             // MIRROR: the value in force, first, before any explanation.
@@ -3953,7 +3963,15 @@
                 { label: 'Model', now: d.model || 'engine default', mirror: d.model || 'the engine default' },
                 'The leader turn is short and mechanical work — the constitution\'s own cost rule is that '
                 + 'an unattended loop does not run on an expensive model. Raise it deliberately, having read the figure beside it.',
-                ' list="s-models"')}
+                '',
+                // ‼️ THE ENGINE IS THE HOST'S ANSWER, NOT A WORD TYPED HERE. `d.engine`
+                // is the engine the leader runner can actually spawn; a page that spelt
+                // it would be a second copy of that fact, and X-249 is about to make it
+                // a choice — at which point this line needs no edit.
+                // SHORTHAND: the empty option carries the figure in force, because a
+                // select has no placeholder and the reader must not have to open it.
+                modelOptsFor(d.engine || '', sentryForm.leaderModel,
+                    '— setting: ' + (d.model || 'engine default') + ' —'))}
             ${box('s-lday', 'leaderDailyUsd',
                 { label: 'Daily $', now: d.dailyUsd, mirror: usd(d.dailyUsd) + ' a day' },
                 'Dollars per calendar day, for THIS campaign. When it is gone the leader stops waking and '
@@ -4039,8 +4057,8 @@
                         + 'account would mean assuming an engine, so nothing is chosen and every round '
                         + 'opens as the identity this machine is signed in as.'
                     ])}
-                <label>Model<input id="s-model" value="${C.esc(sentryForm.model)}" placeholder="engine default" list="s-models"></label>
-                <datalist id="s-models">${(DATA.modelAliases || []).map(m => `<option value="${C.esc(m)}">`).join('')}</datalist>
+                <label>Model<select id="s-model">${
+    modelOptsFor(sentryForm.engine, sentryForm.model, '— engine default —')}</select></label>
             </div>
             <div class="srow">
                 ${tipLabel(
@@ -4314,6 +4332,20 @@
 
     function wireSentry() {
         const w = (id, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener('click', fn); } };
+        /**
+         * ‼️ X-250 — THE ENGINE REDRAWS THE FORM, because the model box below it
+         * is that engine's catalogue. Without this the box kept the list of
+         * whichever engine was named when the form was opened, which is how a
+         * Codex campaign came to be offered Claude's aliases.
+         *
+         * ‼️ AND NOTHING IS TAKEN AWAY (U-101). A word the new engine does not
+         * publish is KEPT as its own marked option rather than deleted while
+         * the reader is looking at a different control; the mark and its
+         * tooltip say the launch will refuse it. Telling is not the same as
+         * clearing, and the delegate rows settled that question already.
+         */
+        const sEng = document.getElementById('s-engine');
+        if (sEng) { sEng.addEventListener('change', () => { readSentryForm(); render(); }); }
         w('s-caret', () => { sentryOpen = !sentryOpen; render(); });
         w('s-new', () => { sentryFormOpen = true; sentryErr = ''; sentryOpen = true; render(); });
         w('s-cancel', () => { readSentryForm(); sentryFormOpen = false; sentryErr = ''; render(); });

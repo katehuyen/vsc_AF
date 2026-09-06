@@ -284,8 +284,24 @@ const rows = r => qsa(r, '[data-scond]');
         /Now: haiku/.test(H) && /Now: \$2 a day/.test(H) && /Now: \$0\.25 a turn/.test(H));
     ok('…and the empty box shows that same figure as its placeholder',
         /id="s-lday"[^>]*placeholder="2"/.test(H) && /id="s-lmax"[^>]*placeholder="0.25"/.test(H));
-    ok('the model box offers the same aliases the round\'s model box does',
-        /id="s-lmodel"[^>]*list="s-models"/.test(H));
+    // ‼️ X-250 — THE MODEL BOX IS A SELECT, NOT FREE TEXT OVER A DATALIST.
+    //
+    // U-97 measured this popup on the DELEGATE rows and wrote the reason down:
+    // Chromium anchors a datalist on the flex PARENT rather than the box, so
+    // the second press draws the list at the far left of the row and a repaint
+    // while it is open collapses it to a single line. The fix landed there and
+    // these two boxes — the campaign's own model and the leader's — were left
+    // behind, which is the form the user was actually pressing. This assertion
+    // used to REQUIRE the datalist, so the defect was pinned in place by a
+    // green test.
+    ok('‼️ the leader\'s model box is a <select>, not free text over a datalist',
+        /<select id="s-lmodel"/.test(H) && !/id="s-lmodel"[^>]*list=/.test(H));
+    ok('‼️ …and the sentry form ships no <datalist> at all',
+        !H.includes('<datalist'));
+    // MIRROR survives the change of control: the figure in force is still
+    // readable without opening the box, now as the empty option's own words.
+    ok('…and the empty option still names the figure the setting holds',
+        /<option value=""[^>]*>— setting: haiku —</.test(H));
 
     typeIn(r, 's-project', 'p1');
     typeIn(r, 's-agent', 'a1');
@@ -395,6 +411,28 @@ const rotBtn = (r, id) => qsa(r, '[data-srot]').filter(e => e.dataset.srot === i
         /not read|unread|—%/i.test(h));
     ok('the accounts are grouped by the engine they belong to',
         h.toLowerCase().includes('claude') && h.toLowerCase().includes('codex'));
+}
+
+{
+    // ‼️ X-250 — AND THE LIST BELONGS TO THE ENGINE THE CAMPAIGN NAMED.
+    //
+    // The box offered the flat alias vocabulary (`DATA.modelAliases`) whatever
+    // `s-engine` held, so a Codex campaign was offered Claude's words — while
+    // `modelListOf(engine)`, four hundred lines above in the same file, had
+    // been doing it right for the delegate rows since U-64.
+    const r = openForm();
+    typeIn(r, 's-model', 'opus');
+    typeIn(r, 's-engine', 'codex');
+    byId(r, 's-engine').fire('change');
+    const box = /<select id="s-model"[\s\S]*?<\/select>/.exec(html(r));
+    ok('the round\'s model box is a <select>', !!box);
+    ok('‼️ …offering what the named engine publishes', !!box && box[0].includes('gpt-5-codex'));
+    ok('‼️ …and not the other engine\'s aliases', !!box && !/>sonnet</.test(box[0]));
+    // ‼️ U-101 — AND A VALUE SOMEBODY TYPED IS NOT TAKEN AWAY WHILE THEY ARE
+    // LOOKING AT ANOTHER CONTROL. The off-catalog word is KEPT as its own
+    // option, marked, so the page tells rather than deletes.
+    ok('‼️ …and the word already in the box survives the change, marked',
+        !!box && /⚠ opus/.test(box[0]));
 }
 
 {

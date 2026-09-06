@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.417.0 - X-250: the model box the user was pressing (2026-09-07)
+
+**The popup drew itself at the far left of the row, and the reason was already
+written down in the same file.** U-97 measured it on the mission delegate rows:
+Chromium anchors a `<datalist>` on the flex PARENT rather than on the box, so
+the second press puts the list somewhere the box is not, and a repaint while it
+is open collapses it to a single line. That fix landed — and the two boxes in
+the **sentry campaign form** were left behind, which is the form somebody
+actually fills in to start a campaign: the round's own **Model** and the
+**leader's Model**. Both are `<select>` now, fed by the same `AFEngine`
+catalogue every other launch surface reads.
+
+**‼️ And the list belongs to the engine the campaign named.** It used to be the
+flat alias vocabulary whatever `Engine` held, so a **Codex** campaign was
+offered **Claude's** words while `modelListOf(engine)` — four hundred lines
+above, in the same file — had been doing it right since U-64. Changing the
+engine now redraws the form, and a word the new engine does not publish is
+**kept, marked ⚠, and explained** rather than deleted while the reader is
+looking at another control (U-101: telling is not clearing).
+
+**‼️ A green test was holding the defect in place.** `test_sentry_form.js`
+asserted that the leader's box *carries* `list="s-models"` — the very thing
+U-97 had removed everywhere else — while `test_missions_webview.js` asserted
+the page ships no `<datalist>` at all. Two tests, one page, opposite claims,
+both passing, because they render different fragments. The assertion now reads
+the other way and the form is measured to ship no datalist.
+
+**The leader's engine is named once.** A `<select>` has no placeholder, so the
+figure in force moved into the empty option (`— setting: haiku —`) and MIRROR
+still holds without opening the box. Which catalogue that box offers is the
+host's answer, not a word typed into the page: `LEADER_ENGINE` in
+`core/sentryLeader.ts` is the one place that knows what the leader runner can
+actually spawn — a constant rather than a setting, because a settable field over
+a runner that ignores it is a box that lies. **X-249 turns it into a real
+axis**: today that runner is `cp.spawn('claude', …)` with no `env`, so the
+turn that commands a multi-engine, multi-account campaign is itself locked to
+one engine and burns an account outside the rotation.
+
 ## 3.416.0 - X-208 (1/n): the live hook, spelt for the shell that will actually run it (2026-09-06)
 
 **Codex's Stop hook has been failing, and the reported reason was the smallest
