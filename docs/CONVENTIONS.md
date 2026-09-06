@@ -392,6 +392,7 @@ badge in a 92px box. Both of those shipped. Both were obvious in one look.
 node test/render_page.js <fixture>            → dist/render/<fixture>.html
 node test/shoot_page.js  <fixture>            → …and a PNG beside it
 node test/render_page.js track --only timeline --light
+node test/shoot_page.js  track --light                 → BOTH take --light
 ```
 
 - `render_page.js` runs the REAL page script through the tests' own DOM shim
