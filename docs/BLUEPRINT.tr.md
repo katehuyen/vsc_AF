@@ -342,6 +342,23 @@ Filodaki son olayların canlı akışı: kullanıcı komutları (prompt), araç 
 - **Ayrıntılı Kılavuz:** Mimari, dosya yapısı, yardımcı kod şablonları ve taşınabilirlik kuralları için: [`docs/SUPERPOWERS-MIMARISI.tr.md`](SUPERPOWERS-MIMARISI.tr.md).
 
 
+
+### Slash Komut Kataloğu (/ Menüsü — 3.333.0 — 3.338.0 — K-29 — K-36)
+
+- **Kompozitörde `/` Seçicisi (`K-30`):** Yazma kutusuna `/` yazıldığında, oturumun çalıştığı motorun (Claude Code, OpenCode vb.) desteklediği tüm yerleşik slash komutlarını listeleyen dinamik bir arama menüsü açılır.
+- **Motor Paritesi ve Filtreleme (`K-31`, `K-32`):** Yalnızca o oturumda gerçekten çalıştırılabilecek komutlar sunulur; motorun tanımadığı komutlar elenir.
+- **Kabuk ve Terminal Bütünlüğü (`K-33`):** PTY kabuk süreçleri ile doğrudan komut ayrımı yapılır; komutlar hazır olan kabuğa güvenle teslim edilir.
+
+### Self-Restart ve Yeniden Başlatmadan Sağ Çıkan Konsol Oturumları (3.408.0 / 3.410.0 — X-230, X-232)
+
+Agent Farm güncellendiğinde veya yeni bir VSIX paketi kurulduğunda, insan müdahalesine gerek kalmadan eklenti ana makinesinin kendini yenileyebilmesi ve açık diyalogların korunması sağlanmıştır:
+
+- **Kendini Yenileme Köprüsü (`src/core/selfRestart.ts`):** Üç yeni köprü operasyonu eklenmiştir: `farm.health`, `farm.restartExtensionHost` ve `farm.reloadWindow`.
+- **Kilitlenme ve Döngü Koruması:** Yeniden başlatma komutu asla köprü handler'ının içinde çalıştırılmaz (handler cevabı yazıp isteği silmeden host ölürse sonsuz açılış döngüsü doğar). Komut 600 ms zamanlayıcı boşluğunda ateşlenir ve diske senkron yazılan cooldown damgası 20 saniye içinde ikinci bir restart'ı kesin olarak reddeder.
+- **Oturum Bitimini Bekleme (`when: "auto"`):** Canlı Konsol oturumu varsa restart armed (tetikte) durumuna geçer; son oturum bittiğinde host'u kendiliğinden yeniden başlatır.
+- **Restart'tan Sağ Çıkan Konsol Oturumları (`X-232`):** `farm.restartExtensionHost { resume: true }` çağrıldığında, çalışan tüm Konsol oturumlarının kimlikleri, harcanan token tutarları ve scrollback geçmişi diske mühürlenir. Yeniden başlatma sonrasında her kart kendi koltuğunda, konuşma geçmişi transkriptten okunmuş olarak **kaldığı yerden devam eder**; oturumlar düşürülmez.
+
+
 ### Kompozitör
 
 Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir. **Oturum çalışırken üç ayar boyutu da canlı kalır (3.44.0)** — süreç açıldıktan sonra gerçekten sabit olan tek şey klasördür (ajan); model, efor ve izin modu üçü de CLI'ın konuşma ortasında kabul ettiği kontrol istekleri olarak gider (`/model`, `/effort`, `set_permission_mode`), yani bir ajan satırından açılan oturum, kompozitörden açılanla tam olarak aynı kadar değiştirilebilir.
@@ -658,6 +675,16 @@ Tablo değiştiği an bütün transcript'ler yerinde yeniden okunur — ⚖ topl
 **Köprü:** `usage.window` döner 5 saatlik pencereyi **iki birimde**, aralarındaki oranla ve yapılandırılmış tavanlara göre yüzdeyle verir. Anthropic'in gerçek abonelik rakamı için `usage.plan`.
 
 ## Oturum Başlatma ve Denetim {#oturum-denetim}
+
+
+### Aktif Süre vs. Boşluk Hassasiyeti (S-52 — `src/core/sessionSpan.ts`)
+
+Oturum tablosunda eskiden `Duration` sütunu ilk mesaj ile son mesaj arasındaki çıplak farkı (`lastTs - firstTs`) gösteriyordu. Bu durum, akşam başlatılıp ertesi sabah devam ettirilen bir konuşmanın 36 saat boyunca aralıksız çalışmış gibi görünmesine yol açıyordu.
+
+- **`sessionSpan` Modülü:** Duvar saatini **aktif çalışma süresi** ile **turlar arasındaki uyku/bekleme süresi** olarak ikiye ayırır (`50m ⋯25.8 h`).
+- **`agentFarm.sessionBreakMin` Ayarı:** Varsayılan 30 dakikadır (0 = devre dışı). İki tur arasındaki boşluk 30 dakikayı aştığında aradaki süre çalışma süresinden düşülür ve hücrede dinlenme sembolüyle gösterilir.
+- **Doğruluk:** Saatlik maliyet, tur başına süre ve çağrı başına harcama artık uyku süresine değil, fiili çalışma süresine bölünerek hesaplanır.
+
 
 *(3.24.0)* Agent Farm oturumları **görüyordu**; artık onlara **dokunuyor**. Dört parça: bir oturum neyle başlar, hangi oturumlar elinin altında durur, çalışan bir oturum nasıl durdurulur, ve tüm bunlara klavyeden nasıl ulaşılır.
 
@@ -1105,6 +1132,18 @@ VS Code'un terminali gerçek bir terminal değildir — Chromium içinde çalı�
 - **Restore VS Code defaults:** üç ayarı da varsayılana döndürür. Komut açılırken mevcut durumu gösterir (`gpu off · smoothScrolling off · …`).
 
 ## Canlı Gözlem
+
+
+### Sesli Bildirimler, Uyarı Tonları ve Canlı Diyalog Okuyucu (DialogueSpeaker) (3.299.0 — 3.314.0 — A-20 — A-26)
+
+Filonun durumunu ekrana bakmadan kulakla takip edebilmek için modern bir ses ve konuşma altyapısı kurulmuştur:
+
+- **Modern Ses Paleti (A-20):** Windows yerel sesleri yerine 10 farklı ses nesnesi tanımlanmıştır. Hem OneCore köprüsü hem de SAPI / say / spd-say arka uçları desteklenir.
+- **Çakışma Önleyici Ses Hakemi (Arbiter - A-22):** Sekiz ajanın aynı anda bitmesi durumunda kulak tırmalayan tek bir gürültü yerine sesler sırayla, aralıklı olarak çalınır (`nudge`).
+- **Sessiz Saatler ve Mute (A-22):** Çiftliğe tek tıkla sus denilebilir; gece saatleri için otomatik sessize alma tanımlanabilir.
+- **Oturum ve Ajan Bazlı Özel Tonlar (A-23, A-24):** Her oturumun ve her ajanın kendine ait bir ses tonu olabilir; satır üzerinde hangi tonun çalacağı simgeyle gösterilir.
+- **Canlı Diyalog Okuyucu (`DialogueSpeaker` - A-26):** Ajanın ürettiği yanıtın markdown ve kod blokları temizlenerek (`sanitizeForSpeech`) yerel konuşma sentezleyicisi (TTS) üzerinden canlı olarak sesli okunması sağlanır.
+
 
 Faz 2 ile gelen gerçek zamanlı izleme katmanı. Oturum kayıtları diske birkaç saniye gecikmeyle düşer; canlı gözlem ise **Claude Code hook'ları** üzerinden olayları anında yakalar: komut girildiği an, araç çalıştığı an, izin beklendiği an.
 
@@ -1580,6 +1619,31 @@ Aşağıda iki modun çalışma prensipleri arasındaki 5 temel mimari fark ve s
 
 
 
+
+## Otonom Nöbet Sistemi — Çoklu Hesap Rotasyonu ve Kampanyalar (Sentry) {#otonom-nobet}
+
+*(3.373.0 — 3.411.0, X-167 ailesi)* Uzun soluklu projelerde ve gece boyu süren geliştirme döngülerinde tek bir Claude veya Codex hesabının 5 saatlik kullanım kotası (~%85-90) tükendiğinde sistemin durmaması, nöbeti devralan diğer hesaplara ve motorlara kesintisiz geçebilmesi için **Otonom Nöbet (Sentry)** motoru inşa edilmiştir.
+
+### Nöbet Mimarisi ve Temel Aktörler
+
+Otonom nöbet, sıradan bir zamanlanmış görev değildir; kendi durumunu, kotasını ve çalışma ortamını izleyen canlı bir orkestrasyondur:
+
+1. **Nöbet Lider Ajanı (`X-191`):** Nöbet başladığında lider ajan (varsayılan `developer` veya `manager`) uyanır. İlk yaptığı iş transkriptleri, git geçmişini ve son devir notlarını (`handover notes`) okuyarak projenin o anki durumunu kavramaktır (`plans/2026-09-05-x191-sentry-leader.md`). Durumu özetler, sıradaki adımları belirler, işleri alt ajanlara delege eder veya kendisi yürütür; ardından bir sonraki nöbet turuna kadar uykuya geçer.
+2. **Nöbet Koşul ve Politika Motoru (`X-190`, `X-194`):** Kampanyanın ne zaman uyuyacağını, ne zaman uyanacağını ve ne zaman duracağını yöneten kural motorudur.
+   - **Kota Eşikleri:** Bir hesabın 5 saatlik kotası `%90`'a ulaştığında tur güvenle kapatılır (`handoff`), sonraki hesaba geçilir.
+   - **VE Grupları (AND Conditions):** Koşul satırları hem canlı kota okumalarını hem de tur limitlerini bir arada değerlendirir.
+   - **Canlı Durum Sondası (`sentry.probe`):** Sistemin o an hangi hesapta olduğunu, kotanın ne kadar kaldığını ve nöbetin ilerleyişini anlık sorgular.
+3. **Nöbet Bekçisi (Watchdog - `X-178`):** Gece yarısı (ör. 02:00) takılan turları, cevap vermeyen süreçleri ve düşen bağlantıları izler; kilitlenmiş oturumları güvenle sonlandırıp nöbet zincirini kurtarır.
+4. **Talimat ve Şablon Havuzu (`X-175`, `X-192`):** Nöbet promptları sabit metinler değildir; `agentFarm.sentryTemplatesFile` ayarındaki şablon dosyasından dinamik olarak derlenir ve model maliyeti doğrudan prompta işlenir (`sentry.templates`, `sentry.prompt`).
+5. **Nöbet Rotasyon Havuzu (Whitelist) ve Çok Motorlu Yedekleme (`X-207`):** Kullanıcı nöbetin hangi hesapları harcamaya yetkili olduğunu tek tek belirler (ör. Claude Hesap 1 + Claude Hesap 2 + Codex Hesap 1). İzin verilmeyen hesaplara asla dokunulmaz. Claude kotası tükenirse sistem otomatik olarak Codex veya OpenCode'a devredebilir.
+
+### Arayüz ve Kontroller
+
+- **Console Canlı Şeridi (`X-177`):** Nöbet açıkken Konsol üst şeridinde nöbet rozeti, aktif hesap ve duraklatma (`Pause / Resume`) kontrolleri yer alır.
+- **Ayarlar Nöbet Bölümü (`X-193`):** Nöbet şablonları, devir notu arama yolları ve klasör önizlemeleri Ayarlar sayfasında müstakil bir kartta yönetilir.
+- **Köprü Operasyonları:** `sentry.status`, `sentry.start`, `sentry.stop`, `sentry.pause`, `sentry.resume`, `sentry.templates`, `sentry.probe`.
+
+
 ## MCP Yönetimi
 
 Ajanlarının dış dünyaya açılan araç kapıları — MCP sunucuları — artık panelde görünür (0.9.0). Agents ağacında her ajanın **MCP** bölümü:
@@ -1688,6 +1752,26 @@ API anahtarları ayar dosyalarında düz metin gezmesin (0.9.0): **Set Secret…
 Aynı yöntem her servis için geçerlidir: `ELEVENLABS_KEY`, `N8N_TOKEN`… — ad ne olursa görevlere env değişkeni olarak girer ve `{secret:AD}` şablonuyla erişilir. **Üç altın kural:** anahtarı asla bir dosyaya/prompt'a yazma; sohbete/ekrana yapıştırdıysan servis panelinden yenile (rotate); kullanmadığını **Delete Secret…** ile sil.
 
 ## Motorlar {#engines}
+
+
+### Çoklu Hesap Yönetimi ve Hesap Kartları (X-167 / X-172 / X-217 / X-218)
+
+*(3.374.0 — 3.411.0)* Tek bir makinede birden fazla Claude Pro veya Codex hesabı barındıran kullanıcılar için Engines sayfasına **Hesap Kartları (Account Cards)** altyapısı eklenmiştir:
+
+- **Hesap Yakalama ve Saklama (`X-172`, `X-204`):** Eklenti, terminalde yapılan girişleri (`/login` veya OAuth grant'leri) otomatik algılar; her hesabı bağımsız bir yuvada (`slot`) adlandırarak saklar.
+- **Tekil Seçim Disiplini (`X-217`):** Bir motor için aynı anda yalnızca tek bir hesap ayakta durabilir (`normalizeActive`). Bu aritmetiği dürüstçe yansıtmak amacıyla On/Off anahtarları kaldırılmıştır. Aktif hesap **`🟢 standing`** durum rozeti taşır; basıldığında ana girişe dönülür (`activeAccounts` temizlenir). Diğer tüm kartlar ise tek tıkla o hesabı aktif yapan **`⚡ Use this one`** eylem çipi taşır (`role="radio"` ve tek `aria-checked="true"`).
+- **Canlı Kota ve Pencereli Sorgulama (`X-187`, `X-206`, `X-215`):** Her hesap kartı 5 saatlik pencere ve haftalık kullanım çubuklarını canlı gösterir. Claude kotaları ağ üzerinden tüm filonun ortak bütçesine istek atarken (5 saniye aralık ve 429 geri çekilme), Codex kotaları yerel diski okur.
+- **Tüm Motorlar İçin Tek Tıkla Yenileme (`[🔄 Refresh all accounts (All Engines)]` - `X-218`):** Hesaplar bölümünün tepesinde yer alır. Ağ istekleriyle disk okumalarını birbirinin arkasında bekletmeden tüm hesapları paralel/sıralı olarak tazeler ve kuyruk ilerleyişini buton üzerinde (`◍ 3 in the line`) canlı çizer.
+
+### Sağlayıcı, Rota ve Tier Omurgası (X-97 — X-117, X-148 — X-151) {#rota-mimarisi}
+
+*(3.341.0 — 3.369.0)* Klasik mimaride motor (Claude Code, OpenCode) ile model doğrudan birbirine bağlıydı. Yeni mimaride motor bir **çalıştırma kabuğu**, sağlayıcı (provider) bir **uç nokta ve servis sağlayıcı**, rota (route) ise **bağlantı hattıdır**:
+
+- **Motor vs. Sağlayıcı Ayrımı:** Claude Code veya OpenCode artık sadece resmî Anthropic uçlarına değil; Kimi, MiniMax, DeepSeek veya GLM gibi üçüncü parti sağlayıcılara yönlendirilebilir (`providerId`, `routeId`, `tier`).
+- **16 Başlatma Boyutu (`RunDimensions`):** Bir görevin, oturumun veya otomasyonun nasıl başlayacağı `core/launchDimensions.ts` içinde veri olarak tanımlanmıştır: `engine`, `model`, `effort`, `permissionMode`, `route`, `tier`, `account`, `rounds`, `finishSound`, `superpowers` vb.
+- **208 Parite Zorunluluğu (`parity.manifest.json`):** 13 başlatma kapısının tamamı (Konsol, Tasks, Harici Terminal, Misyonlar, Zamanlamalar vb.) aynı daraltma kurallarını (`narrowing rules`) yükler; bir kapının desteklediği bir boyutu diğerinin sessizce yutması testlerle engellenmiştir.
+- **Arayüzde Rota Seçimi:** Kompozitörde (`c-route`), Konsol kartında, OS Terminalinde ve Görev formunda rota ve tier bağımsız birer açılır kutudur; motor değiştiğinde uyumsuz rota ve tier otomatik düşürülür.
+
 
 **Anahtar merkezli bakmak yanlış bakmaktı.** Dört yerleşik motorun giriş ve
 ödeme yolları aynı değil: Claude Code bir Pro/Max planı veya API key, Codex bir
@@ -3149,6 +3233,725 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 3.411.0 — X-218: Tüm Motorlarda Tek Tıkla Hesap Yenileme ve Ayrık Maliyet Modeli (2026-09-06)
+
+- **Temel Geliştirme:** Accounts bolumunun tepesinde motor ayrimi yapmayan tek yenileme presti; disk okumalari aga cikanlarin arkasinda bekletilmiyor, sira hareket ederken butonun uzerinde ciziliyor
+- **Teknik Detay ve Doğrulama:** touch · _stale_ — ÖLÇÜLDÜ, KODLANMADI (oturum sonu). Kalemin üç isteğinden İKİSİ ZATEN VAR: (a) Codex kartlarında tekil [⟳] butonu var — `media/engines.js` `refresh` (~satır 487), `quotaSource==='none'` dışındaki her kartta çiziliyor ve Codex için `session-tail` dalıyla DİSKTEN okuyor, AFTip'i 'no request, no queue, no waiting' diyor (X-215); (b) grup başlığında [⟳ all] butonu var — aynı dosya ~satır 595, `data-acrefreshall=<engine>`, ikiden fazla okunabilir hesap varken çiziliyor ve disk motorunda kuyruk vaadi ETMİYOR. EKSİK OLAN TEK ŞEY: Accounts bölümünün EN TEPESİNDE motor ayrımı yapmayan tek bir [⟳ Tüm Hesapları Yenile (All Engines)] butonu + kuyruğun ilerleyişinin görünürlüğü.
+- **No new rule was written to keep them apart, because the split is already:** **there.** `queueAccountRefresh` reads a slot whose figure is on disk here and now and never puts it in the line (X-215). So the button hands every readable slot of every engine to the function that already knows the difference — `data-acrefreshall=""`, which means on this side exactly what `refreshableSlots('')` already means on the other — and spends its sentence saying which half of the press waits and which half does not.
+- **The line is drawn moving:** A card knows its own place (X-206); the section knows how much of the line is left, so while it runs the button reads `◍ 3 in the line` and its panel opens with `3 in the line — 1 being read, 2 still waiting`. A press that acts over half a minute with nothing changing is one nobody presses once and everybody presses five times.
+
+### 3.410.0 — X-232: Restart'tan Sağ Çıkan Konsol Oturumu (Resume) (2026-09-06)
+
+- **Temel Geliştirme:** 232: restart'tan sağ çıkan Konsol oturumu (resume)
+- **Teknik Detay ve Doğrulama:** _stale_ — Kapandı (v11.278 / 3.410.0). `farm.restartExtensionHost { resume: true }` ölmeden önce canlı Konsol oturumlarını X-230'un senkron damgasına yazıyor; uyanışta her satır motorun verdiği id'siyle, kendi koltuğunda, scrollback'i transkriptten okunmuş ve `carried` geri yüklenmiş olarak yeniden başlatılıyor. ‼️ SONRAKİ OKUYUCUYA DÖRT NOT: (1) resume yalnız sonrasını değil KARARI değiştiriyor — geri alınabilir oturum artık engel değil (`liveBlockers(world, kind, resume)`), motorun ad vermediği oturum hâlâ engel ve KAYIP olarak bildiriliyor; (2) taşınan satır `RunDimensions`'tan türetiliyor (`test_console_revive.js` kaynaktan okuyor) — oraya boyut eklenirse dirilen oturum onu taşımadıkça derleme düşer; (3) plan `consoleHost.start`'tan ÖNCE `clearRestartRevive()` ile tüketiliyor, yoksa sonraki her activate aynı oturumları yeniden doğurur; (4) ‼️ CANLI DOĞRULAMA HENÜZ YAPILMADI: bu op'ları taşıyan ilk yapı (3.408.0+) kurulu ama çalışan extension host hâlâ eski kod olduğu için köprüde `farm.*` opları yok; kullanıcının bir kerelik `Developer: Restart Extension Host` adımından sonra X-230 ve X-232 canlı denenmeli (tarif: devir notu §canlı doğrulama).
+- **And a resume changes the decision, not just the aftermath:** A session that will be taken up again was never a reason to wait, so it stops being a blocker and the restart happens at once. A session the engine never NAMED still is one: there is nothing to resume it by, so it is reported as lost rather than quietly dropped — the reader saw a card there. A terminal is never saved by any of this, so a window reload still waits for the terminals.
+
+### 3.409.0 — X-217: Hesap Kartlarında Tekil Seçim (Durum Rozeti + Eylem Çipi) (2026-09-06)
+
+- **Temel Geliştirme:** 217: hesap kartlarında tekil seçim (durum rozeti + eylem çipi)
+- **Teknik Detay ve Doğrulama:** _stale_ — Kapandı (v11.277 / 3.409.0). Hesap kartlarındaki On/Off anahtarı kaldırıldı: duran hesap `🟢 standing` DURUM rozeti taşıyor (basınca ana girişe dönüyor, `activeAccounts[engine]` temizleniyor), diğerleri `⚡ Use this one` EYLEM çipi taşıyor. Tek sınıf iki durum (`.acsel` / `.acsel.on`), `role="radio"` ve tam olarak bir `aria-checked="true"` — şekil, 'birini seçiyorsun' aritmetiğini piksele bakmayan okuyucuya da söylüyor.
+
+### 3.408.0 — X-230: Kendini Yenileme Köprüsü (farm.health, restartExtensionHost, reloadWindow) (2026-09-06)
+
+- **Temel Geliştirme:** 230: kendini yenileme köprüsü (farm.health · farm.restartExtensionHost · farm.reloadWindow)
+- **Teknik Detay ve Doğrulama:** _stale_ — Kapandı (v11.276 / 3.408.0). Üç op — `farm.health` · `farm.restartExtensionHost` · `farm.reloadWindow` — ve kuralın yaşadığı saf çekirdek `src/core/selfRestart.ts`. ‼️ KALEMİN İLK HÂLİNDE OLMAYAN, ÖLÇÜLÜP EKLENEN İKİ KORUMA: (1) köprü yanıtı handler döndükten SONRA yazılıp istek ondan sonra siliniyor, dolayısıyla handler içinde host'u öldüren bir op kendi istek dosyası diskteyken ölür ve yeni host onu tekrar uygular — sonsuz açılış döngüsü; komut artık gecikmeli ateşleniyor (600 ms, cevabın yazıldığı boşluk) ve diske SENKRON yazılan damga 20 sn'lik pencerede ikinci restart'ı reddediyor, `force` bu korumayı AÇMIYOR; (2) Konsol oturumunun tutamağı extension host'un belleğinde olduğu için restart canlı olanların hepsini kaybeder, terminal ise pencerenin çocuğu olduğundan sağ çıkar — terminalde koşan ajan host'u kendi altından yeniden başlatıp doğrulayabilir, aynı çağrı Konsol oturumundan intihardır.
+- **It never restarts inside the handler:** `processBridge` writes the response AFTER the handler returns and unlinks the request after that — so a handler that kills the host dies with its own request still on disk, and the next activation reads it and restarts again, for ever, with no caller left alive to clean the file up. The command is fired on a timer, inside the gap the response is written in, and a cooldown stamp written synchronously to disk refuses a second restart within 20 seconds. `force` does not open that guard: force is about sessions, the loop is about the bridge.
+- **And it never destroys work silently:** A Console session is a spawned child whose handle lives in the extension host's memory, so a host restart loses every live one of them; an integrated terminal belongs to the window and survives — which is exactly why an agent working in a terminal can restart the host under itself and live to verify the result. So the default (`when: "auto"`) ARMS the restart and fires it by itself once the last session ends, and says in the same answer what it is waiting for.
+
+### 3.407.0 — X-216: Aktif Hesap Kablolaması ve Gösterge Senkronizasyonu (2026-09-06)
+
+- **Temel Geliştirme:** 216 aktif hesap kablolaması
+- **Teknik Detay ve Doğrulama:** _no session_ · 2026-09-06 13:48 noticed · agent · **done** · _agent_ — KAPANDI (v11.275 / 3.407.0). Kalem iki iş öngörüyordu; ÖLÇÜLDÜĞÜNDE yalnızca biri kırıktı. (1) KIRIK OLAN: `usageProbe`'un `.codex/sessions` kökü sabitti (`agentFarm.codexHome` ya da `~/.codex`), yani aktif Codex hesabı seçmek figürün üstündeki BAŞLIĞI değiştiriyor, altındaki sayıyı değiştirmiyordu — bir kontrolün alabileceği en kötü şekil, çünkü işe yaramış gibi görünür.
+
+### 3.406.0 — X-215: Codex Kota Entegrasyonu ve Boş Kart Onarımı (2026-09-06)
+
+- **Temel Geliştirme:** 215 Codex kota entegrasyonu
+- **Teknik Detay ve Doğrulama:** _no session_ · 2026-09-06 13:36 noticed · agent · **done** · _agent_ — KAPANDI (v11.274 / 3.406.0). Kalemin öngördüğü şekilde yapıldı: `QuotaSource`'a üçüncü dal (`{ kind: 'session-tail', dir: 'sessions' }`), Codex adapter'ı ona bağlandı, `AccountUsageService` bu dalda SLOTUN KENDİ dizinini okuyor. Tek ayrıştırıcı iki köke hizmet ediyor — `readCodexUsage(probe, mtimeOf, relDir?)` parametrelendi; durum çubuğu makinenin `~/.codex/sessions`'ını, kart kendi klasörünü istiyor (ikinci kopya yok).
+
+### 3.405.0 — X-226: Üç Hesap Boştayken Erken Uyuma Hatasının Önlenmesi (2026-09-06)
+
+- **Temel Geliştirme:** 226 hesap devri
+- **Teknik Detay ve Doğrulama:** touch · _stale_ — ÖLÇÜLDÜ, KODLANMADI. `reseal` (`src/core/consolehost.ts:2468`) tam olarak Konsol biçimli: süreci kapatır, `awaitRelease(sessionId)` ile CLI kaydının serbest kalmasını bekler, sonra `start(...)` ile `--resume` üzerinden YENİ hesapta açar, kartın koltuğunu ve `carryOn(s)` ile toplamlarını korur. Tasks tarafında bunun karşılığı süreç öldürmek DEĞİL: çok turlu görevin TUR SINIRIDIR — X-229 düzeltilirken okundu, `next.resumeSessionId` ile aynı konuşmaya giren `addTask` çağrısı orada.
+
+### 3.404.0 — X-225: Misyon Planlayıcı ve Delegelerde Hesap İzolasyonu (2026-09-06)
+
+- **Temel Geliştirme:** 225: misyon planlayıcı ve delegelerde hesap izolasyonu (account · plannerAccount)
+- **Teknik Detay ve Doğrulama:** touch · _stale_ — OLCULDU, KODLANMADI (kota penceresi). Plan dosya dosya: (1) src/launch/doors/mission.ts - account exempt kaldirilir, collect withAccount ile sarilir; bu tek basina test/test_launch_matrix.js:247 listesini de degistirir (mission exempt listesinden carried listesine gecer). (2) MissionTeamMember (src/core/missions.ts:125) ve MissionPoolMember (src/core/missionMode.ts:64) account?
+
+### 3.403.0 — X-228: İş Akışı Adım Kartında Launch Boyutları (Motor, Model, Efor, İzin, Rota, Tier) (2026-09-06)
+
+- **Temel Geliştirme:** 228: iş akışı adım kartında launch boyutları (motor · model · efor · izin · rota · tier)
+- **Teknik Detay ve Doğrulama:** _no session_ · 2026-09-06 11:16 noticed · agent · **done** · _agent_ — KAPANDI (v11.270 / 3.403.0). Adım kartına engine · model · effort · permissions · route · tier satırı eklendi; rota/tier host tarafında da eksikti (stepSeed sproviderId/stier yaymıyordu, stepFromDraft okumuyordu) — ikisi de bağlandı, rotasız tier düşürülüyor (runExtras'ın bir kat aşağıda yaptığı reddin aynısı). X-149 tuzağına düşmemek için engine satırı, izin paragrafı ve rota/tier çifti ntEngineRow · ntPermTip · ntRouteRows olarak ortaklaştırıldı (eskiden görev formunun içine yazılıydı — ikinci yüzeyin kopyalayacağı yer tam orasıydı); daraltma stepNarrow ile tek kurala (afLaunch + ntNarrowRoute/ntNarrowAccount) soruluyor, adım başka motora taşınınca model/efor/rota/tier/hesap düşüyor.
+
+### 3.402.1 — X-229: İkinci Turun Doğru Hesapla Konuşmaya Devam Etmesi (2026-09-06)
+
+- **Temel Geliştirme:** 167 ROUND 2: hesap boyutu Tasks · otomasyon · iş akışı adımı · yeniden deneme · tur sınırı yollarında
+- **Teknik Detay ve Doğrulama:** _stale_ — KAPANDI (v11.268 / 3.402.1). Tur sınırı artık `runExtras(task)` ile ŞEKİLLE taşıyor; turun kendi alanları (round · rounds=next.rest · roundsTotal · roundOf · resume · notBefore) sonrasına yazılıp kazanıyor, yani `rounds` hâlâ "söylenecek kalan" demek. Beş eksik kapandı: account · providerId · tier · finishSound · superpowers.
+
+### 3.402.0 — X-227 / X-224: Yeniden Deneme ve Zincirlerde Hesap Boyutu Korunması (2026-09-06)
+
+- **X-227 — the unattended retry was dropping seven dimensions, and this one was found by reading rather than reported:** There are two retries in the product. `retryTask`, the one a person presses, carries every dimension of the original across by hand and says why beside each: *"a retry that quietly moved to the agent's standing endpoint is a different run wearing the same name."* `maybeScheduleRetry` — the one that fires BY ITSELF when a run fails, typically at 03:00, with nobody at a window — had its own shorter hand-written list.
+- **X-224 — a workflow step can be billed to its own sign-in:** A chain is the shape that needs this most: every step is headless, so three steps on one plan eat it and the chain hits the wall in the middle with nobody in front of it. `WorkflowStep extends RunDimensions` and `runExtras(step)` has always carried the account to the run — the step's two readings and its card were the only places that could not say it. `stepSeed` now returns it, `stepFromDraft` reads it, and the card asks for it with the same `[machine global]` row the task form got in 3.401.0. The fixture `tasks-step-account` draws the card that holds it, in both themes, because a card nobody photographs is a layout nobody checked.
+
+### 3.401.0 — X-221 / X-222 / X-223: Tasks Formunda Hesap Alanı ve Otomasyon Entegrasyonu (2026-09-06)
+
+- **X-169 put an account box on the Tasks form, seeded it, tested it against mock launch doors, and closed:** The box drew. The page posted the value. And `src/panels/tasksPanel.ts` never read the field: `task-new` carried nine dimensions to `addTask` and not that one, the retry branch carried eleven and not that one, and `dims()` — the automation path, the one that matters most because a schedule fires at 03:00 with nobody at a window — collected fifteen and not that one. Measured before the fix: the word `account` appeared **four times** in a 2,400-line panel, and none of the four was a wire.
+- **The measurement that could not see it, and the one that now can:** The existing sweep (`test_task_seed.js`) pins one direction: every `RunDimensions` field comes back OUT of a stored task and into the form. The mirror was never stated — a dimension the form is SEEDED with is a dimension the form can be SAVED with — so a box could be alive, carry a value, and be dropped one line before the store with every test green. That return leg is now measured on all five readings (three save paths, two automation seeds), derived from `RunDimensions` in the source, so the next dimension somebody draws a box for fails until its wire is connected. When it was written it went red on exactly one name: `account`.
+- **And the third answer reached the form (X-223):** X-211 gave the Console a `[💻 Machine Global]` row — not a fancier way of saying nothing, but the answer that *clears* the engine's config variable, which the VS Code window may itself be carrying. That row never came to the Tasks form, so the bridge could write `account: "@machine"` on a task and the form that edits the same task could not say it back. Two doors into one field, disagreeing about what the field can hold. The row is now on the form, and — the trap found while wiring it — it survives an engine change: a slot belongs to one engine and is narrowed away when the engine moves, but the machine's own sign-in belongs to none, and dropping it would have turned "run this as the machine itself" into "run it as whatever is standing" the moment somebody touched the engine box.
+
+### 3.400.2 — Codex Kota Gerekçesi Düzeltmesi ve X-210 Ayrıştırması (2026-09-06)
+
+- **Temel Geliştirme:** Codex kota gerekçesinin düzeltilmesi (yanlış cümle) + X-210'un altıya bölünmesi
+- **A stated reason is a claim about the world, and a wrong one is worse than a blank bar: it closes the question:** The `kind` stays `none`, because the account cards genuinely are not wired to that reader yet — that is X-215, opened for it — but the sentence now says which of those two things is true, so the next person to read it is pointed at the work instead of away from it.
+
+### 3.400.1 — X-203: Engines Düğmesi ve Toolbox Başlık Çubuğu İkinci Yol (2026-09-06)
+
+- **Temel Geliştirme:** 203: Engines kapısı her durumda, Toolbox başlık çubuğunda ikinci yol
+- **Teknik Detay ve Doğrulama:** _no session_ · 2026-09-06 03:53 noticed · agent · **done** · _agent_ — KAPANDI (v11.264 / 3.400.1). (1) `farmstatus.ts` Engines satırının `action`ı YALNIZCA `dormant` dalındaydı — yani makinede ikinci bir motor kurulur kurulmaz ya da diskte yabancı oturum bulunur bulunmaz satır `ready`/`active` oluyor ve buton tamamen kayboluyordu. Kapı, bakılacak hiçbir şeyi olmayan makineye sunuluyor, dört motoru ve 35 oturumu olan makineden geri çekiliyordu.
+- **A row's action is a way to the SUBJECT of the row, not a fix-it prompt for a subsystem nobody switched on:** The action is now on the row in every state, under one label, because it is one door.
+- **Second way in:** `agentfarm.openEngines` was in no `view/title` menu at all, so with the Dashboard button gone there was no click-path to the page. It sits in the Toolbox view's title bar now, beside Secrets — both are facts of the MACHINE (which CLIs are installed, which sign-ins are captured) rather than of the fleet, and the Agents title bar already carries eight doors. The alternative was the Agents bar, which is more prominent and more crowded; the Dashboard row is the prominent path and this is the standing one.
+
+### 3.400.0 — X-207: Nöbet Hesap Rotasyon Havuzu (Whitelist) ve Çok Motorlu Yedekleme (2026-09-06)
+
+- **Temel Geliştirme:** 207: nöbet hesap rotasyon havuzu (whitelist) ve çok motorlu yedekleme
+- **Teknik Detay ve Doğrulama:** _no session_ · 2026-09-06 03:39 noticed · agent · **done** · _agent_ — KAPANDI (v11.263 / 3.400.0). Kampanyaya iki alan eklendi: `pool` (izin verilen hesaplar, kullanıcının seçtiği SIRAYLA — sıra, kademeli stratejinin önceliğidir) ve `rotation` (`free` varsayılan / `tiered`). İkisi de opsiyonel ve YOKLUĞU bugünkü davranıştır, yani diskteki her mevcut kayıt birebir eskisi gibi planlanır.
+
+### 3.399.4 — Eklenti Başlatma (Activate) Duman Testi ve Kurtarma (2026-09-06)
+
+- **Temel Geliştirme:** eklentiyi açılamaz hâlden kurtaran düzeltme + `activate()` duman testi
+- **‼️ 3.399.0 through 3.399.3 DO NOT ACTIVATE:** Not a broken page — no pages. `activate()` threw on its first surface and every command in the product answered "command not found":
+- **The root cause is one of position, and one line long:** X-212 (3.399.0) gave the status bar the words for WHOSE plan it is showing — `usageAccountLabel`, declared beside the indicator it serves and reading `storedAccounts` out of the accounts block 470 lines further down. Ordinarily that is fine: a closure is allowed to name a `const` declared after it, because by the time anybody calls it the declaration has run. `PlanUsageBar` is the case where nobody waits — it paints inside its own constructor, so the very first thing that happens after `new` is a call back into a binding still in its temporal dead zone. The two readers are declared at the top of `activate()` now, with the rule written where they sit: **anything constructed during activation may call its dependencies before its constructor returns, so a reader handed to one is declared first.**
+- **‼️ AND THE PART THAT MATTERS MORE — 18 972 assertions could not see it:** The suite was green, the vsix verified 16/16, the package installed, and the product was dead. Every file in `test/` tested a piece; not one had ever called `activate()`. Being able to switch the extension on is the precondition of everything the other assertions describe, and it was the one claim nothing checked — a rule that fails silently is not a rule.
+
+### 3.399.3 — X-196 (Bölüm 2): Yinelenen Satır Hover'larının Temizlenmesi (part 2): the hover that repeated the row (2026-09-06)
+
+- **Temel Geliştirme:** 195 (nobet seffafligi) ve X-196 (arayuz supurgesi) kapandi
+- **Teknik Detay ve Doğrulama:** _multi_ — KAPANDI - v11.260 + v11.261 (3.399.2 / 3.399.3, kuruldu). Itemin saydigi dort yuzey de denetlendi. DUZELTILENLER: (1) Missions Sentry durum rozeti - alti durum sozunun (OFF/PAUSED/STOPPED/RUNNING/SLEEPING/WAITING) hicbirinin paneli yoktu, WAITING ile SLEEPING bilmeyen icin ayni resimdi; her biri uzun hali + kampanyanin kendi rakamlariyla aciliyor, SLEEPING'de uyanma saati (ikisini ayiran tek olgu).
+
+### 3.399.2 — X-196 (Bölüm 1): Nöbet Bloğu ve Hesap Kartları Arayüz Süpürgesi (part 1): the sweep reaches the sentry block and the account cards (2026-09-06)
+
+- **Teknik Detay ve Doğrulama:** _multi_ — KAPANDI - v11.260 + v11.261 (3.399.2 / 3.399.3, kuruldu). Itemin saydigi dort yuzey de denetlendi. DUZELTILENLER: (1) Missions Sentry durum rozeti - alti durum sozunun (OFF/PAUSED/STOPPED/RUNNING/SLEEPING/WAITING) hicbirinin paneli yoktu, WAITING ile SLEEPING bilmeyen icin ayni resimdi; her biri uzun hali + kampanyanin kendi rakamlariyla aciliyor, SLEEPING'de uyanma saati (ikisini ayiran tek olgu).
+
+### 3.399.1 — X-195: Devir Notu Kaynağı ve Açılış Şeffaflığı (2026-09-06)
+
+- **Teknik Detay ve Doğrulama:** touch — Çekirdek parça yazıldı ve commit'lendi (v11.255): `src/core/sentryWhy.ts` — saf `roundWhy()` kaydı + `whyShorthand()` rozeti, 16 test. Üç şeyi çiviliyor: (a) `path` sözü verilen değil GERÇEKTEN sözcükleri kuran yol — lider verdict'i alıp turu zaman aşımına uğrarsa o tur ŞABLON turudur, ama uyandıran koşullar ve başarısız turun faturası yine taşınır; (b) `opening` promptun yalnız İLK SATIRI — tam metin zaten görev satırında, ikinci kopya bayatlayan kopyadır; (c) `problems` turla birlikte yolculuk eder, yargılanamayan koşul sessizce yok sayılmaz. Rozet üç durumlu: L (lider yazdı) · M (hiç sorulmadı) · M!
+
+### 3.399.0 — X-211 Ailesi ve X-195: Her Turun Hangi Kelimelerle Açıldığını Açıklaması (2026-09-06)
+
+- **Teknik Detay ve Doğrulama:** _stale_ — SEMSIYE KAPANDI (v11.257) - dort cocugu (X-212, X-213, X-214) tamamlandi. Ailenin cekirdek kavrami: bos hesap IKI ayri cevapti tek yuzle - 'kimse secmedi' (standing hesaba duser, dusmeli) ve 'makinenin kendisini sectim' (dusmemeli). Artik ayri degerler: MACHINE_ACCOUNT ('@machine', core/accountStore.ts).
+
+### 3.398.0 — X-194: Nöbet Koşullarında Canlı Okuma, sentry.probe, VE Grupları ve Lider Kesesi (2026-09-05)
+
+- **Temel Geliştirme:** 194 kapanışı: koşul satırlarında canlı okuma, sentry.probe, VE grupları, lider kesesi
+- **Teknik Detay ve Doğrulama:** touch — HOST YARISI BİTTİ ve commit'lendi (v11.244 · paket 3.390.0 kuruldu ve doğrulandı) — kalem KAPANMADI, görünür yarısı duruyor. Yapılan: sentry.start ve Missions'ın kendi kapısı (extension.ts:15421) artık preset (mechanical|intelligent|hybrid) ve conditions alıyor; newSentry içindeki yeni policyOf() preseti sözlükten dolduruyor, elle verilen koşullar preseti yeniyor ve preset yanında saklanıyor (bir yüzey 'hybrid (edited)' diyebilsin diye); tanınmayan preset ADIYLA reddediliyor, sessizce mekanik olmuyor; hiç mod istenmemesi hiçbir policy yazmıyor (turun kendi varsayılanı var). Testler test_sentry_campaign.js içinde.
+
+### 3.397.0 — X-194 (Bölüm 2): Nöbet Formuna Mod ve Koşul Seçicileri (part 2): the sentry form gets a mode and its conditions (2026-09-05)
+
+- **Temel Geliştirme:** Devir notu — U-130/U-131 kapandı, X-194 yarıda (oturum 2280dda6)
+- **Teknik Detay ve Doğrulama:** touch — HOST YARISI BİTTİ ve commit'lendi (v11.244 · paket 3.390.0 kuruldu ve doğrulandı) — kalem KAPANMADI, görünür yarısı duruyor. Yapılan: sentry.start ve Missions'ın kendi kapısı (extension.ts:15421) artık preset (mechanical|intelligent|hybrid) ve conditions alıyor; newSentry içindeki yeni policyOf() preseti sözlükten dolduruyor, elle verilen koşullar preseti yeniyor ve preset yanında saklanıyor (bir yüzey 'hybrid (edited)' diyebilsin diye); tanınmayan preset ADIYLA reddediliyor, sessizce mekanik olmuyor; hiç mod istenmemesi hiçbir policy yazmıyor (turun kendi varsayılanı var). Testler test_sentry_campaign.js içinde.
+
+### 3.396.0 — U-131: Çoklu Filtrelerde Sağ Tık Önayar Anahtarı (Preset Toggle) (2026-09-05)
+
+- **Temel Geliştirme:** seçenek hover borcu sıfır (U-130) + filtrede sağ tık anahtarı (U-131)
+- **Teknik Detay ve Doğrulama:** touch · _stale_ — BAŞLANMADI, yalnızca yer tespit edildi (kota eşiği). ÖLÇÜLDÜ: Console'daki "Show" kutusu bir <select> DEĞİL — media/console.js:3559 içinde window.AFFilter.multi({ id: "c-kinds", label: "show", allLabel: "everything", options: KINDS, presets: [{ id: "dialog", label: "Dialog", values: ["agent","user"] }] }) ile çizilen paylaşılan bileşen. Yani sağ tık davranışı console.js'e DEĞİL, media/afFilters.js içindeki bileşene yazılmalı — orada `presets` zaten var (satır 209 tanım, 233 çizim, 407 tıklama bağlama) ve bileşen dokuz sayfada kullanılıyor, dolayısıyla kural bir kez yazılınca hepsinde çalışır.
+
+### 3.395.0 — U-130: 2.205 Sessiz Açılır Kutu Seçeneğine Native Tooltip (Sıfır Borç Kapısı) (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** touch — İlk dilim ödendi (v11.236 · paket 3.382.0 kuruldu ve doğrulandı): paylaşılan Sessions tablosunun sıralama kutusu. Tablo dört sayfada birden gömülü olduğu için tek düzeltme dördünü birden düşürdü — sessions 30→0, agentdetail 6→0, dashboard 39→33, planusage 156→132; filo toplamı 2291→2225 ve manifest yeni tabana kilitlendi. YÖNTEM (sonraki dilimler için aynen tekrarlanır): sayfanın <option> üretecini bul, seçeneğin KENDİ metnini title'ın ilk satırı yap, varsa açıklamayı boş satırdan sonra ekle — açıklama sütunun <th>'inde veya RANGE_TIP'te zaten söyleneni TEKRARLAMAMALI, o seçeneği seçmenin ne YAPTIĞINI söylemeli (ONE SUBJECT).
+
+### 3.394.0 — X-197: Atomik Yazıcı ve Yeniden Denebilir Dosyalama (2026-09-05)
+
+- **Temel Geliştirme:** Devir notu — X-204/X-205/X-206/X-197 kapandı, sıra U-130 ve U-131'de
+- **Teknik Detay ve Doğrulama:** _stale_ — v11.248 · paket 3.394.0 kuruldu ve doğrulandı. Dört maddenin dördü de yapıldı. Asıl hasarın düşen yazma DEĞİL, çağıranın "reddedildi" ile "yarısı yazıldı"yı ayırt edememesi olduğu tespit edildi — yineleme tam oradan doğdu.
+
+### 3.393.0 — X-206: Tüm Hesapların Sıralı ve Pencereli Okunması (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** _stale_ — v11.247 · paket 3.393.0 kuruldu ve doğrulandı. Yedi maddenin yedisi de yapıldı. ‼️ "Hepsini yenile" bir PATLAMA değil, bir SIRA: accountUsage hâlâ refreshAll() kabul etmiyor (o metot zaten o modülün önlemek için var olduğu çarpım), yeni core/accountQueue.ts bir SIRA tutuyor ve aynı tekil kapıdan (AccountUsageService.refreshSlot — hedefini adıyla söylüyor, başka hiçbir şeyi değiştirmiyor) beş saniyede bir okuma başlatıyor.
+
+### 3.392.0 — X-205: Duran Hesap Anahtarı ve Doğrudan Seçim (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** _stale_ — v11.246 · paket 3.392.0 kuruldu ve doğrulandı. İki metin butonu ("Use next" / "Main account") tek bir kontrolün iki konumu oldu: gerçek bir on/off anahtarı. ON rengi, standing rozeti ile kartın sol çizgisinin zaten taşıdığı AYNI mavi — bir gerçek için bir renk, böylece kart sütunu etiket okumadan taranıyor.
+
+### 3.391.0 — X-204: Süresi Dolan Token ile Çıkış Yapılmış Hesap Ayrımı (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** _stale_ — v11.245 · paket 3.391.0 kuruldu ve doğrulandı. Alarm kozmetik değildi: 401 → `expired` → `slotIsUsable` false → hesap nöbetin filo listesinden de düşüyordu (extension.ts:23985, sentryWatch.ts:114). Yeni `core/oauthRefresh.ts` grant'ın kısa yarısını CLI ile aynı şekilde yeniliyor (uç nokta, client id ve gövde şekli kurulu CLI ikilisinden OKUNDU, uydurulmadı).
+
+### 3.390.0 — X-194 (Kısım 1): Kampanyanın Belirli Mod ile Başlatılabilmesi (part): a campaign can be STARTED with a mode (2026-09-05)
+
+- **Temel Geliştirme:** nöbet ailesi: talimat havuzu (X-192), Ayarlar ▸ Nöbet bölümü ve yol önizlemesi (X-193), kampanyanın modla başlatılabilmesi (X-194 host yarısı)
+- **Teknik Detay ve Doğrulama:** touch — HOST YARISI BİTTİ ve commit'lendi (v11.244 · paket 3.390.0 kuruldu ve doğrulandı) — kalem KAPANMADI, görünür yarısı duruyor. Yapılan: sentry.start ve Missions'ın kendi kapısı (extension.ts:15421) artık preset (mechanical|intelligent|hybrid) ve conditions alıyor; newSentry içindeki yeni policyOf() preseti sözlükten dolduruyor, elle verilen koşullar preseti yeniyor ve preset yanında saklanıyor (bir yüzey 'hybrid (edited)' diyebilsin diye); tanınmayan preset ADIYLA reddediliyor, sessizce mekanik olmuyor; hiç mod istenmemesi hiçbir policy yazmıyor (turun kendi varsayılanı var). Testler test_sentry_campaign.js içinde.
+
+### 3.389.0 — X-193: Ayarlar Sayfasına Nöbet Bölümü ve Yol Önizlemeleri (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** **done** — v11.243 · paket 3.389.0 kuruldu ve doğrulandı. Nöbetin kendi ayar bölümü var: on üç ayar dört SORU altında gruplandı (devir notunu nerede arar · sonraki oturuma ne söyler · lider ne harcayabilir · bir tur ne zaman boşa gidiyor) ve gruplamanın tanımadığı anahtar 'More' altında yine çiziliyor — gruplama elle yazılmış editoryal bir karar, bayatlayacak, ama bir ayarı GİZLEMEYECEK. Her yol satırı altında çözülmüş GERÇEK yolu taşıyor; kurulamayan yol yol yerine nedeni taşıyor (yeni saf fonksiyon previewPathList, satır hizalı — resolvePathList bilerek değil).
+
+### 3.388.0 — X-192: Tek Nöbet Talimat Havuzu ve Çift Okuma (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** **done** — v11.242 · paket 3.388.0 kuruldu ve doğrulandı. Kayıtlı talimat havuzu artık gerçekten havuz: TEK KAYNAK, İKİ KULLANIM. Başlığı bir verdict adlandıran blok şablondur (mekanik tur doldurur), HER blok liderin harmanladığı malzemedir.
+
+### 3.387.0 — X-191: Nöbet Lider Ajanı ve Çok Kaynaklı Devir Notu Keşfi (2026-09-05)
+
+- **Temel Geliştirme:** nöbet lider ajanı ve çok kaynaklı devir notu keşfi
+- **Teknik Detay ve Doğrulama:** **done** — Kapatıldı: core/sentryLeader.ts (saf; model bir PORT olarak enjekte ediliyor — 'ileride diğer motorlar için de aynı sistem' böylece ikinci bir port, ikinci bir tasarım değil). ALTI TASMA, her biri tasma olarak test edildi: lider yalnız koşul ateşleyince uyanır (rutin gece SIFIR maliyet ve runner'ın hiç çağrılmadığı ÖLÇÜLÜYOR) · varsayılan model haiku, tek yerde adlandırılmış · tur başına süre ve maliyet tavanı · kampanya başına GÜNLÜK bütçe (gece yarısı devrediyor) · her tur ModelAssist olarak kayda geçiyor (model, ms, $, ok) — K1'in asıl kusuru buydu, sentryStep'e artık assist geçiliyor · üst üste N hata modu mekaniğe düşürüyor ve SÖYLÜYOR. ‼️ HİÇBİRİ İŞİN FRENİ DEĞİL: bütçe bitti, fren attı, tur kesildi, cevap okunamadı, runner yok, runner fırlattı — her yol turu YİNE açıyor, şablonla, ve arızayı kaydediyor.
+
+### 3.386.0 — X-189: Devir Notunun Gerçekten Yazıldığı Yerde Aranması (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** **done** — Kapatıldı: yeni saf modül core/handoverDiscovery.ts. Dört kaynak sırayla (transcript > configured > projectNotes > fallback) ve puanlı ad eşleştirme; kanonik ad artık tercih edilir ama zorunlu değil. ŞARTNAMEDEN BİLİNÇLİ BİR AYRIM: kimlik (+3) ad içindeki oturum kimliği VEYA oturumun dosyayı kendisinin yazmış olmasıyla kanıtlanır — tek bileşen, iki kanıt, asla iki kez sayılmaz; ve kimlik puandan bağımsız bir TABANDIR, çünkü 'devir + bugün + kanonik' klasördeki her notu tanımlar ve başkasının notunu benimsemek hiç bulmamaktan kötüdür.
+
+### 3.385.0 — X-190: Nöbet İlke ve Koşul Motoru (Üç Modun Tekilleştirilmesi) (2026-09-05)
+
+- **Temel Geliştirme:** 167 kurtarma ilk dilim (X-187 canlı kota · X-188 yol değişkenleri · X-190 nöbet koşul motoru)
+- **Teknik Detay ve Doğrulama:** **done** — core/sentryPolicy.ts kuruldu (saf: fs/vscode/model/saat yok). ANA KARAR: mekanik/akıllı/hibrit ÜÇ KOD YOLU DEĞİL, tek koşul kümesinin üç ÖN AYARI — mekanik=boş küme, akıllı=her tur ateşleyen küme, hibrit=kullanıcının kümesi. Böylece mekanik yol her hibrit turunda zaten koşuyor, testsiz çürüyemiyor.
+
+### 3.384.0 — X-188: Nöbet Klasör Ayarları ve Yol Değişkenleri Çözücüsü (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** **done** — core/pathVars.ts kuruldu (saf, fs/vscode/path yok) ve üç gömülü kişisel yol ona bağlandı. Sözdizimi — prompt şablonlarının {name} sözdiziminden KASITLI olarak ayrı, çünkü yol şablonu settings kutusuna yazılır ve orada zaten konuşuluyor; VS Code adları (userHome, workspaceFolder) takma ad olarak da çalışır. TEK YASA: çözülemeyen değişken yolu İPTAL EDER, boş dizeye çevirmez.
+
+### 3.383.0 — X-187: Engines Sayfasında Canlı Kota Sorgulama (2026-09-05)
+
+- **Teknik Detay ve Doğrulama:** **done** — Motorlar sayfası artık kotayı kendisi istiyor. Kök neden: AccountUsageService üç kapıyla (beat/readOnEdge/refresh) yazılmış ama yalnız bridge accounts.list yolu bağlanmıştı; sayfa ağa hiç dokunmayan current() değerini okuduğu için soğuk hostta her kart percent -1 / resetsAt 0 çiziyordu. Yapılan: EnginesPanel açılışta, revealde ve her hesap hareketinde (capture/activate/forget) readAccounts() çağırıp cevabı bekliyor ve sonra taze payload gönderiyor; sayfa için TEK zamanlayıcı (hesap başına değil), sekme gizliyken atlanıyor, kapanışta temizleniyor.
+
+### 3.382.0 — U-130 (1/n): Sessions Tablosu Seçenek Hover Borcu Ödemesi (1/n): the sessions table pays its own hover debt (2026-09-05)
+
+- **Temel Geliştirme:** 130 (1/n): Sessions tablosu hover borcunu ödedi (kuruldu ve doğrulandı)
+- **Teknik Detay ve Doğrulama:** touch — İlk dilim ödendi (v11.236 · paket 3.382.0 kuruldu ve doğrulandı): paylaşılan Sessions tablosunun sıralama kutusu. Tablo dört sayfada birden gömülü olduğu için tek düzeltme dördünü birden düşürdü — sessions 30→0, agentdetail 6→0, dashboard 39→33, planusage 156→132; filo toplamı 2291→2225 ve manifest yeni tabana kilitlendi. YÖNTEM (sonraki dilimler için aynen tekrarlanır): sayfanın <option> üretecini bul, seçeneğin KENDİ metnini title'ın ilk satırı yap, varsa açıklamayı boş satırdan sonra ekle — açıklama sütunun <th>'inde veya RANGE_TIP'te zaten söyleneni TEKRARLAMAMALI, o seçeneği seçmenin ne YAPTIĞINI söylemeli (ONE SUBJECT).
+
+### 3.381.0 — U-128: Dar Kutulardaki Seçeneklerin Kendi Adını Taşıması (2026-09-05)
+
+- **Temel Geliştirme:** 128: seçenek hover'ları + ölçülen bütçe kapısı (kuruldu ve doğrulandı)
+- **Teknik Detay ve Doğrulama:** **done** — Düzeltildi ve — asıl önemlisi — ÖLÇÜLDÜ (v11.235 · paket 3.381.0 kuruldu ve extensions.json ile doğrulandı). Haklıydınız ve rapor ettiğinizden daha kötüydü: eklentinin çizdiği 2.639 <option>'ın 2.291'i hiçbir şey söylemiyordu, Console'un kendisinde 126'sı dâhil — çünkü seçenekler `title="${detail}"` diye kuruluyordu ve listelerin çoğunda detail yok. Yani 'yanındakilerde var' bile yarı doğruydu; birkaçı `title=""` çiziyordu.
+
+### 3.380.0 — S-52: Oturum Süresi Ölçümü — Aktif Çalışma ile Gece Boşluğunun Ayrılması (sessionSpan) (2026-09-05)
+
+- **Temel Geliştirme:** 52: resume edilen oturum artık pasif süreyi saymıyor
+- **Teknik Detay ve Doğrulama:** **done** — EVET, ekliyordu — ve ölçüldü. Oturum tablosunun Duration'ı `lastTs - firstTs` idi, yani ertesi sabah resume edilen bir konuşma bir buçuk gün koşmuş gibi okunuyordu. Kullanıcının kendi transkript deposunda 36 oturumda bir saatten uzun iç boşluk var; en kötüsü 1247 dakika diyordu, gerçek çalışma ~144 dakika.
+
+### 3.379.0 — X-178: Nöbet Bekçisi (Watchdog) ve Gece Kilitlenmelerini Önleme (2026-09-04)
+
+- **Temel Geliştirme:** Nöbet yüzeyi + bekçisi (X-177, X-178) — Console canlı şeridi, takılan turu bitiren bekçi, slot sağlığı bildirimleri
+- **Teknik Detay ve Doğrulama:** **done** — Bekçi ve slot sağlığı bitti (v11.233 · paket 3.379.0 kuruldu ve extensions.json ile doğrulandı). BEKÇİ: kampanyanın döngüsünü turların BİTMESİ sürüyor (sentryDue koşan tur varken bilerek false), dolayısıyla hiç bitmeyen bir tur onu sonsuza kadar tutuyordu — kota da kırmıyor, çünkü izin isteminde park etmiş oturum hiçbir şey harcamıyor. Aynı pompa vuruşu artık ikinci soruyu da soruyor (ikinci zamanlayıcı yok): tahtadaki tur hâlâ yaşıyor mu?
+
+### 3.378.0 — X-177 (Bölüm 2): Nöbet Durumunun Konsol Canlı Şeridine Taşınması (2026-09-04)
+
+- **Teknik Detay ve Doğrulama:** touch — BİRİNCİ YARI BİTTİ (v11.230-231, paket 3.377.0 kurulu): Missions sayfasının tepesinde Sentry bölümü + kampanyanın KENDİ paused durumu + sentry.pause/resume köprüde + parity girdileri + dört fixture fotoğraflandı + 16 sayfa testi. Kullanıcı kararları: (1) duraklat kampanyanın kendi durumu olacak, çiftliğin automation ana anahtarı DEĞİL; (2) Console şeridi kampanya kaydı varsa HEP görünecek (durmuşsa 'gece şunu yaptı, şu yüzden durdu' der). İKİNCİ YARI KALDI: Console canlı şeridi — sayfa başlığının altında tek satır, şu an hangi hesapla hangi kalem koşuyor, o hesabın kotasında kalan, sırada ne var, en son ne oldu; tıklayınca Missions'a gider.
+
+### 3.377.0 — X-177 (Bölüm 1): Nöbet Yüzeyi ve Duraklatma Kontrolü (2026-09-04)
+
+- **Teknik Detay ve Doğrulama:** touch — BİRİNCİ YARI BİTTİ (v11.230-231, paket 3.377.0 kurulu): Missions sayfasının tepesinde Sentry bölümü + kampanyanın KENDİ paused durumu + sentry.pause/resume köprüde + parity girdileri + dört fixture fotoğraflandı + 16 sayfa testi. Kullanıcı kararları: (1) duraklat kampanyanın kendi durumu olacak, çiftliğin automation ana anahtarı DEĞİL; (2) Console şeridi kampanya kaydı varsa HEP görünecek (durmuşsa 'gece şunu yaptı, şu yüzden durdu' der). İKİNCİ YARI KALDI: Console canlı şeridi — sayfa başlığının altında tek satır, şu an hangi hesapla hangi kalem koşuyor, o hesabın kotasında kalan, sırada ne var, en son ne oldu; tıklayınca Missions'a gider.
+
+### 3.376.0 — X-176: Nöbet Kampanyasının Fiilen Koşması ve Planlayıcı (2026-09-04)
+
+- **Teknik Detay ve Doğrulama:** touch — BAŞLANDI, YARIM (v11.225 / commit 7a8d91d) — saf planlayıcı bitti, sürücü ve op'lar duruyor. KARARLAR (kullanıcıya soruldu, 2026-09-04): (1) her nöbet turu NORMAL BİR GÖREV SATIRI olur; oturumu açan, terminalini izleyen, bitişini anlayan ve iptal düğmesi veren mevcut TaskManager'dır — kampanya yalnızca sıradaki görevi yaratır (kalemin 'ikinci zamanlayıcı yazılmaz' şartı harfiyen). (2) KAMPANYAYI YALNIZCA KULLANICI BİTİRİR: tur bütçesi ve zaman bütçesi YOK; boş backlog bir BEKLEYİŞTİR, bitiş değil.
+
+### 3.375.0 — X-174 / X-175: Nöbet Şablon Dosyası ve Model Maliyetinin Prompt'a Ulaşması (2026-09-04)
+
+- **Temel Geliştirme:** 175 nöbet promptu tamamlandı: şablonlar gerçekten bir dosyadan geliyor (agentFarm.sentryTemplatesFile), model maliyeti promptun sözlerine ulaşıyor, köprüye sentry.templates ve sentry.prompt eklendi
+- **Teknik Detay ve Doğrulama:** **done** — src/core/sessionDiagnosis.ts kondu (v11.222) — saf modül: fs yok, child_process yok, motor çağrısı yok; bütün gerçekler dışarıdan veriliyor, “bedava” iddiası bu yüzden denetlenebilir. DÖRT hüküm: item-done · clean-handover · nothing-to-continue · hit-the-wall. Dördüncüsü kullanıcının kararı: “duvara toslamak” bir alarmdır, hiç tur üretmemiş oturuma onu demek alarmı okunmaz hale getirir.
+
+### 3.374.0 — X-172: Engines Sayfasında Hesapları Yakalama, Tutma ve Bırakma (2026-09-04)
+
+- **Teknik Detay ve Doğrulama:** touch — ILK DILIM KONDU VE COMMIT EDILDI (v11.220): motor kartindaki hesap cipi. BITEN: enginesPanel.ts'e EnginesPanelDeps.accounts?() + buildData'ya accounts; extension.ts'te enginesPanelDeps.accounts BRIDGE'IN CEVAPLADIGI AYNI OKUYUCUDAN (publicAccount) - sayfa ile accounts.list ayrisamaz; media/engines.js'e accountChipHtml(e) + .engacct CSS, cip engbadge'in hemen saginda; enginespanel fixture'ina uc durumu da iceren accounts verisi; iki temada BAKILDI (Claude'da mavi 'work@studio - 91%', Codex'te sessiz kesik cizgili 'main account', hesabi olmayan motorlarda HIC CIP YOK). Cip bilerek state badge'inden sessiz: badge 'bu kosabilir mi' diye cevaplar, cip 'kimin planiyla' - okuyucu ikincisini ancak birincisi evet olunca sorar; dolgu degil kontur, boylece bir durum hukmuyle karistirilamaz.
+
+### 3.373.0 — X-169: Oturum Başlatan Her Kapıda Hesap Boyutu (Account RunDimension) (2026-09-04)
+
+- **Temel Geliştirme:** Agent Farm 3.373.0 (VSIX) — X-169: hesap, oturum baslatan her kapida bir launch boyutu
+- **Teknik Detay ve Doğrulama:** touch — KESILDI VE GERI ALINDI - kasitli, kod kalmadi, depo temiz. Yapilan is KESIF: boyutun nereye takilacagi bulundu ve olculdu. (1) media/afDimensions.js icine account satiri (owner user, remembered FALSE, perEngine false, redraws false, appliesTo hasAccounts) + src/core/launch.ts LaunchOptions.account + test/lib_launch_doors.js EVERYTHING fixture + test_launch_dimensions 16->17 + test_launch_matrix 208->221 hepsi calisti, testler yesil oldu.
+
+### 3.372.0 — U-129: Motor Kurulum Butonunun Gerçekten Çalışan Komut Basması (2026-09-03)
+
+- **Teknik Detay ve Doğrulama:** **done** — Kok neden: Install dugmeleri her motor icin npm install -g yaziyordu; hicbir motoru olmayan makinede Node de yok, o yuzden hepsi "npm is not recognized" veriyordu. Cozum: kullanicinin _setup/Install-Engines.ps1 tablosu kopyalandi - Claude/Codex/Antigravity icin ureticinin kendi kurulum script i (Windows: irm ... | iex, digerlerinde: curl ...
+
+### 3.371.0 — U-126: Çalışma Dizini Noktası ile Oturumun Ayrıştırılması (2026-09-03)
+
+- **Teknik Detay ve Doğrulama:** touch — KOK NEDEN BULUNDU, DUZELTME KODLANDI AMA GERI ALINDI (kota esigi) - repoda degisiklik yok, agac temiz. KOK NEDEN (kanit kodda): media/console.js `let colorPick` bir OTURUM KIMLIGI tutuyor, colorDot() ise `colorPick === id` olan HER noktaya paleti ciziyor. Ayni oturum panelde uc yerde birden cizilebiliyor - colorDot cagri yerleri: satir ~1872 canli kart (slot c-list), ~1916 'kaldigin yer' rafi (yine c-list), ~2117 resume listesi (slot c-rlist).
+
+### 3.370.0 — X-166: AskUserQuestion Soru Formunda Kutu ve Metin Seçim Kaybı Onarımı (2026-09-03)
+
+- **Temel Geliştirme:** AskUserQuestion secim kaybi duzeltmesi (X-166)
+- **Teknik Detay ve Doğrulama:** **done** — Katman bulundu, sebep kanitlandi, Agent Farm tarafi duzeltildi ve kuruldu (v3.370.0 / v11.211). OLCUM: sekiz aylik transkriptteki 26 AskUserQuestion cagrisinin tamami tarandi. KURAL -> tool sonucunda `response` (serbest metin) varsa CLI yalnizca "The user responded: <metin>" basiyor ve `answers`i TAMAMEN atiyor.
+- **MEASURED, over every AskUserQuestion in the transcript history (26 calls, eight months): when `response` is present the CLI renders `"The user responded: <text>"` and DROPS `answers` outright:** Eight of those calls lost picks that way. The picks were never lost from the RECORD — `toolUseResult.answers` has all four of them, sitting in the transcript that same evening — only from the model's view. That is the worst shape a bug can have: no error, no gap, an answer that looks complete.
+
+### 3.369.0 — X-151: 13 Başlatma Kapısının Modül Olması ve Parite Matrisi Çağrısı (2026-08-31)
+
+- **Temel Geliştirme:** 148 Hamle 3 (X-151): 13 baslatma kapisi modul oldu, 208'lik parite matrisi artik kapilari cagirarak olcuyor (bosluk 141 -> 31)
+- **Teknik Detay ve Doğrulama:** **done** — 3.369.0 (v11.209, 61dea2b). 13 kapı artık modül: `src/launch/doors/`, her biri `collect(ctx)`. ‼️ KAPI OTURUM BAŞLATMIYOR — spawn, kayıt ve UI hidroliği yerinde kaldı; canlı üründe CEVABI çıkarmak matrisin ihtiyacı olan her şeydi, EYLEMİ çıkarmak yedi spawn yolunu tek seferde oynatırdı ve ölçüme hiçbir şey katmazdı.
+- **The 13 doors are modules now (`src/launch/doors/`):** , each with one job: `collect(ctx)` returns the intent it has assembled. ‼️ **A door does not start a session.** The spawning, the recording and the UI plumbing stay exactly where they were — this is a live product, and extracting the ANSWER is all the matrix ever needed, while extracting the ACT would have moved seven spawn paths at once for no extra measurement.
+- **So the matrix stopped grepping and started calling:** Each door is handed EVERY dimension there is and asked what it hands on. A dimension that does not survive the call is not carried, whatever the source says. The gap count fell from **141 to 31** — and the 31 are not noise, they are findings, each one named:
+
+### 3.368.0 — X-150 (2/2): 208 Parite Zorunluluğu ve Ölçümü (2/2): 208 obligations, counted (2026-08-31)
+
+- **Temel Geliştirme:** Agent Farm 3.366.0 · 3.367.0 · 3.368.0 — X-148 Hamle 1 ve 2 (X-149 + X-150) ve oturum devir notu
+- **Teknik Detay ve Doğrulama:** **done** — İki sürümde çıktı: 3.367.0 (v11.206, 36af196) veri kaydı + 3.368.0 (v11.207, 2686841) matris. (1) 16 boyut artık veri: `media/afDimensions.js`, tipli kapısı `src/core/launchDimensions.ts`. Dizi `media/` altında çünkü kabuk anahtarını SAYFA hesaplamalı, yoksa her repaint bir gidiş-dönüş bekler — X-152'nin bitirmek istediği tur gecikmesi sınıfı.
+- **A matrix can:** 16 dimensions crossed with 13 doors is 208 cells, and every one of them must now hold a verdict in `launch.matrix.json`: `carried`, `exempt: <reason>`, or `gap: <reason>`. A seventeenth dimension therefore arrives with THIRTEEN cells that have no verdict and the suite is red until somebody says, per door, which of the three it is. The obligation is created by the dimension, not by somebody remembering to create it — which is the whole item.
+- **‼️ The first count is 67 carried, 141 gaps, and 7 of the 13 doors cannot be pointed at at all:** That is not a regression; it is the first time anybody has had the number. Most doors live inside quickpick loops and message handlers in a 30.476-line file, so their cells are declared rather than measured — and declared as gaps, because `door not addressable yet` is a count and not an excuse. Driving it to zero is X-151's acceptance criterion, stated in a figure rather than a paragraph.
+
+### 3.367.0 — X-150 (1/2): 16 Başlatma Boyutunun Veri Haline Gelmesi (1/2): the 16 launch dimensions are data now (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** **done** — İki sürümde çıktı: 3.367.0 (v11.206, 36af196) veri kaydı + 3.368.0 (v11.207, 2686841) matris. (1) 16 boyut artık veri: `media/afDimensions.js`, tipli kapısı `src/core/launchDimensions.ts`. Dizi `media/` altında çünkü kabuk anahtarını SAYFA hesaplamalı, yoksa her repaint bir gidiş-dönüş bekler — X-152'nin bitirmek istediği tur gecikmesi sınıfı.
+- **The list is now a record, in `media/afDimensions.js`:** Each row says who the answer belongs to, whether a launch writes it back, whether it is remembered per ENGINE (X-145), whether changing it rebuilds the composer shell, where the dimension does not exist at all — and one line of why it is the way it is. It lives in `media/` for the reason the clock and the narrowing rule do: both sides need it, and the shell key has to be computed BY THE PAGE or every repaint waits a round trip. `src/core/launchDimensions.ts` is its typed door.
+- **‼️ The array is pinned to `LaunchOptions` in BOTH directions:** A field added to the interface with no row goes red; a row for a field that no longer exists goes red too. That is the difference between this and the constant it replaced.
+- **Three places that counted these fields by hand now fold over the list:** `ENGINE_MEMORY_FIELDS` is derived rather than typed; the row `launchToRemember` files under an engine is built from it; and the six engine-owned dimensions `withLastLaunch` used to name one by one are inherited by the shape. A seventh of them is a flag on a row now, not six edits somebody has to remember.
+
+### 3.366.0 — X-149: İki Tarafça Yüklenen Tek Daraltma Kuralı (Narrowing Rule) (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** **done** — 3.366.0 (v11.205, 0239582). Daraltma kuralı üç değil DÖRT yerdeydi: dördüncüsü media/afEngine.js'in launchNarrow'u ve kendi yorumu diğer üçünün taşınmadığını itiraf ediyordu. Kural artık tek yerde: media/afLaunch.js (çift ihraç), host onu src/core/aflaunch.ts ile AYNI DOSYA olarak yüklüyor (afTime.js deseni).
+- **There is now one rule and it lives in `media/afLaunch.js`:** , the arrangement the clock and the query language already proved: the pages load it in the webview and the extension host loads the SAME FILE through `src/core/aflaunch.ts`. The four bodies are gone, not shadowed — a page that kept its own would have passed every test and stayed free to drift, so the absence is measured: `defaultEffort`, the one piece of arithmetic the rule owns, no longer appears in any of the three page scripts at all.
+- **‼️ It did NOT make the four agree — that would have changed behaviour on surfaces that took months to get right:** The differences are real answers to real cases, so they are PARAMETERS now instead of divergences hidden in a copy: `keep` is S-34 (a setup a real launch on this engine used beats the catalogue), `preferModelDefault` is the Console's "a model was just picked by hand", `resolveAlias` is S-47/K-28 (`big-pickle` resolving to `opencode/big-pickle`), and `takesEffort` is X-35 (an engine with no effort flag offers none, answered at each call site because the two page surfaces resolve it differently before a catalogue has landed). Every one of them is now a word somebody can read, and converging them is a decision there is finally one place to take.
+- **`test/test_launch_narrow.js` is one fixture table and every entry point answers all of it:** — Node, a webview sandbox, and the host's own compiled `narrowLaunch`. A case added there is a case every surface has to pass, and the page's answer is asserted equal to the host's on all 23 of them, which is the assertion the four copies could never make. Two source-text regexes in `test_launch_parity.js` and one in `test_tasks_webview.js` were replaced by running the rule rather than reading it: their subject had moved, and re-pointing a regex at the new file would have been the same measurement with the same blind spot.
+
+### 3.365.0 — X-106: Otomasyonlara Rota Yayılımı (Schedule/Trigger/Template Rota Desteği) (2026-08-31)
+
+- **Temel Geliştirme:** Agent Farm 3.365.0 (v11.204) — X-105 kapandı, X-106 omurgası çıktı
+- **Teknik Detay ve Doğrulama:** touch — Omurga çıktı — 3.365.0 (v11.204, commit a4b83c5). BİTEN: providerId+tier artık RunDimensions'ta, yani schedule/trigger/template/workflow step şekil gereği taşıyor; runExtras ve retryTask koruyor (tier rota değişince düşüyor); runner'ın HER İKİ spawn şekli (headless + interactive/external) task'ın kendi rotasını routeOf(task) ile aynı resolver'a veriyor; bridgeRunDimensions rotayı kabul edip REDDEDIYOR (motorun işaret edemeyeceği rota, rotanın haritalamadığı tier, rotasız tier, cli+rota çakışması) — 'düşürmek' bilerek seçilmedi, çünkü otomasyon bir kez yazılıp aylar sonra okunuyor; rotanın VAR OLUP OLMADIĞI adapter sorusu olduğu için callback olarak geliyor ve tek yerde (runDims) bağlanıyor — extension.ts'te bridgeRunDimensions( tam olarak 1 kez geçiyor, test sayıyor; ROUTE_NOTE 5 kapıya işlendi; bridgeDimsOut geri veriyor; Yeni Görev formunda Route + Tier kutuları var (motorun sağlayıcı ekseni ve kurulu profili varsa çiziliyor, tier ancak rota seçilince), motor/rota değişince uyumsuz değer düşüyor; 4 seed fonksiyonu (task/schedule/trigger/template) rotayı geri veriyor. 33 yeni doğrulama (test_task_route.js); süit 267/17.396/0; koyu+açık render'a bakıldı.
+- **It travels by the shape, not by ten call sites:** `providerId` and `tier` are now part of `RunDimensions`, so a schedule, a trigger, a template and a workflow step carry them without any of those knowing they exist — and a retry, a clone and an edit inherit them the same way. Both spawn shapes in the runner (the headless one and the interactive one, which live 400 lines apart) pass the task's own route to the same resolver the Console and the terminals already use.
+- **Refused, not narrowed — and that is the difference between a composer and an automation:** A composer redraws, so dropping an impossible value and saying so is right there. An automation is written once and read months later, so a route quietly discarded at write time is a run that silently takes the agent's standing endpoint for ever after. A route this engine cannot be pointed at, a tier the route does not map, a tier with no route at all, and a route beside a `cli` profile are each refused by name at the moment they are written down.
+
+### 3.364.0 — X-105 (6/n): Kartta Yalnız İstenen Değil, Gerçekte Cevap Veren Rota Kimliği (6/n): the card says who served the last turn, not only who was asked for (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** touch — Uc dilim yapildi (3.358.0, 3.359.0, 3.360.0), kalem ACIK. (1) DOGRULUK — ve bu bir BULGUYDU: Console'un kalici (Claude) yolu, yani panelin var olma sebebi olan motor, cp.spawn'a hic env vermiyordu. X-101 per-turn motorlara, X-104 OS penceresine tam ortam vermisti; openPersistent atlanmisti.
+
+### 3.363.0 — X-105 (5/n): Sağlayıcı Değişim Politikası ve console.switch (5/n): a provider change is answered, not guessed (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** touch — Uc dilim yapildi (3.358.0, 3.359.0, 3.360.0), kalem ACIK. (1) DOGRULUK — ve bu bir BULGUYDU: Console'un kalici (Claude) yolu, yani panelin var olma sebebi olan motor, cp.spawn'a hic env vermiyordu. X-101 per-turn motorlara, X-104 OS penceresine tam ortam vermisti; openPersistent atlanmisti.
+- **The verdict is the adapter's, and no engine is named to reach it:** `src/core/providerSwitch.ts` answers one question — may this live session change who serves it, and when — out of `providerScope` and `canSwitchProviderAtTurnBoundary`. Four answers, and `unchanged` is one of them: `unchanged` · `now` · `turn-boundary` · `refuse`. A refusal carries the remedy (`fork` when there is a conversation to carry over, `new` when there is not), because a no with nothing after it leaves the caller nowhere. The module names no engine at all, and a test measures that: a sixth engine gets the right answer by declaring its scope, not by somebody remembering to edit a list.
+- **`console.switch` is the one door:** It asks the policy, THROWS a refusal rather than returning a success with a sentence beside it, and — on the engine where the model names the provider — refuses to invent a model, listing what that provider actually serves instead. `console.setModel` still changes what answers; this changes who serves it, and on two engines those are different questions.
+- **And the card says who is serving it NOW:** On OpenCode a mid-session model change moves the provider, so a pill naming the launch value was pointing at an endpoint the session had stopped talking to. Both facts are kept and neither is stored twice: the current provider is DERIVED from the model the card is on (through the anti-guess reader — a prefix is only a provider when the engine published it), the launch record is untouched because X-102 made it immutable, and the panel's first line is the current one with `Started on:` under it. Same mark, no second pill, and the line is drawn only on a card that really moved.
+
+### 3.362.0 — X-105 (4/n): Kompozitörde Rota Seçimi ve Köprü Rota Desteği (4/n): the composer PICKS the route, and the bridge can too (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** touch — Uc dilim yapildi (3.358.0, 3.359.0, 3.360.0), kalem ACIK. (1) DOGRULUK — ve bu bir BULGUYDU: Console'un kalici (Claude) yolu, yani panelin var olma sebebi olan motor, cp.spawn'a hic env vermiyordu. X-101 per-turn motorlara, X-104 OS penceresine tam ortam vermisti; openPersistent atlanmisti.
+- **‼️ AND THE SUB-AXIS IS ONLY A BOX WHERE IT IS A TIER:** Where the engine's sub-axis is the MODEL — OpenCode names one `provider/model` — that axis is already on this strip, so a picked provider **narrows the model box that is there** instead of adding a second one beside it. Two controls for one subject can disagree within a click, and ONE SUBJECT is the rule that would break.
+- **‼️ Nothing is drawn where there is nothing to choose:** Four of five engines have no provider axis, and the fifth gets no box until a route has actually been set up — so the row measured at `nowrap` is unchanged for everybody who has never made one. There is no variant control either, and that is the transport's answer rather than an omission: a hosted card is spoken to over ACP, which declares only model and mode. The form says why, in the route box's own hover.
+- **The narrowing stays where it belongs:** Picking a route, and moving the engine underneath one, both go through the adapter's own `prunePick` — which says out loud what it dropped, so a tier that stops existing is not something you discover at Send.
+
+### 3.361.0 — S-51: Motor Değiştiğinde Model ve Seçenek Kutularının Senkron Hareketi (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** **done** — Konsol bestecisinde motor degistiginde model ve efor kutulari guncellenmiyordu; ancak kullanici model kutusuna elini uzatinca duzeliyordu. Kok neden tek yerdeydi: model listesi, efor listesi ve motor ipucu satirinin ucu de engineNow() uzerinden ciziliyor, yani kabuk yeniden kurulmadan hicbiri kimildamiyor - ve motor secicisinin kendine ait bir yeniden cizimi yoktu, tek yeniden cizimi host'un setEngine echo'suydu. O echo tam da okuyucunun elinin hala az once bastigi secicinin uzerinde oldugu anda geliyor (native select secimden sonra odagi birakmaz), M-33 bunu 'eller isin basinda' diye okuyup yeniden kurmayi borca yaziyordu; borcu da kullanicinin model kutusuna uzanmasinin focusout'u oduyordu.
+- **M-33 was not the thing to loosen:** Its rule already says *only a rebuild nobody asked for waits*, and this one was asked for by the very hand it was waiting on. So the fix is the answer the model picker beside it has always used: the engine picker repaints on the spot, and hands focus back to itself afterwards so an arrow-key walk through the engine list still reaches its second step.
+
+### 3.360.0 — X-105 (3/n): Rota İçin Tek Okuyucu ve Köprü Bildirimi (3/n): one reader for the route, and the bridge says it too (2026-08-31)
+
+- **Temel Geliştirme:** 3.360.0 — X-105 (1-3/n): Console karti rotasinda kosuyor, rotasini soyluyor ve kopru de soyluyor
+- **Teknik Detay ve Doğrulama:** touch — Uc dilim yapildi (3.358.0, 3.359.0, 3.360.0), kalem ACIK. (1) DOGRULUK — ve bu bir BULGUYDU: Console'un kalici (Claude) yolu, yani panelin var olma sebebi olan motor, cp.spawn'a hic env vermiyordu. X-101 per-turn motorlara, X-104 OS penceresine tam ortam vermisti; openPersistent atlanmisti.
+- **And it is the same reader the card draws from:** The resolution lives in one place that both the page and the op delegate to, and it asks the engine's own adapter — the same one the launcher's route row is built from — for the words it uses. If those were two readings, "what the card says is what the process runs on" could not be true by construction: it can only hold while there is one statement.
+
+### 3.359.0 — X-105 (2/n): Konsol Kartının Hangi Rotadan Sunulduğunu Açıklaması (2/n): the card says what it is served by (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** touch — Uc dilim yapildi (3.358.0, 3.359.0, 3.360.0), kalem ACIK. (1) DOGRULUK — ve bu bir BULGUYDU: Console'un kalici (Claude) yolu, yani panelin var olma sebebi olan motor, cp.spawn'a hic env vermiyordu. X-101 per-turn motorlara, X-104 OS penceresine tam ortam vermisti; openPersistent atlanmisti.
+- **The route is now its own mark, beside the engine badge:** Not a line inside it: the engine is the program, the route is the endpoint, and a badge that answers two questions is a badge that will eventually answer one of them wrong.
+
+### 3.358.0 — X-105 (1/n): Konsol Kartının Seçilen Rotada Koşması (1/n): the Console card runs on the route the card says it is on (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** touch — Uc dilim yapildi (3.358.0, 3.359.0, 3.360.0), kalem ACIK. (1) DOGRULUK — ve bu bir BULGUYDU: Console'un kalici (Claude) yolu, yani panelin var olma sebebi olan motor, cp.spawn'a hic env vermiyordu. X-101 per-turn motorlara, X-104 OS penceresine tam ortam vermisti; openPersistent atlanmisti.
+- **The same defect, a fourth time — this time on the surface the Console exists for:** 
+- **And the card with no route chosen is the half that is easy to miss:** "No route" is not "no statement": the official endpoint is reached by *clearing* what was inherited. A leftover `ANTHROPIC_BASE_URL` in the window answered the exact question the official route was picked to answer, and nothing here could say otherwise because nothing here was said at all.
+
+### 3.357.0 — S-50 / U-127: Soğuk Açılan Konsolun Kapı Yanıtlarıyla Gelmesi ve Tek Kimlik Sözlüğü (2026-08-31)
+
+- **Temel Geliştirme:** 50 (soğuk açılan Console kapının cevaplarıyla geliyor) ve U-127 (Runs tablosunda tek kimlik sözlüğü)
+- **Teknik Detay ve Doğrulama:** **done** — 3.357.0 ile kapandı. Kök neden tek satırlık sıralamaydı: ConsolePanel.show yeni panel dalında sayfanın kabuğunu constructor içinde, yani apply()'dan ÖNCE kuruyordu — sayfanın okuduğu ilk yük henüz hiçbir şey söylenmemiş bir paneli anlatıyordu. Ardından gelen refresh() gerçek yükü henüz betiği çalışmamış bir webview'a itiyordu; yüklenmemiş sayfaya yapılan push geç değil, KAYIPTIR.
+
+### 3.356.0 — X-104: Harici İşletim Sistemi Terminalinin Seçilen Rota Ortamında Başlatılması (1/n): the OS terminal window runs on the route you picked (2026-08-31)
+
+- **Temel Geliştirme:** 33 kapandı (Plan sekmesinde toplu/tekil silme + repaint korumasının 24 sayfaya süpürülmesi) ve X-104'ün ilk yarısı (haricî terminal artık seçilen rotanın ortamında koşuyor)
+- **Teknik Detay ve Doğrulama:** touch — YARIM — 3.356.0 ile ilk yarısı yayımlandı, kalem AÇIK. YAPILAN: haricî terminal, CLI başlatan yüzeyler içinde HİÇ ortam taşımayan tek yüzeymiş. Entegre terminal X-101'den beri overlay alıyor (ajanın kendi değişkenleri + rotanın endpoint/anahtarı + miras kalan Anthropic rotasını susturan clear listesi); üç satır ötedeki haricî dal hepsini düşürüyordu.
+- **On Windows the values travel in a file the script eats, and they are not in the script:** There is no in-memory channel to an OS window here: when Windows Terminal is already running, `wt.exe` is a thin client and the window is opened by a process that started long before this one, so an environment set on the spawn reaches nothing. A route's value is an API key, so the design is about how briefly it exists: the launcher script's first act is to read the file and **delete** it, before it runs anything. A window closed later — with the CLI still running, or killed — leaves nothing behind. Writing the values into the script instead would have left them for as long as the session lasted, because the script only removes itself on its last line and a session is exactly the case that never reaches it.
+
+### 3.355.0 — M-33: Plan Sekmesinde Toplu/Tekil Silme ve 24 Sayfaya Repaint Koruması (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** touch — ODAK YARISI BİTTİ VE YAYIMLANDI (3.354.0 · v11.190); TOPLU SİLME YARISI HENÜZ BAŞLAMADI. KÖK SEBEP BULUNDU VE DOĞRULANDI — boşluk tuşunun suçu yok. `media/tasksPage.js`'te host'tan gelen `data` push'u doğrudan `render()` çağırıyordu, o da `#app`'in tümünü değiştiriyor; o ana kadar verilmiş her element kopuyor ve kopmuş bir düğüm imleci tutamıyor.
+- **Every row can be ticked now, not only the switchable ones:** A workflow and a template have no switch, so they could not be picked at all — and the one act that applies to all four kinds was exactly the one that could not reach them. The two switch buttons say how much of your selection they can touch and grey out when the answer is none; the ticks are pruned to what is actually on screen, so "4 selected" always means four boxes in front of you and a filter change cannot leave a hidden row inside a delete.
+
+### 3.354.0 — M-33: Misyon Plan Sekmesinde İmlecin Kutudan Atılmasının Önlenmesi (2026-08-31)
+
+- **Temel Geliştirme:** 33: imleç artık kutudan atılmıyor
+- **Teknik Detay ve Doğrulama:** touch — ODAK YARISI BİTTİ VE YAYIMLANDI (3.354.0 · v11.190); TOPLU SİLME YARISI HENÜZ BAŞLAMADI. KÖK SEBEP BULUNDU VE DOĞRULANDI — boşluk tuşunun suçu yok. `media/tasksPage.js`'te host'tan gelen `data` push'u doğrudan `render()` çağırıyordu, o da `#app`'in tümünü değiştiriyor; o ana kadar verilmiş her element kopuyor ve kopmuş bir düğüm imleci tutamıyor.
+
+### 3.353.0 — X-102: İstek ile Gerçek Yanıtın Birleşimi (Launch Manifest Join) (2026-08-31)
+
+- **Temel Geliştirme:** 102: bir koşunun ne olması istendiği, ne cevap verdiğinin yanında
+- **Teknik Detay ve Doğrulama:** touch — X-102 2/n (v11.177 + v11.178 — sürüm yok, hiçbir şey spawn'a bağlanmadı). LaunchBinding.launchId + manifestOf(): binding ile manifesti birleştiren halka. Join taskId DEĞİL, çünkü retry yeni bir spawn'dır ve kendi manifestini alır; taskId ile anahtarlansa ikinci koşu birincinin route'unu sessizce sahiplenirdi.
+- **What the engine actually said, read out of its own events:** One rule, and it is the one the catalogs already followed: *the field, not the printed prefix*. A provider is reported when the engine NAMED it in a field of its own; a model spelled with a slash in it proves nothing. OpenCode publishes the same fact three ways — its export, its JSON run stream, its ACP config options — and has changed its wire shape twice already, so one scan collects the named fields wherever they sit rather than three readers that each need remembering. The one qualified name the engine states as its own current value is cut only where the head is a provider that same engine published.
+- **Claude reports no route, and never will:** Measured in August against a local fake endpoint: two Claude processes ran concurrently on separate routes under one model name, and the transcript preserved neither. So `claude-opus-5` is not evidence of Anthropic, the reported-provider list on this engine is permanently empty, and that is an answer rather than a gap. The MODEL is a different field and the transcript does name it — which is what the manifest now has to compare itself against.
+
+### 3.352.0 — S-49 / S-48: Kompozitörün Ajan Seçimiyle Ezilmesinin Önlenmesi (2026-08-31)
+
+- **Teknik Detay ve Doğrulama:** **done** — S-49 kapandı (3.351.0 → 3.352.0 · v11.182). Kök sebep media/console.js içindeki c-agent change işleyicisiydi: ajan kutusu değişince seedFromAgent() çağrılıyor, o da st.model / st.effort / st.permissionMode değerlerini yeni ajanın lastLaunch kaydından eziyor, üstüne setEngine ve setSuperpowers mesajlarını da atıyordu. Bu kural S-34'te bilerek konmuştu ama yanlış yerde: KAPI (ConsolePanel.show → composerLaunch) kompozitörün NEYLE AÇILACAĞINA karar verir; kutular bir kez çizildikten sonra onlar kullanıcınındır.
+- **S-49 — a DOOR seeds the composer; the composer never reseeds itself:** Set a model, set an effort, set a permission mode in the Console composer, then change your mind about WHO runs it — and all three answers were replaced by the newly chosen agent's last-launch record. That rule (S-34) is right for a door that OPENS the panel and wrong for a box the person is standing in: the last decision of a launch was silently undoing the first three. The agent picker now REPAINTS and does nothing else. Where the boxes open from is still decided once, host-side, by the door that opened the panel (`ConsolePanel.show` → `composerLaunch`); once they are drawn, the only thing that writes them is a hand on them. The Superpowers chip follows the new agent exactly as before, because an untouched choice is resolved against the agent the picker is showing rather than written anywhere — and a chip the user HAS pressed now keeps their answer for the same reason the boxes do.
+- **S-48 — the row you pressed is the agent you get:** Pressing the play triangle on an agent row sometimes asked "Select an agent" anyway, and picking a different name there really did start a different agent, so aiming at the row meant nothing. It was a RACE, and it began when the engine work multiplied the live events: `live` fires once per hook, every one of them rebuilt every row in the Agents view including the inline action bar under the pointer, and a press landing inside that rebuild reaches an action with no row behind it — so the command arrives with no argument at all.
+
+### 3.351.0 — U-84 (2/2): Telegram Köprü Yönetim Kartının Sayfa Ayarlarından Beslenmesi (2026-08-30)
+
+- **Teknik Detay ve Doğrulama:** touch — KISMİ — Toolbox yarısı BİTTİ ve yayımlandı (3.346.0 · v11.171 · commit 733e2cf), Farm Settings yarısı BİTMEDİ. YAPILAN: yeni saf çekirdek src/core/telegramCockpit.ts (bridgeStatus · parseChatId · budgetReading) + Toolbox sayfasına Services sekmesi ve Telegram Bridge kartı + toolboxPanel.ts beş mesaj kapısı + telegram.status köprü op'u + beş parity kaydı + test/test_telegram_cockpit.js (47 doğrulama) + test/fixtures/toolbox.js (6 varyant). ÖLÇÜLEN VE ÖNEMLİ: (1) Boş allowlist poller'ı DURDURMUYOR — applyChatBridge uyarıp yine de start() çağırıyor, mesajları isAllowed reddediyor; bu yüzden "running" ile "state" iki ayrı cevap.
+- **So the card carries only what a settings row cannot:** The token is in the secret vault, the day's spend is in the extension's own storage, and "is the poller alive" is a fact about a running process — none of the three is in any box, and all three are the reason somebody opens this page when their phone gets no answer. The card says: token in the vault or not, which bot answered, poller alive or stopped, how many chats the list admits, and what today has cost against today's ceiling. Plus the two acts that are not settings at all — connect a token, ask Telegram who this bot is.
+- **‼️ ONE CARD, and that is now structural rather than a promise:** The badge, the tones, the budget bar and the wiring live in `media/afTelegram.js`, shipped to every page by the shell; the data is composed once by `telegramCard()` in `core/telegramCockpit.ts`; and every `svc-*` message both pages can post is handled by one function in `panels/base.ts` — including the allowlist of the three settings a webview may write, which is the thing a second copy forgets. The tests fail if either page grows a tone vocabulary of its own.
+- **‼️ A SETTING WHOSE ANSWER IS A NAME THAT HAS TO EXIST NOW GETS A PICKER:** `telegram.defaultAgent` was a text box, so the one way to get it wrong — type a name no agent has — was the easiest thing to do and produced no error anywhere. The correct values are not a fact of the manifest (they are whatever agents this machine has today), so the schema names a SOURCE instead: `"x-af-values": "agent"`, and the host fills it in on every draw. Derived, never a list of keys on the page — the same rule `x-af-browse` follows, and `wikiAgent` gets the picker for free. A stored name the host has never heard of stays selected and is marked "not on this machine", because a page that silently swapped it would be changing a setting nobody touched.
+
+### 3.350.0 — X-103: Rota Seçici — Motor, Sağlayıcı, Tier ve Model Ekseni (2026-08-30)
+
+- **Temel Geliştirme:** 103 route seçici (VSIX kuruldu ve doğrulandı)
+- **Teknik Detay ve Doğrulama:** **done** — X-103 kapandı (3.349.0 → 3.350.0 · v11.175 + v11.176). Start Session formu artık adapter kataloğundan çiziliyor: engine → route/provider → tier/model → variant. Yeni saf modül core/launchProvider.ts; formun neyi sunacağına karar veren filtre adaptörün kendi normalizeSelection'ı — böylece kimlik bilgisi olmayan hazır route ŞABLONLARI (Anthropic/Kimi/MiniMax) launcher'da çıkmıyor: seçilseydi hiçbir şey enjekte etmeden mirasla koşardı, yani satır "Kimi" derken oturum başka uçta olurdu.
+- **The rows come from the adapter, never from the engine's name:** A form with `if (engine === 'claude')` in it is a second statement of what each engine offers, and the day an adapter changes its mind the form goes on drawing the old answer confidently. The filter for what may be offered is the engine's own word — `normalizeSelection`.
+- **‼️ Only what can actually run is offered:** The Claude catalog carries the shipped route *templates* (Anthropic, Kimi, MiniMax) beside your own profiles. A template is a SHAPE: no id to hold a credential under, nothing behind it. Picked, it resolves to `unknown` identity and injects **nothing** — the session would run on whatever the shell was already carrying while the row said "Kimi". That is exactly the lie X-101 exists to prevent, so the launcher offers profiles and the template list stays where you create one.
+
+### 3.349.0 — X-101 (3/3): Konsol Rota Kabul Maddesi ve Entegrasyon (3/3): the Console, and the acceptance line closed (2026-08-30)
+
+- **Temel Geliştirme:** 101 ortak runtime registry ve motor adaptorleri
+- **Teknik Detay ve Doğrulama:** touch — HENÜZ KOD YAZILMADI — SADECE ZEMİN ÖLÇÜLDÜ (2026-08-30). Sonraki ajanın en pahalı keşfi bu olurdu, o yüzden yazıyorum. (1) ENJEKSİYON NOKTASI: src/core/tasks.ts:3193 ve :3204 — iki çağrı yeri, ikisi de `env: { ...process.env, ...engineEnv, ...this.opts.getEnv?.(agent.id) }` kuruyor.
+- **‼️ The item's acceptance line, closed and measured:** All four launch surfaces — headless runs, interactive task terminals, session terminals and Console cards — resolve through one symbol, `engineRuntimeFor(agentId, engine)`. The suite reads the real source and fails if a second resolution appears beside it, or if any spawn site returns to spreading `process.env` with the route still in it.
+
+### 3.348.0 — X-101 (2/2): Terminal Yüzeylerinde Rota Ortam Değişkenleri (2/2): the terminal surfaces, where absence is not an instruction (2026-08-30)
+
+- **Teknik Detay ve Doğrulama:** touch — HENÜZ KOD YAZILMADI — SADECE ZEMİN ÖLÇÜLDÜ (2026-08-30). Sonraki ajanın en pahalı keşfi bu olurdu, o yüzden yazıyorum. (1) ENJEKSİYON NOKTASI: src/core/tasks.ts:3193 ve :3204 — iki çağrı yeri, ikisi de `env: { ...process.env, ...engineEnv, ...this.opts.getEnv?.(agent.id) }` kuruyor.
+- **‼️ And all of them through ONE symbol:** `engineRuntimeFor(agentId, engine)` in `extension.ts` is what the runner, the interactive terminal and the session terminal all call, and the suite fails the build if a second resolution appears beside it. That is the item's acceptance line stated as a symbol rather than as an intention: three surfaces resolving a launch three ways are three answers to "which route is this run on", and the transcript records none of them.
+
+### 3.347.0 — X-101 (1/2): Ortak Runtime Registry ve Motor Adaptörleri Omurgası (2026-08-30)
+
+- **Teknik Detay ve Doğrulama:** touch — HENÜZ KOD YAZILMADI — SADECE ZEMİN ÖLÇÜLDÜ (2026-08-30). Sonraki ajanın en pahalı keşfi bu olurdu, o yüzden yazıyorum. (1) ENJEKSİYON NOKTASI: src/core/tasks.ts:3193 ve :3204 — iki çağrı yeri, ikisi de `env: { ...process.env, ...engineEnv, ...this.opts.getEnv?.(agent.id) }` kuruyor.
+- **‼️ The environment names were MEASURED, not remembered:** Read out of the real `claude` binary on this machine, a 217 MB bundle:
+- **‼️ And the two families get different treatment, which is the measurement worth writing down:** All 75 `ANTHROPIC_*` names are route, credential, model-mapping, alternate-backbone or organisation identity: there is not one a run legitimately keeps while being told to use a different route. So that family is a PREFIX rule, and a name shipped next year is covered before anybody hears about it. The `CLAUDE_*` family is not like that at all — it holds the alternate backbones and the plan credential AND the working context Agent Farm itself depends on (`CLAUDE_PROJECT_DIR`, `CLAUDE_PLUGIN_ROOT`, `CLAUDE_CODE_ENTRYPOINT`). Clearing that family wholesale would break the user's own hooks in the name of isolating a route they never changed, so there it is what a name MEANS that decides.
+- **‼️ Nothing chosen means nothing touched:** A user who has never opened this feature is running on their own shell's setup deliberately, and sanitising it because Agent Farm now *could* would break a working machine to enforce a choice nobody made. The moment a route IS chosen the inherited ones all go — including when the choice is Anthropic's own endpoint, because an inherited `ANTHROPIC_BASE_URL` would otherwise send that run to a third party while the manifest recorded first-party. That is the exact lie measured in August.
+
+### 3.346.0 — U-84 (1/2): Toolbox Services Sekmesi ve Telegram Köprü Kartı (2026-08-30)
+
+- **Temel Geliştirme:** 84 (kısmi): Toolbox Services sekmesi ve Telegram Bridge yönetim kartı, telegram.status köprü op'u, telegramCockpit çekirdeği
+- **Teknik Detay ve Doğrulama:** touch — KISMİ — Toolbox yarısı BİTTİ ve yayımlandı (3.346.0 · v11.171 · commit 733e2cf), Farm Settings yarısı BİTMEDİ. YAPILAN: yeni saf çekirdek src/core/telegramCockpit.ts (bridgeStatus · parseChatId · budgetReading) + Toolbox sayfasına Services sekmesi ve Telegram Bridge kartı + toolboxPanel.ts beş mesaj kapısı + telegram.status köprü op'u + beş parity kaydı + test/test_telegram_cockpit.js (47 doğrulama) + test/fixtures/toolbox.js (6 varyant). ÖLÇÜLEN VE ÖNEMLİ: (1) Boş allowlist poller'ı DURDURMUYOR — applyChatBridge uyarıp yine de start() çağırıyor, mesajları isAllowed reddediyor; bu yüzden "running" ile "state" iki ayrı cevap.
+- **‼️ The card derives nothing for itself:** Every badge and figure comes from `core/telegramCockpit.ts`, which is measured against what `applyChatBridge()` really does. A page working out "is it running" from `enabled && hasToken` would be a second copy of the launch rules living in a file nobody thinks of as launch logic, going out of date the first time that function changes — in green.
+- **‼️ RUNNING and USABLE are two different questions:** , and this was measured rather than assumed: an empty allowlist does NOT stop the poller. It warns and starts anyway, and every message that arrives is refused. A single badge collapsing the two would call a live-but-deaf bridge "off" and send somebody to restart a service that is running fine.
+
+### 3.345.0 — X-100 (Yüzey): Agent Farm Rotaları ve Ölçülebilir Sınırlar (surface): the routes Agent Farm holds, and the boundary drawn where it can be measured (2026-08-30)
+
+- **Temel Geliştirme:** 145 (oturum açma kanalları: motor bazlı hafıza + ▶ kapısı Settings'ten çözüyor) ve X-100 (sağlayıcı sahipliği, profil yönetimi, kasa sınırı: yüzey + köprü + parity)
+- **Teknik Detay ve Doğrulama:** touch — YARIM — ÇEKİRDEK BİTTİ, YÜZEY YAPILMADI (3.343.0, commit 5babe43). BİTEN: core/providerOwnership.ts — sahiplik tablosu (engine × veri türü, her satır GEREKÇESİYLE; claude → catalog/credential/config Agent Farm'ın, opencode → üçü de motorun; 'selection' yani bir koşunun hangi sağlayıcıyla başladığı HER motorda Agent Farm'ın, çünkü o yapılandırma değil TARİHTİR ve hiçbir motor tutmuyor), secretKeyFor (profil ID'sinden türer, ETİKETTEN DEĞİL — etiket değişince anahtar kayar ve eski giriş keychain'de sahipsiz kalır), publicProfile (allow-list ile inşa, silme ile değil; hasSecret VARLIK bilgisi public, sırrın kendisi değil), ownershipRefusal (motorun kendi yolunu adlandırarak reddeder: 'opencode auth login'), bumpRevision + copyProfile (kopya YENİ profildir, revision 1'den başlar ve KİMLİK BİLGİSİ TAŞIMAZ). 35 doğrulama, sızdıran sürüm yerleştirilip düştüğü kanıtlandı.
+- **The failure this prevents is still two vaults:** , and the surface is where that becomes a thing a person can act on. So the Engines page now draws the ownership table itself: engine × kind of data, each cell saying which side owns it and carrying the reason in words on its hover. ‼️ The `selection` column reads **Agent Farm on every engine** — which provider a run was actually started with is history, not configuration, and no engine keeps it.
+- **The routes themselves:** get CRUD, copy, revision and credential status:
+
+### 3.344.0 — X-145: Hatırlanan Kurulumun Tek Bir Motora Ait Olması ve Ayarlar Yanıtı (2026-08-30)
+
+- **Teknik Detay ve Doğrulama:** **done** — 3.344.0 — v11.168 + v11.169. Üç kusur: (1) Kayıt bir ajan için tek model/efor/izin kutusu tutuyordu; artık `byEngine` ile motor başına bir satır ve motor değişimi o satırı GERİ ÇAĞIRIYOR (düşürmek hatırlamak değildi). (2) İzin modu artık motorla birlikte düşüyor — S-34 onu 'plan Agent Farm'ın sözü' diye tutuyordu, yazılış için doğru ETKİ için yanlış: bayrak oluyor ve bayrak motorun kendi ayar dosyasını yener, kullanıcının ~/.claude/settings.json'daki bypassPermissions'ı ezen şey buydu.
+- **The reported fault, in the user's own sequence:** Start OpenCode from the launcher without permissions (`manual`). Then press ▶ on the same agent's row and choose Claude — whose default in `~/.claude/settings.json` is `bypassPermissions`. The Claude session came up in `manual`. Nobody had ever said `manual` about Claude.
+- **1. The memory had ONE box for an agent used on three engines:** The record kept one model, one effort and one permission mode per agent, so every engine overwrote the last. S-34 had already dropped the model and the effort on an engine switch — half a fix, because dropping is not remembering: an agent used on two engines has two setups, and emptying the boxes made the user retype the one they had chosen on that engine an hour earlier. The record now holds `byEngine`, one row per engine, and a switch **recalls** that engine's setup. The other engines' rows survive every launch.
+- **2. ▶ answered four questions it never asked:** The ▶ on an agent's row asks engine · project · where, and inherited the model, the effort, the permission mode and the discipline from a record written by a **different door** on a **different engine**, with nothing on screen mentioning any of them. But at that door the agent is known and the dialog makes you choose the engine — both halves of the Farm Settings key are settled before anything starts. So that channel now resolves the way the Settings page draws it: this agent's per-engine default → `agentFarm.launchDefaults` → the engine's own settings file. The same agent on the same engine gives the same session every time.
+
+### 3.343.0 — X-100 (Çekirdek): Rota Mimarisinde Hangi Olguyu Kimin Sahiplendiği (core): who owns which fact, and where the vault boundary runs (2026-08-30)
+
+- **Temel Geliştirme:** 3.343.0 — X-100 (çekirdek): sağlayıcı sahiplik tablosu ve kasa sınırı; secret profil-id ile anahtarlanır, public yarı allow-list ile inşa edilir, Agent Farm sahibi olmadığı veriyi yönetmeyi reddeder. Yüzey/köprü/parity yapılmadı, kalem açık.
+- **Teknik Detay ve Doğrulama:** touch — YARIM — ÇEKİRDEK BİTTİ, YÜZEY YAPILMADI (3.343.0, commit 5babe43). BİTEN: core/providerOwnership.ts — sahiplik tablosu (engine × veri türü, her satır GEREKÇESİYLE; claude → catalog/credential/config Agent Farm'ın, opencode → üçü de motorun; 'selection' yani bir koşunun hangi sağlayıcıyla başladığı HER motorda Agent Farm'ın, çünkü o yapılandırma değil TARİHTİR ve hiçbir motor tutmuyor), secretKeyFor (profil ID'sinden türer, ETİKETTEN DEĞİL — etiket değişince anahtar kayar ve eski giriş keychain'de sahipsiz kalır), publicProfile (allow-list ile inşa, silme ile değil; hasSecret VARLIK bilgisi public, sırrın kendisi değil), ownershipRefusal (motorun kendi yolunu adlandırarak reddeder: 'opencode auth login'), bumpRevision + copyProfile (kopya YENİ profildir, revision 1'den başlar ve KİMLİK BİLGİSİ TAŞIMAZ). 35 doğrulama, sızdıran sürüm yerleştirilip düştüğü kanıtlandı.
+- **The failure this prevents is two vaults:** The obvious design gives every engine the same provider-profile manager. For Claude Code that is exactly right: a provider there is a route Agent Farm assembles, and if Agent Farm does not hold it, nobody does. For OpenCode it is exactly wrong — that engine already owns `/connect`, `opencode auth login`, `auth.json` and `opencode.json`, and a second copy makes two vaults and two revisions where the stale one wins silently.
+
+### 3.342.0 — X-99: Motorların Ne Sunduğunu Gerçekten Bilen Kaynaklardan Okunması (2026-08-30)
+
+- **Temel Geliştirme:** 3.342.0 — X-99: çift kaynaklı sağlayıcı/model/variant/yetenek kataloğu (OpenCode ölçülür, Claude route şablonları veri olarak beyan edilir) + spawn öncesi katalog reddi
+- **Teknik Detay ve Doğrulama:** **done** — core/providerCatalog.ts — çift kaynak. ÖLÇÜLEN taraf: opencode models --verbose, brace-depth ile ayrıştırılıyor (objeler çok satırlı ve kendi süslü parantezlerini taşıyor; satır bazlı bölme, bir modele alan eklendiği gün iki modeli birleştirirdi) ve sağlayıcı providerID ALANINDAN okunuyor, basılan provider/model satırını bölerek DEĞİL — X-98 kuralı bir katman yukarıda, tek satır. BEYAN EDİLEN taraf: CLAUDE_ROUTE_TEMPLATES veri olarak (anthropic · anthropic-api · kimi · minimax), kullanıcının settings'te tarif ettiği route aynı fonksiyonla aynı şekle okunuyor ve aynı adlı hazır satırı yerine geçiyor (iki satır tek ad = akıl yürütülemez bir seçici).
+- **Two engines, two owners, and the ownership is the design:** OpenCode owns its provider list, its credentials and its config; Agent Farm reads the public half and records what was chosen rather than keeping a second copy — two vaults, two revisions and two contradicting truths being the alternative. So that catalog is **measured**. Claude Code has no provider list at all: a provider there is a ROUTE Agent Farm assembles (base URL, auth kind, tier→model mapping), so that catalog is **declared** — and because living provider names must not require a code change, the templates are DATA and a route the user describes in settings is read by the same function into the same shape, replacing a shipped row of the same name rather than appearing twice beside it.
+- **Measured on OpenCode 1.18.19 here, 30 Aug 2026 — three things the shape had to be honest about:** 
+
+### 3.341.0 — X-98: Bu Oturumu Kimin Sunduğunun Her Motor İçin Tek Biçimde Tespiti (2026-08-30)
+
+- **Temel Geliştirme:** 3.341.0 — X-98: motor-agnostik sağlayıcı kimliği ve adapter sözleşmesi (saf çekirdek) + 'model adından provider tahmin edilmez' kuralını ölçen kapı
+- **Teknik Detay ve Doğrulama:** **done** — Saf çekirdekte kuruldu: core/providerIdentity.ts (ProviderIdentity · TurnRuntimeIdentity; origin/scope/proof eksenleri, redactRoute allow-list ile) + core/providerAdapter.ts (catalog·runtime·preflight·identity·resume·billing sözleşmesi; provider ekseni olmayan motor için notApplicableAdapter tam cevap verir). Üç kabul maddesi de karşılandı ve ÖLÇÜLÜYOR: (1) test_provider_identity.js kapısı, model adından provider çıkaran iki şekli reddediyor — ikisi de kasten yerleştirilip düştüğü görüldü, bugün tek muafiyet var (tasks.ts, medya üretim servisi, farklı alan) ve muafiyetin kendisi de ölçülüyor; (2) Claude session-scoped ile OpenCode turn-scoped tek şemada, scope alanı + scopeAllowsTurnChange ile kayıpsız; (3) motor alanı olmayan eski kayıt legacy-inherit kalıyor, model adından doldurulmuyor. 44 yeni doğrulama.
+- **‼️ NOTHING GUESSES THE PROVIDER FROM THE MODEL NAME, and that is now measured rather than asked for:** `claude-opus-5` does not prove Anthropic served it: measured in August against a local fake endpoint, two routes answered under the same model name and the transcript preserved neither. So a provider is DECLARED, or REPORTED, or unknown — and `unknown` is an answer this system has to be able to give rather than an absence it fills in. A record from before any of this stays `legacy-inherit`, which says "nobody was asked" and can be backfilled from real evidence later, rather than `unknown`, which would say "asked, no answer".
+
+### 3.340.0 — S-34 (Yeniden): Hatırlanan Modelin Kaydedildiği Motora Ait Olması (2026-08-30)
+
+- **Temel Geliştirme:** 3.340.0 — S-34 yeniden: hatırlanan model kaydedildiği motorun malıdır (motor değişince model/efor devralınmıyor); iki sahte-yeşil test düzeltildi
+- **Teknik Detay ve Doğrulama:** **done** — Launcher artık en son kullanılan kurulumu YÜZEYİYLE birlikte açıyor. Motor/model/effort/izin zaten hatırlanıyordu; eksik olan tek boyut pencereydi (lastLaunch kaydına `surface` eklendi, sıra: çağıranın istediği → bu ajanın kendi sonu → pencerenin son cevabı → terminal). Ayrıca Start satırı kurulumun hangi kayıtlı profile denk düştüğünü söylüyor — hatırlanan bir isim değil, `matchProfile` ile türetiliyor, yani model satırı değişince iddia da düşüyor.
+- **‼️ Switch the launcher from Antigravity to Claude, press Start, and the Console came up saying Claude with the Antigravity model in the box beside it:** A setup that cannot run, drawn as if it would. 3.339.0 taught the composer to keep a seeded model the engine's published catalog does not list — right, because a catalog is what an engine OFFERS and not everything it can run — but it decided whether to keep by comparing the seeded value against itself, a comparison that cannot fail. So the reconcile was not narrowed, it was silenced, and the one case it exists for went with it.
+- **And two tests were reporting green on prose:** `test_run_surface.js` slices the `startSession` command out of the source at a fixed length, and its last check had drifted to offset 4190 of a 4200-character window — the command had not changed, the comment above it had. `test_finish_sound.js` matched a bare `\n` and passed only while that file happened to be sitting in the working tree with LF endings. Both now measure the behaviour rather than the layout.
+
+### 3.339.0 — S-34: Eksik Kurulum Hatırlamasının Onarımı ve Başlatma Satırı (2026-08-30)
+
+- **Temel Geliştirme:** 34: başlatma konfigürasyonunun tam hatırlanması, motorun kararlılığı ve Start satırında okunabilir kurulum özeti
+- **Teknik Detay ve Doğrulama:** **done** — Launcher artık en son kullanılan kurulumu YÜZEYİYLE birlikte açıyor. Motor/model/effort/izin zaten hatırlanıyordu; eksik olan tek boyut pencereydi (lastLaunch kaydına `surface` eklendi, sıra: çağıranın istediği → bu ajanın kendi sonu → pencerenin son cevabı → terminal). Ayrıca Start satırı kurulumun hangi kayıtlı profile denk düştüğünü söylüyor — hatırlanan bir isim değil, `matchProfile` ile türetiliyor, yani model satırı değişince iddia da düşüyor.
+- **‼️ "Sometimes it forgets the model, sometimes the effort" — and it was one line in the page:** Every door seeds the composer's boxes from the agent's record; the composer then reconciled them against the engine's published catalog and **cleared anything the catalog does not list**. A catalog is what an engine is OFFERING, not what it can run — an alias typed into the launcher's "Other…" box, a model added to `agentFarm.modelAliases` and later removed, a level a catalog stopped advertising. So the model vanished; and because the effort list is looked up BY model, an emptied model then landed on a different list and took the effort with it. A value a real launch on **this** engine used now survives the check, and the select draws it. An engine CHANGE still clears both — those values belong to a different program, which is the case the reconcile exists for.
+- **‼️ Starting an agent from a Projects page silently reset that agent's remembered engine:** That door stated the fleet default engine as its own answer — which beats the memory, because what a caller says wins — and then recorded it. Two doors writing one record, one of them with an answer nobody gave: which is the whole of "sometimes it insists on Antigravity and then suddenly it is Claude again". It now inherits like every other door.
+
+### 3.338.0 — K-36 / M-32: Slash Katalogunun Hatırlanması ve Form Bütünlüğü (2026-08-30)
+
+- **Temel Geliştirme:** 36 slash kataloğu hatırlanıyor · M-32 görev formu kaydettiğini geri veriyor
+- **Teknik Detay ve Doğrulama:** **done** — Ölçüm: gerçek Claude system:init'i 49 komut bildiriyor (17'si skill), terminal_slash_commands ise sadece doctor+color diyor. Seçici oturum yokken 18 gömülü satır + 2 disk skill'i = 20 gösteriyordu. Çözüm motor-bağımsız: rapor globalState'te 'agentfarm.slashCatalog' altında motor ve motor|ajan anahtarıyla saklanıyor (rememberSlashReport / recallSlashReport, core/slashCommands.ts); konsol kapısı canlı karttan, aynı motordaki başka bir canlı oturumdan veya hafızadan okuyor ve gördüğünü öğreniyor; toolbox.slashCommands aynı kaydı okuyor.
+- **‼️ K-36 — the `/` picker offered 18 commands where the same machine's terminal offers 49:** The catalog's one authoritative source is a running session's `system:init`, and the composer's `/` is pressed exactly when there is not one yet — so the picker fell back to the shipped table, and no shipped table can ever close that gap: two thirds of the real list is skills and plugins, i.e. facts about THIS install. So the report is now **remembered** (per engine, and per agent where an agent has folders of its own), written by every door that sees one and read by the ones that cannot. Nothing is spawned to learn it — a session started for its own reasons pays for it once and every later composer is right. `toolbox.slashCommands` reads the same record, so an agent asking "what could I type here" is told what the picker offers.
+- **‼️ And a report is a COMPLETE answer, not an addition:** Measured against a real Claude: 49 names, and `/cost` — which is in the shipped table — is not among them. Offering it anyway teaches a command that answers "unknown", so once a process has named its commands, a shipped row it did not name is dropped. The disk is untouched by this: a file that exists is a command whether or not a running session listed it.
+
+### 3.337.0 — K-32: Çift Motor Paritesinin Ölçülmesi (2026-08-30)
+
+- **Temel Geliştirme:** 14 slash komut kokpiti tamamlandı (katalog · arayüz · satır · kabul)
+- **Teknik Detay ve Doğrulama:** **done** — 3.337.0 (commit v11.160 / 98c1fc0). Kabul yarısı. Zaten yapılmış olanlar sayıldı, EKSİK OLANLAR yazıldı: (1) TÜREVDEN PARİTE — `parity.manifest.json` Konsolun `slashCommands` mesajı ile `toolbox.slashCommands` op'unu aynı yetenek sayıyordu; bunu DOĞRU KILAN şey artık test ediliyor: sayfanın kolu kendi kataloğunu kurmuyor, aynı `scanSlashSources` + `getSlashCommands`'i çağırıyor ve kapı TÜM kataloğu veriyor (o mesajda bir `q` olsaydı K-29'un kaçındığı gidiş-dönüş olurdu).
+- **‼️ The Console's door and the bridge op are the same capability, and it is pinned by DERIVATION:** `parity.manifest.json` already said so; what makes it true is that the page's `slashCommands` handler calls the same `scanSlashSources` + `getSlashCommands` rather than assembling a catalog of its own. A second assembler would drift on the first engine anybody added, and the symptom would be an agent being told about commands the picker never offers. The sweep also checks the door hands over the **whole** catalog — the narrowing is the page's, per keystroke, and a `q` on that message would be the round trip K-29 was built to avoid.
+- **‼️ X-97's `provider` is carried and does not narrow — now measured as such:** A provider decides which *models* a session may run on; nothing anybody has measured says it decides which *commands* the CLI offers. The op accepts it and returns the identical list, and the test says why: a filter invented here would take commands away on the strength of a guess, and the loss would look exactly like a catalog that failed to scan.
+
+### 3.336.0 — K-31: Slash Komutunun Kime Ait Olduğu ve Çalışamayacağı Yerin Tespiti (2026-08-30)
+
+- **Teknik Detay ve Doğrulama:** **done** — 3.336.0 (commit v11.159 / a9e1e32). Seçici satırı artık adın ve cümlenin söyleyemediği iki şeyi söylüyor. (1) ROZET: CLI'nin kendi komutu MOTOR rozetini takıyor — `window.AFEngine.badge` ile, yani kartta/turda/oturum satırında hangi renkse o (X-110).
+- **Whose command it is, in the badge every other surface draws:** A command the CLI itself owns wears the ENGINE badge (X-110, the same colour as on a card, a turn and a session row): `/model` on Claude and `/model` on Codex are different programs' commands, and a list that called both of them "engine" would be hiding the one thing that decides whether it can be typed here at all. A command that came from a file is nobody's engine, so it says which kind of file instead — **local · skill · workflow**.
+- **‼️ And the one it cannot run here:** `/model` with no argument opens an interactive menu *in a terminal*. This session is hosted over stream-json and has no terminal to open it in, so it can only answer with text — offering it silently is offering a way to spend a turn on nothing. The row carries a ▤, and the sentence is a **line in the panel that follows the highlight**: `▤ /model opens a menu in a terminal. This session is hosted, so it can only answer with text — give it its argument (/model [name]) and it acts.` It is not a hover, because a panel over a list you are arrowing through covers the very rows you are comparing.
+
+### 3.335.0 — K-30: Kompozitör Kutusunda '/' Slash Komut Seçicisi (2026-08-30)
+
+- **Temel Geliştirme:** 30 slash komut seçici arayüzü (konsol kompozitörü)
+- **Teknik Detay ve Doğrulama:** touch — Zemin atıldı, arayüz yok — commit v11.156 / d1e35d3 (ara commit: sürüm artmadı, paket yok). Eklenen: `slashQueryAt(text, caret) → {start, q} | undefined` (`core/slashCommands.ts`), saf ve imleç tabanlı. Kodladığı üç kural: komut bir kelime başlatır (URL/yol/kesir komut değil), yalnızca imlecin içinde olduğu token canlı sorgudur, boşluk adı bitirir (`/model opus` bir komut + argümandır).
+- **‼️ A TYPEAHEAD, NOT A WINDOW, and that is the whole design:** The saved-prompt picker takes the screen because choosing a prompt is what you stopped to do; this opens *while* you are mid-sentence. A window that took the focus would mean typing the query twice — once to open it, once inside it. So the box keeps the caret, the box keeps the query, and the list draws above it. There is no filter input in the picker: **`/mod` in the composer IS the filter.**
+
+### 3.334.0 — Kırmızı Kutu, İstenmeyen Hover ve Kapanmayan Palet Onarımları (2026-08-30)
+
+- **U-121, settled — the box stays, and it goes red:** The mark filed under nothing keeps the ordinary checkbox, so it can still be ticked with four others and dropped in one press; what it gets is a **red frame**. No icon beside it and no second word: the colour is the whole message, and the sentence explaining it already lives in the State cell (ONE SUBJECT). The pick button that briefly stood there took the row out of every bulk act to say something the row could say by looking different.
+- **The colour dot no longer opens a hover:** It said the same three sentences on every card in the list — a colour is a mark, it is kept against the session id, it survives the window closing — and it spilled under the conversation pane, so it was unreadable exactly where it appeared. A hover identical on twenty cards is not information; it is a paragraph dismissed twenty times. The dot is its own answer: the colour it is drawn in is the colour it carries. The **dead** dot keeps a short native title, because a control that refuses a press still owes a reason — and a native tooltip is drawn by the host above every pane, so it cannot be clipped by the one it sits in.
+- **The colour palette closes the way everything else closes:** It was openable and un-closable: every control inside it stops the click, so the only way out was the same dot that opened it, and it stood over the next card while the reader worked on. A click anywhere else now shuts it, and so does Escape. The listener is on the document and bound once — a repaint rewires the dots, and a close handler rebound with them would stack up one per repaint — and it repaints only when something was actually open.
+
+### 3.333.0 — K-29: Slash Komut Kataloğu Çekirdeği ve Bridge Desteği (2026-08-30)
+
+- **Temel Geliştirme:** 29: slash komut katalogu ve saglayici adaptoru
+- **Teknik Detay ve Doğrulama:** **done** — 3.333.0 (commit v11.155 / c03c29c). `core/slashCommands.ts`: `SlashCommand` tipi (name · description · scope engine|local|skill|workflow · engine · args · source · tui · reported), `BUILTIN_SLASH` motor tablosu, `getSlashCommands(query)`, `narrowSlash(list, q)`, `mergeReported(had, next)`. Disk yarısı `core/toolbox.ts` → `scanSlashSources(agentDir, home)` (kullanıcı kapsamı önce, ajan kapsamı sonra — yakın olan kazanır).
+- **‼️ The finding that shaped it, measured rather than assumed:** A real Claude `system:init` on this machine named **47** slash commands, and the list mixed the CLI's own (`/model`, `/compact`, `/context`) with the SKILLS this machine happens to have installed (`/dataviz`, `/account-signup`) and two internal names nobody types (`__remote-workflow`). No table shipped inside Agent Farm can be right about that. So the catalog is a **merge**, not a table.
+- **Precedence is one-way: disk beats the session's report beats the shipped table:** — a file is the only source with a description somebody wrote on purpose. A second `system:init` (a resume, a `/reload-skills`) **adds** rather than replaces, so a picker never loses commands it had a moment ago. Internal names beginning `_` are dropped rather than offered.
+
+### 3.332.0 — S-34: Ajanın En Son Kurulumunun Her Başlatma Kapısının Hafızası Olması (2026-08-30)
+
+- **Temel Geliştirme:** 34: son kullanilan baslatma kurulumu her kapida
+- **Teknik Detay ve Doğrulama:** **done** — Launcher artık en son kullanılan kurulumu YÜZEYİYLE birlikte açıyor. Motor/model/effort/izin zaten hatırlanıyordu; eksik olan tek boyut pencereydi (lastLaunch kaydına `surface` eklendi, sıra: çağıranın istediği → bu ajanın kendi sonu → pencerenin son cevabı → terminal). Ayrıca Start satırı kurulumun hangi kayıtlı profile denk düştüğünü söylüyor — hatırlanan bir isim değil, `matchProfile` ile türetiliyor, yani model satırı değişince iddia da düşüyor.
+- **Now it is a layer, and every door stands on it:** The resolution order is the same everywhere: what this launch states → what this AGENT was last started with → the agent's engine defaults → `agentFarm.launchDefaults`. Reading is one function (`seedLastLaunch`), writing is one function (`rememberLaunch`), and what is kept is decided once, in the core — so the next dimension added to a launch is remembered by the shape rather than by ten call sites, which is the failure this item is named for.
+- **‼️ What the composer shows is what runs:** The boxes are seeded from the record and then left alone: an empty box is a person asking for the default, and re-applying the memory at Send would be the panel arguing with a control they had just cleared.
+
+### 3.331.0 — M-31: Liste Sayımının Peşinden Gitmesi ve Senkronizasyon (2026-08-30)
+
+- **Temel Geliştirme:** 31: backlog sayac seridi listeyi de daraltiyor
+- **Teknik Detay ve Doğrulama:** **done** — 3.331.0 (commit v11.153 / 06ea9ac). Sayaç şeridine basış artık `blFilter.rel` eksenini de yazıyor: whole → `['top']` ("wholes only"), every → `null` ("any"). Doğruluğun sebebi: `top` yüklemi (`!i.parent`) ile yuvarlamanın saydığı yüklem (`blCounted`) BİREBİR aynı — o yüzden liste, rakamın saydığı satırların tam kendisi oluyor, yakını değil.
+- **Now the press moves the family filter with it:** `⊟` ticks *wholes only*, `⊞` puts the axis back to *any* — and because "wholes only" is the SAME predicate the roll-up counts by (nobody's part), the rows on screen are exactly the lines behind the number, never a near-miss.
+- **‼️ The arrow points one way:** The strip writes the axis; the axis never writes the strip. Narrowing to *part of something* is a question about the family tree, not an instruction to change what the headline counts. And what you pick AFTER a press stands — change the axis, or clear the filters altogether, and nothing re-applies it until you press the figure again.
+
+### 3.330.0 — K-35: Konsol Kartında Renk Etiketi Desteği (2026-08-29)
+
+- **Temel Geliştirme:** 35: konsol kartlarina renk etiketi
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.330.0 (commit v11.152 / d829ca2). Sol panel birbirine benzeyen kartlardan oluşan bir sütun; "wiki ile ilgili olanı" bulmak her seferinde okumak demekti. Renk artık bir İŞARET: pin ve etiketlerle aynı türden şey (`core/sessionmarks.ts` → `color`, `normalizeColor`, `setColor`, `colorOf`, `SESSION_COLORS`), oturum kimliğine göre dosyalanıyor, kalıcılığı globalState'ten bedava geliyor ve `SessionIndex.applyMark` onu her `SessionInfo`'ya yansıtıyor.
+- **So a session can carry a colour:** , picked from a dot at the bottom-right of its card: ten fixed swatches, a colour of your own, and "none" to take it off. It is a MARK — the same kind of thing as the pin and the labels (`core/sessionmarks.ts`), keyed by session id and remembered for ever.
+- **‼️ Which is why the dot is on every card kind in that panel:** — live, "where you left off", and resumable. A colour that is right on two surfaces out of three is a colour nobody trusts on any of them.
+
+### 3.329.0 — U-122: Vault Şeridindeki Her Nesnenin Bir Yol Olarak Davranması (2026-08-29)
+
+- **Temel Geliştirme:** 122: Wiki vault ve prosedür bilgi şeridi etkileşim zenginliği
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.329.0 (commit v11.151 / 4f885c0). Şerit altı şey adlandırıyor, üçüne basmaya izin veriyordu: görüp kopyalayamadığın bir yol, adını okuyup açamadığın bir kutu ve ölü bir `<span>` olarak çizilen ajan prosedürü — aynı eksiğin üç yüzü. ‼️ `_REF/wiki.md` artık açılıyor: `agentRoots`'a göre çözülüyor (`WikiDeps.agentRoots` + `resolveProcedure`, çekirdekte — köprü ve sayfa aynı yolu görüyor), onu gerçekten tutan İLK kök kazanıyor, hiçbiri tutmuyorsa hiçbir şeyi açmayan bir bağlantı olmak yerine düz metin kalıyor.
+- **📥 `_RAW_` is on the strip, with the count that is the reason to look at it:** The whole promised gesture is "drop a browser export in `_RAW_` and do nothing else"; a folder you have to hunt for in Explorer is that gesture with a hunt in front of it. Pressing it opens the folder.
+- **Everything on the strip has a right-click menu:** — open it in the editor, show it in the folder, copy the absolute path, and for the root, open Wiki settings. Nothing there is new behaviour invented for a menu: each item sends the message the strip's own press already sends, so the menu and the button cannot drift.
+
+### 3.328.0 — U-120: Çiplerin Hangi Kapsama Ait Olduğunu Bildirmesi (2026-08-29)
+
+- **Temel Geliştirme:** 120: aday etiketleme popover'ında kapsam renk dili ve AFTip hover bilgisi
+- **Teknik Detay ve Doğrulama:** touch — Yalnızca ÖLÇÜM yapıldı, kod yazılmadı — kota %80'de yeni bir kaleme başlamak yerine sonraki ajanı keşif turundan kurtarmak için. ‼️ YAPISAL ENGEL BULUNDU: popover'ın seçili konuları `state.picked` — DÜZ BİR STRING DİZİSİ (`media/afWiki.js`), ve `window.AFCombo.html({ picked })` bu diziden çip üretiyor (`media/afCombo.js` satır ~78: `picked.map(p => '<span class="afc-chip">' + esc(p) + …)`). Yani bir çipin HANGİ işaretten geldiği — dolayısıyla kapsamı — çipin çizildiği yerde YOK.
+- **A session-wide chip is now warm:** (the editor's own warning pair, so it holds its contrast in both themes) and a partial one keeps the ordinary accent. The rule is the same from a turn's badge and from a session's, because both popovers are the same panel.
+- **‼️ And what a chip reports is what pressing "Keep it" LEAVES BEHIND:** — every turn the topic is already kept on, plus the scope now chosen. That second half is why it is worth repainting: choosing *Whole session* turns the partial chips warm **before** the press rather than after it. The hover states the count the way the cockpit says it (`Whole session (10 turns)` · `3 turns (3/10)`), then the span (`Turns: 1–3, 7`), then where the topic stands today and what this press would add.
+
+### 3.327.0 — U-121: Onay Kutusunun Derleme Kutusundan Ayrıştırılması (2026-08-29)
+
+- **Temel Geliştirme:** Wiki kokpiti araç çubuğu, master seçim kutusu ve toplu geri kazanma (U-121)
+- **Teknik Detay ve Doğrulama:** **done** — Üç ayrı sıkıntı, üçü de aynı hatadan: onay kutusu bir SEÇİM kutusu değil, DERLEMENİN kutusuydu. ‼️ Master kutu bu yüzden yalnız bir kez basılabiliyordu — her çizimde `checked` yazılmadan çiziliyordu, yani tarayıcı tıklaması her zaman “aç” diye okunuyordu; artık `checked`'i satırlardan, `indeterminate`'i kısmi seçimden alıyor (‼️ `indeterminate` bir ÖZELLİK, işaretlemeye yazılamaz, boyamadan sonra atanmalı — deselect-all'ı kıran şey tam olarak buydu) ve hover'ı iki basıştan hangisini yapmak üzere olduğunu söylüyor. `dropped`/`compiled` sekmelerinde hiç kutu yoktu; artık bir koşunun çıkmış olduğu satır dışında her satır seçilebiliyor ve toplu gruba `↺ Reopen` eklendi.
+- **‼️ So the master box could only be pressed once:** It was drawn unchecked on every repaint, which means a browser click always read as *turn on*: ticking everything worked and untticking it was impossible — the one gesture that box exists for. It now takes its `checked` from the rows themselves and its `indeterminate` from a partial selection (a property, so it cannot be written in markup and has to be set after the paint), and its hover says which of the two presses you are about to make.
+- **And the `dropped` and `compiled` tabs had no boxes at all:** , so five dropped marks could only be brought back one row at a time — which is what made 🚫 Drop feel irreversible even though every row has had its own ↺ all along. Every row is tickable now except the one a run is out for, where anything you do fights the run, and the bulk group gained **↺ Reopen**.
+
+### 3.326.0 — X-140: Bırakılan Dosyanın Derleme Havuzundaki Rotası ve Hedefi (2026-08-29)
+
+- **Temel Geliştirme:** Derleme sözleşmesi ve arşivleme protokolü (X-140)
+- **Teknik Detay ve Doğrulama:** **done** — Brief ve derleme promptu bir CLI transkriptinin dilbilgisiyle yazılmıştı — tur kapsamı, tur numaraları, her turun ne ile açıldığı — ve bir tarayıcı dışa aktarımı koşuya diğer her başlığın aynısı bir başlığın altında, altında “turn scope: whole file” yazarak veriliyordu. ‼️ Artık bırakılan dosya kendi bloğunun İLK SATIRINDA ilan ediliyor (EXTERNAL FILE — NOT A CLI SESSION, tamamını oku, turu yok); notu “neden saklandı” değil ⚠️ KULLANICI DİREKTİFİ olarak gidiyor ve promptta koşunun kendi yargısından üstün olduğu yazıyor — bir dosyada daraltacak tur numarası olmadığı için o notun statüsü gerçekten farklı. ‼️ Derlenen bırakma `_RAW_/_DONE_` altına AJANIN eliyle, raporla aynı nefeste taşınıyor: eklenti bir sayfanın yazıldığını asla öğrenmez, bunu yalnız `wiki.candidates.edit {state:"compiled"}` söyler, dolayısıyla hiçbir şey yazmamış bir koşunun gücüyle taşınan dosya havuz hâlâ pending derken işlenmiş sayılırdı.
+- **‼️ And a compiled drop is moved into `_RAW_/_DONE_` — by the agent, in the same breath as the report:** The extension never learns that a page was written; only `wiki.candidates.edit {state:"compiled"}` says so, so a file moved on the strength of a run that then wrote nothing would be filed as done while the pool still said pending. One actor, one moment. The prompt names the pair together and says what each half costs alone: a file left in the drop box is offered to the next compile as though nothing had happened, and a file moved without the report leaves the pool waiting for a file that is no longer where the mark points.
+
+### 3.325.0 — U-117: Bırakılan Dosyanın Oturum Taklidi Yapmasının Engellenmesi (2026-08-29)
+
+- **Temel Geliştirme:** Wiki kokpitinde ham dosya yönetimi (U-117)
+- **Teknik Detay ve Doğrulama:** **done** — X-139’un doldurduğu havuzdaki harici dosyalar artık kokpitte oturum taklidi yapmıyor. Kaynak hücresinde dosyanın kendi adı + RAW/DONE rozeti (oturumlar karşılık gelen işareti taşıyor); konusuz ham aday kendi aşaması olarak çiziliyor (🌱 needs a topic), onay kutusunun yerinde seçiciyi açan bir düğme var, boş konu hücresi tire yerine “pick a category” diyor. ‼️ Kural yalnızca görsel değil, gövdenin kendisi: startCompileRun konusuz işareti DOSYA ADIYLA reddediyor (bir id hangi bırakmayı dosyalamayı unuttuğunu söylemez), all:true onları dışarıda bırakıyor — tek bir triaj edilmemiş dosya Compile All’u sonsuza kadar tıkayamaz — ve dışarıda bırakmak geriye hiçbir şey bırakmazsa ret hangi dosyaların konu beklediğini söylüyor.
+- **‼️ And the stage a drop arrives in is its own state, not `waiting`:** A raw file lands with no topic on purpose — a topic is the key a page is filed under and a scan will not guess one. So the row reads `🌱 needs a topic`, its empty topics cell says `pick a category…` instead of a dash, and where the tick box would be there is a 🌱 that opens the picker. Three stages, visible at a glance: dropped → filed → compiled.
+
+### 3.324.0 — X-139: Wiki Bırakma Kutusunun Kendiliğinden Bir Havuz Olması (2026-08-29)
+
+- **Temel Geliştirme:** `_RAW_` bırakma kutusu kendiliğinden bir havuz (syncRawCandidates; dosya bırakmak tek jest)
+- **Teknik Detay ve Doğrulama:** **done** — 3.324.0 (commit v11.145 / f177312). `syncRawCandidates(root, store)` yazıldı; `wikiStatus` ve `wiki.candidates.list` ikisi de çağırıyor, yani kokpit kendini çizerken bir saniye önce bırakılan dosya zaten cevabın içinde. Bırakılan dosya ETİKETSİZ aday oluyor (`engine: raw-file`, `addedBy: auto-raw`, `topics: []`, id `wc-raw-…`); etiket dosyanın ilk gerçek satırı, YAML ön maddesi atlanıyor; yalnız `.md`/`.txt`.
+
+### 3.323.0 — S-47: Resume Edilen Oturumun Her Motorda Kendisi Olarak Geri Gelmesi (2026-08-29)
+
+- **Temel Geliştirme:** resume edilen oturum artık beş motorda da kendisi olarak geri geliyor (codex model/efor/izin, Konsol aynası üç boyut, gemini model, opencode çıplak id tamamlama)
+- **Teknik Detay ve Doğrulama:** **done** — 3.323.0 (commit v11.144 / 2472b09). Beş motorun beşi de kapsandı, hepsi tek tek ölçülerek. CODEX: `lastModel` zaten yerel değişkende tutuluyordu (oturumu fiyatlandıran şey o) ama satıra hiç yazılmıyordu — ölçüldü, 110 rollout'un 2'si yanlış modelle resume olurdu; ayrıca `turn_context.effort` (110'un 60'ı) ve `sandbox_policy` üzerinden izin kipi (35'i).
+
+### 3.322.0 — S-46: Antigravity Oturumunun Kendi Modeli ve Eforuyla Başlaması (2026-08-29)
+
+- **Temel Geliştirme:** Antigravity oturumu kendi modeliyle başlıyor ve kendi modeliyle geri geliyor (defaultEffort haritası, eforsuz modelin çalıştırılmadan reddi, transkriptten model/efor okuma)
+- **Teknik Detay ve Doğrulama:** **done** — 3.322.0 (commit v11.143 / b69927c). Üç parça da kapandı. (1) `readAgyCatalog` artık her modelin `defaultEffort`'unu da bildiriyor — etiketi yazan çağrının aynısı, yani "Default → medium" yazan kutu ile komut satırına giden değer bir daha ayrışamaz; efor almayan model (claude-sonnet-4-6) hiçbir şey kazanmıyor.
+- **‼️ And the second half of S-45, on the engine it never reached:** Resume inheritance was built and tested against the Claude parser alone, so an Antigravity conversation came back on the fleet default — the exact failure S-45 exists to end, one engine over. This engine writes no model field anywhere; it staples a sentence to the user's step, and that sentence is the record:
+
+### 3.321.0 — B-20: Bildirim Panosu Eylemlerinin Köprü Üzerinden Yürütülmesi (2026-08-29)
+
+- **Temel Geliştirme:** Agent Farm 3.317.0 → 3.321.0 (beş sürüm) + devir notu
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.321.0 (v11.142 / 2691044). Üç maddesi de yapıldı, dört op: `notices.edit` (yalnızca geçilen alan değişir; ilk düzenleme orijinali anlık görüntüler; hiçbir şeyi değiştirmeyen düzenleme reddedilir), `notices.pin`, `notices.stars`, `notices.undo`. ‼️ SONRAKİ OKUYUCUYA İKİ ŞEY: (1) YILDIZ ÖLÇEĞİ 0-3'TÜR VE ARALIK DIŞI DEĞER KIRPILMAZ, SIFIR OLUR (`coerceStars`, `src/core/notices.ts:181`) — beş yıldız sanıp `stars: 5` gönderen bir çağıran puanı SİLER.
+- **‼️ And undo is why the store changed, not just the ops:** The board's Undo kept the removed notices on the **panel**, which made it a property of a window: an agent that dismissed the wrong batch over the bridge had nothing to take back, and the person's own Undo vanished the moment the board was closed. The memory lives on the store now, so the button and the op undo the same removal — one deep, deliberately, because Undo here means "that was a mistake" and not "walk back through the day".
+
+### 3.320.0 — X-138: Wiki Bırakma Kutusu (Göreceli ve Kendi Kendini Onaran) (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.320.0 (v11.141 / 095fd09). Kalemin dört maddesi de yapıldı. `WIKI_RAW_REL = '_RAW_'` ve `WIKI_DONE_REL = path.join('_RAW_','_DONE_')` (`src/core/wiki.ts`), `ensureRawDirs(root)` → `{ raw, done, ready, created[], error?
+- **Relative to the root, never absolute:** `agentFarm.wikiRoot` is a setting the user retypes on every machine, `%USERPROFILE%` and all. A path baked into the code would be right on exactly one computer.
+- **‼️ Self-healing, because the folder lives in the user's own vault:** — where Obsidian, a sync client and their own hand all reach it. It *will* be deleted, renamed, or simply absent on a fresh machine, and every one of those is a normal Tuesday rather than an error worth a dialog. `ensureRawDirs` makes whatever is missing, recursively and silently, and says what it had to make. It runs on `scaffoldWiki`, `wikiHealth` and `wikiStatus`: asking "is something wrong here" is the moment a user asks, so answering "`_RAW_` is missing" and leaving it missing would be a diagnosis where the fix costs one syscall.
+- **‼️ And it still refuses to create the ROOT:** `mkdir -p <root>/_RAW_/_DONE_` brings the root into existence too — and the root is a hand-typed path. A typo would quietly become a real empty folder on the disk while the real wiki sat untouched beside it, and the health check meant to *report* the problem would have manufactured the evidence that there wasn't one. An unset root is refused outright: `path.join('', '_RAW_')` is the **relative** `_RAW_`, which would appear in whatever directory the process happens to be in.
+
+### 3.319.0 — U-111: Ajan Sayfasında Zaman Aralığı Seçicisi (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.319.0 (v11.140 / 599a322). Dashboard'un zaman aralığı satırının aynısı ajan sayfasına eklendi (`rangeControls()` → `AFHeader.controls`), 30d varsayılanı ile — yani satırın gelmesi sayfanın ilk görünüşünü değiştirmiyor. Yönettikleri: maliyet kartı, oturum kartı, günlük maliyet grafiği (120 günü aşınca haftalık kova).
+- **The same row, on the agent page:** the first week day by day, then 14 / 30 / 90 / 180 / 365, then two dates. It opens on **30d**, which is exactly what the page already drew — the row arriving changes nothing about the first thing you see.
+- **‼️ And the two cards it cannot govern say so:** Tool calls are kept per session, not per day, so there is no honest way to cut them by a span; the memory count is a picture of the present. A page where some cards are scoped and others silently are not is worse than one where none are.
+- **‼️ Sessions are counted from their spans, not from the table:** The obvious implementation — filter the sessions array — is wrong: that array is a *pool*, the union of the true top-N per sortable criterion, built for a table you sort. On a busy agent the count would quietly stop growing at the cap, and it would look perfectly right on every quiet agent. The panel now ships two numbers per session for **all** of them, every engine, and the page counts the ones **overlapping** the span — a conversation opened on Monday and still being written on Friday belongs to every day in between.
+
+### 3.318.0 — K-33: Komutun PTY Yerine Hazır Olan Kabuğa Verilmesi (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** touch — TEŞHİS KONDU, DÜZELTME YAPILMADI (bilerek — aşağıda sebebi). Kalem 'iki yarış durumu' diyor; biri ZATEN ÇÖZÜLMÜŞ, diğeri tam olarak yerinde bulundu. (1) ÇÖZÜLMÜŞ OLAN — süreç devri.
+- **The shell was still starting:** Every terminal here was driven the same way: `createTerminal` … `show()` … `sendText(command, true)` **on the very next statement** — before the shell inside the pty had finished running the user's own startup (a PowerShell profile, oh-my-posh, conda init). On a slow profile the written line is swallowed by or interleaved with that startup's output, and a `claude --resume <id>` that loses its tail runs as a bare `claude`: a fresh process, no conversation, the onboarding screen. The session looks like it evaporated. (The **external** terminal path was always immune — it writes the command to a `.cmd` file first — which is why switching to it "fixed" it.)
+- **The line now waits for the shell to report in:** VS Code can only install its own integration once the shell has started, so `Terminal.shellIntegration` becoming defined is exactly the signal that was missing. ‼️ **The delivery is unchanged** — still `sendText`. `shellIntegration.executeCommand` looks made for this and is deliberately not used: it sends ^C first to interrupt whatever is running, and what these terminals run is a full-screen TUI.
+- **All three doors:** every terminal session the extension opens, the task terminal (whose `exit` line is still second, and still after the command it is meant to outlive) and the session viewer's own fallback.
+
+### 3.317.0 — S-45: Resume Edilen Oturumun Model, Efor ve İzinlerle Dönmesi (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** touch — KEŞİF YAPILDI, KOD YAZILMADI. Kalem üç boyut istiyor (model · efor · izin modu); ölçüldü, ÜÇÜ AYNI DURUMDA DEĞİL ve bu, işin şeklini tamamen değiştiriyor. MODEL — ZATEN ELDE.
+- **The transcript is the answer, and it is the right one:** A `/model` typed INSIDE a session changes the run without Agent Farm ever hearing about it, so anything written down at launch would be stale exactly when it mattered. The file records what actually happened, so a resume now reads it:
+- **All four doors, not the two the report named:** The Console's own resume, the terminal resume, *Resume in Console* (which already reached for the model — and reached wrong) and the `sessions.start` bridge op. `sessions.context` was resuming on the wrong model for the same reason and is fixed with them.
+- **‼️ Order, and one deliberate exception:** In the panels the transcript comes **first**: the composer's boxes are *seeded from* the fleet defaults, so the value travelling with a resume click is a default rather than a choice, and anything placed after it could never win. On the bridge it is the other way round — an argument a caller actually wrote is the most deliberate answer in the room, so it beats the transcript, and the defaults are consulted only for what neither answers.
+
+### 3.316.0 — K-34: Oturum Açan Her Kapının Aynı Kurulumu Taşıması (2026-08-29)
+
+- **Temel Geliştirme:** işitsel kokpit tamamlandı + Superpowers her kapıda (üç sürüm: 3.314.0 A-26 canlı diyalog okuyucu · 3.315.0 M-30 Superpowers işin kendi boyutu · 3.316.0 K-34 başlatma paritesi ve kompozitörün korunması)
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.316.0 (v11.137 / 0ca6699). Kalemin istediği her şey yapıldı. (a) `⚡ Superpowers` artık bir başlatma boyutu: `LaunchOptions` üzerinde, yani çok boyutlu başlatıcı, kenar çubuğu ağaç satırları, yüzey seçici, KAYITLI PROFİL ve terminalin kendisi taşıyor.
+- **`⚡ Superpowers` is a launch dimension now:** , like the model and the permissions: on `LaunchOptions`, so the multi-dimension launcher, the sidebar tree rows, the surface picker, a **saved profile** and the terminal itself all carry it. The launcher shows what will actually happen — *`agent default (on for developer)`* — rather than leaving the reader to guess which setting answered.
+- **‼️ Three answers, and the empty one is not "off":** *Agent default* hands the decision back to `agentFarm.superpowersDefaults`, which is what every session started before this row existed did. A profile that says nothing about the discipline **clears** it on load rather than leaving the last launcher's answer standing — the same rule the model already followed.
+
+### 3.315.0 — M-30: Superpowers Mühendislik Disiplininin İş Boyutu Olması (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.315.0 (v11.136 / 1618280). Dört maddenin dördü de yapıldı. (1) Yeni görev formunda Model/Efor/İzinler'in yanına `⚡ Superpowers` kutusu; aynı kompozitörü görev, zamanlayıcı, tetikleyici, şablon ve iş akışı adımı paylaştığı için beşi birden kazandı.
+- **`⚡ Superpowers`:** , in the new-task form beside Model, Effort and Permissions — so a **task, a schedule, a trigger, a template and a workflow step** can each say it, and an automation that fires at 03:00 says it when it is *written*, which is the only moment anybody is there to say it.
+- **‼️ THREE ANSWERS, AND THE EMPTY ONE IS NOT "OFF":** *Agent default* hands the decision back to the agent's own setting — which is exactly what every task ever written before this row existed said, and what they all keep saying. *On* and *Off* are a person overriding that default for this job alone. A checkbox would have had two states and would have had to invent an answer for every existing automation on the day it shipped.
+- **An explicit pick beats the default, and a retry inherits it:** A rerun that quietly fell back to the agent's setting would be a different job from the one being retried — the same defect the engine, the model and the finish sound each had here once.
+
+### 3.314.0 — A-26: Canlı Diyalog Okuyucu (DialogueSpeaker) ve Sesli Yanıt (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** touch — Dört parçanın İKİSİ bitti, ikisi duruyor — kalem AÇIK. (1/4) `sanitizeForSpeech` + `cutForSpeech` (commit v11.133 / 669ee39): markdown'ın sesli parafrazı — çitli blok boyutuna, tablo boyutuna, yol son parçasına, link etiketine, sembol yığını duraklamaya; her blok noktayla bitiyor; tavan DIALOGUE_MAX=1200 ve kesme cümle sonunda, kesildiğini DIALOGUE_MORE ile söylüyor. (2/4) `DialogueSpeaker` (commit v11.134 / 2c18f74): kesilebilir çalıcı, kendi kanalında.
+- **`🔊 Read this session aloud`:** , in the same right-click the mute and the voice already live in (`Sound for this session…`). Turn it on for the ONE conversation you walked away from, and every turn it finishes is read out loud in that session's own voice.
+- **Per session, and only per session:** There is no fleet-wide "read everything": eight agents reading over each other is a crowd, not a cockpit. For the same reason there is **one reader for the window** — a newer answer cuts short an older one still being read, on purpose.
+- **It is not part of the alert plan:** A session with every ♪ box unticked still reads when you ask it to, and a muted fleet does not silence it: mute exists to stop noise nobody chose, and this switch was thrown by hand. It does not go through the alert queue either — that queue serialises short tones, and a minute-long reading would hold every chime in the farm behind it.
+
+### 3.313.0 — U-123: Nudge Uyarısının Ham JSON Yerine Kendi Kontrolünü Alması (2026-08-29)
+
+- **Temel Geliştirme:** 24 (Sound on finish) + U-123 (dürtme kontrolü); A-26 motor yarısı commit'li
+- **Teknik Detay ve Doğrulama:** **done** — 3.313.0 (commit v11.132 / 05da57b). Alert sounds kartındaki SON ham JSON kutusu kapandı. `⏰ Nudge after [3] min, [2] × [ton]` kapı şeridinde, mute ve sessiz saatlerin yanında — ait olduğu yer orası, çünkü kapının sorusunu ("bir ses olacak mı") cevaplıyor, tablonun sorusunu değil.
+- **`⏰ Nudge after [3] min, [2] × [tone]`:** , on the gate strip, beside the two switches that decide whether the FIRST alert is heard at all. That is where it belongs: it answers the gate's question — *will a sound happen* — not the table's, *which sound*.
+- **And what is waiting right now is on the strip:** `2 waiting` is the number of questions actually armed for a reminder at this moment; a session that is answered or leaves the list disarms itself, so it is what is outstanding rather than a running total. **The card head says the nudge is on** too, beside the armed count — a policy that produces an unrequested chime some minutes later is worth a badge.
+
+### 3.312.0 — A-24: Oturum Bittiğinde Çalacak Sesin Belirlenebilmesi (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** **done** — 3.312.0 (commit v11.131 / 4c1fd2a). Görev · zamanlayıcı · tetikleyici formlarına "Sound on finish" alanı geldi: Default | bir ton | Silent. Üç sürümdür bekleten itiraz ("Sessiz dürüstçe yapılamaz") A-22'nin oturum susturmasıyla çözüldü.
+- **Sound on finish:** , on the New-task form and on the schedule and trigger editors beside it: *Default* · a tone · *Silent — no sound at all*. Drawn for every run, headless included — a headless run has no window to open, but it does END, and it is the one nobody is watching.
+- **It adds no step to the alert chain:** The moment the run's session has an id, the pick is written onto **that session's own step** — the one A-23 built, that the resolution chain already reads and the Live Timeline already draws. So the row goes on saying "this session's own choice" and is telling the truth. Declared ids (a Console run, a resumed conversation) are stamped at the spawn; an ordinary headless run is stamped the moment its transcript names it.
+- **Picking a tone also arms that session's ♪:** — otherwise the choice would be accepted, stored, drawn, and silent whenever the fleet switch happened to be off, which is the defect the field exists to fix.
+
+### 3.311.0 — A-25: Ses Ayarları Şeridi ve Oturum Sesi Menüsü (2026-08-29)
+
+- **Temel Geliştirme:** 25 sesli anons seridi ve oturum sesi menusu
+- **Teknik Detay ve Doğrulama:** **done** — Teslim edildi — 3.311.0 (commit v11.130 / 01a479e). `agentFarm.alerts.speak` artık Alert sounds kartında kendi şeridi: kapının altında, tabloya girmeden önce — anahtar, ses seçici (Windows'un İKİ kayıt defteri de, her satırda dil ve motor), hız, seviye, cümle kutusu ve test düğmesi. Anahtar `ALERT_CARD_KEYS`e girdi, yanında ham JSON kutusu kalmadı.
+- **The strip:** Under the gate, on the same card, in the order the two are read: *is anything heard at all* → *and what does it say*. Switch · voice · rate · volume · the sentence · ▶ test. `agentFarm.alerts.speak` no longer appears as a box beside it.
+- **Every voice on the machine, with its LANGUAGE on the row:** Both of Windows' registries, asked of the machine and not guessed, sorted by language — because an `en-US` voice reading Turkish is not accented, it is unintelligible. The answer costs a PowerShell process, so it is asked once when the card opens and kept; ↻ is for the language pack installed a minute ago.
+
+### 3.310.0 — A-20: Makinedeki Tüm Sesler ve Oturum Başına Ses Ataması (2026-08-29)
+
+- **Temel Geliştirme:** 20 İşitsel Kokpit — çok formatlı çalıcı motoru, on modern ses ve yerel TTS anonsu (OneCore köprüsü dahil)
+- **Teknik Detay ve Doğrulama:** touch — 1. ADIM YAPILDI, kalem AÇIK (3.299.0, commit v11.115). Tasarım notunun (10_Notes/A-18 …) yapım sırasındaki adım 1'i: tools/make_alert_sounds.js on sesi ÜRETİYOR (indirmiyor — lisans), chime-soft = turn-ready.wav ve yeniden üretilmiyor; src/core/alertVoices.ts çözünürlük zincirini (oturum>ajan>ayar>varsayılan) tek yerde cevaplıyor ve hangi basamaktan geldiğini de söylüyor; kayıp dosya alt basamağa düşüyor, sessizliğe değil.
+- **Windows keeps its voices in TWO registries and `System.Speech` sees one:** SAPI 5 reads `Speech\Voices\Tokens` — David and Zira, en-US. Every voice a user has ever installed from Settings goes to `Speech_OneCore\Voices\Tokens`, and `SelectVoice` can neither list nor choose one. Measured on this machine: SAPI 5 had two voices, OneCore had four — one of them **`Microsoft Tolga — Turkish`, already installed and completely unreachable.** So the advice the last release printed ("install a language pack") was for a problem the user did not have.
+- **The COM server underneath reaches both:** `SpVoice.GetVoices()` enumerates the SAPI 5 set only, but `SpObjectToken.SetId(<registry path>)` loads ANY token by id, OneCore included — verified out loud, in Turkish, before it was written. The Windows backend is now that, walking both registries to find a voice by name: **`Tolga` finds `Microsoft Tolga - Turkish (Turkey)`.** Every voice on the machine is selectable, in every language it has.
+
+### 3.309.0 — A-20: Filonun Hangi Ajan Olduğunu Söyleyebilmesi (SAPI/say) (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** touch — 1. ADIM YAPILDI, kalem AÇIK (3.299.0, commit v11.115). Tasarım notunun (10_Notes/A-18 …) yapım sırasındaki adım 1'i: tools/make_alert_sounds.js on sesi ÜRETİYOR (indirmiyor — lisans), chime-soft = turn-ready.wav ve yeniden üretilmiyor; src/core/alertVoices.ts çözünürlük zincirini (oturum>ajan>ayar>varsayılan) tek yerde cevaplıyor ve hangi basamaktan geldiğini de söylüyor; kayıp dosya alt basamağa düşüyor, sessizliğe değil.
+- **A spoken line can, and it costs nothing:** `System.Speech` has been in every Windows install for twenty years; macOS `say` and Linux `spd-say` are equally already there. No network, no account, no model, no per-token anything.
+- **It is an addition to the tone, not a replacement:** A tone reaches the ear in half a second and is recognised before it finishes; a sentence takes two and cannot be told from a podcast in the next room until it is over. So the tone still says what kind, immediately, and the sentence arrives behind it saying which one. **Both ride in one queue ticket** — submitted separately, another lane's chime would land in the middle of this one's sentence, which is the exact overlap the queue exists to stop. It follows the same mute, the same quiet hours and the same per-session mute.
+- **It ships off, and out of the box announces only `question`:** That is the argument for the feature rather than a limitation of it: `question` is the one event where an agent is STOPPED and the cost of not knowing is the whole run standing still. A fleet that announces every finished turn out loud is one you silence in an afternoon — and then you hear nothing at all, including the question.
+
+### 3.308.0 — A-20: On Ses Nesnesi ve Modern Ses Paleti (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** touch — 1. ADIM YAPILDI, kalem AÇIK (3.299.0, commit v11.115). Tasarım notunun (10_Notes/A-18 …) yapım sırasındaki adım 1'i: tools/make_alert_sounds.js on sesi ÜRETİYOR (indirmiyor — lisans), chime-soft = turn-ready.wav ve yeniden üretilmiyor; src/core/alertVoices.ts çözünürlük zincirini (oturum>ajan>ayar>varsayılan) tek yerde cevaplıyor ve hangi basamaktan geldiğini de söylüyor; kayıp dosya alt basamağa düşüyor, sessizliğe değil.
+- **So the ten new ones are ten different OBJECTS:** The partials of a real thing are not a harmonic series, and that — not the envelope — is what makes wood sound like wood: a marimba bar rings at 1 : 3.9 : 9.2, a tubular bell at 1 : 2.76 : 5.40. Three new instruments in the generator (a struck body with arbitrary partial ratios, a pitch glide whose phase is integrated so it does not click, and a seeded noise transient) make: **Crystal** · **Intercom knock** · **Zen bowl** · **Deep sonar** · **Lullaby** · **Marimba** · **Pop** · **Thin ticks** · **Bell, urgent** · **Pulse**.
+- **And they are measured, because nobody can listen to them in a review:** `node tools/make_alert_sounds.js --stats` prints each voice's length, brightness and body, and checks the pairs that carry the feature. The two defaults — Crystal for a finished turn, Intercom knock for a question — sit a factor of **4.7 apart in brightness** and differ as much again in body: one is struck glass, the other a knuckle on a panel with almost no pitch at all. That is a difference you hear through a closed door, which a difference of melody is not.
+- **All five defaults changed, and that is said out loud rather than shipped quietly:** A default nobody hears is not a delivery. What is safe about it: alerts ship OFF, so anybody hearing anything has been to the settings page already; and a voice you CHOSE lives a step above the default in the chain and is untouched. Only "sound on, never picked a voice" moves.
+
+### 3.307.0 — A-20: Windows Sesli Uyarısının Gecikmesiz Çalması (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** touch — 1. ADIM YAPILDI, kalem AÇIK (3.299.0, commit v11.115). Tasarım notunun (10_Notes/A-18 …) yapım sırasındaki adım 1'i: tools/make_alert_sounds.js on sesi ÜRETİYOR (indirmiyor — lisans), chime-soft = turn-ready.wav ve yeniden üretilmiyor; src/core/alertVoices.ts çözünürlük zincirini (oturum>ajan>ayar>varsayılan) tek yerde cevaplıyor ve hangi basamaktan geldiğini de söylüyor; kayıp dosya alt basamağa düşüyor, sessizliğe değil.
+- **Measured: every Windows alert was eight seconds late:** `MediaPlayer` is a WPF `DispatcherObject`, and its `MediaEnded` event is raised on a Dispatcher that `powershell -Command` never runs. So the event never came, the process sat in its wait loop for 17.7 seconds, this module's own timeout killed it at eight, the backend was reported as broken — and the sound you finally heard was the SoundPlayer fallback, announcing a turn that had ended eight seconds earlier. Nothing in the extension was in a position to notice: the fallback returned success, so the alert was working, just late enough to be useless.
+- **The player asks the file how long it is instead:** `NaturalDuration` is filled in by the media engine and needs no dispatcher — which makes it two answers at once: how long to wait, and, when it never arrives, the codec saying it cannot open this file. Measured end to end: **1.8 s for a `.wav`, 2.3 s for an `.mp3`**, and a file no codec can open now reports that, in those words. Before, a refused file left through the same silent loop with exit 0 and was reported as PLAYED.
+- **And it was reported as played:** That is the second half of the same bug and the more dangerous one: `.mp3`, `.flac` and anything else the codec refused came back green. A user who pointed an alert at their own file was told it worked and heard nothing, for ever.
+
+### 3.306.0 — A-22: Birlikte Biten Sekiz Ajanın Sırayla Ses Vermesi (Arbiter) (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** **done** — İki sürümde kapandı. 3.305.0 KAPI: src/core/alertGate.ts saf çekirdeği (quiet hours + silence), durum çubuğunda tek tıklık 🔇 (src/views/muteBar.ts — ilk kez bir şey silahlandırıldığında BELİREN, susturuluyken ekranda KALAN bir öge), gece yarısını saran sessiz saatler, ve oturum bazında susturma. 3.306.0 KUYRUK: AudioArbiter (öncelik question > error > stalled > ended > turn-ready; 500 ms aralık son sesin BİTİŞİNDEN; tavan 6, taşarken en az acil olan düşer; aynı uyarının ikincisi tek uyarı) ve akıllı dürtme (yalnız 'question', varsayılan 3 dk, en fazla 2 hatırlatma, 30 sn'lik süpürge aynı zamanda silahsızlandırma).
+- **One queue for the whole window:** Eight lanes is the normal case, and eight players started in the same 40 ms do not make eight sounds — they make ONE noise, out of which nothing can be told apart, which is the exact ability ten named tones exist to give. The sounds now go one at a time, ordered by how much the news matters: `question` first (the only event where the agent is STOPPED and waiting on you), then `error`, `stalled`, `ended`, and `turn-ready` last — the one that happens most and costs least to miss, because the Timeline shows it anyway.
+- **The 500 ms gap is measured from the END of the last sound:** , not its start. The tones are up to 1.2 s long, so a gap counted from the start would let them overlap, which is the whole thing the queue exists to stop.
+- **The queue has a small ceiling, and something IS dropped:** A backlog of twenty chimes is twenty seconds of noise describing a fleet that has since moved on — not merely useless but actively misleading. Over six waiting, the LEAST urgent goes and says so. The same alert twice is one alert.
+
+### 3.305.0 — A-22: Çiftliği Susturma Kontrolü (Mute ve Sessiz Saatler) (2026-08-29)
+
+- **Teknik Detay ve Doğrulama:** **done** — İki sürümde kapandı. 3.305.0 KAPI: src/core/alertGate.ts saf çekirdeği (quiet hours + silence), durum çubuğunda tek tıklık 🔇 (src/views/muteBar.ts — ilk kez bir şey silahlandırıldığında BELİREN, susturuluyken ekranda KALAN bir öge), gece yarısını saran sessiz saatler, ve oturum bazında susturma. 3.306.0 KUYRUK: AudioArbiter (öncelik question > error > stalled > ended > turn-ready; 500 ms aralık son sesin BİTİŞİNDEN; tavan 6, taşarken en az acil olan düşer; aynı uyarının ikincisi tek uyarı) ve akıllı dürtme (yalnız 'question', varsayılan 3 dk, en fazla 2 hatırlatma, 30 sn'lik süpürge aynı zamanda silahsızlandırma).
+- **Which sound and whether it sounds are two questions, and they stay two:** `resolveVoice` answers the first and is guaranteed to always have an answer; teaching it to resolve to nothing would make every fall-through in it indistinguishable from a deliberate silence. The gate (`core/alertGate.ts`) sits in FRONT of the chain, names who closed it, and edits no choice.
+- **🔇, one click, from wherever the eye already is:** A status bar item that APPEARS the first time anything is armed — the whole family ships off, and an icon sitting there for months on a fleet that has never made a noise is clutter — and stays up while muted, because a control that hides itself once pressed is one nobody can undo. It is the same act as `Agent Farm: Mute / Unmute Alert Sounds`, the Settings card and the `alerts.mute` op: one function, three doors.
+- **Quiet hours WRAP MIDNIGHT:** 23:00→08:00 read as `from <= now < to` is quiet for exactly no minutes of the day, and that is the only shape anybody sets. A time that is not `HH:MM` is refused BY NAME rather than stored: a schedule that reads as configured and silences nothing is the worst of the three outcomes. Start equal to end is an EMPTY window, never all day, so a typo cannot mute a farm around the clock.
+
+### 3.304.0 — X-142: Arşivden Açılan Kalemin Arşivde Asılı Kalmaması (2026-08-28)
+
+- **Temel Geliştirme:** 142: arşivden yeniden açılan kalemin otomatik olarak kendi alanına taşınması (auto-reseat on reopen)
+- **Teknik Detay ve Doğrulama:** **done** — 3.304.0 (v11.123) ile kapandı. Kök sebep: eve taşıma makinesi (`reseatMisfiled`) X-134'te zaten kurulmuştu ve tam bu şekli teşhis ediyordu — ama YALNIZCA bilinçli bir `projects.backlog.tidy` çağırıyordu. Yeniden açma, satırın canlı işe DÖNÜŞTÜĞÜ andır; artık makine o anda çağrılıyor (`setBacklogState`, dolayısıyla hem köprü `projects.backlog.check` hem de sayfadaki kutucuk tıklaması aynı kapıdan geçiyor).
+- **The line's text is not touched:** It is lifted and re-inserted verbatim; what changes is where it sits. `setBacklogState`'s promise has always been that it never REBUILDS somebody's line out of parsed pieces, and that still holds.
+- **Only that one item moves:** The full sweep is still a deliberate act: quietly relocating four other mis-filed lines because somebody unticked a box would be an edit they did not ask for, in a file they read by eye.
+
+### 3.303.0 — A-23: Oturumun Kendi Tonunun Olması ve Satırda Gösterilmesi (2026-08-28)
+
+- **Temel Geliştirme:** 23: oturuma özel uyarı sesi (Timeline ♪ AFTip'i · sağ tık 'Sound for This Session…' · ⏱ olay seçimi · alerts.voice.set scope:session)
+- **Teknik Detay ve Doğrulama:** **done** — 3.303.0 (v11.122) ile kapandı — A-18 tasarım notunun 5. adımı. Asıl iş, A-18'den beri boş duran çözünürlük zincirinin `session` basamağını YAZILABİLİR hale getirmekti: `resolveVoice` bu basamağı hep okuyordu ama `voiceDeps().session` kancası hiçbir yere bağlı değildi, dolayısıyla 'bu konuşmaya kendi sesini ver' her seferinde sessizce `settings` basamağına düşüyordu.
+
+### 3.302.0 — A-21: Uyarı Sesleri Kartı ve Ses Seçimi (2026-08-28)
+
+- **Temel Geliştirme:** Settings ▸ Alert sounds kartı (A-21)
+- **Teknik Detay ve Doğrulama:** **done** — 3.302.0 (v11.119) ile kapandı. Kalem metnindeki her şey karşılandı — adanmış görsel kart, 5 olay × ses eşleştirme matrisi, her satırda ▶ dinle, özel ses kütüphanesi (ekle / yeniden adlandır / sil / önizle, 10 sınırı, dosya kopyalanmıyor). ‼️ YAPILMAYAN İKİ ŞEY, ikisi de bilerek: (1) Master Audio toggle — kalem istiyordu ama adım 3'te verilen "iki yetki BİRLEŞİR, birbirini KAPILAMAZ" kararını bozardı; kapılayan bir master, kendi ♪'sini silahlandırmış bir oturumu susturur.
+
+### 3.301.0 — K-22 / U-118 / U-119: Tıkanmış Oturumun Çıkmaz Sokak Olmaktan Çıkması (2026-08-28)
+
+- **Temel Geliştirme:** 22 (CLI bypass sözleşmesi), U-118 (Needs You bütünsel okuma), U-119 (terminal izin köprüsü) ve A-20 adım 2+3 (uyarı olayları ve ayarları)
+- **Teknik Detay ve Doğrulama:** _round 1_ · 2026-08-28 16:01 · reopened — _CONSOLE BYPASS GERÇEKTE BYPASS OLSUN; HİÇBİR İZİN PENCERESİ GÖSTERMESİN: Kullanıcı kararı kesindir: Console'da açık `bypassPermissions` seçimi veya `Default` seçiminin Claude effective ayarlarda `bypassPermissions` çözülmesi “ne olursa olsun bana izin sorma” sözleşmesidir; UI'da bypass yazıp normal tool izni sormak kabul edilemez. REGRESYON GEÇMİŞİ/KÖK NEDEN: Bu sorun daha önce S-18'de, 602b9720-... oturumundan sonra araştırıldı; uygulama oturumu `47c0722d-bbca-48a0-a8f8-1abeeaa45c04`, commit `20aab6d37b8824f657e9d0be0930346b4aab7fa9` (v3.93.0).
+- **And `Default` was never resolved at all:** A user whose own settings say `permissions.defaultMode: bypassPermissions` got an asking terminal session — the picker even promised it would ask. The layers are read before the command line is built, exactly as the Console reads them, and the launcher's preview shows the flags the launch will really carry. **A bypass that a policy forbids refuses to start** rather than opening under a label it cannot keep: in a terminal that failure is invisible, because nothing draws a card.
+- **A row is a line and an opened row is the text:** Every row kind goes through one reading standard now — a caret and a selectable block that keeps its line breaks, plus an AFTip carrying the whole thing so the common case needs no click at all. **The caret is drawn only when there is more behind it**: a triangle that opens onto the sentence already on the row teaches a reader in two clicks that opening rows tells them nothing. Opening one posts nothing and marks nothing — a blocker is not a message. Queue, Tasks and the Timeline already carried their full text; Needs You was the outlier.
+
+### 3.300.0 — A-20 (Adım 2): Filonun Hangi Tür Dikkat İstediğini Belirtmesi (step 2): the farm says WHICH kind of attention it wants (2026-08-28)
+
+- **Teknik Detay ve Doğrulama:** touch — 1. ADIM YAPILDI, kalem AÇIK (3.299.0, commit v11.115). Tasarım notunun (10_Notes/A-18 …) yapım sırasındaki adım 1'i: tools/make_alert_sounds.js on sesi ÜRETİYOR (indirmiyor — lisans), chime-soft = turn-ready.wav ve yeniden üretilmiyor; src/core/alertVoices.ts çözünürlük zincirini (oturum>ajan>ayar>varsayılan) tek yerde cevaplıyor ve hangi basamaktan geldiğini de söylüyor; kayıp dosya alt basamağa düşüyor, sessizliğe değil.
+- **Step two of the auditory cockpit (A-18):** Step one built the ten voices and the chain that picks one, and nothing was wired to it. This wires it: the live monitor now reports every edge that wants the user, carrying the event that names what happened, and the alert dispatch takes that event all the way to the sound, the modal and the toast.
+- **`waiting-input` was two different endings wearing one status:** A turn that finished hands control back; a turn parked on an `AskUserQuestion` is still open and wants an ANSWER. They were the same beep and the same "your turn" modal, so the only way to tell them apart was to walk back and look — which is the whole thing the sound was for. `LiveConfig.pendingAskOf` is injected, because only the host knows: a hosted conversation's pending ask lives in the Console, and the monitor keeps its promise never to reach outside itself.
+- **Four edges, one emit site:** `waiting-permission` → `question`, `waiting-input` → `question` or `turn-ready` depending on the parked ask, `SessionEnd` → `ended`, the stall sweep → `stalled`. **Once per crossing**, exactly as before: the "waiting" Notification and the `Stop` behind it are one edge, and a session parked in a state does not keep ringing. `onTurnReady` survives unchanged as the narrow view of the same emit — wire one or the other, never both.
+
+### 3.299.0 — A-20 (Adım 1): On Uyarı Sesi ve Hangisinin Çalacağı (step 1): ten alert voices, and which one plays (2026-08-28)
+
+- **Temel Geliştirme:** 20 1. adım — on üretilmiş uyarı sesi + alertVoices.ts çözünürlük zinciri; Windows çalıcısı MediaPlayer'a taşındı
+- **Teknik Detay ve Doğrulama:** touch — 1. ADIM YAPILDI, kalem AÇIK (3.299.0, commit v11.115). Tasarım notunun (10_Notes/A-18 …) yapım sırasındaki adım 1'i: tools/make_alert_sounds.js on sesi ÜRETİYOR (indirmiyor — lisans), chime-soft = turn-ready.wav ve yeniden üretilmiyor; src/core/alertVoices.ts çözünürlük zincirini (oturum>ajan>ayar>varsayılan) tek yerde cevaplıyor ve hangi basamaktan geldiğini de söylüyor; kayıp dosya alt basamağa düşüyor, sessizliğe değil.
+- **The first step of the auditory cockpit (A-18), and nothing is wired to it yet:** — this is the core plus its assets, in the build order the design note lays out. The farm could make exactly one noise, on the one edge where a turn finished. Away from the screen, "your turn" and "it is asking you something" were the same beep, so the only way to tell them apart was to walk back and look — which is the whole thing the sound was for.
+- **Ten voices, generated rather than sourced:** (`tools/make_alert_sounds.js`). The obvious way to get ten alert sounds is to download them, and then the extension ships ten files whose licence nobody can state; these are written from arithmetic, cost 340 kB together, and each one's character is a line of code somebody can read and argue with. All are ≤1.2 s, 44.1 kHz mono, normalised to −3 dBFS. **`chime-soft` is `turn-ready.wav` and is not regenerated** — it is the sound every current install already makes, and a "nicer" replacement would have changed it silently.
+
+### 3.298.0 — U-110: Ad-Değer Haritaları İçin Satır Editörü (2026-08-28)
+
+- **Temel Geliştirme:** üç ad→değer haritası satır editörü aldı; U-89 kapandı, ayarlar sayfasında çıplak JSON kutusu kalmadı
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.298.0, commit v11.114. Üç ad→değer haritası (budgets, superpowersDefaults, agentEngineDefaults) satır editörü aldı: ad kutusu, ok, değer kutusu, ✕, '+ add', 'Save the pairs'. Ad kutusu ÖNERİR ama KISITLAMAZ (datalist) — '*' gerçek bir anahtar, henüz olmayan bir ajan da öyle.
+- **Three settings are a free-form object:** — `budgets`, `superpowersDefaults`, `agentEngineDefaults`. Nothing can list their keys, which is why all three were left as a JSON textarea, and it is the wrong conclusion: **the key is free, the pair is not.** Setting a budget meant hand-writing `{"developer": 20}` including the brace, the quote and the colon, and getting the agent's name right from memory — with a misfiled name failing silently for ever.
+- **The three maps are not the same shape, and each now says so:** `budgets` is name → **number** and gets number boxes; `superpowersDefaults` is name → **boolean** and gets a yes/no picker that can still say "not set"; `agentEngineDefaults` declares nothing about its values and keeps their JSON, honestly, in one cell. All read off `additionalProperties`. **Where the names come from is a manifest fact too** (`x-af-keys`), because the three differ: `budgets` takes agent names and `*` for the whole fleet, `superpowersDefaults` takes names with **no wildcard at all** (it is an exact match), and `agentEngineDefaults` is keyed by an agent's folder. One guessed list for all three would have offered `*` where it does nothing.
+
+### 3.297.0 — U-109: Şeması Tanımlı Ayarlar İçin Gerçek Form/Tablo Görünümü (2026-08-28)
+
+- **Temel Geliştirme:** alanları tanımlı ayarlar gerçek form/tablo oldu (2 form, 13 tablo); livingChecks hiç olmayan items şemasını aldı
+- **Teknik Detay ve Doğrulama:** **done** — Kapandı — 3.297.0, commit v11.113. Alanları tanımlı 2 ayar (taskRetry 16 alan, launchDefaults 4) FORM, 13 ayar TABLO oldu; ikisi de shape.kind'dan türüyor, hiçbir yerde ayar adı listelenmiyor. livingChecks hiç olmayan items şemasını aldı, böylece 'free' kutu sayısı sıfırlandı.
+- **Fifteen settings name every field of their value, type it, say which ones are required and write a sentence about each — and the page drew a JSON textarea over the top of all of it:** `taskRetry` declares SIXTEEN fields; the user was asked to hand-write its braces and to remember that `backoff` takes one of four words, while typing it into a box that accepts anything.
+- **One object with declared fields is now a FORM:** (`taskRetry`, `launchDefaults`) — one box per field, its own sentence beside it. **A list of them is a TABLE** (`cliProfiles`, `launchProfiles`, `pricing`, `mediaPricing`, `quotaWeights`, `modelPolicy`, `dispatchRules`, `relayFeeds`, `ingestFolders`, `extraClaudeDirs`, `projectSkeleton`, `projectTemplates`, `livingChecks`) — one row per entry, `+ add`, a ✕ to drop one, **Save the table** to commit. A closed set is a picker rather than a box that accepts anything, a required column is marked where it is asked for, and a number typed into with words is refused in words rather than written as `NaN`. Both are chosen from `shape.kind`, so a setting whose fields are declared tomorrow gets its editor with nobody touching the page.
+
+### 3.296.0 — U-108: Düz Liste Ayarlarının JSON Kutusu Olmaktan Çıkarılması (2026-08-28)
+
+- **Temel Geliştirme:** 27 (V2) çok turlu görevler gerçekten çalışıyor + U-108 liste ayarları editörü
+- **Teknik Detay ve Doğrulama:** **done** — 3.296.0 (commit v11.112). Dokuz düz liste ayarı artık girdi başına bir kutu + ✕ + '+ add' + 'Save the list'; ekleme/silme TASLAK üzerinde, yapısal her hareket kutuları önce okuyor, değer gerçek dizi olarak gidiyor (ayrıştırma hatası imkânsız). agentRoots ve excludeAgentDirs'in her satırında Browse var ve bu bir MANIFEST gerçeği: items üzerinde x-af-browse.
+- **Nine settings are an array of strings or numbers:** — root folders, excluded folders, model names, Telegram chat ids, queue targets, webhook events, allowed hosts, pack gallery sources, insight categories. The schema says `items.type: "string"` and nothing more: there is no structure to get right in any of them. The page asked for JSON anyway — a textarea, a pair of brackets, and a comma the user had to remember — which is the report U-89 was opened about.
+- **Where the schema says the entries are PATHS, every row gets a Browse:** Declared as `x-af-browse` on `items`, exactly as a scalar path setting declares it on itself — so `agentRoots` and `excludeAgentDirs` get the picker as a fact of the manifest, and the next list of paths gets it by one line there rather than by editing the page. The row picker **saves nothing**: it posts the path back and the draft takes it, because the list around that row is still being edited and saving would commit every other row at the same moment.
 
 ### 3.295.0 — M-27 (v2): Çok Turlu Görevler Denetimi ve Onarımı (2026-08-28)
 
