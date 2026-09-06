@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.407.0 - X-216: the standing account the indicator did not follow (2026-09-06)
+
+*"When we make an account standing for Claude on the Engines page, the Dashboard
+and the status bar turn to it — a standing **Codex** account should do the
+same."*
+
+X-212 wired exactly one half of that. `usageCredentialsFile` and
+`usageAccountLabel` follow `activeAccounts['claude']`; the Codex side of
+`usageProbe` went on reading a FIXED root — the `agentFarm.codexHome` setting,
+or this machine's own `~/.codex`. So making a Codex account standing renamed the
+heading over the figure and changed nothing underneath it. That is the worst
+shape a control can have: it looks like it worked.
+
+The root is now the standing slot's own folder, derived by `slotSessionDir` —
+the same function the account cards read a slot's figure with (X-215), so the
+indicator and the card can never point at two different folders. Nothing
+standing is the ordinary answer and is unchanged: the setting, then `~/.codex`.
+
+The repaint half turned out to be right already, and is pinned by a test so it
+stays that way: both surfaces are repainted before any engine-specific branch,
+and the engine matrix behind them is read live — so for an engine whose figures
+are files, a repaint IS the new reading. The Claude-only branch below it buys a
+fresh ENDPOINT read, which is the one thing that is Claude's alone.
+
 ## 3.406.0 - X-215: the sentence that kept the Codex cards blank (2026-09-06)
 
 The user found this by comparing two surfaces of one product: *"the status bar

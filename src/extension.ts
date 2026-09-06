@@ -16125,6 +16125,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * this is the probe that gives it a home directory, and nothing here makes a
      * network call.
      */
+    /**
+     * ‼️ X-216 — WHOSE `sessions/` THE INDICATOR READS, and it is the standing
+     * account's whenever there is one.
+     *
+     * X-212 wired this for Claude — `usageCredentialsFile` follows
+     * `activeAccounts['claude']` — and the Codex half went on reading a FIXED
+     * root. So making a Codex account standing renamed the heading over the
+     * figure and changed nothing underneath it: the worst shape a control can
+     * have, because it looks like it worked. `slotSessionDir` is the same
+     * function the account cards read a slot's figure with (X-215), so the
+     * indicator and the card cannot point at two different folders.
+     *
+     * Nothing standing is the ordinary answer and unchanged: the setting, or
+     * this machine's own ~/.codex.
+     */
+    const codexSessionsRoot = (): string =>
+        slotSessionDir(findSlot(storedAccounts(), activeAccounts()['codex'] || ''))
+        || path.join(expandEnvPath(cfg().get<string>('codexHome', '').trim())
+            || path.join(os.homedir(), '.codex'), 'sessions');
     const usageProbe: UsageProbe = {
         newestFiles: (relDir, ext, limit) => {
             // ‼️ X-215 — AN ABSOLUTE PATH IS A SLOT'S OWN FOLDER. A captured
@@ -16135,8 +16154,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const root = path.isAbsolute(relDir)
                 ? relDir
                 : relDir === '.codex/sessions'
-                    ? path.join(expandEnvPath(cfg().get<string>('codexHome', '').trim())
-                        || path.join(os.homedir(), '.codex'), 'sessions')
+                    ? codexSessionsRoot()
                     : path.join(os.homedir(), relDir);
             const found: { p: string; t: number }[] = [];
             const walk = (dir: string, depth: number): void => {

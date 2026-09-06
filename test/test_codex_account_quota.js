@@ -177,6 +177,48 @@ const rollout = (used, windowMinutes, resetsAtSec, plan) => JSON.stringify({
 }
 
 // ===========================================================================
+// 5) X-216 — THE INDICATOR FOLLOWS THE STANDING ACCOUNT ON EVERY ENGINE
+//
+// "When we make an account standing for Claude on the Engines page, the
+// Dashboard and the status bar turn to it — a standing Codex account should do
+// the same." X-212 wired exactly one half of that: `usageCredentialsFile` and
+// `usageAccountLabel` follow `activeAccounts['claude']`, and the Codex side of
+// the probe went on reading a FIXED root (`agentFarm.codexHome`, or ~/.codex).
+// So making a Codex account standing renamed the heading and changed nothing
+// underneath it — the worst shape a control can have: it looks like it worked.
+// ===========================================================================
+{
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const probe = ext.slice(ext.indexOf('const usageProbe'), ext.indexOf('const engineUsageMatrix'));
+    ok('‼️ X-216 — the Codex root the indicator reads is the STANDING account\'s '
+        + 'own folder when there is one',
+        /codexSessionsRoot/.test(probe));
+    ok('…derived by the one function that already answers "where is this slot\'s '
+        + 'figure", never by a second path join',
+        /slotSessionDir\(findSlot\(storedAccounts\(\), activeAccounts\(\)\['codex'\]/.test(ext));
+    ok('…and the machine\'s own root is still the answer when nothing is standing, '
+        + 'so a fleet that captured nothing reads exactly as it did',
+        /codexHome/.test(ext) && /os\.homedir\(\), '\.codex'/.test(ext));
+
+    /*
+     * ‼️ AND BOTH SURFACES TURN AT THE PRESS, on any engine. The repaint half was
+     * already engine-agnostic and is pinned here so it stays that way: the early
+     * return below it buys a Claude account a fresh ENDPOINT read, which is the
+     * one thing that is Claude's alone — the Codex figures are re-read from disk
+     * by `engineUsageMatrix()` on every paint, so a repaint IS the new reading.
+     */
+    const follow = ext.slice(ext.indexOf('const usageFollowedAccount'),
+        ext.indexOf('const forgetAccount'));
+    const early = follow.indexOf('!== \'claude\'');
+    ok('‼️ X-216 — the status bar and the Dashboard are repainted before any '
+        + 'engine-specific branch, so a standing Codex account turns them too',
+        follow.indexOf('planUsageBar.paint()') < early
+        && follow.indexOf('DashboardPanel.pushPlanUsage') < early);
+    ok('…and the matrix behind them is read live rather than cached',
+        /engines: engineUsageMatrix/.test(ext));
+}
+
+// ===========================================================================
 // 4) ‼️ THE DISK IS NOT THE ENDPOINT — the budget rule
 // ===========================================================================
 {
