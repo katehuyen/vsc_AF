@@ -107,6 +107,23 @@ export interface LaunchManifest {
      *  folder — the same rule `LaunchBinding.cwd` follows, and for the same
      *  reason: the record is evidence, and evidence has to be what was true. */
     cwd: string;
+    /**
+     * ‼️ X-251 — THE SIGN-IN SLOT THE PROCESS ACTUALLY RAN UNDER; absent = none
+     * was injected, so it ran as whatever this machine is signed in as.
+     *
+     * RESOLVED, which is why it sits here beside `cwd` and `identity` rather
+     * than inside `requested`. An empty box on the composer does not mean "no
+     * account": it means the standing choice answered, and the standing choice
+     * is the one that PAID. Recording the request instead would answer a
+     * question nobody asks of a finished run.
+     *
+     * ‼️ AND IT HAS TO BE RECORDED HERE BECAUSE NOTHING ELSE CAN SAY IT. A
+     * Claude slot's `projects` folder is a junction onto one shared directory
+     * (measured), so every account writes its transcripts into the same place
+     * and the file itself cannot name its owner. The spawn is the only moment
+     * the answer exists.
+     */
+    account?: string;
     surface: LaunchSurface;
     /** ‼️ K-34/X-133 — the discipline this run works to, resolved. Recorded
      *  because it changes what the agent DOES and nothing else records it. */
@@ -172,6 +189,8 @@ export interface ManifestInput {
     mechanism: LaunchMechanism;
     mechanismId?: string;
     cwd: string;
+    /** X-251 — the RESOLVED slot the process ran under; '' = none injected. */
+    account?: string;
     surface: LaunchSurface;
     superpowers?: boolean;
 }
@@ -200,6 +219,9 @@ export function manifestFor(input: ManifestInput): LaunchManifest {
         mechanism: input.mechanism,
         ...(str(input.mechanismId) ? { mechanismId: str(input.mechanismId) } : {}),
         cwd: input.cwd,
+        // X-251 — absent rather than empty: "nothing was injected" and "we do not
+        // know" must not become the same reading years later.
+        ...(str(input.account) ? { account: str(input.account) } : {}),
         surface: input.surface,
         ...(input.superpowers === undefined ? {} : { superpowers: input.superpowers })
     };
@@ -313,6 +335,11 @@ export function describeManifest(m: LaunchManifest): string {
     bits.push(m.requested.model || 'default model');
     if (m.requested.variant) { bits.push(m.requested.variant); }
     if (m.requested.effort) { bits.push(m.requested.effort); }
+    // ‼️ X-251 — AND WHOSE PLAN PAID, where a sign-in was injected. Silent
+    // otherwise: "it ran as this machine" is the ordinary case, and a line that
+    // said so every time is one the reader learns to skip. On a farm with five
+    // accounts under one engine this is the fact the route does NOT imply.
+    if (str(m.account)) { bits.push(`account ${str(m.account)}`); }
     bits.push(m.surface);
     return bits.join(' · ');
 }

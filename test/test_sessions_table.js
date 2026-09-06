@@ -1283,6 +1283,8 @@ const mkRow = (i, extra) => Object.assign({
             engine: '', models: ['claude-opus-5'],
             launch: {
                 route: 'Kimi (work)', revision: 3, requested: 'tier opus - kimi-k2-thinking',
+                // X-251 — whose plan paid. Row 2 below deliberately has none.
+                account: 'claude-work',
                 surface: 'terminal', at: NOW - 1000, agreement: 'matched', note: ''
             }
         }),
@@ -1308,6 +1310,17 @@ const mkRow = (i, extra) => Object.assign({
         html().includes('Started as: terminal'));
     ok('the two halves agreeing is stated as a value, not a sentence',
         html().includes('Asked vs answered: matched'));
+    // ‼️ X-251 — WHOSE PLAN PAID. The transcript cannot say it on any engine: a
+    // Claude slot's projects folder is a junction onto one shared directory, so
+    // five accounts write into the same place and the file cannot name its
+    // owner. The manifest is the only witness there will ever be.
+    ok('‼️ …and which sign-in paid for it',
+        html().includes('Account: claude-work'));
+    // ‼️ AND SILENCE IS THE ORDINARY ANSWER. A run that injected no account ran
+    // as this machine, and a line saying so on every row is one the reader stops
+    // seeing — so the row carries nothing rather than the word "none".
+    ok('‼️ …while a run that injected no sign-in says nothing at all',
+        !/Account: (none|-|unknown|machine)/i.test(html()));
     // !! NOT "wrong". An alias asked for and an id answered is the same run, and
     // a word that accused would fire on almost every honest session.
     ok('!! a disagreement reads as NOT PROVEN, never as wrong',

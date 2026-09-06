@@ -191,6 +191,13 @@ export function sessionRowPool(
                 m.requested.model || 'default model', m.requested.variant || '', m.requested.effort || '']
                 .filter(Boolean).join(' · '),
             surface: m.surface,
+            // ‼️ X-251 — WHOSE PLAN PAID FOR THIS RUN. Empty on a run that
+            // injected no sign-in, and `line` drops an empty — because "it ran
+            // as this machine" is the ordinary case and a row that said so
+            // every time is a row nobody reads. The transcript cannot supply
+            // this on any engine (the accounts share one projects folder), so
+            // the manifest is the only witness there will ever be.
+            account: m.account || '',
             at: m.at,
             agreement: drift.agreement,
             // ‼️ EMPTY ON AN ORDINARY RUN. A line stating "all fine" on every

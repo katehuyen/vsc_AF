@@ -986,6 +986,14 @@
             return [
                 line('Route', L.route + (L.revision ? ` · profile revision ${L.revision}` : '')),
                 line('Requested', L.requested),
+                // ‼️ X-251 — WHOSE PLAN PAID. Empty on a run that injected no
+                // sign-in, and `line` drops it: "this machine's own account" is
+                // the ordinary answer, and a line repeating it on every row is
+                // one the reader stops seeing. It comes from the manifest
+                // because it can come from nowhere else — five accounts write
+                // their transcripts into one shared folder, so the file cannot
+                // name its owner.
+                line('Account', L.account),
                 line('Started as', L.surface),
                 line('Asked vs answered', AGREEMENT[L.agreement] || L.agreement),
                 // ‼️ EMPTY ON AN ORDINARY RUN, and `line` drops it — a note that

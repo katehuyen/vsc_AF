@@ -19502,7 +19502,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const recordLaunch = (input: Omit<ManifestInput, 'launchId' | 'at'>): string => {
         const at = Date.now();
-        const m = manifestFor({ ...input, launchId: newLaunchId(at), at });
+        /**
+         * ‼️ X-251 — WHOSE PLAN PAID, RESOLVED HERE AND NOWHERE ELSE.
+         *
+         * Every door reaches the spawn through this one function, so resolving
+         * the slot here covers all of them at once instead of asking ten call
+         * sites to remember. And it must be RESOLVED rather than copied out of
+         * the options: an empty box means the standing choice answered, and the
+         * standing choice is the account that actually pays.
+         *
+         * Recorded because nothing downstream can reconstruct it — a Claude
+         * slot's `projects` folder is a junction onto one shared directory, so
+         * the transcript cannot name its own owner.
+         */
+        const slot = launchAccountSlot({ engine: input.engine, ...input.options });
+        const m = manifestFor({
+            ...input, launchId: newLaunchId(at), at,
+            ...(slot?.id ? { account: slot.id } : {})
+        });
         writeLaunchManifest(m);
         return m.launchId;
     };

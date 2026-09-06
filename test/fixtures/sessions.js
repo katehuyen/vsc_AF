@@ -36,6 +36,9 @@ const data = () => ({
             engine: '', models: ['claude-opus-5'],
             launch: {
                 route: 'Kimi (work)', revision: 3, requested: 'tier opus - kimi-k2-thinking',
+                // X-251 — whose plan paid; the row below deliberately has none,
+                // because a run that injected no sign-in must stay silent.
+                account: 'claude-work',
                 surface: 'terminal', at: NOW - 400000, agreement: 'matched', note: ''
             }
         }),

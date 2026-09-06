@@ -92,6 +92,26 @@ console.log('\n== the request is kept apart from the answer ==');
         }).catalogRevision === undefined);
 }
 
+console.log('\n== whose plan paid for it ==');
+{
+    // ‼️ X-251 — THE ACCOUNT IS A RESOLVED FACT, so it sits beside `cwd` and
+    // `identity` rather than inside `requested`.
+    //
+    // Measured why it has to be recorded at all: a Claude account slot's
+    // `projects` folder is a JUNCTION onto one shared directory, so five
+    // accounts write their transcripts into the same place and the file cannot
+    // say whose it is. The launch is the only moment the answer exists — and
+    // "as it was asked for" is the wrong half to keep, because an empty box
+    // means the standing choice answered, and THAT is the account that paid.
+    const m = base({ account: 'claude-work' });
+    eq('the slot the process really ran under is on the record', m.account, 'claude-work');
+    ok('‼️ …and it is not folded into the request, which is what was ASKED for',
+        m.requested.account === undefined);
+    ok('‼️ an unnamed account is ABSENT rather than empty — "nothing was injected" '
+        + 'and "we do not know" must not become the same reading',
+        base().account === undefined && base({ account: '   ' }).account === undefined);
+}
+
 console.log('\n== it records the spawn, not a later opinion of it ==');
 {
     const m = base();
@@ -260,7 +280,14 @@ console.log('\n== the store is bounded before the first row is written ==');
         && /a launch manifest was NOT written/.test(ext));
     ok('minting, assembling and keeping are one call, so no door does two of the three',
         /const recordLaunch = \(input: Omit<ManifestInput, 'launchId' \| 'at'>\): string =>/.test(ext)
-        && /manifestFor\(\{ \.\.\.input, launchId: newLaunchId\(at\), at \}\)/.test(ext));
+        && /manifestFor\(\{\s*\n?\s*\.\.\.input, launchId: newLaunchId\(at\), at[,\s]/.test(ext));
+    // ‼️ X-251 — AND THE ACCOUNT IS RESOLVED IN THAT SAME ONE PLACE. Every door
+    // reaches the spawn through `recordLaunch`, so resolving the slot here is
+    // what makes "whose plan paid" true of all of them; asking ten call sites
+    // to remember is the shape this whole family exists to refuse.
+    ok('‼️ …and whose plan paid is resolved there too, not copied out of the options',
+        /const slot = launchAccountSlot\(\{ engine: input\.engine, \.\.\.input\.options \}\);/.test(ext)
+        && /\.\.\.\(slot\?\.id \? \{ account: slot\.id \} : \{\}\)/.test(ext));
 
     // ---- the terminal door ----
     const door = ext.slice(ext.indexOf('const startClaudeSession = ('),

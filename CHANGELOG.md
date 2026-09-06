@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.419.0 - X-251 (1/n): the run records whose plan paid for it (2026-09-07)
+
+**Nothing knew which account a session had run on, and nothing could work it
+out.** Measured on this machine: an account slot's `projects` folder is a
+**junction onto one shared directory** — `…/accounts/claude-wmmuratvural/projects
+-> C:\Users\rotam\.claude\projects` — so five sign-ins write their transcripts
+into the same place and **the file cannot name its own owner.** The live console
+card held the account in memory (`consolehost` `state.account`) and nothing
+persisted it, so the answer died with the card. The spawn is the only moment it
+exists.
+
+**`LaunchManifest` now carries it**, beside `cwd` and `identity` rather
+than inside `requested` — because it is a **resolved** fact. An empty account
+box does not mean "no account": it means the standing choice answered, and the
+standing choice is the one that **paid**. Recording the request instead would
+answer a question nobody asks of a finished run. Absent stays absent: "nothing
+was injected" and "we do not know" must not become the same reading years later.
+
+**Resolved in one place.** Every door reaches the spawn through `recordLaunch`,
+so the slot is resolved there and all ten are covered at once — asking ten call
+sites to remember is the shape this family exists to refuse, and a source-shape
+test now pins it.
+
+**And it is readable.** The sessions tables already join the manifest by
+`launchId` to show the requested half beside the reported one; the launch hover
+gains an `Account` line, and `describeManifest` names the account in the one
+line a notice quotes. **Both stay silent when nothing was injected** — "it ran as
+this machine" is the ordinary case, and a line repeating it on every row is one
+the reader stops seeing.
+
+**Still open on X-251:** the session viewer header and the timeline, and the
+console's own live card (which knows the account but writes it nowhere). The
+record now exists, which is what everything downstream was waiting for —
+including X-252, cost and quota attribution per account, which cannot be
+measured without it.
+
 ## 3.418.0 - X-249 (1/n) + X-259: the turn that commands the rotation now runs inside it (2026-09-07)
 
 **The leader turn spawned with no environment at all.** It is the short, cheap
