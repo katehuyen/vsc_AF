@@ -5092,6 +5092,63 @@ const { opencodeStatus, syncToOpencode } =
         try { fs.rmSync(tmpStorage, { recursive: true, force: true }); } catch { /* ignore */ }
     }
 
+    // ---------- X-230: the farm can load its own new build ----------
+    // The rule lives in core/selfRestart.ts (test_self_restart.js). What is
+    // pinned HERE is the wiring: that the two ops go through that one plan, that
+    // the command is fired from exactly one place, and — the trap that would
+    // otherwise cost a boot loop — that the cooldown stamp reaches the disk
+    // BEFORE the timer that kills the process is set.
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        for (const op of ['farm.health', 'farm.restartExtensionHost', 'farm.reloadWindow']) {
+            ok(`extension.ts registers ${op}`, src.includes(`op: '${op}'`));
+        }
+        ok('…through the shared core rather than its own copy of the rule',
+            /from '\.\/core\/selfRestart'/.test(src));
+
+        const win = (from, to) => {
+            const a = src.indexOf(from);
+            const b = to ? src.indexOf(to, a) : src.length;
+            return a < 0 ? '' : src.slice(a, b > a ? b : src.length);
+        };
+        const health = win("op: 'farm.health'", "op: 'farm.restartExtensionHost'");
+        const restart = win("op: 'farm.restartExtensionHost'", "op: 'farm.reloadWindow'");
+        const reload = win("op: 'farm.reloadWindow'", 'const bridgeDir');
+
+        ok('‼️ farm.health answers "is the new build actually running" — version AND a per-activation id',
+            /version: extVersion/.test(health) && /bootId/.test(health));
+        ok('…and it is the place an armed restart is watched from',
+            /restartArmed/.test(health) && /lastRestart/.test(health));
+        ok('…and it says what the restart would cost right now',
+            /sessions/.test(health) && /terminals/.test(health));
+
+        ok('the restart op asks for the host', /askRestart\('extensionHost'/.test(restart));
+        ok('the reload op asks for the window', /askRestart\('window'/.test(reload));
+        ok('‼️ neither op runs the VS Code command itself — one firing site or the delay rule is optional',
+            !/executeCommand\(/.test(restart) && !/executeCommand\(/.test(reload));
+        ok('both take the arguments the plan understands',
+            /when\?/.test(restart) && /force\?/.test(restart) && /delayMs\?/.test(restart));
+        ok('…and the contract tells the caller how to wait and how to verify',
+            /farm\.health/.test(restart) && /idle/.test(restart) && /force/.test(restart));
+        ok('…and the reload contract says it takes the terminals too',
+            /terminal/i.test(reload));
+
+        const fire = win('const fireRestart', 'const askRestart');
+        ok('the command is fired from the shared plan\'s own name, not a literal',
+            /RESTART_COMMANDS\[/.test(fire));
+        ok('‼️ …and the cooldown stamp is on disk BEFORE the timer that kills this process',
+            fire.indexOf('writeRestartStamp') > -1
+            && fire.indexOf('writeRestartStamp') < fire.indexOf('setTimeout'));
+        ok('‼️ …and the kill is deferred, so the bridge response is written first',
+            /setTimeout\(/.test(fire) && /delayMs/.test(fire));
+
+        const ask = win('const askRestart', "op: 'farm.health'");
+        ok('the decision is the core\'s, not the wiring\'s', /planRestart\(/.test(ask));
+        ok('a refusal reaches the caller as an error rather than a cheerful ok',
+            /'refused'/.test(ask) && /throw new Error/.test(ask));
+        ok('an armed plan is remembered and watched', /armedReady|armTimer|armedRestart/.test(ask));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

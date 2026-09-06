@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.408.0 - X-230: the farm can load its own new build (2026-09-06)
+
+*"We are setting up the autonomous shift on Agent Farm, but normally after a
+new package is made the agents tell me to restart it. How is that going to
+work unattended? Can the agent not do the restart itself?"*
+
+It could not, and the developer rule said so in writing: *"the user only
+restarts VS Code."* At the desk that is friction. During an unattended night
+it is a deadlock — the loop stops until a human comes back to press Reload
+Window, and the one repository where that happens is this one.
+
+Three ops — `farm.health`, `farm.restartExtensionHost`, `farm.reloadWindow` — over one
+core the rule actually lives in (`core/selfRestart.ts`). Two things it refuses to
+do, both measured rather than assumed:
+
+**It never restarts inside the handler.** `processBridge` writes the response
+AFTER the handler returns and unlinks the request after that — so a handler
+that kills the host dies with its own request still on disk, and the next
+activation reads it and restarts again, for ever, with no caller left alive to
+clean the file up. The command is fired on a timer, inside the gap the response
+is written in, and a cooldown stamp written synchronously to disk refuses a
+second restart within 20 seconds. `force` does not open that guard: force is
+about sessions, the loop is about the bridge.
+
+**And it never destroys work silently.** A Console session is a spawned child
+whose handle lives in the extension host's memory, so a host restart loses
+every live one of them; an integrated terminal belongs to the window and
+survives — which is exactly why an agent working in a terminal can restart the
+host under itself and live to verify the result. So the default
+(`when: "auto"`) ARMS the restart and fires it by itself once the last session
+ends, and says in the same answer what it is waiting for.
+
+The bridge is single-file (`bridgeBusy`): a handler that waited would freeze every
+other agent's every op for as long as it waited. So waiting is REPORTED, never
+held — `farm.health` carries the armed plan, what blocks it, and a `bootId` that
+changes on every activation. That id is the proof an autonomous agent has been
+missing: not that the VSIX installed, but that the build now running is the one
+it installed.
+
 ## 3.407.0 - X-216: the standing account the indicator did not follow (2026-09-06)
 
 *"When we make an account standing for Claude on the Engines page, the Dashboard

@@ -127,6 +127,10 @@ import {
 import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
 } from './core/sentryCampaign';
+import {
+    ArmedRestart, armedReady, liveBlockers, planRestart, RESTART_COMMANDS,
+    RESTART_COOLDOWN_MS, RestartKind, RestartWhen
+} from './core/selfRestart';
 import { SENTRY_DEFAULT_STALL_MIN } from './core/sentryWatch';
 import { SENTRY_DEFAULT_FAIL_LIMIT, sentryStep } from './core/sentryDriver';
 import {
@@ -15153,6 +15157,141 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 AirtablePanel.refreshIfOpen();
                 return { registered: false };
             }
+        }
+    ]);
+
+    /**
+     * ‼️ X-230 — THE FARM LOADING ITS OWN NEW BUILD, with nobody at the desk.
+     *
+     * An agent packages a `.vsix`, installs it, and then could do nothing with
+     * it: the running code is in the extension host's memory until somebody
+     * restarts it. During an unattended shift that is not friction, it is a
+     * deadlock. The rule — what each command destroys, why the response has to
+     * be written before the process dies, and why waiting is ARMED rather than
+     * blocked — is in `core/selfRestart.ts`, where it can be read and tested
+     * without a window. What lives here is only the wiring.
+     */
+    const bootId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    const bootAt = Date.now();
+    const restartStampFile = path.join(context.globalStorageUri.fsPath, 'selfRestart.json');
+    interface RestartStamp { at: number; kind: string; fromBootId: string; fromVersion: string }
+    const readRestartStamp = (): RestartStamp | null => {
+        try { return JSON.parse(fs.readFileSync(restartStampFile, 'utf8')) as RestartStamp; }
+        catch { return null; }
+    };
+    /** ‼️ SYNCHRONOUS, AND BEFORE THE TIMER. This stamp is the boot-loop guard,
+     *  and a guard that is written after the process is asked to die is not
+     *  there on the boot it exists for. */
+    const writeRestartStamp = (kind: RestartKind): void => {
+        try {
+            fs.mkdirSync(path.dirname(restartStampFile), { recursive: true });
+            fs.writeFileSync(restartStampFile, JSON.stringify(
+                { at: Date.now(), kind, fromBootId: bootId, fromVersion: extVersion }, null, 2), 'utf8');
+        } catch { /* the cooldown is a guard, not a precondition */ }
+    };
+    let armedRestart: ArmedRestart | null = null;
+    let armTimer: NodeJS.Timeout | null = null;
+    const restartWorld = () => ({
+        now: Date.now(),
+        sessions: consoleHost.list().map(s => ({ id: s.id, agentName: s.agentName, status: s.status })),
+        terminals: vscode.window.terminals.map(t => ({ name: t.name })),
+        lastRestartAt: readRestartStamp()?.at ?? null,
+        armed: armedRestart
+    });
+    const fireRestart = (kind: RestartKind, delayMs: number): void => {
+        writeRestartStamp(kind);
+        armedRestart = null;
+        if (armTimer) { clearInterval(armTimer); armTimer = null; }
+        setTimeout(() => { void vscode.commands.executeCommand(RESTART_COMMANDS[kind]); }, delayMs);
+    };
+    const watchArmed = (): void => {
+        if (armTimer) { return; }
+        armTimer = setInterval(() => {
+            const a = armedRestart;
+            if (!a) {
+                if (armTimer) { clearInterval(armTimer); armTimer = null; }
+                return;
+            }
+            if (armedReady(a, restartWorld())) { fireRestart(a.kind, a.delayMs); }
+        }, 5000);
+    };
+    context.subscriptions.push({ dispose: () => { if (armTimer) { clearInterval(armTimer); } } });
+    const RESTART_WHENS = new Set(['auto', 'now', 'idle', 'cancel']);
+    const askRestart = (kind: RestartKind, args: Record<string, unknown>) => {
+        // An unrecognised `when` is refused rather than quietly read as `auto`:
+        // a caller that asked to wait must never be restarted instead.
+        if (typeof args.when === 'string' && !RESTART_WHENS.has(args.when)) {
+            throw new Error(`Unknown when "${args.when}" — one of auto | now | idle | cancel.`);
+        }
+        const plan = planRestart({
+            kind,
+            when: typeof args.when === 'string' ? args.when as RestartWhen : undefined,
+            force: args.force === true,
+            delayMs: args.delayMs
+        }, restartWorld());
+        if (plan.decision === 'refused') { throw new Error(plan.reason); }
+        if (plan.decision === 'cancelled') {
+            armedRestart = null;
+            if (armTimer) { clearInterval(armTimer); armTimer = null; }
+        } else if (plan.decision === 'armed') {
+            armedRestart = {
+                kind: plan.kind, armedAt: plan.armedAt,
+                delayMs: plan.delayMs, waitingFor: plan.waitingFor
+            };
+            watchArmed();
+        } else {
+            fireRestart(plan.kind, plan.delayMs);
+        }
+        return { ...plan, bootId, version: extVersion };
+    };
+    bridge.register([
+        {
+            op: 'farm.health',
+            describe: 'What is actually running: extension version, this activation\'s bootId (a new one '
+                + 'on every extension host start — compare it to prove a restart really happened), uptime, '
+                + 'live console sessions, open terminals, the armed restart if there is one, and the last '
+                + 'self-restart this window performed. args: none',
+            handler: () => {
+                const w = restartWorld();
+                const live = liveBlockers(w, 'extensionHost');
+                const stamp = readRestartStamp();
+                return {
+                    version: extVersion,
+                    bootId,
+                    startedAt: new Date(bootAt).toISOString(),
+                    uptimeMs: Date.now() - bootAt,
+                    pid: process.pid,
+                    sessions: { live: live.length, list: live },
+                    terminals: w.terminals.map(t => t.name),
+                    restartArmed: armedRestart,
+                    lastRestart: stamp,
+                    cooldownMs: RESTART_COOLDOWN_MS,
+                    cooldownRemainingMs: stamp
+                        ? Math.max(0, RESTART_COOLDOWN_MS - (Date.now() - stamp.at)) : 0
+                };
+            }
+        },
+        {
+            op: 'farm.restartExtensionHost',
+            describe: 'Restart the extension host so a build you just installed is the one running — the '
+                + 'window, its editors and its terminals survive, so an agent working in a terminal can do '
+                + 'this under itself. Live console sessions do NOT survive (their handles are in the host\'s '
+                + 'memory), so by default the restart is ARMED and fires by itself once the last one ends, '
+                + 'and the answer says what it is waiting for. Refused inside a 20s cooldown (a request that '
+                + 'outlived a restart would otherwise loop). args: when? (auto=default | now = refuse rather '
+                + 'than wait | idle = always wait for quiet | cancel = call off what is armed), force? '
+                + '(restart through live sessions and lose them), delayMs?. Then poll farm.health until '
+                + 'bootId changes and version is the new one.',
+            handler: (args) => askRestart('extensionHost', args)
+        },
+        {
+            op: 'farm.reloadWindow',
+            describe: 'Reload the whole VS Code window (Developer: Reload Window). Heavier than '
+                + 'farm.restartExtensionHost: it also takes down every integrated terminal — including the '
+                + 'one an agent may be running in — so open terminals block it the same way live console '
+                + 'sessions do. Use it when package.json contributions changed. Same args and same cooldown '
+                + 'as farm.restartExtensionHost.',
+            handler: (args) => askRestart('window', args)
         }
     ]);
 
