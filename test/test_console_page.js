@@ -58,6 +58,22 @@ function mkEl(id) {
         // makes, and for the same reason: everything the page draws is in it.
         querySelectorAll(sel) { return sandbox.document.querySelectorAll(sel); },
         scrollTop: 0, scrollHeight: 1000, clientHeight: 300,
+        // ‼️ U-133 — attributes are READ BACK, not swallowed. A stub that only
+        // accepted them would let a page ship an aria state, a role or a data-
+        // hook that says nothing, and every assertion about it would pass. The
+        // two that already have a place on this object keep it, so a test can go
+        // on asking for `.title` and `.hidden` the way the page sets them.
+        _attrs: {},
+        setAttribute(k, v) {
+            this._attrs[k] = String(v);
+            if (k === 'title') { this.title = String(v); }
+            if (k === 'hidden') { this.hidden = true; }
+        },
+        getAttribute(k) { return Object.prototype.hasOwnProperty.call(this._attrs, k) ? this._attrs[k] : null; },
+        removeAttribute(k) {
+            delete this._attrs[k];
+            if (k === 'hidden') { this.hidden = false; }
+        },
         set innerHTML(v) { this._html = v; this._writes++; }, get innerHTML() { return this._html; },
         addEventListener(ev, fn) { this.listeners[ev] = fn; },
         // ‼️ K-30 — REALLY DELIVERED. A component that pastes into a box tells
@@ -1965,6 +1981,67 @@ const html = allHtml;
     opt(0, 0)._fn();
     ok('a card that fits is not marked as cut', els['c-ask'].className === 'askbox');
     ok('…and one question of two is counted', /1\/2 answered/.test(card()));
+
+    // ---- U-133: folding it away without letting go of the turn --------------
+    //
+    // ‼️ THE CARD COVERED WHAT THE QUESTION WAS ABOUT. It is a column between
+    // the conversation and the composer and it may take half the window, so the
+    // paragraphs written in the flow moments before the question — the ones you
+    // have to read TO answer — were out of reach until it was answered.
+    //
+    // What is pinned here is not that a class toggles. It is that folding does
+    // NOT go through a rebuild: the card is holding picks, a half-typed
+    // sentence, a caret and a place in a list taller than the window, and every
+    // one of those is carried across a rebuild BY HAND. A body under
+    // display:none reports a scroll position of zero, so a fold that rebuilt
+    // would throw the reader back to question one on the way out.
+    {
+        push(data(CONVO.slice(), { pendingAsk: askOf('req-fold', 4) }));
+        body().scrollHeight = 1000; body().clientHeight = 300;
+        opt(1, 0)._fn();
+        body().scrollTop = 96;
+        const fold = () => els['c-ask-min'].listeners.click();
+
+        ok('‼️ U-133: the card carries a control to fold it away', /id="c-ask-min"/.test(card()));
+        ok('…and it is in the FIXED header, not among the questions that scroll',
+            card().indexOf('id="c-ask-min"') < card().indexOf('id="c-ask-body"'));
+
+        const writes = els['c-ask']._writes;
+        fold();
+        ok('‼️ folding does not re-draw the card — what comes back is the card, not a copy of it',
+            els['c-ask']._writes === writes);
+        ok('…the card says it is folded, in the one place that owns its class list',
+            els['c-ask'].className === 'askbox min');
+        ok('‼️ …and it no longer claims to be cut off, because none of it is on screen',
+            els['c-ask'].className.indexOf('more') < 0);
+        ok('…while the header keeps saying the turn is held, and by how much',
+            /1\/4 answered/.test(card()) && /waiting on you/.test(card()));
+        ok('…and the control says which state it is in before it says what it does',
+            /^Folded away/.test(els['c-ask-min'].title));
+
+        // ‼️ THE MARKUP MAY NOT VARY WITH THE FOLD. The card's html is compared
+        // against its last write to decide whether to rebuild; a glyph or a
+        // title baked into it would desync that cache, and the next repaint
+        // would rebuild the very DOM the fold exists to leave alone.
+        push(data(CONVO.slice(), { pendingAsk: askOf('req-fold', 4) }));
+        ok('‼️ …a repaint while folded rebuilds nothing and does not spring it open',
+            els['c-ask']._writes === writes && els['c-ask'].className === 'askbox min');
+
+        fold();
+        ok('unfolding puts it back, cut-mark and all', els['c-ask'].className === 'askbox more');
+        ok('…with your place in the list where you left it', body().scrollTop === 96);
+        ok('…and your picks still picked', /1\/4 answered/.test(card()));
+
+        // ‼️ A QUESTION YOU HAVE NOT READ IS NEVER FOLDED AWAY. A fold that
+        // outlived its question would hide the next one behind a button nobody
+        // knows to press — a held turn that looks like a hung one, which is the
+        // failure this whole card exists to prevent.
+        fold();
+        ok('a fold is a property of THIS question', els['c-ask'].className === 'askbox min');
+        push(data(CONVO.slice(), { pendingAsk: askOf('req-next', 2) }));
+        ok('‼️ …so the next question arrives open, whatever the last one was left as',
+            els['c-ask'].className.indexOf('min') < 0 && /0\/2 answered/.test(card()));
+    }
 
     // A permission ask has no questions: no count, but the same fixed strip —
     // a tool call with a huge input is exactly as unanswerable when it overflows.

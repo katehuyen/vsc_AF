@@ -566,6 +566,28 @@
         /* how much of the card is still unanswered — the one number that says
            whether anything is waiting for you out of sight */
         .askbox .t .cnt { margin-left:auto; font-size:10px; font-weight:600; opacity:.85; white-space:nowrap; }
+        /* ‼️ U-133 — GETTING OUT OF THE WAY WITHOUT GOING AWAY.
+           The card is a column between the conversation and the composer and it
+           may take half the window, so the paragraphs the question is ABOUT —
+           written in the flow moments before it — were pushed out of reach until
+           it was answered. Which is backwards: you have to read them TO answer.
+           Minimised it keeps its line, its tag and its count, so the session is
+           still visibly held; only the questions and the answer strip fold away.
+           ‼️ And it is a VIEW act, not a state change — nothing is re-rendered,
+           so what comes back is not a reconstruction of the card, it is the card.
+           The glyph is CSS so the button's MARKUP never varies: the card's html
+           is compared against its last write to decide whether to rebuild, and a
+           label that changed with the state would have made minimising rebuild
+           the very DOM that is holding the reader's picks and place. */
+        .askbox .askmin { margin-left:6px; font:inherit; font-size:11px; line-height:1;
+            padding:1px 6px; border-radius:6px; cursor:pointer;
+            border:1px solid var(--vscode-widget-border,#4444);
+            background:var(--vscode-editor-background); color:var(--vscode-foreground); }
+        .askbox .askmin:hover { background:var(--vscode-list-hoverBackground); }
+        .askbox .askmin::after { content:'▁'; }
+        .askbox.min .askmin::after { content:'⤢'; }
+        .askbox.min { max-height:none; }
+        .askbox.min .askbody, .askbox.min .askfoot { display:none; }
         .askbox .t .cnt.done { opacity:.6; font-weight:400; }
         .askbox .t .tag { font-size:10px; padding:1px 6px; border-radius:8px; font-weight:600;
             border:1px solid var(--vscode-focusBorder,#3794ff); }
@@ -1548,11 +1570,26 @@
      * card taller than the window is never itself below the fold.
      */
     let askPick = { req: '', by: {} };   // which request the picks belong to
+    /**
+     * ‼️ U-133 — MINIMISED IS A PROPERTY OF THIS QUESTION, NOT OF THE CONSOLE.
+     *
+     * A card folded away that STAYED folded away for the next question would
+     * hide a question nobody has read yet behind a button nobody knows to press
+     * — which is the failure this card was built to prevent (a held turn that
+     * looks like a hung one), reintroduced by the control meant to make it
+     * bearable. So a new request arrives open, always, in the same act that
+     * clears the picks.
+     */
+    let askMin = { req: '', on: false };
 
     function askBoxHtml(s) {
         const a = s && s.pendingAsk;
         if (!a) { askPick = { req: '', by: {} }; return ''; }
-        if (askPick.req !== a.requestId) { askPick = { req: a.requestId, by: {} }; }
+        if (askPick.req !== a.requestId) {
+            askPick = { req: a.requestId, by: {} };
+            // U-133 — a question you have not read yet is never folded away.
+            askMin = { req: a.requestId, on: false };
+        }
         const qs = a.questions || [];
         const body = qs.length
             ? qs.map((q, qi) => {
@@ -1602,6 +1639,7 @@
                 <span class="tag">${qs.length ? '❓ waiting on you' : '🔐 permission'}</span>
                 ${C.esc(qs.length ? (a.displayName || a.tool) + ' is asking' : (a.displayName || a.tool) + ' wants to run')}
                 ${count}
+                <button class="askmin" id="c-ask-min" aria-label="fold this card away"></button>
             </div>
             <div class="askbody" id="c-ask-body">${body}</div>
             <div class="askfoot">
@@ -1622,7 +1660,49 @@
         const wrap = document.getElementById('c-ask');
         if (!wrap) { return; }
         const body = document.getElementById('c-ask-body');
-        wrap.className = body && body.scrollHeight > body.clientHeight + 1 ? 'askbox more' : 'askbox';
+        // ‼️ U-133 — this writes the WHOLE class list, so it owns "minimised"
+        // too. Adding that class anywhere else would last until the next
+        // repaint, a resize, or a keystroke in the free-text line — the card
+        // would spring back open under the reader's hand.
+        const min = askMin.on ? ' min' : '';
+        // A folded card has no overflow to report: the questions are not on
+        // screen, so a line saying they are cut would be describing nothing.
+        const more = !askMin.on && body && body.scrollHeight > body.clientHeight + 1 ? ' more' : '';
+        wrap.className = 'askbox' + more + min;
+    }
+
+    /**
+     * ‼️ U-133 — FOLDING IS A VIEW ACT AND NOTHING IS REBUILT.
+     *
+     * The card carries the reader's picks, their half-typed sentence, their
+     * caret and their place in a list taller than the window — and `renderAsk`
+     * has to carry every one of those across a rebuild by hand. A fold that went
+     * through a rebuild would be a fifth thing to carry, and the one that cannot
+     * be carried: a body under `display:none` reports a scroll position of zero,
+     * so unfolding would silently throw the reader back to question one.
+     *
+     * So the class is toggled and the title rewritten in place. What comes back
+     * is not a reconstruction of the card; it is the card.
+     */
+    function paintAskMin() {
+        const wrap = document.getElementById('c-ask');
+        if (!wrap) { return; }
+        markAskOverflow();
+        const b = document.getElementById('c-ask-min');
+        if (!b) { return; }
+        b.setAttribute('aria-expanded', askMin.on ? 'false' : 'true');
+        // MIRROR — the control is one glyph wide, so its tooltip opens with the
+        // state it is in before it says what pressing it does.
+        b.title = askMin.on
+            ? 'Folded away — the turn is still held and this line says so.\n\n'
+            + 'Press to bring the questions and the answer strip back exactly as you left them: '
+            + 'nothing was re-drawn, so your picks, your half-typed sentence and your place in the '
+            + 'list are where they were.'
+            : 'Fold this card down to its line.\n\n'
+            + 'The card can take half the window, and what a question is ABOUT was usually written '
+            + 'in the flow just above it — which you have to read to answer. Folded, the flow is '
+            + 'yours to scroll again; the turn stays open, this line keeps saying so, and pressing '
+            + 'it again brings the card back as it is now.';
     }
 
     function renderAsk() {
@@ -1641,13 +1721,16 @@
         const oldBody = document.getElementById('c-ask-body');
         const sameAsk = !!(s && s.pendingAsk && askPick.req === s.pendingAsk.requestId);
         const scrolled = oldBody && sameAsk ? oldBody.scrollTop : 0;
-        if (!slot('c-ask', askBoxHtml(s))) { markAskOverflow(); return; }
+        if (!slot('c-ask', askBoxHtml(s))) { paintAskMin(); return; }
         wireAsk(s);
         const body = document.getElementById('c-ask-body');
         // written either way: 0 is the answer for a question you have not read
         // yet, and saying it is how the card cannot inherit the last one's place
         if (body) { body.scrollTop = scrolled; }
-        markAskOverflow();
+        // ‼️ AFTER the rebuild, because the rebuild writes a card with no fold
+        // state in its markup at all — the glyph is CSS and the title is set
+        // here, which is what keeps the html stable enough to be compared.
+        paintAskMin();
         const box = document.getElementById('c-ask-free');
         if (box && kept) {
             box.value = kept;
@@ -1673,6 +1756,13 @@
             }, {}),
             response: free()
         });
+        const foldBtn = document.getElementById('c-ask-min');
+        if (foldBtn) {
+            foldBtn.addEventListener('click', () => {
+                askMin = { req: a.requestId, on: !askMin.on };
+                paintAskMin();
+            });
+        }
         document.querySelectorAll('[data-askq]').forEach(b => b.addEventListener('click', () => {
             const q = (a.questions || [])[Number(b.dataset.askq)];
             const o = q && (q.options || [])[Number(b.dataset.asko)];

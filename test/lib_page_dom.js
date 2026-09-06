@@ -129,6 +129,23 @@ function runPage(scriptFile, DATA, extraWindow) {
             checked: 'checked' in attrs, indeterminate: false,
             textContent: '', className: attrs.class || '', style: {},
             classList: { add() { }, remove() { } },
+            /**
+             * ‼️ ATTRIBUTES ARE WRITTEN AND READ BACK.
+             *
+             * This shim already parses them out of the markup, so a page could
+             * READ one it had drawn and not SET one at runtime — an aria state,
+             * a data hook — which threw. Swallowing them would have been the
+             * worse fix: every assertion about the attribute would then pass on
+             * a page that never set it, which is this shim's one job to prevent.
+             */
+            setAttribute(k, v) {
+                attrs[k] = String(v);
+                if (k === 'class') { this.className = String(v); }
+                if (k === 'value') { this.value = String(v); }
+            },
+            getAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k) ? attrs[k] : null; },
+            hasAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k); },
+            removeAttribute(k) { delete attrs[k]; },
             _listeners: {},
             addEventListener(ev, fn) { (this._listeners[ev] = this._listeners[ev] || []).push(fn); },
             focus() { active = this; }, blur() { if (active === this) { active = null; } },

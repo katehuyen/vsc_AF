@@ -2,6 +2,54 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.415.0 - U-133: the question can be folded down to its line without letting go of the turn (2026-09-06)
+
+**The card was covering what the question was about.** The ask card sits between
+the conversation and the composer and may take half the window, and it stays
+there until it is answered. But the paragraphs a question is *about* — what the
+agent found, what it is proposing, why it is asking at all — are written in the
+flow moments before it. So the one thing you have to read in order to answer was
+the one thing the card put out of reach.
+
+It now carries a fold control in its fixed header. Folded, the card keeps its
+line: the **❓ waiting on you** tag, whose it is, and how many questions are still
+open — the session is still visibly held, which is the whole reason the card is
+loud in the first place. Everything else gets out of the way, and the
+conversation is yours to scroll.
+
+**‼️ Folding is a VIEW act and nothing is re-drawn.** The card is holding your
+picks, your half-typed sentence, your caret and your place in a list taller than
+the window, and every one of those is carried across a rebuild *by hand*. A fold
+that went through a rebuild would be a fifth thing to carry — and the one that
+cannot be: a body under `display:none` reports a scroll position of zero, so
+unfolding would have thrown you back to question one. The class is toggled in
+place, so what comes back is not a reconstruction of the card. It is the card.
+
+That is also why the button's **markup never varies with the state**: the card's
+html is compared against its last write to decide whether to rebuild, so a glyph
+or a title baked into it would have desynced that cache and made the next
+repaint rebuild the very DOM the fold exists to leave alone. The glyph is CSS;
+the tooltip is set on the element.
+
+**A fold belongs to THIS question.** One that outlived its question would hide
+the next one behind a button nobody knows to press — a held turn that looks like
+a hung one, which is exactly the failure this card was built to prevent. A new
+request always arrives open, in the same act that clears the picks.
+
+Nothing else about the card moved: same shape, same ceiling, same scroller, same
+answer strip, same words.
+
+**And the card now has a picture.** Every other state of the Console had a
+fixture scene and the only one that stops a running session dead did not, because
+`pendingAsk` was null everywhere. Four questions with described options — the
+shape that gave the card its ceiling in the first place — is now drawn.
+
+**Also: the page shims can write attributes.** `setAttribute` was missing from
+both test DOMs, so a page that set one at runtime threw. Swallowing them would
+have been the worse fix — every assertion about the attribute would then pass on
+a page that never set it, which is the one thing those shims exist to prevent.
+They are written and read back now.
+
 ## 3.414.0 - X-220: an account is an engine and an address, and the card says which state it is in (2026-09-06)
 
 **Two rows, one account.** Signing in again and pressing *Capture this sign-in*

@@ -533,6 +533,60 @@ const sentryStoppedData = () => Object.assign(data(), {
     }
 });
 
+/**
+ * ‼️ THE CARD THAT HOLDS THE TURN, WHICH HAD NEVER BEEN DRAWN.
+ *
+ * Every other state of this panel has a picture and this one — the only thing
+ * on the page that stops a running session dead — did not, because the fixture
+ * left `pendingAsk` null everywhere. Four questions with described options is
+ * the shape that gave the card its ceiling and its scroller (and, with U-133,
+ * its fold): it is exactly the case where the card takes half the window and
+ * buries the paragraphs the questions are ABOUT.
+ */
+const askingData = () => {
+    const d = data();
+    d.sessions = d.sessions.map(s => (s.id !== 'cs2' ? s : Object.assign({}, s, {
+        status: 'working',
+        pendingAsk: {
+            requestId: 'ask-1',
+            tool: 'AskUserQuestion',
+            displayName: 'AskUserQuestion',
+            questions: [
+                {
+                    question: 'Hangi hesapla devam edelim?', header: 'Hesap', multiSelect: false,
+                    options: [
+                        { label: 'work@studio', description: 'max20x — five-hour window 91% gone' },
+                        { label: 'personal@gmail', description: 'pro — 12% gone, resets at 05:40' }
+                    ]
+                },
+                {
+                    question: 'Which of these should the run touch?', header: 'Scope', multiSelect: true,
+                    options: [
+                        { label: 'the panel', description: 'media/console.js and its page tests' },
+                        { label: 'the core', description: 'src/core/consoleproto.ts' },
+                        { label: 'the bridge', description: 'a new op and its dispatch test' }
+                    ]
+                },
+                {
+                    question: 'How far should it go before checking back?', header: 'Leash', multiSelect: false,
+                    options: [
+                        { label: 'one step', description: 'stop after the first green test' },
+                        { label: 'the whole item', description: 'package and install, then report' }
+                    ]
+                },
+                {
+                    question: 'What happens if the quota wall is hit halfway?', header: 'Wall', multiSelect: false,
+                    options: [
+                        { label: 'hand over', description: 'write the letter and stop' },
+                        { label: 'wait it out', description: 'sleep until the window turns over' }
+                    ]
+                }
+            ]
+        }
+    })));
+    return d;
+};
+
 module.exports = {
     script: 'console.js',
     data,
@@ -677,6 +731,11 @@ module.exports = {
             id: 'console-sentry-stopped',
             label: 'Console — …and the strip that explains a night that ended at three (X-177)',
             data: sentryStoppedData()
+        },
+        {
+            id: 'console-asking',
+            label: 'Console — a question holding the turn: the card that can be folded down to its line (U-133)',
+            data: askingData()
         }
     ]
 };
