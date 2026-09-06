@@ -1760,6 +1760,109 @@
         return window.AFLaunch.narrowEffort(ntCatalog(engine), model, effort);
     }
 
+    /**
+     * ‼️ X-228 — AND THE THREE ROWS THAT ANSWER "WHAT RUNS IT" ARE BUILT ONCE,
+     * BECAUSE THERE ARE NOW TWO SURFACES ASKING.
+     *
+     * A workflow step is a run, so its card asks the same questions the task
+     * form asks — and each of these rows carries a paragraph that is TRUE about
+     * the engine rather than about the form: what a permission mode becomes on
+     * an engine that cannot stop and ask, why a tier is not a model, why an
+     * engine that is not installed is offered and refused. A second copy of that
+     * is a second thing to keep true, which is exactly the trap X-149 closed for
+     * the narrowing rule one screen above. The caller says only which box it is
+     * drawing into; nothing else about the two surfaces differs.
+     */
+    function ntEngineRow(id, cur) {
+        const L = DATA.launch || {};
+        const list = L.engines || [];
+        if (list.length < 2) { return ''; }
+        const chosen = cur || (L.defaults && L.defaults.engine) || 'claude';
+        const opts = list.map(e => C.option(e.id === 'claude' ? '' : e.id,
+            e.label + (e.ready ? '' : ' — cannot run here'), {
+            selected: e.id === chosen, disabled: !e.ready, detail: e.next || ''
+        })).join('');
+        return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine the permission mode below is spent UP FRONT because the engine cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on Antigravity a request its own app can overrule — and the run states no dollar figure, counting tokens instead (whether that is billed against a plan or a key is what its sign-in says, on the Engines page). ‼️ OpenCode breaks that sentence at both ends: it CAN stop and ask, which is exactly why an unattended run of it needs the auto-approve mode — with nobody to answer, the request comes back REFUSED rather than waiting — and it states the price of every turn itself. An engine with no reasoning-effort setting of its own (Gemini has none, OpenCode has none) is not given that box at all. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
+                <select id="nt-${id}">${opts}</select></label>`;
+    }
+    /**
+     * ‼️ U-59 — WHAT "PERMISSIONS" MEANS ON THE ENGINE THIS RUN WILL USE.
+     *
+     * One sentence served every engine and it was written for the two that
+     * behave alike: "one that stops to ask waits until you notice it." A
+     * shared-ACP engine does not wait — with nobody on the other end of its
+     * own question the tool call comes back refused — and a per-turn engine
+     * never asks in the first place. Three shapes, three outcomes, and the
+     * one the reader is choosing is the one printed.
+     */
+    function ntPermTip(engineId) {
+        const row = ((DATA.launch || {}).engines || []).find(e => e.id === (engineId || 'claude'));
+        const shape = (row && row.shape) || 'persistent';
+        if (shape === 'sharedAcp') {
+            return 'What it may do without asking. ‼️ This engine really does stop and ask — and unattended there is nobody to answer, '
+                + 'so a request it would have asked about comes back REFUSED and the run carries on without that tool. '
+                + 'Choose acceptEdits or bypassPermissions to hand it the auto-approve override instead; both reach the same one flag here. '
+                + 'plan runs its own plan agent, which is refused every edit tool.';
+        }
+        if (shape === 'perTurn') {
+            return 'What it may do without asking. ‼️ This engine cannot stop and ask at all, so this is not a question it will ever put to you: '
+                + 'it is fixed for every turn when the run starts — hover the Engine box above for what it becomes there.';
+        }
+        return 'What it may do without asking. ‼️ Nobody is sitting in front of an unattended run: one that stops to ask waits until you notice it, and one on bypassPermissions does not stop at all.';
+    }
+    /**
+     * ‼️ X-106 — WHICH ROUTE THE RUN IS SERVED BY, and it matters MORE on an
+     * automation than anywhere else in this extension.
+     *
+     * An automation fires with nobody at a window. Every other dimension on
+     * these forms already understood that — the engine, the effort, the tone,
+     * the discipline are all asked because "it can only be said when the
+     * automation is WRITTEN" — and the endpoint the process actually talks to
+     * was the one that could not be said at all: a nightly job took whichever
+     * standing route the agent happened to have at 3 a.m.
+     *
+     * ‼️ DRAWN ONLY WHERE THERE IS SOMETHING TO PICK, exactly as the CLI row
+     * beside it is. Three of the five engines have no provider axis and a
+     * Claude with no profiles set up has nothing to offer — a box with no
+     * referent is what docs/CONVENTIONS.md forbids, and neither form is where a
+     * person learns that routes exist (the Providers page is).
+     *
+     * ‼️ AND THE TIER BOX BELONGS TO THE ROUTE ABOVE IT. `opus` is
+     * `kimi-k2-thinking` on one route and `MiniMax-M2` on another, so the word
+     * has no meaning until a route answers it — which is why the tiers ride ON
+     * each route rather than in a list of their own.
+     */
+    function ntRouteRows(routeId, tierId, engine, providerId, tier) {
+        const routeForm = ntRoutes(engine);
+        if (!routeForm) { return ''; }
+        const noun = String(routeForm.noun || 'Route');
+        const opts = [C.option('', '— none: nothing injected, nothing cleared —', {
+            selected: !providerId,
+            detail: 'The run takes whichever ' + noun.toLowerCase() + ' the agent happens to be set to when it fires — and nobody is watching when it does.'
+        })]
+            .concat(routeForm.providers.map(p =>
+                C.option(p.id, p.label, { selected: p.id === providerId, detail: p.detail || p.baseUrl || '' })))
+            .join('');
+        const row = `<label class="ntf" title="${C.esc(noun
+            + ': the endpoint this run really talks to, which the engine itself never says. '
+            + 'An automation fires with nobody watching, so a run that names none takes '
+            + 'whichever route the agent happens to be set to when it fires. '
+            + 'None = nothing injected and nothing cleared, which is what every run written '
+            + 'before this did.')}"><span>${C.esc(noun)}</span>
+                    <select id="nt-${routeId}">${opts}</select></label>`;
+        const tiers = (routeForm.providers.find(p => p.id === providerId) || {}).tiers || [];
+        if (!tiers.length) { return row; }
+        const topts = [C.option('', '— the route\'s own choice —', { selected: !tier, detail: 'No tier named, so the route serves whatever it serves by default.' })]
+            .concat(tiers.map(t =>
+                C.option(t.id, t.label + (t.detail ? ' — ' + t.detail : ''), {
+                    selected: t.id === tier,
+                    detail: 'A tier is not a model: this name is served by a different model on every route, which is why it is asked here and not in the model box.'
+                })))
+            .join('');
+        return row + `<label class="ntf" title="Which model this route serves for that name. A tier is not a model: &quot;opus&quot; is one model on one route and another on the next, which is why it is asked here and not in the model box."><span>Tier</span>
+                    <select id="nt-${tierId}">${topts}</select></label>`;
+    }
+
     /** A plain <select> over `{id,label}` rows — the kind-specific fields. */
     function pickSel(id, label, list, value, title) {
         const opts = list.map(o =>
@@ -2066,6 +2169,79 @@
                     <select id="nt-st-saccount">${opts}</select></label>`;
     }
 
+    /**
+     * ‼️ X-228 — WHAT ACTUALLY RUNS THIS LINK OF THE CHAIN.
+     *
+     * Measured: the step card collected stype · title · agent · prompt · mode ·
+     * account and the chain fields, and drew NO launch box at all — while the
+     * host was ready in both directions (`stepSeed` published `sengine` /
+     * `smodel` / `seffort` / `spermissionMode`, `stepFromDraft` read them back,
+     * `WorkflowStep extends RunDimensions`, `runExtras(step)` carried them to
+     * the run). Data model, persistence and run path were all there; there was
+     * nowhere to SAY it. So every step of every chain built on this page fell to
+     * the fleet default, and a value written through the bridge was invisible
+     * here — surviving the round trip only because `readStep` writes back the
+     * keys it names and leaves the rest alone. An invisible setting.
+     *
+     * ‼️ AND IT ASKS THROUGH THE SAME ROWS THE TASK FORM ASKS THROUGH
+     * (`ntEngineRow` · `ntModels` · `ntEfforts` · `ntPermTip` · `ntRouteRows`),
+     * narrowed by the one rule in `media/afLaunch.js`. A step card writing its
+     * own half of that rule is exactly the defect X-149 closed: four copies of
+     * one question, answering it four ways.
+     */
+    function stepLaunchRows(s) {
+        return ntEngineRow('st-sengine', s.sengine)
+            + choiceSel('st-smodel', 'Model', ntModels(s.sengine), s.smodel,
+                'Which model runs THIS step. ‼️ The list belongs to the Engine above: '
+                + ntModelNote(s.sengine) + ' Empty = the step states nothing and the chain\'s '
+                + 'run inherits, which is what every step written before this did.')
+            + choiceSel('st-seffort', 'Effort', ntEfforts(s.sengine, s.smodel), s.seffort,
+                'How much reasoning per turn, from the levels the chosen model actually supports. '
+                + 'A chain is where this is worth saying step by step: the link that plans and the '
+                + 'link that files the output are not the same kind of work.')
+            + choiceSel('st-spermissionMode', 'Permissions', (DATA.launch || {}).permissions,
+                s.spermissionMode, ntPermTip(s.sengine))
+            + ntRouteRows('st-sproviderId', 'st-stier', s.sengine, s.sproviderId, s.stier)
+            + stepAccountRow(s);
+    }
+
+    /**
+     * ‼️ X-228 — THE STEP SPEAKS THE ONE NARROWING RULE, IN ITS OWN VOCABULARY.
+     *
+     * A step draft is a flat set of boxes, so it names the dimensions with an
+     * `s` in front (`sengine`, `smodel`… — `stepSeed` and `stepFromDraft` on the
+     * host agree with it). That prefix is the ONLY difference, and it must not
+     * become a reason to write the rule a second time: X-149 closed exactly that
+     * failure, where four copies of one question answered it four ways. So the
+     * step is VIEWED as a run for the length of the call, `ntNarrowRoute` /
+     * `ntNarrowAccount` / `AFLaunch` answer it, and the answers are written back.
+     *
+     * `which` says what moved, because the answers differ: a new engine drops a
+     * model its CLI cannot take (and with it the effort, whose vocabulary the
+     * model owns), while a new model keeps the engine and only re-decides the
+     * effort.
+     */
+    function stepNarrow(s, which) {
+        if (!s) { return; }
+        const view = {
+            engine: s.sengine || '', model: s.smodel || '', effort: s.seffort || '',
+            account: s.saccount || '', providerId: s.sproviderId || '', tier: s.stier || ''
+        };
+        if (which === 'engine') {
+            const kept = window.AFLaunch.narrowModel(ntCatalog(view.engine), view.model);
+            if (kept !== view.model) { view.model = kept; view.effort = ''; }
+            ntNarrowRoute(view);
+            ntNarrowAccount(view);
+        } else if (which === 'route') {
+            ntNarrowRoute(view);
+        }
+        // …and even where the model survived, its effort vocabulary may not:
+        // the same engine can state different levels for the same name.
+        view.effort = ntNarrowEffort(view.engine, view.model, view.effort);
+        s.smodel = view.model; s.seffort = view.effort; s.saccount = view.account;
+        s.sproviderId = view.providerId; s.stier = view.tier;
+    }
+
     function stepCardHtml(c) {
         const s = c.step || newStep();
         const isNew = c.stepIdx === -1;
@@ -2094,7 +2270,7 @@
                         ${C.option('headless', 'headless — runs and exits', { selected: s.smode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never — and the step can be retried automatically.' })}
                         ${C.option('interactive', 'interactive — opens a session', { selected: s.smode === 'interactive', detail: 'Opens a terminal with you in front of it. Closing that window is how you end it, so "it failed" is not a fact anything can read from it.' })}
                     </select></label>` : ''}
-                ${s.stype === 'agent' ? stepAccountRow(s) : ''}
+                ${s.stype === 'agent' ? stepLaunchRows(s) : ''}
             </div>
             ${s.stype === 'agent' ? `<div class="ntgrid">
                 <label class="ntf wide" title="${C.esc(
@@ -2197,7 +2373,13 @@
         // this side: `readStep` writes back only the keys it names, so a box the
         // card draws and this list forgets is a control that looks alive and is
         // not (the same defect X-221 found on the task form's own account box).
-        ['stype', 'title', 'agent', 'prompt', 'smode', 'saccount', 'onFail', 'runIf', 'contract', 'verifyCriteria',
+        // ‼️ X-228 — and so are the five boxes beside it. The key IS the element
+        // id here, which is why the step card names its route box `sproviderId`
+        // rather than borrowing the task form's `nt-route`: one name, drawn,
+        // read and stored.
+        ['stype', 'title', 'agent', 'prompt', 'smode', 'saccount',
+            'sengine', 'smodel', 'seffort', 'spermissionMode', 'sproviderId', 'stier',
+            'onFail', 'runIf', 'contract', 'verifyCriteria',
             'whUrl', 'whMethod', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone',
             'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg'].forEach(v);
         ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax'].forEach(n);
@@ -2421,58 +2603,12 @@
             .concat((L.clis || []).map(p =>
                 C.option(p.name, p.name, { selected: p.name === c.cli, detail: p.path || p.detail || '' })))
             .join('');
-        /**
-         * ‼️ X-106 — WHICH ROUTE THE RUN IS SERVED BY, and it matters MORE here
-         * than anywhere else in this extension.
-         *
-         * An automation fires with nobody at a window. Every other dimension on
-         * this form already understood that — the engine, the effort, the tone,
-         * the discipline are all here because "it can only be said when the
-         * automation is WRITTEN" — and the endpoint the process actually talks
-         * to was the one that could not be said at all: a nightly job took
-         * whichever standing route the agent happened to have at 3 a.m.
-         *
-         * ‼️ DRAWN ONLY WHERE THERE IS SOMETHING TO PICK, exactly as the CLI row
-         * beside it is. Three of the five engines have no provider axis and a
-         * Claude with no profiles set up has nothing to offer — a box with no
-         * referent is what docs/CONVENTIONS.md forbids, and this form is not
-         * where a person learns that routes exist (the Providers page is).
-         *
-         * ‼️ AND THE TIER BOX BELONGS TO THE ROUTE ABOVE IT. `opus` is
-         * `kimi-k2-thinking` on one route and `MiniMax-M2` on another, so the
-         * word has no meaning until a route answers it — which is why the tiers
-         * ride ON each route rather than in a list of their own.
-         */
-        const routeForm = ntRoutes(c.engine);
-        const routeRow = (() => {
-            if (!routeForm) { return ''; }
-            const noun = String(routeForm.noun || 'Route');
-            const opts = [C.option('', '— none: nothing injected, nothing cleared —', {
-                selected: !c.providerId,
-                detail: 'The run takes whichever ' + noun.toLowerCase() + ' the agent happens to be set to when it fires — and nobody is watching when it does.'
-            })]
-                .concat(routeForm.providers.map(p =>
-                    C.option(p.id, p.label, { selected: p.id === c.providerId, detail: p.detail || p.baseUrl || '' })))
-                .join('');
-            const row = `<label class="ntf" title="${C.esc(noun
-                + ': the endpoint this run really talks to, which the engine itself never says. '
-                + 'An automation fires with nobody watching, so a run that names none takes '
-                + 'whichever route the agent happens to be set to when it fires. '
-                + 'None = nothing injected and nothing cleared, which is what every run written '
-                + 'before this did.')}"><span>${C.esc(noun)}</span>
-                    <select id="nt-route">${opts}</select></label>`;
-            const tiers = (routeForm.providers.find(p => p.id === c.providerId) || {}).tiers || [];
-            if (!tiers.length) { return row; }
-            const topts = [C.option('', '— the route\'s own choice —', { selected: !c.tier, detail: 'No tier named, so the route serves whatever it serves by default.' })]
-                .concat(tiers.map(t =>
-                    C.option(t.id, t.label + (t.detail ? ' — ' + t.detail : ''), {
-                        selected: t.id === c.tier,
-                        detail: 'A tier is not a model: this name is served by a different model on every route, which is why it is asked here and not in the model box.'
-                    })))
-                .join('');
-            return row + `<label class="ntf" title="Which model this route serves for that name. A tier is not a model: &quot;opus&quot; is one model on one route and another on the next, which is why it is asked here and not in the model box."><span>Tier</span>
-                    <select id="nt-tier">${topts}</select></label>`;
-        })();
+        // ‼️ X-106 — which route the run is served by, and the tier under it.
+        // ‼️ X-228 — built by `ntRouteRows`, which the workflow step card draws
+        // from too: the paragraph explaining why a tier is not a model is true
+        // about the ROUTE, not about this form, and a second copy of it is a
+        // second thing to keep true.
+        const routeRow = ntRouteRows('route', 'tier', c.engine, c.providerId, c.tier);
         /**
          * ‼️ X-169 — WHOSE PLAN PAYS FOR THIS RUN, and it matters MORE here than
          * anywhere: a task fires with nobody watching, so an account that is not
@@ -2538,42 +2674,11 @@
          * understands — readiness, flags, sandbox and billing all included.
          * Drawn only when there is more than one engine to choose between.
          */
-        const engineSel = cur => {
-            const list = L.engines || [];
-            if (list.length < 2) { return ''; }
-            const chosen = cur || L.defaults?.engine || 'claude';
-            const opts = list.map(e => C.option(e.id === 'claude' ? '' : e.id,
-                e.label + (e.ready ? '' : ' — cannot run here'), {
-                selected: e.id === chosen, disabled: !e.ready, detail: e.next || ''
-            })).join('');
-            return `<label class="ntf" title="Which engine runs it. ‼️ On a per-turn engine the permission mode below is spent UP FRONT because the engine cannot stop and ask — a Codex sandbox, a Gemini approval mode, or on Antigravity a request its own app can overrule — and the run states no dollar figure, counting tokens instead (whether that is billed against a plan or a key is what its sign-in says, on the Engines page). ‼️ OpenCode breaks that sentence at both ends: it CAN stop and ask, which is exactly why an unattended run of it needs the auto-approve mode — with nobody to answer, the request comes back REFUSED rather than waiting — and it states the price of every turn itself. An engine with no reasoning-effort setting of its own (Gemini has none, OpenCode has none) is not given that box at all. An engine that is not installed or not signed in here cannot be chosen; hover it for the one thing to do about that."><span>Engine</span>
-                <select id="nt-engine">${opts}</select></label>`;
-        };
-        /**
-         * ‼️ U-59 — WHAT "PERMISSIONS" MEANS ON THE ENGINE THIS RUN WILL USE.
-         *
-         * One sentence served every engine and it was written for the two that
-         * behave alike: "one that stops to ask waits until you notice it." A
-         * shared-ACP engine does not wait — with nobody on the other end of its
-         * own question the tool call comes back refused — and a per-turn engine
-         * never asks in the first place. Three shapes, three outcomes, and the
-         * one the reader is choosing is the one printed.
-         */
-        const permTipFor = engineId => {
-            const row = (L.engines || []).find(e => e.id === (engineId || 'claude'));
-            const shape = (row && row.shape) || 'persistent';
-            if (shape === 'sharedAcp') {
-                return 'What it may do without asking. ‼️ This engine really does stop and ask — and unattended there is nobody to answer, '
-                    + 'so a request it would have asked about comes back REFUSED and the run carries on without that tool. '
-                    + 'Choose acceptEdits or bypassPermissions to hand it the auto-approve override instead; both reach the same one flag here. '
-                    + 'plan runs its own plan agent, which is refused every edit tool.';
-            }
-            if (shape === 'perTurn') {
-                return 'What it may do without asking. ‼️ This engine cannot stop and ask at all, so this is not a question it will ever put to you: '
-                    + 'it is fixed for every turn when the run starts — hover the Engine box above for what it becomes there.';
-            }
-            return 'What it may do without asking. ‼️ Nobody is sitting in front of an unattended run: one that stops to ask waits until you notice it, and one on bypassPermissions does not stop at all.';
-        };
+        // ‼️ X-228 — the engine row and the permission paragraph are the shared
+        // ones (`ntEngineRow` / `ntPermTip`): the step card asks the same two
+        // questions of the same engine list.
+        const engineSel = cur => ntEngineRow('engine', cur);
+        const permTipFor = engineId => ntPermTip(engineId);
         const LEDE = {
             task: 'A task is one claude run. Everything except the agent and the prompt is optional — an empty field means no flag, and the agent\'s own settings stay in charge.',
             schedule: 'A schedule is a task that has not happened yet: it runs on its own at a set time, so it takes every dimension a task takes — and a guard, so it does not wake an agent for nothing.',
@@ -4159,9 +4264,26 @@
                 // ‼️ X-224 — `saccount` reads back like the other pickers here.
                 // It does NOT redraw: nothing else on the card depends on it, and
                 // a repaint under the pointer is what the redraw list is for.
-                ['agent', 'smode', 'saccount', 'contract', 'onFailStep', 'mScene'].forEach(id =>
-                    byId('nt-st-' + id, 'change', () => readStep()));
+                // ‼️ X-228 — `seffort`, `spermissionMode` and `stier` read like
+                // the account does: nothing else on the card depends on them.
+                ['agent', 'smode', 'saccount', 'seffort', 'spermissionMode', 'stier',
+                    'contract', 'onFailStep', 'mScene'].forEach(id =>
+                        byId('nt-st-' + id, 'change', () => readStep()));
                 byId('nt-st-parallel', 'change', () => readStep());
+                // ‼️ X-228 — and the three that DECIDE the boxes under them do
+                // what the task form's own handlers do, through the one rule:
+                // an engine narrows the model, the effort, the route and the
+                // sign-in; a model re-decides the effort; a route re-decides
+                // the tier box that only exists while that route maps tiers.
+                byId('nt-st-sengine', 'change', () => {
+                    readStep(); stepNarrow(composer && composer.step, 'engine'); render();
+                });
+                byId('nt-st-smodel', 'change', () => {
+                    readStep(); stepNarrow(composer && composer.step, 'model'); render();
+                });
+                byId('nt-st-sproviderId', 'change', () => {
+                    readStep(); stepNarrow(composer && composer.step, 'route'); render();
+                });
                 // ‼️ These five REDRAW: the kind decides which half of the card
                 // exists at all, the method whether there is a body, polling
                 // whether there are poll fields, "jump to" which step, and a

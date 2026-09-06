@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.403.0 - X-228: the step card that could not say what runs it (2026-09-06)
+
+A workflow step card asked six questions — what the step IS, its title, its
+agent, its prompt, its mode and (since X-224) whose sign-in pays — and drew **no
+launch box at all.** No engine, no model, no effort, no permissions, no route.
+
+The measurement is what makes it a defect rather than a gap: the host was ready
+in BOTH directions. `stepSeed` published `sengine`/`smodel`/`seffort`/
+`spermissionMode`, `stepFromDraft` read them back, `WorkflowStep extends
+RunDimensions`, and `runExtras(step)` carried every one of them to the run. The
+data model, the persistence and the run path were all in place; there was
+nowhere to SAY it. So every step of every chain built on this page fell to the
+fleet default, and a value written through the bridge was invisible on the one
+page that edits it — surviving the round trip only because `readStep` writes
+back the keys it names and leaves the rest alone. An invisible setting is worse
+than a missing one.
+
+The route was not even seeded, so a step could be pointed at an endpoint from
+the bridge and from nowhere else. It is seeded now (`sproviderId`/`stier`), and
+a tier with no route under it is dropped — the same refusal `runExtras` makes
+one layer down, because `opus` is a different model on every route.
+
+‼️ And the rows are BUILT ONCE. The engine picker, the permission paragraph and
+the route/tier pair used to be written out inside the task form, which is
+exactly where a second surface would have copied them from — X-149's four copies
+of one narrowing rule, one screen over. `ntEngineRow` / `ntPermTip` /
+`ntRouteRows` are shared now, and the step narrows through `stepNarrow`, which
+VIEWS the step as a run and asks `media/afLaunch.js` and the form's own
+`ntNarrowRoute` / `ntNarrowAccount`. Moving a step onto another engine drops the
+model, the effort, the route, the tier and the sign-in that engine cannot take.
+
+Pinned by a sweep derived at both ends: `RunDimensions` read out of the source,
+the card's own `s` prefix as its vocabulary, and `stepSeed` as membership — so
+the next dimension seeded into a step is unreachable from this page until it is
+drawn here and read back here too.
+
 ## 3.402.1 - X-229: round two answered the conversation as somebody else (2026-09-06)
 
 Found while fixing X-227, one screen away from it: the **third** hand-copied

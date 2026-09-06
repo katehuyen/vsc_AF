@@ -177,14 +177,44 @@ console.log('\n== one reader, and the resolver attached to it exactly once ==');
         (ext.match(/ROUTE_NOTE/g) || []).length >= 5);
 
     const page = fs.readFileSync(path.join(ROOT, 'media', 'tasksPage.js'), 'utf8');
+    // ‼️ X-228 — ONE route row, drawn into two surfaces. It used to be written
+    // out inside the task form, which is where the workflow step card would have
+    // copied it from; the caller now says only which two boxes it is.
     ok('the form has a route box, drawn only where there is something to pick',
-        /id="nt-route"/.test(page) && /const routeForm = ntRoutes\(c\.engine\)/.test(page));
+        /function ntRouteRows\(routeId, tierId, engine, providerId, tier\)/.test(page)
+        && /const routeForm = ntRoutes\(engine\)/.test(page)
+        && /ntRouteRows\('route', 'tier', c\.engine, c\.providerId, c\.tier\)/.test(page));
     ok('…and a tier box under it, drawn only where that route publishes tiers',
-        /id="nt-tier"/.test(page) && /if \(!tiers\.length\) \{ return row; \}/.test(page));
+        /id="nt-\$\{tierId\}"/.test(page) && /if \(!tiers\.length\) \{ return row; \}/.test(page));
     ok('‼️ …and moving the engine or the route drops what the new one cannot carry, '
         + 'exactly as the model box already does',
         /function ntNarrowRoute\(c\)/.test(page)
         && (page.match(/ntNarrowRoute\(composer\)/g) || []).length >= 2);
+    /**
+     * ‼️ X-228 — AND A WORKFLOW STEP IS NARROWED BY THE SAME RULE, NOT BY A
+     * SECOND ONE WEARING AN `s` PREFIX.
+     *
+     * A step draft names the dimensions `sengine`/`smodel`/`sproviderId`… — the
+     * prefix is the only difference, and it must not become a reason to write
+     * the rule again: X-149 closed exactly that failure, four copies of one
+     * question answering it four ways. So the step is VIEWED as a run for the
+     * length of the call and the shared answers are written back.
+     */
+    ok('‼️ a step card narrows through the SAME rule, in its own vocabulary',
+        /function stepNarrow\(s, which\)/.test(page)
+        && /ntNarrowRoute\(view\)/.test(page) && /ntNarrowAccount\(view\)/.test(page)
+        && /window\.AFLaunch\.narrowModel\(ntCatalog\(view\.engine\), view\.model\)/.test(page)
+        && /view\.effort = ntNarrowEffort\(view\.engine, view\.model, view\.effort\)/.test(page));
+    ok('…and its engine, model and route boxes are the three that ask it',
+        /byId\('nt-st-sengine', 'change'[\s\S]{0,140}?stepNarrow\(composer && composer\.step, 'engine'\)/.test(page)
+        && /byId\('nt-st-smodel', 'change'[\s\S]{0,140}?stepNarrow\(composer && composer\.step, 'model'\)/.test(page)
+        && /byId\('nt-st-sproviderId', 'change'[\s\S]{0,140}?stepNarrow\(composer && composer\.step, 'route'\)/.test(page));
+    // ‼️ …and a tier with no route under it is not carried to the run, which is
+    // the same refusal `runExtras` makes one layer down: `opus` is a different
+    // model on every route, so the word answers nothing on its own.
+    ok('…and a step\'s tier is stored only where that step named a route',
+        /tier: str\('sproviderId'\) \? \(str\('stier'\) \|\| undefined\) : undefined/
+            .test(fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8')));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

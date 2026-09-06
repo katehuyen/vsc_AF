@@ -970,6 +970,12 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         smodel: s.model ?? '',
         seffort: s.effort ?? '',
         spermissionMode: s.permissionMode ?? '',
+        // ‼️ X-228 — …and the route serving it, with the tier that route maps.
+        // The card names them `sproviderId`/`stier` rather than borrowing the
+        // task form's `route`/`tier` because on a step card the box id IS the
+        // draft key (`readStep`), so one name is drawn, read and stored.
+        sproviderId: s.providerId ?? '',
+        stier: s.tier ?? '',
         // ‼️ X-224 — …and WHOSE PLAN pays for this link of the chain. A chain is
         // the shape that needs this most: three steps on one sign-in eat one
         // plan and hit the wall in the middle, and it is a headless run, so
@@ -1120,6 +1126,12 @@ export function stepFromDraft(
             model: str('smodel') || undefined,
             effort: str('seffort') || undefined,
             permissionMode: str('spermissionMode') || undefined,
+            // ‼️ X-228 — and the route it is served by. A tier without a route
+            // answers nothing (`opus` is a different model on every route), so
+            // it is kept only where a route was named — the same rule
+            // `runExtras` applies one layer down.
+            providerId: str('sproviderId') || undefined,
+            tier: str('sproviderId') ? (str('stier') || undefined) : undefined,
             // ‼️ X-224 — and the sign-in it is billed to. Empty = the step states
             // nothing and the chain's run inherits, exactly as before; `@machine`
             // is a STATED answer and not the same as empty (see X-223).

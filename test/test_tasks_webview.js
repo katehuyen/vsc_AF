@@ -289,6 +289,22 @@ const DATA = {
                 { id: 'personal', label: 'personal@gmail', health: 'ready', active: false }
             ]
         },
+        // ‼️ X-228 — and the routes an engine may be pointed at, for exactly the
+        // reason the accounts above are here: a route row is drawn only where
+        // there is something to pick, so a launch block without one tests the
+        // single state neither the task form nor the step card is in.
+        routes: {
+            claude: {
+                noun: 'Route',
+                providers: [
+                    {
+                        id: 'kimi', label: 'Kimi (Moonshot)', detail: 'the Moonshot endpoint',
+                        tiers: [{ id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' }]
+                    },
+                    { id: 'minimax', label: 'MiniMax', detail: 'the MiniMax endpoint', tiers: [] }
+                ]
+            }
+        },
         // S-20 — what each ENGINE currently offers. The flat pair above is the
         // fallback; this is what the Model box must actually read once the form
         // knows which engine will run the task.
@@ -1621,6 +1637,108 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     fld('nt-st-saccount').value = 'personal';
     fld('nt-st-saccount').fire('change');
 
+    /**
+     * ‼️ X-228 — AND WHAT ACTUALLY RUNS THIS LINK: ENGINE · MODEL · EFFORT ·
+     * PERMISSIONS · ROUTE.
+     *
+     * Measured before it was written: the card collected stype · title · agent
+     * · prompt · smode · saccount and the chain fields, and drew no launch box
+     * at all — while `stepSeed` was already publishing `sengine` / `smodel` /
+     * `seffort` / `spermissionMode`, `stepFromDraft` was already reading them
+     * back, and `runExtras(step)` was already carrying them to the run. The data
+     * model, the persistence and the run path were all in place; there was
+     * nowhere to SAY it, so every step of every chain built on this page fell to
+     * the fleet default — and a value written through the bridge was invisible
+     * here while surviving the round trip, which is worse than either.
+     */
+    ok('‼️ X-228 — an agent step says WHAT RUNS IT: engine, model, effort, permissions',
+        /id="nt-st-sengine"/.test(html()) && /id="nt-st-smodel"/.test(html())
+        && /id="nt-st-seffort"/.test(html()) && /id="nt-st-spermissionMode"/.test(html()));
+    ok('…and which route serves it, drawn only where that engine has one',
+        /id="nt-st-sproviderId"/.test(html()));
+    fld('nt-st-smodel').value = 'opus';
+    fld('nt-st-smodel').fire('change');
+    fld('nt-st-seffort').value = 'xhigh';
+    fld('nt-st-seffort').fire('change');
+    fld('nt-st-spermissionMode').value = 'acceptEdits';
+    fld('nt-st-spermissionMode').fire('change');
+    fld('nt-st-sproviderId').value = 'kimi';
+    fld('nt-st-sproviderId').fire('change');
+    ok('‼️ X-228 — picking a route opens the tier box that route maps, as on the task form',
+        /id="nt-st-stier"/.test(html()));
+    fld('nt-st-stier').value = 'opus';
+    fld('nt-st-stier').fire('change');
+    /**
+     * ‼️ X-228 — AND MOVING THE ENGINE DROPS WHAT THE NEW ONE CANNOT CARRY,
+     * exactly as the task form's own engine box does.
+     *
+     * This is the half of the item that had to be SHARED rather than written
+     * again: a Claude slot carried onto Codex names a directory Codex never
+     * reads, a Kimi route is an endpoint its CLI was never pointed at, and
+     * `opus` is a `--model` it can only reject. Left sitting in a box, each of
+     * them is a card claiming a decision the run will not make — and a step card
+     * writing its own half of that rule is the exact defect X-149 closed.
+     */
+    fld('nt-st-sengine').value = 'codex';
+    fld('nt-st-sengine').fire('change');
+    ok('‼️ X-228 — moving the step onto another engine takes the route and the sign-in with it',
+        !/id="nt-st-sproviderId"/.test(html()) && !/id="nt-st-stier"/.test(html())
+        && !/id="nt-st-saccount"/.test(html()));
+    ok('…and the model box becomes that engine\'s own list',
+        /id="nt-st-smodel"/.test(html()) && html().includes('GPT-5.6-Terra'));
+    // (That the values are DROPPED rather than hidden is the narrowing rule
+    // itself, and it is pinned where that rule lives — test_task_route.js.)
+    fld('nt-st-sengine').value = '';
+    fld('nt-st-sengine').fire('change');
+    // …and they are said again, which is what the save below is measured against.
+    fld('nt-st-smodel').value = 'opus';
+    fld('nt-st-smodel').fire('change');
+    fld('nt-st-seffort').value = 'xhigh';
+    fld('nt-st-seffort').fire('change');
+    fld('nt-st-saccount').value = 'personal';
+    fld('nt-st-saccount').fire('change');
+    fld('nt-st-sproviderId').value = 'kimi';
+    fld('nt-st-sproviderId').fire('change');
+    fld('nt-st-stier').value = 'opus';
+    fld('nt-st-stier').fire('change');
+    /**
+     * ‼️ AND THE SWEEP THAT MAKES IT STICK, derived at both ends rather than
+     * listed: every run dimension the HOST seeds a step card with has a box on
+     * that card. The names are `RunDimensions` read out of `src/core/tasks.ts`
+     * (`WorkflowStep extends RunDimensions`), the vocabulary is the card's own
+     * `s`-prefix, and membership is `stepSeed` itself — so the next dimension
+     * somebody seeds into a step is unreachable from this page until it is drawn
+     * here too, which is precisely the four-month gap X-228 measured.
+     */
+    {
+        const at3 = (...p) => path.join(__dirname, '..', ...p);
+        const tsrc = fs.readFileSync(at3('src', 'core', 'tasks.ts'), 'utf8');
+        const at = tsrc.indexOf('export interface RunDimensions');
+        const dims = [...tsrc.slice(at, tsrc.indexOf('\n}', at))
+            .matchAll(/^ {4}([a-zA-Z][\w]*)\??:/gm)].map(m => m[1]);
+        const panel = fs.readFileSync(at3('src', 'panels', 'tasksPanel.ts'), 'utf8');
+        const a2 = panel.indexOf('function stepSeed(s: WorkflowStep)');
+        let depth = 0, seedBody = '';
+        for (let j = a2 + 40; j < panel.length; j++) {
+            if (panel[j] === '{') { depth++; }
+            else if (panel[j] === '}') { depth--; if (!depth) { seedBody = panel.slice(a2, j + 1); break; } }
+        }
+        ok('the host\'s reading of a step was found', seedBody.length > 400);
+        const seeded = dims.map(d => 's' + d).filter(k => new RegExp('\\b' + k + ':').test(seedBody));
+        ok('…and it seeds the launch of a step, by name',
+            ['sengine', 'smodel', 'seffort', 'spermissionMode', 'saccount', 'sproviderId', 'stier']
+                .every(k => seeded.includes(k)));
+        const page = fs.readFileSync(at3('media', 'tasksPage.js'), 'utf8');
+        const readList = page.slice(page.indexOf('function readStep()'),
+            page.indexOf('function stepError('));
+        const undrawn = seeded.filter(k => !html().includes('id="nt-st-' + k + '"'));
+        ok('‼️ X-228 — every dimension the host seeds a step with has a box on the card'
+            + ' (missing: ' + JSON.stringify(undrawn) + ')', !undrawn.length);
+        const unread = seeded.filter(k => !new RegExp("'" + k + "'").test(readList));
+        ok('‼️ …and every one of those boxes is read back when the step is saved'
+            + ' (missing: ' + JSON.stringify(unread) + ')', !unread.length);
+    }
+
     // it refuses IN the card
     posted = [];
     fld('nt-st-title').value = '';
@@ -1708,6 +1826,16 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     // alive and was not — which is exactly what X-221 found on the task form.
     ok('‼️ X-224 — …and the sign-in the first step was billed to',
         wfSave && wfSave.item.steps[0].saccount === 'personal');
+    // ‼️ X-228 — …and WHAT RAN IT. Same rule, four boxes further: a control the
+    // card draws and the save drops is a control that looks alive and is not,
+    // which is the defect X-221 measured on the task form's own account box.
+    ok('‼️ X-228 — …and the engine, model, effort and permissions it was set to run on',
+        wfSave && wfSave.item.steps[0].smodel === 'opus'
+        && wfSave.item.steps[0].seffort === 'xhigh'
+        && wfSave.item.steps[0].spermissionMode === 'acceptEdits');
+    ok('‼️ X-228 — …and the route serving it, with the tier that route maps',
+        wfSave && wfSave.item.steps[0].sproviderId === 'kimi'
+        && wfSave.item.steps[0].stier === 'opus');
 
     // ---- the palette's addWorkflowStep / editWorkflowStep land on the same card
     send({
@@ -1732,6 +1860,7 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         /id="nt-st-mScene"/.test(html()) && html().includes('Tanıtım · Açılış'));
     ok('…and a vision-QA criteria, which is a verify by another name',
         html().includes('Vision QA criteria'));
+
 
     // ---- a trigger can finally point at a workflow
     send({ type: 'plan-compose', kind: 'trigger', seed: { mode2: 'new' } });
@@ -1852,7 +1981,14 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'tasksPanel.ts'), 'utf8');
     const tasks = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'tasks.js').replace('.js', '.ts'), 'utf8');
 
-    ok('the form has an engine row', /<select id="nt-engine">/.test(page));
+    // ‼️ X-228 — ONE engine row, drawn into two boxes. It used to be written out
+    // inside the task form, which is where a second surface asking the same
+    // question would have copied it from — so the row is built once and the
+    // caller says only which box it is (`nt-engine` here, `nt-st-sengine` on a
+    // workflow step card).
+    ok('the form has an engine row', /function ntEngineRow\(id, cur\)/.test(page)
+        && /ntEngineRow\('engine', cur\)/.test(page)
+        && /ntEngineRow\('st-sengine', s\.sengine\)/.test(page));
     ok('…drawn only when there is more than one engine to choose between',
         /if \(list\.length < 2\) \{ return ''; \}/.test(page));
     // U-130 moved the whole row through `C.option`, which emits `disabled` and

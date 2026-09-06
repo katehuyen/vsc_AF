@@ -238,6 +238,36 @@ const DIMENSION_BOX = {
         [{ id: 'dev', name: 'dev' }], 1);
     eq('…and a card that names none states nothing, so the chain inherits',
         bare.step && bare.step.account, undefined);
+
+    /**
+     * ‼️ X-228 — AND THE REST OF WHAT RUNS A STEP, WHICH THE CARD COULD NOT SAY.
+     *
+     * `stepSeed` published `sengine`/`smodel`/`seffort`/`spermissionMode` and
+     * `stepFromDraft` read them back, but the card drew no box for any of them —
+     * a setting that survived every round trip and was invisible on the one page
+     * that edits it. The route was not even seeded, so a chain step could not be
+     * pointed at an endpoint from anywhere but the bridge.
+     */
+    ok('‼️ X-228 — a step\'s stored route and tier come back into its card too',
+        /\bsproviderId\b/.test(stepBody) && /\bstier\b/.test(stepBody));
+    const routed = P.stepFromDraft(
+        {
+            stype: 'agent', title: 'plan it', agent: 'dev', prompt: 'p', smode: 'headless',
+            sengine: 'claude', smodel: 'opus', seffort: 'xhigh', spermissionMode: 'acceptEdits',
+            sproviderId: 'kimi', stier: 'opus'
+        },
+        [{ id: 'dev', name: 'dev' }], 1);
+    eq('‼️ X-228 — …and a card that names them produces a step that carries them',
+        routed.step && [routed.step.engine, routed.step.model, routed.step.effort,
+            routed.step.permissionMode, routed.step.providerId, routed.step.tier],
+        ['claude', 'opus', 'xhigh', 'acceptEdits', 'kimi', 'opus']);
+    // ‼️ A TIER WITHOUT A ROUTE IS DROPPED, which is the same refusal
+    // `runExtras` makes one layer down: `opus` is a different model on every
+    // route, so the word answers nothing until a route answers it.
+    eq('…and a tier with no route under it is not stored at all',
+        P.stepFromDraft(
+            { stype: 'agent', title: 't', agent: 'dev', prompt: 'p', smode: 'headless', stier: 'opus' },
+            [{ id: 'dev', name: 'dev' }], 1).step.tier, undefined);
 }
 
 Module._load = origLoad;
