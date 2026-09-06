@@ -176,6 +176,22 @@ export interface EngineAuthAdapter {
      * Gemini sign-in is on this machine without being able to hold a second
      * one. Support governs capture, not reading.
      */
+    /**
+     * ‼️ X-219 — HOW A DEAD SIGN-IN IS RENEWED, in the engine's own words.
+     *
+     * A stored credential that no longer refreshes can only be fixed by a
+     * person at a browser: an agent may not drive the user's browser and may
+     * not open a debug connection to it. What the extension can honestly do is
+     * open the engine's OWN command in the slot's OWN directory — and then
+     * measure the result instead of assuming it, which is what `statusArgs` is
+     * for. Undefined where the engine cannot hold a second sign-in at all: an
+     * offer whose only outcome is a refusal is worse than no offer.
+     *
+     * ‼️ IT NAMES NO VARIABLE. The isolation comes from `accountEnv`, the one
+     * seam every launch already goes through (X-168); a command that spelt the
+     * variable out here would be the second place it has to change.
+     */
+    signIn?(): { command: string; args: string[]; statusArgs: string[] } | undefined;
     readIdentity(fsr: AccountFs, dir: string, now?: number): AccountIdentity;
     /** where this slot's remaining quota comes from */
     quotaSource(): QuotaSource;
@@ -340,6 +356,10 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         evidence: 'Measured on this machine 2026-09-03: pointed at an empty directory, '
             + '`claude auth status --json` answered loggedIn:false, reported its projectsDirectory '
             + 'inside that directory, and wrote a fresh .claude.json there.',
+        // ‼️ MEASURED 2026-09-06 from `claude --help` / `claude auth --help`:
+        // the subcommand is `auth login`. There is no bare `claude login`, and a
+        // button wired to one would have failed on the first press.
+        signIn: () => ({ command: 'claude', args: ['auth', 'login'], statusArgs: ['auth', 'status'] }),
         readIdentity: readClaudeIdentity,
         quotaSource: () => ({ kind: 'oauth-credentials', file: '.credentials.json' })
     },
@@ -353,6 +373,9 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         evidence: 'CODEX_HOME is Codex\'s own documented override for ~/.codex, but it has NOT been run '
             + 'here — the codex CLI is not installed on this machine, only its auth.json is. Capturing a '
             + 'second Codex account is allowed and stays marked "declared" until somebody proves it.',
+        // Measured the same day from `codex --help` / `codex login --help`:
+        // `codex login`, with `codex login status` to read the result back.
+        signIn: () => ({ command: 'codex', args: ['login'], statusArgs: ['login', 'status'] }),
         readIdentity: readCodexIdentity,
         /**
          * ‼️ X-215 — CODEX'S QUOTA IS ITS OWN TRANSCRIPT, and this said the

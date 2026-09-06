@@ -178,6 +178,44 @@ const config = (email) => JSON.stringify({
         && !accountCapableEngines().includes('agy'));
     ok('every adapter states its evidence — a support level with no reason is a guess',
         ENGINE_AUTH_ADAPTERS.every(a => a.evidence.length > 40));
+    // ---------- ‼️ X-219 — THE CARD SAYS "ONLY A PERSON CAN FIX IT", AND MEANS IT ----------
+    //
+    // A dead sign-in reads "sign in again in a terminal and capture it once more.
+    // Nothing here can renew it" — true, and the reason the debt on one account
+    // has stood for seven sessions. Renewing it is a BROWSER flow: an agent may
+    // not drive the user's browser and may not open a debug connection to it, so
+    // what the extension can honestly do is open the right command in the right
+    // isolated directory and then MEASURE the result.
+    //
+    // ‼️ THE COMMAND IS THE ENGINE'S OWN, AND IT IS NOT GUESSED. Measured on this
+    // machine 2026-09-06 from the CLIs' own --help: Claude Code signs in with
+    // `claude auth login` (there is NO `claude login` — the item asked for one),
+    // and Codex with `codex login`. Each also has a status command, which is what
+    // makes the card's return to "ready" a measurement rather than a hope.
+    {
+        const sign = a => (typeof a.signIn === 'function' ? a.signIn() : undefined);
+        ok('‼️ X-219: an engine that can hold a second sign-in says HOW one is renewed',
+            ENGINE_AUTH_ADAPTERS.filter(a => a.support !== 'unmapped')
+                .every(a => { const s2 = sign(a); return !!s2 && !!s2.command && Array.isArray(s2.args); }));
+        ok('…and one that cannot isolate offers no command rather than a wrong one',
+            ENGINE_AUTH_ADAPTERS.filter(a => a.support === 'unmapped').every(a => !sign(a)));
+        ok('‼️ …the Claude command is the one the CLI really has',
+            sign(adapterFor('claude')).command === 'claude'
+            && sign(adapterFor('claude')).args.join(' ') === 'auth login');
+        ok('‼️ …and Codex\'s is its own, not Claude\'s spelt differently',
+            sign(adapterFor('codex')).command === 'codex'
+            && sign(adapterFor('codex')).args.join(' ') === 'login');
+        ok('‼️ …each carrying the STATUS command, so "ready" can be measured rather than assumed',
+            ENGINE_AUTH_ADAPTERS.filter(a => a.support !== 'unmapped')
+                .every(a => Array.isArray(sign(a).statusArgs) && sign(a).statusArgs.length > 0));
+        // ‼️ THE VARIABLE IS NEVER SPELT OUT AT A NEW DOOR (X-168). The command
+        // is run in the slot's own directory through the SAME seam every launch
+        // uses, so an engine whose variable changes changes in one place.
+        ok('‼️ …and the isolation comes from accountEnv, not from a second copy of the name',
+            ENGINE_AUTH_ADAPTERS.filter(a => a.support !== 'unmapped')
+                .every(a => !JSON.stringify(sign(a)).includes(a.configEnv)));
+    }
+
     ok('‼️ …and no adapter claims a variable it has not verified',
         ENGINE_AUTH_ADAPTERS.every(a => (a.support === 'unmapped') === (a.configEnv === '')));
 
