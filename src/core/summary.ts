@@ -1,5 +1,5 @@
-import * as cp from 'child_process';
 import { sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * D3 — Weekly health digest. Instead of ten separate alerts, one cheap-model
@@ -65,15 +65,10 @@ export function generateWeeklySummary(
             `(2) dikkat gerektiren sorunlar (bütçe/hata/nöbet/kalite — yoksa söyleme), (3) tek somut öneri. ` +
             `Rakam yığma; yalnızca önemli olanı söyle. Başlık, madde işareti, selamlama kullanma. ` +
             `VERİLER: ${factsText}`);
-        cp.exec(`claude ${judgeArgs.trim()} -p "${p}"`,
-            { cwd, timeout: 180_000, windowsHide: true },
-            (err, stdout) => {
-                const out = String(stdout ?? '').trim();
-                if (err && !out) {
-                    resolve('');
-                    return;
-                }
-                resolve(out.replace(/\s+/g, ' ').trim().slice(0, 600));
-            });
+        // X-260 — through the seam.
+        void execOneShot({ cwd, args: judgeArgs, prompt: p, timeoutMs: 180_000 }).then(r => {
+            if (r.error && !r.out) { resolve(''); return; }
+            resolve(r.out.replace(/\s+/g, ' ').trim().slice(0, 600));
+        });
     });
 }

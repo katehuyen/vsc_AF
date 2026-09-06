@@ -1,6 +1,6 @@
-import * as cp from 'child_process';
 import * as fs from 'fs';
 import { sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * H3 — Synthetic pulse (smoke) checks. A fixed, cheap prompt runs against
@@ -66,14 +66,11 @@ export const PULSE_PROMPT =
     'Nabız kontrolü: kim olduğunu ve asıl görevini TEK cümlede söyle. Araç kullanma, dosya açma — sadece cevapla.';
 
 function execClaude(cwd: string, args: string, prompt: string, timeoutMs: number): Promise<{ out: string; err?: string }> {
-    return new Promise(resolve => {
-        cp.exec(`claude ${args.trim()} -p "${sanitizePrompt(prompt)}"`,
-            { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer: 2 * 1024 * 1024 },
-            (error, stdout) => resolve({
-                out: String(stdout ?? '').trim(),
-                err: error ? String(error.message).slice(0, 160) : undefined
-            }));
-    });
+    // X-260 — through the seam: a sweep that runs at 3 a.m. spends the account
+    // the rotation chose, not the one the window was left signed in as.
+    return execOneShot({
+        cwd, args, prompt: sanitizePrompt(prompt), timeoutMs, maxBuffer: 2 * 1024 * 1024
+    }).then(r => ({ out: r.out, err: r.error ? r.error.slice(0, 160) : undefined }));
 }
 
 /**

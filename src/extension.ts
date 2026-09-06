@@ -192,6 +192,7 @@ import {
     rememberManifest
 } from './core/launchManifest';
 import { describeDrift, runDrift, turnRuntimes } from './core/turnRuntime';
+import { installOneShotCaps } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
@@ -17364,6 +17365,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         return accountEnv(launchAccountSlot(o));
     };
+    /**
+     * ‼️ X-260 — AND THE FLEET'S OWN SHORT TURNS GO THROUGH THE SAME DOOR.
+     *
+     * The judge behind A/B and evals, the pulse sweep, the quality scan, the
+     * suggestion pass, the weekly summary, the memory distiller, the dispatcher
+     * and the command bar each ran `cp.exec("claude …")` with no `env` — which
+     * meant "whoever this machine is signed in as", outside the pool the user
+     * allowed and invisible to `pickAccount`. A sweep at 3 a.m. could spend the
+     * window the user was saving, and no surface in the product could say so.
+     *
+     * They now ask `core/oneShot`, and the ONE thing they cannot answer for
+     * themselves — the name of the engine's variable and which slot the
+     * rotation means — is handed in from here, the side that owns the slot
+     * list and the adapters. Same callback, same reason, as the Console's and
+     * the task runner's (X-169). The route half of the seam is deliberately
+     * left unwired: `engineRuntimeFor` answers per AGENT, and a fleet-wide
+     * sweep has no agent to answer for — inventing one would be a policy
+     * nobody chose.
+     */
+    installOneShotCaps({
+        accountLayer: (engine, account) => launchAccountEnv({ engine, account })
+    });
     /**
      * ‼️ X-214 — WHICH SIGN-IN A TERMINAL PICKS A CONVERSATION BACK UP ON.
      *

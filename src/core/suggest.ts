@@ -1,6 +1,6 @@
-import * as cp from 'child_process';
 import * as fs from 'fs';
 import { extractJson, sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * D2 — Instruction suggestion engine. A cheap model scans the user's
@@ -136,24 +136,23 @@ export function scanCorrections(
             `Tek seferlik istekleri kural yapma; yalnızca en az iki kez tekrarlanan kalıpları öner. ` +
             `Yalnızca şu JSON ile cevap ver: {'suggestions':[{'rule':'...','evidence':'hangi mesajlara dayandığı'}]} ` +
             `(çift tırnaklı geçerli JSON kullan). Tekrarlayan kalıp yoksa boş dizi döndür. MESAJLAR: ${joined}`);
-        cp.exec(`claude ${judgeArgs.trim()} -p "${p}"`,
-            { cwd, timeout: 240_000, windowsHide: true },
-            (err, stdout) => {
-                const raw = String(stdout ?? '').trim();
-                if (err && !raw) {
-                    resolve({ rules: [], raw: 'scan unavailable (' + String(err.message).slice(0, 80) + ')' });
-                    return;
-                }
-                const json = extractJson(raw) as { suggestions?: { rule?: unknown; evidence?: unknown }[] } | undefined;
-                const rules = (Array.isArray(json?.suggestions) ? json!.suggestions! : [])
-                    .filter(s => typeof s?.rule === 'string' && (s.rule as string).trim())
-                    .slice(0, 3)
-                    .map(s => ({
-                        rule: String(s.rule).trim().slice(0, 300),
-                        evidence: String(s.evidence ?? '').trim().slice(0, 300)
-                    }));
-                resolve({ rules, raw });
-            });
+        // X-260 — through the seam.
+        void execOneShot({ cwd, args: judgeArgs, prompt: p, timeoutMs: 240_000 }).then(r => {
+            const raw = r.out;
+            if (r.error && !raw) {
+                resolve({ rules: [], raw: 'scan unavailable (' + r.error.slice(0, 80) + ')' });
+                return;
+            }
+            const json = extractJson(raw) as { suggestions?: { rule?: unknown; evidence?: unknown }[] } | undefined;
+            const rules = (Array.isArray(json?.suggestions) ? json!.suggestions! : [])
+                .filter(s => typeof s?.rule === 'string' && (s.rule as string).trim())
+                .slice(0, 3)
+                .map(s => ({
+                    rule: String(s.rule).trim().slice(0, 300),
+                    evidence: String(s.evidence ?? '').trim().slice(0, 300)
+                }));
+            resolve({ rules, raw });
+        });
     });
 }
 

@@ -1,6 +1,6 @@
-import * as cp from 'child_process';
 import * as fs from 'fs';
 import { sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * D1 — Quality scorecard. A cheap-model judge periodically samples recent
@@ -123,22 +123,21 @@ export function scoreOutput(
             `(5=mükemmel, 3=idare eder, 1=kötü/alakasız). ` +
             `İSTEK: ${prompt} --- CEVAP: ${answer} --- ` +
             `Yalnızca tek satır cevap ver ve şu biçimi kullan: SCORE: <sayı> - kısa gerekçe.`);
-        cp.exec(`claude ${judgeArgs.trim()} -p "${p}"`,
-            { cwd, timeout: 180_000, windowsHide: true },
-            (err, stdout) => {
-                const out = String(stdout ?? '').trim();
-                if (err && !out) {
-                    resolve({ reason: 'judge unavailable (' + String(err.message).slice(0, 80) + ')' });
-                    return;
-                }
-                const line = out.split('\n').find(l => /SCORE/i.test(l)) ??
-                    out.split('\n').find(l => l.trim()) ?? '';
-                const m = /SCORE[:\s]*([1-5])/i.exec(line) ?? /\b([1-5])\b/.exec(line);
-                resolve({
-                    score: m ? Number(m[1]) : undefined,
-                    reason: line.slice(0, 200) || '(no verdict)'
-                });
+        // X-260 — through the seam.
+        void execOneShot({ cwd, args: judgeArgs, prompt: p, timeoutMs: 180_000 }).then(r => {
+            const out = r.out;
+            if (r.error && !out) {
+                resolve({ reason: 'judge unavailable (' + r.error.slice(0, 80) + ')' });
+                return;
+            }
+            const line = out.split('\n').find(l => /SCORE/i.test(l)) ??
+                out.split('\n').find(l => l.trim()) ?? '';
+            const m = /SCORE[:\s]*([1-5])/i.exec(line) ?? /\b([1-5])\b/.exec(line);
+            resolve({
+                score: m ? Number(m[1]) : undefined,
+                reason: line.slice(0, 200) || '(no verdict)'
             });
+        });
     });
 }
 

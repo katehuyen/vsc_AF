@@ -9,6 +9,7 @@ import { conversationTitle, SessionOrigin, sessionOrigin, sessionHeadless } from
 import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { parseCliViewer } from '../core/cliViewer';
+import { oneShotEnv } from '../core/oneShot';
 import { revealPath } from '../core/reveal';
 import { askExportOptions, handleAfNav, htmlShell, wikiMarksOf, wikiMarkMessage } from './base';
 
@@ -293,7 +294,23 @@ export function parseContextReport(content: string): ContextReport | null {
  *  one transcript file is a risk we don't take. */
 export function runContextCapture(
     file: string, cwd: string, model: string | undefined,
-    cb: (r: { ok: boolean; report?: ContextReport; error?: string }) => void
+    cb: (r: { ok: boolean; report?: ContextReport; error?: string }) => void,
+    /**
+     * ‼️ X-260 — WHICH SIGN-IN PICKS THE CONVERSATION BACK UP.
+     *
+     * This spawn resumes the USER'S OWN session, and it passed no environment
+     * at all: it ran as whichever account the VS Code window happened to hold.
+     * Because every slot's `projects` folder is a junction onto one shared root
+     * (X-251), the transcript is FOUND either way — so the failure is silent by
+     * construction: the capture succeeds and the wrong plan pays for it.
+     *
+     * Unstated is not "the machine": it is the standing choice of that engine,
+     * the same answer every other launch resolves to. Naming the account this
+     * session actually ran as is the session viewer's half of X-251, which is
+     * where the manifest reaches this surface — it is passed in, never guessed
+     * here.
+     */
+    account?: string
 ): void {
     const sid = path.basename(file, '.jsonl');
     if (!/^[0-9a-fA-F-]{8,}$/.test(sid)) { cb({ ok: false, error: 'unrecognized session id' }); return; }
@@ -307,7 +324,7 @@ export function runContextCapture(
         // shell:true — `claude` is a .cmd shim on Windows. sid/model are validated
         // above (uuid chars / word chars only), nothing user-typed reaches the line.
         child = cp.spawn(`claude --resume ${sid}${modelArg} -p "/context"`,
-            { cwd, shell: true, windowsHide: true });
+            { cwd, shell: true, windowsHide: true, env: oneShotEnv({ account }) });
     } catch (e) { cb({ ok: false, error: String(e) }); return; }
     let out = '', err = '', done = false;
     const finish = (r: { ok: boolean; report?: ContextReport; error?: string }): void => {

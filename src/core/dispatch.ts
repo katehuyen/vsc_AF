@@ -1,5 +1,5 @@
-import * as cp from 'child_process';
 import { extractJson, sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * F2 — Dispatcher: decides which agent takes an incoming piece of work
@@ -52,24 +52,20 @@ export function classifierPrompt(candidates: DispatchCandidate[], text: string):
 export function classifyWithModel(
     cwd: string, judgeArgs: string, candidates: DispatchCandidate[], text: string
 ): Promise<{ agent?: string; reason: string }> {
-    return new Promise(resolve => {
-        const p = sanitizePrompt(classifierPrompt(candidates, text));
-        cp.exec(`claude ${judgeArgs.trim()} -p "${p}"`,
-            { cwd, timeout: 120_000, windowsHide: true },
-            (err, stdout) => {
-                const raw = String(stdout ?? '').trim();
-                if (err && !raw) {
-                    resolve({ reason: 'classifier unavailable (' + String(err.message).slice(0, 80) + ')' });
-                    return;
-                }
-                const json = extractJson(raw) as { agent?: unknown; reason?: unknown } | undefined;
-                const name = typeof json?.agent === 'string' ? json.agent.trim() : '';
-                const known = candidates.find(c => c.name.toLowerCase() === name.toLowerCase());
-                resolve({
-                    agent: known?.name,
-                    reason: String(json?.reason ?? raw.slice(0, 120)) || '(no reason)'
-                });
-            });
+    const p = sanitizePrompt(classifierPrompt(candidates, text));
+    // X-260 — through the seam.
+    return execOneShot({ cwd, args: judgeArgs, prompt: p, timeoutMs: 120_000 }).then(r => {
+        const raw = r.out;
+        if (r.error && !raw) {
+            return { reason: 'classifier unavailable (' + r.error.slice(0, 80) + ')' };
+        }
+        const json = extractJson(raw) as { agent?: unknown; reason?: unknown } | undefined;
+        const name = typeof json?.agent === 'string' ? json.agent.trim() : '';
+        const known = candidates.find(c => c.name.toLowerCase() === name.toLowerCase());
+        return {
+            agent: known?.name,
+            reason: String(json?.reason ?? raw.slice(0, 120)) || '(no reason)'
+        };
     });
 }
 

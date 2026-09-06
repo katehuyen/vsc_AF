@@ -2,6 +2,60 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.422.0 - X-260 (1/n): the fleet's own turns run on the account the rotation chose (2026-09-07)
+
+**Agent Farm runs a dozen short turns nobody starts and nobody sits in** — the
+judge behind A/B and evals, the pulse sweep, the quality scan, the suggestion
+pass, the weekly summary, the memory distiller, the dispatcher, the command bar,
+and the two verification judges inside the task runner. Every one of them was
+written the same way:
+
+```
+cp.exec(`claude ${judgeArgs} -p "${prompt}"`, { cwd, timeout }, cb)
+```
+
+**No `env`. So each of them ran as whoever the MACHINE was signed in as** —
+outside the pool the user allowed, invisible to `pickAccount`, and spending a
+window no surface in the product could report. A sweep firing at 3 a.m. could
+eat the plan the user was saving for the morning, and nothing anywhere would
+say that it had. Every other launch in the extension — task, session, console,
+terminal, leader turn — has gone through the account resolver since X-169.
+These twelve were the one hole left in an otherwise closed system.
+
+**And the same line nailed the engine into a template string**, so the axis
+every other launch carries could not even be stated here.
+
+**There is now ONE seam** (`core/oneShot.ts`). `core` says what it wants —
+engine, account, flags, prompt — and the extension, which owns the slot list
+and the engines' adapters, hands in how to answer it, exactly as it already
+does for the Console and the task runner. The environment is assembled by the
+same `spawnEnvironment` every other spawn uses, so "the route wins over the
+account wins over the window" is stated once rather than argued twice, and a
+layer that says `null` still REMOVES a name (X-211).
+
+**Nothing installed is the documented absent case, not a failure:** the seam
+hands back `undefined` and the turn inherits its environment byte for byte, so
+the headless service and every unit test behave exactly as before.
+
+**An engine with no one-shot form yet is REFUSED by name** rather than quietly
+spawned as `claude` — the same mistake X-259 found one layer down. Making the
+other engines real needs a per-engine envelope reader, which is X-249's second
+half and is deliberately not smuggled in here.
+
+**‼️ And the sharpest one: the /context capture resumes the USER'S OWN session.**
+It, too, passed no environment. Because every slot's `projects` folder is a
+junction onto one shared root (X-251), the transcript is FOUND either way — so
+the failure is silent by construction: the capture succeeds and the wrong plan
+pays for it. It now takes a stated account; naming the one that session actually
+ran as is the session viewer's half of X-251, where the manifest reaches that
+surface.
+
+**Left open (X-260, 2/n):** the headless service (`service/farmService.ts`)
+spawns while VS Code is closed and has no extension to ask — its account has to
+travel in its own config, which is its own piece of work. The seam's route half
+is wired for but deliberately not installed: `engineRuntimeFor` answers per
+AGENT, and a fleet-wide sweep has no agent to answer for.
+
 ## 3.421.0 - X-264: a schedule that fires once IS its moment (2026-09-07)
 
 **A `once` schedule installed over the bridge was stored with no time at all.**

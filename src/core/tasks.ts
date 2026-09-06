@@ -7,6 +7,7 @@ import { spawnEnvironment, terminalEnvOverlay } from './providerRuntime';
 import { AgentInfo } from './agents';
 import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
+import { execOneShot } from './oneShot';
 import {
     appendAutomationEvent, AutomationEvent, AutomationState, evaluatePrecondition,
     gateBlock, pauseExpired, Precondition
@@ -4329,17 +4330,16 @@ export class TaskManager implements vscode.Disposable {
                 `Sen bir kalite denetçisisin. Aşağıdaki ÇIKTI şu ÖLÇÜTÜ karşılıyor mu? ` +
                 `ÖLÇÜT: ${criteria} --- ÇIKTI: ${body.slice(0, 4000)} --- ` +
                 `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
-            cp.exec(`claude ${judgeArgs} -p "${prompt}"`,
-                { cwd, timeout: 180_000, windowsHide: true },
-                (err, stdout) => {
-                    if (err && !stdout) {
-                        resolve({ pass: true, reason: 'judge unavailable — passed through (' + String(err.message).slice(0, 80) + ')' });
-                        return;
-                    }
-                    const line = String(stdout).trim().split('\n').find(l => l.trim()) ?? '';
-                    const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
-                    resolve({ pass, reason: line.slice(0, 200) || '(no verdict)' });
-                });
+            // X-260 — through the seam.
+            void execOneShot({ cwd, args: judgeArgs, prompt, timeoutMs: 180_000 }).then(r => {
+                if (r.error && !r.out) {
+                    resolve({ pass: true, reason: 'judge unavailable — passed through (' + r.error.slice(0, 80) + ')' });
+                    return;
+                }
+                const line = r.out.split('\n').find(l => l.trim()) ?? '';
+                const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
+                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)' });
+            });
         });
     }
 
@@ -4356,17 +4356,16 @@ export class TaskManager implements vscode.Disposable {
                 `Sen bir görsel kalite denetçisisin. "${path.basename(assetFile)}" dosyasındaki görseli/videoyu Read aracıyla aç ve incele. ` +
                 `Şu ÖLÇÜTü karşılıyor mu? ÖLÇÜT: ${criteria}. ` +
                 `Yalnızca tek satır cevap ver: ilk kelime PASS veya FAIL olsun, ardından kısa gerekçe yaz.`);
-            cp.exec(`claude ${judgeArgs} -p "${prompt}"`,
-                { cwd: this.outputsDir, timeout: 180_000, windowsHide: true },
-                (err, stdout) => {
-                    if (err && !stdout) {
-                        resolve({ pass: true, reason: 'vision judge unavailable — passed through (' + String(err.message).slice(0, 80) + ')' });
-                        return;
-                    }
-                    const line = String(stdout).trim().split('\n').filter(l => l.trim()).pop() ?? '';
-                    const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
-                    resolve({ pass, reason: line.slice(0, 200) || '(no verdict)' });
-                });
+            // X-260 — through the seam.
+            void execOneShot({ cwd: this.outputsDir, args: judgeArgs, prompt, timeoutMs: 180_000 }).then(r => {
+                if (r.error && !r.out) {
+                    resolve({ pass: true, reason: 'vision judge unavailable — passed through (' + r.error.slice(0, 80) + ')' });
+                    return;
+                }
+                const line = r.out.split('\n').filter(l => l.trim()).pop() ?? '';
+                const pass = !/^\s*FAIL\b/i.test(line) && /PASS/i.test(line);
+                resolve({ pass, reason: line.slice(0, 200) || '(no verdict)' });
+            });
         });
     }
 

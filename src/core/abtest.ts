@@ -1,8 +1,8 @@
-import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * I2 — A/B instruction experiments. Two CLAUDE.md variants answer the same
@@ -46,11 +46,10 @@ export function prepareVariantDir(agentDir: string, claudeMd: string): string {
 }
 
 function execClaude(cwd: string, args: string, prompt: string): Promise<string> {
-    return new Promise(resolve => {
-        cp.exec(`claude ${args.trim()} -p "${sanitizePrompt(prompt)}"`,
-            { cwd, timeout: 240_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-            (_err, stdout) => resolve(String(stdout ?? '').trim()));
-    });
+    // X-260 — through the seam, so this turn runs as the sign-in the resolver
+    // names rather than whichever one the machine happens to hold.
+    return execOneShot({ cwd, args, prompt: sanitizePrompt(prompt), timeoutMs: 240_000 })
+        .then(r => r.out);
 }
 
 /** Judge two answers with randomized presentation order. */

@@ -1,6 +1,6 @@
-import * as cp from 'child_process';
 import * as fs from 'fs';
 import { sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * G3 — Eval sets: the trace→dataset loop. Bad production traces (low-scored
@@ -111,11 +111,9 @@ export class EvalStore {
 }
 
 function execClaude(cwd: string, args: string, prompt: string, timeoutMs: number): Promise<string> {
-    return new Promise(resolve => {
-        cp.exec(`claude ${args.trim()} -p "${sanitizePrompt(prompt)}"`,
-            { cwd, timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-            (_err, stdout) => resolve(String(stdout ?? '').trim()));
-    });
+    // X-260 — through the seam (account, and the engine as a stated axis).
+    return execOneShot({ cwd, args, prompt: sanitizePrompt(prompt), timeoutMs })
+        .then(r => r.out);
 }
 
 /** Replay one case: run the agent with the case input, judge the output against the expectation. */

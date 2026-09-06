@@ -1,7 +1,7 @@
-import * as cp from 'child_process';
 import * as fs from 'fs';
 import { parsePlannerEnvelope } from './missions';
 import { estimateTokens, extractJson, sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * I3 — Memory distillation. A cheap model condenses a bloated or stale
@@ -32,24 +32,21 @@ export interface JudgeRun {
  */
 function runJudge(cwd: string, judgeArgs: string, prompt: string): Promise<JudgeRun> {
     const extra = /--output-format/.test(judgeArgs) ? '' : ' --output-format json';
-    return new Promise(resolve => {
-        cp.exec(`claude ${judgeArgs.trim()}${extra} -p "${prompt}"`,
-            { cwd, timeout: 240_000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
-            (err, stdout) => {
-                const out = String(stdout ?? '').trim();
-                if (!out) {
-                    resolve({ text: '', error: 'no output' + (err ? ` (${String(err.message).slice(0, 80)})` : '') });
-                    return;
-                }
-                const envelope = parsePlannerEnvelope(out);
-                if (!envelope) { resolve({ text: out }); return; }
-                resolve({
-                    text: envelope.result.trim(),
-                    costUSD: envelope.costUSD,
-                    tokens: envelope.tokens,
-                    error: envelope.isError ? `the model reported an error (${envelope.subtype ?? 'unknown'})` : undefined
-                });
-            });
+    // X-260 — through the seam.
+    return execOneShot({
+        cwd, args: judgeArgs.trim() + extra, prompt, timeoutMs: 240_000
+    }).then(r => {
+        if (!r.out) {
+            return { text: '', error: 'no output' + (r.error ? ` (${r.error.slice(0, 80)})` : '') };
+        }
+        const envelope = parsePlannerEnvelope(r.out);
+        if (!envelope) { return { text: r.out }; }
+        return {
+            text: envelope.result.trim(),
+            costUSD: envelope.costUSD,
+            tokens: envelope.tokens,
+            error: envelope.isError ? `the model reported an error (${envelope.subtype ?? 'unknown'})` : undefined
+        };
     });
 }
 

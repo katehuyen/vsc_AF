@@ -1,5 +1,5 @@
-import * as cp from 'child_process';
 import { extractJson, sanitizePrompt } from './util';
+import { execOneShot } from './oneShot';
 
 /**
  * F1 — Natural-language command bar: one sentence in ("yarın 09:00'da
@@ -128,23 +128,16 @@ export function describePlan(plan: FarmPlan): string {
 export function interpretCommand(
     cwd: string, judgeArgs: string, agentNames: string[], utterance: string, now = new Date()
 ): Promise<{ plan?: FarmPlan; errors: string[]; raw: string }> {
-    return new Promise(resolve => {
-        const p = sanitizePrompt(buildCommandPrompt(agentNames, utterance, now));
-        cp.exec(`claude ${judgeArgs.trim()} -p "${p}"`,
-            { cwd, timeout: 180_000, windowsHide: true },
-            (err, stdout) => {
-                const raw = String(stdout ?? '').trim();
-                if (err && !raw) {
-                    resolve({ errors: ['planner unavailable: ' + String(err.message).slice(0, 100)], raw: '' });
-                    return;
-                }
-                const { plan, error } = parsePlan(raw);
-                if (!plan) {
-                    resolve({ errors: [error ?? 'unparseable plan'], raw });
-                    return;
-                }
-                const errors = validatePlan(plan, agentNames);
-                resolve({ plan: errors.length ? undefined : plan, errors, raw });
-            });
+    const p = sanitizePrompt(buildCommandPrompt(agentNames, utterance, now));
+    // X-260 — through the seam.
+    return execOneShot({ cwd, args: judgeArgs, prompt: p, timeoutMs: 180_000 }).then(r => {
+        const raw = r.out;
+        if (r.error && !raw) {
+            return { errors: ['planner unavailable: ' + r.error.slice(0, 100)], raw: '' };
+        }
+        const { plan, error } = parsePlan(raw);
+        if (!plan) { return { errors: [error ?? 'unparseable plan'], raw }; }
+        const errors = validatePlan(plan, agentNames);
+        return { plan: errors.length ? undefined : plan, errors, raw };
     });
 }
