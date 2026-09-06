@@ -495,6 +495,29 @@
          * whose figure is a file on this disk that is three false claims in one
          * sentence, and the queue it describes is one this press never joins.
          */
+        /**
+         * ‼️ X-219 — THE ANSWER TO THE YELLOW BADGE, ON THE SAME LINE AS IT.
+         *
+         * A card that states a sign-in is dead and offers nothing to do about it
+         * is a diagnosis with no treatment; the page said outright that nothing
+         * here could renew it, and it was true. This press signs nobody in — the
+         * flow is a browser one only a person can finish — it opens the ENGINE'S
+         * OWN command in the SLOT'S OWN directory, which is the whole of the
+         * extension's honest part. It is drawn only where it applies: a ready
+         * sign-in has nothing to renew.
+         */
+        const reauth = a.health === 'ready'
+            ? ''
+            : T.wrap('<button class="secondary small acreauth" data-acreauth="' + esc(a.id) + '">🔑</button>',
+                'Sign in again as ' + (a.label || a.id),
+                'Opens a terminal whose environment points the engine at this account\'s own directory, '
+                + 'and runs the engine\'s own sign-in command there. Nothing is copied over the sign-in '
+                + 'you are using and no other row moves — the browser flow writes the new credential '
+                + 'straight into this one.\n\n'
+                + 'It cannot tell you it worked: the flow can be abandoned halfway, and a card that '
+                + 'assumed success would be lying about the one fact it exists to state. When the '
+                + 'terminal closes this row is READ AGAIN from disk, so the badge above changes because '
+                + 'the files did.');
         const onDisk = a.quotaSource === 'session-tail';
         const refresh = a.quotaSource === 'none'
             ? ''
@@ -529,9 +552,12 @@
             + (a.plan ? '<span class="acplan">' + esc(a.plan) + '</span>' : '')
             + (a.health === 'ready' ? ''
                 : T.wrap('<span class="acbad">' + esc(a.health === 'needs-signin' ? 'needs signing in' : 'unreadable') + '</span>', 'This sign-in is not usable',
-                    'The stored credential no longer refreshes, and only a person can fix it: sign in '
-                    + 'again in a terminal and capture it once more. Nothing here can renew it.'))
+                    'The stored credential no longer refreshes, and only a person can fix it: signing in '
+                    + 'is a browser flow. The 🔑 beside this is where that starts — it opens a terminal '
+                    + 'pointed at THIS account\'s own directory, so the renewed credential lands on this '
+                    + 'row and on nothing else.'))
             + '<span class="grow"></span>'
+            + reauth
             + refresh
             + stand
             + T.wrap('<button class="secondary small" data-acforget="' + esc(a.id) + '">Forget</button>',
@@ -876,6 +902,9 @@
                    the held verdict and the keyless route wear. */
                 .acbad { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
                     border-color:transparent; cursor:help; }
+                /* X-219 — the one control that answers that badge wears the badge's
+                   colour: a dead sign-in and its remedy are one fact, said twice. */
+                .acreauth { border-color:var(--vscode-charts-yellow,#d7ba7d); }
                 /* ‼️ X-205 — the standing account is a SWITCH. Two states of one
                    control, drawn rather than spelled: a button whose label has
                    to be read is a button the eye has to stop at, and this one
@@ -1056,6 +1085,11 @@
                     .filter(a => (!b.dataset.acrefreshall || a.engine === b.dataset.acrefreshall)
                         && a.usageState !== 'no-source')
                     .map(a => a.id) })));
+        // X-219 — the page names a ROW and nothing else: whether that sign-in
+        // may be renewed at all, with which command and in which directory, is
+        // decided in the one place `accounts.reauth` calls.
+        document.querySelectorAll('[data-acreauth]').forEach(b =>
+            b.addEventListener('click', () => post({ type: 'accountReauth', id: b.dataset.acreauth })));
         document.querySelectorAll('[data-acforget]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountForget', id: b.dataset.acforget })));
         document.querySelectorAll('[data-accapture]').forEach(b =>

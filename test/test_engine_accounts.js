@@ -225,6 +225,17 @@ const config = (email) => JSON.stringify({
         ok('…every refusal comes with no command at all, so a caller cannot run one anyway',
             [planReauth('@machine', slots), planReauth('agy-1', slots), planReauth('ghost', slots)]
                 .every(r => !!r.refusal && !r.command));
+        // ‼️ A REFUSAL IS READ BY A PERSON, so it is pinned as PROSE and not only
+        // as a match. Two of these three shipped as a template literal that had
+        // swallowed its own concatenation — the reader was handed
+        // `…may have been ' + 'forgotten`, source and all, on the one surface
+        // whose entire job is to explain itself. Every string test passed: they
+        // all matched a word near the front. This asks what the sentence LOOKS
+        // like, which is the question the failure was hiding from.
+        ok('‼️ …and every refusal is a sentence rather than the source that built it',
+            [planReauth('@machine', slots), planReauth('agy-1', slots), planReauth('ghost', slots)]
+                .every(r => !/['`]\s*\+\s*['`]/.test(r.refusal) && !/\n/.test(r.refusal)
+                    && /[.!?]$/.test(r.refusal.trim())));
     }
 
     // ---------- ‼️ X-219 — THE CARD SAYS "ONLY A PERSON CAN FIX IT", AND MEANS IT ----------

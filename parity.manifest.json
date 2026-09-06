@@ -1813,6 +1813,15 @@
       ]
     },
     {
+      "capability": "enginesPanel.ts#accountReauth",
+      "ui": [
+        "page:enginesPanel.ts#accountReauth"
+      ],
+      "ops": [
+        "accounts.reauth"
+      ]
+    },
+    {
       "capability": "enginesPanel.ts#accountForget",
       "ui": [
         "page:enginesPanel.ts#accountForget"

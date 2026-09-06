@@ -97,6 +97,13 @@ export interface EnginesPanelDeps {
     activateAccount(id: string, engine: string): Promise<string>;
     forgetAccount(id: string): Promise<string>;
     /**
+     * ‼️ X-219 — OPEN THE WAY BACK for a sign-in that has stopped refreshing.
+     * Answers with the refusal to show, or an empty string when a terminal was
+     * opened — never with "it worked", because the browser flow it starts can
+     * be abandoned halfway and only the disk knows.
+     */
+    reauthAccount(id: string): Promise<string>;
+    /**
      * ‼️ X-206 — ASK FOR **THESE** FIGURES, IN A LINE.
      *
      * `readAccounts()` is the beat: one slot per turn, whichever is stalest. A
@@ -324,6 +331,15 @@ export class EnginesPanel {
                     msg.gesture === 'all' ? 'all' : 'toggle');
                 this.refresh();
                 break;
+            case 'accountReauth': {
+                // ‼️ X-219 — NOT `wroteAccount`: nothing was written and nobody is
+                // signed in yet. Its live reading would spend a request on the very
+                // account whose credential is the thing that stopped working.
+                const refused = await this.deps.reauthAccount(String(msg.id ?? ''));
+                await this.panel.webview.postMessage({ type: 'acc-msg', text: refused });
+                if (!refused) { this.refresh(); }
+                break;
+            }
             case 'accountForget':
                 // Bookkeeping only: the directory is left on disk. Deleting
                 // somebody's stored sign-in because they tidied a list is not

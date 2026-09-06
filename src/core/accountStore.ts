@@ -206,15 +206,15 @@ export function planReauth(stated: string | undefined, list: EngineAccountSlot[]
     }
     const slot = findSlot(list, id);
     if (!slot) {
-        return { refusal: `No account "${id}" is stored on this machine — it may have been '
-            + 'forgotten. Capture it again before asking it to sign in.` };
+        return { refusal: `No account "${id}" is stored on this machine — it may have been `
+            + 'forgotten. Capture it again before asking it to sign in.' };
     }
     const a = adapterFor(slot.engine);
     const how = a.signIn ? a.signIn() : undefined;
     if (!canIsolateAccounts(slot.engine) || !how) {
-        return { refusal: `${slot.engine} has no verified way to keep two sign-ins apart on '
+        return { refusal: `${slot.engine} has no verified way to keep two sign-ins apart on `
             + 'this machine, so a login started here would land in the one directory both of '
-            + 'them read — and would replace the sign-in you are using rather than this row.` };
+            + 'them read — and would replace the sign-in you are using rather than this row.' };
     }
     return {
         command: how.command, args: how.args, statusArgs: how.statusArgs,

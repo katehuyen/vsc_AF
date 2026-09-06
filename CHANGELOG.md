@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.413.0 - X-219: a dead sign-in can be renewed from the card that reports it (2026-09-06)
+
+**The card stated the problem and offered nothing to do about it.** An account
+whose stored credential stops refreshing wore a yellow *needs signing in* badge
+whose own tooltip ended "Nothing here can renew it" — accurate, and the reason
+one account's debt has stood open for seven sessions. A diagnosis with no
+treatment is where the reader leaves the page.
+
+Renewing a plan sign-in is a **browser** flow that only a person can finish, so
+the extension's honest part is small and this release is exactly that part and
+no more: it opens the **engine's own** sign-in command with the environment that
+points it at **that account's own directory**. Nothing is copied over the live
+sign-in (X-168), no browser is driven, and no other row moves — the flow writes
+the new credential straight into the row that asked for it.
+
+**‼️ The command is the engine's own, and it was measured rather than assumed.**
+The request asked for `claude login`; there is no such command. Read off the
+CLIs' own `--help` on this machine: Claude Code signs in with `claude auth
+login` and reads back with `claude auth status`; Codex uses `codex login` and
+`codex login status`. A button wired to the requested command would have failed
+on its first press. Each adapter carries its own pair, so an engine that cannot
+hold a second sign-in offers no command at all rather than a wrong one.
+
+**‼️ It never declares the outcome.** The flow can be abandoned halfway, and a
+card that assumed success would be lying about the one fact it exists to state.
+So the plan hands back `statusArgs` — the way to MEASURE the result — and the
+card, when the terminal closes, is READ AGAIN from disk with its cached identity
+dropped first. The badge changes because the files changed.
+
+**It refuses more often than it agrees, and every refusal comes with no command
+at all:** never for the main sign-in (it is the ABSENCE of a slot, and the
+session talking to you runs as it), never for an engine with no verified way to
+keep two identities apart (the login would land in the one directory both of
+them read), never for an id nothing is stored under.
+
+`accounts.reauth` on the bridge and the 🔑 on the card are the same function —
+`planReauth` — so a page and an agent cannot come to mean two different things
+about which sign-ins may be renewed.
+
+**‼️ And a refusal is now pinned as prose, not only as a match.** Two of the
+three refusals shipped as a template literal that had swallowed its own
+concatenation: the reader would have been handed `…may have been ' + 'forgotten`,
+source and all, on the one surface whose entire job is to explain itself. Every
+string test passed — they all matched a word near the front. The new gate asks
+what the sentence *looks* like: no concatenation residue, no newline, ends in a
+full stop.
+
 ## 3.412.0 - X-231: the fleet's waits, in one reading and one shape (2026-09-06)
 
 *"An autonomous process must also know that it is waiting for other reasons.

@@ -171,6 +171,31 @@ const sec = () => {
         /does not (become|make it) |not stood up|standing choice is unchanged|is not made the standing one/i.test(h));
 }
 
+// ---- X-219: the yellow badge now has an answer beside it -------------------
+//
+// ‼️ THE BADGE AND THE BUTTON ARE ONE FACT. The card stated a sign-in was dead
+// and offered nothing to do about it — a diagnosis with no treatment, and the
+// reason one account's debt stood for seven sessions. The press signs nobody
+// in: it opens the engine's own command in the slot's own directory, which is
+// the whole of the extension's honest part in a browser flow.
+{
+    const h = sec();
+    const keys = (h.match(/data-acreauth="[^"]*"/g) || []);
+    ok('‼️ X-219: a dead sign-in card carries the way to renew it',
+        keys.length === 1 && keys[0] === 'data-acreauth="spare"');
+    ok('‼️ …and a healthy one does not, because it has nothing to renew',
+        !/data-acreauth="work-1"/.test(h) && !/data-acreauth="personal"/.test(h));
+    ok('‼️ …the page no longer claims nothing here can renew it, because now something can',
+        h.indexOf('Nothing here can renew it') < 0);
+    ok('…and the badge points at the key rather than at a terminal the reader must find',
+        /The 🔑 beside this is where that starts/.test(h));
+    ok('‼️ …the press promises no outcome — the row is read again from disk instead',
+        /cannot tell you it worked/.test(h) && /READ AGAIN from disk/.test(h));
+    r.query('[data-acreauth]')[0].click();
+    ok('‼️ …and the page names a ROW and nothing else: no command, no directory, no variable',
+        JSON.stringify(r.last()) === JSON.stringify({ type: 'accountReauth', id: 'spare' }));
+}
+
 // ---- a refusal is shown where it happened ----------------------------------
 {
     r.send({ type: 'acc-msg', text: 'Nothing is signed in to claude on this disk.' });

@@ -17234,6 +17234,53 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { refusal: '', slot, filesRemoved };
     };
     /**
+     * ‼️ X-219 — RENEW A SIGN-IN THAT HAS STOPPED REFRESHING, from its own card.
+     *
+     * A stored credential that no longer refreshes can only be fixed by a person
+     * at a browser, so the extension's honest part is small and this is the whole
+     * of it: open the ENGINE'S OWN sign-in command with the environment that
+     * points it at the SLOT'S OWN directory. It signs nobody in, opens no
+     * browser itself, and copies nothing over the live directory (X-168) — the
+     * flow writes the new credential straight into the row that asked for it.
+     *
+     * ‼️ IT NEVER DECLARES THE OUTCOME. Whether the person finished the flow or
+     * closed the tab halfway is not knowable from here, so success is MEASURED:
+     * when the terminal closes the slot is read from disk again — with its
+     * cached identity dropped first, or the answer would be up to five seconds
+     * stale by construction — and the surfaces repaint from what is there.
+     *
+     * The decision itself is `planReauth`'s, which is the same function
+     * `accounts.reauth` calls, so a card and the bridge cannot come to mean two
+     * different things about which sign-ins may be renewed.
+     */
+    const reauthAccount = async (id: string): Promise<string> => {
+        const clean = (id || '').trim();
+        const plan = planReauth(clean, storedAccounts());
+        if (plan.refusal) { return plan.refusal; }
+        const slot = findSlot(storedAccounts(), clean);
+        if (!slot || !plan.command) { return 'That account could not be read back to be signed in.'; }
+        const term = vscode.window.createTerminal({
+            name: `🔑 ${slotLabel(slot)}`,
+            // The shell runs where the user lives, not inside the account folder:
+            // the ROUTE is the environment, and a CLI started in a directory it
+            // has never seen asks to be trusted before it asks anything else.
+            cwd: os.homedir(),
+            // ‼️ The variable's NAME is the adapter's, carried in the plan. A door
+            // that spelt out CLAUDE_CONFIG_DIR would be a door that only works on
+            // one engine while looking general (X-168).
+            env: terminalEnvOverlay([plan.env], undefined)
+        });
+        term.show();
+        sendToTerminalWhenReady(term, [plan.command, ...(plan.args || [])].join(' '));
+        const sub = vscode.window.onDidCloseTerminal(closed => {
+            if (closed !== term) { return; }
+            sub.dispose();
+            identitySeen.delete(slot.id);
+            EnginesPanel.refreshIfOpen();
+        });
+        return '';
+    };
+    /**
      * ‼️ X-169 — WHICH SIGN-IN A LAUNCH RUNS ON, IN ONE FUNCTION, so no surface
      * invents its own order. What the launch itself states wins; otherwise the
      * engine's active account — the one thing "use this next" writes; otherwise
@@ -18238,6 +18285,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (await activateAccount(id, engine)).refusal,
         forgetAccount: async (id: string): Promise<string> =>
             (await forgetAccount(id, false)).refusal,
+        reauthAccount: (id: string): Promise<string> => reauthAccount(id),
         queueAccountRefresh: (ids: string[], gesture: 'toggle' | 'all'): void =>
             queueAccountRefresh(ids, gesture),
         ownership: () => ownershipTable(),
