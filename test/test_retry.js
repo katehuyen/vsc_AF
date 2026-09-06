@@ -338,5 +338,54 @@ const BROKE = 'Error: ENOENT: no such file or directory';
         /capped at 90 min/.test(describeRetry({ max: 5, delayMin: 10, backoff: 'double', capMin: 90 })));
 }
 
+// ---------- ‼️ X-227 — THE RETRY RUNS THE WAY THE ORIGINAL RAN ----------------
+//
+// There are two retries in this product and only one of them was holding to
+// that rule. `TaskManager.retryTask` — the one a person presses — carries every
+// dimension across by hand and says why beside each: "a retry that quietly moved
+// to the agent's standing endpoint is a different run wearing the same name."
+// `maybeScheduleRetry` — the one that fires BY ITSELF when a run fails, at 03:00,
+// with nobody at a window — hand-copied its own shorter list and dropped seven.
+//
+// Measured before the fix: account, providerId, tier, finishSound, superpowers,
+// interactiveTarget and interactiveClose. Each has its own cost, and the first
+// is the worst of them: a reset-aware retry WAITS for one account's window to
+// reopen and then ran the work on whichever account happened to be standing.
+//
+// The list is `RunDimensions`, read out of the source, so this cannot shrink
+// again quietly — the next dimension somebody adds fails here until the
+// unattended retry carries it too.
+{
+    const fs = require('fs');
+    const ROOT = path.join(__dirname, '..');
+    const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    const at = tasksTs.indexOf('export interface RunDimensions');
+    const fields = [...tasksTs.slice(at, tasksTs.indexOf('\n}', at))
+        .matchAll(/^ {4}([a-zA-Z][\w]*)\??:/gm)].map(m => m[1]);
+    ok('RunDimensions was found and has fields', at > 0 && fields.length >= 10);
+
+    const anchor = 'const t = this.addTask(agent, nextTitle, prompt, mode, {';
+    const i = tasksTs.indexOf(anchor);
+    let body = '';
+    if (i >= 0) {
+        let depth = 0;
+        for (let j = i + anchor.length - 1; j < tasksTs.length; j++) {
+            if (tasksTs[j] === '{') { depth++; }
+            else if (tasksTs[j] === '}') { depth--; if (!depth) { body = tasksTs.slice(i, j + 1); break; } }
+        }
+    }
+    ok('the unattended retry\'s own reading of the failed run was found',
+        body.length > 200 && /\bpermissionMode\b/.test(body));
+    ok('‼️ X-227 — the retry nobody is watching carries EVERY dimension of the run '
+        + 'it repeats (missing: '
+        + fields.filter(f => !new RegExp(`\\b${f}\\b`).test(body)).join(', ') + ')',
+        fields.every(f => new RegExp(`\\b${f}\\b`).test(body)));
+    // ‼️ Named on its own, because a list that is merely "not empty" does not say
+    // which plan the night was billed to.
+    ok('‼️ X-227 — and the ACCOUNT above all, or the wait and the run disagree '
+        + 'about whose window was being waited for',
+        /\baccount\b/.test(body));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

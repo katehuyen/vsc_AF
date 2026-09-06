@@ -2023,6 +2023,49 @@
                 : stepCardHtml(c)}`;
     }
 
+    /**
+     * ‼️ X-224 — WHOSE PLAN PAYS FOR THIS LINK OF THE CHAIN.
+     *
+     * A chain is the shape that needs the account most, and it was the last
+     * surface that could not say it. Three steps on one sign-in eat one plan and
+     * hit the wall in the middle; every step of a workflow is headless, so there
+     * is nobody in front of it to move the work when they do. "Step 1 plans on
+     * A, step 2 codes on B, step 3 writes up on the machine's own" is the whole
+     * reason a step carries its own dimensions at all.
+     *
+     * The step card has no engine box of its own (the step's engine is stated
+     * elsewhere and inherited), so the list offered is that engine's — falling
+     * back to Claude's, which is what a step with nothing stated runs on. Drawn
+     * only where there is something to choose, exactly like the task form's row.
+     */
+    function stepAccountRow(s) {
+        const rows = ntAccounts(s.sengine);
+        if (!rows.length) { return ''; }
+        const opts = [C.option('', '— the standing choice, else the main sign-in —', {
+            selected: !s.saccount,
+            detail: 'The ACTIVE account of this engine answers when the step fires — the one the Engines page points at — and failing that the main sign-in, which is what every chain built before this took.'
+        }),
+        C.option(MACHINE_ACCOUNT, MACHINE_GLOBAL_ROW, {
+            selected: s.saccount === MACHINE_ACCOUNT,
+            detail: 'The identity this machine itself is signed in as — nothing is injected. Unlike the empty row above, this is PINNED: it stays here whatever the Engines page is pointing at when the chain runs.'
+        })]
+            .concat(rows.map(a => C.option(a.id,
+                (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''), {
+                selected: a.id === s.saccount,
+                detail: [
+                    a.active ? 'The standing choice for this engine right now.' : '',
+                    a.health === 'ready' ? '' : (a.next || 'This slot needs signing in again before it can pay for a step.')
+                ].filter(Boolean).join('\n\n')
+            })))
+            .join('');
+        return `<label class="ntf" title="${C.esc('Which sign-in pays for THIS step. '
+            + 'A chain runs headless with nobody in front of it, so a step that names none takes '
+            + 'whichever account is standing when it fires — and three steps on one plan is how a '
+            + 'chain hits the wall in the middle. A dot marks the standing choice; a warning sign '
+            + 'marks a slot that needs signing in again.')}"><span>Account</span>
+                    <select id="nt-st-saccount">${opts}</select></label>`;
+    }
+
     function stepCardHtml(c) {
         const s = c.step || newStep();
         const isNew = c.stepIdx === -1;
@@ -2051,6 +2094,7 @@
                         ${C.option('headless', 'headless — runs and exits', { selected: s.smode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never — and the step can be retried automatically.' })}
                         ${C.option('interactive', 'interactive — opens a session', { selected: s.smode === 'interactive', detail: 'Opens a terminal with you in front of it. Closing that window is how you end it, so "it failed" is not a fact anything can read from it.' })}
                     </select></label>` : ''}
+                ${s.stype === 'agent' ? stepAccountRow(s) : ''}
             </div>
             ${s.stype === 'agent' ? `<div class="ntgrid">
                 <label class="ntf wide" title="${C.esc(
@@ -2149,7 +2193,11 @@
         const v = (id) => { const el = g(id); if (el && el.value != null) { s[id] = String(el.value); } };
         const n = (id) => { const el = g(id); if (el) { s[id] = Number(el.value) || 0; } };
         const b = (id) => { const el = g(id); if (el) { s[id] = !!el.checked; } };
-        ['stype', 'title', 'agent', 'prompt', 'smode', 'onFail', 'runIf', 'contract', 'verifyCriteria',
+        // ‼️ X-224 — `saccount` is in this list, which is the whole of the fix on
+        // this side: `readStep` writes back only the keys it names, so a box the
+        // card draws and this list forgets is a control that looks alive and is
+        // not (the same defect X-221 found on the task form's own account box).
+        ['stype', 'title', 'agent', 'prompt', 'smode', 'saccount', 'onFail', 'runIf', 'contract', 'verifyCriteria',
             'whUrl', 'whMethod', 'whBody', 'whHeader', 'whPollUrl', 'whStatusField', 'whDone',
             'mModel', 'mInput', 'mScene', 'bUrl', 'bGoal', 'bHosts', 'apMsg', 'selMsg'].forEach(v);
         ['onFailStep', 'verifyRetries', 'whInterval', 'selMin', 'selMax'].forEach(n);
@@ -4108,7 +4156,10 @@
                     'mModel', 'mInput', 'bUrl', 'bGoal', 'bHosts',
                     'apMsg', 'selMsg', 'selMin', 'selMax'].forEach(id =>
                         byId('nt-st-' + id, 'input', () => readStep()));
-                ['agent', 'smode', 'contract', 'onFailStep', 'mScene'].forEach(id =>
+                // ‼️ X-224 — `saccount` reads back like the other pickers here.
+                // It does NOT redraw: nothing else on the card depends on it, and
+                // a repaint under the pointer is what the redraw list is for.
+                ['agent', 'smode', 'saccount', 'contract', 'onFailStep', 'mScene'].forEach(id =>
                     byId('nt-st-' + id, 'change', () => readStep()));
                 byId('nt-st-parallel', 'change', () => readStep());
                 // ‼️ These five REDRAW: the kind decides which half of the card

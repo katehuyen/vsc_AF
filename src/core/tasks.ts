@@ -4094,14 +4094,35 @@ export class TaskManager implements vscode.Disposable {
                 noteTaskEvent(task, 'retried', d.why);
                 const t = this.addTask(agent, nextTitle, prompt, mode, {
                     projectId: task.projectId,
-                    ...(task.engine ? { engine: task.engine } : {}),
-                    ...(task.model ? { model: task.model } : {}),
-                    ...(task.effort ? { effort: task.effort } : {}),
-                    ...(task.permissionMode ? { permissionMode: task.permissionMode } : {}),
-                    ...(task.cli ? { cli: task.cli } : {}),
-                    ...(task.workDir ? { workDir: task.workDir } : {}),
-                    ...(task.priority ? { priority: task.priority } : {}),
-                    ...(task.ignoreBudget ? { ignoreBudget: true } : {}),
+                    /**
+                     * ‼️ X-227 — THE RETRY RUNS THE WAY THE ORIGINAL RAN, AND
+                     * THIS IS THE RETRY NOBODY IS WATCHING.
+                     *
+                     * `retryTask` — the one a person presses — carries every
+                     * dimension across and says why beside each. This one, which
+                     * fires BY ITSELF when a run fails, hand-copied a shorter
+                     * list: engine, model, effort, permissionMode, cli, workDir,
+                     * priority, ignoreBudget. Measured against `RunDimensions`,
+                     * it was dropping SEVEN — account, providerId, tier,
+                     * finishSound, superpowers, interactiveTarget,
+                     * interactiveClose — and it had been dropping them silently,
+                     * on the path where there is nobody at a window to notice.
+                     *
+                     * The account is the worst of the seven: `retryDecision`
+                     * waits for ONE plan's window to reopen (`engineResetAt`,
+                     * M-10) and the run then went to whichever account happened
+                     * to be standing — the wait and the run disagreeing about
+                     * whose window was being waited for. The route was next: the
+                     * same word names a different model on two of them.
+                     *
+                     * So it travels by the SHAPE now, like a schedule, a
+                     * trigger, a template and a workflow step already do. That is
+                     * the whole point of `runExtras` — the eighteenth dimension
+                     * must not become the eighteenth thing to forget. What still
+                     * follows it is written after on purpose: the fields below
+                     * are the retry's OWN, and they must beat the original's.
+                     */
+                    ...runExtras(task),
                     ...(policy ? { retry: policy } : {}),
                     // ‼️ S-19 — A RETRY OF A RESUMED TURN RESUMES THE SAME
                     // CONVERSATION. The turn never happened (a limit refused it

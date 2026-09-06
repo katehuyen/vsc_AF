@@ -1600,6 +1600,26 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         && /id="nt-st-verifyCriteria"/.test(html()));
     ok('the first step is offered no run-if and no parallel — there is nothing beside it',
         !/id="nt-st-runIf"/.test(html()) && !/id="nt-st-parallel"/.test(html()));
+    /**
+     * ‼️ X-224 — AND WHOSE PLAN PAYS FOR THIS LINK OF THE CHAIN.
+     *
+     * A chain is the shape that needs the account most: three steps on one
+     * sign-in eat one plan and hit the wall in the middle, and every step of one
+     * is headless, so there is nobody there to move it when they do. The field
+     * has always been on the type (`WorkflowStep extends RunDimensions`) and
+     * `runExtras` has always carried it to the run — the card was the only place
+     * that could not say it.
+     */
+    ok('‼️ X-224 — an agent step asks whose sign-in pays for it',
+        /id="nt-st-saccount"/.test(html()));
+    ok('…and the empty row says what leaving it empty MEANS',
+        html().includes('the standing choice, else the main sign-in'));
+    ok('…with the machine\'s own sign-in among the answers, as on the task form',
+        /value="@machine"/.test(html()) && html().includes('Machine Global'));
+    // …and the answer given here has to survive all the way to the saved chain,
+    // which is asserted where the chain is saved (search: X-224).
+    fld('nt-st-saccount').value = 'personal';
+    fld('nt-st-saccount').fire('change');
 
     // it refuses IN the card
     posted = [];
@@ -1683,6 +1703,11 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         && wfSave.item.steps[1].stype === 'webhook'
         && wfSave.item.steps[1].whUrl === 'https://n8n.example/hook'
         && wfSave.item.steps[1].whPoll === true);
+    // ‼️ X-224 — INCLUDING WHOSE PLAN PAYS FOR IT. Picked on the card ten
+    // assertions ago; it has to be here, or the box was a control that looked
+    // alive and was not — which is exactly what X-221 found on the task form.
+    ok('‼️ X-224 — …and the sign-in the first step was billed to',
+        wfSave && wfSave.item.steps[0].saccount === 'personal');
 
     // ---- the palette's addWorkflowStep / editWorkflowStep land on the same card
     send({

@@ -970,6 +970,11 @@ function stepSeed(s: WorkflowStep): Record<string, unknown> {
         smodel: s.model ?? '',
         seffort: s.effort ?? '',
         spermissionMode: s.permissionMode ?? '',
+        // ‼️ X-224 — …and WHOSE PLAN pays for this link of the chain. A chain is
+        // the shape that needs this most: three steps on one sign-in eat one
+        // plan and hit the wall in the middle, and it is a headless run, so
+        // there is nobody there to move it when they do.
+        saccount: s.account ?? '',
         onFail: s.onFail === undefined || s.onFail === 'stop' ? 'stop'
             : s.onFail === 'continue' ? 'continue' : 'goto',
         onFailStep: typeof s.onFail === 'number' ? s.onFail : 1,
@@ -1115,6 +1120,10 @@ export function stepFromDraft(
             model: str('smodel') || undefined,
             effort: str('seffort') || undefined,
             permissionMode: str('spermissionMode') || undefined,
+            // ‼️ X-224 — and the sign-in it is billed to. Empty = the step states
+            // nothing and the chain's run inherits, exactly as before; `@machine`
+            // is a STATED answer and not the same as empty (see X-223).
+            account: str('saccount') || undefined,
             outputContract: mode === 'headless' && str('contract') === 'json' ? 'json' : undefined,
             verify
         }

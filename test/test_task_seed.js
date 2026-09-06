@@ -210,6 +210,34 @@ const DIMENSION_BOX = {
         eq(`‼️ every dimension comes back out of ${what} too`,
             fields.filter(f => !named(body, f)), []);
     }
+
+    // ‼️ X-224 — AND A WORKFLOW STEP IS A RUN THAT CAN BE BILLED TO SOMEBODY.
+    //
+    // A chain is the shape that needs this most: three steps on one sign-in eat
+    // one plan and hit the wall in the middle, and "step 1 plans on A, step 2
+    // codes on B, step 3 writes up on the machine's own" is the whole reason a
+    // step carries its own dimensions at all. `WorkflowStep extends
+    // RunDimensions`, so the field has always been on the type and `runExtras`
+    // has always carried it to the run — it was the step's own two readings
+    // that could not say it.
+    const stepBody = region('function stepSeed(s: WorkflowStep): Record<string, unknown> {');
+    ok('the reading of a workflow step was found',
+        stepBody.length > 200 && /\bsmodel\b/.test(stepBody));
+    ok('‼️ X-224 — a step\'s stored account comes back into its card',
+        /\bsaccount\b/.test(stepBody) && /\baccount\b/.test(stepBody));
+    const built = P.stepFromDraft(
+        {
+            stype: 'agent', title: 'write it up', agent: 'dev', prompt: 'do the thing',
+            smode: 'headless', saccount: 'personal', sengine: 'claude'
+        },
+        [{ id: 'dev', name: 'dev' }], 1);
+    eq('‼️ X-224 — …and a card that names one produces a step that carries it',
+        [built.error, built.step && built.step.account], [undefined, 'personal']);
+    const bare = P.stepFromDraft(
+        { stype: 'agent', title: 't', agent: 'dev', prompt: 'p', smode: 'headless' },
+        [{ id: 'dev', name: 'dev' }], 1);
+    eq('…and a card that names none states nothing, so the chain inherits',
+        bare.step && bare.step.account, undefined);
 }
 
 Module._load = origLoad;

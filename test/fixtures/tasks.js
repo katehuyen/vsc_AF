@@ -547,6 +547,37 @@ const variants = () => ([
             drive(r, draft, 'nt-account');
         }
     },
+    /**
+     * ‼️ X-224 — AND THE SAME QUESTION ON A LINK OF A CHAIN, which is where it
+     * bites hardest: every step of a workflow is headless, so three steps on one
+     * sign-in eat one plan and the chain hits the wall in the middle with nobody
+     * in front of it. The step card is only drawn while a step is being edited,
+     * so a picture of the chain shut photographs the one state this row is not
+     * in — the card is opened here on the step that names an account.
+     */
+    {
+        id: 'tasks-step-account',
+        label: 'Tasks → a workflow step, billed to its own sign-in (X-224)',
+        data: data(),
+        act: (r) => {
+            r.send({
+                type: 'plan-compose', kind: 'workflow',
+                seed: {
+                    mode2: 'edit', id: 'w1', title: 'gece zinciri', stepIdx: 1,
+                    steps: [
+                        {
+                            stype: 'agent', title: 'Topla', agent: 'developer',
+                            prompt: 'rakamları topla', smode: 'headless'
+                        },
+                        {
+                            stype: 'agent', title: 'Yaz', agent: 'manager',
+                            prompt: 'raporu yaz', smode: 'headless', saccount: 'personal'
+                        }
+                    ]
+                }
+            });
+        }
+    },
     // ‼️ S-19 — the form when the run continues a conversation instead of
     // opening one. The picker, its search box, the count line and the held-row
     // warning are all drawn by this state and by nothing else.

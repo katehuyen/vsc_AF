@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.402.0 - X-227/X-224: the retry nobody is watching, and the chain that ate one plan (2026-09-06)
+
+**X-227 — the unattended retry was dropping seven dimensions, and this one was
+found by reading rather than reported.** There are two retries in the product.
+`retryTask`, the one a person presses, carries every dimension of the original
+across by hand and says why beside each: *"a retry that quietly moved to the
+agent's standing endpoint is a different run wearing the same name."*
+`maybeScheduleRetry` — the one that fires BY ITSELF when a run fails, typically
+at 03:00, with nobody at a window — had its own shorter hand-written list.
+
+Measured against `RunDimensions`, it was dropping **account, providerId, tier,
+finishSound, superpowers, interactiveTarget and interactiveClose.** Each has its
+own cost, and the first is the worst: `retryDecision` reads the engine's
+published reset time and WAITS for one plan's window to reopen (M-10) — and then
+the run went to whichever account happened to be standing. The wait and the run
+disagreeing about whose window was being waited for. The route was next: the same
+word names a different model on two of them, so the run that finally succeeded
+was not necessarily the run that had been asked for. And the finish sound, on
+the one path whose whole justification is that nobody is watching it.
+
+The fix is not a longer list — a longer list is the same bug with a later date.
+`runExtras` already exists as the ONE carrier of `RunDimensions`, and a schedule,
+a trigger, a template and a workflow step all travel through it. This retry now
+does too, with the retry's own fields written after it so they still win. The
+rule is measured in `test_retry.js`, derived from `RunDimensions` in the source:
+when it was written it named all seven out loud.
+
+**X-224 — a workflow step can be billed to its own sign-in.** A chain is the
+shape that needs this most: every step is headless, so three steps on one plan
+eat it and the chain hits the wall in the middle with nobody in front of it.
+`WorkflowStep extends RunDimensions` and `runExtras(step)` has always carried the
+account to the run — the step's two readings and its card were the only places
+that could not say it. `stepSeed` now returns it, `stepFromDraft` reads it, and
+the card asks for it with the same `[machine global]` row the task form got in
+3.401.0. The fixture `tasks-step-account` draws the card that holds it, in both
+themes, because a card nobody photographs is a layout nobody checked.
+
+Still open on the same card, and now written down as X-228: the step card draws
+NO launch dimension boxes at all — engine, model, effort, permission and route
+are on the type, are seeded by the host, are read back by the host and are
+carried to the run, but there has never been anywhere to type them. They can be
+set over the bridge and nowhere else.
+
 ## 3.401.0 - X-221/X-222/X-223: the Tasks form had an account box that went nowhere (2026-09-06)
 
 An audit of the X-167 and X-211 families — asked for because the user remembered
