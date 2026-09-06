@@ -233,7 +233,7 @@
     },
     "mission": {
       "engine": "carried",
-      "account": "exempt: X-169 - a mission runs for HOURS across rounds and its delegates spawn one at a time. An account frozen into the mission would pin round nine to a plan that round two exhausted, and it would do it silently. Each delegate run resolves the account at its own spawn, from the one place that holds it.",
+      "account": "carried",
       "providerId": "gap: reaches this door and stops - nobody has said whether it should",
       "tier": "gap: reaches this door and stops - nobody has said whether it should",
       "variant": "gap: reaches this door and stops - nobody has said whether it should",

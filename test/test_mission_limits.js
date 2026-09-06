@@ -461,7 +461,9 @@ function makeDeps(replies) {
         // what both `createMission` and `previewMission` now run. Reading the
         // four-line wrapper instead would find nothing and pass by default.
         const at = ext.indexOf('const resolveMissionInput = ');
-        const create = ext.slice(at, at + 12000);
+        // ‼️ The window has to reach past the block being asserted about; it grows
+        // as that block does (X-225 added the two account axes to it).
+        const create = ext.slice(at, at + 18000);
         ok('‼️ createMission judges the raw ceilings before it normalises them',
             create.indexOf('validateMissionLimitsInput(') > 0
             && create.indexOf('validateMissionLimitsInput(') < create.indexOf('normalizeMissionLimits('));

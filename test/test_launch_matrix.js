@@ -241,12 +241,24 @@ ok('…and answers with an object rather than throwing on a fixture',
      * "whose plan pays" to be answered behind its back at the spawn, which is
      * the shape of every defect this folder is named after.
      */
+    /**
+     * ‼️ X-225 — AND `mission` IS ON THIS LIST NOW.
+     *
+     * It used to be on the line below, exempt, with a reason written on the
+     * door: "a mission runs for hours, so an account frozen into it would pin
+     * round nine to a plan round two exhausted." That is a real risk answered by
+     * taking the decision away from the user — while the model, the effort and
+     * the permission mode beside it were overridable both mission-wide and per
+     * member on the very same ladder. And the exemption did not buy what it
+     * promised: the planner spawned with no environment at all, so "each
+     * delegate resolves the account at its own spawn" had no code behind it.
+     */
     ok('‼️ X-169 — the sign-in reaches every door that could state one',
         ['composer', 'treeRow', 'treeMenu', 'launcher', 'surfacePick', 'projects',
-            'webviews', 'palette', 'bridge', 'task', 'automation']
+            'webviews', 'palette', 'bridge', 'task', 'automation', 'mission']
             .every(d => has(d, 'account')));
-    ok('…and the two that deliberately do not are SAID to, because a state is not a saved setup',
-        ['profile', 'mission'].every(d =>
+    ok('…and the ONE that deliberately does not is SAID to, because a state is not a saved setup',
+        ['profile'].every(d =>
             !has(d, 'account')
             && !!doorExemptions(LAUNCH_DOORS.find(x => x.id === d)).account));
     ok('‼️ the bridge collects from its ARGUMENTS and does not inherit — the one asymmetry',

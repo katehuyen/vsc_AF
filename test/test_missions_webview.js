@@ -108,6 +108,16 @@ const DATA = {
         { id: 'dontAsk', label: 'dontAsk', detail: 'stops instead of asking when it would need permission' },
         { id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'EVERY action auto-approved — no prompts at all' }
     ],
+    // ‼️ X-225 — THE SIGN-INS THIS MACHINE HOLDS, per engine, in the shape the
+    // host's one matrix publishes. OpenCode is deliberately absent: an engine
+    // with nothing captured draws no box at all, and that is the state the
+    // account row has to be measured in as well as the state it appears in.
+    accounts: {
+        claude: [
+            { id: 'work-1', label: 'work@studio', health: 'ready', active: true },
+            { id: 'personal', label: 'personal@gmail', health: 'stale', active: false }
+        ]
+    },
     defaults: { maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxMinutes: 120, maxParallel: 2 },
     pending: { questions: [], approvals: ['run1'] },
     // ‼️ U-64 — THE ENGINE MATRIX AND WHAT EACH ENGINE OFFERS, in the shape
@@ -531,6 +541,24 @@ getEl('f-planner').value = 'opus';
 // ‼️ U-100 — the OTHER half of the planner's profile. The mission could say
 // which model plans and had no way to say how hard it thinks.
 getEl('f-planner-effort').value = 'high';
+/**
+ * ‼️ X-225 — AND WHOSE PLAN THE ORCHESTRATOR SPENDS, which was refused for
+ * the whole surface on the mission's behalf: `missionDoor` declared the
+ * account exempt because "a mission runs for hours", while the model, the
+ * effort and the permission mode beside it were overridable twice over. It
+ * bought nothing either — the planner spawned with NO environment at all, so
+ * it ran as whatever the VS Code window happened to be holding.
+ */
+ok('‼️ X-225 — the orchestrator block asks whose plan the planner spends',
+    html().includes('id="f-planner-account"'));
+ok('…and a member row asks the same of its own delegations',
+    html().includes('id="ac-1"') && html().includes('personal@gmail'));
+ok('…with the machine\'s own sign-in among the answers, as on every other surface',
+    html().includes('@machine') && html().includes('Machine Global'));
+ok('‼️ …and a slot that needs signing in again is MARKED rather than offered silently',
+    /⚠ personal@gmail/.test(html()));
+getEl('f-planner-account').value = 'personal';
+getEl('ac-1').value = 'work-1';
 getEl('f-approval').value = 'each-round';
 getEl('f-start').listeners.click();
 const created = posted.find(p => p.type === 'create');
@@ -540,6 +568,10 @@ ok('Start posts the assembled form', created && created.input.goal === 'Ship the
 ok('planner-model override rides along', created && created.input.plannerModel === 'opus');
 ok('‼️ U-100 — and so does the planner EFFORT, on the same payload',
     created && created.input.plannerEffort === 'high');
+ok('‼️ X-225 — …and the sign-in the planner is billed to',
+    created && created.input.plannerAccount === 'personal');
+ok('‼️ X-225 — …and the one the member\'s delegations are billed to, on its own row',
+    created && created.input.team[0].account === 'work-1');
 /**
  * ‼️ X-94 — THE PROJECT IS A THREE-WAY ANSWER AND IT IS POSTED AS THREE.
  *

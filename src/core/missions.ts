@@ -183,6 +183,18 @@ export interface MissionTeamMember {
      * both the wider of the two.
      */
     permissionMode?: string;
+    /**
+     * ‼️ X-225 — WHOSE PLAN PAYS FOR THIS MEMBER'S DELEGATIONS. Empty = the
+     * mission's own, and empty there = nothing stated, so the spawn resolves
+     * the engine's standing sign-in exactly as every mission before this did.
+     *
+     * Per MEMBER for the same reason the model and the permission mode are: a
+     * mission is where several agents work at once, and "the reviewer runs on
+     * the account that still has window left" is the decision a person actually
+     * makes on a machine rotating three plans. It used to be refused on the
+     * mission's behalf — see `resolveDelegateRun` for what that cost.
+     */
+    account?: string;
 }
 
 /**
@@ -366,6 +378,33 @@ export interface MissionSpec {
      * ordinary tasks and were free the moment tasks grew an engine.
      */
     engine?: string;
+    /**
+     * ‼️ X-225 — THE SIGN-IN EVERY DELEGATION IS BILLED TO unless the member
+     * overrides it, on exactly the axis `engine` is.
+     *
+     * ABSENT MEANS TODAY'S BEHAVIOUR on every spec ever written: nothing is
+     * stated, the delegation reaches the task launch path with no account, and
+     * the engine's standing sign-in answers there. This is a restriction lifted,
+     * not a default changed — the dimension used to be declared out of scope for
+     * the whole surface while the model, the effort and the permission mode
+     * beside it were overridable twice over.
+     */
+    account?: string;
+    /**
+     * ‼️ X-225 — AND THE PLANNER'S OWN, WHICH IS A DIFFERENT QUESTION.
+     *
+     * The planner is not a delegation: it is a headless `claude` in the lead's
+     * folder, called once per round for the whole run, and it is the call that
+     * carries the mission's context from round to round. So it bills its own
+     * plan and it is stated on its own axis, beside `plannerModel` and
+     * `plannerEffort` — a long mission whose planner and whose workers share one
+     * sign-in is exactly the run that stops in the middle.
+     *
+     * ‼️ AND IT IS THE ONE THAT WAS NOT MERELY UNSTATED BUT UNREACHABLE:
+     * `missionPlannerCallOnce` spawned with no environment at all, so the
+     * planner ran as whatever the VS Code window happened to be holding.
+     */
+    plannerAccount?: string;
     limits: MissionLimits;
     approvalMode: MissionApprovalMode;
     /**

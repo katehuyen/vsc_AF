@@ -2936,7 +2936,7 @@ const { opencodeStatus, syncToOpencode } =
                 // calls it. Pointing at the wrapper would pass this test by
                 // finding nothing to complain about.
                 const create = src.slice(src.indexOf('const resolveMissionInput = '),
-                    src.indexOf('const resolveMissionInput = ') + 14000);
+                    src.indexOf('const resolveMissionInput = ') + 18000);
                 const rawAt = create.indexOf('validateMissionInput(');
                 const normAt = create.indexOf('normalizeObjective(');
                 const goalAt = create.indexOf("String(input.goal");
@@ -3001,7 +3001,7 @@ const { opencodeStatus, syncToOpencode } =
             // nobody to ask — and a refused call still exits 0 (measured), which
             // is the part a caller cannot discover for itself.
             ok('‼️ …and the permission mode a delegation spends UP FRONT',
-                /permissionMode\?\}\]/.test(misBlock)
+                /permissionMode\?, account\?\}\]/.test(misBlock)
                 && /nobody in it to ask/.test(misBlock.replace(/'\s*\+\s*'/g, ''))
                 && /exits 0/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
             ok('…and both list ops read it back, so a caller can tell a default from a value that never arrived',
@@ -3012,11 +3012,25 @@ const { opencodeStatus, syncToOpencode } =
             // happens to a field the caller leaves out, which before this was
             // "nothing, silently".
             ok('‼️ …and the effort, with the ladder that resolves what is left blank',
-                /effort\?, permissionMode\?\}\]/.test(misBlock)
+                /effort\?, permissionMode\?, account\?\}\]/.test(misBlock)
                 && /agentFarm\.agentEngineDefaults/.test(misBlock.replace(/'\s*\+\s*'/g, ''))
                 && /agentFarm\.launchDefaults/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
-            ok('…and a POOL member takes the same five, which it never could before',
+            ok('…and a POOL member takes the same six, which it never could before',
                 /findAgent\(String\(p\.agent \?\? p\.agentId \?\? ''\)\)\.id/.test(src));
+            /**
+             * ‼️ X-225 — AND THE SIXTH: WHOSE PLAN PAYS. Two axes, because they
+             * are two questions — the delegations' sign-in (overridable per
+             * member, exactly as `engine` is) and the ORCHESTRATOR's own, which
+             * is one headless claude carrying the run from round to round. The
+             * describe has to say what omitting them means, because "nothing
+             * stated" is the state every mission ever written is in.
+             */
+            ok('‼️ X-225 — …and whose plan pays, mission-wide and for the planner',
+                /account\? \(X-225 — WHOSE PLAN EVERY DELEGATION IS BILLED TO/.test(misBlock)
+                && /plannerAccount\? \(X-225/.test(misBlock)
+                && /is refused before/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
+            ok('…and the delegation actually carries the sign-in onto the task',
+                /if \(dims\.account\) \{ task\.account = dims\.account; \}/.test(src));
             ok('‼️ …and says out loud that the PLANNER stays on Claude Code, with why',
                 /THE PLANNER ALWAYS RUNS ON CLAUDE CODE/.test(misBlock)
                 && /--disallowedTools/.test(misBlock));

@@ -115,6 +115,18 @@
     const form = {
         title: '', goal: '', leadAgentId: '', workdir: '', plannerModel: '', plannerEffort: '',
         /**
+         * ‼️ X-225 — WHOSE PLAN THE ORCHESTRATOR ITSELF SPENDS.
+         *
+         * Its own field beside `plannerModel`/`plannerEffort`, because the
+         * planner is not a delegation: it is one headless claude in the lead's
+         * folder, called once a round, carrying the run from round to round. A
+         * long mission whose planner and whose workers share one sign-in is
+         * exactly the run that stops in the middle — and before this the planner
+         * spawned with no environment at all, so it ran as whatever the VS Code
+         * window happened to be holding.
+         */
+        plannerAccount: '',
+        /**
          * ‼️ X-94 — WHICH PROJECT THIS RUN IS FILED UNDER, as a CHOICE.
          *
          * There was no control here at all, and the host's contract has three
@@ -148,7 +160,13 @@
         // ‼️ …and `efforts` (M-18), the fourth. Model, engine and permissions
         // were per member and effort was not, so a reviewer that wanted `low`
         // and a planner that wanted `xhigh` had to be the same run.
-        team: {}, roles: {}, models: {}, engines: {}, perms: {}, efforts: {},
+        // ‼️ X-225 — …and `accounts`, the sixth: whose plan pays for THIS
+        // member's delegations. Per member for the same reason the model and the
+        // permission mode are — on a machine rotating three plans, "the reviewer
+        // runs on the account that still has window left" is the decision a
+        // person actually makes. It used to be refused for the whole surface on
+        // the mission's behalf (see `missionDoor`).
+        team: {}, roles: {}, models: {}, engines: {}, perms: {}, efforts: {}, accounts: {},
         maxRounds: '', maxTasks: '', maxCostUSD: '', maxMinutes: '', maxParallel: '',
         // ‼️ …and the token ceiling, which was INVISIBLE. On a subscription
         // engine no delegation ever states a dollar, so `maxCostUSD` — the limit
@@ -398,7 +416,11 @@
         agentId: a.id, role: form.roles[a.id] || '',
         model: form.models[a.id] || '', engine: form.engines[a.id] || '',
         effort: form.efforts[a.id] || '',
-        permissionMode: form.perms[a.id] || ''
+        permissionMode: form.perms[a.id] || '',
+        // ‼️ X-225 — and whose plan pays for it. Empty travels as empty and the
+        // host stores nothing, which is what leaves the standing sign-in to
+        // answer at the spawn — the behaviour of every mission before this.
+        account: form.accounts[a.id] || ''
     }));
     /**
      * ‼️ U-97 — MODEL IS A SELECT HERE, NOT FREE TEXT OVER A DATALIST.
@@ -462,21 +484,39 @@
         const eng = effEngine(agentId);
         const model = form.models[agentId] || '';
         const effort = form.efforts[agentId] || '';
+        /**
+         * ‼️ X-225 — AND AN ACCOUNT BELONGS TO ONE ENGINE, so it is one of the
+         * words a row can lose when its engine moves. A Claude slot carried onto
+         * Codex names a directory Codex never reads: the host refuses it at
+         * creation rather than billing somebody nobody chose, so leaving it in
+         * the box would be a row that cannot start and does not say why.
+         *
+         * ‼️ AND THE MACHINE'S OWN SIGN-IN BELONGS TO NO ENGINE (X-223), so it
+         * survives every engine change — clearing it would silently turn "run as
+         * the machine itself" into "run as whatever is standing".
+         */
+        const account = form.accounts[agentId] || '';
+        const acctKept = !account || account === '@machine'
+            || ((DATA.accounts || {})[eng || 'claude'] || []).some(a => a && a.id === account);
         const cat = (window.AFEngine.models(launchView(), eng) || []).filter(m => m.id);
         if (cat.length) {
             const fixed = window.AFEngine.narrow(launchView(), eng, model, effort);
             return {
                 agentId, engine: eng,
                 model: fixed.model, effort: fixed.effort,
+                account: acctKept ? account : '',
                 lostModel: model && fixed.model !== model ? model : '',
-                lostEffort: effort && fixed.effort !== effort ? effort : ''
+                lostEffort: effort && fixed.effort !== effort ? effort : '',
+                lostAccount: acctKept ? '' : account
             };
         }
         const rows = window.AFEngine.efforts(launchView(), eng, model) || [];
         const keeps = rows.some(e => e.id === effort);
         return {
             agentId, engine: eng, model, effort: keeps ? effort : '',
-            lostModel: '', lostEffort: keeps ? '' : effort
+            account: acctKept ? account : '',
+            lostModel: '', lostEffort: keeps ? '' : effort,
+            lostAccount: acctKept ? '' : account
         };
     };
     /** Write one plan onto the row, and leave the reason where the row is. */
@@ -484,10 +524,12 @@
         const engLabel = ((DATA.engines || []).find(e => e.id === plan.engine) || {}).label || plan.engine;
         const lost = [
             plan.lostModel ? `model ${plan.lostModel}` : '',
-            plan.lostEffort ? `effort ${plan.lostEffort}` : ''
+            plan.lostEffort ? `effort ${plan.lostEffort}` : '',
+            plan.lostAccount ? `account ${plan.lostAccount}` : ''
         ].filter(Boolean);
         form.models[plan.agentId] = plan.model;
         form.efforts[plan.agentId] = plan.effort;
+        form.accounts[plan.agentId] = plan.account;
         if (lost.length) { narrowNote[plan.agentId] = `${lost.join(' and ')} cleared — ${engLabel} does not offer it`; }
     };
     /** Every row whose explicit words no longer fit its engine — collected for
@@ -496,7 +538,7 @@
         narrowAsk = (DATA.agents || [])
             .filter(a => included(a.id))
             .map(a => narrowPlan(a.id))
-            .filter(p => p.lostModel || p.lostEffort);
+            .filter(p => p.lostModel || p.lostEffort || p.lostAccount);
     };
     /**
      * Read the bulk profile's four boxes back out of the DOM.
@@ -776,6 +818,54 @@
                 + ' ends "successfully", so a delegate that did nothing looks like one that worked.'
                 + ' Set plan for a reviewer that must not write.';
         };
+        /**
+         * ‼️ X-225 — THE SIGN-INS THIS MACHINE HOLDS FOR THAT ENGINE.
+         *
+         * From the host's one matrix (`engineAccountMatrix`), the same one the
+         * Tasks form and the Console read, so the rows, the health marks and the
+         * standing-choice dot cannot say three different things on three pages.
+         * EMPTY IS THE ORDINARY ANSWER — four of the five engines cannot isolate
+         * a sign-in and a machine that has captured none has nothing to choose
+         * between — and an empty list draws no box, which is the rule a control
+         * with no referent falls under.
+         */
+        const accountRowsFor = (engine) =>
+            ((DATA.accounts || {})[engine || 'claude'] || []).filter(a => a && a.id);
+        const MACHINE_ACCOUNT = '@machine';
+        const accountOpts = (engine, sel) => {
+            const rows = accountRowsFor(engine);
+            if (!rows.length) { return ''; }
+            return [C.option('', '— the standing choice —', {
+                selected: !sel,
+                detail: 'The ACTIVE account of this engine answers when the delegation spawns — the one the'
+                    + ' Engines page points at — and failing that the main sign-in. That is what every mission'
+                    + ' written before this took, and it is not a decision recorded on the run.'
+            }), C.option(MACHINE_ACCOUNT, '💻 Machine Global', {
+                selected: sel === MACHINE_ACCOUNT,
+                detail: 'The identity this machine itself is signed in as — nothing is injected. Unlike the'
+                    + ' empty row above this is PINNED: it stays here whatever the Engines page is pointing at'
+                    + ' when the round fires, hours after anybody looked at this window.'
+            })].concat(rows.map(a => C.option(a.id,
+                (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''), {
+                selected: a.id === sel,
+                detail: [
+                    a.active ? 'The standing choice for this engine right now.' : '',
+                    a.health === 'ready' ? '' : 'This slot needs signing in again before it can pay for a run.'
+                ].filter(Boolean).join('\n\n')
+            }))).join('');
+        };
+        // MIRROR: the box is narrow, so its tooltip opens with what it is set to
+        // right now and then says what the field is.
+        const accountTitle = (engine, sel) => {
+            const row = accountRowsFor(engine).find(a => a.id === sel);
+            return (sel === MACHINE_ACCOUNT ? 'Machine Global'
+                : (row ? row.label : 'the standing choice'))
+                + '\n\nWhose plan pays for this member\u2019s delegations. A mission runs for HOURS and its'
+                + ' rounds fire with nobody in front of them, so "three members on one sign-in" is how a run'
+                + ' hits the plan wall in the middle of round nine. Empty is not "no account": the standing'
+                + ' choice of that engine answers at the spawn, exactly as it always has. A dot marks the'
+                + ' standing choice; a warning sign marks a slot that needs signing in again.';
+        };
         // ‼️ M-18 — the effort vocabulary, from the host's one list too. Same
         // rule as the permissions above: never a copy typed in here, or the two
         // surfaces start offering different words for the same setting.
@@ -880,6 +970,13 @@
                 <select id="pm-${i}" class="mdl${ovr(form.perms[a.id])}" data-perm="${C.esc(a.id)}"
                     title="${C.esc(mirror(pv, 'permissionMode', permTitle(form.perms[a.id] || '')))}"
                     ${inRow ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
+                ${/* ‼️ X-225 — and whose plan pays for it. Drawn only where this
+                     machine holds a sign-in for that engine: a box with no
+                     referent is what docs/CONVENTIONS.md forbids, and four of
+                     the five engines cannot isolate one at all. */''}
+                ${accountRowsFor(eng).length ? `<select id="ac-${i}" class="mdl${ovr(form.accounts[a.id])}" data-account="${C.esc(a.id)}"
+                    title="${C.esc(mirror(pv, 'account', accountTitle(eng, form.accounts[a.id] || '')))}"
+                    ${inRow ? '' : 'disabled'}>${accountOpts(eng, form.accounts[a.id] || '')}</select>` : ''}
                 ${narrowNote[a.id] ? `<span class="narrownote" title="This row's own words were cleared because the engine it is on does not offer them — said here rather than left as a value that quietly vanished.">${C.esc(narrowNote[a.id])}</span>` : ''}
             </div>`;
         }).join('');
@@ -1006,6 +1103,22 @@
                         + ' which is what every mission written before this does.'))}"
                         >${effortOpts(form.plannerEffort, effortRowsFor('claude', form.plannerModel || ''),
                             '— ' + plannerValue('effort', 'CLI chooses') + ' —')}</select></label>
+                ${/* ‼️ X-225 — AND WHOSE PLAN THE ORCHESTRATOR SPENDS. Beside the
+                     model and the effort because it is the same kind of answer
+                     about the same call, and it is the one that decides whether
+                     a long mission reaches its last round at all: the planner is
+                     called once per ROUND for the life of the run. Claude Code,
+                     always — see the fixed Planner engine field above. */''}
+                ${accountRowsFor('claude').length ? `<label>Account override
+                    <select id="f-planner-account" title="${C.esc(
+                        'Whose plan the LEAD\u2019s planning calls are billed to; a delegate keeps its own row\u2019s.'
+                        + ' The planner is always Claude Code, so these are Claude sign-ins.'
+                        + '\n\nIt is called once per ROUND for the life of the mission and it is what carries the'
+                        + ' lead\u2019s context from one round to the next, so a mission that runs for hours on the'
+                        + ' same plan as its workers is the one that stops in the middle.'
+                        + '\n\nLeft empty the standing choice of this engine answers when each round fires — which'
+                        + ' is what every mission written before this did.')}"
+                        >${accountOpts('claude', form.plannerAccount)}</select></label>` : ''}
             </div>
             <div class="frow"><span class="muted small">${!adaptive
                 ? 'Its CLAUDE.md is the orchestration identity — a planning-minded agent leads best.'
@@ -1284,6 +1397,10 @@
         form.projectId = val('f-project', form.projectId);
         form.plannerModel = val('f-planner', form.plannerModel);
         form.plannerEffort = val('f-planner-effort', form.plannerEffort);
+        // ‼️ X-225 — guarded like every other read: the box is not drawn on a
+        // machine with no Claude sign-in captured, and an unguarded read would
+        // wipe a choice the moment a slot was forgotten.
+        form.plannerAccount = val('f-planner-account', form.plannerAccount);
         DATA.agents.forEach((a, i) => {
             const cb = document.getElementById('tm-' + i);
             if (!cb) { return; }
@@ -1298,6 +1415,7 @@
             }
             form.roles[a.id] = val('rl-' + i, form.roles[a.id]);
             form.models[a.id] = val('md-' + i, form.models[a.id]);
+            form.accounts[a.id] = val('ac-' + i, form.accounts[a.id]);
             form.engines[a.id] = val('en-' + i, form.engines[a.id]);
             form.perms[a.id] = val('pm-' + i, form.perms[a.id]);
             form.efforts[a.id] = val('ef-' + i, form.efforts[a.id]);
@@ -1341,6 +1459,12 @@
             title: form.title, goal: form.goal, leadAgentId: form.leadAgentId,
             workdir: form.workdir, plannerModel: form.plannerModel,
             plannerEffort: form.plannerEffort,
+            // ‼️ X-225 — the orchestrator's own sign-in. Its own key beside the
+            // planner's model and effort, and NOT a mission-wide fallback: U-101
+            // took that shape out of this form because a level the rows cannot
+            // see is a form disagreeing with itself. `MissionSpec.account` stays
+            // for the bridge and for child inheritance, exactly as `engine` does.
+            plannerAccount: form.plannerAccount,
             /**
              * ‼️ U-101 — NO `engine` HERE. The composer used to carry a
              * `Delegation engine` box that looked like a bulk switch over the

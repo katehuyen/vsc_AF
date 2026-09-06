@@ -813,6 +813,16 @@ const data = (over) => Object.assign({
     engineModels: ENGINE_MODELS,
     permissions: PERMISSIONS,
     efforts: EFFORTS,
+    // ‼️ X-225 — the sign-ins this machine holds, per engine, in the shape the
+    // host's one matrix publishes. Only Claude has any: an engine with nothing
+    // captured draws no box, and the picture has to show a row where the
+    // sixth control is there beside one where it is not.
+    accounts: {
+        claude: [
+            { id: 'work-1', label: 'work@studio', health: 'ready', active: true },
+            { id: 'personal', label: 'personal@gmail', health: 'stale', active: false }
+        ]
+    },
     /** The host's own FAILURE_KINDS (M-18) — the page must never carry a copy,
      *  or the reader and the lead get told different things about one failure. */
     failureKinds: {
@@ -884,6 +894,26 @@ module.exports = {
     script: 'missions.js',
     data,
     variants: () => [
+        {
+            /**
+             * ‼️ X-225 — THE NEW-MISSION FORM WITH ITS SIXTH CONTROL.
+             *
+             * A member row now carries engine · model · effort · permissions ·
+             * account, and the orchestrator block carries model · effort ·
+             * account. Both are the kind of change every string test passes on
+             * and an eye does not: whether the row still reads as one row when
+             * it wraps, and whether the two blocks still look like two
+             * questions rather than one long shelf of pickers.
+             */
+            id: 'mission-accounts', label: 'Missions — the new-mission form, with whose plan pays (X-225)',
+            data: data({}),
+            act: (r) => {
+                const d = r.sandbox.document;
+                fire(d.getElementById('newmission'), 'click');
+                const tick = d.getElementById('tm-1');
+                if (tick) { tick.checked = true; fire(tick, 'change'); }
+            }
+        },
         {
             // ‼️ X-177 — the block with NOTHING set up. It has to explain what a
             // campaign is before anybody presses a button, and it is the state

@@ -72,6 +72,10 @@ export interface MissionPoolMember {
      *  member could not state. See `resolveDelegateRun`. */
     effort?: string;
     permissionMode?: string;
+    /** ‼️ X-225 — and whose plan pays for its delegations. Empty = the mission's
+     *  own, and empty there = nothing stated, which is what the spawn resolves.
+     *  See `resolveDelegateRun`. */
+    account?: string;
 }
 
 /**
@@ -170,7 +174,7 @@ export function normalizePool(raw: unknown): MissionPoolMember[] {
         if (!agentId || seen.has(agentId)) { continue; }
         seen.add(agentId);
         const m: MissionPoolMember = { agentId, agentName };
-        for (const k of ['role', 'model', 'engine', 'effort', 'permissionMode'] as const) {
+        for (const k of ['role', 'model', 'engine', 'effort', 'permissionMode', 'account'] as const) {
             const v = String(o[k] ?? '').trim();
             if (v) { m[k] = v; }
         }
@@ -560,14 +564,29 @@ export interface DelegateRun {
     effort?: string;
     permissionMode?: string;
     workDir?: string;
+    /**
+     * ‼️ X-225 — WHOSE PLAN PAYS FOR THIS DELEGATION.
+     *
+     * Absent means nothing was stated, and that is the state every mission
+     * written before this is in: the run reaches the task launch path with no
+     * account and the engine's standing sign-in answers there, exactly as it
+     * always has. Naming one here is a RESTRICTION LIFTED — `missionDoor` used
+     * to declare the dimension out of scope on the mission's behalf, while the
+     * model, the effort and the permission mode beside it were overridable both
+     * mission-wide and per member.
+     */
+    account?: string;
     /** Which layer decided each field — for the day somebody asks why a
      *  delegate ran on a model nobody typed into this mission. */
-    origin: Record<'engine' | 'model' | 'effort' | 'permissionMode', DelegateOrigin>;
+    origin: Record<'engine' | 'model' | 'effort' | 'permissionMode' | 'account', DelegateOrigin>;
 }
 
 export function resolveDelegateRun(
-    member: { model?: string; engine?: string; effort?: string; permissionMode?: string } | undefined,
-    spec: { engine?: string; workdir?: string } | undefined,
+    member: {
+        model?: string; engine?: string; effort?: string;
+        permissionMode?: string; account?: string;
+    } | undefined,
+    spec: { engine?: string; workdir?: string; account?: string } | undefined,
     layers: DelegateRunLayers = {}
 ): DelegateRun {
     const t = (v: unknown) => String(v ?? '').trim();
@@ -600,14 +619,35 @@ export function resolveDelegateRun(
     // the fleet default is the honest reading — inventing a third layer here
     // would be a setting with nowhere to be typed.
     const perm = pick(t(member?.permissionMode), '', t(launch.permissionMode));
+    /**
+     * ‼️ X-225 — AND THE SIGN-IN, ON TWO RUNGS RATHER THAN FOUR.
+     *
+     * A member overrides the mission, and under that there is NOTHING. There is
+     * no per-agent and no fleet rung for an account on purpose: `activeAccounts`
+     * is not a default to fall through to here, it is what the SPAWN resolves
+     * when nothing was stated (`accountStore.resolveAccount`, one place). A
+     * third rung would answer the same question twice and the two answers would
+     * disagree the first time somebody moved the standing choice mid-mission.
+     *
+     * ‼️ WHICH IS ALSO WHY THE FLOOR IS ABSENCE AND NOT `@machine`. Absent
+     * leaves the run exactly as every mission before this ran it; `@machine` is
+     * a stated answer that CLEARS the engine's config variable, and inventing it
+     * here would change the default for every existing mission silently.
+     */
+    const account: { value: string; origin: DelegateOrigin } =
+        t(member?.account) ? { value: t(member?.account), origin: 'member' }
+            : t(spec?.account) ? { value: t(spec?.account), origin: 'mission' }
+                : { value: '', origin: 'cli' };
 
     const out: DelegateRun = {
         engine,
         origin: {
             engine: engineOrigin, model: model.origin,
-            effort: effort.origin, permissionMode: perm.origin
+            effort: effort.origin, permissionMode: perm.origin,
+            account: account.origin
         }
     };
+    if (account.value) { out.account = account.value; }
     if (model.value) { out.model = model.value; }
     if (effort.value) { out.effort = effort.value; }
     if (perm.value) { out.permissionMode = perm.value; }
@@ -629,5 +669,9 @@ export function describeDelegateRun(r: DelegateRun): string {
     say('model', r.model, r.origin.model);
     say('effort', r.effort, r.origin.effort);
     say('permissions', r.permissionMode, r.origin.permissionMode);
+    // ‼️ X-225 — and whose plan is paying for it. On the line for the same
+    // reason the model is: "why did that delegate bill the work account?" is a
+    // question the run has to be able to answer without a settings file.
+    say('account', r.account, r.origin.account);
     return parts.join(' · ');
 }

@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.404.0 - X-225: the mission that was not allowed to say whose plan it spends (2026-09-06)
+
+`missionDoor` declared the account **exempt**, with the reason written on the
+door: *"a mission runs for HOURS across rounds and its delegates spawn one at a
+time. An account frozen into the mission would pin round nine to a plan that
+round two exhausted."* The risk is real. Refusing the dimension is not an answer
+to it — it is the decision taken away from the person who owns the plans, on the
+one surface that runs longest, while the model, the effort and the permission
+mode beside it were overridable both mission-wide and per member all along.
+
+‼️ And the exemption bought nothing it promised. It ended *"each delegate run
+resolves the account at its own spawn, from the one place that holds it."*
+Measured: the delegate was queued as a task with **no account on it at all**, and
+`missionPlannerCallOnce` — the call that carries a mission from round to round —
+spawned with **no `env` whatsoever**, so the planner ran as whatever the VS Code
+window happened to be holding. Neither half of that sentence described any code.
+
+Two axes now, because they are two questions:
+
+* **`account`** — whose plan every delegation is billed to, on exactly the axis
+  `engine` is; a member overrides it with its own. The ladder is member →
+  mission → **nothing**, and the floor is deliberate: there is no per-agent and
+  no fleet rung, because `activeAccounts` is not a default to fall through to,
+  it is what the spawn resolves when nothing was stated. Nothing stated leaves
+  every mission behaving exactly as it did.
+* **`plannerAccount`** — whose plan the orchestrator itself spends. One headless
+  `claude` in the lead's folder, called once per round for the life of the run.
+  A long mission whose planner and whose workers share one sign-in is precisely
+  the run that stops in the middle.
+
+Refused, not narrowed, at creation: an id this machine does not hold, or one
+belonging to another engine, is answered before a planner turn is spent — and a
+member's is judged against the engine that member will really land on, not
+against `claude`. On the form, a row whose engine moves loses an account that
+engine cannot take, said out loud in the row's own note, exactly as its model and
+effort already were.
+
+The form gained an **Account override** in the Orchestrator block and a sixth box
+on every member row. ‼️ There is **no mission-wide box**, and that is U-101's
+rule rather than an omission: a mission-level fallback the rows cannot see is a
+form disagreeing with itself. `MissionSpec.account` stays for the bridge, for
+specs already on disk and for child inheritance — as `MissionSpec.engine` does.
+
 ## 3.403.0 - X-228: the step card that could not say what runs it (2026-09-06)
 
 A workflow step card asked six questions — what the step IS, its title, its

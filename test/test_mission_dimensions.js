@@ -160,6 +160,49 @@ const R = M.resolveDelegateRun;
     eq('and it is not attributed to the agent', r.origin.permissionMode, 'fleet');
 }
 
+// ==================== 8b. ‼️ X-225 — AND WHOSE PLAN PAYS FOR THE DELEGATION
+//
+// The previous answer was an EXEMPTION: `missionDoor` declared the account
+// out of scope on the grounds that "a mission runs for hours, so an account
+// frozen into it would pin round nine to a plan round two exhausted". That
+// reasoning describes a real risk and answers it by taking the decision away
+// from the user — while `model`, `effort` and `permissionMode` are overridable
+// both mission-wide and per member on the very same ladder. And the exemption
+// did not even buy what it promised: the planner spawned with no environment at
+// all and the delegates were queued with no account, so "each delegate resolves
+// its own at spawn" was a sentence with no code behind it.
+//
+// ‼️ AND IT IS A RESTRICTION LIFTED, NOT A DEFAULT CHANGED. With nothing stated
+// the ladder resolves to NOTHING, so the run reaches the task launch path
+// exactly as it did before and the engine's standing account answers there.
+{
+    console.log('\n-- ‼️ X-225 — whose plan pays for a delegation: member → mission → nothing');
+    const bare = R({}, {}, { launch: { engine: 'codex' } });
+    ok('nothing stated anywhere writes no account at all — today\'s behaviour, untouched',
+        bare.account === undefined);
+    eq('…and it says so rather than claiming somebody chose', bare.origin.account, 'cli');
+    const fromMission = R({}, { account: 'work-1' }, {});
+    eq('a mission-wide sign-in reaches a member that states none',
+        fromMission.account, 'work-1');
+    eq('…attributed to the mission', fromMission.origin.account, 'mission');
+    const fromMember = R({ account: 'personal' }, { account: 'work-1' }, {});
+    eq('and the member overrides it, exactly as its model does',
+        fromMember.account, 'personal');
+    eq('…attributed to the member', fromMember.origin.account, 'member');
+    // ‼️ There is no per-agent and no fleet layer for a sign-in: `activeAccounts`
+    // is not a default to fall through to, it is what the SPAWN resolves when
+    // nothing was stated. A third rung here would answer the question twice.
+    ok('whitespace is not a sign-in',
+        R({ account: '   ' }, { account: ' ' }, {}).account === undefined);
+    // ‼️ X-223 — `@machine` is a STATED answer, not a blank: it clears the
+    // engine's config variable rather than leaving it as it was.
+    eq('the machine\'s own sign-in is an answer a member may give',
+        R({ account: '@machine' }, {}, {}).account, '@machine');
+    ok('…and the trace line says who is paying',
+        /account personal/.test(M.describeDelegateRun(fromMember))
+        && /account work-1 \(mission\)/.test(M.describeDelegateRun(fromMission)));
+}
+
 // ================================================ 9. the pool takes the five too
 {
     console.log('\n-- a POOL member carries the same five dimensions a team member does');
@@ -180,6 +223,13 @@ const R = M.resolveDelegateRun;
     eq('with its permission mode', cast[0].permissionMode, 'plan');
     eq('a blank field is dropped rather than stored as ""',
         M.normalizePool([{ agentId: 'a', agentName: 'A', effort: '  ' }])[0].effort, undefined);
+    // ‼️ X-225 — and the SIXTH, which is the one that decides whether the run
+    // finishes at all on a machine rotating three plans.
+    eq('a pool member states whose plan pays for it too',
+        M.normalizePool([{ agentId: 'a', agentName: 'A', account: 'personal' }])[0].account,
+        'personal');
+    eq('…and a blank one is dropped like every other field',
+        M.normalizePool([{ agentId: 'a', agentName: 'A', account: '  ' }])[0].account, undefined);
 }
 
 // ====================================== 10. the runtime role records the four
@@ -248,6 +298,74 @@ const R = M.resolveDelegateRun;
         + 'that model?" without a settings file nobody remembers',
         /const dimNote = describeDelegateRun\(dims\);/.test(ext)
         && /s\.runNote/.test(media));
+
+    /**
+     * ‼️ X-225 — AND THE TWO SPAWNS THE EXEMPTION LEFT UNWIRED.
+     *
+     * The old exemption promised that "each delegate run resolves the account at
+     * its own spawn". Measured: the delegate was queued as a task with no
+     * account on it at all, and the PLANNER — the call that carries the mission
+     * from round to round — was spawned with no `env` whatsoever, so it ran as
+     * whatever the VS Code window happened to be holding. Neither half of the
+     * promise existed. Both are wired here, through the same environment layer
+     * every other spawn in this codebase uses.
+     */
+    ok('‼️ X-225 — the delegation is queued with the sign-in the ladder resolved',
+        /if \(dims\.account\) \{ task\.account = dims\.account; \}/.test(ext));
+    ok('‼️ X-225 — …and the PLANNER call spawns with an environment, which it had none of',
+        /env: spawnEnvironment\(\s*process\.env,\s*\[launchAccountEnv\(\{ engine: 'claude', account: spec\.plannerAccount \}\)\]/
+            .test(ext));
+    ok('…through the ONE layer, so "the machine\'s own sign-in" can still CLEAR the '
+        + 'variable a window was started with',
+        /launchAccountEnv/.test(ext) && /spawnEnvironment/.test(ext));
+    /**
+     * ‼️ AND A SIGN-IN THAT NAMES NOTHING IS REFUSED BEFORE THE MISSION EXISTS.
+     *
+     * The same doctrine every other launch surface follows
+     * (`accountStore.accountRefusal`, read once through `launchAccountRefusal`):
+     * falling back to the main account for a slot somebody forgot would bill an
+     * identity nobody chose — and on a mission it would do it for hours. Refused
+     * at creation, where one disk read knows the answer, rather than at the
+     * third round's spawn.
+     */
+    ok('‼️ X-225 — a mission refuses a sign-in that names nothing, at creation',
+        /launchAccountRefusal\(\{ engine: 'claude', account: plannerAccount \}\)/.test(ext)
+        && /launchAccountRefusal\(\{ engine: missionEngine, account: missionAccount \}\)/.test(ext));
+    ok('…and it judges a MEMBER\'s against the engine that member will really land on',
+        /m\.engine \|\| missionEngine/.test(ext));
+    /**
+     * ‼️ X-225 — AND IT IS SAYABLE FROM THE FORM, on the two axes it exists on.
+     *
+     * ‼️ AND THERE IS NO MISSION-WIDE BOX, WHICH IS U-101'S RULE AND NOT AN
+     * OMISSION. The composer used to carry a `Delegation engine` box that looked
+     * like a bulk switch over the rows and was not one — it wrote a mission-level
+     * FALLBACK that never touched a row override — so the form disagreed with
+     * itself and one preference could be stated in two places at once. The rows
+     * are the single source of truth; `MissionSpec.account` stays for the bridge,
+     * for specs already on disk and for child inheritance, exactly as
+     * `MissionSpec.engine` does.
+     */
+    ok('‼️ X-225 — the orchestrator block asks whose plan the PLANNER spends',
+        /id="f-planner-account"/.test(media));
+    ok('…and every member row asks the same of its own delegations',
+        /id="ac-\$\{i\}"/.test(media) && /data-account=/.test(media));
+    ok('…drawn only where this machine has a sign-in for that engine to offer',
+        /accountRowsFor/.test(media));
+    ok('…and both reach the host in the draft it sends',
+        /plannerAccount: form\.plannerAccount/.test(media)
+        && /account: form\.accounts\[/.test(media));
+    ok('…and are read back off the form like every other row control',
+        /form\.accounts\[a\.id\] = val\('ac-' \+ i, form\.accounts\[a\.id\]\)/.test(media)
+        && /form\.plannerAccount = val\('f-planner-account', form\.plannerAccount\)/.test(media));
+    ok('‼️ …and the form still writes NO mission-wide fallback, which is U-101',
+        !/id="f-account"/.test(media));
+
+    // ‼️ …and the run says whose plan its planner is on, beside the model and the
+    // effort it already declared. "Why did this mission bill that plan?" is a
+    // question about a run that started last week; it has to be answerable off
+    // the run, not off this morning's settings.
+    ok('…and the run\'s planner block reports the sign-in it was started on',
+        /account: sp\?\.plannerAccount \?\? null/.test(ext));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

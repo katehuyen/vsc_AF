@@ -186,7 +186,7 @@ import {
     rememberManifest
 } from './core/launchManifest';
 import { describeDrift, runDrift, turnRuntimes } from './core/turnRuntime';
-import { terminalEnvOverlay } from './core/providerRuntime';
+import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
     StoredProviderProfile
@@ -5104,10 +5104,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (!settled) { settled = true; resolve(r); }
                 };
                 try {
+                    /**
+                     * ‼️ X-225 — AND THE PLANNER RUNS AS SOMEBODY, WHICH IT
+                     * NEVER DID.
+                     *
+                     * This spawn passed no `env` at all, so the call that
+                     * carries a mission from round to round — the longest-lived
+                     * and most expensive thing a mission does — inherited
+                     * whatever config variable the VS Code window happened to be
+                     * holding. The old exemption on `missionDoor` claimed each
+                     * run "resolves the account at its own spawn"; this is the
+                     * spawn, and it resolved nothing.
+                     *
+                     * ‼️ THROUGH THE ONE LAYER, never a second injection path:
+                     * `spawnEnvironment` is where `null` means REMOVE, which is
+                     * the only way "the machine's own sign-in" can clear a
+                     * variable the window was started with (X-211). Nothing
+                     * stated adds no name and changes nothing.
+                     */
                     const child = cp.spawn(command, {
                         cwd: lead?.dir ?? os.homedir(),
                         shell: true, windowsHide: true,
-                        stdio: ['pipe', 'pipe', 'pipe']
+                        stdio: ['pipe', 'pipe', 'pipe'],
+                        env: spawnEnvironment(
+                            process.env,
+                            [launchAccountEnv({ engine: 'claude', account: spec.plannerAccount })],
+                            undefined)
                     });
                     let out = '', err = '';
                     const timer = setTimeout(() => {
@@ -5375,6 +5397,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (dims.engine && dims.engine !== 'claude') { task.engine = dims.engine; }
                     if (dims.effort) { task.effort = dims.effort; }
                     if (dims.permissionMode) { task.permissionMode = dims.permissionMode; }
+                    // ‼️ X-225 — AND WHOSE PLAN PAYS FOR IT. Written only where
+                    // the ladder resolved one: a task with no account reaches
+                    // its own launch path unstated and the engine's standing
+                    // sign-in answers there, which is what every mission before
+                    // this did. The rest is free, because a delegation IS a
+                    // task — the account layer, the `@machine` clearing and the
+                    // refusal for an engine that cannot isolate one all already
+                    // live on the task's own spawn.
+                    if (dims.account) { task.account = dims.account; }
                     if (dims.workDir) { task.workDir = dims.workDir; }
                     // What it ended up with AND WHO SAID SO, on the step the
                     // lead and the reader both look at. Without this the answer
@@ -6227,7 +6258,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const poolRaw = Array.isArray(input.pool)
             ? input.pool as {
                 agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown;
-                effort?: unknown; permissionMode?: unknown;
+                effort?: unknown; permissionMode?: unknown; account?: unknown;
             }[]
             : [];
         const poolIn = poolRaw
@@ -6269,13 +6300,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     return `${who}: ${bad}`;
                 }
                 const role = String(raw.role ?? '').trim();
+                // ‼️ X-225 — a pool member states whose plan pays for it, exactly
+                // as a team member does. Checked below with the team's, once the
+                // mission engine it may inherit is known.
+                const acct = String(raw.account ?? '').trim();
                 pool[at] = {
                     ...pool[at],
                     ...(role ? { role } : {}),
                     ...(model ? { model } : {}),
                     ...(eng in ENGINES ? { engine: eng } : {}),
                     ...(eff ? { effort: eff } : {}),
-                    ...(perm ? { permissionMode: perm } : {})
+                    ...(perm ? { permissionMode: perm } : {}),
+                    ...(acct ? { account: acct } : {})
                 };
             }
             pool = normalizePool(pool);
@@ -6299,7 +6335,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const teamIn = Array.isArray(input.team)
             ? input.team as {
                 agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown;
-                effort?: unknown; permissionMode?: unknown;
+                effort?: unknown; permissionMode?: unknown; account?: unknown;
             }[]
             : [];
         const team: MissionSpec['team'] = [];
@@ -6338,7 +6374,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     model: model || undefined,
                     engine: memberEngine in ENGINES ? memberEngine : undefined,
                     effort: memberEffort || undefined,
-                    permissionMode: memberPerm || undefined
+                    permissionMode: memberPerm || undefined,
+                    // ‼️ X-225 — and whose plan pays for this member's work. It
+                    // is CHECKED below rather than here, because the engine it
+                    // has to be checked against is the mission's where the
+                    // member states none, and that is read further down.
+                    account: String(t.account ?? '').trim() || undefined
                 });
             }
         }
@@ -6355,6 +6396,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // has no such flag" case to answer here.
         const plannerEffort = String(input.plannerEffort ?? '').trim();
         for (const bad of validateLaunch({ effort: plannerEffort })) { return `Planner: ${bad}`; }
+        /**
+         * ‼️ X-225 — WHOSE PLAN THE ORCHESTRATOR ITSELF SPENDS.
+         *
+         * Its own axis, beside the planner's model and effort, because the
+         * planner is not a delegation: it is one headless `claude` in the lead's
+         * folder, called once per round for the whole run, and it is what
+         * carries the mission's context from round to round. A long mission
+         * whose planner and whose workers share one sign-in is exactly the run
+         * that stops in the middle.
+         *
+         * Always Claude Code — see `MissionSpec.engine` for why the planner is
+         * not on the engine axis — so the refusal is asked of `claude`.
+         */
+        const plannerAccount = String(input.plannerAccount ?? '').trim();
+        const plannerAccountBad = launchAccountRefusal({ engine: 'claude', account: plannerAccount });
+        if (plannerAccountBad) { return `Planner: ${plannerAccountBad}`; }
         // The mission-wide engine for its DELEGATIONS. Refused here, before the
         // mission exists, if this machine cannot run it: a mission that plans
         // three rounds and then fails every delegation has spent planner turns
@@ -6363,6 +6420,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (missionEngine && missionEngine !== 'claude') {
             const refused = engineRefusal(engineMatrix(), missionEngine);
             if (refused) { return refused; }
+        }
+        /**
+         * ‼️ X-225 — THE SIGN-IN EVERY DELEGATION IS BILLED TO unless the member
+         * overrides it, on exactly the axis the mission engine is — and refused
+         * HERE, before the mission exists, for the same reason the engine is: a
+         * mission that plans three rounds and then fails every delegation has
+         * spent planner turns to discover what one disk read knew.
+         *
+         * ‼️ A MEMBER'S IS JUDGED AGAINST THE ENGINE IT WILL REALLY LAND ON. An
+         * account belongs to one engine, and a member that states none runs on
+         * the mission's — so checking every member against `claude` would pass
+         * a Claude slot onto a Codex member and refuse a Codex slot that is
+         * right. Nothing stated is not a mistake and is not checked.
+         */
+        const missionAccount = String(input.account ?? '').trim();
+        const missionAccountBad = launchAccountRefusal({ engine: missionEngine, account: missionAccount });
+        if (missionAccountBad) { return missionAccountBad; }
+        for (const m of [...team, ...pool]) {
+            const bad = launchAccountRefusal({ engine: m.engine || missionEngine, account: m.account });
+            if (bad) { return `${m.agentName}: ${bad}`; }
         }
         const workdir = String(input.workdir ?? '').trim();
         if (workdir && !fs.existsSync(workdir)) { return `Workdir does not exist: ${workdir}`; }
@@ -6423,6 +6500,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 workdir: workdir || undefined,
                 plannerModel: plannerModel || undefined,
                 plannerEffort: plannerEffort || undefined,
+                // ‼️ X-225 — the delegation-wide sign-in and the planner's own.
+                // Absent means nothing stated, which is what every mission
+                // written before this said and still behaves as.
+                account: missionAccount || undefined,
+                plannerAccount: plannerAccount || undefined,
                 projectId,
                 // The mission-wide engine for DELEGATIONS; a member may override
                 // it. The planner stays on Claude Code by design — see
@@ -7858,7 +7940,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'missions.start',
             describe: 'Start a mission. args: goal, lead (name|id), team ([{agent, role?, model?, engine?, '
-                + 'effort?, permissionMode?}] — ‼️ M-18: a member states as much or as little as it likes and '
+                + 'effort?, permissionMode?, account?}] — ‼️ M-18: a member states as much or as little as it likes and '
                 + 'the REST IS RESOLVED THE WAY A LAUNCH RESOLVES IT: member → the mission\'s `engine`/`workdir` '
                 + '→ this agent\'s own default for the engine it lands on (agentFarm.agentEngineDefaults) → the '
                 + 'fleet (agentFarm.launchDefaults) → the CLI. Before this a delegate read three fields off the '
@@ -7887,6 +7969,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'mission\'s control flow parses `claude -p --output-format json` and spends --disallowedTools '
                 + 'and --max-turns, none of which the other engine has. An engine that cannot run here is '
                 + 'refused before the mission is created), '
+                + '‼️ account? (X-225 — WHOSE PLAN EVERY DELEGATION IS BILLED TO, on the same axis as '
+                + '`engine`; a member overrides it with its own `account`. Omit it and NOTHING is stated: '
+                + 'the delegation reaches the task launch path unstated and the engine\'s standing sign-in '
+                + 'answers there, which is what every mission written before this did. "@machine" is a '
+                + 'STATED answer and clears the engine\'s config variable rather than leaving it. An id '
+                + 'nothing on this machine holds, or one belonging to another engine, is refused before '
+                + 'the mission exists rather than at the third round\'s spawn), '
+                + '‼️ plannerAccount? (X-225 — and whose plan the ORCHESTRATOR itself spends, which is a '
+                + 'different question: the planner is one headless claude in the lead\'s folder, called '
+                + 'once per round, carrying the mission from round to round. A long mission whose planner '
+                + 'and whose workers share one sign-in is exactly the run that stops in the middle. Before '
+                + 'this the planner spawned with NO environment at all and ran as whatever the VS Code '
+                + 'window happened to hold), '
                 + 'approvalMode? (each-round|auto), maxRounds?, maxTasks?, maxCostUSD?, '
                 + '(‼️ EVERY LIMIT IS YOURS TO SET: nothing is clamped from above, and 0 on ANY '
                 + 'of maxRounds/maxTasks/maxCostUSD/maxTokens/maxMinutes/maxParallel means UNLIMITED on '
@@ -7913,7 +8008,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'OUTCOME rather than a recipe: successCriteria ([{id?, text, required?}] — required, and '
                 + 'each id is stable for the life of the mission because evaluations refer to it), '
                 + 'constraints? ([string] — what the run may NOT do), pool? ([{agent, role?, model?, engine?, '
-                + 'effort?, permissionMode?}] — whom the lead may draw on, on the SAME five dimensions a team '
+                + 'effort?, permissionMode?, account?}] — whom the lead may draw on, on the SAME six dimensions a team '
                 + 'member takes; omit for the whole fleet), '
                 + '‼️ poolScope? (fleet|selected — U-102: WHICH of the two readings of an empty pool you mean. '
                 + '`fleet` is the whole fleet and the rows are overrides on it, not a cast list; `selected` is '
@@ -8110,6 +8205,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         engine: 'claude',
                         model: sp?.plannerModel ?? null,
                         effort: sp?.plannerEffort ?? null,
+                        // ‼️ X-225 — and whose plan it is spending. Declared, like
+                        // the two above it: null means the mission said nothing
+                        // and the standing sign-in answered at the spawn.
+                        account: sp?.plannerAccount ?? null,
                         /**
                          * ‼️ M-29 — THE RESOLVED LAUNCH, KEPT BY THE RUN.
                          *
@@ -15396,6 +15495,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // let you choose the engine, the permissions and the model for a
             // reviewer and then ran it at whatever the CLI thinks is normal.
             efforts: EFFORT_CHOICES,
+            // ‼️ X-225 — AND THE SIGN-INS THIS MACHINE HOLDS, per engine. Read
+            // through the same one matrix the Tasks form and the Console read
+            // (`engineAccountMatrix`), so the rows, the health marks and the
+            // standing-choice dot cannot say three different things on three
+            // pages. Empty for an engine that cannot isolate a sign-in or a
+            // machine with nothing captured — and an empty list draws no box,
+            // which is the rule a control with no referent falls under.
+            accounts: engineAccountMatrix(),
             // ‼️ M-18 — WHAT EACH FAILURE CLASS MEANS, from the one registry the
             // LEAD is told it from. The page shows the reader the same sentence
             // the model was given, so the two can never drift into describing
