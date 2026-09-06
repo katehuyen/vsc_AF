@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.421.0 - X-264: a schedule that fires once IS its moment (2026-09-07)
+
+**A `once` schedule installed over the bridge was stored with no time at all.**
+`schedules.add` documents its moment as `"YYYY-MM-DD HH:MM"` — the same words
+`schedules.edit` and the command bar use — but the seed parser behind it
+(`parseSeedSchedules`) accepted a **number only**. The documented form arrived,
+failed a `typeof` test, and was dropped on the floor. What was kept was a
+schedule that is enabled, listed on the page, counted by the forecast, and
+**can never be due**: `scheduleDue` asks `!!s.onceAt` first.
+
+Nothing said so. The call returned `ok`, the row appeared, and the run simply
+never happened — a rule that fails silently is not a rule. It was found the
+only way it can be: by installing one and reading the store back.
+
+**The parser now reads the moment the way it is written** — the spaced form,
+the ISO form, and epoch milliseconds as a number or as its digits — and a
+moment nobody can read stays `undefined` rather than becoming "no time".
+**And `schedules.add` REFUSES a `once` schedule without one**, at the door,
+in front of the caller who can still fix it. The contract says which forms it
+takes, so the two halves cannot drift apart again.
+
 ## 3.420.0 - X-256 + X-234: the card names what actually limits the farm, and its buttons work (2026-09-07)
 
 **Farm Status had no row for accounts** — live · tasks · triggers · workflows ·

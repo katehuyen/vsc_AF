@@ -117,5 +117,31 @@ const daily = extra => Object.assign({
         && parseSeedSchedules('{"a":1}').length === 0);
 }
 
+// ---------- X-264: a `once` seed states its moment in the DOCUMENTED form ----
+// The contract (schedules.add / schedules.edit / the command bar) writes the
+// moment as "YYYY-MM-DD HH:MM"; this parser took a number and dropped anything
+// else on the floor, so a once schedule installed over the bridge was stored
+// with NO time — enabled, listed, and unable to ever be due. A moment that
+// cannot be read is refused (left undefined for the caller to reject), never
+// silently turned into "no time at all" on a schedule that is kept.
+{
+    const seed = extra => parseSeedSchedules(JSON.stringify([Object.assign({
+        agentId: 'd:/a/dev', agentName: 'dev', title: 't' + Math.random(),
+        prompt: 'p', kind: 'once'
+    }, extra)]))[0];
+    const want = new Date(2026, 8, 7, 8, 0).getTime();
+    ok('once: "YYYY-MM-DD HH:MM" is the documented form and is read',
+        seed({ onceAt: '2026-09-07 08:00' }).onceAt === want);
+    ok('once: the ISO form of the same moment reads the same',
+        seed({ onceAt: '2026-09-07T08:00' }).onceAt === want);
+    ok('once: epoch ms still works, as a number or as its digits',
+        seed({ onceAt: want }).onceAt === want && seed({ onceAt: String(want) }).onceAt === want);
+    ok('once: a moment nobody can read stays undefined rather than becoming now',
+        seed({ onceAt: 'tomorrow-ish' }).onceAt === undefined
+        && seed({ onceAt: '' }).onceAt === undefined);
+    ok('a non-once seed carries no moment even when one is given',
+        seed({ kind: 'daily', onceAt: '2026-09-07 08:00' }).onceAt === undefined);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

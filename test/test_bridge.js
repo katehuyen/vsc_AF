@@ -4413,6 +4413,14 @@ const { opencodeStatus, syncToOpencode } =
             && /workDir\?/.test(sched) && /priority\?/.test(sched) && /project\?/.test(sched));
         ok('…and says why a project has to be DECLARED on an automation',
             /nobody looking/.test(sched));
+        // ‼️ X-264 — a `once` schedule IS its moment. The parser took a number
+        // only, so the documented "YYYY-MM-DD HH:MM" arrived, was dropped, and
+        // what was kept was a schedule that is enabled, listed and can never be
+        // due. The guard belongs on the door, where the caller can still fix it.
+        ok('‼️ schedules.add refuses a once schedule with no readable moment',
+            /A once schedule needs onceAt/.test(sched));
+        ok('…and its contract states the form it accepts',
+            /onceAt\? \("YYYY-MM-DD HH:MM" or epoch ms/.test(sched));
 
         // The page can make a trigger and a template now, so an agent can too —
         // in the same commit, which is the whole rule.

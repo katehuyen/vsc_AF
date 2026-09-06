@@ -7629,7 +7629,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // schedule cannot pick an engine — and would go and build it as a
             // task instead. Two contracts for one handler is the drift the
             // catalogue exists to prevent.
-            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt?, mode?, missed? (skip|run|ask), and the SAME run dimensions a task takes — engine? ('
+            describe: 'Install a schedule. args: agent (name|id), title, prompt, kind? (daily|weekly|once), hour?, minute?, dow?, onceAt? ("YYYY-MM-DD HH:MM" or epoch ms — ‼️ a kind:once schedule IS its moment, so one that cannot be read is REFUSED here rather than kept as a schedule that is enabled, listed and can never be due), mode?, missed? (skip|run|ask), and the SAME run dimensions a task takes — engine? ('
                 + ENGINE_ENUM
                 + ' — ‼️ refused HERE if unknown, rather than at 3 a.m. with nobody watching), model?, effort? (‼️ refused on an engine that has no such setting: '
                 + enginesWithoutEffort()
@@ -7640,6 +7640,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const seeds = parseSeedSchedules(JSON.stringify([
                     { ...args, agentId: agent.id, agentName: agent.name }]));
                 need(seeds.length, 'Invalid schedule — title and prompt are required.');
+                // ‼️ X-264: a `once` schedule IS its moment. Without one it is
+                // enabled, listed, and can never be due — so it is refused HERE,
+                // in front of the caller who can still fix it, rather than kept
+                // as a schedule that quietly never fires. schedules.edit has
+                // always said this; add said nothing and stored the corpse.
+                need(seeds[0].kind !== 'once' || seeds[0].onceAt !== undefined,
+                    'A once schedule needs onceAt — "YYYY-MM-DD HH:MM" or epoch ms.');
                 need(!taskManager.schedules.some(s => s.title === seeds[0].title),
                     `A schedule titled "${seeds[0].title}" already exists.`);
                 const model = optStr(args, 'model');

@@ -1163,6 +1163,21 @@ export function parseSeedSchedules(text: string): Omit<FarmSchedule, 'id'>[] {
             const n = typeof v === 'number' ? Math.floor(v) : NaN;
             return isFinite(n) && n >= lo && n <= hi ? n : def;
         };
+        // ‼️ X-264: the moment a `once` schedule fires is WRITTEN as
+        // "YYYY-MM-DD HH:MM" everywhere it is offered — the bridge contract,
+        // schedules.edit, the command bar — and this parser used to take only a
+        // number, so the documented form landed here and was dropped on the
+        // floor. What survived was a once schedule that was enabled, listed,
+        // and could never be due: a rule that fails silently is not a rule.
+        // A moment nobody can read stays undefined so the caller can REFUSE it;
+        // it is never rounded into "no time at all" on a schedule that is kept.
+        const moment = (v: unknown): number | undefined => {
+            if (typeof v === 'number') { return isFinite(v) ? v : undefined; }
+            if (typeof v !== 'string' || !v.trim()) { return undefined; }
+            const s = v.trim();
+            const t = /^\d+$/.test(s) ? Number(s) : Date.parse(s.replace(' ', 'T'));
+            return isFinite(t) ? t : undefined;
+        };
         out.push({
             agentId: o.agentId,
             agentName: typeof o.agentName === 'string' ? o.agentName : '',
@@ -1173,7 +1188,7 @@ export function parseSeedSchedules(text: string): Omit<FarmSchedule, 'id'>[] {
             hour: int(o.hour, 0, 23, 9),
             minute: int(o.minute, 0, 59, 0),
             dow: kind === 'weekly' ? int(o.dow, 0, 6, 1) : undefined,
-            onceAt: kind === 'once' && typeof o.onceAt === 'number' ? o.onceAt : undefined,
+            onceAt: kind === 'once' ? moment(o.onceAt) : undefined,
             enabled: o.enabled !== false,
             missed: o.missed === 'run' || o.missed === 'ask' || o.missed === 'skip' ? o.missed : undefined,
             lastRunKey: typeof o.lastRunKey === 'string' ? o.lastRunKey : undefined
