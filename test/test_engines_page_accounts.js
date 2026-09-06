@@ -83,7 +83,7 @@ const sec = () => {
 // ---- which one the next session opens with ---------------------------------
 {
     const h = sec();
-    ok('the standing account is marked', /class="acnow"/.test(h));
+    ok('the standing account is marked', /class="acsel on"/.test(h));
     const use = r.query('[data-acuse]');
     ok('‼️ every account that is NOT standing offers one click to stand it up',
         use.length === 4 && !use.some(b => b.dataset.acuse === 'work-1'));
@@ -101,28 +101,41 @@ const sec = () => {
     ok('…and it clears the engine rather than naming an account',
         JSON.stringify(r.last()) === JSON.stringify({ type: 'accountActivate', id: '', engine: 'claude' }));
 
-    // ---- X-205: it is a SWITCH, and its state is drawn rather than spelled ----
+    // ---- X-217: THE SHAPE OF A CONTROL STATES THE ARITHMETIC OF THE CHOICE ---
     //
-    // ‼️ "Use next" read as *hand the next one to whoever is next* — the
-    // opposite of what it does. The state is binary and exclusive per engine,
-    // so the control is one switch with two positions and the words move into
-    // the AFTip, where the whole consequence fits.
-    ok('‼️ both directions are the SAME control, in its two positions',
-        /class="actog on"[^>]*data-acmain/.test(h)
-        && (h.match(/class="actog"[^>]*data-acuse/g) || []).length === 4);
-    ok('…exactly one switch is ON, and it is the standing account\'s',
-        (h.match(/class="actog on"/g) || []).length === 1);
-    ok('…and it announces itself as a switch to anything not looking at pixels',
-        (h.match(/role="switch"/g) || []).length === 5
-        && /aria-checked="true"/.test(h) && /aria-checked="false"/.test(h));
+    // ‼️ A SWITCH SAYS "THESE GO ON AND OFF INDEPENDENTLY". These do not: one
+    // engine has exactly one standing account, and `normalizeActive` has always
+    // enforced it — so a row of switches drew a promise the code refuses to keep
+    // (turn a second one on and the first goes off by itself, which is not what
+    // a switch means anywhere else in this product). A single-selection choice
+    // is drawn the way one is: the chosen one wears a STATE badge, the others
+    // carry an ACTION chip. A switch stays the right shape for a pool whose
+    // members really do go on and off independently — which is precisely what
+    // one-standing-account-per-engine is not.
+    ok('‼️ the switch is gone from the section entirely',
+        !/actog/.test(h) && !/role="switch"/.test(h));
+    ok('‼️ the standing account wears a STATE badge, and it is the way back',
+        /class="acsel on"[^>]*data-acmain="claude"/.test(h) && /🟢/.test(h));
+    ok('‼️ every other account carries an ACTION chip, not a state',
+        (h.match(/class="acsel"[^>]*data-acuse/g) || []).length === 4 && /⚡/.test(h));
+    ok('…exactly one of them is the chosen one', (h.match(/class="acsel on"/g) || []).length === 1);
+    ok('‼️ …and it announces a single-selection group, not five independent switches',
+        (h.match(/role="radio"/g) || []).length === 5
+        && (h.match(/aria-checked="true"/g) || []).length === 1
+        && (h.match(/aria-checked="false"/g) || []).length === 4);
     ok('‼️ …while the misleading words are gone from the section entirely',
         !/Use next|Main account<\/button>/.test(h));
 
-    // MIRROR — a control with no words at all opens its tooltip with the state
-    // it is IN, before it says what pressing it would do.
-    ok('…and the hover names the position first, then the whole consequence',
-        /ON — the standing/.test(h) && /hands the engine back to the main sign-in/.test(h)
-        && /OFF — switch to this account/.test(h) && /goes off in the same act/.test(h));
+    // ONE SUBJECT — "which one is standing" is now said by the control, so the
+    // separate head pill that also said it is gone: a fact drawn twice is a fact
+    // that can disagree with itself.
+    ok('‼️ the fact is in ONE place, not two', !/class="acnow"/.test(h));
+
+    // MIRROR — the badge opens its tooltip with the state it is IN, and the chip
+    // with what pressing it would do; neither makes the reader guess.
+    ok('…and the hover names the state first, then the whole consequence',
+        /standing .*account|the standing/i.test(h) && /hands the engine back to the main sign-in/.test(h)
+        && /goes off in the same act/.test(h));
 }
 
 // ---- dropping one ----------------------------------------------------------

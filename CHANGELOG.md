@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.409.0 - X-217: the account cards stop drawing a promise the code refuses to keep (2026-09-06)
+
+*"The On/Off switch on the cards is MISLEADING — it looks as though more than
+one could be on at a time; but only one account per engine can be active."*
+
+It could not, and never could: `normalizeActive` has always enforced one
+standing account per engine. So turning a second switch on turned the first
+one off by itself — which is not what a switch means anywhere else in this
+product, or anywhere else at all. The control was drawing an arithmetic the
+code does not have.
+
+A single selection is now drawn as one: the standing account wears a STATE
+badge (`🟢 standing`) and every other card carries an ACTION chip
+(`⚡ Use this one`). Both are the same class in two states, both announce
+themselves as `role="radio"` with exactly one `aria-checked="true"` — so the
+shape says "one of these is chosen" to a reader looking at pixels and to one
+that never will.
+
+Pressing the badge is still the way back to the main sign-in, which is the
+one gesture with no card of its own: the main sign-in is the ABSENCE of a
+slot, and a page that can enter a state it cannot leave is a trap.
+
+ONE SUBJECT: the head pill that also said `standing` is gone. The fact is
+drawn once, by the control that owns it — two drawings of one fact are two
+things that can disagree.
+
 ## 3.408.0 - X-230: the farm can load its own new build (2026-09-06)
 
 *"We are setting up the autonomous shift on Agent Farm, but normally after a

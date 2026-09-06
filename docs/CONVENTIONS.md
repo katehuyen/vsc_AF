@@ -505,6 +505,26 @@ rows.filter(r => q.test(r.title + ' ' + r.agent));
   Session Viewer's transcript filter and the Task Analytics tables), and nothing
   on either page looked wrong.
 
+### The SHAPE of a control states the arithmetic of the choice (X-217)
+
+A switch says "these go on and off independently". A radio — or the badge/chip
+pair below — says "exactly one of these is chosen". A chip says "pressing me
+does something". Before drawing a control, read what the code actually enforces:
+the Engines page drew a row of switches over the standing accounts, where
+`normalizeActive` had always kept exactly one per engine, so turning a second one
+on turned the first off by itself. That is not what a switch means anywhere else,
+here or outside — the control was promising an arithmetic the code refuses.
+
+Single selection is drawn as single selection: the chosen member wears a **state
+badge** (`🟢 standing`), every other one carries an **action chip**
+(`⚡ Use this one`); one class, two states; `role="radio"` with exactly one
+`aria-checked="true"`, so the shape says it to a reader who never looks at a
+pixel. And it is drawn ONCE — the head pill that also said `standing` went with
+it, because a fact in two places is two facts that can disagree.
+
+A switch stays right where members really do toggle independently. Both shapes
+existing is the reason they must not look alike.
+
 ### A multi-pick dropdown has TWO gestures
 
 `AFFilter.multi` (`media/afFilters.js`), and both are free on every picker in

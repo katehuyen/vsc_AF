@@ -447,28 +447,35 @@
                         + 'accounts are read one at a time and never less than five seconds apart.'
                 ]), 'acwinw');
         /**
-         * ‼️ X-205 — A SWITCH, NOT A SENTENCE. "Use next" reads as *hand the
-         * next one to whoever is next*, which is the opposite of what it does:
-         * it makes THIS account the one the next session opens as. The state is
-         * binary and exclusive per engine — exactly what a switch is for — so
-         * the control says it by its shape, and the words move into the AFTip
-         * where there is room for the whole consequence (MIRROR: the first line
-         * is this switch's CURRENT state).
+         * ‼️ X-217 — THE SHAPE OF THE CONTROL STATES THE ARITHMETIC OF THE CHOICE.
+         *
+         * A switch says "these go on and off independently". These do not: an
+         * engine has exactly ONE standing account and `normalizeActive` has
+         * always enforced it, so a row of switches drew a promise the code
+         * refuses to keep — turn a second one on and the first goes off by
+         * itself, which is not what a switch means anywhere else in this
+         * product. A single-selection choice is drawn the way one is: the chosen
+         * account wears a STATE badge (pressing it is the way back to the main
+         * sign-in), every other one carries an ACTION chip. A switch is the
+         * right shape where the members really do go on and off independently —
+         * a pool several of which can be ticked at once — and that is exactly
+         * what this is not.
+         *
+         * MIRROR: the badge opens with the state it IS in; the chip with what
+         * pressing it would do.
          */
         const stand = a.active
-            ? T.wrap('<button class="actog on" role="switch" aria-checked="true" '
-                + 'data-acmain="' + esc(a.engine) + '"><i></i></button>',
-                'ON — the standing ' + engineLabel(a.engine) + ' account',
-                'Every new ' + engineLabel(a.engine) + ' session opens as ' + (a.label || a.id) + '.\n\n'
-                + 'Switching it OFF hands the engine back to the main sign-in — the identity this machine '
+            ? T.wrap('<button class="acsel on" role="radio" aria-checked="true" '
+                + 'data-acmain="' + esc(a.engine) + '">🟢 standing</button>',
+                'Standing — every new ' + engineLabel(a.engine) + ' session opens as ' + (a.label || a.id),
+                'Pressing it hands the engine back to the main sign-in — the identity this machine '
                 + 'is logged in as, for which nothing is injected at all. Either way nothing already '
                 + 'running moves: an account is fixed for a session the way a route is.')
-            : T.wrap('<button class="actog" role="switch" aria-checked="false" '
-                + 'data-acuse="' + esc(a.id) + '" data-acengine="' + esc(a.engine) + '"><i></i></button>',
-                'OFF — switch to this account',
-                'Turning it on makes ' + (a.label || a.id) + ' the account every new ' + engineLabel(a.engine)
-                + ' session opens as. The one that is on now goes off in the same act: one engine, one '
-                + 'standing account.\n\n'
+            : T.wrap('<button class="acsel" role="radio" aria-checked="false" '
+                + 'data-acuse="' + esc(a.id) + '" data-acengine="' + esc(a.engine) + '">⚡ Use this one</button>',
+                'Make ' + (a.label || a.id) + ' the standing account',
+                'Every new ' + engineLabel(a.engine) + ' session would then open as it. The one standing '
+                + 'now goes off in the same act: one engine, one standing account.\n\n'
                 + 'Nothing already running moves — starting on another account means starting another '
                 + 'session. An account is deliberately not remembered per agent: it is a state (how much '
                 + 'of a plan is left, which changes hourly), not a preference, so this one place holds it '
@@ -520,7 +527,6 @@
                     + 'and what the directory is called: ' + (a.dir || 'under the accounts root') + '.')
                 : '')
             + (a.plan ? '<span class="acplan">' + esc(a.plan) + '</span>' : '')
-            + (a.active ? '<span class="acnow">standing</span>' : '')
             + (a.health === 'ready' ? ''
                 : T.wrap('<span class="acbad">' + esc(a.health === 'needs-signin' ? 'needs signing in' : 'unreadable') + '</span>', 'This sign-in is not usable',
                     'The stored credential no longer refreshes, and only a person can fix it: sign in '
@@ -802,9 +808,8 @@
                 /* the standing one wears the rule, in the SAME blue as the chip on
                    its engine card — one colour for one fact across the page */
                 .accard.a-now { border-left:3px solid var(--vscode-charts-blue,#3794ff); }
-                .acplan, .acnow, .acbad { font-size:10px; padding:1px 8px; border-radius:9px;
+                .acplan, .acbad { font-size:10px; padding:1px 8px; border-radius:9px;
                     white-space:nowrap; border:1px solid var(--vscode-widget-border,#4446); }
-                .acnow { background:var(--vscode-charts-blue,#3794ff); color:#fff; border-color:transparent; }
                 /* a dead sign-in is YOUR MOVE, not a system error: the same yellow
                    the held verdict and the keyless route wear. */
                 .acbad { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
@@ -815,16 +820,20 @@
                    is read at a glance down a column of cards. The ON colour is
                    the SAME blue the standing badge and the card's left rule
                    wear — one colour for one fact, across the page. */
-                .actog { width:34px; height:18px; padding:0; border-radius:9px; flex:none;
+                /* ‼️ X-217 — ONE ENGINE, ONE STANDING ACCOUNT, so the control is a
+                   single selection and not a row of switches: the chosen one wears
+                   the state as a badge (the same pill the rest of the head speaks
+                   in), the others offer the action. Same family, two jobs — which
+                   is why they share a class and differ by one modifier. */
+                .acsel { font-size:10px; padding:1px 8px; border-radius:9px; flex:none;
+                    line-height:16px; cursor:pointer; white-space:nowrap;
                     border:1px solid var(--vscode-widget-border,#4446);
-                    background:var(--vscode-input-background,#2224); cursor:pointer;
-                    position:relative; transition:background .12s ease, border-color .12s ease; }
-                .actog i { position:absolute; top:2px; left:2px; width:12px; height:12px;
-                    border-radius:50%; background:var(--vscode-descriptionForeground,#999);
-                    transition:left .12s ease, background .12s ease; }
-                .actog:hover { border-color:var(--vscode-focusBorder,#3794ff); }
-                .actog.on { background:var(--vscode-charts-blue,#3794ff); border-color:transparent; }
-                .actog.on i { left:18px; background:#fff; }
+                    background:var(--vscode-button-secondaryBackground,#3a3d41);
+                    color:var(--vscode-button-secondaryForeground,#ccc);
+                    transition:background .12s ease, border-color .12s ease; }
+                .acsel:hover { border-color:var(--vscode-focusBorder,#3794ff); }
+                .acsel.on { background:var(--vscode-charts-blue,#3794ff); color:#fff;
+                    border-color:transparent; }
                 /* ‼️ X-206 — the refresh button IS the queue indicator. A second
                    badge beside it would say the same thing twice and take the
                    width the card does not have: the glyph is ⟳ at rest, the
