@@ -5221,6 +5221,19 @@ const { opencodeStatus, syncToOpencode } =
             /armedRestartWait\(/.test(ask));
         ok('…and the sentence is kept ON the record, so nobody has to write it twice',
             /reason: plan\.reason/.test(ask));
+        // ---------- X-219: renewing a dead sign-in reaches the bridge too ----------
+        // The rule is in core/accountStore.ts (test_engine_accounts.js). Pinned here:
+        // that the op exists, that it DECIDES nothing, and that a refusal reaches the
+        // caller as a refusal rather than as a plan with an empty command in it.
+        ok('extension.ts registers accounts.reauth', src.includes("op: 'accounts.reauth'"));
+        const re = cut("op: 'accounts.reauth'", "op: 'accounts.forget'");
+        ok('‼️ the op asks the core and adds no rule of its own',
+            /planReauth\(/.test(re) && !/MACHINE_ACCOUNT/.test(re) && !/canIsolate/.test(re));
+        ok('‼️ …a refusal is an error, not a plan with nothing in it',
+            /need\(!plan\.refusal/.test(re));
+        ok('…and it says out loud that it signs nobody in',
+            /signs nobody in/.test(re) && /statusArgs/.test(re));
+
         const sr = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'selfRestart.ts'), 'utf8');
         const armed = sr.slice(sr.indexOf('export interface ArmedRestart'),
             sr.indexOf('export interface RestartWorld'));

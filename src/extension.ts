@@ -224,6 +224,7 @@ import {
 } from './core/engineAccounts';
 import {
     CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, accountEnvFor, accountLabelOf,
+    planReauth,
     accountRefusal, addSlot, findSlot,
     forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel,
     slotsFor, statedAccountLabel
@@ -32812,6 +32813,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     note: `${refreshQueue.pending.length + (refreshQueue.reading ? 1 : 0)} account(s) in the line, `
                         + 'one read every five seconds.'
                 };
+            }
+        },
+        {
+            op: 'accounts.reauth',
+            describe: '‼️ X-219 — HOW TO RENEW A SIGN-IN THAT HAS STOPPED REFRESHING, for one '
+                + 'stored account. It signs nobody in and opens no browser: renewing a plan '
+                + 'sign-in is a browser flow that only a person can complete, so this answers with '
+                + 'the PLAN — the engine\'s own command (`command` + `args`), the environment that '
+                + 'points it at THIS account\'s directory and nothing else (`env`, `dir`), and '
+                + '`statusArgs`, the command that reads the result back. ‼️ RUN THE STATUS '
+                + 'COMMAND RATHER THAN ASSUMING IT WORKED: the flow can be abandoned halfway, and '
+                + 'a caller that reported success would be lying about the one fact it was asked '
+                + 'for. Refused, by name and with NO command at all, for the main sign-in (it is '
+                + 'the absence of a slot, and the session talking to you runs as it), for an '
+                + 'engine with no verified way to keep two identities apart (the login would land '
+                + 'in the one directory both of them read), and for an id nothing is stored '
+                + 'under. Nothing is copied over the live directory in either case. args: id',
+            handler: (args) => {
+                // The decision is the core's (planReauth); this hands over the answer.
+                const plan = planReauth(argStr(args, 'id'), storedAccounts());
+                need(!plan.refusal, plan.refusal ?? '');
+                return plan;
             }
         },
         {
