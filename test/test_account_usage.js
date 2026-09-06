@@ -59,7 +59,8 @@ function svc(slots, opts = {}) {
                 ? opts.refresh(file, refreshes.length)
                 : { kind: 'rejected', reason: 'the stored sign-in carries no refresh token' };
         },
-        busy: opts.busy
+        busy: opts.busy,
+        onRead: opts.onRead
     });
     return { service, calls, refreshes, reads, tick: (ms) => { clock += ms; } };
 }
@@ -524,6 +525,44 @@ async function main() {
         ok('a measured account still beats an unread one inside a tier',
             pickAccount([{ ...at('unread', -1), state: 'no-source' }, at('known', 44)],
                 { rotation: 'tiered' }).slotId === 'known');
+    }
+
+    // ---------- X-261: the measurer TELLS somebody, campaign or not -------
+    // The announcement of a fallen sign-in used to live inside the sentry
+    // turn, behind `if (!this.sentry) return`, so a token that died while the
+    // user was working by hand across three accounts was said by nobody. The
+    // seam belongs on the only thing that measures, and it fires on EVERY
+    // settled figure — judging what changed is the listener's business.
+    {
+        const heard = [];
+        const { service, tick } = svc([slot('a'), slot('b')], { onRead: u => heard.push(u) });
+        await service.beat();
+        ok('‼️ a settled figure tells the listener, with nothing running',
+            heard.length === 1 && Array.isArray(heard[0]) && heard[0].length === 2);
+        tick(10 * 60_000);
+        await service.beat();
+        ok('…and again on the next one, so nothing depends on a campaign', heard.length === 2);
+        ok('…and it is handed everything known, not only the slot just read',
+            heard[1].every(u => typeof u.slotId === 'string'));
+    }
+    {
+        // A listener that throws must never break a read: the figure is the
+        // product's, the announcement is a courtesy on top of it.
+        const { service } = svc([slot('a')], { onRead: () => { throw new Error('boom'); } });
+        const out = await service.beat();
+        ok('‼️ a listener that throws does not cost the figure', out.length === 1);
+    }
+    {
+        // And the live wire, which is the half that gets forgotten: the
+        // extension really hands the seam in, and the campaign no longer
+        // posts the sentence itself (two announcers = two notices per fall).
+        const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('‼️ extension.ts wires the announcement onto the thing that measures',
+            ext.includes('onRead: usage => announceSlotHealth(usage)'));
+        ok('…the fleet remembers what it already said, outliving every campaign',
+            ext.includes('DOWN_SLOTS_KEY') && ext.includes('globalState.update(DOWN_SLOTS_KEY'));
+        ok('…and the sentry turn no longer posts it itself',
+            !ext.includes('for (const id of health?.newlyDown'));
     }
 
     console.log(`${pass} passed, ${fail} failed`);

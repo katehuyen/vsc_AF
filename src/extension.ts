@@ -133,7 +133,7 @@ import {
     ArmedRestart, armedReady, liveBlockers, planRestart, RESTART_COMMANDS,
     RESTART_COOLDOWN_MS, RestartKind, RestartWhen
 } from './core/selfRestart';
-import { SENTRY_DEFAULT_STALL_MIN } from './core/sentryWatch';
+import { SENTRY_DEFAULT_STALL_MIN, slotHealth } from './core/sentryWatch';
 import { SENTRY_DEFAULT_FAIL_LIMIT, sentryStep } from './core/sentryDriver';
 import {
     DEFAULT_LEADER_CAPS, LEADER_ENGINE, LeaderBudgetState, LeaderCaps, LeaderOutcome, LeaderRunner,
@@ -17002,10 +17002,60 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * the status bar would come to disagree about one week. It touches no
          * network, which is why the service reads it outside the request budget.
          */
+        // ‼️ X-261 — and whoever measures a slot TELLS somebody it fell over.
+        // The announcement used to live inside the sentry turn, behind
+        // `if (!this.sentry) return`, so a token that died while the user was
+        // working by hand across three accounts was said by nobody.
+        onRead: usage => announceSlotHealth(usage),
         readSessionTail: (slot, dir) => (String(slot.engine || '').toLowerCase() === 'codex'
             ? readCodexUsage(usageProbe, p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } }, dir)
             : undefined)
     });
+    /**
+     * ‼️ X-261 — THE FLEET'S OWN MEMORY OF WHICH SIGN-INS ARE DOWN.
+     *
+     * The campaign has one of its own (`sentry.downSlots`) and it stays,
+     * because it answers a different question: whether THIS campaign still
+     * has an account to run on. This one answers "has the user been told",
+     * and it has to outlive every campaign — a token dies on a Tuesday
+     * afternoon with no campaign anywhere near it, and that is precisely the
+     * case the old gate lost.
+     *
+     * ‼️ IT IS THE ONLY THING THAT POSTS. Two announcers for one event is a
+     * duplicate notice on every fall, and the campaign's own bookkeeping
+     * (which slots it may still use) is untouched by moving the sentence out
+     * of it. The body says what a campaign adds only when there IS one.
+     */
+    const DOWN_SLOTS_KEY = 'agentfarm.downSlots';
+    const announceSlotHealth = (usage: SlotUsage[]): void => {
+        const known = context.globalState.get<string[]>(DOWN_SLOTS_KEY, []);
+        const h = slotHealth(known, usage);
+        if (!h.newlyDown.length && !h.recovered.length) { return; }
+        void context.globalState.update(DOWN_SLOTS_KEY, h.down);
+        for (const id of h.newlyDown) {
+            const rest = usage.filter(u => u.slotId !== id && u.state !== 'expired' && u.state !== 'no-auth');
+            // ‼️ A campaign is a CIRCUMSTANCE here, not the reason to speak.
+            const running = taskManager.sentryBusy();
+            noticesStore.add({
+                title: `${id} needs signing in again`,
+                type: 'warning',
+                level: h.anyUsable ? 2 : 3,
+                body: (h.anyUsable
+                    ? `The endpoint rejected ${id}'s token, so nothing will be opened on it. `
+                        + `The other ${rest.length} account(s) are unaffected — sign in again to bring it back.`
+                    : `The endpoint rejected ${id}'s token, and it was the last account this machine `
+                        + 'could run on. Signing in again is all it needs.')
+                    + (running
+                        ? ' A campaign is running right now, so it is carrying on without this account.'
+                        : ''),
+                // X-257 — the slot as DATA, so two falls of one sign-in read
+                // as one story and the board can be narrowed to it.
+                account: id,
+                tags: ['accounts']
+            });
+        }
+    };
+
     /**
      * ‼️ X-206 — "REFRESH ALL" IS A LINE, NOT A BURST.
      *
@@ -25059,34 +25109,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         //
         // A rejected sign-in has never stopped a campaign — `slotIsUsable`
         // refuses it and `mostRoom` picks from the rest — so the only failure
-        // left is nobody being TOLD, which is the same loss in slow motion: the
+        // left is nobody being TOLD -- which is X-261, and no longer lives here: the
         // user finds out in the morning by wondering why one account was never
         // touched. Announced once per fall (the record holds what was already
         // reported), and re-armed when the slot answers again.
-        const health = taskManager.applySentrySlotHealth(usage);
-        for (const id of health?.newlyDown ?? []) {
-            const rest = usage.filter(u => u.slotId !== id && u.state !== 'expired' && u.state !== 'no-auth');
-            noticesStore.add({
-                title: `Sentry - ${id} needs signing in again`,
-                type: 'alert',
-                level: health?.anyUsable ? 2 : 3,
-                body: health?.anyUsable
-                    ? `The endpoint rejected ${id}'s token, so the campaign is not using it. It carries `
-                        + `on with the other ${rest.length} account(s) — sign in again to bring it back.`
-                    : `The endpoint rejected ${id}'s token, and it was the last account this campaign `
-                        + 'could use. Nothing will be opened until one of them is signed in again — the '
-                        + 'campaign is standing, not stopped, so signing in is all it needs.',
-                agentName: rec.agent,
-                projectId: doc.project.id,
-                // ‼️ X-257 — THE SLOT AS DATA, not only inside the sentence.
-                // This is the notice the account axis was missing: it is the
-                // one place the product says an account has fallen over, and
-                // until now it said so in prose, so nothing could group two of
-                // them or ask whether a slot has an open warning against it.
-                account: id,
-                tags: ['sentry']
-            });
-        }
+        void taskManager.applySentrySlotHealth(usage);
+        // ‼️ X-261 — THE CAMPAIGN NO LONGER DOES THE TELLING, and that is the
+        // whole item. The announcement used to live right here, which meant
+        // it could only ever happen while a campaign was running: a token
+        // that died on a Tuesday afternoon, with the user working across
+        // three accounts by hand, was noticed by nothing and said by nobody.
+        // It is now `announceSlotHealth`, wired to the thing that MEASURES
+        // (AccountUsageService.onRead), so it fires whenever a figure lands.
+        // The call above stays: which slots this campaign may still use is a
+        // different question from whether the user has been told, and the
+        // campaign owns the first one. Two announcers would be two notices.
 
         /* ---- ‼️ X-191 — AND WHETHER THE LEADER IS WOKEN AT ALL ----------------
          *

@@ -390,6 +390,23 @@ export interface AccountUsageOptions {
      */
     busy?(slotId: string): boolean;
     /**
+     * ‼️ X-261 — SOMEBODY IS TOLD WHEN A SIGN-IN FALLS OVER, and it is not
+     * the campaign's business alone.
+     *
+     * X-178's announcement was real and well written, but its only caller
+     * sat inside the sentry turn and `applySentrySlotHealth` opens with
+     * `if (!this.sentry) return`. So a token that died while the user was
+     * working across three accounts by hand — which is most of the day —
+     * was noticed by nothing and said by nobody: the account simply stopped
+     * being chosen, and the user found out by wondering.
+     *
+     * This is the seam for it, and it belongs HERE because this class is the
+     * only thing that measures. Called after every read that settles a
+     * figure, with everything known at that moment — judging what CHANGED is
+     * the listener's job, not a second memory in here.
+     */
+    onRead?(usage: SlotUsage[]): void;
+    /**
      * ‼️ X-215 — READ A SLOT'S OWN TRANSCRIPTS, for an engine whose allowance is
      * on this disk rather than behind an endpoint (`QuotaSource.session-tail`).
      *
@@ -542,8 +559,20 @@ export class AccountUsageService {
             if (!had) { this.byId.set(slot.id, unreadUsage(slot)); }
             return this.current();
         }
-        this.byId.set(slot.id, usageFromEngine(slot, eu));
-        return this.current();
+        return this.settle(usageFromEngine(slot, eu));
+    }
+
+    /**
+     * A figure has just been settled. ONE place, so the announcement cannot
+     * be attached to three of the four ways a slot's figure lands and look
+     * connected. A listener that throws must never break a read: the figure
+     * is the product's, the announcement is a courtesy on top of it.
+     */
+    private settle(u: SlotUsage): SlotUsage[] {
+        this.byId.set(u.slotId, u);
+        const all = this.current();
+        try { this.opts.onRead?.(all); } catch { /* announcing never breaks a read */ }
+        return all;
     }
 
     private read(reason: 'beat' | 'edge' | 'user'): Promise<SlotUsage[]> {
@@ -570,7 +599,7 @@ export class AccountUsageService {
         const file = slotCredentialsFile(slot);
         if (!file) { return this.current(); }
         const cred = (this.opts.readCreds ?? readOauthCredentials)(file);
-        const put = (u: SlotUsage) => { this.byId.set(slot.id, u); return this.current(); };
+        const put = (u: SlotUsage) => this.settle(u);
         const bad = (state: PlanUsageState, note: string, plan = ''): SlotUsage => ({
             slotId: slot.id, engine: slot.engine, state,
             percent: -1, resetsAt: 0, plan, fetchedAt: now, note

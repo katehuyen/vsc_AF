@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.424.0 - X-261: a sign-in that falls over is announced whether or not a campaign is running (2026-09-07)
+
+**X-178's announcement was real, well written, and could only fire inside a
+campaign.** Its one caller sat in the sentry turn, and
+`applySentrySlotHealth` opens with `if (!this.sentry) { return undefined; }`.
+So a token that died on a Tuesday afternoon — while the user was working across
+three accounts by hand, which is most of the day — was noticed by nothing and
+said by nobody. The account simply stopped being chosen, and the user found out
+by wondering why one of them had gone quiet.
+
+**The announcement now hangs off the thing that MEASURES.**
+`AccountUsageService` gained one seam (`onRead`), called after every settled
+figure with everything known at that moment — through a single funnel, so it
+cannot end up attached to three of the four ways a figure lands and still look
+connected. Judging what CHANGED is the listener's job, not a second memory
+inside the service.
+
+**The fleet keeps its own record of what it has already said**, in global state,
+so it outlives every campaign — which is exactly the case the old gate lost.
+The campaign keeps `sentry.downSlots`, because that answers a different
+question: which accounts THIS campaign may still run on.
+
+**And it is the only announcer.** Two of them would mean two notices per fall,
+so the sentence moved out of the sentry turn rather than being copied; a
+campaign is now a CIRCUMSTANCE the body mentions when there is one, not the
+reason anybody is told. The notice carries the slot as data (X-257), so two
+falls of one sign-in read as one story.
+
+A listener that throws never costs the figure: the measurement is the product's,
+the announcement is a courtesy on top of it.
+
 ## 3.423.0 - X-257: a notice says WHICH sign-in it is about, as data (2026-09-07)
 
 **The board could not be asked a question about accounts.** X-178 closed with
