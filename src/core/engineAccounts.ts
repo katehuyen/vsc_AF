@@ -79,6 +79,21 @@ export type SlotSupport = 'measured' | 'declared' | 'unmapped';
 export type QuotaSource =
     /** an OAuth credentials file, relative to the slot directory */
     | { kind: 'oauth-credentials'; file: string }
+    /**
+     * ‼️ X-215 — THE ENGINE'S OWN TRANSCRIPTS, under the slot's directory.
+     *
+     * Some engines publish no endpoint and are not silent either: they write
+     * what the service told them into the rollout they are keeping anyway, and
+     * a reader that knows the shape can have the figure for the price of a file
+     * read. `dir` is relative to the slot, which is what makes the answer PER
+     * ACCOUNT rather than per machine.
+     *
+     * ‼️ AND THIS BRANCH DOES NOT GO TO THE NETWORK, so nothing that reads it
+     * may be metered by the budget that exists to be polite to an endpoint —
+     * see `AccountUsageService`. A figure off this machine's own disk waiting
+     * in a queue it does not belong in is a cost with no payer.
+     */
+    | { kind: 'session-tail'; dir: string }
     /** nothing to read — and the reason, because a blank bar explains nothing */
     | { kind: 'none'; reason: string };
 
@@ -340,7 +355,8 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
             + 'second Codex account is allowed and stays marked "declared" until somebody proves it.',
         readIdentity: readCodexIdentity,
         /**
-         * ‼️ THIS SENTENCE WAS FALSE, AND THE FALSEHOOD IS WHY NOBODY LOOKED.
+         * ‼️ X-215 — CODEX'S QUOTA IS ITS OWN TRANSCRIPT, and this said the
+         * opposite for as long as the cards were blank.
          *
          * It read "Codex keeps no readable quota figure on disk — its plan
          * limits are only visible inside the CLI itself". `core/engineUsage.ts`
@@ -351,17 +367,12 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
          * user found it by comparing two surfaces of the same product.
          *
          * A stated reason is a claim about the world, and a wrong one is worse
-         * than a blank bar: it closes the question. `kind` stays `none` because
-         * the account cards genuinely do not read it yet — that plumbing is
-         * X-215 — but the words now say which of those two things is true, so
-         * the next reader is pointed at the work rather than away from it.
+         * than a blank bar: it CLOSES THE QUESTION. `sessions` is a shared path
+         * (see `sharedPaths` above), so a captured slot has the real folder
+         * under its own directory and the figure is that account's, not the
+         * machine's.
          */
-        quotaSource: () => ({
-            kind: 'none',
-            reason: 'Codex does publish a figure — engineUsage.ts reads the weekly window out of the '
-                + 'newest rollout under sessions/, which is what the status bar and the Dashboard draw. '
-                + 'The account cards are not wired to it yet (X-215); this is not a limit of the engine.'
-        })
+        quotaSource: () => ({ kind: 'session-tail', dir: 'sessions' })
     },
     {
         engine: 'gemini',

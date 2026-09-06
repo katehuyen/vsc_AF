@@ -189,14 +189,24 @@ function codexBars(l: CodexLimits): PlanBar[] {
  * figures are as old as the last turn Codex ran, and a card that stamped them
  * with the time it read the file would be claiming a freshness nothing has.
  */
-export function readCodexUsage(probe: UsageProbe, mtimeOf: (p: string) => number): EngineUsage {
+export function readCodexUsage(
+    probe: UsageProbe, mtimeOf: (p: string) => number,
+    /**
+     * ‼️ X-215 — WHOSE `sessions/` FOLDER. The default is the machine's own,
+     * which is what the status bar and the Dashboard have always asked for; a
+     * captured account passes its OWN directory and gets its own figure out of
+     * the same parser. Two roots, one reader — a second copy of this parser is
+     * how the card and the status bar would come to disagree about one week.
+     */
+    relDir = '.codex/sessions'
+): EngineUsage {
     const base: EngineUsage = {
         id: 'codex', label: 'Codex', state: 'unknown', bars: [], plan: '', fetchedAt: 0,
         note: 'Codex has not written a quota reading here yet. It records one while it works, '
             + 'so run one turn and this fills in — there is no endpoint to ask.'
     };
     let files: string[] = [];
-    try { files = probe.newestFiles('.codex/sessions', '.jsonl', ROLLOUTS_TO_TRY); } catch { return base; }
+    try { files = probe.newestFiles(relDir, '.jsonl', ROLLOUTS_TO_TRY); } catch { return base; }
     for (const file of files) {
         let limits: CodexLimits | undefined;
         try { limits = readCodexLimits(probe.readTail(file, TAIL_BYTES)); } catch { continue; }

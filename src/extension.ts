@@ -85,7 +85,7 @@ import { LiveMonitor, LiveSession } from './core/live';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { PlanUsageService, refreshMs } from './core/planusage';
-import { EngineUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
+import { EngineUsage, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
 import {
     AgentEngineDefaults, resolveDefault, storedDefault, storedRoute, withAgentDefault
 } from './core/agentDefaults';
@@ -213,7 +213,8 @@ import {
 } from './core/engines';
 import {
     AccountFs, AccountIdentity, EngineAccountSlot, ENGINE_AUTH_ADAPTERS,
-    accountEnv, adapterFor as accountAdapterFor, canIsolateAccounts, describeSlotLayout, liveSource
+    accountEnv, adapterFor as accountAdapterFor, canIsolateAccounts, describeSlotLayout, liveSource,
+    slotQuotaSource
 } from './core/engineAccounts';
 import {
     CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, accountEnvFor, accountLabelOf,
@@ -221,7 +222,10 @@ import {
     forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel,
     slotsFor, statedAccountLabel
 } from './core/accountStore';
-import { AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotCredentialsFile, slotIsUsable } from './core/accountUsage';
+import {
+    AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotCredentialsFile, slotIsUsable,
+    slotSessionDir
+} from './core/accountUsage';
  import * as accountQueue from './core/accountQueue';
 import {
     PATH_VARS, PathVarContext, PreviewedPath, previewPathList, resolvePathList, resolvePathVars
@@ -16123,10 +16127,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const usageProbe: UsageProbe = {
         newestFiles: (relDir, ext, limit) => {
-            const root = relDir === '.codex/sessions'
-                ? path.join(expandEnvPath(cfg().get<string>('codexHome', '').trim())
-                    || path.join(os.homedir(), '.codex'), 'sessions')
-                : path.join(os.homedir(), relDir);
+            // ‼️ X-215 — AN ABSOLUTE PATH IS A SLOT'S OWN FOLDER. A captured
+            // account keeps its transcripts under its own directory, so the
+            // account cards ask this same probe for that folder by name. Nothing
+            // relative changes: the machine's own roots are resolved exactly as
+            // they were, which is what the status bar and the Dashboard read.
+            const root = path.isAbsolute(relDir)
+                ? relDir
+                : relDir === '.codex/sessions'
+                    ? path.join(expandEnvPath(cfg().get<string>('codexHome', '').trim())
+                        || path.join(os.homedir(), '.codex'), 'sessions')
+                    : path.join(os.homedir(), relDir);
             const found: { p: string; t: number }[] = [];
             const walk = (dir: string, depth: number): void => {
                 if (depth > 6) { return; }
@@ -16675,7 +16686,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ttlMs: planBeatMs,
         edgeFloorMs: planEdgeFloorMs,
         cliVersion: installedCliVersion,
-        busy: accountIsBusy
+        busy: accountIsBusy,
+        /**
+         * ‼️ X-215 — CODEX'S CARD READS CODEX'S OWN TRANSCRIPTS.
+         *
+         * The same probe and the same parser the status bar and the Dashboard
+         * use (`readCodexUsage`), pointed at THIS SLOT'S folder instead of the
+         * machine's. One reader, two roots — a second copy is how the card and
+         * the status bar would come to disagree about one week. It touches no
+         * network, which is why the service reads it outside the request budget.
+         */
+        readSessionTail: (slot, dir) => (String(slot.engine || '').toLowerCase() === 'codex'
+            ? readCodexUsage(usageProbe, p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } }, dir)
+            : undefined)
     });
     /**
      * ‼️ X-206 — "REFRESH ALL" IS A LINE, NOT A BURST.
@@ -16719,9 +16742,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * waiting in the place it had.
      */
     const queueAccountRefresh = (ids: string[], gesture: 'toggle' | 'all'): void => {
-        refreshQueue = gesture === 'toggle' && ids.length === 1
-            ? accountQueue.toggle(refreshQueue, ids[0])
-            : accountQueue.enqueue(refreshQueue, ids);
+        /**
+         * ‼️ X-215 — A FILE READ JOINS NO LINE.
+         *
+         * The queue exists for one reason: to space out REQUESTS, one every five
+         * seconds, so asking how much quota is left never becomes the thing that
+         * spends it. An account whose figure is a file under its own directory
+         * makes no request, so putting it in the line would leave a card waiting
+         * for nothing while wearing a number that says it is third in a queue it
+         * is not in. It is read here and now, and the queue never sees it.
+         */
+        const stored = storedAccounts();
+        const onDisk = ids.filter(id => !!slotSessionDir(stored.find(s => s.id === id)));
+        for (const id of onDisk) { void accountUsage.refreshSlot(id); }
+        const queued = ids.filter(id => onDisk.indexOf(id) < 0);
+        refreshQueue = gesture === 'toggle' && queued.length === 1
+            ? accountQueue.toggle(refreshQueue, queued[0])
+            : accountQueue.enqueue(refreshQueue, queued);
         EnginesPanel.refreshIfOpen();
         pumpRefreshQueue();
     };
@@ -16782,6 +16819,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             percent: u?.percent ?? -1,
             resetsAt: u?.resetsAt ?? 0,
             usageState: u?.state ?? 'error',
+            // X-215 — the NAME of the window that percentage is of. Empty = the
+            // five-hour one, which is what every row meant before a second
+            // engine had a figure at all.
+            window: u?.window ?? '',
+            // ‼️ X-215 — AND WHERE THE FIGURE COMES FROM AT ALL. The ⟳ button's
+            // panel promised "one request, never less than five seconds apart"
+            // on every card; on one whose figure is a file on this disk that is
+            // three false claims in one sentence — the same kind of wrong
+            // sentence that kept these cards blank for months.
+            quotaSource: slotQuotaSource(slot).kind,
             // ‼️ X-206 — WHEN THE FIGURE WAS READ, not when the account was
             // filed. The card used to carry `capturedAt` beside a percentage,
             // and the two answer different questions: one says how long this
@@ -17871,6 +17918,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // nobody has read a figure for and one whose sign-in died draw
                     // the same empty bar, and one of them is ready to work.
                     usageState: pub.usageState, note: pub.note,
+                    // X-215 — and WHICH WINDOW that percentage is of, because a
+                    // second engine's figure is not a five-hour one, and where
+                    // it comes from, because the ⟳ button's words depend on it.
+                    window: pub.window, quotaSource: pub.quotaSource,
                     capturedAt: pub.capturedAt, dir: pub.dir,
                     // X-206 — when the FIGURE was read, and where this card
                     // stands in the refresh line. Both are facts about the

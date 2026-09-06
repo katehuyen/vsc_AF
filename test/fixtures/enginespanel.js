@@ -44,7 +44,8 @@ const data = () => {
                 id: 'work-1', engine: 'claude', label: 'work@studio',
                 email: 'work@studio.example', plan: 'max20x', health: 'ready', active: true,
                 percent: 91, resetsAt: NOW + 37 * 60 * 1000,
-                usageState: 'ok', note: '', capturedAt: NOW - 6 * 24 * 3600 * 1000,
+                usageState: 'ok', note: '', quotaSource: 'oauth-credentials',
+                capturedAt: NOW - 6 * 24 * 3600 * 1000,
                 // X-206 — the figure's own age, and the refresh line: this one
                 // is being read right now, the next is waiting behind it.
                 fetchedAt: NOW - 40 * 1000, queue: 'reading', queuePlace: 0,
@@ -54,7 +55,8 @@ const data = () => {
                 id: 'personal', engine: 'claude', label: 'personal@gmail',
                 email: 'personal@gmail.com', plan: 'pro', health: 'ready', active: false,
                 percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000,
-                usageState: 'ok', note: '', capturedAt: NOW - 2 * 3600 * 1000,
+                usageState: 'ok', note: '', quotaSource: 'oauth-credentials',
+                capturedAt: NOW - 2 * 3600 * 1000,
                 fetchedAt: NOW - 3 * 3600 * 1000, queue: 'queued', queuePlace: 1,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
             },
@@ -62,19 +64,44 @@ const data = () => {
                 id: 'spare', engine: 'claude', label: 'spare@gmail',
                 email: 'spare@gmail.com', plan: 'pro', health: 'needs-signin', active: false,
                 percent: -1, resetsAt: 0,
-                usageState: 'no-auth', note: 'The refresh token was rejected.', capturedAt: NOW - 21 * 24 * 3600 * 1000,
+                usageState: 'no-auth', note: 'The refresh token was rejected.',
+                quotaSource: 'oauth-credentials', capturedAt: NOW - 21 * 24 * 3600 * 1000,
                 fetchedAt: NOW - 26 * 3600 * 1000, queue: 'queued', queuePlace: 2,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/spare'
             },
             // Captured, and NOT standing — the chip says "main account" here,
             // which is the state a reader is most likely to misread as "none".
             {
+                // X-215 - the card this item exists for. Codex publishes no
+                // endpoint and is not silent: the figure is its own transcript's
+                // last rate_limits block, so the window is a WEEK and the label
+                // over the bar has to say so.
                 id: 'codex-work', engine: 'codex', label: 'work@studio',
-                email: 'work@studio.example', plan: '', health: 'ready', active: false,
-                percent: -1, resetsAt: 0,
-                usageState: 'unread', note: '', capturedAt: NOW - 3 * 3600 * 1000,
-                fetchedAt: 0, queue: 'idle', queuePlace: 0,
+                email: 'work@studio.example', plan: 'plus', health: 'ready', active: false,
+                percent: 72, resetsAt: NOW + 3 * 24 * 3600 * 1000,
+                usageState: 'ok', window: 'Current week', quotaSource: 'session-tail',
+                note: 'Read from the account\'s own Codex transcript, which records the limit the service returned '
+                    + 'on its last turn. It costs nothing and asks nothing - but it is as old as that turn.',
+                capturedAt: NOW - 3 * 3600 * 1000,
+                fetchedAt: NOW - 26 * 60 * 1000, queue: 'idle', queuePlace: 0,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-work'
+            },
+            {
+                // ‼️ X-215 — AND THE OTHER SILENCE, on the same engine. A slot
+                // captured before its CLI has run once has no transcript to
+                // read, so it has no figure AND no window name — and "five-hour
+                // window — not read yet" would be the one claim about it that is
+                // certainly wrong. It is the row that keeps the two silences
+                // apart: nothing measured yet, versus a sign-in that died.
+                id: 'codex-spare', engine: 'codex', label: 'spare@chatgpt',
+                email: 'spare@chatgpt.example', plan: '', health: 'ready', active: false,
+                percent: -1, resetsAt: 0,
+                usageState: 'error', window: '', quotaSource: 'session-tail',
+                note: 'Not read yet — this account\'s own transcripts hold the figure, so reading it '
+                    + 'costs no request and no place in any line. It fills in as soon as something looks.',
+                capturedAt: NOW - 20 * 60 * 1000,
+                fetchedAt: 0, queue: 'idle', queuePlace: 0,
+                dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-spare'
             }
         ],
         /**

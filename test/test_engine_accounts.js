@@ -235,8 +235,19 @@ const config = (email) => JSON.stringify({
     const q = slotQuotaSource({ engine: 'claude' });
     ok('Claude\'s quota is read from the slot\'s own credentials file',
         q.kind === 'oauth-credentials' && q.file === '.credentials.json');
+    /**
+     * ‼️ X-215 — AND CODEX IS NOT ONE OF THEM ANY MORE. This asserted that every
+     * engine but Claude publishes nothing, which was never true of Codex: it
+     * writes `rate_limits.primary` into its own rollout and the status bar has
+     * drawn that figure since U-27. The stamped sentence saying otherwise is
+     * exactly what kept the account cards blank, so the rule is now the one that
+     * matters — every engine either NAMES where its figure is read from, or says
+     * in a full sentence why there is none. Nobody gets to blank a card.
+     */
+    ok('‼️ X-215 — Codex names its own transcripts as the source',
+        (() => { const s = slotQuotaSource({ engine: 'codex' }); return s.kind === 'session-tail' && s.dir === 'sessions'; })());
     ok('‼️ an engine with no readable allowance says so, in words, not by blanking',
-        ENGINE_AUTH_ADAPTERS.filter(a => a.engine !== 'claude')
+        ENGINE_AUTH_ADAPTERS.filter(a => a.engine !== 'claude' && a.engine !== 'codex')
             .every(a => { const s = a.quotaSource(); return s.kind === 'none' && s.reason.length > 30; }));
     ok('an unknown engine is a reason too, never an exception',
         slotQuotaSource({ engine: 'nope' }).kind === 'none' && slotQuotaSource(undefined).kind === 'none');

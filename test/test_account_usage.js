@@ -287,8 +287,22 @@ async function main() {
         ok('‼️ an engine that publishes no quota is never fetched — no wasted request',
             calls.length === 0);
         const u = service.current();
-        ok('…and it says WHY, in the adapter\'s own words, instead of a blank bar',
-            u.every(x => x.state === 'no-source' && (x.note || '').length > 30));
+        /*
+         * ‼️ X-215 CHANGED WHAT THESE TWO ROWS MEAN, and the difference is the
+         * whole item. Codex publishes nothing to an ENDPOINT and is not silent:
+         * it writes the figure into its own transcript, so its slot is now an
+         * unread readable one rather than a `no-source` dead end. Gemini really
+         * does publish nothing, and still says so in its adapter's own words.
+         * Neither of them costs a request either way, which is what the
+         * assertion above is about.
+         */
+        const cx = u.find(x => x.slotId === 'cx');
+        const gm = u.find(x => x.slotId === 'gm');
+        ok('‼️ X-215 — Codex is no longer told it has nothing to read',
+            cx.state === 'error' && /costs no request/.test(cx.note || ''));
+        ok('…and an engine that genuinely publishes nothing still says WHY, in the '
+            + 'adapter\'s own words, instead of a blank bar',
+            gm.state === 'no-source' && (gm.note || '').length > 30);
         // ‼️ NOT KNOWING IS NOT BEING BLOCKED. Codex states a plan it simply does
         // not publish; refusing to start a session there would turn "we cannot
         // see it" into "you cannot use it".

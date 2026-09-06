@@ -390,12 +390,28 @@
          * used are the same fact, and only one of them is the answer to the
          * question being asked. DENSITY: none of this costs a click now.
          */
+        /**
+         * ‼️ X-215 — THE WINDOW IS NAMED BY WHOEVER MEASURED IT.
+         *
+         * This block named ONE engine's window in three places, which is
+         * right for every Claude row and wrong for the engine this card was
+         * finally wired to: Codex publishes a WEEK, and a card drawing 72%
+         * under those words would be a lie with a real number in it. The name
+         * travels with the figure (`SlotUsage.window`, derived from the
+         * window's own minutes) and the five-hour wording is what an engine
+         * that named nothing still gets — which is every row written before.
+         */
+        // …and an UNREAD disk-backed row has no name yet either, because the
+        // window's length is in the reading. "five-hour" would be the one claim
+        // that is certainly wrong there.
+        const winName = a.window
+            || (a.quotaSource === 'session-tail' ? 'usage window' : 'five-hour window');
         const window5 = read
             ? T.wrap('<div class="acwin">'
-                + '<div class="acwt"><span>five-hour window</span><strong>' + a.percent + '%</strong></div>'
+                + '<div class="acwt"><span>' + esc(winName) + '</span><strong>' + a.percent + '%</strong></div>'
                 + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>'
                 + '<div class="acsub">' + esc(accountTurns(a) || 'no reset time was read') + '</div></div>',
-                'Five-hour window — ' + (a.label || a.id),
+                winName.charAt(0).toUpperCase() + winName.slice(1) + ' — ' + (a.label || a.id),
                 T.lines([
                     'used: ' + a.percent + '%',
                     'left: ' + Math.max(0, 100 - a.percent) + '%',
@@ -403,11 +419,16 @@
                     'this figure was ' + readAge,
                     a.plan ? 'plan: ' + a.plan : '',
                     '',
-                    'The percentage is Anthropic\'s own — the same figure /usage prints — and not a '
-                    + 'total worked out of the transcripts. A campaign compares it against the '
-                    + 'ceiling to decide whether this sign-in is worth opening a round on.'
+                    // ‼️ X-215 — WHERE THE NUMBER CAME FROM, IN ITS OWN WORDS.
+                    // This paragraph claimed the figure was Anthropic's, which
+                    // is true of a Claude row and false of the engine this card
+                    // was wired to next. The reading carries its own sentence
+                    // now; the Anthropic one is what a row with none still gets.
+                    a.note || ('The percentage is Anthropic\'s own — the same figure /usage prints — and not a '
+                        + 'total worked out of the transcripts. A campaign compares it against the '
+                        + 'ceiling to decide whether this sign-in is worth opening a round on.')
                 ]), 'acwinw')
-            : T.wrap('<div class="acnone">five-hour window — '
+            : T.wrap('<div class="acnone">' + esc(winName) + ' — '
                 + (a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired'
                     ? 'needs signing in again, so nothing was read'
                     : 'not read yet') + '</div>',
@@ -460,7 +481,15 @@
          * takes it out — a queue you cannot leave is one you learn not to join.
          */
         const q = a.queue || 'idle';
-        const refresh = a.percent < 0 && a.usageState === 'no-source'
+        /**
+         * ‼️ X-215 — A BUTTON MAY NOT PROMISE WHAT IT WILL NOT DO. This panel
+         * said "one request, for this account alone — accounts are read one at a
+         * time and never less than five seconds apart" on every card. On a card
+         * whose figure is a file on this disk that is three false claims in one
+         * sentence, and the queue it describes is one this press never joins.
+         */
+        const onDisk = a.quotaSource === 'session-tail';
+        const refresh = a.quotaSource === 'none'
             ? ''
             : T.wrap('<button class="acref ' + esc(q) + '" data-acrefresh="' + esc(a.id) + '">'
                 + (q === 'reading' ? '◍' : q === 'queued' ? (a.queuePlace || '·') : '⟳') + '</button>',
@@ -472,10 +501,16 @@
                     : q === 'queued'
                         ? 'One account is read every five seconds, in the order they were asked for. Press again '
                         + 'to take this one out of the line.'
-                        : 'One request, for this account alone. Accounts are read one at a time and never less '
-                        + 'than five seconds apart, however many are asked for at once — asking how much quota '
-                        + 'is left must not become the thing that spends it.\n\n'
-                        + 'This figure was ' + readAge + '.');
+                        : onDisk
+                            ? 'This engine publishes no endpoint and is not silent either: it writes what the '
+                            + 'service told it into the transcript it is keeping anyway, so this reads a file '
+                            + 'under this account\'s own folder. No request, no queue, no waiting — and the '
+                            + 'figure is as old as that account\'s last turn.\n\n'
+                            + 'This figure was ' + readAge + '.'
+                            : 'One request, for this account alone. Accounts are read one at a time and never less '
+                            + 'than five seconds apart, however many are asked for at once — asking how much quota '
+                            + 'is left must not become the thing that spends it.\n\n'
+                            + 'This figure was ' + readAge + '.');
         return '<div class="accard' + (a.active ? ' a-now' : '') + '">'
             + '<div class="pohead">'
             + '<span class="poname">' + esc(a.label || a.id) + '</span>'
@@ -508,7 +543,11 @@
             // percentage above is stale without them having to wonder.
             + ' · ' + esc(readAge)
             + ' · ' + esc(a.id)
-            + (a.note ? ' · ' + esc(a.note) : '') + '</div></div>';
+            // ‼️ X-215 — ONE SUBJECT: the note explains a SILENCE here, and a
+            // figure inside the panel above. It used to be printed in both, and
+            // the engine that reads its quota off its own transcripts carries a
+            // two-sentence note — which would have run along the card's footer.
+            + (!read && a.note ? ' · ' + esc(a.note) : '') + '</div></div>';
     }
 
     /**
@@ -541,14 +580,23 @@
                 + '<span class="acgrpc muted small">' + rows.length
                 + (rows.length === 1 ? ' account' : ' accounts') + '</span>'
                 + '<span class="grow"></span>'
+                // ‼️ X-215 — A GROUP THAT MAKES NO REQUEST IS NOT A LINE. The
+                // sentence below is about pacing an endpoint; on an engine whose
+                // figures are files under each account's own folder there is
+                // nothing to pace, and promising a queue would describe a wait
+                // that never happens.
                 + (readable.length > 1
                     ? T.wrap('<button class="secondary small" data-acrefreshall="' + esc(eng) + '">⟳ all</button>',
                         'Read all ' + readable.length + ' ' + engineLabel(eng) + ' figures',
-                        'They go into one line and are read ONE AT A TIME, five seconds apart — N accounts '
-                        + 'are still N requests, and the spacing is the only thing that keeps asking how '
-                        + 'much is left from becoming what spends it.\n\n'
-                        + 'Each card shows its place in the line while it waits, and pressing a waiting '
-                        + 'card takes it back out.')
+                        readable[0].quotaSource === 'session-tail'
+                            ? 'This engine writes what the service told it into its own transcripts, so all '
+                            + readable.length + ' are read straight off this disk — no requests, no line, no '
+                            + 'waiting. Each figure is as old as that account\'s last turn.'
+                            : 'They go into one line and are read ONE AT A TIME, five seconds apart — N accounts '
+                            + 'are still N requests, and the spacing is the only thing that keeps asking how '
+                            + 'much is left from becoming what spends it.\n\n'
+                            + 'Each card shows its place in the line while it waits, and pressing a waiting '
+                            + 'card takes it back out.')
                     : '')
                 + '</div>';
             return head + rows.map(accountCardHtml).join('');

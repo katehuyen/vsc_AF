@@ -7,6 +7,7 @@ import {
 } from './planusage';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
 import { MACHINE_ACCOUNT } from './accountStore';
+import { EngineUsage } from './engineUsage';
 import { ensureAccessToken, EXPIRY_SKEW_MS, RefreshOutcome } from './oauthRefresh';
 
 /**
@@ -63,6 +64,14 @@ export interface SlotUsage {
     plan: string;
     /** when these figures were read; 0 = never */
     fetchedAt: number;
+    /**
+     * ‼️ X-215 — WHICH WINDOW THE PERCENTAGE IS OF. Absent = the five-hour one,
+     * which is what every Claude row means and what every surface drew before a
+     * second engine had a figure at all. Codex's own window is the WEEK, and a
+     * card that printed 72% under the words "five-hour window" would be a lie
+     * with a real number in it.
+     */
+    window?: string;
     /** one honest line for anything other than a live figure */
     note?: string;
 }
@@ -88,6 +97,44 @@ export function slotCredentialsFile(slot: { dir: string; engine: string } | unde
     return source.kind === 'oauth-credentials' ? path.join(slot.dir, source.file) : '';
 }
 
+/**
+ * ‼️ X-215 — WHERE THIS SLOT'S OWN TRANSCRIPTS ARE, for an engine that records
+ * its allowance instead of publishing one. The exact mirror of
+ * `slotCredentialsFile`, and for the same reason: one place decides what a
+ * slot's figure is read FROM, so the card, the service and the queue cannot
+ * each answer it differently. '' where the engine has no such source.
+ */
+export function slotSessionDir(slot: { dir: string; engine: string } | undefined): string {
+    if (!slot || !slot.dir) { return ''; }
+    const source = adapterFor(slot.engine).quotaSource();
+    return source.kind === 'session-tail' ? path.join(slot.dir, source.dir) : '';
+}
+
+/**
+ * ‼️ X-215 — THE ENGINE'S OWN READING, NARROWED TO WHAT A SLOT ROW SHOWS.
+ *
+ * `usageFrom` below does this for Anthropic's snapshot and takes the FIVE-HOUR
+ * bar, because that is the window a Claude plan is walled by. An engine that
+ * publishes its own bars names its own window — Codex's is the week — so the
+ * PRIMARY bar is the figure and the card is told what it is called. A card that
+ * drew a weekly percentage under the words "five-hour window" would be a lie
+ * with a real number in it, which is worse than the blank it replaces.
+ */
+export function usageFromEngine(slot: { id: string; engine: string }, eu: EngineUsage): SlotUsage {
+    const bar = eu.bars[0];
+    const read = eu.state === 'ok' && !!bar;
+    return {
+        slotId: slot.id, engine: slot.engine,
+        state: read ? 'ok' : 'error',
+        percent: read ? bar.percent : -1,
+        resetsAt: read ? bar.resetsAt : 0,
+        plan: eu.plan ?? '',
+        fetchedAt: eu.fetchedAt ?? 0,
+        ...(read && bar.title ? { window: bar.title } : {}),
+        ...(eu.note ? { note: eu.note } : {})
+    };
+}
+
 /** A slot that has never been read yet, stated rather than left missing. */
 export function unreadUsage(slot: { id: string; engine: string }): SlotUsage {
     const source = adapterFor(slot.engine).quotaSource();
@@ -100,7 +147,14 @@ export function unreadUsage(slot: { id: string; engine: string }): SlotUsage {
     return {
         slotId: slot.id, engine: slot.engine, state: 'error',
         percent: -1, resetsAt: 0, plan: '', fetchedAt: 0,
-        note: 'Not read yet — the next turn of the shared usage budget will pick this one up.'
+        // ‼️ X-215 — AND THE SENTENCE SAYS WHICH SILENCE THIS IS. A slot whose
+        // figure is a file on this disk is not waiting for a request budget, and
+        // telling the reader it is would send them to look at a queue it is not
+        // in — the same kind of wrong sentence that kept these cards blank.
+        note: source.kind === 'session-tail'
+            ? 'Not read yet — this account\'s own transcripts hold the figure, so reading it costs '
+                + 'no request and no place in any line. It fills in as soon as something looks.'
+            : 'Not read yet — the next turn of the shared usage budget will pick this one up.'
     };
 }
 
@@ -335,6 +389,17 @@ export interface AccountUsageOptions {
      * the page in the first place.
      */
     busy?(slotId: string): boolean;
+    /**
+     * ‼️ X-215 — READ A SLOT'S OWN TRANSCRIPTS, for an engine whose allowance is
+     * on this disk rather than behind an endpoint (`QuotaSource.session-tail`).
+     *
+     * The service owns no `fs` — this is the file half, handed in the way every
+     * other read here is. It is called with the slot and the directory
+     * `slotSessionDir` resolved, and it answers with the engine's own reading or
+     * nothing. Undefined hook = the branch is simply not read, which is what
+     * every caller written before this did.
+     */
+    readSessionTail?(slot: EngineAccountSlot, dir: string): EngineUsage | undefined;
     now?(): number;
 }
 
@@ -395,6 +460,11 @@ export class AccountUsageService {
         if (!slot || adapterFor(slot.engine).quotaSource().kind === 'none') {
             return Promise.resolve(this.current());
         }
+        // ‼️ X-215 — A FILE READ IS NOT A REQUEST. It answers here, before the
+        // floor and before the in-flight guard: a card whose figure is on this
+        // disk must not be told to wait for a queue that exists to be polite to
+        // somebody else's endpoint.
+        if (slotSessionDir(slot)) { return Promise.resolve(this.readTail(slot, 0)); }
         if (now - this.lastFetchAt < MIN_FETCH_INTERVAL_MS) { return Promise.resolve(this.current()); }
         if (this.inflight) { return this.inflight; }
         this.inflight = this.load(slot, now).finally(() => { this.inflight = undefined; });
@@ -410,9 +480,12 @@ export class AccountUsageService {
     private pick(
         slots: EngineAccountSlot[], reason: 'beat' | 'edge' | 'user', now: number
     ): EngineAccountSlot | undefined {
-        // Only slots that actually have a figure to read; the rest cost nothing
-        // and are reported from their adapter's own sentence.
-        const readable = slots.filter(s => adapterFor(s.engine).quotaSource().kind !== 'none');
+        // Only slots the ENDPOINT can be asked about. A slot with no source at
+        // all is reported from its adapter's own sentence; a `session-tail` slot
+        // has a figure and needs no request for it (X-215), and letting it take a
+        // turn in a round robin that hands out one request per interval would
+        // starve the slots that actually need one.
+        const readable = slots.filter(s => adapterFor(s.engine).quotaSource().kind === 'oauth-credentials');
         if (!readable.length) { return undefined; }
         const ttl = Math.max(0, this.opts.ttlMs());
         const due = readable.filter(s => {
@@ -432,9 +505,51 @@ export class AccountUsageService {
         });
     }
 
+    /**
+     * ‼️ X-215 — THE HALF THAT COSTS NOTHING, done first and unconditionally.
+     *
+     * Every gate below this — the shared floor, the 429 backoff, the one-request
+     * round robin, the in-flight guard — exists for one reason: asking how much
+     * quota is left must not become the thing that spends it. None of that is
+     * true of a file on this machine, so none of it applies here. What DOES
+     * apply is the per-slot TTL, because a walk of a sessions folder on every
+     * paint is a cost of its own.
+     */
+    private readTails(now: number, ttlMs: number): void {
+        if (!this.opts.readSessionTail) { return; }
+        for (const slot of this.opts.slots()) {
+            const dir = slotSessionDir(slot);
+            if (!dir) { continue; }
+            const had = this.byId.get(slot.id);
+            if (had && had.fetchedAt && now - had.fetchedAt < ttlMs) { continue; }
+            this.readTail(slot, ttlMs);
+        }
+    }
+
+    /** One slot's own transcripts, put on the record. Never throws: a folder
+     *  that is not there is a slot with no figure, not a broken service. */
+    private readTail(slot: EngineAccountSlot, ttlMs: number): SlotUsage[] {
+        const dir = slotSessionDir(slot);
+        if (!dir || !this.opts.readSessionTail) { return this.current(); }
+        const now = this.now();
+        const had = this.byId.get(slot.id);
+        if (ttlMs && had && had.fetchedAt && now - had.fetchedAt < ttlMs) { return this.current(); }
+        let eu: EngineUsage | undefined;
+        try { eu = this.opts.readSessionTail(slot, dir); } catch { eu = undefined; }
+        if (!eu) {
+            // Nothing read is NOT nothing to read: the slot keeps saying it is
+            // unread rather than acquiring a zero it never measured.
+            if (!had) { this.byId.set(slot.id, unreadUsage(slot)); }
+            return this.current();
+        }
+        this.byId.set(slot.id, usageFromEngine(slot, eu));
+        return this.current();
+    }
+
     private read(reason: 'beat' | 'edge' | 'user'): Promise<SlotUsage[]> {
         const now = this.now();
         const slots = this.opts.slots();
+        this.readTails(now, Math.max(0, this.opts.ttlMs()));
         const floor = reason === 'edge'
             ? Math.max(MIN_FETCH_INTERVAL_MS, this.opts.edgeFloorMs?.() ?? EDGE_READ_FLOOR_MS)
             : MIN_FETCH_INTERVAL_MS;

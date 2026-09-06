@@ -55,7 +55,7 @@ const sec = () => {
 {
     const h = sec();
     const cards = (h.match(/class="accard/g) || []).length;
-    ok('one card per stored account', cards === DATA.accounts.length && cards === 4);
+    ok('one card per stored account', cards === DATA.accounts.length && cards === 5);
     ok('…each carrying the address', h.indexOf('personal@gmail.com') >= 0
         && h.indexOf('work@studio.example') >= 0);
     ok('…and the plan that is being paid for', h.indexOf('max20x') >= 0 && h.indexOf('pro') >= 0);
@@ -68,7 +68,7 @@ const sec = () => {
     const h = sec();
     const bars = (h.match(/class="progress"/g) || []).length;
     ok('‼️ a bar per account whose percentage was really read, and only those',
-        bars === 2);
+        bars === 3);
     ok('…drawn at the figure it read', /width:91%/.test(h) && /width:12%/.test(h));
     ok('‼️ the 91% one is marked hot rather than merely wide — a bar the reader '
         + 'has to measure with their eye is a figure they have to compute',
@@ -86,7 +86,7 @@ const sec = () => {
     ok('the standing account is marked', /class="acnow"/.test(h));
     const use = r.query('[data-acuse]');
     ok('‼️ every account that is NOT standing offers one click to stand it up',
-        use.length === 3 && !use.some(b => b.dataset.acuse === 'work-1'));
+        use.length === 4 && !use.some(b => b.dataset.acuse === 'work-1'));
     use.find(b => b.dataset.acuse === 'personal').click();
     ok('…and that press asks the host to activate exactly that account',
         JSON.stringify(r.last()) === JSON.stringify({ type: 'accountActivate', id: 'personal', engine: 'claude' }));
@@ -109,11 +109,11 @@ const sec = () => {
     // the AFTip, where the whole consequence fits.
     ok('‼️ both directions are the SAME control, in its two positions',
         /class="actog on"[^>]*data-acmain/.test(h)
-        && (h.match(/class="actog"[^>]*data-acuse/g) || []).length === 3);
+        && (h.match(/class="actog"[^>]*data-acuse/g) || []).length === 4);
     ok('…exactly one switch is ON, and it is the standing account\'s',
         (h.match(/class="actog on"/g) || []).length === 1);
     ok('…and it announces itself as a switch to anything not looking at pixels',
-        (h.match(/role="switch"/g) || []).length === 4
+        (h.match(/role="switch"/g) || []).length === 5
         && /aria-checked="true"/.test(h) && /aria-checked="false"/.test(h));
     ok('‼️ …while the misleading words are gone from the section entirely',
         !/Use next|Main account<\/button>/.test(h));
@@ -128,7 +128,7 @@ const sec = () => {
 // ---- dropping one ----------------------------------------------------------
 {
     const drop = r.query('[data-acforget]');
-    ok('every account can be dropped', drop.length === 4);
+    ok('every account can be dropped', drop.length === 5);
     drop.find(b => b.dataset.acforget === 'spare').click();
     ok('…and dropping asks for exactly that id', JSON.stringify(r.last())
         === JSON.stringify({ type: 'accountForget', id: 'spare' }));
@@ -176,10 +176,10 @@ const sec = () => {
     ok('‼️ accounts are grouped by the engine they belong to',
         /class="acgrpn">Claude Code</.test(h) && /class="acgrpn">Codex</.test(h));
     ok('…each group counting its own', /Claude Code<\/span><span class="acgrpc[^>]*>3 accounts/.test(h)
-        && /Codex<\/span><span class="acgrpc[^>]*>1 account</.test(h));
+        && /Codex<\/span><span class="acgrpc[^>]*>2 accounts</.test(h));
     ok('…and only a group with something to compare gets a group-wide read',
-        (h.match(/data-acrefreshall/g) || []).length === 1
-        && /data-acrefreshall="claude"/.test(h));
+        (h.match(/data-acrefreshall/g) || []).length === 2
+        && /data-acrefreshall="claude"/.test(h) && /data-acrefreshall="codex"/.test(h));
 
     // ‼️ A press that acts in twenty seconds with no sign it was heard is
     // indistinguishable from a button that does nothing.
@@ -196,7 +196,7 @@ const sec = () => {
     // X-206 — the age of the FIGURE, beside the age of the account. They answer
     // different questions and only one of them decides a switch.
     ok('‼️ every card says when its own figure was read, not only when it was filed',
-        /captured 6d ago · read 40s ago/.test(h) && /captured 3h ago · never read/.test(h));
+        /captured 6d ago · read 40s ago/.test(h) && /captured 20m ago · never read/.test(h));
 
     const one = r.query('[data-acrefresh]').find(b => b.dataset.acrefresh === 'personal');
     one.click();

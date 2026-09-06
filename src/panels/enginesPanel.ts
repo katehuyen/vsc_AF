@@ -64,6 +64,10 @@ export interface EnginesPanelDeps {
         id: string; engine: string; label: string; email: string; plan: string;
         health: string; active: boolean; percent: number; resetsAt: number;
         usageState: string; note: string; capturedAt: number; dir: string;
+        /** X-215 — which window `percent` is of ('' = the five-hour one) */
+        window: string;
+        /** X-215 — 'oauth-credentials' (an endpoint) | 'session-tail' (this disk) | 'none' */
+        quotaSource: string;
         /** X-206 — when the FIGURE was read (0 = never), not when the account was filed */
         fetchedAt: number;
         /** X-206 — 'idle' | 'queued' | 'reading', and the place in the line (0 = not waiting) */

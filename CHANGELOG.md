@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.406.0 - X-215: the sentence that kept the Codex cards blank (2026-09-06)
+
+The user found this by comparing two surfaces of one product: *"the status bar
+says week 72% for Codex — why is that not on the account cards?"* The cards were
+not missing a feature. They were being told, in a stamped sentence, that there
+was nothing to read:
+
+```
+quotaSource: () => ({ kind: 'none',
+    reason: 'Codex keeps no readable quota figure on disk' })
+```
+
+‼️ **That sentence was false, and a wrong reason is worse than a blank bar
+because it closes the question.** `core/engineUsage.ts` has read
+`rate_limits.primary` out of the tail of the newest rollout since U-27 — it is
+where the status bar's "week 72%" comes from. `accountUsage.ts` read the stamp,
+not the world, and dropped every Codex slot from the list of things it could
+read.
+
+`QuotaSource` has a third branch now — `session-tail`, the engine's own
+transcripts under **the slot's own directory**, which is what makes the answer
+per account rather than per machine. One parser serves both roots: the status
+bar asks `readCodexUsage` for the machine's `~/.codex/sessions`, a card asks the
+same function for its own folder, and a second copy is how the two would come to
+disagree about one week.
+
+‼️ **A FILE READ IS NOT A REQUEST, and nothing here may pretend otherwise.**
+Every gate in `AccountUsageService` — the five-second floor, the one-request
+round robin, the 429 backoff — exists so that asking how much quota is left
+never becomes the thing that spends it. None of that is true of a file on this
+disk, so a `session-tail` slot takes no turn in the robin, waits behind no
+floor, and joins no refresh queue. Three sentences in the UI that promised a
+request, a line and a five-second spacing now say what actually happens.
+
+And the card names the window it drew. "five-hour window" is right for every
+Claude row and wrong for the row this item exists for: Codex publishes a **week**,
+and 72% under those words would have been a lie with a real number in it.
+
 ## 3.405.0 - X-226: the run that slept until 07:50 while three accounts sat at 4% (2026-09-06)
 
 The X-211 family promised one thing: *when the quota runs out mid-work, change
