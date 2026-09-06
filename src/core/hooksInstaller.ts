@@ -12,11 +12,48 @@ const PLAIN_EVENTS = [
 ];
 export const ALL_HOOK_EVENTS = [...TOOL_EVENTS, ...PLAIN_EVENTS];
 
-export function hookCommand(port: number): string {
-    // curl ships with Windows 10+/macOS/Linux. -m 3 keeps a dead listener from
-    // ever blocking the agent; "|| cd ." forces exit code 0 in cmd, bash and sh.
-    return `curl -s -m 3 -X POST "http://127.0.0.1:${port}/event?src=${HOOK_MARKER}" ` +
-        `-H "Content-Type: application/json" --data-binary @- || cd .`;
+/**
+ * ‼️ X-208 — WHICH SHELL WILL RUN THE HOOK. Not a preference: the same string
+ * cannot work in all of them, and each way it fails is silent.
+ */
+export type HookShell = 'posix' | 'powershell';
+
+/**
+ * ‼️ X-208 — ONE HOOK, TWO SPELLINGS, AND WINDOWS POWERSHELL BREAKS ALL THREE
+ * PARTS OF THE OTHER ONE.
+ *
+ * The line below is what every engine's hook file has carried, and it works in
+ * sh, bash and cmd — measured. Under **Windows PowerShell 5.1** it fails three
+ * separate times, and only the first of them was ever reported:
+ *
+ *   1. `||` IS NOT A STATEMENT SEPARATOR THERE. It is a PARSE error, so the
+ *      command never runs at all and the engine reports the hook as failed
+ *      (measured: "The token '||' is not a valid statement separator in this
+ *      version"). Codex's Stop hook has been failing on exactly this.
+ *   2. ‼️ `curl` IS NOT CURL. In Windows PowerShell 5.1 it is an ALIAS for
+ *      `Invoke-WebRequest`, which is handed curl's flags and does something
+ *      else entirely. Fixing (1) alone leaves the hook calling the wrong tool.
+ *   3. ‼️ `@-` IS THE SPLATTING OPERATOR. Unquoted, PowerShell eats it before
+ *      curl sees it: measured, the process exits 1 and **the body never
+ *      arrives** — the worst of the three, because a hook that posts nothing
+ *      while its shell reports success is a listener that has simply gone quiet.
+ *
+ * So the PowerShell spelling names the executable, quotes the dash, and forces
+ * the exit code with `; exit 0` — measured to both parse AND deliver, with a
+ * dead listener still leaving exit 0.
+ *
+ * ‼️ AND `; exit 0` IS NOT THE ONE TO STANDARDISE ON. Under **cmd** it exits 0
+ * and posts NOTHING (measured) — cmd hands `;` to curl as an argument. That is
+ * why there are two spellings and not one: every candidate for a single string
+ * is silently wrong in some shell that really runs these.
+ */
+export function hookCommand(port: number, shell: HookShell = 'posix'): string {
+    // -m 3 keeps a dead listener from ever blocking the agent.
+    const rest = `-s -m 3 -X POST "http://127.0.0.1:${port}/event?src=${HOOK_MARKER}" `
+        + '-H "Content-Type: application/json" --data-binary ';
+    return shell === 'powershell'
+        ? `curl.exe ${rest}'@-' ; exit 0`
+        : `curl ${rest}@- || cd .`;
 }
 
 interface HookEntry {

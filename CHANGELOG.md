@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.416.0 - X-208 (1/n): the live hook, spelt for the shell that will actually run it (2026-09-06)
+
+**Codex's Stop hook has been failing, and the reported reason was the smallest
+of three.** Every engine's hook file carries one line — a `curl` POST to the
+live listener with `|| cd .` on the end to force exit 0 — and it works in sh,
+bash and cmd. Under **Windows PowerShell 5.1**, where Codex runs its hooks on
+this machine, it fails three separate times:
+
+1. **`||` is not a statement separator there.** It is a *parse* error, so the
+   command never runs and the engine reports the hook as failed. This is the one
+   that was reported.
+2. **‼️ `curl` is not curl.** In Windows PowerShell 5.1 it is an alias for
+   `Invoke-WebRequest`, handed curl's flags. Fixing (1) alone leaves the hook
+   calling a different tool.
+3. **‼️ An unquoted `@-` is the splatting operator.** PowerShell eats it before
+   curl sees it: measured, the process exits 1 and **the body never arrives** —
+   the worst of the three, because a shell reporting success while posting
+   nothing looks exactly like a listener that has gone quiet.
+
+`hookCommand(port, shell)` now has two spellings. The sh/bash/cmd one is
+unchanged to the character — Claude's hooks run on it today and this item is
+about the other shell. The PowerShell one names `curl.exe`, quotes the dash, and
+forces the exit code with `; exit 0`; measured, it both parses and delivers, and
+a dead listener still leaves exit 0.
+
+**‼️ And there is no single string, which is why there are two.** `; exit 0`
+looked like the one to standardise on — until it was measured under **cmd**,
+where it exits 0 and posts **nothing**: cmd hands the semicolon to curl as an
+argument. Every candidate for one line is silently wrong in some shell that
+really runs these, so the shell is named rather than guessed.
+
+`hooks.status` and the Infra panel now publish **both**, because deriving the
+second one by hand is exactly what produced the broken Codex hook.
+
 ## 3.415.0 - U-133: the question can be folded down to its line without letting go of the turn (2026-09-06)
 
 **The card was covering what the question was about.** The ask card sits between

@@ -18389,6 +18389,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 listener: live.listenerState,
                 port: cfg().get<number>('livePort', 8377),
                 command: hookCommand(cfg().get<number>('livePort', 8377)),
+                commandPowerShell: hookCommand(cfg().get<number>('livePort', 8377), 'powershell'),
                 targets: hookTargets(infraDeps)
             }),
             holder: () => portHolder(cfg().get<number>('livePort', 8377)),

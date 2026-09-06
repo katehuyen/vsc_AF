@@ -188,12 +188,23 @@ export function registerInfraOps(bridge: BridgeRegistry, deps: InfraBridgeDeps):
     bridge.register([
         {
             op: 'hooks.status',
-            describe: 'Where the Claude live hooks stand, per file. Without them the extension is BLIND — no timeline, no permission-wait notice, no live turn — and the commonest cause of "nothing shows up" is that they were never installed, or were installed for one agent and not the farm. USER scope is one file that covers every session on this machine; AGENT scope is one file per agent folder. args: none',
+            describe: '‼️ X-208 — TWO SPELLINGS, AND THE SHELL DECIDES WHICH ONE. `command` is the '
+                + 'sh/bash/cmd line every hook file carries; `commandPowerShell` is the same hook for an '
+                + 'engine whose hooks run under Windows PowerShell (Codex here). Do not copy the first '
+                + 'into the second: measured, `||` is a parse error there, `curl` is an alias for '
+                + 'Invoke-WebRequest, and an unquoted `@-` is the splatting operator — that last one '
+                + 'exits 1 and posts NOTHING. Where the Claude live hooks stand, per file. Without them the extension is BLIND — no timeline, no permission-wait notice, no live turn — and the commonest cause of "nothing shows up" is that they were never installed, or were installed for one agent and not the farm. USER scope is one file that covers every session on this machine; AGENT scope is one file per agent folder. args: none',
             handler: () => {
                 const targets = hookTargets(deps);
                 const port = deps.livePort();
                 return {
                     port, command: hookCommand(port),
+                    // ‼️ X-208 — the SAME hook, spelt for a shell that cannot run
+                    // the line above. Published rather than left to be derived,
+                    // because the way it fails under Windows PowerShell is three
+                    // silent failures deep (see hooksInstaller.ts) and the last
+                    // one posts nothing while reporting success.
+                    commandPowerShell: hookCommand(port, 'powershell'),
                     installed: targets.filter(t => t.installed).length,
                     targets,
                     note: targets.some(t => t.scope === 'user' && t.installed)
@@ -242,6 +253,7 @@ export function registerInfraOps(bridge: BridgeRegistry, deps: InfraBridgeDeps):
                 if (args.dryRun === true) {
                     return {
                         dryRun: true, port, command: hookCommand(port),
+                        commandPowerShell: hookCommand(port, 'powershell'),
                         files: targets.map(t => ({ ...t })),
                         note: `${targets.length} file(s) would be written; nothing has changed.`
                     };

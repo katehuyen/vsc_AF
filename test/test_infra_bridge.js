@@ -15,7 +15,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const { registerInfraOps, hookTargets, serviceFiles, SERVICE_TASK_NAME } =
     require(path.join(__dirname, '..', 'out', 'core', 'infraBridge.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
-const { HOOK_MARKER } = require(path.join(__dirname, '..', 'out', 'core', 'hooksInstaller.js'));
+const { HOOK_MARKER, hookCommand } = require(path.join(__dirname, '..', 'out', 'core', 'hooksInstaller.js'));
 
 (async () => {
     const root = fs.mkdtempSync(path.join(__dirname, 'tmp-infra-'));
@@ -222,6 +222,64 @@ const { HOOK_MARKER } = require(path.join(__dirname, '..', 'out', 'core', 'hooks
     // hookTargets is the shared reading behind status/install/remove.
     ok('hookTargets is one reading for all three ops',
         hookTargets({ getAgents: () => [{ id: 'a1', name: 'yazar', dir: agentDir }], userSettingsFile: () => path.join(home, 'settings.json') }).length === 2);
+
+    // ---- X-208: one hook, two spellings, because one string cannot do it ----
+    //
+    // ‼️ EVERY WAY THIS BREAKS IS SILENT, AND THERE ARE THREE OF THEM. The line
+    // every hook file has carried works in sh, bash and cmd — measured. Under
+    // Windows PowerShell 5.1, where Codex runs its hooks on this machine, it
+    // fails three separate times and only the first was ever reported:
+    //
+    //   1. `||` is not a statement separator — a PARSE error, so nothing runs
+    //      and the engine reports the hook as failed;
+    //   2. `curl` is an ALIAS for Invoke-WebRequest — fixing (1) alone leaves
+    //      the hook calling a different tool with curl's flags;
+    //   3. an unquoted `@-` is the SPLATTING operator — measured, the process
+    //      exits 1 and the body never arrives, which is the worst of the three
+    //      because a shell reporting success while posting nothing looks
+    //      exactly like a listener that has gone quiet.
+    {
+        const posix = hookCommand(8377);
+        const pwsh = hookCommand(8377, 'powershell');
+
+        // The working spelling does not move. Claude's hooks run on it today,
+        // and this whole item is about the OTHER shell.
+        ok('‼️ X-208: the sh/bash/cmd spelling is unchanged, to the character',
+            posix === 'curl -s -m 3 -X POST "http://127.0.0.1:8377/event?src=agentfarm-live" '
+            + '-H "Content-Type: application/json" --data-binary @- || cd .');
+        ok('…and it is what a caller gets when it names no shell at all',
+            hookCommand(8377, 'posix') === posix);
+
+        ok('‼️ …the PowerShell spelling carries no `||`, which does not PARSE there',
+            pwsh.indexOf('||') < 0);
+        ok('‼️ …it names the EXECUTABLE, because bare curl is an alias for Invoke-WebRequest',
+            /(^|\s)curl\.exe\s/.test(pwsh) && !/(^|\s)curl\s/.test(pwsh));
+        ok('‼️ …and it QUOTES the dash, because @- unquoted is the splatting operator',
+            pwsh.indexOf("--data-binary '@-'") >= 0 && !/--data-binary @-/.test(pwsh));
+        ok('…while still forcing exit 0, which is the whole reason the other one has || cd .',
+            /;\s*exit 0\s*$/.test(pwsh));
+
+        // ‼️ AND THE OTHER WAY ROUND. `; exit 0` exits 0 under cmd and posts
+        // NOTHING (measured) — cmd hands the semicolon to curl as an argument.
+        // Standardising on it would have traded a loud failure for a quiet one.
+        ok('‼️ …and the sh/cmd spelling does NOT borrow it: under cmd it posts nothing',
+            posix.indexOf('exit 0') < 0);
+
+        // The two are the SAME hook. A spelling that drifted in its port, its
+        // marker or its timeout would be a second listener nobody asked for.
+        const same = (s) => s.replace(/^curl(\.exe)? /, '').replace(/ (\|\| cd \.|; exit 0)$/, '')
+            .replace(/'@-'/, '@-');
+        ok('‼️ …and the two differ ONLY where a shell forces them to',
+            same(posix) === same(pwsh) && same(posix).indexOf(HOOK_MARKER) >= 0
+            && same(posix).indexOf('8377') >= 0);
+
+        // The bridge publishes both, so nobody has to derive the second one —
+        // deriving it is what produced the broken Codex hook in the first place.
+        const st3 = await reg.dispatch('hooks.status', {});
+        ok('‼️ …and hooks.status hands over BOTH, so the second is never guessed at',
+            st3.ok && st3.result.command === hookCommand(st3.result.port)
+            && st3.result.commandPowerShell === hookCommand(st3.result.port, 'powershell'));
+    }
 
     fs.rmSync(root, { recursive: true, force: true });
     console.log(`${pass} passed, ${fail} failed`);
