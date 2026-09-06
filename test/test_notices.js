@@ -12,7 +12,7 @@ const {
     NoticesStore, makeNotice, filterNotices, capNotices, coerceType, coerceLevel,
     coerceSections, coerceStars, unreadCount, openQuestionCount, registerNoticesOps,
     noticeMarkdown, buildNoticesMarkdown, NOTICE_TYPES, reportFileStem,
-    staleReminderKeys, IDLE_REMINDER_PREFIX
+    staleReminderKeys, IDLE_REMINDER_PREFIX, NO_ACCOUNT
 } = require(path.join(__dirname, '..', 'out', 'core', 'notices.js'));
 const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 
@@ -516,6 +516,39 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     const dis = await reg.dispatch('notices.dismiss', { id: post.result.id });
     ok('dismiss by id', dis.ok && dis.result.ok === true);
     ok('…and says the removal can be taken back', dis.result.undoable === 1);
+
+    // ---------- X-257: WHICH SIGN-IN THIS HAPPENED TO, AS DATA ----------
+    // X-178 announces a slot whose token fell over, and it says which one in
+    // PROSE. So the same account's repeated failures cannot be grouped, the
+    // board cannot be filtered by sign-in, and an agent cannot ask "is there an
+    // open warning about this account". On a farm whose scarce resource IS
+    // account quota, that is the axis the board was missing.
+    {
+        const a1 = makeNotice({ title: 'signed out', account: '  claude-work ' });
+        ok('a notice carries the account it is about', a1.account === 'claude-work');
+        ok('…and a notice about no particular account carries none',
+            makeNotice({ title: 'x' }).account === undefined);
+
+        const list = [
+            makeNotice({ title: 'a', account: 'slot-a' }),
+            makeNotice({ title: 'b', account: 'slot-b' }),
+            makeNotice({ title: 'c' })
+        ];
+        ok('the board can be filtered by sign-in',
+            filterNotices(list, { account: 'slot-a' }).length === 1);
+        ok('…case-insensitively, the way the agent filter is',
+            filterNotices(list, { account: 'SLOT-B' }).length === 1);
+        ok('‼️ …and "nobody filed one" is a different question from no filter at all',
+            filterNotices(list, { account: NO_ACCOUNT }).length === 1
+            && filterNotices(list, {}).length === 3);
+
+        const posted = await reg.dispatch('notices.post',
+            { title: 'slot down', account: 'claude-night' });
+        ok('the bridge posts the account as data', posted.ok && posted.result.account === 'claude-night');
+        const found = await reg.dispatch('notices.list', { account: 'claude-night' });
+        ok('…and lists by it', found.ok && found.result.length === 1
+            && found.result[0].title === 'slot down');
+    }
 
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(reportDir, { recursive: true, force: true }); } catch {}

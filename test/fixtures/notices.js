@@ -41,14 +41,14 @@ const notices = [
         title: 'Antigravity rozet rengi: kırmızı mı, başka bir ton mu?',
         body: 'Yeşil zaten eklentinin kendi sinyal rengi. Mavi Gemini\'de. Kırmızıya geçtim ama '
             + 'onaylamanı istiyorum çünkü hata rengiyle aynı aileden.',
-        status: 'open', tags: ['ux'], projectId: 'p1', stars: 2
+        status: 'open', tags: ['ux'], projectId: 'p1', stars: 2, account: 'claude-wmmuratvural'
     },
     {
         id: 'n2', ts: T - 2 * H, agentName: 'developer', type: 'report', level: 2,
         title: 'Oturum tablosu artık dört motorun da oturumlarını listeliyor',
         body: 'Dashboard, Sessions sayfası, ajan sayfası ve proje sayfası — dördü de aynı bileşeni '
             + 'kullanıyordu ve dördü de yalnızca Claude oturumlarını besliyordu.',
-        read: true, tags: ['bug', 'motor'], projectId: 'p1'
+        read: true, tags: ['bug', 'motor'], projectId: 'p1', account: 'claude-wmmuratvural'
     },
     {
         id: 'n3', ts: T - 5 * H, agentName: 'manager', type: 'info', level: 1,
@@ -58,7 +58,7 @@ const notices = [
         id: 'n4', ts: T - 9 * H, agentName: 'developer', type: 'report', level: 4,
         title: 'ZEN 2.4.1 mağazaya gönderildi — inceleme bekliyor',
         body: 'Sürüm notları ve mağaza metni güncellendi.',
-        pinned: true, tags: ['release'], projectId: 'p2'
+        pinned: true, tags: ['release'], projectId: 'p2', account: 'claude-murvietnam-2'
     },
     {
         id: 'n5', ts: T - 26 * H, agentName: 'psikolog', type: 'info', level: 1,

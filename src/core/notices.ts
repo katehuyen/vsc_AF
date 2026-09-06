@@ -101,6 +101,21 @@ export interface Notice {
      * for an agent's — and the user can change or clear it on the row.
      */
     projectId?: string;
+    /**
+     * ‼️ X-257 — WHICH SIGN-IN THIS HAPPENED TO.
+     *
+     * The slot whose token fell over was announced with its name written into
+     * the TITLE, which reads perfectly and answers nothing a machine can ask:
+     * the same account's repeated failures cannot be grouped, the board cannot
+     * be narrowed to one sign-in, and an agent cannot ask "is there an open
+     * warning about this account" before it sends work there. On a farm whose
+     * scarce resource IS account quota, that is the axis the board was missing.
+     *
+     * Same class as `agentName` and `projectId`: STAMPED by whoever posts,
+     * never derived. A notice about no particular account carries none, and
+     * that is a real answer rather than a gap.
+     */
+    account?: string;
 }
 
 export interface NoticeSnapshot {
@@ -136,6 +151,8 @@ export interface NoticeInput {
     sourceKey?: string;
     /** Which project this is about — see Notice.projectId. */
     projectId?: string;
+    /** Which sign-in this is about — see Notice.account (X-257). */
+    account?: string;
 }
 
 export interface NoticeFilter {
@@ -151,12 +168,19 @@ export interface NoticeFilter {
     /** A project id — or `NO_PROJECT` for "the ones nobody filed". Absent = no
      *  project filter at all, which is not the same question. */
     projectId?: string;
+    /** A slot id — or `NO_ACCOUNT` for "the ones about no particular sign-in".
+     *  Absent = no account filter at all, which is not the same question. */
+    account?: string;
     limit?: number;
 }
 
 /** The filter value that asks for rows carrying NO project. A real id can
  *  never collide with it: ids are `prj_…`. */
 export const NO_PROJECT = '(none)';
+
+/** The same shape of answer for the account axis: rows about NO sign-in. A slot
+ *  id can never collide with it — ids are engine-prefixed (`claude-…`). */
+export const NO_ACCOUNT = '(none)';
 
 const MAX_NOTICES = 400;
 const TITLE_MAX = 200;
@@ -234,6 +258,8 @@ export function makeNotice(input: NoticeInput, now = Date.now()): Notice {
     if (sourceKey) { n.sourceKey = sourceKey.slice(0, 200); }
     const projectId = String(input.projectId ?? '').trim();
     if (projectId) { n.projectId = projectId.slice(0, 60); }
+    const account = String(input.account ?? '').trim();
+    if (account) { n.account = account.slice(0, 80); }
     if (type === 'question') { n.status = 'open'; }
     return n;
 }
@@ -249,6 +275,7 @@ export function filterNotices(list: Notice[], f: NoticeFilter): Notice[] {
     const status = (f.status ?? '').toLowerCase();
     const tag = (f.tag ?? '').toLowerCase();
     const project = (f.projectId ?? '').trim();
+    const account = (f.account ?? '').trim().toLowerCase();
     let out = sortNotices(list).filter(n =>
         (!type || n.type === type) &&
         (!f.level || n.level === f.level) &&
@@ -259,6 +286,9 @@ export function filterNotices(list: Notice[], f: NoticeFilter): Notice[] {
         (f.handled === undefined || !!n.handled === f.handled) &&
         (!f.minStars || (n.stars ?? 0) >= f.minStars) &&
         (!project || (project === NO_PROJECT ? !n.projectId : n.projectId === project)) &&
+        (!account || (account === NO_ACCOUNT
+            ? !n.account
+            : (n.account ?? '').toLowerCase() === account)) &&
         (!tag || (n.tags ?? []).some(t => t.toLowerCase() === tag)));
     if (f.limit && f.limit > 0) { out = out.slice(0, Math.floor(f.limit)); }
     return out;
@@ -717,7 +747,7 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
     bridge.register([
         {
             op: 'notices.post',
-            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn. project? (id or name) files the notice under a project so it shows on that project\'s Work tab and timeline — an unknown name is reported back and the notice posts unfiled rather than being guessed at. ‼️ OMIT IT AND AGENT FARM FILLS IT IN: if you are running in a session that belongs to a project, that project is stamped for you and the answer says so (projectFrom). Pass project only to file the notice somewhere ELSE, or project="(none)" to say out loud that it belongs nowhere.',
+            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn. project? (id or name) files the notice under a project so it shows on that project\'s Work tab and timeline — an unknown name is reported back and the notice posts unfiled rather than being guessed at. ‼️ OMIT IT AND AGENT FARM FILLS IT IN: if you are running in a session that belongs to a project, that project is stamped for you and the answer says so (projectFrom). Pass project only to file the notice somewhere ELSE, or project="(none)" to say out loud that it belongs nowhere. account? (X-257 — WHICH SIGN-IN this is about, as DATA rather than a name written into the title. On a farm whose scarce resource IS account quota that is the axis the board was missing: the repeated failures of one slot group, the page narrows to one sign-in, and an agent can ask notices.list whether an account has an open warning BEFORE it sends work there. Stamped, never derived — a notice about no particular account carries none, and that is an answer rather than a gap.)',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 const agentName = optStr(args, 'agent') || undefined;
@@ -775,16 +805,17 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                     tags: (args.tags as string[] | string | undefined),
                     dueAt: typeof args.dueAt === 'number' ? args.dueAt : undefined,
                     reportPath,
-                    projectId
+                    projectId,
+                    account: optStr(args, 'account') || undefined
                 });
                 try { deps.onPost?.(n); } catch { /* toast best-effort */ }
                 changed();
-                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, reportError, projectId: n.projectId, projectFrom, projectError, unread: deps.store.unread() };
+                return { id: n.id, ts: n.ts, type: n.type, level: n.level, title: n.title, reportPath: n.reportPath, reportError, projectId: n.projectId, projectFrom, projectError, account: n.account, unread: deps.store.unread() };
             }
         },
         {
             op: 'notices.list',
-            describe: 'List notices, pinned/newest first. args: type?, level?, minLevel?, agent?, unread? (bool), status? (open|answered|declined), handled? (bool), minStars?, tag?, project? (id or name — or "(none)" for the ones nobody filed), limit? (default 30). To poll your answered questions: agent=<you>, type=question, handled=false.',
+            describe: 'List notices, pinned/newest first. args: type?, level?, minLevel?, agent?, unread? (bool), status? (open|answered|declined), handled? (bool), minStars?, tag?, project? (id or name — or "(none)" for the ones nobody filed), account? (a slot id — or "(none)" for the ones about no particular sign-in; absent asks nothing about the axis, which is a different question), limit? (default 30). To poll your answered questions: agent=<you>, type=question, handled=false.',
             handler: (args) => deps.store.list({
                 type: optStr(args, 'type'),
                 level: typeof args.level === 'number' ? args.level : undefined,
@@ -796,6 +827,7 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
                 minStars: typeof args.minStars === 'number' ? args.minStars : undefined,
                 tag: optStr(args, 'tag'),
                 projectId: projectFilter(optStr(args, 'project'), deps),
+                account: optStr(args, 'account'),
                 limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 30
             })
         },

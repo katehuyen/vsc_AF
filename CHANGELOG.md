@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.423.0 - X-257: a notice says WHICH sign-in it is about, as data (2026-09-07)
+
+**The board could not be asked a question about accounts.** X-178 closed with
+the farm announcing a slot whose token had fallen over — and it announced it in
+PROSE: the slot's name was written into the title and nowhere else. The word
+`account` did not appear in `core/notices.ts` at all.
+
+So three things were impossible on a farm whose scarce resource IS account
+quota: the repeated failures of one slot could not be grouped, the board could
+not be narrowed to one sign-in, and an agent could not ask `notices.list`
+whether an account has an open warning against it **before** sending work there.
+
+**A notice now carries `account`** — the same class of axis as `agentName` and
+`projectId`: **stamped by whoever posts, never derived.** A notice about no
+particular sign-in carries none, and that is an answer rather than a gap.
+
+- `notices.post` takes it and reports it back; `notices.list` filters by it,
+  with `"(none)"` for "the ones about no particular account" — because absent
+  asks nothing about the axis, which is a different question.
+- **The producer fills it:** the sentry slot-health notice stamps the slot it is
+  about instead of leaving it inside the sentence.
+- **The board draws it:** a 🔑 chip beside the project mark, carrying the slot's
+  short form with the whole name in its panel (SHORTHAND — five slots of one
+  engine differ in their last word, and a row is the wrong place to read them),
+  plus an **Accounts** filter whose options are derived from the rows
+  themselves. A slot nothing has ever been said about is not a filter anybody
+  can want, and a stamp naming a slot that has since been removed must stay
+  reachable — otherwise its rows become the ones nobody can filter to.
+
 ## 3.422.0 - X-260 (1/n): the fleet's own turns run on the account the rotation chose (2026-09-07)
 
 **Agent Farm runs a dozen short turns nobody starts and nobody sits in** — the

@@ -25078,6 +25078,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         + 'campaign is standing, not stopped, so signing in is all it needs.',
                 agentName: rec.agent,
                 projectId: doc.project.id,
+                // ‼️ X-257 — THE SLOT AS DATA, not only inside the sentence.
+                // This is the notice the account axis was missing: it is the
+                // one place the product says an account has fallen over, and
+                // until now it said so in prose, so nothing could group two of
+                // them or ask whether a slot has an open warning against it.
+                account: id,
                 tags: ['sentry']
             });
         }

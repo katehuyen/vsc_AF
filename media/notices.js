@@ -11,8 +11,14 @@
     const st = (typeof vscode.getState === 'function' && vscode.getState()) || {};
     // Type / level / agent / status are multi-pick: null = all (no filter),
     // an array = exactly that subset, [] = none. See media/afFilters.js.
-    const DEF = { fMode: 'all', fType: null, fLevel: null, fAgent: null, fStatus: null, fProject: null, sortKey: 'newest', query: '', singleMode: false };
+    const DEF = { fMode: 'all', fType: null, fLevel: null, fAgent: null, fStatus: null, fProject: null, fAccount: null, sortKey: 'newest', query: '', singleMode: false };
     const pick = v => (Array.isArray(v) ? v : null);
+    /**
+     * X-257 — the bucket a row about NO sign-in answers to, so an account
+     * filter never makes those rows vanish with nothing on screen saying
+     * they exist. Same shape of answer as the project one.
+     */
+    const NO_ACCOUNT = '(none)';
     let fMode = st.fMode || DEF.fMode;
     let fType = pick(st.fType);
     let fLevel = pick(st.fLevel);
@@ -21,6 +27,8 @@
     // Which projects to list. Picked by ID rather than by name so a rename does
     // not silently empty the filter — the picker prints the name.
     let fProject = pick(st.fProject);
+    // X-257 — which sign-ins the board is narrowed to (slot ids, or NO_ACCOUNT).
+    let fAccount = pick(st.fAccount);
     let sortKey = st.sortKey || DEF.sortKey;
     let query = st.query || DEF.query;
     let singleMode = st.singleMode !== undefined ? !!st.singleMode : DEF.singleMode;
@@ -65,7 +73,7 @@
         ['type', 'Type'], ['agent', 'Agent']
     ];
 
-    function saveState() { if (vscode.setState) { vscode.setState({ fMode, fType, fLevel, fAgent, fStatus, fProject, sortKey, query, singleMode }); } }
+    function saveState() { if (vscode.setState) { vscode.setState({ fMode, fType, fLevel, fAgent, fStatus, fProject, fAccount, sortKey, query, singleMode }); } }
     /** The project a notice is filed under, out of the list the host shipped.
      *  Undefined for an unfiled one AND for a stamp whose project is gone —
      *  both draw the same "—", because both mean "this row names no project
@@ -169,6 +177,7 @@
             // project filter never makes rows disappear without a name for
             // where they went.
             inSet(fProject, n.projectId || window.AFProject.NONE) &&
+            inSet(fAccount, n.account || NO_ACCOUNT) &&
             matchesQuery(n));
         const by = {
             newest: (a, b) => b.ts - a.ts, oldest: (a, b) => a.ts - b.ts,
@@ -332,7 +341,7 @@
                 ${n.reportPath ? '<span class="nt-badge rep" title="Full report attached — click to open inside">📄</span>' : ''}
                 ${statusBadge(n)}${n.edited ? '<span class="nt-badge muted">✎</span>' : ''}
                 ${tags ? `<span class="nt-tags">${tags}</span>` : ''}
-                ${projectChip(n)}
+                ${projectChip(n)}${accountChip(n)}
                 ${starsHtml(n)}
                 <span class="nt-pin ${n.pinned ? 'on' : ''}" data-pinrow="${esc(n.id)}" data-pin="${n.pinned ? '0' : '1'}" title="${n.pinned ? 'Unpin' : 'Pin'}">📌</span>
                 <span class="nt-meta muted small">${esc(n.agentName)} · ${esc(timeLabel(n.ts))}${n.read ? '' : ' <span class="nt-udot">●</span>'}</span>
@@ -360,6 +369,28 @@
         return window.AFTip.wrap(
             `<span class="nt-proj" data-openproj="${esc(p.id)}" role="button" tabindex="0">`
             + window.AFProject.badge(p) + '</span>', t.head, t.body);
+    }
+
+    /**
+     * ‼️ X-257 — WHICH SIGN-IN THE ROW IS ABOUT.
+     *
+     * Drawn only when the notice HAS one, for the same reason the project
+     * mark is: a placeholder on every row costs the width the title needs
+     * and says nothing. SHORTHAND — the row carries the slot's short form
+     * and the panel the whole name, because five slots of one engine differ
+     * in their last word and a row is the wrong place to read them.
+     */
+    function accountChip(n) {
+        const id = String(n.account || '').trim();
+        if (!id) { return ''; }
+        // engine-prefixed ids (claude-…) read as their tail on a narrow row
+        const short = id.replace(/^[a-z]+-/, '');
+        return window.AFTip.wrap(
+            '<span class="nt-acct">🔑 ' + esc(short) + '</span>',
+            id,
+            'This message is about that sign-in. It is stamped as DATA rather than '
+            + 'written into the sentence, so the board can be narrowed to one account '
+            + 'and two failures of the same one read as one story — the Accounts filter.');
     }
 
     /** The "file it under…" picker, in the open body. A select rather than a
@@ -416,7 +447,17 @@
             { id: 'nt-project', label: 'Projects', get: () => fProject, set: v => { fProject = v; },
                 title: 'Which project\'s notices to list — manage them on the ◧ Projects page',
                 options: [{ v: window.AFProject.NONE, t: '— No project' }].concat(
-                    (DATA.projects || []).map(p => ({ v: p.id, t: (p.icon ? p.icon + ' ' : '') + p.name }))) }
+                    (DATA.projects || []).map(p => ({ v: p.id, t: (p.icon ? p.icon + ' ' : '') + p.name }))) },
+            // ‼️ X-257 — the sign-ins that are actually ON the board, derived
+            // from the rows rather than shipped by the host: a slot nothing has
+            // ever been said about is not a filter anybody can want, and a stamp
+            // naming a slot that has since been removed must stay reachable —
+            // otherwise its rows become the ones nobody can filter to.
+            { id: 'nt-account', label: 'Accounts', get: () => fAccount, set: v => { fAccount = v; },
+                title: 'Which sign-in the notices are about — the accounts named on this board',
+                options: [{ v: NO_ACCOUNT, t: '— No account' }].concat(
+                    Array.from(new Set((DATA.notices || []).map(n => n.account).filter(Boolean)))
+                        .sort().map(a => ({ v: a, t: '🔑 ' + a }))) }
         ];
     }
 
@@ -613,6 +654,7 @@
            the notice IS, left of what the user did to it. Clickable, so it gets
            the pointer every other openable mark on this page has. */
         .nt-proj { flex-shrink:0; font-size:11px; opacity:.85; cursor:pointer; }
+        .nt-acct { flex-shrink:0; font-size:11px; opacity:.8; white-space:nowrap; }
         .nt-proj:hover { opacity:1; text-decoration:underline; }
         .nt-projrow { display:flex; gap:6px; align-items:center; margin:6px 0 2px; }
         .nt-projrow select { padding:2px 6px; max-width:260px; }
@@ -700,7 +742,7 @@
         }));
         bind('nt-sort', 'change', e => { sortKey = e.target.value; saveState(); render(); });
         bind('nt-search', 'input', e => { query = e.target.value; refocusSearch = true; saveState(); render(); });
-        bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; fStatus = DEF.fStatus; fProject = DEF.fProject; sortKey = DEF.sortKey; query = DEF.query; stickyRead.clear(); saveState(); render(); });
+        bind('nt-reset', 'click', () => { fMode = DEF.fMode; fType = DEF.fType; fLevel = DEF.fLevel; fAgent = DEF.fAgent; fStatus = DEF.fStatus; fProject = DEF.fProject; fAccount = DEF.fAccount; sortKey = DEF.sortKey; query = DEF.query; stickyRead.clear(); saveState(); render(); });
 
         // Filing. The picker in an open notice writes one row; the toolbar's
         // box writes the selection (or everything shown), which is the gesture
