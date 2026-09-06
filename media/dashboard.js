@@ -600,6 +600,31 @@
 
         const ins = DATA.insightTotals;
 
+        /**
+         * ‼️ X-231 — WHAT THE FLEET IS WAITING FOR, AND WHAT WOULD END IT.
+         *
+         * The count alone would be the poster this row exists not to be: five
+         * things held up is not a decision until you know whether any of them is
+         * waiting for YOU. So the sub line is the split — a clock ends by itself,
+         * an event ends when something else finishes, a human means nobody is
+         * coming — and the hover names them.
+         *
+         * ‼️ NOTHING HERE IS DECIDED. Every kind, sentence and verdict was worked
+         * out in core/waits.ts and handed over; this counts and draws. A second
+         * opinion about one wait is the whole failure the item was opened about.
+         *
+         * ‼️ AND ZERO IS DRAWN. A tile that vanishes when nothing is held up cannot
+         * be told apart from a page that never learned to ask.
+         */
+        const waits = DATA.waits || [];
+        const wBy = k => waits.filter(w => w.clearedBy === k).length;
+        const waitTip = waits.length
+            ? waits.map(w => (w.subject && w.subject.name ? w.subject.name : '') + ' — ' + w.reason
+                + (typeof w.until === 'number'
+                    ? ' (until ' + new Date(w.until).toLocaleTimeString() + ')' : '')).join('\n')
+            : 'Nothing is held up: no run is parked behind a ceiling or a clock, no mission is '
+                + 'waiting on you, no campaign is sleeping and no restart is armed.';
+
         // ‼️ A NUMBER YOU CANNOT ACT ON IS A POSTER. Each tile says what it is,
         // what it currently reads, and — where there is one — which page answers
         // the question it raises, so the menu can offer to go there.
@@ -619,6 +644,11 @@
                 ? ` · <span title="The cost, token and model figures on this page are measured from Claude Code transcripts and cover ${sessionsMeasured} of them; the other ${sessionsOther} ran on engines that state no price.">${sessionsMeasured} priced</span>`
                 : ''}</div></div>
             <div class="card" ${tile('5h window', '', '')}><div class="label">5h window</div>${windowHtml}</div>
+            <div class="card" ${tile('Waiting', 'tasks', waits.length + ' held up')}><div class="label">Waiting</div>
+                <div class="kpi" title="${C.esc(waitTip)}">${waits.length}</div>
+                <div class="sub">${waits.length
+                    ? `${wBy('clock')} clock · ${wBy('event')} event · ${wBy('human')} human`
+                    : 'nothing is held up'}</div></div>
             <div class="card" ${tile('Insights', 'portfolio', ins.error + ' errors · ' + ins.warning + ' warnings · ' + ins.info + ' info')}><div class="label">Insights</div><div class="kpi">${ins.error + ins.warning + ins.info}</div>
                 <div class="sub">${ins.error} errors · ${ins.warning} warnings · ${ins.info} info <a data-guide="saglik-ve-optimizasyon">?</a></div></div>
             ${DATA.mediaCost && DATA.mediaCost.month > 0 ? `

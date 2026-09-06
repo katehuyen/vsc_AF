@@ -2,6 +2,69 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.412.0 - X-231: the fleet's waits, in one reading and one shape (2026-09-06)
+
+*"An autonomous process must also know that it is waiting for other reasons.
+Whoever uses this function, let them HAVE that knowledge — let them give the
+command willing to wait, and if the command is making them wait, let them
+understand that with its reason."* — the condition on X-230's approval.
+
+**The root cause was not a missing figure, it was a missing vocabulary.** Every
+wait in this extension was already reported correctly on its own surface: a
+parked run says which ceiling holds it, a mission says it is waiting for an
+approval, a sentry says when it wakes, an armed restart says which session it is
+behind. What nobody could do was ask ONE question — "why am I not moving?" —
+without calling five ops and reading five different shapes. And when a sixth
+reason appeared, nothing told anybody.
+
+`farm.waits` answers it once. Every row carries the same answers whatever
+produced it: `kind`, `subject`, `reason`, `since`, `until` where a clock decides
+it, `blockedBy` — and `clearedBy`, which is the only part a caller can act on:
+**clock** (it ends by itself), **event** (when something else finishes),
+**human** (nobody is coming). Where an op ends the wait, it is named, so a
+caller can act instead of poll. Ordered by when relief comes, with the ones
+nothing will end by itself last and the longest-standing of those first.
+
+**Nothing here writes a second sentence.** The reason is the one the source
+already wrote — the parked row's own line, the run's own "what it is doing",
+the campaign's last plan, the armed plan's own words (which are now KEPT on the
+record instead of being rebuilt). Two sentences about one wait is exactly how a
+surface and an op come to disagree about the same fact.
+
+**And the op that MAKES you wait speaks the same dialect as the op you ask
+afterwards.** X-230's `decision:"armed"` was the first example of this shape, so
+it now carries a `wait` built by the same function — an agent reads the wait it
+is handed and the wait it asks about later as one object.
+
+**‼️ The vocabulary is guarded by the sources, not beside them.** `test_waits.js`
+reads `launchBlock` out of `tasks.ts` and the `MissionRunStatus` union out of
+`missions.ts`: a sixth block code, or a new `waiting-…` status, that nothing
+translates FAILS THE BUILD and is named in the failure. Both gates were proved
+by breaking them on purpose. A hold this build has no name for is still
+reported, as `task-unknown` — a wait that vanishes from the reading is worse
+than a wait with a dull name.
+
+**Two things the measurement corrected.** The account handover is NOT a separate
+wait: `tasks.ts` writes it into the parked row's own sentence (`notBeforeWhy:
+'account handover · ' + carry.why`), so it arrives as the `reason` of a
+`task-clock`, and a second row would be the copy that goes stale. And the task
+side is not one wait but a family of five — the codes `launchBlock` really
+produces — so all five are translated rather than the one the item named.
+
+**The person reads the same answer.** The Dashboard now carries a *Waiting* tile:
+the count, the clock/event/human split under it, and every wait named on hover.
+Zero is drawn on purpose — a tile that vanishes when nothing is held up cannot be
+told apart from a page that never learned to ask. The page counts and draws; it
+derives no wait of its own, and there is exactly ONE place the fleet's waits are
+assembled, which the build checks.
+
+**And the parity scanner learned the difference between naming an op and
+registering one.** A wait says which op ENDS it, so a plain data table now holds
+`tasks.unpark` and `missions.approve` — read as second registrations, they failed
+the build for a duplicate nobody had written. The discriminator is the registry's
+own contract: `{ op, describe, handler }`, so an object literal carrying neither
+half is a reference. The hollow check keeps its teeth.
+
 ## 3.411.0 - X-218: one press for every account, and the two costs under it (2026-09-06)
 
 *"And at the very top of the Accounts section, a general [🔄 Refresh all

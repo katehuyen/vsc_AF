@@ -5113,7 +5113,7 @@ const { opencodeStatus, syncToOpencode } =
         };
         const health = win("op: 'farm.health'", "op: 'farm.restartExtensionHost'");
         const restart = win("op: 'farm.restartExtensionHost'", "op: 'farm.reloadWindow'");
-        const reload = win("op: 'farm.reloadWindow'", 'const bridgeDir');
+        const reload = win("op: 'farm.reloadWindow'", "op: 'farm.waits'");
 
         ok('‼️ farm.health answers "is the new build actually running" — version AND a per-activation id',
             /version: extVersion/.test(health) && /bootId/.test(health));
@@ -5167,6 +5167,64 @@ const { opencodeStatus, syncToOpencode } =
         ok('a refusal reaches the caller as an error rather than a cheerful ok',
             /'refused'/.test(ask) && /throw new Error/.test(ask));
         ok('an armed plan is remembered and watched', /armedReady|armTimer|armedRestart/.test(ask));
+    }
+
+    // ---------- X-231: the fleet's waits, as one reading ----------
+    // The rule is in core/waits.ts and its two gates read the sources
+    // (test_waits.js). What is pinned HERE is the wiring: that the op exists,
+    // that it TRANSLATES the state each manager already holds rather than
+    // deciding anything itself, and — the condition the item put on it — that
+    // the op which MAKES a caller wait answers with the same object the
+    // reading op returns. Two dialects for one wait is the failure this whole
+    // item exists to prevent, and the producing op is where it would start.
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const cut = (from, to) => {
+            const a = src.indexOf(from);
+            const b = to ? src.indexOf(to, a) : src.length;
+            return a < 0 ? '' : src.slice(a, b > a ? b : src.length);
+        };
+        ok('extension.ts registers farm.waits', src.includes("op: 'farm.waits'"));
+        ok('…through the shared shape rather than its own copy of it',
+            /from '\.\/core\/waits'/.test(src));
+
+        const op = cut("op: 'farm.waits'", 'const fleetWaitsNow');
+        ok('‼️ the op TRANSLATES and decides nothing — no kind, no rule, no verdict of its own',
+            /fleetWaitsNow\(\)/.test(op) && !/clearedBy: '/.test(op) && !/kind: 'task-/.test(op));
+        ok('…and it answers the one figure before the list: will anything change by itself',
+            /clearedBy: \{/.test(op) && /waiting: waits\.length/.test(op));
+
+        // ‼️ X-231 (d) — ONE GATHERING, TWO READERS. The item asks for the agent's
+        // answer AND the person's; two call sites assembling the same list from the
+        // same managers is how they would come to disagree by one wait.
+        const gather = cut('const fleetWaitsNow', '\n    const bridgeDir');
+        ok('every source the item names reaches the one gathering',
+            /taskManager\.tasks/.test(gather) && /missionStore\.runs/.test(gather)
+            && /taskManager\.sentry/.test(gather) && /armedRestart/.test(gather));
+        ok('‼️ …carrying the sentence each source ALREADY wrote, never a new one',
+            /deferredReason/.test(gather) && /lastWhy/.test(gather) && /now\?\.what/.test(gather));
+        ok('…and whether a sentry round is on the board is DERIVED here too, as sentry.status derives it',
+            /sentryBusy\(\)/.test(gather));
+        ok('…while a parked row\'s age comes from the event that parked it, not from now()',
+            /'parked'/.test(gather));
+        ok('‼️ …and the Dashboard is handed THAT result rather than gathering its own',
+            /waits: \(\) => fleetWaitsNow\(\)/.test(src));
+        ok('…which is the only place the fleet\'s waits are assembled',
+            (src.match(/fleetWaits\(\{/g) || []).length === 1);
+
+        // ‼️ CONDITION (c) — THE OP THAT MAKES YOU WAIT SPEAKS THE SAME DIALECT
+        // AS THE OP YOU ASK AFTERWARDS. X-230's `decision:"armed"` was the
+        // first example of this shape; it must not become a second version of
+        // it, so the armed answer is BUILT by the same function.
+        const ask = cut('const askRestart', "op: 'farm.health'");
+        ok('‼️ X-231: the armed answer carries the wait object the reading op returns',
+            /armedRestartWait\(/.test(ask));
+        ok('…and the sentence is kept ON the record, so nobody has to write it twice',
+            /reason: plan\.reason/.test(ask));
+        const sr = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'selfRestart.ts'), 'utf8');
+        const armed = sr.slice(sr.indexOf('export interface ArmedRestart'),
+            sr.indexOf('export interface RestartWorld'));
+        ok('…which is why ArmedRestart carries a reason at all', /reason\?: string;/.test(armed));
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

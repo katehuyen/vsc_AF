@@ -263,12 +263,26 @@ export function discoverOps(sources: { file: string; src: string }[]): BridgeOpD
                 open = src.lastIndexOf('{', open - 1);
             }
             const body = open >= 0 ? balanced(src, open) : '';
-            out.push({
-                op: m[2], file,
-                hasHandler: /(^|[\s{,])handler:/m.test(body),
-                hasDescribe: /(^|[\s{,])describe:/m.test(body),
-                body
-            });
+            const hasHandler = /(^|[\s{,])handler:/m.test(body);
+            const hasDescribe = /(^|[\s{,])describe:/m.test(body);
+            /**
+             * ‼️ X-231 — A REFERENCE TO AN OP IS NOT A REGISTRATION OF ONE.
+             *
+             * This matched every `op: '…'` in extension.ts and the core, which was
+             * right while the only thing that ever wrote an op name was the registry.
+             * `farm.waits` broke that: a wait says WHICH OP ENDS IT, so a plain data
+             * table now names `tasks.unpark` and `missions.approve` — and the scanner
+             * read those four references as second registrations and failed the build
+             * for a duplicate nobody had written.
+             *
+             * The discriminator is the registry's own contract rather than a file
+             * list: a registration is `{ op, describe, handler }`, so an object literal
+             * carrying NEITHER is somebody naming an op, not declaring one. The gate
+             * keeps its teeth — a registration missing one half still has the other,
+             * and is still reported as hollow.
+             */
+            if (!hasHandler && !hasDescribe) { continue; }
+            out.push({ op: m[2], file, hasHandler, hasDescribe, body });
         }
     }
     return out;

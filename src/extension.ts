@@ -128,6 +128,7 @@ import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
 } from './core/sentryCampaign';
 import { planRevive, reviveInit, RevivePlan, ReviveRow, ReviveSkip } from './core/consoleRevive';
+import { armedRestartWait, fleetWaits, FleetWait } from './core/waits';
 import {
     ArmedRestart, armedReady, liveBlockers, planRestart, RESTART_COMMANDS,
     RESTART_COOLDOWN_MS, RestartKind, RestartWhen
@@ -15259,7 +15260,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } else if (plan.decision === 'armed') {
             armedRestart = {
                 kind: plan.kind, armedAt: plan.armedAt,
-                delayMs: plan.delayMs, waitingFor: plan.waitingFor, resume
+                // ‼️ X-231 — the plan's own sentence, carried rather than re-written.
+                delayMs: plan.delayMs, waitingFor: plan.waitingFor, resume,
+                reason: plan.reason
             };
             watchArmed();
         } else {
@@ -15267,6 +15270,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         return {
             ...plan, bootId, version: extVersion,
+            // ‼️ X-231 — AND THE WAIT IT JUST CREATED, IN THE FLEET'S OWN DIALECT.
+            // `decision:"armed"` was the first example of this shape; building the
+            // answer with the same function is what stops it from becoming a second
+            // version of it, so an agent reads the wait it is handed and the wait it
+            // asks `farm.waits` about later as one object.
+            wait: plan.decision === 'armed'
+                ? armedRestartWait({
+                    kind: plan.kind, armedAt: plan.armedAt,
+                    reason: plan.reason, waitingFor: plan.waitingFor
+                }, Date.now())
+                : undefined,
             // X-232 — what a resume would take with it, said BEFORE the death
             // rather than discovered after it.
             revive: resume ? planRevive(consoleHost.list()) : undefined
@@ -15323,9 +15337,77 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'sessions do. Use it when package.json contributions changed. Same args and same cooldown '
                 + 'as farm.restartExtensionHost.',
             handler: (args) => askRestart('window', args)
+        },
+        {
+            op: 'farm.waits',
+            describe: 'Everything the fleet is waiting for, in ONE reading and ONE shape — the op '
+                + 'an autonomous process asks before it decides whether to wait, and after a '
+                + 'command made it wait. Every row carries the same answers whatever produced it: '
+                + '`kind`, `subject` (task | mission | sentry | window), `reason` — the sentence '
+                + 'the source ITSELF wrote, never a second one — `since`, `until` where a clock '
+                + 'decides it, `blockedBy` (`task:<id>` / `session:<id>`, derived from the board '
+                + 'rather than hand-listed), `clearedBy` (clock = it ends by itself · event = when '
+                + 'something else finishes · human = not until a person acts) and `op`, the call '
+                + 'that ENDS the wait where one exists. Ordered by when relief comes, with the '
+                + 'ones nothing will end by itself last and the longest-standing of those first. '
+                + '‼️ A hold this build has no name for is reported as `task-unknown` rather than '
+                + 'dropped, and a new wait nothing here translates FAILS THE BUILD — test_waits.js '
+                + 'reads `launchBlock` and the `MissionRunStatus` union out of the sources. '
+                + '‼️ AN ACCOUNT HANDOVER IS NOT A SEPARATE WAIT: tasks.ts writes it into the '
+                + 'parked row\'s own sentence, so it arrives as the `reason` of a `task-clock` '
+                + 'and counting it twice would make the second copy the stale one. args: none',
+            handler: () => {
+                const waits = fleetWaitsNow();
+                return {
+                    now: Date.now(),
+                    waiting: waits.length,
+                    // The one figure a caller needs before the list: will anything
+                    // change on its own, or is a person the only way out of this?
+                    clearedBy: {
+                        clock: waits.filter(x => x.clearedBy === 'clock').length,
+                        event: waits.filter(x => x.clearedBy === 'event').length,
+                        human: waits.filter(x => x.clearedBy === 'human').length
+                    },
+                    waits
+                };
+            }
         }
     ]);
 
+    /**
+     * ‼️ X-231 — ONE GATHERING, READ BY THE OP AND BY THE PAGE.
+     *
+     * The item asks for both: an agent that can ask why it is not moving, and a
+     * person who sees the same answer on the front page. Two call sites building
+     * the same list from the same managers is how they would come to disagree by
+     * one wait — so there is one, and the Dashboard is handed its result.
+     */
+    const fleetWaitsNow = (): FleetWait[] => {
+        const rec = taskManager.sentry;
+        return fleetWaits({
+            now: Date.now(),
+            // ‼️ THE HOLD IS READ OFF THE ROW, not decided again here:
+            // `launchBlock` already wrote the code and the sentence, and asking
+            // it a second time would be a second opinion about one run.
+            tasks: taskManager.tasks.map(t => ({
+                id: t.id, title: t.title, agent: t.agentName, status: t.status,
+                heldByCode: t.deferredCode, heldBy: t.deferredReason,
+                since: (t.events ?? []).filter(e => e.kind === 'parked').slice(-1)[0]?.ts
+            })),
+            missions: missionStore.runs.map(r => ({
+                id: r.id, name: missionStore.spec(r.specId)?.title ?? r.specId,
+                status: r.status, now: r.now?.what, since: r.now?.since
+            })),
+            sentry: rec ? {
+                id: rec.id, name: rec.project || rec.id, status: rec.status,
+                // as sentry.status derives it — a stored flag is how a campaign
+                // comes to believe it is still running a round that died.
+                running: taskManager.sentryBusy(),
+                wakeAt: rec.wakeAt, lastWhy: rec.lastWhy, lastAt: rec.lastAt
+            } : undefined,
+            armed: armedRestart ?? undefined
+        });
+    };
     const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');
     try { stageBridgeCli(context.extensionPath, context.globalStorageUri.fsPath, extVersion); } catch { /* best effort */ }
     let bridgeBusy = false;
@@ -16428,6 +16510,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(live.onDidUpdate(() => planUsageBar.fleetChanged()));
 
     const dashboardDeps = {
+        // X-231 (d) — the same reading the bridge answers with, so the person
+        // and the agent are never told different things about one fleet.
+        waits: () => fleetWaitsNow(),
         extensionUri: context.extensionUri,
         getAgents: () => agents,
         index,

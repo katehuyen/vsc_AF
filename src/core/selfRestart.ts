@@ -76,6 +76,11 @@ export interface ArmedRestart {
     armedAt: number;
     delayMs: number;
     waitingFor: RestartBlocker[];
+    /** ‼️ X-231 — THE SENTENCE, KEPT. The plan says why it is waiting; without it on
+     *  the record `farm.waits` would have to write a SECOND sentence about the same
+     *  wait, and two sentences about one fact is how a surface and an op come to
+     *  disagree. Nothing here re-words it — it is carried. */
+    reason?: string;
     /** ‼️ X-232 — this plan was asked to TAKE ITS CONSOLE SESSIONS UP AGAIN, and
      *  it fires by that rule: what a resume can save was never a reason to wait,
      *  so re-asking the question at firing time would be a different question. */

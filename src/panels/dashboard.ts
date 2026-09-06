@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AgentInfo } from '../core/agents';
+import { FleetWait } from '../core/waits';
 import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { SessionIndex, SessionInfo, sessionMission, sessionOrigin, sessionHeadless } from '../core/sessions';
@@ -59,6 +60,8 @@ export interface DashboardDeps {
      * rather than to one that guesses.
      */
     launchManifests?(): readonly LaunchManifest[];
+    /** X-231 — every open wait in the fleet, already in the shared shape. */
+    waits?(): FleetWait[];
 }
 
 interface AgentSummary {
@@ -526,6 +529,9 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         agentProjects: deps.agentProjects?.() ?? {},
         window: { ...win, limit: deps.windowTokenLimit(), wLimit: deps.windowWeightedTokenLimit?.() ?? 0 },
         fleetBudget: deps.budgets()['*'] ?? 0,
+        // X-231 (d) — what the fleet is waiting for, decided in core/waits.ts
+        // and handed over whole: this page counts and draws, it does not judge.
+        waits: deps.waits?.() ?? [],
         mediaCost: deps.mediaCost(),
         insightTotals: {
             error: insights.filter(i => i.severity === 'error').length,

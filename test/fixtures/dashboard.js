@@ -126,6 +126,22 @@ const data = () => ({
     sessionRows: sessionRows(), sessionTableN: 20,
     window: { tokens: 4_100_000, msgs: 210, cost: 18.4, limit: 0 },
     fleetBudget: 50, mediaCost: { today: 0.9, month: 12.4 },
+    // X-231 — a fleet held up by one of each: a clock nobody has to act on,
+    // an event that ends when a session does, and a person who has not looked.
+    waits: [
+        { kind: 'task-clock', subject: { kind: 'task', id: 't1', name: 'nightly sweep' },
+            reason: 'waiting until 03:20 — retry 2 (account handover · no other claude '
+                + 'account is captured on this machine)',
+            since: NOW - 5 * 60000, until: NOW + 20 * 60000, blockedBy: [],
+            clearedBy: 'clock', op: 'tasks.unpark' },
+        { kind: 'restart-armed', subject: { kind: 'window', id: 'extensionHost', name: 'extensionHost' },
+            reason: 'Waiting for 1 live console session(s) (developer) to finish',
+            since: NOW - 30000, blockedBy: ['session:cs1'], clearedBy: 'event',
+            op: 'farm.restartExtensionHost' },
+        { kind: 'mission-approval', subject: { kind: 'mission', id: 'm1', name: 'audit' },
+            reason: 'waiting for your approval (round 2)',
+            since: NOW - 40 * 60000, blockedBy: [], clearedBy: 'human', op: 'missions.approve' }
+    ],
     insightTotals: { error: 1, warning: 3, info: 4 },
     unknownModels: [],
     /**

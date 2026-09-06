@@ -311,6 +311,21 @@ if (!fs.existsSync(MANIFEST_FILE)) {
 }
 const manifest = JSON.parse(read(MANIFEST_FILE));
 
+// ‼️ X-231 — AND A REFERENCE TO AN OP IS NOT A REGISTRATION OF ONE. A wait now
+// says which op ENDS it, so a plain data table names `tasks.unpark`; read as a
+// second registration that failed the build for a duplicate nobody wrote. The
+// registry's own contract is the discriminator, so the hollow check keeps its
+// teeth: half a registration is still reported, none of one is not a registration.
+{
+    const refs = P.discoverOps([{ file: 'core/waits.ts', src:
+        "const RULES = [{ prefix: 'wait:', kind: 'task-clock', op: 'tasks.unpark' }];" }]);
+    ok('‼️ an op NAMED in a data table is not counted as registered', refs.length === 0);
+    const half = P.discoverOps([{ file: 'extension.ts', src:
+        "bridge.register([{ op: 'x.y', describe: 'does a thing' }]);" }]);
+    ok('…while half a registration is still caught as hollow',
+        half.length === 1 && half[0].hasDescribe && !half[0].hasHandler);
+}
+
 ok('the scan found the surface at all — commands, page actions and ops',
     ui.filter(u => u.kind === 'command').length > 150
     && ui.filter(u => u.kind === 'page').length > 300

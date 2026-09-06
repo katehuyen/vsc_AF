@@ -987,3 +987,27 @@ how the two doors came to behave differently in the first place.
 The confirmation says **when it next fires** and that saving never runs it: the
 old "Schedule saved." was true and useless, and left the surprise nowhere to be
 caught.
+
+## A wait is an answer, and it has one shape
+
+Anything in this extension that stops and waits — a parked run, a mission asking
+for an approval, a sleeping campaign, an armed restart — reports it through
+`core/waits.ts` and through nothing else. The shape is `kind · subject · reason ·
+since · until? · blockedBy[] · clearedBy · op?`, and three of those are rules
+rather than fields:
+
+- **`reason` is the sentence the source ALREADY wrote.** Never a second one. Two
+  sentences about one wait is how a surface and an op come to disagree about the
+  same fact, and the second copy is always the one that goes stale.
+- **`clearedBy` is the answer, not the timestamp.** `clock` ends by itself,
+  `event` ends when something else finishes, `human` means nobody is coming. A
+  caller deciding whether to wait needs that before it needs a moment.
+- **An op that MAKES a caller wait answers in this shape too.** The wait handed
+  back in the moment and the wait read afterwards are one object, built by one
+  function.
+
+‼️ **And a new reason to wait cannot be added silently.** `test_waits.js` reads
+`launchBlock` out of `tasks.ts` and the `MissionRunStatus` union out of
+`missions.ts` and fails, by name, on anything nothing translates. If you add a
+wait somewhere with no such union to derive from, add the gate with it — a rule
+that only lives in this paragraph is a rule that lasts until the next person.
