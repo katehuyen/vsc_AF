@@ -277,6 +277,36 @@ does has to know about this, and no page should re-invent it.
 
 ---
 
+## A run's dimensions travel by the SHAPE, and the rule is DERIVED
+
+**`runExtras` (`src/core/tasks.ts`) is the one carrier of `RunDimensions`. A
+place that hands one run's dimensions to another goes through it — never through
+a hand-written list of field names.** If a path has its own fields to state
+(a retry's policy, a round's remaining prompts), they are written AFTER the
+spread so they win.
+
+Measured on one day in 2026-09: three hand-written lists in this file, each
+believed complete by whoever wrote it. `maybeScheduleRetry` dropped seven
+dimensions; the round boundary dropped five and did it while `--resume`ing the
+same conversation, so round two answered as an account that had never seen the
+transcript; the Tasks panel's three save paths dropped the account entirely, so
+every task written from that form for four months billed a plan nobody named.
+A hand-written list is not wrong when it is written. It is wrong on the day the
+eighteenth dimension is added, and nothing tells anybody.
+
+**And the rule is measured by READING `RunDimensions` OUT OF THE SOURCE, not by
+listing the fields in the test.** `test_retry.js` (two regions) and
+`test_task_seed.js` (five readings) cut each literal out by brace balance and
+require every field of the interface to be named inside it. A dimension added
+tomorrow fails these tests until its wire is connected — which is the only
+version of this rule that survives the person who wrote it.
+
+X-169 is the argument. It was tested against mock launch doors, went green, and
+closed with its live wire never connected. **A test that does not derive the rule
+proves that somebody once wrote the code correctly, not that the rule holds.**
+When a fourth list appears, copy the shape of those tests: find the anchor text,
+cut the object literal by brace balance, look for each field name inside it.
+
 ## The parity gate
 
 **Every user-triggerable action is recorded in `parity.manifest.json`, and the
