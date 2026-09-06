@@ -191,7 +191,7 @@ const sec = () => {
     ok('…each group counting its own', /Claude Code<\/span><span class="acgrpc[^>]*>3 accounts/.test(h)
         && /Codex<\/span><span class="acgrpc[^>]*>2 accounts</.test(h));
     ok('…and only a group with something to compare gets a group-wide read',
-        (h.match(/data-acrefreshall/g) || []).length === 2
+        (h.match(/data-acrefreshall="(claude|codex)"/g) || []).length === 2
         && /data-acrefreshall="claude"/.test(h) && /data-acrefreshall="codex"/.test(h));
 
     // ‼️ A press that acts in twenty seconds with no sign it was heard is
@@ -216,10 +216,67 @@ const sec = () => {
     ok('pressing a card asks for that one slot, as a toggle',
         JSON.stringify(r.last()) === JSON.stringify({
             type: 'accountRefresh', ids: ['personal'], gesture: 'toggle' }));
-    r.query('[data-acrefreshall]')[0].click();
+    r.query('[data-acrefreshall]').find(b => b.dataset.acrefreshall === 'claude').click();
     ok('‼️ …and a group press names every READABLE slot of that engine, and no other engine\'s',
         JSON.stringify(r.last()) === JSON.stringify({
             type: 'accountRefresh', gesture: 'all', ids: ['work-1', 'personal', 'spare'] }));
+}
+
+// ---------- ‼️ X-218 — ONE PRESS FOR EVERY ACCOUNT, AND THE COST IT WILL NOT HIDE ----------
+//
+// Each engine already had its own group-wide read (X-206, X-215); the press
+// the user asked for is the one ABOVE them — all of them, whichever engine.
+// The trap is that the two halves do not cost the same thing: a Claude figure
+// is a REQUEST against a budget the whole fleet shares, a Codex figure is a
+// file under the account's own folder. A single button that paced the file
+// reads behind the requests would make the free half wait for nothing; one
+// that paced nothing would spend the budget the line exists to protect.
+// `queueAccountRefresh` already splits them (X-215) — what is pinned here is
+// that the BUTTON SAYS SO, and that a line which is moving can be seen moving.
+{
+    const h = sec();
+    const all = h.match(/data-acrefreshall="[^"]*"/g) || [];
+    ok('‼️ X-218: the section itself offers one press for every account, naming no engine',
+        all.length === 3 && all.filter(a => a === 'data-acrefreshall=""').length === 1);
+    ok('…above the engine groups, which is where a section-wide gesture belongs',
+        h.indexOf('data-acrefreshall=""') >= 0
+        && h.indexOf('data-acrefreshall=""') < h.indexOf('class="acgrp"'));
+    ok('…and it replaces neither group button',
+        /data-acrefreshall="claude"/.test(h) && /data-acrefreshall="codex"/.test(h));
+
+    // ‼️ The item's whole warning, in one sentence the reader can check.
+    ok('‼️ …it names the half that lands at once, so no card is left waiting for nothing',
+        h.indexOf('2 of them are files under their own account\'s folder and land at once') >= 0);
+    ok('‼️ …and the half that really is requests, spaced, on a budget it shares',
+        h.indexOf('the other 3 go into one line, one every five seconds') >= 0);
+
+    // A queue nobody can see is indistinguishable from a frozen button (X-206,
+    // said again one level up: the card knows its own place, the section knows
+    // how much of the line is left).
+    ok('‼️ …and a line that is moving says so ON the button, not in a log',
+        /data-acrefreshall=""[^>]*>◍ 3 in the line</.test(h));
+    ok('…splitting the one in flight from the ones still waiting',
+        h.indexOf('1 being read, 2 still waiting') >= 0);
+
+    const btn = r.query('[data-acrefreshall]').find(b => b.dataset.acrefreshall === '');
+    btn.click();
+    ok('‼️ …and the press hands over every readable slot of BOTH engines, in one gesture',
+        JSON.stringify(r.last()) === JSON.stringify({
+            type: 'accountRefresh', gesture: 'all',
+            ids: ['work-1', 'personal', 'spare', 'codex-work', 'codex-spare'] }));
+}
+
+// ‼️ …AND IT IS NOT DRAWN WHERE IT WOULD BE THE BUTTON BELOW IT, TWICE. With
+// one engine on the machine, "all engines" and "all Claude Code accounts" are
+// the same press, and a control whose only distinction is its position is
+// furniture — the group button already reads every account there is.
+{
+    const one = fixture.data();
+    one.accounts = one.accounts.filter(a => a.engine === 'claude');
+    const h = runPage('engines.js', one).html();
+    ok('‼️ X-218: with a single engine the section-wide press is not drawn twice',
+        (h.match(/data-acrefreshall="[^"]*"/g) || []).length === 1
+        && /data-acrefreshall="claude"/.test(h));
 }
 
 // ---- nothing secret --------------------------------------------------------

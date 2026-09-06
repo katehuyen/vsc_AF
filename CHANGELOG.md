@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.411.0 - X-218: one press for every account, and the two costs under it (2026-09-06)
+
+*"And at the very top of the Accounts section, a general [🔄 Refresh all
+accounts (All Engines)] button that makes no distinction between engines."*
+
+Every engine already had its own group-wide read; what was missing was the
+press above them — all of them, whichever engine. The item's warning is the
+whole design: the two halves do not cost the same thing. A Claude figure is a
+REQUEST against a budget the whole fleet shares (five seconds apart, and a 429
+pulls every account back); a Codex figure is a file under that account's own
+folder. One button that paced the file reads behind the requests would make the
+free half wait for nothing, and one that paced nothing would spend the budget
+the line exists to protect.
+
+**No new rule was written to keep them apart, because the split is already**
+**there.** `queueAccountRefresh` reads a slot whose figure is on disk here and
+now and never puts it in the line (X-215). So the button hands every readable
+slot of every engine to the function that already knows the difference —
+`data-acrefreshall=""`, which means on this side exactly what
+`refreshableSlots('')` already means on the other — and spends its sentence
+saying which half of the press waits and which half does not.
+
+**The line is drawn moving.** A card knows its own place (X-206); the section
+knows how much of the line is left, so while it runs the button reads
+`◍ 3 in the line` and its panel opens with `3 in the line — 1 being read, 2
+still waiting`. A press that acts over half a minute with nothing changing is
+one nobody presses once and everybody presses five times.
+
+**And it is not drawn where it would be the button below it, twice.** With a
+single engine on this machine, "all engines" and "all Claude Code accounts" are
+the same press, and a control whose only distinction is its position is
+furniture — the group button already reads every account there is.
+
 ## 3.410.0 - X-232: the console sessions that survive the restart (2026-09-06)
 
 *"Even when I am at the desk working in the Console — I would rather not press

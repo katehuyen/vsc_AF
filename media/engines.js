@@ -610,6 +610,64 @@
     }
 
     /**
+     * ‼️ X-218 — THE PRESS ABOVE THE GROUPS, AND THE TWO COSTS UNDER IT.
+     *
+     * Every engine already had its own group-wide read; the one thing missing
+     * was the press that does not ask which engine — "read all of them". The
+     * trap the item names is that the halves do not cost the same thing: a
+     * Claude figure is a REQUEST against a budget the whole fleet shares, a
+     * Codex figure is a file under that account's own folder. `queueAccountRefresh`
+     * already keeps them apart (X-215) — the file reads never join the line at
+     * all — so this button hands over EVERY readable slot and spends its
+     * sentence saying which half of the press waits and which half does not.
+     *
+     * ‼️ AND IT IS NOT DRAWN WHERE IT WOULD BE THE BUTTON BELOW IT, TWICE. With
+     * one engine on the machine "all engines" and "all Claude Code accounts"
+     * are the same press; a control whose only distinction is its position is
+     * furniture.
+     *
+     * ‼️ THE LINE IS DRAWN MOVING. A card knows its own place (X-206); the
+     * section knows how much of the line is left, because a press that acts
+     * over half a minute with nothing changing is a press nobody repeats once
+     * and everybody repeats five times.
+     */
+    function allEnginesRefreshHtml(list) {
+        const T = window.AFTip;
+        const readable = list.filter(a => a.usageState !== 'no-source');
+        const engines = [];
+        for (const a of readable) { if (engines.indexOf(a.engine) < 0) { engines.push(a.engine); } }
+        if (engines.length < 2) { return ''; }
+        const disk = readable.filter(a => a.quotaSource === 'session-tail');
+        const net = readable.filter(a => a.quotaSource !== 'session-tail');
+        const reading = readable.filter(a => a.queue === 'reading').length;
+        const queued = readable.filter(a => a.queue === 'queued').length;
+        const inLine = reading + queued;
+        const moving = [];
+        if (reading) { moving.push(reading + ' being read'); }
+        if (queued) { moving.push(queued + ' still waiting'); }
+        const paced = 'Each card shows its place in the line while it waits, and pressing a waiting '
+            + 'card takes it back out.';
+        const cost = !net.length
+            ? 'All ' + disk.length + ' are files under their own account\'s folder and land at once — no '
+            + 'request, no line, no waiting. Each figure is as old as that account\'s last turn.'
+            : !disk.length
+                ? 'They go into one line and are read ONE AT A TIME, five seconds apart — ' + net.length
+                + ' accounts are still ' + net.length + ' requests, and the spacing is the only thing '
+                + 'that keeps asking how much is left from becoming what spends it.\n\n' + paced
+                : disk.length + ' of them are files under their own account\'s folder and land at once; '
+                + 'the other ' + net.length + ' go into one line, one every five seconds — pressing this '
+                + 'is still ' + net.length + ' requests, and the spacing is the only thing that keeps '
+                + 'asking how much is left from becoming what spends it. The files are never held behind '
+                + 'them.\n\n' + paced;
+        return T.wrap('<button class="secondary small" data-acrefreshall="">'
+            + (inLine ? '◍ ' + inLine + ' in the line' : '⟳ all engines') + '</button>',
+            inLine
+                ? inLine + ' in the line — ' + moving.join(', ')
+                : 'Read every account on this machine — all ' + readable.length + ' of them',
+            cost);
+    }
+
+    /**
      * ‼️ X-172 — THE SIGN-INS THIS MACHINE HOLDS, AND THE THREE GESTURES.
      *
      * The chip slice made the page SAY which account each engine is plugged
@@ -654,7 +712,11 @@
             + '</div>'
             : '';
         return '<div class="posec">'
+            + '<div class="posech">'
             + '<h3 class="potitle">Accounts</h3>'
+            + '<span class="grow"></span>'
+            + allEnginesRefreshHtml(list)
+            + '</div>'
             + '<p class="englede">More than one sign-in of the same engine, without signing in and out. '
             + '<b>An account is a config directory, not a copied credential:</b> starting a session with '
             + 'one set points the engine at that directory through its own variable, so the session you '
@@ -873,6 +935,8 @@
                 /* X-100 — providers */
                 .posec { margin-top:22px; border-top:1px solid var(--vscode-widget-border,#4443); padding-top:14px; }
                 .potitle { font-size:14px; margin:0 0 8px; }
+                .posech { display:flex; align-items:center; gap:8px; }
+                .posech .potitle { margin:0 0 8px; }
                 /* ‼️ NOT full width. Four short columns stretched across a
                    1400px page put the reader's eye on a journey between the
                    engine and its answer — DENSITY is the fact per pixel, not
@@ -982,11 +1046,15 @@
         document.querySelectorAll('[data-acrefresh]').forEach(b =>
             b.addEventListener('click', () => post({
                 type: 'accountRefresh', ids: [b.dataset.acrefresh], gesture: 'toggle' })));
+        // X-218 — an EMPTY engine is the section-wide press, and it means here
+        // exactly what it already means on the other side of the bridge:
+        // `refreshableSlots('')` is every readable slot, whatever engine it is.
         document.querySelectorAll('[data-acrefreshall]').forEach(b =>
             b.addEventListener('click', () => post({
                 type: 'accountRefresh', gesture: 'all',
                 ids: (DATA.accounts || [])
-                    .filter(a => a.engine === b.dataset.acrefreshall && a.usageState !== 'no-source')
+                    .filter(a => (!b.dataset.acrefreshall || a.engine === b.dataset.acrefreshall)
+                        && a.usageState !== 'no-source')
                     .map(a => a.id) })));
         document.querySelectorAll('[data-acforget]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountForget', id: b.dataset.acforget })));
