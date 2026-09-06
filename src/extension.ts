@@ -16560,6 +16560,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // farm "Claude-only".
                 enginesReady: engineMatrix().filter(e => e.ready).map(e => e.id),
                 engineCount: Object.keys(ENGINES).length,
+                /**
+                 * ‼️ X-256 — THE SIGN-INS, FROM THE CACHE EVERY OTHER SURFACE SHOWS.
+                 *
+                 * `current()` and never `refresh()`: drawing a status card must not
+                 * put five accounts into a request queue. A window nobody has read
+                 * carries `fetchedAt: 0`, and the row says "no window read yet"
+                 * rather than inventing a figure — which is also why the row is
+                 * `ready` rather than `active` until something has actually looked.
+                 */
+                accounts: (() => {
+                    const seen = accountUsage.current();
+                    return storedAccounts().map(sl => {
+                        const u = seen.find(x => x.slotId === sl.id);
+                        return {
+                            slotId: sl.id, engine: sl.engine,
+                            percent: typeof u?.percent === 'number' ? u.percent : -1,
+                            health: slotIdentityFresh(sl).health,
+                            fetchedAt: u?.fetchedAt ?? 0
+                        };
+                    });
+                })(),
                 ingestFolderCount: cfg().get<IngestFolder[]>('ingestFolders', [])
                     .filter(f => f && typeof f.path === 'string' && !!f.path.trim()).length,
                 registeredAssetCount: readMediaMetas(taskManager.outputsDir)

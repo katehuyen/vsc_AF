@@ -26,9 +26,10 @@ const dormantFarm = {
 {
     const rows = buildFarmStatus(dormantFarm);
     const by = Object.fromEntries(rows.map(r => [r.id, r]));
-    // ‼️ TEN: the ENGINES row split off from the custom-CLI one (X-35) — two
-    // independent facts that used to share a row and contradict the rest of the app.
-    ok('10 subsystem rows', rows.length === 10);
+    // ‼️ ELEVEN: the ENGINES row split off from the custom-CLI one (X-35) — two
+    // independent facts that used to share a row and contradict the rest of the
+    // app — and X-256 added ACCOUNTS, the row for what actually limits the farm.
+    ok('11 subsystem rows', rows.length === 11);
     ok('live is active with event count', by.live.state === 'active' && by.live.detail.includes('4200'));
     ok('tasks dormant -> setupExample action', by.tasks.state === 'dormant'
         && by.tasks.action.kind === 'command' && by.tasks.action.value === 'agentfarm.setupExample');
@@ -228,6 +229,101 @@ const dormantFarm = {
     ok('…under one label, because it is one door',
         withDoor({}).action.label === 'Engines'
         && withDoor({ enginesReady: ['claude', 'codex'] }).action.label === 'Engines');
+}
+
+// ‼️ X-256 — THE CARD THAT ANSWERS "IS THE FARM WORKING" MUST NAME WHAT ACTUALLY
+// LIMITS IT.
+//
+// The rows were live · tasks · triggers · workflows · media · engines, and the
+// word "account" appeared nowhere in this module — on a farm whose scarce
+// resource IS account quota. How many sign-ins there are, how many have fallen
+// out and how much room is left across them was unanswerable from the page a
+// person opens to ask whether the farm is all right.
+{
+    const acc = (over) => buildFarmStatus({ ...dormantFarm, ...over })
+        .find(r => r.id === 'accounts');
+
+    ok('the card carries an accounts row at all', !!acc({}));
+    // ‼️ NO ACCOUNT IS NOT A FAULT. It is what every farm did before accounts
+    // existed and it still works: every session runs as this machine.
+    ok('with none captured the row is dormant and says what happens instead',
+        acc({}).state === 'dormant'
+        && /machine|this machine|sign-in/i.test(acc({}).detail));
+    ok('…and offers the door to where one is captured',
+        acc({}).action && acc({}).action.kind === 'command');
+
+    const two = acc({ accounts: [
+        { slotId: 'a', engine: 'claude', percent: 23, health: 'ready' },
+        { slotId: 'b', engine: 'claude', percent: -1, health: 'ready' }
+    ] });
+    ok('captured but never read reads as ready, not as active',
+        two.state === 'ready' && /2 account/.test(two.detail));
+
+    const live = acc({ accounts: [
+        { slotId: 'a', engine: 'claude', percent: 23, health: 'ready', fetchedAt: 1 },
+        { slotId: 'b', engine: 'codex', percent: 91, health: 'ready', fetchedAt: 1 }
+    ] });
+    ok('a read window makes it active', live.state === 'active');
+    // ‼️ THE FIGURE THAT DECIDES TONIGHT is how much room the EMPTIEST account
+    // has: that is the one the rotation will reach for, and an average would
+    // hide a farm with one free account and four walls.
+    ok('‼️ …and it states the room the rotation will actually find',
+        /77%/.test(live.detail));
+    ok('…across the engines it holds', /2 engine/.test(live.detail));
+
+    // ‼️ A SLOT THAT CANNOT SIGN IN IS THE ONE FACT WORTH INTERRUPTING FOR, and
+    // it must be said on the row rather than left to the Engines page — the
+    // whole point of this card is that a person does not have to go looking.
+    const broken = acc({ accounts: [
+        { slotId: 'a', engine: 'claude', percent: 23, health: 'ready', fetchedAt: 1 },
+        { slotId: 'b', engine: 'claude', percent: -1, health: 'unreadable', fetchedAt: 1 }
+    ] });
+    ok('‼️ a sign-in that has fallen out is named on the row', /1 need/i.test(broken.detail));
+    // …and an account nobody could read is NOT counted as room. "not read" and
+    // "0% used" are opposite facts; treating the second as the first is how a
+    // campaign gets sent at a wall.
+    ok('‼️ …and an unread account is not counted as room',
+        !/100%|-1/.test(broken.detail));
+}
+
+// ‼️ X-234 — EVERY DOOR THIS CARD DRAWS MUST BE ONE THE PANEL WILL OPEN.
+//
+// The Engines button did nothing: the panel's `statusAction` handler tested the
+// command against a HAND-WRITTEN set of three, `agentfarm.openEngines` was not
+// in it, and the message was dropped in silence. X-203 had already fixed the
+// button's disappearance, so the user pressed a control that was finally there
+// and still got nothing.
+//
+// The fix is not a fourth string. The panel now DERIVES the set from the rows it
+// just published, so a row added here can never be swallowed there — and this
+// test proves the derivation is the shape the panel really uses, not a copy of
+// the same list in a second place.
+{
+    const fs = require('fs');
+    const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'dashboard.ts'), 'utf8');
+    ok('‼️ the allowed commands are DERIVED from the card, not typed out beside it',
+        /const ALLOWED = new Set\(\s*\n?\s*\(this\.deps\.farmStatus\?\.\(\) \?\? \[\]\)/.test(panel)
+        && !/new Set\(\['agentfarm\./.test(panel));
+    // ‼️ AND A REFUSAL IS NOT A SILENCE. If a press ever is refused, the reader
+    // is told — a button that does nothing is the defect this item is about,
+    // and replacing one silence with another would only move it.
+    ok('‼️ …and a command that is refused says so instead of vanishing',
+        /statusAction/.test(panel) && /showWarningMessage\([^)]*ALLOWED|refused/i.test(panel));
+
+    // Every command a row can publish, gathered from the states this module
+    // really produces — the list the panel will derive at run time.
+    const everyCommand = new Set();
+    for (const input of [dormantFarm, { ...dormantFarm, enginesReady: ['claude'] },
+        { ...dormantFarm, taskCount: 3, tasksDone7d: 2, triggerCount: 1, triggersFired7d: 1,
+            workflowCount: 1, workflowRuns7d: 1, mediaKeys: 2, mediaJobs7d: 3 }]) {
+        for (const r of buildFarmStatus(input)) {
+            if (r.action && r.action.kind === 'command') { everyCommand.add(r.action.value); }
+        }
+    }
+    ok('every command door this card can draw is an agentfarm command',
+        everyCommand.size > 0 && [...everyCommand].every(v => /^agentfarm\./.test(v)));
+    ok('‼️ …and the Engines door is among them, which is the one that was dropped',
+        everyCommand.has('agentfarm.openEngines'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -803,11 +803,39 @@ export class DashboardPanel {
                 break;
             }
             case 'statusAction': {
-                // Farm Status card buttons. Commands are whitelisted — the
-                // webview must not be able to run arbitrary commands.
-                const ALLOWED = new Set(['agentfarm.setupExample', 'agentfarm.installHooks', 'agentfarm.setSecret']);
+                /**
+                 * Farm Status card buttons. Commands stay whitelisted — a
+                 * webview must not be able to run arbitrary commands — but the
+                 * list is DERIVED from the card that was just published rather
+                 * than typed out here.
+                 *
+                 * ‼️ X-234 — THE HAND-WRITTEN SET WAS THE BUG. It held three
+                 * commands and `agentfarm.openEngines` was not one of them, so
+                 * pressing the Engines button posted a message this handler
+                 * dropped without a word. X-203 had just fixed that button's
+                 * DISAPPEARANCE, so the user finally had a control to press and
+                 * still got nothing — the worst of both. A list typed beside the
+                 * thing it is supposed to describe goes stale the first time
+                 * somebody adds a row, and nothing fails when it does.
+                 *
+                 * Deriving costs one rebuild of a small pure record per click
+                 * and makes the guarantee structural: a door this card can draw
+                 * is a door this handler will open, by construction.
+                 */
+                const ALLOWED = new Set(
+                    (this.deps.farmStatus?.() ?? [])
+                        .filter(r => r.action && r.action.kind === 'command')
+                        .map(r => String(r.action?.value ?? '')));
                 if (msg.kind === 'command' && typeof msg.value === 'string' && ALLOWED.has(msg.value)) {
                     void vscode.commands.executeCommand(msg.value);
+                } else if (msg.kind === 'command') {
+                    // ‼️ AND A REFUSAL IS NOT A SILENCE. Swallowing the press is
+                    // exactly the defect above; if this ever fires, the reader
+                    // needs to know it was refused rather than that the button
+                    // is broken.
+                    void vscode.window.showWarningMessage(
+                        `Agent Farm: that button asked for "${String(msg.value)}", which the Farm Status `
+                        + 'card is not currently offering, so it was refused rather than run.');
                 } else if (msg.kind === 'guide' && typeof msg.value === 'string') {
                     void vscode.commands.executeCommand('agentfarm.openGuide', msg.value);
                 } else if (msg.kind === 'settings' && typeof msg.value === 'string') {

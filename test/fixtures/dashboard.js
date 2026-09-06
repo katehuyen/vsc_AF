@@ -169,7 +169,15 @@ const data = () => ({
         enginesReady: ['claude', 'codex', 'agy'], engineCount: 4,
         ingestFolderCount: 0, registeredAssetCount: 0,
         oversightLoopsOn: 1, qualitySamples: 12,
-        secretCount: 3
+        secretCount: 3,
+        // X-256 — the row for what actually limits the farm: three sign-ins on
+        // two engines, one of them fallen out, so the card has to show both the
+        // room the rotation will find and the account it cannot use.
+        accounts: [
+            { slotId: 'work@studio', engine: 'claude', percent: 23, health: 'ready', fetchedAt: 1 },
+            { slotId: 'personal', engine: 'claude', percent: 91, health: 'ready', fetchedAt: 1 },
+            { slotId: 'codex-work', engine: 'codex', percent: -1, health: 'unreadable', fetchedAt: 1 }
+        ]
     }),
     // ‼️ The honest one-liner under the page: what is NOT in the money above.
     externalSessions: { codex: 31, agy: 4, gemini: 2 }

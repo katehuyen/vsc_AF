@@ -73,6 +73,25 @@ export interface FarmStatusInput {
     enginesReady: string[];
     /** …and how many are built in at all, so "1 of 4" can be said. */
     engineCount: number;
+    /**
+     * ‼️ X-256 — THE SIGN-INS THIS MACHINE HOLDS, as the little the row needs.
+     *
+     * Deliberately NOT `SlotUsage[]`: this module is pure and its input is a
+     * reading, so it takes the four facts the row states and nothing else — the
+     * caller does the reading, from the same cached usage every other surface
+     * shows. Absent (and empty) is a real answer: no account was ever captured,
+     * which is what every farm did before accounts existed.
+     */
+    accounts?: {
+        slotId: string;
+        engine: string;
+        /** 0–100 of that engine's own window; -1 = not known */
+        percent: number;
+        /** 'ready' | anything else = it cannot pay for a run until it signs in */
+        health?: string;
+        /** 0 = nobody has read this account's window yet */
+        fetchedAt?: number;
+    }[];
     ingestFolderCount: number;
     registeredAssetCount: number;
     oversightLoopsOn: number;       // enabled sampling loops (quality/suggest/weekly)
@@ -223,6 +242,72 @@ export function buildFarmStatus(i: FarmStatusInput): SubsystemStatus[] {
             detail: `only Claude Code is ready here — ${engineRollCall()} are supported but not installed or not signed in`,
             action: { ...enginesDoor }
         });
+    /**
+     * ‼️ X-256 — THE ROW FOR WHAT ACTUALLY LIMITS THIS FARM.
+     *
+     * Every other row answers "is this subsystem switched on". This one answers
+     * the question that decides whether tonight happens at all: how many
+     * sign-ins there are, how many have fallen out, and how much room the
+     * rotation will FIND. The card had no such row and the word "account"
+     * appeared nowhere in this module, on a farm whose scarce resource is
+     * exactly that.
+     *
+     * ‼️ THE FIGURE IS THE EMPTIEST ACCOUNT, NOT AN AVERAGE. `pickAccount`
+     * reaches for the one with the most room, so that is the number that
+     * decides; an average would read as healthy on a farm with one free account
+     * and four walls.
+     *
+     * ‼️ AND AN UNREAD ACCOUNT IS NOT ROOM. "nobody has read it" and "0% used"
+     * are opposite facts, and counting the first as the second is how a
+     * campaign gets sent at a wall. It is not counted, and it is not a fault
+     * either — `slotIsUsable` lets such a slot run.
+     */
+    /**
+     * ‼️ THE SAME PAGE, UNDER THE ROW'S OWN SUBJECT. The accounts section lives
+     * on the Engines page today, so the command is the same one — but two
+     * adjacent buttons both reading "Engines" are two controls a reader has to
+     * tell apart by counting rows. A row's door is named for what it opens ONTO
+     * (X-203), and when the accounts page of its own arrives only the command
+     * changes here.
+     */
+    const accountsDoor = {
+        label: 'Accounts', kind: 'command', value: 'agentfarm.openEngines'
+    } as const;
+    const accounts = i.accounts ?? [];
+    if (accounts.length === 0) {
+        rows.push({
+            id: 'accounts', label: 'Accounts', state: 'dormant',
+            detail: 'no second sign-in captured — every session runs as the account this machine '
+                + 'is signed in as, which is what every farm did before accounts existed',
+            action: { ...accountsDoor }
+        });
+    } else {
+        const engines = new Set(accounts.map(a => String(a.engine || '').trim().toLowerCase())
+            .filter(Boolean));
+        const hurt = accounts.filter(a => a.health && a.health !== 'ready').length;
+        const read = accounts.filter(a => (a.fetchedAt ?? 0) > 0);
+        const measured = read.filter(a => typeof a.percent === 'number' && a.percent >= 0);
+        const room = measured.length
+            ? Math.max(...measured.map(a => 100 - Number(a.percent)))
+            : -1;
+        rows.push({
+            id: 'accounts', label: 'Accounts',
+            // Captured but never read is READY: the farm can use them, nothing
+            // has measured them yet. A window that has been read is the farm
+            // actually working the pool.
+            state: read.length ? 'active' : 'ready',
+            detail: [
+                `${accounts.length} account${accounts.length === 1 ? '' : 's'}`
+                    + (engines.size ? ` on ${engines.size} engine${engines.size === 1 ? '' : 's'}` : ''),
+                hurt ? `${hurt} need${hurt === 1 ? 's' : ''} signing in again` : '',
+                room >= 0 ? `most room ${room}%` : 'no window read yet',
+                // Said out loud rather than left to be deduced from the count:
+                // the pool being whole is the reason the rotation can act.
+                !hurt && measured.length ? 'the rotation has somewhere to go' : ''
+            ].filter(Boolean).join(' · '),
+            action: { ...accountsDoor }
+        });
+    }
     if (i.cliProfileCount === 0) {
         rows.push({
             id: 'cli', label: 'Custom CLI profiles', state: 'dormant',

@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.420.0 - X-256 + X-234: the card names what actually limits the farm, and its buttons work (2026-09-07)
+
+**Farm Status had no row for accounts** — live · tasks · triggers · workflows ·
+media · engines, and the word "account" appeared nowhere in the module. On a farm
+whose scarce resource IS account quota, the card a person opens to ask "is this
+all right" could not say how many sign-ins there are, how many have fallen out,
+or how much room the rotation will find.
+
+**The row states the figure that decides tonight: the EMPTIEST account's room**,
+because that is the one `pickAccount` reaches for. An average would read as
+healthy on a farm with one free account and four walls. A slot that cannot sign
+in is named on the row rather than left to the Engines page — the point of the
+card is that nobody has to go looking. **And an unread account is not counted as
+room:** "nobody has read it" and "0% used" are opposite facts, and treating the
+first as the second is how a campaign gets sent at a wall. It is read from the
+CACHED usage every other surface shows, never a refresh — drawing a status card
+must not put five accounts into a request queue.
+
+**‼️ X-234 — and the Engines button finally does something.** The panel's
+`statusAction` handler tested the command against a **hand-written set of
+three** and `agentfarm.openEngines` was not in it, so the press was dropped
+without a word. X-203 had just fixed that button's *disappearance*, so the user
+finally had a control to press and still got nothing — the worst of both.
+
+The fix is not a fourth string. **The allowed set is now DERIVED from the card
+that was just published**, so a door this module can draw is a door the panel
+will open, by construction; a test pins the derivation rather than copying the
+list into a second place. And a refused command now **says so** instead of
+vanishing: replacing one silence with another would only move the defect.
+
+The accounts row carries its own door label ("Accounts", the same command for
+now) — two adjacent buttons both reading "Engines" are two controls a reader has
+to tell apart by counting rows. When the accounts page of its own arrives
+(X-235/X-236) only the command changes.
+
 ## 3.419.0 - X-251 (1/n): the run records whose plan paid for it (2026-09-07)
 
 **Nothing knew which account a session had run on, and nothing could work it
