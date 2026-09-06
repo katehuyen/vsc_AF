@@ -280,6 +280,15 @@ const DATA = {
             { id: 'acceptEdits', label: 'acceptEdits', detail: 'file edits auto-approved' }
         ],
         defaults: { model: '', effort: '', permissionMode: '' },
+        // ‼️ X-223 — the sign-ins this machine has captured. Here because the
+        // account row is drawn only where there is something to pick, so a
+        // launch block without them tests the one state the row is not in.
+        accounts: {
+            claude: [
+                { id: 'work-1', label: 'work@studio', health: 'ready', active: true },
+                { id: 'personal', label: 'personal@gmail', health: 'ready', active: false }
+            ]
+        },
         // S-20 — what each ENGINE currently offers. The flat pair above is the
         // fallback; this is what the Model box must actually read once the form
         // knows which engine will run the task.
@@ -1288,6 +1297,47 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
         /id="nt-cli"/.test(html()) && html().includes('>codex<'));
     ok('the agent is a field, not a first question', /id="nt-agent"/.test(html()));
 
+    /**
+     * ‼️ X-223 — AND WHOSE PLAN PAYS FOR IT, WITH THE MACHINE'S OWN SIGN-IN AS A
+     * CHOICE SOMEBODY CAN MAKE.
+     *
+     * X-211 gave the Console three answers, not two: a named slot, nothing
+     * stated, and the machine's own identity stated OUTRIGHT — which is not the
+     * same as saying nothing, because it CLEARS the engine's config variable
+     * that the VS Code window may itself be carrying. That third answer never
+     * reached this form, so the bridge could write `account: "@machine"` on a
+     * task and the form that edits the same task could not say it back. Two
+     * doors into one field, disagreeing about what the field can hold.
+     */
+    ok('the account picker is on the form', /id="nt-account"/.test(html()));
+    ok('…and the empty row says what leaving it empty MEANS',
+        html().includes('the standing choice, else the main sign-in'));
+    ok('…and the captured sign-ins are on it, the standing one marked',
+        html().includes('work@studio') && html().includes('personal@gmail'));
+    ok('‼️ X-223 — the machine\'s own sign-in is a row, not an absence',
+        /value="@machine"/.test(html()) && html().includes('Machine Global'));
+    // ‼️ X-223 — A SLOT BELONGS TO ONE ENGINE AND IS DROPPED WHEN THE ENGINE
+    // MOVES; the machine's own sign-in belongs to NONE and must survive, or
+    // touching the engine box would quietly turn "as the machine itself" into
+    // "as whatever is standing" — the one answer whose point is that nothing
+    // gets injected.
+    fld('nt-account').value = 'personal';
+    fld('nt-account').fire('change');
+    fld('nt-engine').value = 'codex';
+    fld('nt-engine').fire('change');
+    ok('a slot that belongs to another engine is dropped when the engine moves',
+        !/value="personal" selected/.test(html()));
+    fld('nt-engine').value = '';
+    fld('nt-engine').fire('change');
+    fld('nt-account').value = '@machine';
+    fld('nt-account').fire('change');
+    fld('nt-engine').value = 'codex';
+    fld('nt-engine').fire('change');
+    fld('nt-engine').value = '';
+    fld('nt-engine').fire('change');
+    ok('‼️ X-223 — …but the machine\'s own sign-in belongs to no engine and stays',
+        /value="@machine" selected/.test(html()));
+
     // Fill it in and queue it.
     fld('nt-prompt').value = 'read the report and summarise it';
     fld('nt-prompt').fire('input');
@@ -1301,9 +1351,14 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
     fld('nt-permissionMode').fire('change');
     fld('nt-priority').value = '3';
     fld('nt-priority').fire('input');
+    // ‼️ X-223 — billed to the machine's own sign-in, stated outright.
+    fld('nt-account').value = '@machine';
+    fld('nt-account').fire('change');
     posted = [];
     fld('nt-add').click();
     const made = posted.find(p => p.type === 'task-new');
+    ok('‼️ X-223 — the machine\'s own sign-in travels to the host as the sentinel',
+        made && made.task.account === '@machine');
     ok('Add sends ONE message carrying the whole task',
         made && made.task.prompt === 'read the report and summarise it'
         && made.task.agent === 'genel' && made.task.model === 'haiku'

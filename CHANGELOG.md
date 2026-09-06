@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.401.0 - X-221/X-222/X-223: the Tasks form had an account box that went nowhere (2026-09-06)
+
+An audit of the X-167 and X-211 families — asked for because the user remembered
+functions being discussed that they could no longer find — turned up a closed
+item whose wire was never connected.
+
+**X-169 put an account box on the Tasks form, seeded it, tested it against mock
+launch doors, and closed.** The box drew. The page posted the value. And
+`src/panels/tasksPanel.ts` never read the field: `task-new` carried nine
+dimensions to `addTask` and not that one, the retry branch carried eleven and not
+that one, and `dims()` — the automation path, the one that matters most because
+a schedule fires at 03:00 with nobody at a window — collected fifteen and not
+that one. Measured before the fix: the word `account` appeared **four times** in
+a 2,400-line panel, and none of the four was a wire.
+
+So every task written from that page for four months ran on whichever sign-in
+happened to be standing, silently billed a plan nobody named, and offered the
+box back the next time the form was opened. `scheduleSeed` and `triggerSeed` did
+not read it back either, so editing a saved automation's *time* wrote the
+emptiness over an account somebody had chosen on purpose.
+
+**The measurement that could not see it, and the one that now can.** The existing
+sweep (`test_task_seed.js`) pins one direction: every `RunDimensions` field comes
+back OUT of a stored task and into the form. The mirror was never stated — a
+dimension the form is SEEDED with is a dimension the form can be SAVED with — so
+a box could be alive, carry a value, and be dropped one line before the store
+with every test green. That return leg is now measured on all five readings
+(three save paths, two automation seeds), derived from `RunDimensions` in the
+source, so the next dimension somebody draws a box for fails until its wire is
+connected. When it was written it went red on exactly one name: `account`.
+
+**And the third answer reached the form (X-223).** X-211 gave the Console a
+`[💻 Machine Global]` row — not a fancier way of saying nothing, but the answer
+that *clears* the engine's config variable, which the VS Code window may itself
+be carrying. That row never came to the Tasks form, so the bridge could write
+`account: "@machine"` on a task and the form that edits the same task could not
+say it back. Two doors into one field, disagreeing about what the field can hold.
+The row is now on the form, and — the trap found while wiring it — it survives an
+engine change: a slot belongs to one engine and is narrowed away when the engine
+moves, but the machine's own sign-in belongs to none, and dropping it would have
+turned "run this as the machine itself" into "run it as whatever is standing" the
+moment somebody touched the engine box.
+
+No host plumbing was missing: `addTask`, `retryTask` and `launchAccountEnv` have
+all honoured the field since X-169/X-211. This release is the four lines between
+the form and them, plus the test that will not let them go missing again.
+
 ## 3.400.2 - the Codex account card said something that was not true (2026-09-06)
 
 The Codex adapter answered, whenever anybody asked why its account cards show no

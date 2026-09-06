@@ -1660,6 +1660,12 @@
         const all = (DATA.launch || {}).accounts || {};
         return (all[engine || 'claude'] || []).filter(a => a && a.id);
     }
+    /** ‼️ X-223 — the machine's own sign-in, stated. The value is the sentinel
+     *  the host and the core share (core/accountStore.ts), never ''. */
+    const MACHINE_ACCOUNT = '@machine';
+    /** …and what it is called in a picker — the badge is what makes it read as
+     *  a choice somebody made rather than a placeholder nobody filled in. */
+    const MACHINE_GLOBAL_ROW = '💻 Machine Global';
     /**
      * ‼️ X-106 — A ROUTE BELONGS TO ONE ENGINE, AND A TIER TO ONE ROUTE.
      *
@@ -1675,6 +1681,12 @@
         // names a directory Codex never reads, so the run would go to the main
         // sign-in while the form claimed otherwise. Dropped rather than left
         // sitting in a box that disagrees with the row above it.
+        // ‼️ X-223 — …BUT THE MACHINE'S OWN SIGN-IN BELONGS TO NO ENGINE, so it
+        // survives every engine change. Narrowing it away would silently turn
+        // "run this as the machine itself" into "run it as whatever is standing"
+        // the moment the engine box was touched — the one answer whose whole
+        // point is that nothing gets injected.
+        if (c.account === MACHINE_ACCOUNT) { return; }
         if (!ntAccounts(c.engine).some(a => a.id === c.account)) { c.account = ''; }
     }
     function ntNarrowRoute(c) {
@@ -2430,6 +2442,22 @@
             const opts = [C.option('', '— the standing choice, else the main sign-in —', {
                 selected: !c.account,
                 detail: 'The ACTIVE account of this engine answers when the run fires — the one the Engines page points at — and failing that the main sign-in, which is what every run written before this took.'
+            }),
+            /**
+             * ‼️ X-223 — AND THE MACHINE'S OWN SIGN-IN, STATED OUTRIGHT, which
+             * is a THIRD answer and not a fancier way of saying nothing.
+             *
+             * Nothing stated leaves the engine's config variable exactly as it
+             * is — and the VS Code window Agent Farm runs in may itself have
+             * been started carrying one. Stating this CLEARS it, so the run is
+             * the machine's own identity whatever the fleet is rotating. The
+             * Console has had the row since X-211; this form had the same field
+             * and could not say the same thing, so a task the bridge wrote with
+             * it could not be edited here without losing it.
+             */
+            C.option(MACHINE_ACCOUNT, MACHINE_GLOBAL_ROW, {
+                selected: c.account === MACHINE_ACCOUNT,
+                detail: 'The identity this machine itself is signed in as — nothing is injected, which is what every run took before accounts existed. Unlike the empty row above, this is PINNED: it stays here whatever the Engines page is pointing at when the run fires.'
             })]
                 .concat(rows.map(a => C.option(a.id,
                     (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''), {

@@ -1305,6 +1305,9 @@ function scheduleSeed(s: FarmSchedule): Record<string, unknown> {
         // the same as `off`.
         superpowers: s.superpowers === undefined ? '' : (s.superpowers ? 'on' : 'off'),
         cli: s.cli ?? '', providerId: s.providerId ?? '', tier: s.tier ?? '',
+        // ‼️ X-222 — and the sign-in it was saved on, or editing the time of a
+        // schedule would quietly move it back onto the standing account.
+        account: s.account ?? '',
         workDir: s.workDir ?? '', priority: s.priority ?? 0,
         ignoreBudget: !!s.ignoreBudget,
         // ‼️ M-27 — what it was saved with, so reopening the form shows the
@@ -1341,6 +1344,8 @@ function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unkn
         // the same as `off`.
         superpowers: dims.superpowers === undefined ? '' : (dims.superpowers ? 'on' : 'off'),
         cli: dims.cli ?? '', providerId: dims.providerId ?? '', tier: dims.tier ?? '',
+        // ‼️ X-222 — and the sign-in it was saved on (see scheduleSeed).
+        account: dims.account ?? '',
         workDir: dims.workDir ?? '', priority: dims.priority ?? 0,
         ignoreBudget: !!dims.ignoreBudget,
         // ‼️ M-27 — the chain it was saved with (see RunDimensions.rounds).
@@ -1671,6 +1676,16 @@ export class TasksPanel {
             effort: str('effort') || undefined,
             permissionMode: str('permissionMode') || undefined,
             cli: str('cli') || undefined,
+            // ‼️ X-222 — AND WHOSE PLAN PAYS FOR IT. This is the door the
+            // account was written for: a schedule fires at 03:00 with nobody at
+            // a window, so "the nightly batch runs on the second sign-in" can
+            // only be said HERE or it is never said at all. It was drawn on the
+            // form and read on the `task-new` branch only, so the box took an
+            // answer, announced the plan as saved, and fired it every night on
+            // whichever account happened to be standing. Empty stays undefined
+            // = GONE (see the note above), which reads as "the engine's active
+            // account decides" — the behaviour every run written before this had.
+            account: str('account') || undefined,
             // X-106 - AND WHICH ROUTE SERVES IT. The dimension an automation needs
             // most and could not state: with nobody at a window, a run that names
             // none takes whichever route the agent is set to when it fires. The
@@ -2232,6 +2247,11 @@ export class TasksPanel {
                         effort: str('effort') || undefined,
                         permissionMode: str('permissionMode') || undefined,
                         cli: str('cli') || undefined,
+                        // ‼️ X-221 — and on the SIGN-IN the form is showing. A
+                        // retry of a run that died on an exhausted plan is the
+                        // one case where moving the account is the whole point,
+                        // and the form was the only place to say it.
+                        account: str('account') || undefined,
                         // X-106 - and on the route the form is showing, which is
                         // the original's unless it was changed there.
                         providerId: str('providerId') || undefined,
@@ -2315,6 +2335,14 @@ export class TasksPanel {
                     ...(str('effort') ? { effort: str('effort') } : {}),
                     ...(str('permissionMode') ? { permissionMode: str('permissionMode') } : {}),
                     ...(str('cli') ? { cli: str('cli') } : {}),
+                    // ‼️ X-221 — AND WHICH SIGN-IN PAYS FOR IT. The box has been
+                    // on this form since X-169 and the store has held the field
+                    // just as long; this line is what was missing between them,
+                    // so every task written from this page ran on whichever
+                    // account was standing and never said so. Omitted when the
+                    // box is empty, which is the third answer — "the engine's
+                    // active account decides" — and not the same as naming one.
+                    ...(str('account') ? { account: str('account') } : {}),
                     // X-106 - the route this run is served by (see dims()).
                     ...(str('providerId') ? { providerId: str('providerId') } : {}),
                     ...(str('providerId') && str('tier') ? { tier: str('tier') } : {}),

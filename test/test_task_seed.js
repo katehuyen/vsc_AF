@@ -131,6 +131,87 @@ const DIMENSION_BOX = {
         ['', '', '', '']);
 }
 
+// ---------- ‼️ X-221 — AND THE RETURN LEG, WHICH NOBODY WAS MEASURING -------
+//
+// The sweep above is one direction: a stored task comes back into the form. The
+// bug it could never see is the other one — the form is drawn, the person picks
+// an answer, the page posts it, and the HOST never reads the field. The box is
+// alive, the value travels, and it is dropped one line before the store.
+//
+// That is not hypothetical. X-169 put an account box on this form, seeded it
+// above, tested it against mock doors, and closed — while `task-new`, the retry
+// branch and `dims()` all went on building their objects without ever reading
+// `account`. Every task written from this page for four months billed whichever
+// sign-in happened to be standing, and said nothing.
+//
+// So the rule is the mirror of the one above: **a dimension the form is seeded
+// with is a dimension the form can be SAVED with**, on all three save paths. The
+// list is `RunDimensions` again, read out of the source, so the next dimension
+// somebody draws a box for fails this test until its wire is connected too.
+{
+    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8');
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    const at = src.indexOf('export interface RunDimensions');
+    const fields = [...src.slice(at, src.indexOf('\n}', at))
+        .matchAll(/^ {4}([a-zA-Z][\w]*)\??:/gm)].map(m => m[1]);
+
+    /** The object literal that starts at `anchor`, by brace balance. */
+    const region = anchor => {
+        const i = panel.indexOf(anchor);
+        if (i < 0) { return ''; }
+        let depth = 0;
+        for (let j = i + anchor.length - 1; j < panel.length; j++) {
+            if (panel[j] === '{') { depth++; }
+            else if (panel[j] === '}') { depth--; if (!depth) { return panel.slice(i, j + 1); } }
+        }
+        return '';
+    };
+    // The three doors out of this one form. A run written now, a run written
+    // again after a failure, and a run written for later — the last is the one
+    // that matters most, because there is nobody at the window when it fires.
+    const SAVES = [
+        ['a new task', region('const task = m.addTask(agent, title, prompt, mode, {')],
+        ['a retry', region('const copy = m.retryTask(original, prompt, {')],
+        ['an automation', region('const dims = (): RunDimensions => ({')]
+    ];
+    for (const [what, body] of SAVES) {
+        ok(`the save path for ${what} was found`,
+            body.length > 200 && /\bpermissionMode\b/.test(body));
+    }
+    // A dimension counts as READ when the save names it — by its own name or by
+    // the form's name for it (`projectId` is the `project` box, `retry` is the
+    // `retryMode` box plus the numbers under it).
+    const named = (body, f) =>
+        new RegExp(`\\b${f}\\b`).test(body) || new RegExp(`\\b${DIMENSION_BOX[f]}\\b`).test(body);
+    for (const [what, body] of SAVES) {
+        eq(`‼️ every dimension the form seeds is read back when saving ${what}`,
+            fields.filter(f => !named(body, f)), []);
+    }
+    // ‼️ And the one that was actually dropped, named on its own so the failure
+    // says what it is rather than only that a list is not empty.
+    for (const [what, body] of SAVES) {
+        ok(`‼️ X-221 — the account reaches the store when saving ${what}`,
+            /\baccount\b/.test(body));
+    }
+
+    // ‼️ X-222 — AND AN AUTOMATION IS REOPENED THE SAME WAY A TASK IS.
+    //
+    // `taskSeed` is swept above; the other two readings of a stored object were
+    // never held to the same rule, so a schedule saved on the second account
+    // drew an empty account box when it was edited — and saving that form wrote
+    // the emptiness back over a decision somebody had made on purpose.
+    const SEEDS = [
+        ['a schedule', region('function scheduleSeed(s: FarmSchedule): Record<string, unknown> {')],
+        ['a trigger', region('function triggerSeed(t: FarmTrigger, fallbackAgent: string): Record<string, unknown> {')]
+    ];
+    for (const [what, body] of SEEDS) {
+        ok(`the reading of ${what} was found`,
+            body.length > 200 && /\bpermissionMode\b/.test(body));
+        eq(`‼️ every dimension comes back out of ${what} too`,
+            fields.filter(f => !named(body, f)), []);
+    }
+}
+
 Module._load = origLoad;
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
