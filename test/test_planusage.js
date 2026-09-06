@@ -846,6 +846,28 @@ const LIVE_PAYLOAD = {
             /ev\.data\.account !== undefined/.test(dash));
     }
 
+    // ‼️ THE QUOTA PROBE READS THE WINDOW OF THE ACCOUNT THE SESSION RUNS AS.
+    //
+    // `credentialsPath()` defaults to `~/.claude`, which belongs to whatever
+    // account this machine happens to be signed in as. A session started from an
+    // Agent Farm account slot carries CLAUDE_CONFIG_DIR and its credentials live
+    // THERE. A probe calling `readOauthCredentials()` bare therefore reports a
+    // stranger's window, and it has done so TWICE: once reading 95% for an account
+    // the session had not spent a token on, once reading 0% for a session whose own
+    // window was at 54%. The second is the dangerous direction — an agent pacing
+    // itself against a 90% rule works straight through its own wall.
+    //
+    // ‼️ AND IT LIVES IN tools/ RATHER THAN .tmp/ FOR THE REASON THE SECOND FAILURE
+    // EXISTS: .tmp is ignored, so the first fix never travelled and the next hand
+    // wrote it again without the part that mattered.
+    {
+        const probe = fs.readFileSync(path.join(__dirname, '..', 'tools', 'quota.js'), 'utf8');
+        ok('‼️ the quota probe resolves CLAUDE_CONFIG_DIR rather than trusting the default',
+            /CLAUDE_CONFIG_DIR/.test(probe) && /readOauthCredentials\(file\)/.test(probe));
+        ok('‼️ …and PRINTS the directory it read, so a stranger\'s number is visible as one',
+            /'config dir/.test(probe));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();
