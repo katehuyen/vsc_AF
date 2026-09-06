@@ -385,6 +385,38 @@ const BROKE = 'Error: ENOENT: no such file or directory';
     ok('‼️ X-227 — and the ACCOUNT above all, or the wait and the run disagree '
         + 'about whose window was being waited for',
         /\baccount\b/.test(body));
+
+    /**
+     * ‼️ X-229 — AND THE ROUND BOUNDARY, WHICH IS THE SAME DEFECT AND WORSE.
+     *
+     * A round is not a new run: it is a REPLY, and it goes back into the same
+     * conversation by `resumeSessionId`. So a round that changes account resumes
+     * a transcript on a sign-in that never had it — the exact mid-run drift the
+     * X-211 family was built to end, arriving through the front door.
+     *
+     * The third hand-copied dimension list in this file. Measured before the
+     * fix, round two was dropping account, providerId, tier, finishSound and
+     * superpowers, and its list looked complete enough that nobody read it
+     * against `RunDimensions`. Which is the argument for reading it here.
+     */
+    const rAnchor = 'const row = this.addTask(agent, `${baseTitle} · R${next.round}`, next.prompt, task.mode, {';
+    const ri = tasksTs.indexOf(rAnchor);
+    let round = '';
+    if (ri >= 0) {
+        let depth = 0;
+        for (let j = ri + rAnchor.length - 1; j < tasksTs.length; j++) {
+            if (tasksTs[j] === '{') { depth++; }
+            else if (tasksTs[j] === '}') { depth--; if (!depth) { round = tasksTs.slice(ri, j + 1); break; } }
+        }
+    }
+    ok('the round boundary\'s own reading of the round before it was found',
+        round.length > 200 && /\bpermissionMode\b/.test(round));
+    ok('‼️ X-229 — a round carries EVERY dimension of the round it answers (missing: '
+        + fields.filter(f => !new RegExp(`\\b${f}\\b`).test(round)).join(', ') + ')',
+        fields.every(f => new RegExp(`\\b${f}\\b`).test(round)));
+    ok('‼️ X-229 — and the ACCOUNT above all: a round resumes a conversation, and '
+        + 'resuming one on a sign-in that never had it is the drift X-211 ended',
+        /\baccount\b/.test(round));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.402.1 - X-229: round two answered the conversation as somebody else (2026-09-06)
+
+Found while fixing X-227, one screen away from it: the **third** hand-copied
+dimension list in `core/tasks.ts`. The one that queues the next round of a
+multi-round task carried thirteen fields and dropped five — **account,
+providerId, tier, finishSound, superpowers.**
+
+This is worse than X-227, and the reason is two lines further down in the same
+literal. A round is not a new run: it is a REPLY, and it goes back into the same
+conversation by `resumeSessionId`. So round two `--resume`d a transcript on a
+sign-in that had never seen it — the mid-run drift the whole X-211 family was
+built to end, arriving through the front door of the feature that produces the
+longest runs in the product. The route mattered too: with it dropped, the second
+half of a chain spoke to a different model behind the same word.
+
+Fixed the way X-227 was: `runExtras` is the ONE carrier of `RunDimensions`, and
+this literal now goes through it, with the round's own fields written after so
+they still win — `rounds` here is what is LEFT to say, not what the task started
+with. Measured in `test_retry.js` against `RunDimensions` read out of the source,
+in a second region beside X-227's; both named their missing fields out loud
+before the fix.
+
+Three lists, three readings, one carrier. If a fourth appears, the test that
+found this one is the shape to copy.
+
 ## 3.402.0 - X-227/X-224: the retry nobody is watching, and the chain that ate one plan (2026-09-06)
 
 **X-227 — the unattended retry was dropping seven dimensions, and this one was

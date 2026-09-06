@@ -3857,6 +3857,26 @@ export class TaskManager implements vscode.Disposable {
                     + (next.awaitBinding ? ', held until this run is matched to its transcript' : ''));
                 const row = this.addTask(agent, `${baseTitle} · R${next.round}`, next.prompt, task.mode, {
                     projectId: task.projectId,
+                    /**
+                     * ‼️ X-229 — THE ROUND RUNS THE WAY THE ROUND BEFORE IT RAN,
+                     * AND HERE THAT IS NOT A PREFERENCE.
+                     *
+                     * A round is not a new run: it is a REPLY, and the lines
+                     * below send it back into the same conversation by
+                     * `resumeSessionId`. This literal was the third hand-copied
+                     * dimension list in this file and it was dropping five —
+                     * account, providerId, tier, finishSound, superpowers — so
+                     * round two resumed a transcript on a sign-in that had never
+                     * seen it. That is the mid-run drift the X-211 family was
+                     * built to end, arriving through the front door.
+                     *
+                     * By the shape now, like everything else that inherits a
+                     * run's dimensions. It is FIRST on purpose: the round's own
+                     * fields are written after it and must win — `rounds` here
+                     * is what is LEFT to say (`next.rest`), not what the task
+                     * started with.
+                     */
+                    ...runExtras(task),
                     round: next.round,
                     rounds: next.rest,
                     roundsTotal: task.roundsTotal,
