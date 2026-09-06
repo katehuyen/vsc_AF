@@ -178,9 +178,16 @@ const CTX = {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
     const props = pkg.contributes.configuration.properties || {};
 
+    // ‼️ THE NEWLINE IS NOT PART OF THE CLAIM. `core.autocrlf` is true on this
+    // machine, so a fresh clone hands every source file CRLF and `git stash`
+    // flips one on the spot — this gate then reads `configuredFolder(\r\n`, fails
+    // to match `configuredFolder(\n`, and reports that a resolver somebody never
+    // touched has gone missing. It passed only because the files it reads
+    // happened to be LF in one working tree. What is being counted is the CALL
+    // ON ITS OWN LINE, which is what the argument list following it means.
     ok('there is ONE resolver the folder settings go through',
         /const configuredFolder = \(/.test(ext)
-        && (ext.match(/configuredFolder\(\n/g) || []).length === 3);
+        && (ext.match(/configuredFolder\(\r?\n/g) || []).length === 3);
     ok('…and it asks the module, rather than expanding anything itself',
         /resolvePathVars\(candidate, ctx\)/.test(ext));
     ok('…and a template it could not build is SKIPPED, never half-used',

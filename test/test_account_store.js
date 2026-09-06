@@ -109,7 +109,7 @@ const ready = (email, plan = 'pro') => ({
 {
     const plan = planCapture({
         engine: 'claude', home: HOME, root: ROOT,
-        identity: ready('murat@example.com', 'max'), taken: [], now: NOW
+        identity: ready('murat@example.com', 'max'), stored: [], now: NOW
     });
     ok('the plan seals an account named after the address it read',
         plan.refusal === '' && plan.slot.id === 'claude-murat');
@@ -146,22 +146,70 @@ const ready = (email, plan = 'pro') => ({
         plan.links.find(l => /projects$/.test(l.to)).from.replace(/\\/g, '/')
             === HOME + '/.claude/projects');
 
-    ok('a second account on the same address counts up rather than overwriting',
-        planCapture({
-            engine: 'claude', home: HOME, root: ROOT, identity: ready('murat@example.com'),
-            taken: ['claude-murat'], now: NOW
-        }).slot.id === 'claude-murat-2');
     ok('a label the user typed is kept and is what the row will say',
         slotLabel(planCapture({
             engine: 'claude', home: HOME, root: ROOT, identity: ready('a@x.com'),
-            taken: [], label: 'İş hesabı', now: NOW
+            stored: [], label: 'İş hesabı', now: NOW
         }).slot) === 'İş hesabı');
+}
+
+// ---------- ‼️ X-220 — CAPTURING AN ACCOUNT THAT IS ALREADY HERE ----------
+//
+// The id counted up past a name it had used, so pressing Capture after signing
+// in again — the ordinary way to fix a dead credential before there was a 🔑 —
+// produced `claude-murat-2`: two rows, ONE account, one of them stale, and
+// every picker in the product offering both. An account is an engine and an
+// address; two rows on one address is a duplicate, not a second account.
+{
+    const here = (o) => ({
+        id: 'claude-murat', engine: 'claude', dir: path.join(ROOT, 'claude-murat'),
+        email: 'murat@example.com', label: 'İş', ...o
+    });
+    const recapture = (stored, o) => planCapture({
+        engine: 'claude', home: HOME, root: ROOT,
+        identity: ready('murat@example.com', 'max'), stored, now: NOW + 1, ...o
+    });
+
+    const again = recapture([here()]);
+    ok('‼️ X-220: capturing an address that is already stored REFRESHES that row',
+        again.refusal === '' && again.slot.id === 'claude-murat' && again.reseats === 'claude-murat');
+    ok('…into the directory that row already has, so nothing is left behind either',
+        again.slot.dir === path.join(ROOT, 'claude-murat')
+        && again.copies.every(c => path.dirname(c.to) === path.join(ROOT, 'claude-murat')));
+    ok('‼️ …and the moment moves, because the card\'s job is to say how old this credential is',
+        again.slot.capturedAt === NOW + 1);
+    ok('…while the name the user gave it survives — re-sealing is not a reason to forget it',
+        slotLabel(again.slot) === 'İş');
+    ok('…unless they type a new one, which is the whole point of pressing it again',
+        slotLabel(recapture([here()], { label: 'Yeni ad' }).slot) === 'Yeni ad');
+
+    // ‼️ A MATCH IS AN ENGINE AND AN ADDRESS. Not an id, which is a folder name,
+    // and not an address nobody could read.
+    ok('‼️ an address the engine never reported is NOT a match — that says unknown, not new',
+        recapture([here({ email: '' })]).slot.id === 'claude-murat-2');
+    ok('‼️ …and the same address on ANOTHER engine is another account, not this one',
+        recapture([here({ engine: 'codex', id: 'codex-murat' })]).reseats === undefined);
+
+    // ‼️ THE SILENT PART IS BOUNDED BY THE DIRECTORY (constitution, Principle 2).
+    // Merging quietly is right only where the refresh writes exactly the files
+    // the capture would have written anyway. A folder somebody arranged by hand
+    // is a distinction they drew, and dissolving it without asking is the one
+    // move this system forbids outright.
+    const moved = recapture([here({ dir: 'D:/elsewhere/murat' })]);
+    ok('‼️ …a row whose directory is not where this machine keeps them is REFUSED BY NAME',
+        /D:\/elsewhere\/murat/.test(moved.refusal) && /arranged by hand/.test(moved.refusal));
+    ok('…and nothing is written for it — no slot, no copies',
+        moved.slot === undefined && moved.copies.length === 0);
+    ok('…the refusal names the row the way the reader sees it, not by its folder id',
+        /"İş"/.test(moved.refusal));
+    ok('‼️ …and it is a sentence rather than the source that built it',
+        !/['`]\s*\+\s*['`]/.test(moved.refusal) && !/\n/.test(moved.refusal));
 }
 
 // ---------- the refusals, which are the point ----------
 {
     const of = (o) => planCapture({
-        engine: 'claude', home: HOME, root: ROOT, taken: [], now: NOW, ...o
+        engine: 'claude', home: HOME, root: ROOT, stored: [], now: NOW, ...o
     });
     ok('‼️ an engine that cannot isolate refuses, in its adapter\'s own words',
         /Antigravity/.test(of({ engine: 'agy', identity: ready('a@x.com') }).refusal));

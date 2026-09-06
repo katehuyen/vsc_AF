@@ -518,6 +518,44 @@
                 + 'assumed success would be lying about the one fact it exists to state. When the '
                 + 'terminal closes this row is READ AGAIN from disk, so the badge above changes because '
                 + 'the files did.');
+        /**
+         * ‼️ X-220 — THE VERDICT IS ALWAYS DRAWN, AND THREE STATES ARE THREE
+         * STATES.
+         *
+         * The card wore a badge only when something was wrong, so a healthy row
+         * said NOTHING — and nothing is also what a row nobody has looked at
+         * says. The one question a reader opens this page with ("can I start a
+         * session on this?") was answered by an absence.
+         *
+         * ‼️ And the two bad states wore the SAME yellow and the SAME sentence.
+         * They are not the same fact: one is a credential that no longer
+         * refreshes, the other a file nothing could be made of — the second does
+         * not even know WHOSE account this is. Two verdicts drawn identically is
+         * one verdict with a lie in it.
+         *
+         * SHORTHAND: the badge is the short form, the panel carries the long one
+         * — and what that state REQUIRES OF THE READER, because a verdict nobody
+         * can act on is an alarm rather than information.
+         */
+        const VERDICTS = {
+            'ready': ['ok', '🟢 ready', 'This sign-in works',
+                'The credential is there and still refreshes, so a session started on this account '
+                + 'opens as it and nobody is asked to sign in. Read from this account\'s own '
+                + 'directory just now — not remembered from when it was captured.'],
+            'needs-signin': ['warn', '🟠 needs signing in', 'This sign-in has expired',
+                'The credential is readable but no longer refreshes, so a session started here would '
+                + 'open as nobody. Only a person can fix it: signing in is a browser flow. '
+                + 'The 🔑 beside this is where that starts — it opens a terminal pointed at THIS '
+                + 'account\'s own directory, so the renewed credential lands on this row and on '
+                + 'nothing else.'],
+            'unreadable': ['bad', '🔴 unreadable', 'This sign-in could not be read at all',
+                'The file is there and nothing could be made of it — locked by a running session, '
+                + 'half-written, or left over from an older shape of the engine. ‼️ This is NOT an '
+                + 'expired sign-in: that one knows whose account it is and cannot refresh it, while '
+                + 'this one cannot tell you even that. Signing in again writes the file afresh, '
+                + 'which is what the 🔑 beside this does.']
+        };
+        const verdict = VERDICTS[a.health] || VERDICTS['unreadable'];
         const onDisk = a.quotaSource === 'session-tail';
         const refresh = a.quotaSource === 'none'
             ? ''
@@ -550,12 +588,8 @@
                     + 'and what the directory is called: ' + (a.dir || 'under the accounts root') + '.')
                 : '')
             + (a.plan ? '<span class="acplan">' + esc(a.plan) + '</span>' : '')
-            + (a.health === 'ready' ? ''
-                : T.wrap('<span class="acbad">' + esc(a.health === 'needs-signin' ? 'needs signing in' : 'unreadable') + '</span>', 'This sign-in is not usable',
-                    'The stored credential no longer refreshes, and only a person can fix it: signing in '
-                    + 'is a browser flow. The 🔑 beside this is where that starts — it opens a terminal '
-                    + 'pointed at THIS account\'s own directory, so the renewed credential lands on this '
-                    + 'row and on nothing else.'))
+            + T.wrap('<span class="acbad ' + verdict[0] + '">' + esc(verdict[1]) + '</span>',
+                verdict[2], verdict[3])
             + '<span class="grow"></span>'
             + reauth
             + refresh
@@ -567,7 +601,14 @@
                 + 'pointed at an id that names nothing would silently fall back to whoever is signed in.')
             + '</div>'
             + window5
-            + '<div class="pobody muted small">' + esc(a.engine)
+            // ‼️ X-220 — THE ENGINE, IN THE PRODUCT'S OWN BADGE. This card wrote
+            // the raw id in lowercase grey while the Console, the agent page and
+            // the slash picker all drew `AFEngine.badge` for the same fact — one
+            // component, one colour, one spelling, and this was the surface that
+            // had opted out of it. It is not a second copy of the group heading:
+            // a single-engine machine draws no heading at all (`bare`), and this
+            // is where the row says what it belongs to.
+            + '<div class="pobody muted small">' + window.AFEngine.badge(a.engine)
             + (a.capturedAt ? ' · captured ' + esc(age(a.capturedAt, DATA.now)) : '')
             // X-206 — the age of the FIGURE, which is the one the reader is
             // deciding on. It sits next to the age of the account deliberately:
@@ -898,10 +939,19 @@
                 .accard.a-now { border-left:3px solid var(--vscode-charts-blue,#3794ff); }
                 .acplan, .acbad { font-size:10px; padding:1px 8px; border-radius:9px;
                     white-space:nowrap; border:1px solid var(--vscode-widget-border,#4446); }
-                /* a dead sign-in is YOUR MOVE, not a system error: the same yellow
-                   the held verdict and the keyless route wear. */
-                .acbad { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
-                    border-color:transparent; cursor:help; }
+                /* ‼️ X-220 — three states, three colours. A working sign-in is the
+                   ordinary case and is drawn QUIETLY: shouting it in green would
+                   cost the two that need the eye their only advantage. An expired
+                   one is YOUR MOVE, in the same yellow the held verdict and the
+                   keyless route wear; an unreadable one is a FAULT and wears the
+                   red every other fault on this page does. */
+                .acbad { cursor:help; }
+                .acbad.ok { background:transparent; color:var(--vscode-descriptionForeground,#9d9d9d);
+                    border-color:var(--vscode-widget-border,#4446); }
+                .acbad.warn { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
+                    border-color:transparent; }
+                .acbad.bad { background:var(--vscode-charts-red,#f14c4c); color:#fff;
+                    border-color:transparent; }
                 /* X-219 — the one control that answers that badge wears the badge's
                    colour: a dead sign-in and its remedy are one fact, said twice. */
                 .acreauth { border-color:var(--vscode-charts-yellow,#d7ba7d); }

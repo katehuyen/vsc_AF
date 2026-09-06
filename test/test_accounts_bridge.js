@@ -77,13 +77,16 @@ function registry(state) {
                 const engine = optStr(a, 'engine') || 'claude';
                 const plan = planCapture({
                     engine, home: 'C:/Users/murat', root: 'C:/store/accounts',
-                    identity: state.identity, taken: state.slots.map(s => s.id),
+                    identity: state.identity, stored: state.slots,
                     label: optStr(a, 'label'), now: 1
                 });
                 need(!plan.refusal, plan.refusal);
                 state.slots = addSlot(state.slots, plan.slot);
                 if (optBool(a, 'activate')) { state.active = { ...state.active, [engine]: plan.slot.id }; }
-                return { captured: publicAccount(plan.slot), layout: describeSlotLayout(engine) };
+                return {
+                    captured: publicAccount(plan.slot), reseated: plan.reseats ?? null,
+                    layout: describeSlotLayout(engine)
+                };
             }
         },
         {
@@ -207,6 +210,24 @@ function freshState() {
         ok('‼️ activate:"true" as a WORD still activates — the af.js shorthand', r.result.captured.active === true);
         ok('the answer explains the arrangement rather than leaving it to a document',
             /junction|link/i.test(r.result.layout) && /transcript|session records/i.test(r.result.layout));
+
+        // ‼️ X-220 — AN ACCOUNT IS AN ENGINE AND AN ADDRESS. Pressing Capture
+        // again after signing in — the ordinary way to fix a dead credential
+        // before there was a key on the card — used to mint `claude-yeni-2`:
+        // two rows, ONE account, one of them stale, and every picker offering
+        // both.
+        const before = state.slots.length;
+        const again = await reg.dispatch('accounts.capture', {});
+        ok('‼️ X-220: capturing an address already stored REFRESHES its row',
+            again.ok && again.result.reseated === 'claude-yeni'
+            && again.result.captured.id === 'claude-yeni');
+        ok('…so the list does not grow, and no second row of one account is offered anywhere',
+            state.slots.length === before
+            && state.slots.filter(s => s.id === 'claude-yeni').length === 1);
+        ok('‼️ …and the answer says WHICH of the two things it did, rather than "captured" either way',
+            r.result.reseated === null && again.result.reseated === 'claude-yeni');
+        ok('…the name the user gave it survives a refresh they did not rename',
+            again.result.captured.label === 'Üçüncü');
 
         const blocked = await reg.dispatch('accounts.capture', { engine: 'agy' });
         ok('‼️ an engine with no verified isolation is refused, not captured',

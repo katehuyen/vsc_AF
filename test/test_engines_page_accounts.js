@@ -196,6 +196,45 @@ const sec = () => {
         JSON.stringify(r.last()) === JSON.stringify({ type: 'accountReauth', id: 'spare' }));
 }
 
+// ---- X-220: the verdict is always drawn, and three states are three states --
+//
+// The badge appeared only when something was wrong, so a healthy row said
+// NOTHING — and nothing is also what a row nobody has looked at says. Worse,
+// `needs signing in` and `unreadable` wore the same yellow and the same
+// sentence, while one is a credential that cannot refresh and the other a file
+// that cannot say whose account it is.
+{
+    const h = sec();
+    const badges = (h.match(/class="acbad ([a-z]+)"/g) || []).map(s => s.split(' ')[1].replace(/"/, ''));
+    ok('‼️ X-220: every card carries its verdict, not only the ones in trouble',
+        badges.length === DATA.accounts.length && badges.length === 5);
+    ok('…and the ordinary case is drawn QUIETLY, so the ones that need the eye keep their advantage',
+        badges.filter(v => v === 'ok').length === 4 && /class="acbad ok">🟢 ready</.test(h));
+    ok('‼️ …an expired sign-in is YOUR MOVE, in the yellow this page already uses for that',
+        /class="acbad warn">🟠 needs signing in</.test(h));
+
+    // ‼️ THE TWO BAD STATES ARE NOT ONE STATE. Drawn identically, they told the
+    // reader the same thing about two different problems.
+    const broken = fixture.data();
+    broken.accounts = broken.accounts.map(a =>
+        a.id === 'spare' ? { ...a, health: 'unreadable' } : a);
+    const hb = runPage('engines.js', broken).html();
+    ok('‼️ …and a file nothing could be made of is a FAULT, in red, not the same yellow',
+        /class="acbad bad">🔴 unreadable</.test(hb) && !/🟠 needs signing in/.test(hb));
+    ok('‼️ …with its own sentence: one knows whose account it is and cannot refresh it, '
+        + 'the other cannot tell you even that',
+        /cannot tell you even that/.test(hb) && !/cannot tell you even that/.test(h));
+    ok('…and both offer the key, because signing in again is what fixes either',
+        /data-acreauth="spare"/.test(hb) && /data-acreauth="spare"/.test(h));
+
+    // ‼️ ONE COMPONENT FOR ONE FACT. The Console, the agent page and the slash
+    // picker all draw AFEngine.badge for the engine; this card wrote the raw id
+    // in lowercase grey, which is the same fact in a second spelling.
+    ok('‼️ X-220: the engine is drawn in the product\'s own badge, not as raw grey text',
+        (h.match(/class="af-eng /g) || []).length === 5
+        && !/class="pobody muted small">claude/.test(h));
+}
+
 // ---- a refusal is shown where it happened ----------------------------------
 {
     r.send({ type: 'acc-msg', text: 'Nothing is signed in to claude on this disk.' });

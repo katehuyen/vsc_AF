@@ -48,6 +48,12 @@ export interface CapturePlan {
     links: CaptureStep[];
     /** empty when the capture can run; the one-sentence reason otherwise */
     refusal: string;
+    /**
+     * ‼️ X-220 — the id of the row this plan REFRESHES rather than adds. Absent
+     * means a new account; present means the list does not grow, and a caller
+     * that reports "captured" either way is describing an act nobody performed.
+     */
+    reseats?: string;
 }
 
 /** The setting is user-editable, so nothing in it may be assumed. */
@@ -253,8 +259,17 @@ export interface CaptureArgs {
     root: string;
     /** who is signed in right now, read from the live directory by the caller */
     identity: AccountIdentity;
-    /** the ids already taken, so a second plan on one address counts up */
-    taken: string[];
+    /**
+     * ‼️ X-220 — THE ACCOUNTS ALREADY ON THIS MACHINE, not a projection of them.
+     *
+     * This was the list of ids, which is all a fresh capture needs to count up
+     * past a name it has already used. It is not enough to answer the question
+     * that matters more: *is this sign-in already here?* An account is an engine
+     * and an address; the id is a folder name derived from the address, so a
+     * list of ids can say `claude-work` is taken and cannot say the row under it
+     * is the very account being captured.
+     */
+    stored: EngineAccountSlot[];
     /** what the user wants to call it; the address is the fallback */
     label?: string;
     now?: number;
@@ -268,6 +283,23 @@ export interface CaptureArgs {
  * table that starts sessions on the wrong account for ever after — and does it
  * quietly, which is the only kind of wrong this feature can be.
  */
+/**
+ * ‼️ X-220 — IS THIS SIGN-IN ALREADY ON THE LIST?
+ *
+ * An account is an ENGINE and an ADDRESS. Matching on the id instead would call
+ * `claude-work` and `claude-work-2` two different accounts when they are one
+ * account filed twice — which is the bug this answers. An address nobody could
+ * read is NOT a match: it says the engine did not tell us who this is, not that
+ * this is somebody new, and guessing there would merge two strangers.
+ */
+function storedAs(list: EngineAccountSlot[], engine: string, email: string): EngineAccountSlot | undefined {
+    const want = String(email || '').trim().toLowerCase();
+    if (!want) { return undefined; }
+    const eng = String(engine || '').trim();
+    return (list || []).find(s =>
+        s.engine === eng && String(s.email || '').trim().toLowerCase() === want);
+}
+
 export function planCapture(args: CaptureArgs): CapturePlan {
     const engine = String(args.engine || '').trim();
     const empty = (refusal: string): CapturePlan => ({ copies: [], links: [], refusal });
@@ -286,8 +318,37 @@ export function planCapture(args: CaptureArgs): CapturePlan {
     }
 
     const a = adapterFor(engine);
-    const id = mintSlotId(engine, args.identity.email || String(args.label || ''), args.taken);
-    const dir = slotDir(args.root, id);
+    /**
+     * ‼️ X-220 — CAPTURING AN ACCOUNT THAT IS ALREADY HERE REFRESHES ITS ROW,
+     * it does not open a second one.
+     *
+     * The id counts up past a name it has used (`claude-work-2`), which is right
+     * when two plans really do share an address and wrong every other time. A
+     * user who signs in again and presses Capture — the ordinary way to fix a
+     * dead credential before this release — got a clone: two rows, one account,
+     * one of them stale, and every picker in the product offering both.
+     *
+     * ‼️ AND THE SILENT PART IS BOUNDED BY THE DIRECTORY. Merging is quiet only
+     * when the row lives where this machine puts it, because then the refresh
+     * writes exactly the files the capture would have written anyway. A row
+     * whose directory somebody arranged by hand is a DISTINCTION, and dissolving
+     * a distinction the user drew — without asking — is the one move this system
+     * forbids outright. So that case is refused by name, with the folder in the
+     * sentence, and nothing is written.
+     */
+    const already = storedAs(args.stored, engine, args.identity.email);
+    if (already && already.dir !== slotDir(args.root, already.id)) {
+        return empty(`"${slotLabel(already)}" is already stored for this address, but its directory `
+            + `is not where this machine keeps accounts — it is ${already.dir}. Re-sealing it would `
+            + 'write over a folder somebody arranged by hand, and two rows for one address would be '
+            + 'the same account offered twice. Nothing was captured: forget that row first if you '
+            + 'want it sealed here instead.');
+    }
+    const id = already
+        ? already.id
+        : mintSlotId(engine, args.identity.email || String(args.label || ''),
+            (args.stored || []).map(s => s.id));
+    const dir = already ? already.dir : slotDir(args.root, id);
     const copies = a.ownFiles.map(name => ({
         from: path.join(args.home, liveSource(engine, name)),
         to: path.join(dir, name)
@@ -301,12 +362,19 @@ export function planCapture(args: CaptureArgs): CapturePlan {
     return {
         slot: {
             id, engine, dir,
-            label: (args.label || '').trim() || undefined,
+            // A name the user typed now wins; otherwise the row keeps the one it
+            // was given. Re-sealing an account is not a reason to forget what
+            // they called it.
+            label: (args.label || '').trim() || already?.label || undefined,
             email: args.identity.email || undefined,
             subscriptionType: args.identity.subscriptionType || undefined,
             capturedAt: args.now ?? Date.now()
         },
-        copies, links, refusal: ''
+        copies, links, refusal: '',
+        // ‼️ The caller is TOLD which of the two things it is about to do. A page
+        // that says "captured" when a row was refreshed is describing an act
+        // nobody performed, and the count above the list would not move.
+        reseats: already ? already.id : undefined
     };
 }
 

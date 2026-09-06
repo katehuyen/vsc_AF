@@ -2,6 +2,56 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.414.0 - X-220: an account is an engine and an address, and the card says which state it is in (2026-09-06)
+
+**Two rows, one account.** Signing in again and pressing *Capture this sign-in*
+— the ordinary way to fix a dead credential before there was a 🔑 on the card —
+minted `claude-work-2` beside `claude-work`. Same person, same plan, same
+address; one row stale, both offered in every picker in the product, and the
+figure under each of them read from a different file. The id counts up past a
+name it has already used, which is right when two plans really do share an
+address and wrong every other time.
+
+An account is an **engine and an address**. Capturing one that is already stored
+now **refreshes that row** — same id, same directory, the moment and the tier
+updated, the name the user gave it kept unless they type a new one — and the
+list does not grow. `accounts.capture` says which of the two things it did:
+`reseated` carries the row's id, or is null when a real account was added. A
+caller told "captured" either way would be counting an account that was already
+there.
+
+**‼️ The quiet merge stops at the directory.** Merging without asking is right
+only where the refresh writes exactly the files the capture would have written
+anyway. A row filed somewhere other than where this machine keeps accounts is a
+distinction somebody drew by hand, and dissolving one of those unasked is the
+single move this system forbids outright — so it is refused **by name, with the
+folder in the sentence**, and nothing is written. An address the engine never
+reported is not a match either: that says *unknown*, not *new*, and guessing
+there would merge two strangers.
+
+**The verdict is now always drawn, and three states are three states.** The card
+wore a badge only when something was wrong, so a healthy row said *nothing* —
+and nothing is also what a row nobody has looked at says. The one question a
+reader opens this page with was answered by an absence. Worse, **needs signing
+in** and **unreadable** wore the same yellow and the same sentence, while one is
+a credential that can no longer refresh and the other a file that cannot say
+whose account it even is. Now: 🟢 *ready* drawn quietly (shouting the ordinary
+case costs the other two their only advantage), 🟠 *needs signing in* in the
+yellow this page already uses for "your move", 🔴 *unreadable* in the red it uses
+for a fault — each with its own panel saying what that state requires of the
+reader.
+
+And the engine on each card is drawn in **the product's own badge**
+(`AFEngine.badge`), the component the Console, the agent page and the slash
+picker have always used. This card was writing the raw id in lowercase grey: the
+same fact in a second spelling.
+
+**Also fixed: a gate that was passing by accident.** `test_path_vars.js` counted
+`configuredFolder(\n` in the source. `core.autocrlf` is true here, so a fresh
+clone hands every file CRLF — and one `git stash` flips one on the spot. The
+gate then reports that a resolver nobody touched has gone missing. It is
+line-ending agnostic now; what it counts is the call on its own line.
+
 ## 3.413.0 - X-219: a dead sign-in can be renewed from the card that reports it (2026-09-06)
 
 **The card stated the problem and offered nothing to do about it.** An account

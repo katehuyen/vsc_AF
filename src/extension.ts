@@ -17133,13 +17133,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const list = storedAccounts();
         const plan = planCapture({
             engine: eng, home: os.homedir(), root: accountRoot,
-            identity: liveIdentity(eng), taken: list.map(s => s.id), label: (label || '').trim()
+            identity: liveIdentity(eng), stored: list, label: (label || '').trim()
         });
         if (plan.refusal) { return { refusal: plan.refusal, plan }; }
         const failed = runCapturePlan(plan);
         if (failed) { return { refusal: failed, plan }; }
         const slot = plan.slot as EngineAccountSlot;
+        // ‼️ X-220 — `addSlot` merges by id, and the plan chose the EXISTING id
+        // when this address is already stored, so a re-capture refreshes that row
+        // in place instead of adding a clone. The cached identity for it is
+        // dropped, or the card would go on showing the verdict it had five
+        // seconds ago — the very verdict this press exists to change.
         await writeAccounts(addSlot(list, slot));
+        if (plan.reseats) { identitySeen.delete(plan.reseats); }
         // ‼️ CAPTURING IS NOT CHOOSING, and the default says so. Redirecting the
         // next session as a side effect of writing something down would move
         // where the money comes from without anybody asking for it.
@@ -32751,7 +32757,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the reason, when the engine has no verified way to isolate an identity, when nothing '
                 + 'is signed in, or when the stored files cannot be read. args: engine? (default claude), '
                 + 'label? (what to call it; the address is the fallback), activate? (also make it the '
-                + 'account the next session uses, default false)',
+                + 'account the next session uses, default false). ‼️ X-220 — AN ADDRESS THAT IS '
+                + 'ALREADY STORED REFRESHES ITS ROW rather than opening a second one: an account is '
+                + 'an engine and an address, so two rows on one address is the same account offered '
+                + 'twice, with one of them stale. `reseated` carries the id when that is what '
+                + 'happened, and the list does not grow. The quiet merge stops at the directory — a '
+                + 'row filed somewhere other than where this machine keeps accounts is refused by '
+                + 'name, because that folder is a distinction somebody drew by hand.',
             handler: async (args) => {
                 const done = await captureAccount(
                     optStr(args, 'engine') ?? '', optStr(args, 'label') ?? '',
@@ -32760,6 +32772,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const slot = done.slot as EngineAccountSlot;
                 return {
                     captured: publicAccount(slot, accountUsage.current(), activeAccounts()),
+                    // ‼️ X-220 — WHICH OF THE TWO THINGS HAPPENED. A caller told
+                    // "captured" after a row was refreshed would count an account
+                    // that was already there, and the count above the list would
+                    // not move to agree with it.
+                    reseated: done.plan.reseats ?? null,
                     copied: done.plan.copies.length, linked: done.plan.links.length,
                     layout: describeSlotLayout(slot.engine)
                 };
