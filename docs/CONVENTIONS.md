@@ -411,6 +411,20 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   ledger is mostly `done`, which is how a scheme that shouts on `done` becomes
   one flat green. Give it the real distribution, and give it Turkish text —
   that is what these pages actually carry.
+- **‼️ DRAW THE ARITY THE USER ACTUALLY GETS, not the one that shows the
+  feature off.** U-133 is the record of this: the fold control on the ask
+  card was pushed to the right edge by a rule that lived on the ANSWERED
+  COUNT, and the count is only drawn when there is more than one question.
+  The fixture scene asked FOUR and so did its test, which is the single arity
+  where that layout came out right — so every picture ever taken showed the
+  control neatly in the corner while the card an agent usually puts up (ONE
+  question) dropped it mid-row, straight after the words "is asking". Both
+  the render and the suite certified the bug for a day, and the user found it
+  in one look at their own screen.
+  **So: one and many are two pictures, not one.** Empty, one, many, and
+  too-many are different layouts wherever a count, a wrap, a scroller or an
+  `auto` margin is involved — and the one to add first is the SMALLEST, because
+  the rich scene is the one somebody already built to demo the feature.
 - **Check the light theme too** (`--light`). `color-mix` over a dark fallback
   and `color:#fff` on a chip are the two that fail there and only there.
 - **‼️ What only exists after a press has to be photographable, or it ships

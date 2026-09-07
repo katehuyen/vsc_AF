@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.438.0 - the rule U-133 cost twice: draw the arity the user actually gets (2026-09-07)
+
+Documentation only, and it is the part of U-133 that will outlive the CSS.
+
+The fold control on the ask card was pushed to the right edge by a rule that
+lived on the **answered count**, and the count is only drawn when there is more
+than one question. The fixture scene asked **four** and so did the item's own
+test — the single arity where that layout came out right. So every picture ever
+taken of the card showed the control neatly in the corner, the suite stayed
+green, and the card an agent actually puts up (one question) dropped the control
+into the middle of the row. **The looking glass and the test suite certified the
+bug for a day**, and the user found it in one look at their own screen.
+
+So a fixture draws the arity the user really gets, not the one that shows the
+feature off: **empty, one, many and too-many are different layouts** wherever a
+count, a wrap, a scroller or an `auto` margin is involved — and the smallest is
+the scene to add first, because the rich one is already there, built by somebody
+demonstrating the feature. Written into `docs/CONVENTIONS.md` → "Looking at it".
+
 ## 3.437.0 - U-133 again: the fold control was in the middle of the row, invisible, and the card was see-through (2026-09-07)
 
 **Reported by the user with a screenshot, after the first fix had shipped.** All
