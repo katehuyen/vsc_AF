@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.430.0 - X-254 (1/n): the work queue's fourth route axis — whose plan pays (2026-09-07)
+
+**The file counted three of four.** `WorkItem` carries `engine · model · effort`
+and its own comment calls that the question a fleet of five engines asks:
+"which engine, on which model, at what effort". On a machine holding five
+sign-ins under ONE engine the remaining question is whose PLAN pays, and the
+word `account` did not appear in `workqueue.ts` once.
+
+**And the queue is where the autonomous fleet takes its work from.** Without the
+axis a runner cannot be told "do this one on that plan", the queue cannot be
+filtered by sign-in, and one account hitting its wall cannot change what is
+picked up next.
+
+**It behaves exactly like its three siblings, on purpose.** Optional and
+independent; an empty one is a real answer — "this item does not care, the
+resolved account decides" — so nothing is defaulted at capture, because a value
+invented there is indistinguishable from one the user chose. `(none)` on the
+axis asks for the items nobody claimed a sign-in for, and omitting the axis
+still means every item, claimed or not. Each axis moves on its own: setting the
+engine never clears an account somebody set from another surface.
+
+**‼️ And it is NOT lower-cased, unlike the two beside it.** `engine` is an id
+and `effort` is a word, so both fold. An account is a SLOT ID the user minted,
+and folding its case names a directory that does not exist.
+
+`queue.add`, `queue.list`, `queue.edit` and `queue.route` take it and say so in
+their own `describe` — same commit, per the bridge rule.
+
+**Still open on X-254:** the Queue page's own account picker and filter, and the
+rule that an item whose account is at its wall WAITS rather than being slid onto
+another sign-in.
+
 ## 3.429.0 - X-251 (2/n): a session's own page and its timeline card say whose plan ran it (2026-09-07)
 
 **The half that was worse than a missing label.** The session viewer resumes the
