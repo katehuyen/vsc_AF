@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.437.0 - U-133 again: the fold control was in the middle of the row, invisible, and the card was see-through (2026-09-07)
+
+**Reported by the user with a screenshot, after the first fix had shipped.** All
+three faults are things **no render ever showed**, and that is the real lesson of
+this item.
+
+**1. The control sat mid-row, not in the corner — and the fixture is why nobody
+saw it.** The rule that pushes the right-hand end of the header to the right
+lived on the *answered count*, and the count is only drawn when there is **more
+than one question**. So on a single-question card — the card an agent actually
+puts up most of the time — nothing carried the free space and the fold control
+landed directly after the words "is asking", mid-row, where nobody looks for a
+control. The fixture scene and its test both asked **four** questions, which is
+the one arity where the old layout came out right, so both drew it neatly in the
+corner and both passed. A layout rule that only holds at one arity is not a
+layout rule: the growth now lives on the element that is **always** there (the
+name of whoever is asking), which also makes a long tool name truncate instead of
+shouldering the controls aside. **A single-question scene has been added to the
+fixture** — the picture that would have caught this.
+
+**2. It did not look or behave like a control.** Its box was about thirteen
+pixels tall with a `#4444` hairline around it, on a background the same colour as
+the card. Being that small, the reader had to land the pointer on the **glyph
+itself** — measured by the user, in their own words: *you have to hit exactly the
+line*. It is now 24×24 with the glyph centred, drawn in the card's own focus
+colour so it reads as part of this card, and it fills on hover. And it carries
+its **tooltip in the markup**, so the control is never unexplained before the
+first paint; the paint still writes the MIRROR text (the state it is in, then
+what pressing does) over the top.
+
+**3. The card was 90% transparent.** Its background was mixed against
+`transparent`, so the transcript underneath printed straight through the header —
+the user's screenshot shows the "load older" bar sitting inside the "waiting on
+you" badge. Same tint, mixed against the editor's background instead of against
+nothing. The thing holding a running turn still has to be the thing you can read.
+
 ## 3.436.0 - X-251 closes: the sessions table says the sign-in in WORDS (2026-09-07)
 
 **Closes X-251.** The item's last clause asked for a per-row account chip beside

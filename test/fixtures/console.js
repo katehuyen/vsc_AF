@@ -606,6 +606,39 @@ const askingData = () => {
     return d;
 };
 
+/**
+ * ‼️ U-133 — ONE QUESTION, WHICH IS THE ARITY THE CARD IS USUALLY IN.
+ *
+ * The scene above asks four, and four is the one shape where the old header
+ * layout came out right: the answered count is only drawn when there is more
+ * than one question, and the count was what pushed the right-hand end of the
+ * row to the right. So every picture ever taken of this card showed the fold
+ * control neatly in the corner, while the card the user actually gets put it
+ * mid-row, straight after the words "is asking". A fixture that only ever
+ * draws the easy arity is a fixture that certifies the bug.
+ */
+const askingOneData = () => {
+    const d = data();
+    d.sessions = d.sessions.map(s => (s.id !== 'cs2' ? s : Object.assign({}, s, {
+        status: 'working',
+        pendingAsk: {
+            requestId: 'ask-one',
+            tool: 'AskUserQuestion',
+            displayName: 'AskUserQuestion',
+            questions: [
+                {
+                    question: 'Hangi hesapla devam edelim?', header: 'Hesap', multiSelect: false,
+                    options: [
+                        { label: 'work@studio', description: 'max20x — five-hour window 91% gone' },
+                        { label: 'personal@gmail', description: 'pro — 12% gone, resets at 05:40' }
+                    ]
+                }
+            ]
+        }
+    })));
+    return d;
+};
+
 module.exports = {
     script: 'console.js',
     data,
@@ -750,6 +783,11 @@ module.exports = {
             id: 'console-sentry-stopped',
             label: 'Console — …and the strip that explains a night that ended at three (X-177)',
             data: sentryStoppedData()
+        },
+        {
+            id: 'console-asking-one',
+            label: 'Console — ONE question: the arity the fold control has to survive (U-133)',
+            data: askingOneData()
         },
         {
             id: 'console-asking',

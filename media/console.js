@@ -552,7 +552,13 @@
         .askbox { flex:none; margin:8px 0 0; padding:9px 11px; border-radius:8px;
             display:flex; flex-direction:column; min-height:0; max-height:52vh;
             border:1px solid var(--vscode-focusBorder,#3794ff);
-            background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 10%, transparent); }
+            /* ‼️ U-133 — MIXED AGAINST THE EDITOR, NOT AGAINST NOTHING. With
+               a transparent value as the second colour this card was 90% see-through:
+               the transcript underneath printed through its own header, and the
+               user's screenshot shows the "load older" bar sitting inside the
+               "waiting on you" badge. Same tint, opaque. The thing holding a
+               running turn still has to be the thing you can read. */
+            background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 10%, var(--vscode-editor-background)); }
         .askbox:empty { display:none; }
         .askbox .askbody { flex:1 1 auto; min-height:0; overflow-y:auto; overscroll-behavior:contain;
             padding-right:3px; }
@@ -565,7 +571,20 @@
         .askbox .t { font-weight:600; font-size:12px; display:flex; gap:6px; align-items:center; }
         /* how much of the card is still unanswered — the one number that says
            whether anything is waiting for you out of sight */
-        .askbox .t .cnt { margin-left:auto; font-size:10px; font-weight:600; opacity:.85; white-space:nowrap; }
+        /* ‼️ U-133 — WHO IS ASKING, AND IT IS THE PART THAT TAKES THE SLACK.
+           The rule that pushes the right-hand end of this row to the right used
+           to live on the count — which is only drawn when there is more than ONE
+           question. So on a single-question card, the card the user actually
+           gets, nothing carried the free space and the fold control landed in
+           mid-row, straight after the words "is asking", where nobody looks for
+           a control. Both the fixture scene and its test asked FOUR questions,
+           so both drew it at the right edge and both passed: a layout rule that
+           only holds at one arity is not a layout rule. It belongs on the one
+           element that is always present, and the ellipsis is the bonus — a long
+           tool name now truncates instead of shouldering the controls aside. */
+        .askbox .t .who { flex:1 1 auto; min-width:0;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .askbox .t .cnt { flex:none; font-size:10px; font-weight:600; opacity:.85; white-space:nowrap; }
         /* ‼️ U-133 — GETTING OUT OF THE WAY WITHOUT GOING AWAY.
            The card is a column between the conversation and the composer and it
            may take half the window, so the paragraphs the question is ABOUT —
@@ -579,11 +598,23 @@
            is compared against its last write to decide whether to rebuild, and a
            label that changed with the state would have made minimising rebuild
            the very DOM that is holding the reader's picks and place. */
-        .askbox .askmin { margin-left:6px; font:inherit; font-size:11px; line-height:1;
-            padding:1px 6px; border-radius:6px; cursor:pointer;
-            border:1px solid var(--vscode-widget-border,#4444);
-            background:var(--vscode-editor-background); color:var(--vscode-foreground); }
-        .askbox .askmin:hover { background:var(--vscode-list-hoverBackground); }
+        /* ‼️ U-133 — AND IT HAS TO LOOK AND FEEL LIKE A CONTROL. It was a box
+           about thirteen pixels tall with a #4444 hairline round it on a
+           background the same colour as the card, so it read as a stray glyph;
+           and being that small the reader had to land the pointer ON the glyph.
+           Measured by the user, in their own words: you have to hit exactly the
+           line. A control is the size of a finger and says it can be pressed, or
+           it is decoration. The tint is the card's own focus colour, so it reads
+           as part of this card rather than as a fifth thing in the row. */
+        .askbox .askmin { margin-left:6px; flex:none; font:inherit; font-size:12px; line-height:1;
+            min-width:24px; min-height:24px; padding:0; border-radius:6px; cursor:pointer;
+            display:inline-flex; align-items:center; justify-content:center;
+            border:1px solid color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 55%,
+                var(--vscode-editor-background));
+            background:color-mix(in srgb, var(--vscode-focusBorder,#3794ff) 18%,
+                var(--vscode-editor-background)); color:var(--vscode-foreground); }
+        .askbox .askmin:hover { background:var(--vscode-focusBorder,#3794ff);
+            color:var(--vscode-button-foreground,#ffffff); }
         .askbox .askmin::after { content:'▁'; }
         .askbox.min .askmin::after { content:'⤢'; }
         .askbox.min { max-height:none; }
@@ -1637,9 +1668,11 @@
         })}
                 title="${C.esc(window.AFCtx.hint('The turn is still open — it picks your answer up and carries on'))}">
                 <span class="tag">${qs.length ? '❓ waiting on you' : '🔐 permission'}</span>
-                ${C.esc(qs.length ? (a.displayName || a.tool) + ' is asking' : (a.displayName || a.tool) + ' wants to run')}
+                <span class="who">${C.esc(qs.length ? (a.displayName || a.tool) + ' is asking'
+            : (a.displayName || a.tool) + ' wants to run')}</span>
                 ${count}
-                <button class="askmin" id="c-ask-min" aria-label="fold this card away"></button>
+                <button class="askmin" id="c-ask-min" aria-label="fold this card away"
+                    title="Fold this card down to its line — the turn stays held and this line keeps saying so. Press again to bring it back exactly as you left it."></button>
             </div>
             <div class="askbody" id="c-ask-body">${body}</div>
             <div class="askfoot">

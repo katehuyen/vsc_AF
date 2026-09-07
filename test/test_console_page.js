@@ -2043,6 +2043,74 @@ const html = allHtml;
             els['c-ask'].className.indexOf('min') < 0 && /0\/2 answered/.test(card()));
     }
 
+    // ---- U-133 REOPENED: the control was in the middle of the row, invisible,
+    // ---- and the card let the transcript show through it -------------------
+    //
+    // ‼ REPORTED BY THE USER WITH A SCREENSHOT (2026-09-07) after the first fix
+    // shipped, and every one of the three is a thing NO RENDER EVER SHOWED —
+    // which is the real lesson of this item.
+    //
+    // ‼ 1. THE FIXTURE HAD FOUR QUESTIONS AND THAT IS WHY NOBODY SAW IT. The
+    // rule that pushes the right-hand end of the header to the right lived on
+    // the ANSWERED COUNT, and the count is only drawn when there is more than
+    // one question. So on the card the user actually gets — one question — there
+    // was nothing carrying the free space, and the fold control fell in directly
+    // after the words "is asking", mid-row, where nobody reads a control. Both
+    // the fixture scene and the test above asked FOUR, so both drew it at the
+    // right edge and both passed. A layout rule that only holds at one arity is
+    // not a layout rule, so the growth belongs on the part that is ALWAYS there.
+    {
+        push(data(CONVO.slice(), { pendingAsk: askOf('req-one', 1) }));
+        const one = card();
+        ok('‼ U-133: a ONE-question card has no count — the arity the fixture never drew',
+            !/answered<\/span>/.test(one));
+        ok('‼ …and the fold control is still the LAST thing in the header row',
+            one.indexOf('id="c-ask-min"') > one.indexOf('is asking'));
+        ok('‼ …because the growth is on the part that is always there, not on the count',
+            /class="who"/.test(one));
+        push(data(CONVO.slice(), { pendingAsk: askOf('req-many', 3) }));
+        ok('…and the same element carries it when the count IS drawn',
+            /class="who"/.test(card()) && /0\/3 answered/.test(card()));
+    }
+
+    // ‼ 2. THE CONTROL DID NOT LOOK OR BEHAVE LIKE A CONTROL. Its box was about
+    // thirteen pixels tall with a border nobody could see, so the reader had to
+    // land the pointer on the glyph itself — measured by the user, in their own
+    // words: "you have to hit exactly the line". A control is the size of a
+    // finger or it is decoration.
+    //
+    // ‼ AND IT HAD NO TOOLTIP UNTIL THE FIRST PAINT. `paintAskMin` writes the
+    // MIRROR text (the state first, then what pressing does) — but it writes it
+    // onto the DOM, so the markup itself carried none, and a card rendered
+    // anywhere that markup is read on its own explained nothing. The static one
+    // is safe precisely because it does NOT vary: the card's html is compared
+    // against its last write, and only a title that CHANGED with the fold would
+    // desync that cache.
+    {
+        const askCss = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
+        push(data(CONVO.slice(), { pendingAsk: askOf('req-tip', 1) }));
+        ok('‼ U-133: the fold control carries its own tooltip in the MARKUP',
+            /id="c-ask-min"[^>]*title="[^"]{20,}"/.test(card())
+            || /title="[^"]{20,}"[^>]*id="c-ask-min"/.test(card()));
+        ok('…and the paint still writes the MIRROR text over it',
+            /^Fold this card|^Folded away/.test(els['c-ask-min'].title));
+        ok('‼ …and the box is a real hit area, not the glyph',
+            /\.askbox \.askmin \{[^}]*min-width:2\dpx/.test(askCss)
+            && /\.askbox \.askmin \{[^}]*min-height:2\dpx/.test(askCss));
+        ok('…drawn as something pressable rather than a hairline',
+            /\.askbox \.askmin \{[^}]*var\(--vscode-focusBorder/.test(askCss));
+    }
+
+    // ‼ 3. THE CARD WAS 90% TRANSPARENT. Its background was mixed against
+    // `transparent`, so the transcript underneath printed straight through the
+    // header — the user's screenshot shows the "load older" bar sitting inside
+    // the "waiting on you" badge. The thing that is holding a running turn still
+    // must be the thing you can read: the tint is the same, it is just mixed
+    // against the editor's own background instead of against nothing.
+    const askBoxCss = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
+    ok('‼ U-133: the card that holds the turn is OPAQUE — nothing prints through it',
+        /\.askbox \{[^}]*background:color-mix\(in srgb, var\(--vscode-focusBorder,#3794ff\) \d+%, var\(--vscode-editor-background/.test(askBoxCss));
+
     // A permission ask has no questions: no count, but the same fixed strip —
     // a tool call with a huge input is exactly as unanswerable when it overflows.
     push(data(CONVO.slice(), {
