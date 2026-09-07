@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.432.0 - X-260 (2/n): a turn fired while VS Code is closed spends the sign-in written on it (2026-09-07)
+
+**‼️ And the measurement this corrects is our own.** The item was paused as a
+POLICY question — "whose plan pays for a turn nobody is at a window for" — off a
+reading of `src/core/automation.ts`, which is the trigger's PRECONDITION module,
+has never carried a route of any kind, and is not where the answer lives.
+`FarmSchedule extends RunDimensions` and a trigger's `{ kind: 'task' }` action
+does too, so the account is written on the item when the user makes it, already
+persisted into `farm-tasks.json`, and already honoured by the extension's own
+runner. There was nothing to decide. One hop was missing.
+
+**The hop.** `farmService.ts` read the file, dropped the field on the floor and
+spawned `claude -p` with no environment at all — so whichever sign-in the
+machine happened to hold paid for every schedule and every watch trigger that
+fired overnight: outside the rotation, unattributable, and invisible because the
+run itself succeeds.
+
+**One order, not two.** The service resolves exactly as the extension does —
+stated account, then the standing choice for that engine, then nothing injected
+— through the same functions (`resolveAccount`, `accountRefusal`,
+`accountEnvFor`), now reachable from a process with no `vscode`. A second order
+would disagree the first time one of them changed, and 3 a.m. is the worst place
+for that to surface.
+
+**‼️ A sign-in that cannot be resolved STOPS the run.** A slot the user deleted,
+one belonging to another engine, or a service that has not been handed the table
+yet: the run is skipped and the reason logged where the "while you were away"
+digest reads. Falling through to the main sign-in is the silent wrong spend this
+whole family exists to end, and with nobody watching it is worse, not more
+forgivable.
+
+**The table travels, and it is kept fresh.** An account is a config DIRECTORY
+and the id→directory map lives in VS Code settings, which a plain node process
+cannot open — so the extension writes it into `service-config.json` beside the
+agent map. Unlike the agent map it is rewritten whenever the sign-ins move: a
+stale copy is not a cosmetic lag once a run can be refused, because a schedule
+pointed at this afternoon's new slot would be skipped tonight for a reason that
+stopped being true hours ago.
+
+Each headless run's own report now names the sign-in that paid — the transcript
+cannot, because every slot's `projects` folder is a junction onto one shared
+root. And an item asking for an engine this service cannot spawn is SAID in the
+log rather than silently served by `claude`.
+
 ## 3.431.0 - X-253: a saved launch profile remembers the sign-in, softly (2026-09-07)
 
 **Closes X-253, and the user chose the middle answer in their own words:** the

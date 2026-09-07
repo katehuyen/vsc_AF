@@ -24,14 +24,44 @@ import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { full as afFull } from '../core/aftime';
+import { headlessAccountPlan } from '../core/accountStore';
 
 interface ServiceConfig {
     agents: { id: string; name: string; dir: string }[];
     extraArgs?: string;
     maxConcurrent?: number;
+    /**
+     * ‼️ X-260 (2/n) — THE SIGN-INS, SO A NIGHT RUN CAN SPEND THE RIGHT ONE.
+     *
+     * An account is a config DIRECTORY, and the slot table that maps an id onto
+     * one lives in VS Code settings — which this process cannot read. So the
+     * extension writes it here beside the agent map, for the same reason the
+     * agent map is here: the service knows what the file tells it and nothing
+     * else. Shapes deliberately loose (`unknown` at the seam) because they come
+     * off a file, and `headlessAccountPlan` normalises them.
+     */
+    accounts?: unknown;
+    /** which sign-in each engine is standing on, when an item names none. */
+    activeAccounts?: unknown;
 }
 
-interface StoredSchedule {
+/**
+ * ‼️ X-260 (2/n) — WHAT A SCHEDULE OR A TRIGGER ACTION ALREADY CARRIES.
+ *
+ * `FarmSchedule extends RunDimensions` and a trigger's `{ kind: 'task' }`
+ * action does too (`src/core/tasks.ts`), so both of these are written on the
+ * item when the user makes it and are already in `farm-tasks.json`. This
+ * service simply did not read them: it spawned `claude` with no environment,
+ * and whichever sign-in the machine happened to hold paid.
+ */
+interface RunAxes {
+    /** whose plan pays — a slot id, or `@machine` stated outright. */
+    account?: string;
+    /** which engine the item asked for; this service can only spawn `claude`. */
+    engine?: string;
+}
+
+interface StoredSchedule extends RunAxes {
     id: string; agentId: string; agentName: string; title: string; prompt: string;
     mode: string; kind: 'daily' | 'weekly' | 'once';
     hour: number; minute: number; dow?: number; onceAt?: number;
@@ -40,12 +70,13 @@ interface StoredSchedule {
 
 interface StoredTrigger {
     id: string; title: string; type: string; watchPath?: string;
-    action?: { kind: string; agentId?: string; agentName?: string; title?: string; prompt?: string };
+    action?: { kind: string; agentId?: string; agentName?: string; title?: string; prompt?: string }
+        & RunAxes;
     debounceSec: number; cooldownSec: number; maxPerHour: number;
     enabled: boolean; lastFiredAt?: number; fireCount?: number; recentFirings?: number[];
 }
 
-interface StoredTask {
+interface StoredTask extends RunAxes {
     id: string; agentId: string; agentName: string; title: string; prompt: string;
     mode: string; status: string; createdAt: number; startedAt?: number; endedAt?: number;
     fromSchedule?: string; fromTrigger?: string; outputFile?: string;
@@ -144,13 +175,38 @@ function scheduleDue(s: StoredSchedule, now: Date): { due: boolean; runKey: stri
 
 let runningCount = 0;
 
+/**
+ * ‼️ X-260 (2/n) — THE ENVIRONMENT A NIGHT RUN SPAWNS IN, so the plan that pays
+ * is the one written on the item rather than whichever the machine held.
+ *
+ * `null` from the plan means REMOVE the variable — the `@machine` answer, which
+ * is a statement of "the machine's own sign-in" and is not the same as saying
+ * nothing. Anything else is added on top of this process's own environment,
+ * which is what the spawn inherited before and must go on inheriting.
+ */
+function envForRun(plan: { env: Record<string, string | null> }): NodeJS.ProcessEnv {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const [k, v] of Object.entries(plan.env)) {
+        if (v === null) { delete env[k]; } else { env[k] = v; }
+    }
+    return env;
+}
+
 function spawnHeadless(cfgSvc: ServiceConfig, task: StoredTask, agentDir: string): void {
     fs.mkdirSync(outputsDir, { recursive: true });
     const outFile = path.join(outputsDir, `${task.id}.md`);
     task.outputFile = outFile;
     task.status = 'running';
     task.startedAt = Date.now();
-    const header = `# ${task.title}\n\n- Agent: ${task.agentName}\n- Started: ${afFull(Date.now())} (headless service)\n- Prompt: ${task.prompt}\n\n---\n\n`;
+    // ‼️ X-260 (2/n) — resolved BEFORE the output file is written, because a
+    // refused run must not leave a half-written report claiming it started.
+    const plan = headlessAccountPlan({ engine: task.engine, account: task.account }, cfgSvc);
+    const header = `# ${task.title}\n\n- Agent: ${task.agentName}\n- Started: ${afFull(Date.now())} (headless service)\n`
+        // Said in the report itself: a run nobody watched must be able to answer
+        // "whose plan did this spend" months later, and the transcript cannot —
+        // every slot's projects folder is a junction onto one shared root.
+        + `- Account: ${plan.account || 'the machine sign-in (nothing injected)'}\n`
+        + `- Prompt: ${task.prompt}\n\n---\n\n`;
     fs.writeFileSync(outFile, header, 'utf8');
     const stream = fs.createWriteStream(outFile, { flags: 'a' });
     const extra = (cfgSvc.extraArgs ?? '').trim();
@@ -158,6 +214,7 @@ function spawnHeadless(cfgSvc: ServiceConfig, task: StoredTask, agentDir: string
         cwd: agentDir,
         shell: true,
         windowsHide: true,
+        env: envForRun(plan),
         stdio: ['ignore', 'pipe', 'pipe']
     });
     runningCount++;
@@ -185,7 +242,7 @@ function spawnHeadless(cfgSvc: ServiceConfig, task: StoredTask, agentDir: string
 
 function launchTask(cfgSvc: ServiceConfig, store: ReturnType<typeof readStore>,
     agentId: string, agentName: string, title: string, prompt: string,
-    origin: { fromSchedule?: string; fromTrigger?: string }): boolean {
+    origin: { fromSchedule?: string; fromTrigger?: string }, axes: RunAxes = {}): boolean {
     const maxConc = cfgSvc.maxConcurrent ?? 1;
     if (runningCount >= maxConc) {
         log(`deferred "${title}" — ${runningCount} running`);
@@ -196,9 +253,41 @@ function launchTask(cfgSvc: ServiceConfig, store: ReturnType<typeof readStore>,
         logRun({ kind: 'task-skipped', title, reason: 'agent dir missing' });
         return false;
     }
+    /**
+     * ‼️ X-260 (2/n) — A SIGN-IN THAT CANNOT BE RESOLVED STOPS THE RUN.
+     *
+     * The item named a slot this machine no longer holds, or one belonging to
+     * another engine, or the service has not been handed the table yet.
+     * Starting anyway would spend a window on a plan nobody chose and record it
+     * as the one they did — with nobody at a window to notice, which is why
+     * this is worse at night rather than more forgivable. The skip is logged
+     * where the "while you were away" digest reads, so it is visible in the
+     * morning.
+     */
+    const plan = headlessAccountPlan({ engine: axes.engine, account: axes.account }, cfgSvc);
+    if (plan.refusal) {
+        logRun({ kind: 'task-skipped', title, reason: plan.refusal });
+        log(`skipped "${title}" — ${plan.refusal}`);
+        return false;
+    }
+    // ‼️ AND AN ENGINE THIS SERVICE CANNOT SPAWN IS SAID, not silently served by
+    // claude. It runs one engine today; an item asking for another gets its
+    // turn on the wrong CLI, which no environment can fix. Said rather than
+    // refused, because that is the behaviour every schedule already has and
+    // taking it away in an account commit would be a second change wearing the
+    // shape of this one.
+    const wantEngine = String(axes.engine || '').trim().toLowerCase();
+    if (wantEngine && wantEngine !== 'claude') {
+        log(`"${title}" asks for engine "${wantEngine}" — this service only spawns claude`);
+    }
     const task: StoredTask = {
         id: newId(), agentId, agentName, title, prompt,
-        mode: 'headless', status: 'running', createdAt: Date.now(), ...origin
+        mode: 'headless', status: 'running', createdAt: Date.now(),
+        // The axes travel onto the record, so the run's own report and the
+        // panel that picks it up next launch can both say whose plan paid.
+        ...(axes.account ? { account: axes.account } : {}),
+        ...(axes.engine ? { engine: axes.engine } : {}),
+        ...origin
     };
     store.tasks.push(task);
     logRun({ kind: 'task-started', taskId: task.id, title, agent: agentName });
@@ -255,7 +344,10 @@ function fireWatchTrigger(id: string): void {
     const prompt = (t.action.prompt ?? '').split('{watch}').join(t.watchPath ?? '');
     logRun({ kind: 'trigger-fired', triggerId: t.id, title: t.title });
     launchTask(readConfig(), store, t.action.agentId ?? '', t.action.agentName ?? '?',
-        `${t.title} (service)`, prompt, { fromTrigger: t.id });
+        `${t.title} (service)`, prompt, { fromTrigger: t.id },
+        // X-260 (2/n) — the action's own axes. A trigger's task action extends
+        // RunDimensions, so this reads a field that was always written.
+        { account: t.action.account, engine: t.action.engine });
     writeStore(store);
 }
 
@@ -341,7 +433,11 @@ function tick(): void {
         dirty = true;
         logRun({ kind: 'schedule-due', scheduleId: s.id, title: s.title });
         launchTask(cfgSvc, store, s.agentId, s.agentName, `${s.title} (service)`, s.prompt,
-            { fromSchedule: s.id });
+            { fromSchedule: s.id },
+            // X-260 (2/n) — FarmSchedule extends RunDimensions; the sign-in the
+            // user chose when they made this schedule has been on the file all
+            // along, and this is the hop that was missing.
+            { account: s.account, engine: s.engine });
     }
     if (dirty) { writeStore(store); }
     armWatchers();

@@ -4482,11 +4482,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 JSON.stringify({
                     agents: agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })),
                     extraArgs: cfg().get<string>('taskExtraArgs', ''),
-                    maxConcurrent: 1
+                    maxConcurrent: 1,
+                    /**
+                     * ‼️ X-260 (2/n) — THE SIGN-INS, BECAUSE THE SERVICE CANNOT
+                     * READ SETTINGS.
+                     *
+                     * A schedule has carried an `account` since X-169 and the
+                     * headless service spawned with no environment at all, so
+                     * every turn fired while VS Code was closed spent whichever
+                     * sign-in the machine happened to hold. The id on the item
+                     * was never the missing part; the TABLE that turns an id
+                     * into a config directory was, and it lives in VS Code
+                     * settings — which a plain node process cannot open.
+                     *
+                     * Written here for the same reason the agent map is: the
+                     * service knows what this file tells it and nothing else.
+                     * The standing choice travels too, so an item that names no
+                     * sign-in resolves the same way at 3 a.m. as it would with
+                     * somebody at the window — one order, not two.
+                     */
+                    accounts: storedAccounts(),
+                    activeAccounts: activeAccounts()
                 }, null, 2), 'utf8');
         } catch { /* best-effort */ }
     };
     writeServiceConfig();
+    /**
+     * ‼️ X-260 (2/n) — AND IT IS REWRITTEN WHEN THE SIGN-INS MOVE, which the
+     * agent map never needed.
+     *
+     * Regenerating only on activation was fine while this file held an agent
+     * map that changes when a folder is added. The account table changes while
+     * VS Code is open — a slot captured this afternoon, a standing choice moved
+     * on the Engines page — and a stale copy is not a cosmetic lag now: the
+     * service REFUSES a run naming a sign-in it cannot resolve, so a schedule
+     * pointed at this afternoon's new slot would be skipped tonight for a
+     * reason that stopped being true hours ago.
+     */
+    context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
+        if (e.affectsConfiguration('agentFarm.accounts')
+            || e.affectsConfiguration('agentFarm.activeAccounts')
+            || e.affectsConfiguration('agentFarm.taskExtraArgs')) {
+            writeServiceConfig();
+        }
+    }));
 
     // "While you were away": show what the service ran since last activation.
     const serviceRunsFile = path.join(context.globalStorageUri.fsPath, 'service-runs.jsonl');

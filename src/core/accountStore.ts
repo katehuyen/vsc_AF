@@ -471,3 +471,61 @@ export function statedAccountLabel(
     if (id === MACHINE_ACCOUNT) { return MACHINE_GLOBAL; }
     return slotLabel(findSlot(list, id)) || id;
 }
+
+/**
+ * ‼️ X-260 (2/n) — WHOSE PLAN PAYS FOR A TURN FIRED WHILE VS CODE IS CLOSED.
+ *
+ * The headless service (`src/service/farmService.ts`) spawns schedule and
+ * trigger runs with NO environment at all, so whichever sign-in the machine
+ * happened to hold paid for them — off the rotation, unattributable, and
+ * invisible because the run itself succeeds.
+ *
+ * ‼️ AND THERE WAS NOTHING TO DECIDE, which is the correction this function
+ * carries. The item was paused on a policy question ("who pays for a turn
+ * nobody is at a window for") raised off a reading of `core/automation.ts` —
+ * the trigger PRECONDITION module, which has never carried a route of any kind
+ * and is not where the answer lives. `FarmSchedule extends RunDimensions` and a
+ * trigger's `{ kind: 'task' }` action does too, so the account is written on the
+ * item when the user makes it, persisted into `farm-tasks.json`, and already
+ * honoured by the extension's own runner. One hop was missing, not a policy.
+ *
+ * So this is `resolveAccount` + `accountRefusal` + `accountEnvFor` in the order
+ * the extension already uses them, in a shape a process with no `vscode` can
+ * call. Two orders would disagree the first time one of them was changed, and
+ * the night is the worst place for the disagreement to surface.
+ *
+ * ‼️ AND A NAME THAT RESOLVES TO NOTHING REFUSES THE RUN rather than falling
+ * through to the main sign-in. That fall-through is the silent wrong spend this
+ * whole family exists to end, and at 3 a.m. with nobody watching it is worse,
+ * not better: the run has to be visibly skipped so somebody can see why.
+ */
+export interface HeadlessAccountPlan {
+    /** what to add to the child's environment; `null` = REMOVE the variable. */
+    env: Record<string, string | null>;
+    /** the slot that will pay, or '' for the machine's own sign-in. */
+    account: string;
+    /** non-empty = do not start this run, and log this sentence. */
+    refusal: string;
+}
+
+/**
+ * The service's copy of the standing choice, as it is written into
+ * `service-config.json`. Deliberately `unknown` on the way in: it is read off a
+ * file another process wrote, so it is normalised here rather than trusted.
+ */
+export function headlessAccountPlan(
+    want: { engine?: string; account?: string },
+    cfg: { accounts?: unknown; activeAccounts?: unknown }
+): HeadlessAccountPlan {
+    const list = normalizeSlots(cfg.accounts);
+    const active = normalizeActive(cfg.activeAccounts);
+    const engine = String(want.engine || 'claude').trim() || 'claude';
+    const stated = String(want.account || '').trim();
+    // ‼️ The sentinel is resolved BEFORE the refusal, because `@machine` names
+    // no slot on purpose and asking `accountRefusal` about it would be asking
+    // whether "nothing" is stored.
+    const id = resolveAccount(stated, engine, active);
+    const refusal = accountRefusal(id, list, engine);
+    if (refusal) { return { env: {}, account: '', refusal }; }
+    return { env: accountEnvFor(engine, stated || id, list), account: id, refusal: '' };
+}
