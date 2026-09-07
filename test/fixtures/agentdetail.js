@@ -103,6 +103,21 @@ const data = () => ({
         dutiesPath: 'D:/zone/agent/ajanlar/developer/DUTIES.md',
         duties
     },
+    /**
+     * ‼️ X-262 — what the three start controls would actually run as, so the
+     * MIRROR hover on them can be LOOKED AT. Without this the fixture exercises
+     * only the documented absent case (a page built before the host sent it),
+     * which is the one shape that was never the bug.
+     */
+    nextLaunch: {
+        engine: 'claude', model: 'opus', effort: 'xhigh',
+        permissionMode: 'bypassPermissions',
+        remembered: true, accountAxis: true, accountStated: false,
+        account: {
+            id: 'claude-murvietnam-2', label: 'murvietnam-2', health: 'ready',
+            active: true, percent: 91, resetsAt: NOW + 42 * 60000
+        }
+    },
     contextHealth: {
         memory: { files: 3, tokens: 6380, orphans: 1, notRecalled: 2, stale: 2 },
         skills: { total: 4, unused: 1 },

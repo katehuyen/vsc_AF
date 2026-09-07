@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.426.0 - X-262: a surface that inherits a sign-in says which one, before the click (2026-09-07)
+
+**The launch doors were never wrong.** `doors/projects.ts` and
+`doors/webviews.ts` both call `withAccount(ctx, pick(ctx.seed(agentId), …))`,
+and `withAccount` really does resolve the account. What neither surface did was
+DRAW it: the agent page’s three start controls and the project page’s "Start a
+session here" opened a session and the reader learned whose plan was paying
+afterwards. This is a visibility fix; it decides nothing and it does not touch
+S-34 — the remembered setup is still a layer, and this states what that layer
+resolves to.
+
+**Why the account gets its own sentence.** Of everything inherited, it is the
+only dimension that goes stale by itself. A model is today whatever it was
+yesterday; a window fills on its own and a sign-in falls over on its own. So
+the account is not merely named — it is drawn with its live figure through the
+same component every picker uses (X-263), because "what you last ran on" can
+already be false by the time somebody reads it.
+
+**One reader, not a second opinion.** `nextLaunchReadout` seeds from the same
+`seedLastLaunch` the doors seed from and resolves through the same
+`launchAccountSlot` they resolve with. A readout that computed either itself
+would be a page confidently describing a setup the door will not use.
+
+**And where it stays silent, which is the part worth keeping.** The project
+page’s start button may open a QuickPick: a project naming no agent, or naming
+several, does not know WHO it will run as until after the click, and a setup
+stated then would be a guess. The host sends the readout only where there is
+exactly one answer — and `startSession` now resolves the agent through that
+same `projectStartAgent`, so the button’s readout and the launch cannot become
+two answers that agree most of the time. Where it cannot be known the tooltip
+says the agent is chosen when you press it, rather than saying nothing.
+
+Also: the agent-detail fixture now carries a `nextLaunch`, so the hover can be
+looked at instead of only exercising the absent case.
+
 ## 3.425.0 - X-263: a sign-in picker says how much of that plan is left (2026-09-07)
 
 **Five pickers drew the same account, and they had already stopped agreeing.**

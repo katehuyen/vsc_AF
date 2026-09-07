@@ -43,6 +43,16 @@ export interface AgentDetailDeps {
      *  duty changes a file no session index is watching, so the page has to say
      *  so itself — otherwise the tree keeps yesterday's duty list. */
     refreshAll?(): void;
+    /**
+     * ‼️ X-262 — WHAT THIS AGENT'S START BUTTONS WOULD ACTUALLY RUN AS.
+     *
+     * The three controls on this page inherit the remembered setup (S-34) and
+     * the account resolved from it, and said none of it — so the reader learned
+     * whose plan was paying after the session was already open. Optional like
+     * `projectStyle`: a page built without it simply says nothing, which is the
+     * behaviour this page had before.
+     */
+    nextLaunch?(agentId: string): Record<string, unknown>;
 }
 
 /**
@@ -204,6 +214,10 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
         },
         contextHealth,
         taskHealth,
+        // ‼️ X-262 — computed on every render rather than cached: the account is
+        // the one inherited dimension that goes stale on its own, so a figure
+        // captured when the panel opened is the stale thing this item is about.
+        nextLaunch: deps.nextLaunch ? deps.nextLaunch(agent.id) : null,
         totals: {
             cost: totalCost,
             sessions: sessions.length,

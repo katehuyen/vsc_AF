@@ -934,11 +934,51 @@
      * The row says so rather than doing it silently: a button that quietly
      * changes what the status bar says is a button people learn to distrust.
      */
+    /**
+     * ‼️ X-262 — WHAT "START A SESSION HERE" WOULD ACTUALLY RUN AS.
+     *
+     * The launch inherits the chosen agent's remembered setup (S-34) and the
+     * account resolved from it, and this page said none of it — so whose plan
+     * paid was learned after the session was open.
+     *
+     * ‼️ AND WHERE IT STAYS SILENT, WHICH IS THE POINT. This button may open a
+     * QuickPick: a project naming no agent, or several, does not know WHO it
+     * will run as until after the click, and a setup stated then would be a
+     * guess. The host sends `nextLaunch` only where there is exactly one answer
+     * (`projectStartAgent`) — so here `null` is not a gap, it is the honest
+     * reply, and it says the agent is chosen when you press it.
+     *
+     * The account carries its live figure through the shared component (X-263)
+     * because it is the one inherited dimension that goes stale on its own.
+     */
+    function startTip(p, what) {
+        const n = p && p.nextLaunch;
+        if (!n) {
+            return what + '\n\nWhich agent this runs as is chosen when you press it —'
+                + ' this project does not name a single one, so the setup and the sign-in'
+                + ' cannot be stated yet.';
+        }
+        const A = window.AFAccount;
+        const setup = [n.engine, n.model, n.effort, n.permissionMode].filter(Boolean).join(' · ');
+        const lines = [(n.remembered ? 'Runs as: ' : 'Runs as (fleet default): ')
+            + n.agent + ' — ' + setup];
+        if (n.accountAxis) {
+            lines.push(n.account
+                ? 'Sign-in: ' + A.label(n.account)
+                    + (n.accountStated ? '' : ' — nothing recorded named one, so the standing choice answered')
+                    + '\n' + A.detail(n.account)
+                    + '\n‼️ The sign-in is the one part of this setup that goes stale on its own:'
+                    + ' its window fills and it can fall over between one session and the next.'
+                : 'Sign-in: the machine’s own — no slot is captured for this engine.');
+        }
+        return lines.join('\n') + '\n\n' + what;
+    }
+
     function workStartHtml(p) {
         const isActive = DATA.activeId === p.id;
         return `<div class="pj-worktop">
-            <button data-work="session-console" title="Open the Console composer on this project. It becomes the window's active project first — that is what puts the project's brief into the agent's system prompt at spawn.">▶ Start a session here</button>
-            <button class="secondary" data-work="session-terminal" title="Same, in a terminal instead of the hosted Console.">⌨ …in a terminal</button>
+            <button data-work="session-console" title="${C.esc(startTip(p, "Open the Console composer on this project. It becomes the window's active project first — that is what puts the project's brief into the agent's system prompt at spawn."))}">▶ Start a session here</button>
+            <button class="secondary" data-work="session-terminal" title="${C.esc(startTip(p, 'Same, in a terminal instead of the hosted Console.'))}">⌨ …in a terminal</button>
             <button class="secondary" data-work="task" title="Open the New-task form with this project already filled in">⚙ New task</button>
             <button class="secondary" data-work="schedule" title="A schedule that states this project — its runs are filed here, and it appears under &quot;Fires by itself&quot;">⏰ New schedule</button>
             <button class="secondary" data-work="trigger" title="A trigger that states this project — same rule as a schedule">⚡ New trigger</button>

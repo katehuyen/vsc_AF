@@ -63,6 +63,53 @@
         }
     ];
 
+    /**
+     * ‼️ X-262 — MIRROR: WHAT THIS BUTTON WOULD ACTUALLY RUN AS, before it is pressed.
+     *
+     * These three controls inherit the remembered setup (S-34) and the account
+     * resolved from it, and used to say none of it: the reader found out whose
+     * plan was paying once the session was already open. The launch doors were
+     * never wrong — `withAccount` resolves it properly — so this is a
+     * VISIBILITY fix and it decides nothing.
+     *
+     * ‼️ AND THE ACCOUNT GETS ITS OWN SENTENCE, because it is the only inherited
+     * dimension that goes stale on its own: a model is today whatever it was
+     * yesterday, but a window fills by itself and a sign-in falls over by
+     * itself. So it is drawn with its live figure through the shared component
+     * (X-263) — the same string the pickers show — rather than merely named.
+     */
+    function inheritedTip(what) {
+        const n = DATA.nextLaunch;
+        if (!n) { return what; }
+        const A = window.AFAccount;
+        const setup = [n.engine, n.model, n.effort, n.permissionMode]
+            .filter(Boolean).join(' · ');
+        const head = (n.remembered ? 'Runs as: ' : 'Runs as (fleet default): ') + setup;
+        const lines = [head];
+        if (n.accountAxis) {
+            if (n.account) {
+                // ‼️ TWO DIFFERENT FACTS, and they read as one if worded loosely:
+                // `accountStated` is about the REMEMBERED setup (did anything
+                // name an account, or did the standing choice answer?), while
+                // the component's own line is about the SLOT (is this the
+                // engine's active one?). A run can be on the standing choice
+                // without anything having chosen it, which is the case worth
+                // knowing before pressing.
+                lines.push('Sign-in: ' + A.label(n.account)
+                    + (n.accountStated ? '' : ' — nothing recorded named one, so the standing choice answered'));
+                const d = A.detail(n.account);
+                if (d) { lines.push(d); }
+                lines.push('‼️ The sign-in is the one part of this setup that goes stale on its'
+                    + ' own: its window fills and it can fall over between one session and the'
+                    + ' next, which is why the figure is here and not just the name.');
+            } else {
+                lines.push('Sign-in: the machine’s own — no slot is captured for this engine,'
+                    + ' so nothing is injected.');
+            }
+        }
+        return [lines.join('\n'), what].join('\n\n');
+    }
+
     // Shared advanced Sessions table (sort box, turn accordion, single-open,
     // ⌨ jump-to-terminal) — the same component the dashboard uses. It re-renders
     // only its own container, so an open pricing editor is never clobbered.
@@ -536,19 +583,24 @@
                 // the one page you start sessions from. The menu is the header's
                 // own (AFHeader.menu), so it looks and behaves like the claimed
                 // nav buttons next to it.
+                // ‼️ X-262 — and every one of them now MIRRORs what it would
+                // actually run as, account included, before it is pressed.
                 actions: `${window.AFHeader.menu({
                     id: 'start', label: 'Start session',
-                    title: 'Start a session for this agent — in a terminal or in the Console',
+                    title: inheritedTip('Start a session for this agent — in a terminal or in the Console'),
                     items: SURFACES
                 })}
                     ${window.AFHeader.menu({
                         id: 'launch', label: 'Start session…',
-                        title: 'Start a session after picking model · effort · permission mode · name · first prompt',
+                        // The launcher ASKS, so what it opens ON is the inherited
+                        // setup — which is exactly what the reader is about to
+                        // overrule and therefore wants to see first.
+                        title: inheritedTip('Start a session after picking model · effort · permission mode · name · first prompt'),
                         items: SURFACES
                     })}
                     ${window.AFHeader.menu({
                         id: 'continue', label: 'Continue latest',
-                        title: 'Pick this agent\'s most recent session back up',
+                        title: inheritedTip('Pick this agent\'s most recent session back up'),
                         items: SURFACES
                     })}
                     <button class="secondary" id="reveal">Reveal folder</button>`,

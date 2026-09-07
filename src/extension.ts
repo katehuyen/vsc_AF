@@ -16650,7 +16650,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The page writes DUTIES.md now (U-14). Nothing watches that file, so
         // the trees and the Toolbox would keep yesterday's list until the next
         // Refresh — the write has to say so itself.
-        refreshAll: () => refreshAll()
+        refreshAll: () => refreshAll(),
+        // ‼️ X-262 — what this agent's three start controls would run as, read
+        // through the same seed and the same account resolver the doors use.
+        nextLaunch: (agentId: string) => nextLaunchReadout(agentId)
     };
     /**
      * ‼️ THE EVALS PAGE — U-14, surface 7. The only area in the sweep with no
@@ -20048,6 +20051,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const seedLastLaunch = (agentId: string, o: LaunchOptions = {}): LaunchOptions =>
         withLastLaunch(o, lastLaunchOf(agentId));
+
+    /**
+     * ‼️ X-262 — WHAT A PAGE BUTTON WOULD ACTUALLY START AS, said BEFORE the click.
+     *
+     * Measured: `doors/projects.ts` and `doors/webviews.ts` both resolve the
+     * account correctly (`withAccount` → `ctx.accountFor`), so inheritance
+     * works. What neither surface does is DRAW it — the agent page's three
+     * start controls and the project page's "Start a session here" open a
+     * session and the reader learns whose plan is paying afterwards.
+     *
+     * ‼️ AND THE ACCOUNT IS WHY THIS IS ITS OWN ITEM. Of everything inherited,
+     * it is the ONLY dimension that goes stale by itself: model, effort and
+     * permissions are today whatever they were yesterday, but a window fills on
+     * its own and a sign-in falls over on its own. So the account is not merely
+     * NAMED here — it is named with its live figure, through the same reader
+     * every picker uses (X-263), because "what you last ran on" can be a false
+     * claim by the time somebody reads it.
+     *
+     * This states; it never decides. The remembered setup is still a LAYER
+     * (S-34) and this is a READING of that layer, taken through the same
+     * `seedLastLaunch` the doors seed from and the same `launchAccountSlot`
+     * they resolve with — a readout that computed either itself would be a page
+     * confidently describing a setup the door will not use.
+     */
+    const nextLaunchReadout = (agentId: string) => {
+        const seed = seedLastLaunch(agentId);
+        // ‼️ THE FLEET DEFAULT IS `launchDefaults()`, and an empty engine there
+        // still means `claude` (X-18) — the same fallback every door takes. A
+        // setting invented here would describe a launch nobody performs.
+        const d = launchDefaults();
+        const engine = (seed.engine || d.engine || 'claude') as string;
+        const slot = launchAccountSlot({ engine, account: seed.account });
+        const usage = accountUsage.current();
+        return {
+            engine,
+            model: seed.model || d.model || '',
+            effort: seed.effort || d.effort || '',
+            permissionMode: seed.permissionMode || d.permissionMode || '',
+            /** false = nothing is remembered, so these are the fleet defaults. */
+            remembered: !!lastLaunchOf(agentId),
+            /** X-213 — whether the axis exists on this engine at all, which is
+             *  NOT the same question as whether anything has been captured. */
+            accountAxis: canIsolateAccounts(engine),
+            /** ‼️ Did the remembered setup NAME an account, or is this simply
+             *  whatever is standing right now? The reader needs to tell those
+             *  apart: one is a decision, the other is a default that can move
+             *  under them between this render and the next. */
+            accountStated: !!(seed.account && seed.account.trim()),
+            /** The resolved slot with its live figure — or null, which is the
+             *  documented answer "this runs as the machine itself". */
+            account: slot ? {
+                id: slot.id, label: slotLabel(slot),
+                health: slotIdentityFresh(slot).health,
+                active: activeAccounts()[slot.engine] === slot.id,
+                ...accountFigure(slot.id, usage)
+            } : null
+        };
+    };
 
     /**
      * ‼️ S-34 — AND THE ONE RECORDING CALL, made by every door that actually
@@ -23500,6 +23561,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }));
     };
     /** One project, as every bridge op reports it. */
+    /**
+     * ‼️ X-262 — WHO A "START A SESSION HERE" WOULD RUN AS, when that is knowable.
+     *
+     * The button may open a QuickPick: a project that names no agent, or names
+     * several, does not know who it will run as until after the click. This
+     * returns the agent ONLY where there is exactly one answer, and `undefined`
+     * — a real answer, not a gap — where the person will be asked.
+     *
+     * `startSession` (the handler that actually launches) resolves through this
+     * same function, so the setup the page states and the setup the launch takes
+     * cannot be two different answers that agree most of the time.
+     */
+    const projectStartAgent = (p: Project): AgentInfo | undefined => {
+        const named = (p.match?.agents ?? [])
+            .map(a => agents.find(x => x.name === a || x.id === a))
+            .filter((a): a is AgentInfo => !!a);
+        if (named.length === 1) { return named[0]; }
+        // Nothing named, and the farm holds exactly one agent: the pick would
+        // have no second row, so it is not a question either.
+        if (!named.length && agents.length === 1) { return agents[0]; }
+        return undefined;
+    };
+    /** …and the readout for it, or null where the agent is chosen on the click. */
+    const projectNextLaunch = (p: Project) => {
+        const a = projectStartAgent(p);
+        return a ? { agent: a.name, ...nextLaunchReadout(a.id) } : null;
+    };
     const projectView = (p: Project) => {
         const roll = projectRollup().find(r => r.name === p.name);
         const parent = p.parentId ? projectStore.get(p.parentId) : undefined;
@@ -26707,7 +26795,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         extensionUri: context.extensionUri,
         data: () => ({
             generatedAt: Date.now(),
-            projects: projectStore.all().map(p => projectView(p)),
+            // ‼️ X-262 — each row carries what its start button would run as, or
+            // null where the agent is chosen on the click (projectStartAgent).
+            projects: projectStore.all().map(p => ({
+                ...projectView(p), nextLaunch: projectNextLaunch(p)
+            })),
             agents: agents.map(a => a.name),
             activeId: activeProjectId(),
             activeName: activeProject()?.name ?? '',
@@ -27287,7 +27379,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const named = (p.match?.agents ?? [])
                 .map(a => agents.find(x => x.name === a || x.id === a))
                 .filter((a): a is AgentInfo => !!a);
-            let agent = named.length === 1 ? named[0] : undefined;
+            // ‼️ X-262 — the SAME resolver the page states the setup from, so
+            // the readout on the button and the agent this actually starts
+            // cannot be two answers that agree most of the time.
+            let agent = projectStartAgent(p);
             if (!agent) {
                 const choices = (named.length ? named : agents);
                 if (!choices.length) {
