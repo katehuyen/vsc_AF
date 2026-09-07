@@ -128,6 +128,76 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
         tbadge.slice(0, 700).indexOf('Account') > 0);
 }
 
+// ---------- the sessions table says it in WORDS, like the other two ----------
+//
+// ‼ X-251 (3/n) — THE ROW BADGE WAS ASKED FOR AND REFUSED, and this is what
+// the clause actually needed. The user's answer (2026-09-07): no per-row chip,
+// because in a fleet where every row carries the same sign-in a chip repeated
+// down the column is noise, and the fact already lives one hover away.
+//
+// ‼ BUT THE HOVER WAS PRINTING AN INTERNAL ID. The viewer and the timeline
+// both resolve through `statedAccountLabel` (`sessionAccountOf`), so they say
+// "aicozums@gmail.com" while the table said "claude-aicozums" — the same fact
+// in two spellings, one of which is a directory name the reader never chose.
+// The resolver is HANDED IN rather than imported, for the reason every other
+// optional here is: a table can be asked for rows before the account store
+// exists, and a missing resolver must degrade to the raw id rather than to a
+// blank — an id nobody can read still names the right account.
+{
+    const Module = require('module');
+    const origLoad = Module._load;
+    Module._load = function (request) {
+        if (request === 'vscode') {
+            return {
+                Uri: {}, window: {}, ViewColumn: {}, ConfigurationTarget: {}, env: {},
+                workspace: { getConfiguration: () => ({ get: (_k, d) => d }) }
+            };
+        }
+        return origLoad.apply(this, arguments);
+    };
+    const { sessionRowPool } = require(path.join(ROOT, 'out', 'panels', 'dashboard.js'));
+    Module._load = origLoad;
+
+    const session = {
+        file: 'f1', agentName: 'developer', sessionId: 'sid1', title: 't1',
+        firstTs: 1000, lastTs: 2000, mtime: 900, launchId: 'L1',
+        usage: { input: 1, output: 0, cacheWrite: 0, cacheRead: 0 },
+        cost: 1, isSidechain: false, toolCalls: 1, errors: 0,
+        lastCtxTokens: 0, userTurns: 1, turns: []
+    };
+    const manifest = {
+        launchId: 'L1', engine: 'claude', surface: 'console', at: 1000,
+        account: 'claude-aicozums',
+        identity: { origin: 'inherited' },
+        requested: { model: 'opus' }
+    };
+    const labelled = sessionRowPool([session], undefined, 12, undefined, undefined,
+        [manifest], id => (id === 'claude-aicozums' ? 'aicozums@gmail.com' : id));
+    ok('‼ the table names the sign-in the way the viewer and the timeline do',
+        labelled[0].launch.account === 'aicozums@gmail.com');
+
+    const bare = sessionRowPool([session], undefined, 12, undefined, undefined, [manifest]);
+    ok('…and with no resolver it degrades to the raw id, never to a blank',
+        bare[0].launch.account === 'claude-aicozums');
+
+    const noAccount = sessionRowPool([{ ...session, launchId: 'L2' }], undefined, 12,
+        undefined, undefined,
+        [{ ...manifest, launchId: 'L2', account: undefined }], () => 'never asked');
+    ok('‼ a run that injected no sign-in stays EMPTY — the resolver is not asked',
+        noAccount[0].launch.account === '');
+}
+
+// ---------- and no row grows a chip of its own (the user's answer) ----------
+{
+    const tableJs = read('media', 'sessionsTable.js');
+    // The Engine cell is where a sign-in chip would have gone, next to the
+    // engine badge (ONE SUBJECT). It must carry the engine badge and nothing
+    // about the account: the fact belongs to the launch panel's hover.
+    const cell = tableJs.slice(tableJs.indexOf('AFEngine.badge(r.engine)'));
+    ok('‼ the Engine cell draws no per-row account chip — asked for and refused',
+        cell.slice(0, 400).indexOf('account') < 0);
+}
+
 console.log((fail ? 'FAIL' : 'ok') + ' — test_session_account_surfaces.js: '
     + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

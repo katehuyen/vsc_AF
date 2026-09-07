@@ -60,6 +60,13 @@ export interface DashboardDeps {
      * rather than to one that guesses.
      */
     launchManifests?(): readonly LaunchManifest[];
+    /**
+     * ‼️ X-251 (3/n) — what the recorded sign-in is CALLED. The manifest
+     * holds a slot id; the viewer and the timeline already put the label on
+     * the page, so the table asks the same host for the same words rather
+     * than printing a directory name.
+     */
+    accountLabel?(stated: string): string;
     /** X-231 — every open wait in the fleet, already in the shared shape. */
     waits?(): FleetWait[];
 }
@@ -140,7 +147,23 @@ export function sessionRowPool(
      * by the launchId the BINDING wrote onto the session — nothing here reads a
      * route off a transcript, because no transcript carries one (measured).
      */
-    manifests?: readonly LaunchManifest[]
+    manifests?: readonly LaunchManifest[],
+    /**
+     * ‼️ X-251 (3/n) — WHAT THE RECORDED SIGN-IN IS CALLED, resolved by the
+     * host rather than spelt out here.
+     *
+     * The manifest records a SLOT ID (`claude-aicozums`) because that is the
+     * only value a launch can be sure of; it is a directory name the reader
+     * never chose. The session viewer and the timeline both put the label on
+     * the page (`statedAccountLabel`), so a table printing the id was the same
+     * fact in two spellings.
+     *
+     * Optional like `manifests` and `projectStyle`, and for the same reason: a
+     * table can be asked for rows before the account store exists. Missing
+     * degrades to the raw id — unreadable still names the right account, blank
+     * would name none.
+     */
+    accountLabel?: (stated: string) => string
 ): unknown[] {
     /**
      * ‼️ THE DENOMINATOR UNDER THE CTX CELL, PER ENGINE (X-35).
@@ -197,7 +220,10 @@ export function sessionRowPool(
             // every time is a row nobody reads. The transcript cannot supply
             // this on any engine (the accounts share one projects folder), so
             // the manifest is the only witness there will ever be.
-            account: m.account || '',
+            // ‼️ X-251 (3/n) — and it is the LABEL, not the slot id: the viewer
+            // and the timeline already say it in words, and one surface
+            // spelling it as a directory name is the same fact twice.
+            account: m.account ? (accountLabel ? accountLabel(m.account) : m.account) : '',
             at: m.at,
             agreement: drift.agreement,
             // ‼️ EMPTY ON AN ORDINARY RUN. A line stating "all fine" on every
@@ -517,7 +543,8 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
     const sessionRows = sessionRowPool(deps.index.allWithExternal(),
         s => deps.index.isSessionActive(s, now), tableN,
         s => (s.agentName ? projectByAgent[s.agentName] : undefined),
-        name => deps.projectStyle?.(name), deps.launchManifests?.());
+        name => deps.projectStyle?.(name), deps.launchManifests?.(),
+        stated => deps.accountLabel?.(stated) ?? stated);
 
     const win = deps.index.windowUsage(now);
 

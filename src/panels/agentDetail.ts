@@ -39,6 +39,13 @@ export interface AgentDetailDeps {
      * rather than to one that guesses.
      */
     launchManifests?(): readonly LaunchManifest[];
+    /**
+     * ‼️ X-251 (3/n) — what the recorded sign-in is CALLED. The manifest
+     * holds a slot id; the viewer and the timeline already put the label on
+     * the page, so the table asks the same host for the same words rather
+     * than printing a directory name.
+     */
+    accountLabel?(stated: string): string;
     /** Re-read the agent folders and repaint every tree and page. Writing a
      *  duty changes a file no session index is watching, so the page has to say
      *  so itself — otherwise the tree keeps yesterday's duty list. */
@@ -277,7 +284,8 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
         sessions: sessionRowPool(tableSessions,
             s => deps.index.isSessionActive(s), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
-            name => deps.projectStyle?.(name), deps.launchManifests?.()),
+            name => deps.projectStyle?.(name), deps.launchManifests?.(),
+            stated => deps.accountLabel?.(stated) ?? stated),
         sessionTableN: tableN,
         /**
          * ‼️ U-111 — EVERY SESSION'S SPAN, because `sessions` above CANNOT

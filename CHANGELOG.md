@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.436.0 - X-251 closes: the sessions table says the sign-in in WORDS (2026-09-07)
+
+**Closes X-251.** The item's last clause asked for a per-row account chip beside
+the engine badge. **It was put to the user and refused**, and the reason is the
+one the measurement had already raised: in a fleet where every row carries the
+same sign-in, a chip repeated down the column is noise, and the fact already
+lives one hover away in the row's launch panel. A test now pins the absence, so
+nobody re-adds it from the backlog text alone.
+
+**But the hover was printing an internal id.** The session viewer and the Live
+Timeline both resolve through `statedAccountLabel`, so they say
+`aicozums@gmail.com` while the table said `claude-aicozums` — the same fact in
+two spellings, one of them a directory name the reader never chose. The three
+tables that carry launch manifests (Dashboard, agent page, Sessions page) are now
+handed the same resolver the console already uses; the projects page passes no
+manifests, so it has no account line to spell.
+
+**The resolver is handed in, not imported**, for the reason every other optional
+on `sessionRowPool` is: a table can be asked for rows before the account store
+exists, and a missing resolver degrades to the raw id — an id nobody can read
+still names the right account, a blank names none. A run that injected no
+sign-in stays **empty** and the resolver is never asked: absent stays absent.
+
 ## 3.435.0 - X-265: the Live Timeline went deaf the day an account became a directory (2026-09-07)
 
 **Closes X-265.** Live Claude sessions had been running for a day — hundreds of

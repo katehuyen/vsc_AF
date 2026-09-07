@@ -16762,7 +16762,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         projectStyle: (name: string) => projectStyleOf(name),
         // X-102 - what each run was SET UP to be, so the row can hold the
         // requested half beside the reported one. Same store all three tables read.
-        launchManifests: () => launchManifests()
+        launchManifests: () => launchManifests(),
+        // ‼️ X-251 (3/n) — …and what that recorded sign-in is CALLED. The
+        // manifest holds a slot id (a directory name); the reader gets the
+        // label the viewer and the timeline already show them.
+        accountLabel: (stated: string) => statedAccountLabel(stated, storedAccounts())
     };
     const detailDeps = {
         extensionUri: context.extensionUri,
@@ -16780,6 +16784,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // X-102 - what each run was SET UP to be, so the row can hold the
         // requested half beside the reported one. Same store all three tables read.
         launchManifests: () => launchManifests(),
+        // ‼️ X-251 (3/n) — …and what that recorded sign-in is CALLED. The
+        // manifest holds a slot id (a directory name); the reader gets the
+        // label the viewer and the timeline already show them.
+        accountLabel: (stated: string) => statedAccountLabel(stated, storedAccounts()),
         // The page writes DUTIES.md now (U-14). Nothing watches that file, so
         // the trees and the Toolbox would keep yesterday's list until the next
         // Refresh — the write has to say so itself.
@@ -30507,7 +30515,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         agents.map(a => ({ id: a.id, name: a.name, dir: a.dir })), projectStore.all()),
                     projectStyle: (name: string) => projectStyleOf(name),
                     // X-102 - the requested half of every run on this page too.
-                    launchManifests: () => launchManifests()
+                    launchManifests: () => launchManifests(),
+                    // ‼️ X-251 (3/n) — …and the sign-in in words, not as a
+                    // slot id, through the one resolver every surface uses.
+                    accountLabel: (stated: string) =>
+                        statedAccountLabel(stated, storedAccounts())
                 }, {
                     ...(typeof arg?.project === 'string' && arg.project ? { project: arg.project } : {}),
                     ...(typeof arg?.agentName === 'string' && arg.agentName ? { agentName: arg.agentName } : {}),

@@ -42,6 +42,13 @@ export interface SessionsPageDeps {
      * rather than to one that guesses.
      */
     launchManifests?(): readonly LaunchManifest[];
+    /**
+     * ‼️ X-251 (3/n) — what the recorded sign-in is CALLED. The manifest
+     * holds a slot id; the viewer and the timeline already put the label on
+     * the page, so the table asks the same host for the same words rather
+     * than printing a directory name.
+     */
+    accountLabel?(stated: string): string;
 }
 
 /** What the page opens scoped to. Everything is optional: with nothing set the
@@ -94,7 +101,8 @@ function buildData(
         },
         sessions: sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),
-            name => deps.projectStyle?.(name), deps.launchManifests?.()),
+            name => deps.projectStyle?.(name), deps.launchManifests?.(),
+            stated => deps.accountLabel?.(stated) ?? stated),
         sessionTableN: tableN
     };
 }
