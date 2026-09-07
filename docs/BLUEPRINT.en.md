@@ -1139,7 +1139,8 @@ The **Open Timeline** button in the notification takes you straight to the swim-
 ### Security and Performance
 
 - The listener is `127.0.0.1` only — unreachable from outside, no data goes to any external service.
-- The hook command has the pattern `curl -m 3 ... || cd .`: if the listener is down it silently gives up in at most 3 seconds and **never blocks the agent** (the exit code is always 0).
+- The hook command has the pattern `curl --connect-timeout 2 -m 15 ... || cd .`: the exit code is always 0, so a hook **never blocks the agent**. ‼️ X-265 — the limit used to be a flat `-m 3`, which never did the job it was there for: on `127.0.0.1` a missing listener is REFUSED in about a millisecond and no timeout is involved. What three seconds actually cut off was a listener that IS there and busy — measured 0.28–0.54s with the extension host idle, **6.7s under load** — and it failed silently, because `|| cd .` swallows the timeout. So the connect is bounded (the only hang a dead listener can really cause is a socket bound but not accepting) and the exchange is not.
+- ‼️ **A captured account is a config directory, so it needs its own copy of the hooks** (X-265). `CLAUDE_CONFIG_DIR` moves which `settings.json` the engine reads; a session started on a captured sign-in reads the file in its slot directory. Agent Farm carries the settings file into a slot when it is captured, and repairs slots captured earlier on every activation — but only when the user's own file carries the hooks (removing them is a decision), and by seeding the slot from that whole file rather than a hooks-only stub. `hooks.status` and the cockpit card report a captured account without hooks as **partial**, naming it.
 - Each tool call adds ~2 tiny processes (curl); imperceptible in practice.
 - If two VS Code windows are open, the first to open takes the listener; the other shows "port in use" in the Timeline title — this is fine, one listener is enough.
 

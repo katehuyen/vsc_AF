@@ -1211,7 +1211,8 @@ Bildirimdeki **Open Timeline** düğmesi seni doğrudan kulvar görünümüne g�
 ### Güvenlik ve Performans
 
 - Dinleyici yalnızca `127.0.0.1` — dışarıdan erişilemez, hiçbir dış servise veri gitmez.
-- Hook komutu `curl -m 3 ... || cd .` kalıbındadır: dinleyici kapalıysa en fazla 3 saniyede sessizce vazgeçer ve **ajanı asla bloklamaz** (çıkış kodu her zaman 0).
+- Hook komutu `curl --connect-timeout 2 -m 15 ... || cd .` kalıbındadır: çıkış kodu her zaman 0 olduğu için bir hook **ajanı asla bloklamaz**. ‼️ X-265 — sınır eskiden düz `-m 3`'tü ve orada bulunma sebebini hiç yerine getirmiyordu: `127.0.0.1` üzerinde dinleyici yoksa bağlantı yaklaşık bir milisaniyede REDDEDİLİR, zaman aşımı hiç devreye girmez. Üç saniyenin gerçekten kestiği şey, ORADA OLAN ama meşgul olan bir dinleyiciydi — ölçüldü: extension host boştayken 0,28–0,54 s, **yük altında 6,7 s** — ve bu sessizce başarısız oluyordu, çünkü `|| cd .` zaman aşımını yutar. Artık bağlanma sınırlıdır (ölü bir dinleyicinin gerçekten yaratabileceği tek takılma, bağlanmış ama kabul etmeyen bir sokettir), alışveriş değil.
+- ‼️ **Yakalanmış bir hesap bir config dizinidir, dolayısıyla hook'ların kendi kopyasına ihtiyacı vardır** (X-265). `CLAUDE_CONFIG_DIR` motorun hangi `settings.json` dosyasını okuduğunu değiştirir; bir hesapla açılan oturum slot dizinindeki dosyayı okur. Agent Farm ayar dosyasını slot yakalanırken taşır ve daha önce yakalanmış slotları her açılışta onarır — ama yalnız kullanıcının kendi dosyasında hook'lar varsa (onları kaldırmak bir karardır) ve slotu yalnız hook içeren bir kütükle değil, o dosyanın TAMAMIYLA tohumlayarak. `hooks.status` ve kokpit kartı, hook'suz bir yakalanmış hesabı **partial** olarak, adıyla raporlar.
 - Her araç çağrısına ~2 küçük süreç (curl) eklenir; pratikte hissedilmez.
 - İki VS Code penceresi açıksa dinleyiciyi ilk açılan alır; diğeri Timeline başlığında "port in use" gösterir — sorun değildir, tek dinleyici yeter.
 

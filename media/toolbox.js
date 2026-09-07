@@ -751,7 +751,11 @@
         // (user scope) first and named as such.
         const fileRow = t => `<div class="hkfile">
             <span class="hkmark ${t.installed ? 'ok' : 'no'}">${t.installed ? '✓' : '✗'}</span>
-            <span class="hkscope">${t.scope === 'user' ? 'user' : esc(t.agent || 'agent')}</span>
+            <!-- X-265: an account row carries no agent name; labelled "acct:<slot>" so
+                 the reader can tell a captured sign-in from an agent folder at a glance. -->
+            <span class="hkscope">${t.scope === 'user' ? 'user'
+        : t.scope === 'account' ? 'acct:' + esc(t.account || '?')
+            : esc(t.agent || 'agent')}</span>
             <span class="hkpath" title="${esc(t.file)}">${esc(t.file)}</span>
         </div>`;
 

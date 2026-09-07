@@ -45,6 +45,14 @@ export interface CapturePlan {
     /** the slot that would be created; absent when `refusal` is set */
     slot?: EngineAccountSlot;
     copies: CaptureStep[];
+    /**
+     * ‼️ X-265 — files copied because the SESSION needs them, not because the
+     * identity does (`settings.json`). Kept apart from `copies` because an
+     * empty `copies` is how a failed capture is recognised, and these must
+     * never make one look successful; and because one of them being absent is
+     * ordinary rather than a fault.
+     */
+    carries: CaptureStep[];
     links: CaptureStep[];
     /** empty when the capture can run; the one-sentence reason otherwise */
     refusal: string;
@@ -302,7 +310,8 @@ function storedAs(list: EngineAccountSlot[], engine: string, email: string): Eng
 
 export function planCapture(args: CaptureArgs): CapturePlan {
     const engine = String(args.engine || '').trim();
-    const empty = (refusal: string): CapturePlan => ({ copies: [], links: [], refusal });
+    const empty = (refusal: string): CapturePlan =>
+        ({ copies: [], carries: [], links: [], refusal });
 
     const refusal = captureRefusal(engine);
     if (refusal) { return empty(refusal); }
@@ -355,6 +364,16 @@ export function planCapture(args: CaptureArgs): CapturePlan {
     }));
     // ‼️ The link points at the LIVE directory, not at another slot: every
     // session ever started, on whatever account, is still read from one root.
+    // ‼️ X-265 — and the settings the session will run under. A COPY like the
+    // identity and not a link, because it is a FILE: a junction needs no
+    // administrator on Windows but a file symlink does, which is the same
+    // reason `sharedPaths` holds directories only. Copied once, at capture —
+    // afterwards Agent Farm keeps only its OWN hook entries in step, because
+    // the rest of that file is the user's (`syncHooksToAccounts`).
+    const carries = (a.carryFiles ?? []).map(name => ({
+        from: path.join(args.home, liveSource(engine, name)),
+        to: path.join(dir, name)
+    }));
     const links = a.sharedPaths.map(name => ({
         from: path.join(args.home, a.liveDir, name),
         to: path.join(dir, name)
@@ -370,7 +389,7 @@ export function planCapture(args: CaptureArgs): CapturePlan {
             subscriptionType: args.identity.subscriptionType || undefined,
             capturedAt: args.now ?? Date.now()
         },
-        copies, links, refusal: '',
+        copies, carries, links, refusal: '',
         // ‼️ The caller is TOLD which of the two things it is about to do. A page
         // that says "captured" when a row was refreshed is describing an act
         // nobody performed, and the count above the list would not move.

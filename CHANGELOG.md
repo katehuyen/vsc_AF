@@ -2,6 +2,79 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.435.0 - X-265: the Live Timeline went deaf the day an account became a directory (2026-09-07)
+
+**Closes X-265.** Live Claude sessions had been running for a day — hundreds of
+tool calls — with **nothing on the Live Timeline**, under a cockpit card
+reporting "every session on this machine is covered" in green. Three causes, all
+of them the same shape: a feature that shipped correctly broke another one that
+never knew it existed.
+
+**1. The hooks never reached a captured account.** `CLAUDE_CONFIG_DIR` moves
+which `settings.json` the engine reads. A slot directory held `.credentials.json`,
+`.claude.json` and a `projects` junction — and **no settings file at all**, so an
+isolated session inherited no hooks, no model and no permission mode. Measured on
+this machine: the last real Claude hook event was 2026-09-06 20:01.
+
+**‼️ Measured live, on the running machine, and the proof is exact.** The
+previous session (`dbbbd9e7`, hours of work under slot `claude-aicozums`, which
+had no settings file): **0 hook events, ever**. This session (`e6116c62`, started
+09:40Z under `claude-murvietnam-2`): nothing until **10:08:24Z** — the minute the
+repair below wrote `settings.json` into its slot directory — and 81 events in the
+eight minutes after. Claude picks the file up without a restart.
+
+The adapter now says the file travels (`carryFiles`), and it is a list of its
+**own** — an empty `copies` is how a failed capture is recognised, and a settings
+file must never make a slot with no credentials in it look sealed. Slots captured
+before any of this existed are repaired on every activation
+(`syncHooksToAccounts`), under three rules: **the user file decides** (no hooks of
+ours there, nothing written anywhere — somebody who removed them meant to), **a
+slot is seeded from the user's whole file** rather than given a hooks-only stub
+(an account that reports its work faithfully while doing it under different rules
+is worse than one that is silent), and it is **idempotent**.
+
+`hookTargets` — the one list of "every file the live hooks can live in" — now has
+three kinds, so `hooks.status`, `hooks.install`, `hooks.remove` and the cockpit
+page all learn about accounts in the same breath. **User scope carries through to
+them**, because "every session on this machine" is only true if the directory the
+engine actually reads gets one. What was written into a slot can be taken back out
+by the button that removes hooks.
+
+**‼️ And the verdict can now go amber for the failure that happened.** User scope
+installed plus an unhooked account is `partial`, naming the account — a card that
+cannot report the commonest failure is decoration.
+
+**2. The hook gave up on a host that was merely busy.** `-m 3` was there to stop a
+dead listener blocking the agent and never did that job: on 127.0.0.1 a missing
+listener is REFUSED in about a millisecond. What three seconds cut off was a
+listener that IS there — measured 0.28–0.54s idle, **6.7s under load** — and it
+failed silently, because `|| cd .` swallows the timeout. Now
+`--connect-timeout 2 -m 15`: the connect is bounded (the only hang a dead listener
+can really cause), the exchange is not. A file still carrying the old line is
+repaired in place on activation — "installed but stale" is the worst state,
+because every surface says it is fine.
+
+**3. The Console refused to mirror Claude.** "Claude is never mirrored — its CLI
+fires the real hooks" was right for as long as a Claude session could be relied on
+to fire them. Now Claude is mirrored **only while its own hooks are silent**, and
+the dedup is exact rather than hopeful: a real CLI hook never carries `engine`,
+so one arriving stands the mirror down for that session for good. This is the
+safety net, not the fix.
+
+**‼️ And a fourth thing, found while measuring the first three: the test suite
+was editing the machine it runs on.** `test_activation.js` says in its own first
+paragraph that it is "activation on a machine with an untouched configuration —
+the coldest start there is". It was not. `cfgValueRaw` asks the vscode registry
+first and, when it answers `undefined` — which a stand-in always does — falls
+back to **reading the user's own settings.json off the disk**. So `activate()`
+ran there with this machine's real `agentFarm.*` values and a real `os.homedir()`,
+and a suite run rewrote `~/.claude/settings.json` and seeded all three captured
+account directories. Nothing was damaged (those were the writes the feature is
+meant to make), but the next `fs` write inside activation might not be so
+harmless. The home and the three Windows profile variables now point at an empty
+temp directory, and the isolation is **asserted** rather than assumed — a test
+that quietly stops being isolated is how this happened in the first place.
+
 ## 3.434.0 - X-254 (d): an item whose sign-in is at its wall WAITS (2026-09-07)
 
 **Closes X-254.** `queue.list` takes `ready: true`, which drops the items whose

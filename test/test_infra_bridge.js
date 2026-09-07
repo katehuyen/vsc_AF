@@ -7,6 +7,7 @@
 // argument vector rather than a command line that a path with a space in it
 // could break out of.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 let pass = 0, fail = 0;
@@ -18,7 +19,12 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
 const { HOOK_MARKER, hookCommand } = require(path.join(__dirname, '..', 'out', 'core', 'hooksInstaller.js'));
 
 (async () => {
-    const root = fs.mkdtempSync(path.join(__dirname, 'tmp-infra-'));
+    // ‼️ X-265 — IN THE TEMP DIRECTORY, NOT IN THE REPO. The cleanup at the end
+    // of this file only runs when the file gets there: a test that THROWS leaves
+    // its fixture behind, and a fixture inside `test/` is an untracked directory
+    // that walks straight into the next `git add -A`. Measured today — one did.
+    // The `af-` prefix is the one `run-all.js` sweeps.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'af-infra-'));
     const home = path.join(root, 'home', '.claude');
     const agentDir = path.join(root, 'agents', 'yazar');
     const storage = path.join(root, 'storage');
@@ -46,6 +52,9 @@ const { HOOK_MARKER, hookCommand } = require(path.join(__dirname, '..', 'out', '
     registerInfraOps(reg, {
         getAgents: () => [{ id: 'a1', name: 'yazar', dir: agentDir }],
         userSettingsFile: () => path.join(home, 'settings.json'),
+        // X-265 — this farm has captured no accounts; the third kind of hook
+        // target has its own file (test_account_hooks.js).
+        accountSettingsFiles: () => [],
         livePort: () => 8377,
         storageDir: () => storage,
         serviceSource: () => path.join(extDir, 'farmService.js'),
@@ -95,7 +104,7 @@ const { HOOK_MARKER, hookCommand } = require(path.join(__dirname, '..', 'out', '
         const badAgent = await reg.dispatch('hooks.install', { agent: 'nobody' });
         ok('…and an agent that is not there is named, not written', !badAgent.ok && /not found/.test(badAgent.error));
         const badScope = await reg.dispatch('hooks.install', { scope: 'everywhere' });
-        ok('…and an invented scope lists the real ones', !badScope.ok && /user, agents or both/.test(badScope.error));
+        ok('…and an invented scope lists the real ones', !badScope.ok && /user, agents, accounts, both/.test(badScope.error));
 
         const st2 = await reg.dispatch('hooks.status', {});
         ok('hooks.status now reports both files installed', st2.result.installed === 2);
@@ -221,7 +230,7 @@ const { HOOK_MARKER, hookCommand } = require(path.join(__dirname, '..', 'out', '
 
     // hookTargets is the shared reading behind status/install/remove.
     ok('hookTargets is one reading for all three ops',
-        hookTargets({ getAgents: () => [{ id: 'a1', name: 'yazar', dir: agentDir }], userSettingsFile: () => path.join(home, 'settings.json') }).length === 2);
+        hookTargets({ getAgents: () => [{ id: 'a1', name: 'yazar', dir: agentDir }], userSettingsFile: () => path.join(home, 'settings.json'), accountSettingsFiles: () => [] }).length === 2);
 
     // ---- X-208: one hook, two spellings, because one string cannot do it ----
     //
@@ -242,10 +251,17 @@ const { HOOK_MARKER, hookCommand } = require(path.join(__dirname, '..', 'out', '
         const posix = hookCommand(8377);
         const pwsh = hookCommand(8377, 'powershell');
 
-        // The working spelling does not move. Claude's hooks run on it today,
-        // and this whole item is about the OTHER shell.
-        ok('‼️ X-208: the sh/bash/cmd spelling is unchanged, to the character',
-            posix === 'curl -s -m 3 -X POST "http://127.0.0.1:8377/event?src=agentfarm-live" '
+        // The working spelling is pinned to the character. Claude's hooks run on
+        // it today, and this item is about the OTHER shell — so any change to it
+        // has to be a change somebody MEANT, which is what this line makes it.
+        //
+        // ‼️ X-265 changed it once, deliberately: `-m 3` was cutting off a
+        // listener that was there and busy (6.7s measured under load) while doing
+        // nothing at all about a dead one, which on 127.0.0.1 is refused in a
+        // millisecond. The connect is bounded now; the exchange is not.
+        ok('‼️ X-208/X-265: the sh/bash/cmd spelling is pinned, to the character',
+            posix === 'curl -s --connect-timeout 2 -m 15 '
+            + '-X POST "http://127.0.0.1:8377/event?src=agentfarm-live" '
             + '-H "Content-Type: application/json" --data-binary @- || cd .');
         ok('…and it is what a caller gets when it names no shell at all',
             hookCommand(8377, 'posix') === posix);

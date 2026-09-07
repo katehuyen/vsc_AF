@@ -143,6 +143,24 @@ export interface EngineAuthAdapter {
     /** the files that ARE the identity and belong to the slot */
     ownFiles: string[];
     /**
+     * ‼️ X-265 — …AND THE FILES THAT ARE NOT THE IDENTITY BUT DECIDE HOW THE
+     * SESSION BEHAVES. Copied at capture, never linked, never required.
+     *
+     * Isolation was designed around the sign-in and quietly took the rest of
+     * the directory with it. `~/.claude/settings.json` holds the user's model,
+     * their permission mode AND Agent Farm's own live hooks; a slot without it
+     * starts a session that obeys none of them and posts no event, so the Live
+     * Timeline went deaf the day a second account became possible — measured
+     * 2026-09-07: not one Claude hook event since.
+     *
+     * ‼️ SEPARATE FROM `ownFiles` BECAUSE THE CAPTURE COUNTS THOSE. A capture
+     * that copied nothing from `ownFiles` is a FAILED capture — a row that
+     * would start sessions as nobody — so folding a settings file into that
+     * list would let a slot with no credentials in it pass for a sealed
+     * account. Missing here is ordinary: the user may never have had one.
+     */
+    carryFiles?: string[];
+    /**
      * …and what must keep pointing at the main directory, because relocating a
      * config directory moves more than the identity.
      */
@@ -350,6 +368,12 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         // diverging costs the panel every session it starts, which is why those
         // are here.
         sharedPaths: ['projects', 'todos', 'shell-snapshots'],
+        // ‼️ X-265 — the settings file travels with the slot. CLAUDE_CONFIG_DIR
+        // moves where `settings.json` is READ FROM, so an isolated session
+        // inherits the user's model, permission mode and live hooks only if a
+        // copy is put there. Measured on this machine: it was not, and every
+        // Claude session started under an account has been invisible since.
+        carryFiles: ['settings.json'],
         liveDir: '.claude',
         // ‼️ the identity is at the HOME ROOT, not under .claude — see liveFiles
         liveFiles: { '.claude.json': '.claude.json' },

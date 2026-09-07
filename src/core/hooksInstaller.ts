@@ -47,9 +47,27 @@ export type HookShell = 'posix' | 'powershell';
  * why there are two spellings and not one: every candidate for a single string
  * is silently wrong in some shell that really runs these.
  */
+/**
+ * ‼️ X-265 — WHY THE TIMEOUT IS TWO NUMBERS AND NOT ONE.
+ *
+ * `-m 3` was there to stop a dead listener blocking the agent, and it never
+ * did that job: the listener is on 127.0.0.1, so when nothing is bound the
+ * connection is REFUSED in about a millisecond and no timeout is involved.
+ * What three seconds actually cut off was a listener that IS there and busy —
+ * measured on this machine 2026-09-07: 0.28-0.54s with the extension host
+ * idle, 6.7s under load. So the one case the limit ever fired on was the case
+ * worth waiting for, and it failed SILENTLY (`|| cd .` swallows exit 28), which
+ * is how a timeline can be empty while hundreds of tool calls run.
+ *
+ * `--connect-timeout 2` is the honest guard: it bounds the only hang a dead
+ * listener can really cause — a socket bound but not accepting — while `-m 15`
+ * lets a busy host answer. A hook is blocking, so the worst case is a tool
+ * call that waits fifteen seconds for a host that has stopped answering at
+ * all; the trade the other way was losing every event on a working one.
+ */
 export function hookCommand(port: number, shell: HookShell = 'posix'): string {
-    // -m 3 keeps a dead listener from ever blocking the agent.
-    const rest = `-s -m 3 -X POST "http://127.0.0.1:${port}/event?src=${HOOK_MARKER}" `
+    const rest = `-s --connect-timeout 2 -m 15 `
+        + `-X POST "http://127.0.0.1:${port}/event?src=${HOOK_MARKER}" `
         + '-H "Content-Type: application/json" --data-binary ';
     return shell === 'powershell'
         ? `curl.exe ${rest}'@-' ; exit 0`
@@ -182,4 +200,70 @@ export function hasOurHooks(file: string): boolean {
     if (!settings?.hooks) { return false; }
     return Object.values(settings.hooks).some(list =>
         Array.isArray(list) && list.some(isOurs));
+}
+
+/**
+ * ‼️ X-265 — IS THE HOOK IN THIS FILE THE ONE WE WOULD WRITE TODAY?
+ *
+ * `hasOurHooks` answers "is any of ours in here", which was enough while there
+ * was one file a person installed by hand. A sync that runs BY ITSELF needs the
+ * sharper question, or it rewrites every settings file on every activation —
+ * and a file rewritten for nothing is a file that can be lost for nothing.
+ * Every event must be present AND carry the current command: a changed port is
+ * exactly the case where the marker is there and the hook posts into the void.
+ */
+export function hooksAreCurrent(file: string, port: number): boolean {
+    const settings = readSettings(file);
+    if (!settings?.hooks) { return false; }
+    const want = hookCommand(port);
+    for (const event of ALL_HOOK_EVENTS) {
+        const list = settings.hooks[event];
+        if (!Array.isArray(list)) { return false; }
+        const ours = list.find(isOurs);
+        if (!ours) { return false; }
+        if (!(ours.hooks ?? []).some(h => h.command === want)) { return false; }
+    }
+    return true;
+}
+
+/**
+ * ‼️ X-265 — EVERY CAPTURED ACCOUNT KEEPS THE USER'S HOOK STATE, because the
+ * isolation is what took it away.
+ *
+ * `CLAUDE_CONFIG_DIR` moves which `settings.json` the engine reads. A slot
+ * directory holds the sign-in and nothing else, so every session started on a
+ * captured account has run with NO hooks — measured 2026-09-07: the Live
+ * Timeline had not logged one Claude event since accounts shipped, while the
+ * page went on drawing confidently. Nobody did anything wrong; the feature that
+ * broke this one never knew this file existed.
+ *
+ * Three rules, each one a decision somebody could otherwise reverse by accident:
+ *
+ *   · ‼️ THE USER FILE DECIDES. If the main settings file does not carry our
+ *     hooks, nothing is written anywhere. Somebody who removed them meant to,
+ *     and seeding them into the slots would be this system overruling a person
+ *     quietly.
+ *   · ‼️ A SLOT WITH NO SETTINGS FILE IS SEEDED FROM THE USER'S, not given a
+ *     hooks-only stub. The isolation lost their model and their permission mode
+ *     too; restoring the hooks alone would leave an account that reports its
+ *     work faithfully and does it under different rules.
+ *   · IDEMPOTENT. A file already carrying today's command is left untouched, so
+ *     this may be called on every activation and after every capture.
+ */
+export function syncHooksToAccounts(
+    userFile: string, slotFiles: string[], port: number
+): InstallResult[] {
+    if (!hasOurHooks(userFile)) { return []; }
+    const out: InstallResult[] = [];
+    for (const file of slotFiles) {
+        if (hooksAreCurrent(file, port)) { continue; }
+        if (!fs.existsSync(file) && fs.existsSync(userFile)) {
+            try {
+                fs.mkdirSync(path.dirname(file), { recursive: true });
+                fs.copyFileSync(userFile, file);
+            } catch { /* installHooksInto still writes a usable file below */ }
+        }
+        out.push(installHooksInto(file, port));
+    }
+    return out;
 }

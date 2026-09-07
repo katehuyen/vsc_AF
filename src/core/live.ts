@@ -68,6 +68,17 @@ export interface LiveSession {
      *  rolled back) while the session was still running, which is exactly the
      *  case a version comparison must not average over. */
     afVersions?: string[];
+    /**
+     * ‼️ X-265 — HAS THIS SESSION EVER SPOKEN FOR ITSELF?
+     *
+     * True once a payload arrived with no `engine` on it, which only a real
+     * CLI hook has (see HookPayload.engine). It is the one honest way to ask
+     * "are this session's own hooks working", and the Console mirror asks it
+     * before drawing a Claude session: mirroring one whose hooks are firing
+     * would draw every turn twice, and mirroring one whose hooks are NOT is
+     * the difference between a timeline and an empty page.
+     */
+    realHook?: boolean;
 }
 
 export type LiveEventKind =
@@ -260,6 +271,21 @@ const ACTIVE_GAP_MS = 10 * 60 * 1000;
  * session ids. The CLI id is derived from the namespace — claude payloads carry
  * `source` with a different meaning (startup/resume/clear), so it is not used.
  */
+/**
+ * ‼️ X-265 — A STATED ENGINE THAT SAYS "claude" IS NOT A SOURCE.
+ *
+ * `LiveSession.source` means EXTERNAL CLI — it is what puts a gemini or codex
+ * badge on a lane. The Console mirror has to name its engine on every payload
+ * (that is how a mirror is told from a real hook), and it now mirrors Claude
+ * too when Claude's own hooks are silent; taking that name as a `source` would
+ * badge the native engine as a foreign one, on exactly the sessions that were
+ * invisible until today.
+ */
+export function statedSource(engine: string | undefined): string | undefined {
+    const v = (engine ?? '').trim();
+    return v && v.toLowerCase() !== 'claude' ? v : undefined;
+}
+
 export function cliSourceOf(sessionId: string): string | undefined {
     return sessionId.startsWith('cli:') ? (sessionId.split(':')[1] || undefined) : undefined;
 }
@@ -545,7 +571,7 @@ export class LiveMonitor implements vscode.Disposable {
             }
             s.lastEventTs = e.ts;
             if (e.transcriptPath) { s.transcriptPath = e.transcriptPath; }
-            if (!s.source && e.engine?.trim()) { s.source = e.engine.trim(); }
+            if (!s.source) { s.source = statedSource(e.engine); }
             // Read back out of the store rather than assumed to be this build:
             // after a reload the session's earlier events may well have been
             // watched by the version that was installed before the update.
@@ -810,7 +836,7 @@ export class LiveMonitor implements vscode.Disposable {
                 agentName,
                 // The id first (a `cli:` lane names its own engine), then what
                 // the caller stated — see HookPayload.engine.
-                source: cliSourceOf(id) ?? (payload.engine?.trim() || undefined),
+                source: cliSourceOf(id) ?? statedSource(payload.engine),
                 status: 'idle',
                 startedAt: Date.now(),
                 lastEventTs: Date.now(),
@@ -833,7 +859,7 @@ export class LiveMonitor implements vscode.Disposable {
         // A hosted session learns its engine on the SAME event that names it, so
         // a session revived from the store before the mirror spoke gets its
         // badge as soon as one arrives rather than staying unlabelled for life.
-        if (!s.source && payload.engine?.trim()) { s.source = payload.engine.trim(); }
+        if (!s.source) { s.source = statedSource(payload.engine); }
         return s;
     }
 
@@ -865,9 +891,27 @@ export class LiveMonitor implements vscode.Disposable {
         this.onEventEmitter.fire(event);
     }
 
+    /**
+     * ‼️ X-265 — ARE THIS SESSION'S OWN HOOKS WORKING?
+     *
+     * Only a real CLI hook arrives without `engine` on it, so this answers
+     * "has anything but our own mirror ever spoken for this id". The Console
+     * mirror is the one caller: false means the engine is deaf here — a
+     * captured account whose settings file has no hook in it, a removed
+     * install, a blocked port — and the host is the only thing that can put
+     * the session on the page at all.
+     */
+    hasRealHooks(sessionId: string): boolean {
+        return this.sessionsMap.get(sessionId)?.realHook === true;
+    }
+
     handle(payload: HookPayload): void {
         const cfg = this.getConfig();
         const s = this.session(payload);
+        // ‼️ X-265 — recorded before anything else is decided: a mirror always
+        // names its engine and a real hook never does, so this is the whole
+        // test, and it must not be reachable only down some branch.
+        if (!payload.engine) { s.realHook = true; }
         const now = Date.now();
         s.lastEventTs = now;
         s.notifiedStuck = false;

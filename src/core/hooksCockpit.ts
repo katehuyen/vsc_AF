@@ -40,8 +40,16 @@ export type ListenerState = 'listening' | 'disabled' | 'port-in-use' | 'error';
 
 /** One hook file and whether ours are in it (mirrors `infraBridge.HookTarget`). */
 export interface HookFile {
-    scope: 'user' | 'agent';
+    /**
+     * ‼️ X-265 — `account` is the third kind, and leaving it out was how the
+     * card came to promise a coverage it did not have. A captured account is a
+     * config directory, so the engine reads ITS settings file and not the
+     * user's; a hook missing there is a session nobody can see.
+     */
+    scope: 'user' | 'agent' | 'account';
     agent?: string;
+    /** the slot id, when this file belongs to a captured account */
+    account?: string;
     file: string;
     installed: boolean;
 }
@@ -210,6 +218,9 @@ export interface HooksStatus {
      *  this machine, so an agent-only install is a farm that reports some
      *  sessions and silently drops the rest. */
     userInstalled: boolean;
+    /** ‼️ X-265 — captured accounts whose own settings file carries no hooks.
+     *  Non-zero means the timeline is blind exactly where the work is. */
+    accountsBlind: number;
 }
 
 /**
@@ -225,9 +236,14 @@ export function hooksStatus(input: HooksStatusInput): HooksStatus {
     const targets = input.targets ?? [];
     const installed = targets.filter(t => t.installed).length;
     const userInstalled = targets.some(t => t.scope === 'user' && t.installed);
+    // ‼️ X-265 — the accounts that read their own settings file and find no
+    // hooks in it. Counted beside `userInstalled` because the two together are
+    // the honest answer: user scope installed is no longer the whole story.
+    const accountsBlind = targets.filter(t => t.scope === 'account' && !t.installed);
 
     const base = {
-        installed, total: targets.length, userInstalled
+        installed, total: targets.length, userInstalled,
+        accountsBlind: accountsBlind.length
     };
 
     if (input.listener === 'port-in-use') {
@@ -268,6 +284,27 @@ export function hooksStatus(input: HooksStatusInput): HooksStatus {
             detail: `Only ${installed} agent file(s) carry the hooks. User scope is NOT installed, so `
                 + 'any session started outside those agents reports nothing.',
             next: 'Install at user scope — one file covers every session on this machine.'
+        };
+    }
+    /**
+     * ‼️ X-265 — AND THE SENTENCE BELOW WAS THE UNTRUE ONE.
+     *
+     * "User scope is installed — every session on this machine is covered" was
+     * exact until an account became a config directory of its own. After that,
+     * the card went on saying it in green while every session started on a
+     * captured sign-in posted nothing — measured 2026-09-07: a whole day of
+     * work invisible under a card reporting ok. A verdict that cannot go amber
+     * for the commonest failure is decoration, so this branch exists before
+     * the green one and names the accounts it is talking about.
+     */
+    if (accountsBlind.length) {
+        return {
+            ...base, state: 'partial', tone: HOOKS_TONE.partial,
+            detail: `User scope is installed, but ${accountsBlind.length} captured account(s) carry `
+                + 'no hooks of ours: a session started on one reads ITS OWN settings.json '
+                + `(${accountsBlind.map(t => t.account || t.file).join(', ')}) and posts nothing, `
+                + 'so the timeline looks empty while the work is running.',
+            next: 'Install at user scope — it carries through to every captured account.'
         };
     }
     return {

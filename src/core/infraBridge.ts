@@ -4,7 +4,8 @@ import { AgentInfo } from './agents';
 import { argStr, BridgeRegistry, need, optStr } from './bridge';
 import { clearPort, portHolder } from './portScan';
 import {
-    hasOurHooks, hookCommand, installHooksInto, InstallResult, removeHooksFrom
+    hasOurHooks, hookCommand, installHooksInto, InstallResult, removeHooksFrom,
+    syncHooksToAccounts
 } from './hooksInstaller';
 import { PriceRule } from './pricing';
 
@@ -35,6 +36,15 @@ export interface InfraBridgeDeps {
     getAgents(): AgentInfo[];
     /** ~/.claude/settings.json — the user-scope hook target */
     userSettingsFile(): string;
+    /**
+     * ‼️ X-265 — …AND ONE PER CAPTURED ACCOUNT, because an account IS a config
+     * directory and the engine reads its `settings.json` from THERE. Left out of
+     * this list, every session started on a captured account is a session Agent
+     * Farm cannot see — which is exactly what happened for a day. Claude-shaped
+     * only: another engine's hook file is a different file in a different format,
+     * and a guess here would report a target that does not exist.
+     */
+    accountSettingsFiles(): { id: string; file: string }[];
     /** the port the hooks POST to (agentFarm.livePort) */
     livePort(): number;
     /**
@@ -63,13 +73,23 @@ export interface InfraBridgeDeps {
 }
 
 export interface HookTarget {
-    scope: 'user' | 'agent';
+    scope: 'user' | 'agent' | 'account';
     agent?: string;
+    /** X-265 — the slot id, when this file belongs to a captured account. */
+    account?: string;
     file: string;
     installed: boolean;
 }
 
-/** Every file the live hooks can live in, and whether ours are in it. */
+/**
+ * Every file the live hooks can live in, and whether ours are in it.
+ *
+ * ‼️ X-265 — THREE KINDS NOW, AND THE THIRD IS THE ONE THAT BROKE. A captured
+ * account is a config directory, so the engine reads ITS `settings.json`; a
+ * kind of file missing from this list is a kind of session nobody can see.
+ * Adding accounts here is what makes hooks.status, hooks.install, hooks.remove
+ * and the cockpit page all learn about them in the same breath.
+ */
 export function hookTargets(deps: InfraBridgeDeps): HookTarget[] {
     const user: HookTarget = {
         scope: 'user', file: deps.userSettingsFile(), installed: false
@@ -78,7 +98,9 @@ export function hookTargets(deps: InfraBridgeDeps): HookTarget[] {
     return [user, ...deps.getAgents().map(a => {
         const file = path.join(a.dir, '.claude', 'settings.local.json');
         return { scope: 'agent' as const, agent: a.name, file, installed: hasOurHooks(file) };
-    })];
+    }), ...deps.accountSettingsFiles().map(a => ({
+        scope: 'account' as const, account: a.id, file: a.file, installed: hasOurHooks(a.file)
+    }))];
 }
 
 /** The files the service install writes, in the order it writes them. */
@@ -171,10 +193,23 @@ export function registerInfraOps(bridge: BridgeRegistry, deps: InfraBridgeDeps):
             return t ? [t] : [];
         }
         const scope = (optStr(args, 'scope') || 'user').toLowerCase();
-        need(['user', 'agents', 'both'].includes(scope),
-            `scope is user, agents or both — not "${scope}"`);
+        // ‼️ X-265 — `both` STILL NAMES user + agents, unchanged: a caller written
+        // before accounts existed said `both` and meant those two, and quietly
+        // adding a third kind to what it RESOLVES would change what every existing
+        // caller reads back. The accounts get their own word here, and `all` is
+        // the one that means everything.
+        //
+        // ‼️ That is a separate question from what an install then WRITES. The
+        // carry-through below follows the USER FILE being written — the promise
+        // "every session on this machine" lives on that file, not on a scope word
+        // — so `user` and `both` reach the accounts and `agents` deliberately
+        // does not.
+        need(['user', 'agents', 'accounts', 'both', 'all'].includes(scope),
+            `scope is user, agents, accounts, both (user+agents) or all — not "${scope}"`);
         if (scope === 'user') { return all.filter(t => t.scope === 'user'); }
         if (scope === 'agents') { return all.filter(t => t.scope === 'agent'); }
+        if (scope === 'accounts') { return all.filter(t => t.scope === 'account'); }
+        if (scope === 'both') { return all.filter(t => t.scope !== 'account'); }
         return all;
     };
 
@@ -207,9 +242,19 @@ export function registerInfraOps(bridge: BridgeRegistry, deps: InfraBridgeDeps):
                     commandPowerShell: hookCommand(port, 'powershell'),
                     installed: targets.filter(t => t.installed).length,
                     targets,
-                    note: targets.some(t => t.scope === 'user' && t.installed)
+                    // ‼️ X-265 — "user scope is installed" WAS the whole answer
+                    // and is no longer: a captured account reads its own
+                    // settings file, so a machine with user scope installed and
+                    // an unhooked account is a machine whose timeline is blind
+                    // exactly where the work is. Named rather than implied.
+                    note: (targets.some(t => t.scope === 'user' && t.installed)
                         ? 'User scope is installed — every session on this machine is covered.'
-                        : 'User scope is NOT installed; only the agent files listed as installed report events.'
+                        : 'User scope is NOT installed; only the files listed as installed report events.')
+                        + (targets.some(t => t.scope === 'account' && !t.installed)
+                            ? ` ‼️ ${targets.filter(t => t.scope === 'account' && !t.installed).length}`
+                                + ' captured account(s) have NO hooks: a session started on one of them'
+                                + ' reads ITS OWN settings.json and posts nothing. hooks.install fixes it.'
+                            : '')
                 };
             }
         },
@@ -245,20 +290,43 @@ export function registerInfraOps(bridge: BridgeRegistry, deps: InfraBridgeDeps):
         },
         {
             op: 'hooks.install',
-            describe: '‼️ MERGE THE LIVE HOOKS INTO A CLAUDE SETTINGS FILE — the one setup step the extension cannot do for itself. `scope:"user"` (the default) is the one to want: one file, every session. `scope:"agents"` writes each agent\'s .claude/settings.local.json, `agent` names just one, `both` does the lot. Existing settings are preserved and a one-time .agentfarm-bak copy is made beside each file. Running claude sessions must be restarted before the hooks fire. `dryRun:true` answers with the exact files and nothing else. args: scope? (user|agents|both, default user), agent? (name|id — one agent), dryRun?',
+            describe: '‼️ MERGE THE LIVE HOOKS INTO A CLAUDE SETTINGS FILE — the one setup step the extension cannot do for itself. `scope:"user"` (the default) is the one to want: one file, every session. `scope:"agents"` writes each agent\'s .claude/settings.local.json, `agent` names just one, `both` does user+agents. ‼️ X-265 — `scope:"accounts"` is the third kind: a CAPTURED ACCOUNT is a config directory, so the engine reads ITS settings.json and a session started on one posts nothing without a hook there. USER SCOPE CARRIES THROUGH TO THEM AUTOMATICALLY (that is what "every session on this machine" has to mean now); `all` writes every file there is. Existing settings are preserved and a one-time .agentfarm-bak copy is made beside each file. Running claude sessions must be restarted before the hooks fire. `dryRun:true` answers with the exact files and nothing else. args: scope? (user|agents|accounts|both|all, default user), agent? (name|id — one agent), dryRun?',
             handler: (args) => {
                 const targets = resolveTargets(args);
                 need(targets.length, 'No target files — the farm has no agents to install into.');
                 const port = deps.livePort();
+                /**
+                 * ‼️ X-265 — USER SCOPE PROMISES "every session on this machine",
+                 * and an account IS a config directory.
+                 *
+                 * That promise was true while `~/.claude` was the only place an
+                 * engine read settings from. A captured account moves the file
+                 * the engine reads, so user scope went on reporting success
+                 * while the sessions that actually matter — the ones started on
+                 * a sign-in — posted nothing for a day. Carrying the install
+                 * through is not scope creep: it is the scope this op already
+                 * claimed, kept.
+                 */
+                const carried = targets.some(t => t.scope === 'user')
+                    ? hookTargets(deps).filter(t => t.scope === 'account'
+                        && !targets.some(x => x.file === t.file))
+                    : [];
                 if (args.dryRun === true) {
                     return {
                         dryRun: true, port, command: hookCommand(port),
                         commandPowerShell: hookCommand(port, 'powershell'),
-                        files: targets.map(t => ({ ...t })),
-                        note: `${targets.length} file(s) would be written; nothing has changed.`
+                        files: [...targets, ...carried].map(t => ({ ...t })),
+                        note: `${targets.length + carried.length} file(s) would be written; nothing has changed.`
                     };
                 }
                 const results: InstallResult[] = targets.map(t => installHooksInto(t.file, port));
+                // ‼️ AFTER the user file is written, never before: the sync reads
+                // it to decide whether it may act at all, and a slot seeded from
+                // a file with no hooks in it would be seeded with no hooks.
+                if (carried.length) {
+                    results.push(...syncHooksToAccounts(
+                        deps.userSettingsFile(), carried.map(t => t.file), port));
+                }
                 const failed = results.filter(r => !r.ok);
                 return {
                     port, installed: results.filter(r => r.ok).length,
@@ -273,7 +341,7 @@ export function registerInfraOps(bridge: BridgeRegistry, deps: InfraBridgeDeps):
         },
         {
             op: 'hooks.remove',
-            describe: 'Take Agent Farm\'s own hook entries back out of the settings files, leaving every foreign hook where it is. Files that never had ours are skipped rather than rewritten, so this is idempotent — a second call removes nothing and says so. args: scope? (user|agents|both, default both), agent? (name|id), dryRun?',
+            describe: 'Take Agent Farm\'s own hook entries back out of the settings files, leaving every foreign hook where it is. Files that never had ours are skipped rather than rewritten, so this is idempotent — a second call removes nothing and says so. args: scope? (user|agents|accounts|both|all — default is EVERY file that has ours, captured accounts included, because a hook this extension put into a slot directory must be removable by the button that removes hooks), agent? (name|id), dryRun?',
             handler: (args) => {
                 const scoped = optStr(args, 'scope') || optStr(args, 'agent')
                     ? resolveTargets(args)

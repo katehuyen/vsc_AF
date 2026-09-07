@@ -34,6 +34,42 @@ const fs = require('fs');
 const os = require('os');
 const Module = require('module');
 
+/*
+ * ‼️ X-265 — AND THE STAND-IN WAS NOT ENOUGH: THIS TEST WAS ACTIVATING THE
+ * EXTENSION AGAINST THE USER'S REAL MACHINE.
+ *
+ * The comment above says "activation on a machine with an untouched
+ * configuration". It was not, and the gap is exactly one function:
+ * `cfgValueRaw` (`core/settingsDoor.ts`) asks the vscode registry FIRST and,
+ * when it answers `undefined` — which the stand-in always does, because it hands
+ * back the default and there is no default to hand — falls back to READING THE
+ * USER'S OWN settings.json OFF THE DISK. So `activate()` here ran with this
+ * machine's real `agentFarm.*` values, `os.homedir()` pointed at the real home,
+ * and every `fs` write inside activation landed on the developer's own machine.
+ *
+ * Measured 2026-09-07: a suite run rewrote `~/.claude/settings.json` and created
+ * a settings file in all three captured account directories. Nothing was
+ * damaged — the writes were the ones the feature under test is supposed to make
+ * — but "the test suite edits the machine it runs on" is true either way, and
+ * the next fs write in activation might not be so harmless.
+ *
+ * So the sandbox is made real before anything is required: the home and the
+ * three Windows profile variables point at an empty temp directory, which is
+ * what `os.homedir()` and `vscodeUserSettingsFile()` both read. Now the file
+ * tests what its own first paragraph promises — the coldest start there is.
+ */
+const SANDBOX = fs.mkdtempSync(path.join(os.tmpdir(), 'af-activation-'));
+for (const [k, v] of Object.entries({
+    USERPROFILE: SANDBOX,
+    HOME: SANDBOX,
+    APPDATA: path.join(SANDBOX, 'AppData', 'Roaming'),
+    LOCALAPPDATA: path.join(SANDBOX, 'AppData', 'Local'),
+    XDG_CONFIG_HOME: path.join(SANDBOX, '.config')
+})) {
+    process.env[k] = v;
+    try { fs.mkdirSync(v, { recursive: true }); } catch { /* best effort */ }
+}
+
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
@@ -323,8 +359,17 @@ const context = {
         + (missing.length ? ' — missing: ' + missing.slice(0, 12).join(', ') : ''),
         missing.length === 0);
 
+    // ‼️ X-265 — AND THE SANDBOX IS CHECKED, not assumed. A test that quietly
+    // stopped being isolated is how this file came to edit the machine it runs
+    // on; the assertion is cheap and it is the only thing standing between the
+    // next fs write inside activate() and somebody's real configuration.
+    ok('‼️ activation ran against a sandbox home, not the developer\'s machine',
+        os.homedir() === SANDBOX
+        && !fs.existsSync(path.join(os.homedir(), '.claude', 'settings.json')));
+
     Module._load = origLoad;
     try { fs.rmSync(storage, { recursive: true, force: true }); } catch { /* temp dir */ }
+    try { fs.rmSync(SANDBOX, { recursive: true, force: true }); } catch { /* temp dir */ }
 
     console.log(`test_activation.js: ${pass} passed, ${fail} failed`);
     // ‼️ activate() leaves timers and watchers running — the same ones that keep

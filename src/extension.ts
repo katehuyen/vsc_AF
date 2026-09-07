@@ -79,7 +79,8 @@ import {
     buildAgentTaskStats, buildTaskFamilies, mergeTaskRecords, readTaskHistory, taskAlerts
 } from './core/taskstats';
 import {
-    hasOurHooks, hookCommand, installHooksInto, removeHooksFrom, userSettingsPath
+    hasOurHooks, hookCommand, hooksAreCurrent, installHooksInto, removeHooksFrom,
+    syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
 import { LiveMonitor, LiveSession } from './core/live';
 import { OwnerLease } from './core/owner';
@@ -737,6 +738,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * reader handed to one is declared here, not next to its subject matter.
      */
     const storedAccounts = (): EngineAccountSlot[] => normalizeSlots(cfg().get<unknown[]>('accounts', []));
+    /**
+     * ‼️ X-265 — WHERE A CAPTURED ACCOUNT READS ITS SETTINGS, listed once.
+     *
+     * `CLAUDE_CONFIG_DIR` moves that file, so this is where the live hooks have
+     * to reach for a session started on a sign-in to be visible at all. Claude
+     * only, deliberately: another engine's hooks are a different file in a
+     * different format, and naming one here would report a target that is not
+     * there. `userSettingsPath` rather than a second `settings.json` literal —
+     * one spelling of what a Claude settings file is called.
+     */
+    const accountSettingsFiles = (): { id: string; file: string }[] => storedAccounts()
+        .filter(s => s.engine === 'claude')
+        .map(s => ({ id: s.id, file: userSettingsPath(s.dir) }));
     const activeAccounts = (): Record<string, string> =>
         normalizeActive(cfg().get<Record<string, string>>('activeAccounts', {}));
     let agents: AgentInfo[] = [];
@@ -1255,6 +1269,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
     context.subscriptions.push(live);
     live.start();
+    /**
+     * ‼️ X-265 — AND THE HOOKS FOLLOW THE ACCOUNTS, EVERY ACTIVATION.
+     *
+     * The listener above is only half of a live timeline; the other half is a
+     * hook in the settings file the engine actually reads. Multi-account
+     * isolation moved that file and nothing carried the hooks across, so from
+     * the day accounts shipped every session started on one was invisible —
+     * measured 2026-09-07, not one Claude event in the log since.
+     *
+     * Here rather than at capture alone, because the slots that broke were
+     * captured BEFORE this line existed and would otherwise stay deaf for ever.
+     * It writes nothing when the user has no hooks of ours (removing them is a
+     * decision) and nothing when the file is already current, so the ordinary
+     * start-up cost is a handful of reads.
+     */
+    try {
+        const userFile = userSettingsPath(claudeDir());
+        const livePort = cfg().get<number>('livePort', 8377);
+        /**
+         * ‼️ AND A HOOK THAT IS PRESENT BUT OUT OF DATE IS REPAIRED IN PLACE.
+         *
+         * The command itself changed with X-265 (a three-second timeout was
+         * cutting off a host that was merely busy), and a file still carrying
+         * the old line reports "installed" while dropping events under load —
+         * the worst state to be in, because every surface says it is fine.
+         * Only entries carrying our own marker are touched and a .agentfarm-bak
+         * copy already exists beside each file, so this cannot take a foreign
+         * hook or a hand-written setting with it.
+         */
+        const stale = [
+            userFile,
+            ...agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
+        ].filter(f => hasOurHooks(f) && !hooksAreCurrent(f, livePort));
+        for (const f of stale) { installHooksInto(f, livePort); }
+        const healed = syncHooksToAccounts(
+            userFile, accountSettingsFiles().map(a => a.file), livePort);
+        if (healed.length || stale.length) {
+            console.log(`[agent-farm] X-265: refreshed ${stale.length} stale hook file(s) `
+                + `and carried the live hooks into ${healed.length} account directory(ies) — `
+                + 'a session started on a captured sign-in reads its OWN settings.json');
+        }
+    } catch { /* a settings repair must never stop the extension loading */ }
 
     // ---- YOUR TURN alerts — one setting per SESSION (U-66) ----
     //
@@ -17232,6 +17288,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return `Nothing was found to copy for ${plan.slot.engine} — the sign-in files were not `
                     + 'where this engine keeps them. Nothing was captured.';
             }
+            // ‼️ X-265 — AFTER the guard above, and counted separately. These
+            // are not the identity: a slot that got its credentials but no
+            // settings file is a real account with the machine defaults, while
+            // a slot that got only a settings file is nobody. Letting these
+            // raise `copied` would turn the second case into a silent success.
+            for (const c of plan.carries) {
+                if (!fs.existsSync(c.from)) { continue; }
+                if (fs.existsSync(c.to)) { continue; }
+                try { fs.copyFileSync(c.from, c.to); } catch { /* a settings copy never fails a capture */ }
+            }
             for (const l of plan.links) {
                 if (fs.existsSync(l.to)) { continue; }
                 if (!fs.existsSync(l.from)) { continue; }
@@ -21275,6 +21341,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const infraDeps: InfraBridgeDeps = {
         getAgents: () => agents,
         userSettingsFile: () => userSettingsPath(claudeDir()),
+        accountSettingsFiles,
         livePort: () => cfg().get<number>('livePort', 8377),
         // U-86 — the safe half of a port repair, and the same act the card's
         // "restart listener" button is. `start()` stops first.
@@ -21628,8 +21695,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * mirrors it into the monitor as the hook events it already understands.
      * Three rules keep the mirror honest:
      *
-     *   · **Claude is never mirrored.** Its CLI fires the real hooks; a mirror
-     *     beside them would draw every Claude session twice.
+     *   · **Claude is mirrored ONLY WHILE ITS OWN HOOKS ARE SILENT (X-265).**
+     *     "Claude is never mirrored" was right for as long as a Claude session
+     *     could be relied on to fire its own hooks, and multi-account isolation
+     *     ended that: `CLAUDE_CONFIG_DIR` moves the settings file the hooks live
+     *     in, so a session started on a captured sign-in posts NOTHING and this
+     *     rule turned it into a session nobody could see. Measured 2026-09-07 —
+     *     a whole day of Console work, hundreds of tool calls, no lane.
+     *
+     *     The dedup is exact rather than hopeful: `live.hasRealHooks(sid)` is
+     *     true the moment ANY payload arrives without an `engine` on it, which
+     *     only a real CLI hook does. So a session whose hooks work is mirrored
+     *     never, and one whose hooks are dead is mirrored throughout. The
+     *     window in between is the handful of milliseconds before the first
+     *     hook lands — and the mirror cannot even act inside it, because it has
+     *     no thread id to key a lane on until the engine names one.
+     *
+     *     ‼️ THIS IS THE SAFETY NET, NOT THE FIX. The hooks reaching an account
+     *     directory is (`syncHooksToAccounts`); this is what keeps a TERMINAL-less
+     *     Console session visible when they still do not, for whatever reason
+     *     nobody has thought of yet.
      *   · **Nothing is invented.** One prompt event per user message, one tool
      *     span per tool row, `Stop` when the turn really ends, `SessionEnd` when
      *     the session does. Cost and tokens are NOT mirrored — the transcript
@@ -21642,12 +21727,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const mirrorConsoleToLive = (id: string): void => {
         const s = consoleHost.get(id);
         if (!s) { return; }
-        const engine = (s.engine ?? 'claude').trim().toLowerCase();
-        // Claude fires its own hooks — mirroring it would double every card.
-        if (!engine || engine === 'claude') { return; }
+        const engine = (s.engine ?? '').trim().toLowerCase() || 'claude';
         // Until the engine names the thread there is no id to key a lane on.
         const sid = s.sessionId;
         if (!sid) { return; }
+        // ‼️ X-265 — Claude is mirrored only while its own hooks are silent. One
+        // real hook for this id and the mirror stands down for good: drawing
+        // beside a working hook stream would double every turn.
+        if (engine === 'claude' && live.hasRealHooks(sid)) { return; }
         const base = { session_id: sid, cwd: s.cwd, engine };
         let seen = liveMirror.get(id);
         if (!seen) {
@@ -30519,8 +30606,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const target = await vscode.window.showQuickPick(
                 [
                     {
+                        // ‼️ X-265 — "all sessions" is only true if the captured
+                        // accounts are written too: an account IS a config
+                        // directory and the engine reads its settings from there.
                         label: 'User settings — all sessions (recommended)',
-                        description: userFile,
+                        description: accountSettingsFiles().length
+                            ? `${userFile}  (+ ${accountSettingsFiles().length} captured account(s))`
+                            : userFile,
                         files: [userFile]
                     },
                     {
@@ -30539,6 +30631,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             );
             if (confirmed !== 'Install') { return; }
             const results = target.files.map(f => installHooksInto(f, port));
+            // ‼️ X-265 — and through to every captured account, AFTER the user
+            // file is written (the sync reads it to decide whether it may act).
+            // Skipped for the per-agent choice, which is deliberately narrow.
+            if (target.files.includes(userFile)) {
+                results.push(...syncHooksToAccounts(
+                    userFile, accountSettingsFiles().map(a => a.file), port));
+            }
             const failed = results.filter(r => !r.ok);
             if (failed.length) {
                 void vscode.window.showErrorMessage(
@@ -30559,7 +30658,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.removeHooks', async () => {
             const candidates = [
                 userSettingsPath(claudeDir()),
-                ...agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
+                ...agents.map(a => path.join(a.dir, '.claude', 'settings.local.json')),
+                // ‼️ X-265 — a hook this extension put into an account directory
+                // must be removable by the button that removes hooks. Left out,
+                // "remove" would report success and the accounts would go on
+                // posting — the worst kind of half-done.
+                ...accountSettingsFiles().map(a => a.file)
             ].filter(hasOurHooks);
             if (!candidates.length) {
                 void vscode.window.showInformationMessage('Agent Farm: no live hooks found to remove.');
