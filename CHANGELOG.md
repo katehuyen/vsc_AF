@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.439.0 - a retrospective audit, because "done" was the defendant's own testimony (2026-09-07)
+
+Twenty-eight sessions over five days closed item after item on the automatic
+Pro-account switching work, and every one of them was certified by the agent
+that did it. Nobody ever went back. The defects the user keeps finding by hand
+— a stray control sitting on top of the Live Timeline's text, a restart
+mechanism that blocks its own console session — are what that leaves behind.
+
+This ships the machine for going back, not another rule asking agents to be
+careful.
+
+**The unit of audit is a CLAIM, not a session.** Three sources, and only one of
+them is binding: the user's own turn (the specification), the agent's closing
+note (the claim — the defendant's testimony), and today's code and screen
+(reality, measured). A discrepancy between them is a finding. An audit that
+reads the closing note has audited nothing, which is precisely how each of
+these sessions certified the one before it.
+
+- **`tools/audit_extract.js`** — a closed session's transcript is 5-8 MB, so
+  nobody could re-read 28 of them and nobody did. This cuts one into a ~2 KB
+  dossier: every user turn **verbatim** (never summarised — it is the law), the
+  agent's closing prose, the handover note by name, the files it wrote, the
+  commits in its window, the item codes it named. `--list` prints the corpus
+  newest-first. Measured: `dbbbd9e7` → 6.5 KB out of 6.9 MB.
+- **`tools/audit_lint.js`** — the gate. A verdict other than ⬜ without a
+  `kanıt:` is refused; a citation of the form `path:line` that points at a file
+  that is not there, or a line past its end, is refused. **And `fix@` may not
+  equal `@`: nobody closes their own repair** — the agent that fixed it leaves
+  🔁 and the next one verifies. That separation has never existed here, and it
+  is the only structural difference between this and what already failed.
+  `--next` hands the baton to the next agent (the first unexamined row, or,
+  when there are none, the oldest repair still waiting for an independent
+  check). `--seed` appends missing session blocks; `--stats` counts verdicts.
+- **`test/test_audit_ledger.js`** — a gate that lives in a script nobody runs
+  would repeat the failure it was built to end, so the gate is measured: 14
+  checks proving it REFUSES each violation on its own fixture, that a legend's
+  example rows inside a fence are documentation rather than verdicts, and that
+  the real ledger is clean where the vault is mounted.
+
+The ledger itself is the user's document and lives in Obsidian, beside the
+project: `10_Notes/DENETİM - Sicil.md`. It holds the position across sessions —
+a handover note points at it, it does not replace it. Two tracks: **A**, the 28
+sessions newest-first; **B**, the surfaces, ordered by a measurement rather than
+a guess (how many of the 28 sessions wrote to each one — missions 9, console 7,
+engines 4, …). Track B exists because a stray checkbox appears in no claim
+anybody made, so a claim-by-claim audit would never find it.
+
+The agent-side procedure is `_REF/audit.md`, triggered from the constitution.
+
 ## 3.438.0 - the rule U-133 cost twice: draw the arity the user actually gets (2026-09-07)
 
 Documentation only, and it is the part of U-133 that will outlive the CSS.

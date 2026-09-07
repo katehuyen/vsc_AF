@@ -16,3 +16,6 @@ par.out
 scratchpad/
 
 .tmp_*
+
+# generated dossiers — the transcripts are the record; these are cut from them
+dist/audit/
