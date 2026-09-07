@@ -627,7 +627,10 @@ const SENTRY_DEFAULTS = {
         // ‼️ X-250 — `engine` is which catalogue the leader's model box offers.
         // The host answers it from `LEADER_ENGINE`, the one place that knows
         // what the leader runner can actually spawn.
-        leader: { model: 'haiku', dailyUsd: 2, maxUsd: 0.25, engine: 'claude' }
+        // ‼️ X-249 (2/n) — `engine` is now what the SETTING answers and `engines`
+        // is what the box may be moved to. One entry means no box is drawn: a
+        // select with a single option is a control that cannot be used.
+        leader: { model: 'haiku', dailyUsd: 2, maxUsd: 0.25, engine: 'claude', engines: ['claude'] }
     },
     idlePollMin: 10,
     permissionModes: [

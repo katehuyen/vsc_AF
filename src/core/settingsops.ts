@@ -227,6 +227,7 @@ const CATEGORY_OF: Record<string, string> = {
     sentryInstructionFiles: 'sentry',
     handoverSources: 'sentry',
     handoverFolders: 'sentry',
+    sentryLeaderEngine: 'sentry',
     sentryLeaderModel: 'sentry',
     sentryLeaderBudgetUsd: 'sentry',
     sentryLeaderMaxSeconds: 'sentry',

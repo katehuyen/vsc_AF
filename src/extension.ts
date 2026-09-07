@@ -136,7 +136,7 @@ import {
 import { SENTRY_DEFAULT_STALL_MIN, slotHealth } from './core/sentryWatch';
 import { SENTRY_DEFAULT_FAIL_LIMIT, sentryStep } from './core/sentryDriver';
 import {
-    DEFAULT_LEADER_CAPS, LEADER_ENGINE, LeaderBudgetState, LeaderCaps, LeaderOutcome, LeaderRunner,
+    DEFAULT_LEADER_CAPS, LeaderBudgetState, LeaderCaps, LeaderOutcome, LeaderRunner,
     leaderAllowed, runLeaderTurn
 } from './core/sentryLeader';
 import {
@@ -192,7 +192,7 @@ import {
     rememberManifest
 } from './core/launchManifest';
 import { describeDrift, runDrift, turnRuntimes } from './core/turnRuntime';
-import { installOneShotCaps } from './core/oneShot';
+import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
     addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
@@ -15930,6 +15930,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // left empty — the setting then goes on deciding, including
                 // when it is changed tomorrow. `newSentry` refuses an
                 // unreadable figure rather than storing a purse of zero.
+                // ‼️ X-249 (2/n) — which ENGINE the deciding turn spawns. Absent
+                // means the setting decides, as the model beside it does.
+                ...(input.leaderEngine ? { leaderEngine: String(input.leaderEngine) } : {}),
                 ...(input.leaderModel ? { leaderModel: String(input.leaderModel) } : {}),
                 // ‼️ X-249 — …and whose plan pays for that turn. Absent is not the
                 // machine's sign-in: it is the campaign's own pool answering.
@@ -25002,6 +25005,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const finish = (r: { text: string; costUsd?: number; error?: string }): void => {
             if (!done) { done = true; resolve(r); }
         };
+        /**
+         * ‼️ X-249 (2/n) — THE ENGINE IS AN AXIS NOW, AND ITS THREE FACTS COME
+         * FROM ONE PLACE.
+         *
+         * What used to be spelt here — the command name, the flags, and a
+         * Claude-shaped envelope reader — are the three things that differ per
+         * engine, and they are declared TOGETHER in `core/oneShot.ts`. This
+         * runner takes ARGV · ENV · ENVELOPE from the adapter and spells none
+         * of them, which is the whole reason the engine can be an axis at all:
+         * a runner that named its engine here would ignore whatever the
+         * campaign chose, and a box over it would be a box that lies.
+         *
+         * ‼️ AND AN ENGINE WITH NO ADAPTER IS REFUSED BY NAME. It is a failed
+         * turn, so the campaign carries on mechanically and the round says why
+         * — never a fall-through to `claude`, which would spend a window on a
+         * model nobody chose and report it as the one they did.
+         */
+        const spawnAs = oneShotArgv({ engine: o.engine, model: o.model, json: true });
+        if (!spawnAs) {
+            finish({
+                text: '',
+                error: `no one-shot turn is implemented for "${o.engine}" yet, `
+                    + `so the leader could not be woken — the engines that can be spawned `
+                    + `AND read are ${oneShotEngines().join(', ')}`
+            });
+            return;
+        }
         let child: cp.ChildProcess;
         try {
             /**
@@ -25015,18 +25045,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * engine directly, which is exactly why it was the one place the
              * account layer never reached.
              *
-             * ‼️ The variable's NAME is not written here. `launchAccountEnv`
-             * asks the engine's own adapter, and `spawnEnvironment` is where a
-             * layer's `null` means REMOVE rather than blank — both already
-             * solved once, for every other spawn in the farm.
+             * ‼️ The variable's NAME is not written here, and neither is the
+             * ORDER the layers go on in: `oneShotEnv` is the same assembly the
+             * fleet's other short turns already use, so "the route wins over
+             * the account wins over the window" is argued once. No provider
+             * route is installed on that seam today, which is byte for byte the
+             * environment this spawn built by hand before.
              */
-            child = cp.spawn(LEADER_ENGINE, ['--model', o.model, '--output-format', 'json', '-p'], {
+            child = cp.spawn(spawnAs.cmd, spawnAs.args, {
                 cwd, windowsHide: true, shell: process.platform === 'win32',
-                // No provider route: the leader turn is a plain engine call on a
-                // plan, and inventing a route here would put a key in front of a
-                // turn nobody asked to bill that way.
-                env: spawnEnvironment(process.env,
-                    [launchAccountEnv({ engine: LEADER_ENGINE, account: o.account })], undefined)
+                env: oneShotEnv({ engine: o.engine, account: o.account })
             });
         } catch (e) { finish({ text: '', error: String((e as Error)?.message ?? e) }); return; }
 
@@ -25043,7 +25071,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         child.on('error', e => { clearTimeout(timer); finish({ text: '', error: String(e?.message ?? e) }); });
         child.on('close', () => {
             clearTimeout(timer);
-            const env = parsePlannerEnvelope(out.trim());
+            // The reply's shape is the ENGINE's, so it is read by the same
+            // adapter that built the line — never by a Claude-shaped reader
+            // that would silently return null for anything else.
+            const env = oneShotEnvelope(o.engine, out.trim());
             if (!env) {
                 // Not an envelope: still hand the prose over. The parser above
                 // will refuse it and record the fault — reporting "no output"
@@ -25059,7 +25090,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(env.isError ? { error: `the engine reported an error (${env.subtype ?? 'unknown'})` } : {})
             });
         });
-        try { child.stdin?.end(o.prompt); } catch { /* the close handler will report it */ }
+        // The vector carries no prompt on purpose — the adapter says which
+        // channel this engine reads it on, and for every engine that has one
+        // today that channel is stdin.
+        if (spawnAs.stdin) {
+            try { child.stdin?.end(o.prompt); } catch { /* the close handler will report it */ }
+        }
     });
 
     /** The leash in force for one campaign: its own overrides above the
@@ -25071,6 +25107,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
         const cfg = afConfig();
         return {
+            /**
+             * ‼️ X-249 (2/n) — AND THE ENGINE READS THE SAME CHAIN AS THE MODEL.
+             *
+             * It is policy in the sense the model and the three numbers are:
+             * the same meaning on every campaign, so campaign → setting →
+             * default is the right order. What it is NOT is `account`, two
+             * fields below, where a farm-wide answer would spend somebody's
+             * plan outside the pool their campaign was given.
+             */
+            engine: String(rec.leaderCaps?.engine ?? cfg.get<string>('sentryLeaderEngine') ?? '').trim()
+                || DEFAULT_LEADER_CAPS.engine,
             model: String(rec.leaderCaps?.model ?? cfg.get<string>('sentryLeaderModel') ?? '').trim(),
             maxSeconds: n(rec.leaderCaps?.maxSeconds ?? cfg.get<number>('sentryLeaderMaxSeconds'), DEFAULT_LEADER_CAPS.maxSeconds),
             maxUsd: n(rec.leaderCaps?.maxUsd ?? cfg.get<number>('sentryLeaderMaxUsd'), DEFAULT_LEADER_CAPS.maxUsd),
@@ -25534,7 +25581,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // ‼️ X-250 — AND WHICH ENGINE'S CATALOGUE THE MODEL BOX SHOULD OFFER.
                     // The page must not spell an engine name; it asks, and the answer
                     // comes from the one place that knows what the runner spawns.
-                    return { model: c.model, dailyUsd: c.dailyUsd, maxUsd: c.maxUsd, engine: LEADER_ENGINE };
+                    //
+                    // ‼️ X-249 (2/n) — `engine` IS NOW THE SETTING'S ANSWER, not a
+                    // constant, and `engines` is what the box may be MOVED to. A
+                    // choice of one is not drawn: the page renders the select only
+                    // when there is really more than one, so the day a second adapter
+                    // is measured the box appears with no edit here or there.
+                    return {
+                        model: c.model, dailyUsd: c.dailyUsd, maxUsd: c.maxUsd,
+                        engine: c.engine, engines: oneShotEngines()
+                    };
                 })()
             },
             idlePollMin: cfg().get<number>('sentryIdlePollMin', SENTRY_DEFAULT_POLL_MIN),
@@ -33451,6 +33507,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'the campaign\'s own pool answers - the same account the next round would open '
                 + 'on. It is NOT the machine sign-in: that is what the turn used to run on by '
                 + 'accident, outside the pool and invisible to the rotation), '
+                + '‼️ leaderEngine? (WHICH ENGINE THE LEADER TURN SPAWNS. It was a constant until '
+                + 'X-249: the runner could build one command line and read one reply envelope, so a '
+                + 'settable field would have been a box that lies. Both halves are the engine '
+                + 'adapter\'s now, so an engine nobody has written one for is REFUSED BY NAME - the '
+                + 'refusal names the engines that can really be spawned AND read - rather than '
+                + 'quietly becoming claude. Omit it and the agentFarm.sentryLeaderEngine setting '
+                + 'decides), '
                 + '‼️ leaderModel? / leaderDailyUsd? / leaderMaxUsd? (THE LEADER\'S OWN LEASH for '
                 + 'this campaign only - the model its short deciding turn runs on, the dollars it '
                 + 'may spend per calendar day, and what one turn may cost before the NEXT is '
@@ -33497,6 +33560,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(optStr(args, 'preset') ? { preset: optStr(args, 'preset') } : {}),
                     ...(Array.isArray(a.conditions) ? { conditions: a.conditions as Condition[] } : {}),
                     // …and the leader's leash, absent when it was not asked for.
+                    ...(optStr(args, 'leaderEngine') ? { leaderEngine: optStr(args, 'leaderEngine') } : {}),
                     ...(optStr(args, 'leaderModel') ? { leaderModel: optStr(args, 'leaderModel') } : {}),
                     ...(optStr(args, 'leaderAccount') ? { leaderAccount: optStr(args, 'leaderAccount') } : {}),
                     ...(a.leaderDailyUsd !== undefined ? { leaderDailyUsd: a.leaderDailyUsd } : {}),

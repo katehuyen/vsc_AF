@@ -190,6 +190,20 @@ export interface SentryAsk {
      */
     leaderModel?: string;
     /**
+     * ‼️ X-249 (2/n) — WHICH ENGINE THE LEADER TURN SPAWNS.
+     *
+     * It used to be a constant, because the runner could build one command line
+     * and read one reply envelope. Both are now the engine adapter's
+     * (`core/oneShot.ts`), so this is a real choice — and an engine nobody has
+     * written an adapter for is refused BY NAME at the spawn rather than
+     * quietly becoming `claude`, which is what a constant did for ever.
+     *
+     * Absent means the setting decides, exactly like `leaderModel`: an engine
+     * means the same thing on every campaign, so it is policy. Naming one here
+     * also chooses which catalogue the model box offers.
+     */
+    leaderEngine?: string;
+    /**
      * ‼️ X-249 — WHOSE PLAN PAYS FOR THE LEADER TURN, as a slot id.
      *
      * Absent is not "the machine's sign-in": it means the campaign's own pool
@@ -362,11 +376,15 @@ function money(v: unknown, hi: number): number | undefined {
  * wakes: the loudest possible way to fail silently.
  */
 function leaderCapsOf(ask: SentryAsk): Partial<LeaderCaps> | undefined {
+    const engine = String(ask.leaderEngine ?? '').trim();
     const model = String(ask.leaderModel ?? '').trim();
     const account = String(ask.leaderAccount ?? '').trim();
     const dailyUsd = money(ask.leaderDailyUsd, 10000);
     const maxUsd = money(ask.leaderMaxUsd, 10000);
     const caps: Partial<LeaderCaps> = {
+        // Same rule as the model beside it: named is recorded, unnamed is left
+        // ABSENT so the setting goes on deciding, including when it changes.
+        ...(engine ? { engine } : {}),
         ...(model ? { model } : {}),
         // Same rule as the rest of this function: an account nobody named is
         // left ABSENT rather than written as empty, so the resolution stays

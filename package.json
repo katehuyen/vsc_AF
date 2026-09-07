@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.427.0",
+  "version": "3.428.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9771,6 +9771,11 @@
           },
           "default": [],
           "markdownDescription": "The POOL of your own saved instructions a sentry campaign draws on, as an ordered list of markdown files (the X-188 path variables are allowed: `${vault}`, `${workspace}`, `${projectNotes}`, `${today}` …). Same shape as Saved prompts, and read TWICE for two jobs: a block whose heading names a verdict — item-done, clean-handover, nothing-to-continue, hit-the-wall, or * for any — is a TEMPLATE and fills mechanically; every block, including the ones whose heading names something of your own (`Genel tembihler`, `Sabaha karşı`), is MATERIAL the leader blends into the next session's opening words. It is material, never a template it copies.\n\n`agentFarm.sentryTemplatesFile` is read first and this list follows it — they are assembled, not chosen between, so a file named in both is read once. A path whose variables cannot be filled is skipped WITH ITS REASON rather than pointed at the wrong folder; a path that is gone is reported and the rest of the pool still reads. Empty is the normal case: the built-in templates answer every verdict with no file of yours anywhere. `sentry.instructions` on the bridge shows what was read, what was refused, and what a leader woken on a given verdict would actually be given."
+        },
+        "agentFarm.sentryLeaderEngine": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The ENGINE a sentry LEADER turn spawns. It was a constant until X-249, and honestly so: the runner could build one command line and read one reply envelope, so a settable box would have been a box that lies. Both halves are now the engine's own adapter, so this is a real choice — and an engine nobody has written an adapter for is REFUSED BY NAME, which names the ones that can be spawned AND read, rather than quietly spawning `claude` and reporting a turn nobody asked for. A campaign may name its own; this is what answers when none does. Empty = `claude`."
         },
         "agentFarm.sentryLeaderModel": {
           "type": "string",

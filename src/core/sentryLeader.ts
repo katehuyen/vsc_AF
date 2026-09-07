@@ -271,6 +271,18 @@ export function parseLeaderReply(text: unknown): LeaderReply {
 /* -------------------------------------------------------------- the leash */
 
 export interface LeaderCaps {
+    /**
+     * ‼️ X-249 (2/n) — WHICH ENGINE THE TURN SPAWNS; '' = the campaign never
+     * chose one, so the setting and then the default answer.
+     *
+     * It is POLICY, in the sense the other four are: it means the same thing on
+     * every campaign, so a farm-wide setting is the right shape for it. An
+     * engine nobody has written a one-shot adapter for is refused by name where
+     * the process is actually spawned — this module keeps no adapter list,
+     * because a second place that knew which engines are real is a second place
+     * that can be wrong.
+     */
+    engine: string;
     /** the model the turn runs on; '' = the campaign never chose one */
     model: string;
     /** seconds one turn may take before it is cut */
@@ -300,22 +312,23 @@ export interface LeaderCaps {
     account: string;
 }
 
-/**
- * ‼️ THE ENGINE THE LEADER RUNNER CAN ACTUALLY SPAWN TODAY — named here so that
- * exactly one place knows it, and so a surface asking "which models may the
- * leader be set to" has somewhere honest to ask.
- *
- * It is a CONSTANT rather than a choice because the runner is one
- * (`sentryLeaderRunner` in `src/extension.ts` spawns this engine and no other),
- * and a settable field over a runner that ignores it would be a box that lies.
- * X-249 turns it into a real axis; until then this is the truth, in one place.
- */
-export const LEADER_ENGINE = 'claude';
-
 /** ‼️ CHEAP BY DEFAULT, AND NAMED ONCE. The constitution's own test and cost
  *  policy: expensive models are not what an unattended loop runs on. The user
  *  can raise it from the settings, deliberately, having read the number. */
 export const DEFAULT_LEADER_CAPS: LeaderCaps = {
+    /**
+     * ‼️ X-249 (2/n) — THE DEFAULT ENGINE, WHICH IS NO LONGER A CONSTANT.
+     *
+     * This was `LEADER_ENGINE`, and the reason it was a constant was honest:
+     * the runner could spawn one engine and read one envelope, so a settable
+     * field would have been a box that lies. Both halves are now the engine
+     * adapter's (`core/oneShot.ts` — ARGV and ENVELOPE declared together), so
+     * the runner spawns whatever is named and REFUSES BY NAME what has no
+     * adapter. A default rather than an empty answer, exactly like the model
+     * above it and unlike `account` below: an engine nobody named is a missing
+     * answer, not a delegation.
+     */
+    engine: 'claude',
     model: 'haiku',
     maxSeconds: 120,
     maxUsd: 0.25,
@@ -440,7 +453,7 @@ export function recordLeaderTurn(
  * plan pays, and the two would disagree the first time a campaign named one.
  */
 export type LeaderRunner = (o: {
-    prompt: string; model: string; account: string; timeoutMs: number;
+    prompt: string; engine: string; model: string; account: string; timeoutMs: number;
 }) => Promise<{ text: string; costUsd?: number; error?: string }>;
 
 export interface LeaderOutcome {
@@ -487,6 +500,11 @@ export async function runLeaderTurn(
     }
 
     const model = (caps.model || '').trim() || DEFAULT_LEADER_CAPS.model;
+    // ‼️ X-249 (2/n) — LIKE THE MODEL, NOT LIKE THE ACCOUNT. Nobody naming an
+    // engine is a missing answer with a documented default; nobody naming an
+    // account is the caller saying "you decide". The two fields look alike on
+    // the record and mean opposite things, so both are resolved out loud.
+    const engine = (caps.engine || '').trim() || DEFAULT_LEADER_CAPS.engine;
     // ‼️ X-249 — NOT `|| DEFAULT`, unlike the model. An unnamed account is not a
     // missing answer waiting for a fallback, it is the caller saying "you
     // decide"; substituting anything here would make this module a second place
@@ -496,7 +514,7 @@ export async function runLeaderTurn(
     let text = '', costUsd = 0, error = '';
     try {
         const res = await run({
-            prompt: buildLeaderBrief(i), model, account,
+            prompt: buildLeaderBrief(i), engine, model, account,
             timeoutMs: Math.max(1, num(caps.maxSeconds, DEFAULT_LEADER_CAPS.maxSeconds)) * 1000
         });
         text = String(res?.text ?? '');

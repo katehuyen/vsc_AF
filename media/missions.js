@@ -3248,6 +3248,9 @@
          */
         // ‼️ X-249 — and whose plan pays for that turn. Empty is not the
         // machine's sign-in: it is the campaign's own pool answering.
+        // ‼️ X-249 (2/n) — and which ENGINE it spawns. Empty means the setting
+        // decides, exactly like the model beside it.
+        leaderEngine: '',
         leaderModel: '', leaderAccount: '', leaderDailyUsd: '', leaderMaxUsd: ''
     };
     /** The three the dictionary declares, plus what an EDITED one is called. */
@@ -3951,8 +3954,37 @@
      * No accounts for that engine draws no box: a control with no referent is
      * not drawn.
      */
+    /**
+     * ‼️ X-249 (2/n) — THE ENGINE IN FORCE FOR THE LEADER, in one place.
+     *
+     * It was `d.engine` read straight — right while the engine was a constant,
+     * and wrong the moment it became a choice: the model catalogue and the
+     * account list are both cut by it, and a form that offered one engine's
+     * models beside another engine's sign-ins would be drawing a setup that
+     * cannot launch. `d.engine` is now what the SETTING says, so the box in
+     * front of the reader wins over it.
+     */
+    function leaderEngineOf(d) {
+        return String(sentryForm.leaderEngine || (d && d.engine) || '').trim();
+    }
+    function leaderEngineOpts(d) {
+        // A choice of ONE is not a choice: the box is not drawn until a second
+        // adapter has really been measured, at which point it appears by itself.
+        const list = ((d && d.engines) || []).filter(Boolean);
+        if (list.length < 2) { return ''; }
+        const sel = sentryForm.leaderEngine;
+        return [C.option('', '— setting: ' + (d.engine || 'unset') + ' —', {
+            selected: !sel,
+            detail: 'Nothing named here, so the agentFarm.sentryLeaderEngine setting decides — '
+                + 'including when you change it tomorrow.'
+        })].concat(list.map(e => C.option(e, e, {
+            selected: e === sel,
+            detail: 'This engine publishes a one-shot turn Agent Farm can both spawn AND read. '
+                + 'An engine missing from this list is refused by name rather than run.'
+        }))).join('');
+    }
     function leaderAccountRows(s, d) {
-        const eng = String((d && d.engine) || '').trim().toLowerCase();
+        const eng = String(leaderEngineOf(d) || '').trim().toLowerCase();
         return (s.accountPool || []).filter(a => a && a.id
             && (!eng || String(a.engine || '').trim().toLowerCase() === eng));
     }
@@ -4011,6 +4043,16 @@
             <span class="flabel" title="${C.esc('What the LEADER turn may spend on this campaign. '
                 + 'It is not the round\'s own model or budget: the leader is the short, cheap turn that '
                 + 'decides what the next round should say, and it only runs at all when a condition above holds.')}">Leader</span>
+            ${leaderEngineOpts(d) ? box('s-lengine', 'leaderEngine',
+                { label: 'Engine', now: d.engine,
+                    mirror: (sentryForm.leaderEngine || d.engine)
+                        + (sentryForm.leaderEngine ? '' : ' — what the setting says') },
+                'Which engine the leader turn spawns. It was a constant until X-249, and honestly '
+                + 'so: the runner could build one command line and read one reply envelope, so a '
+                + 'box over it would have been a box that lies. Both halves are the engine’s own '
+                + 'adapter now.\n\nIt also decides which catalogue the Model box below offers and '
+                + 'which sign-ins the Account box can name — an engine reads only its own.',
+                '', leaderEngineOpts(d)) : ''}
             ${box('s-lmodel', 'leaderModel',
                 { label: 'Model', now: d.model || 'engine default', mirror: d.model || 'the engine default' },
                 'The leader turn is short and mechanical work — the constitution\'s own cost rule is that '
@@ -4022,7 +4064,7 @@
                 // a choice — at which point this line needs no edit.
                 // SHORTHAND: the empty option carries the figure in force, because a
                 // select has no placeholder and the reader must not have to open it.
-                modelOptsFor(d.engine || '', sentryForm.leaderModel,
+                modelOptsFor(leaderEngineOf(d), sentryForm.leaderModel,
                     '— setting: ' + (d.model || 'engine default') + ' —'))}
             ${leaderAccountOpts(s, d) ? box('s-laccount', 'leaderAccount',
                 { label: 'Account', now: 'the pool decides', mirror: leaderAccountMirror(s, d) },
@@ -4337,6 +4379,7 @@
         sentryForm.ceiling = v('s-ceiling');
         sentryForm.safetyBufferMin = v('s-buffer');
         sentryForm.failLimit = v('s-fail');
+        sentryForm.leaderEngine = v('s-lengine');
         sentryForm.leaderModel = v('s-lmodel');
         sentryForm.leaderAccount = v('s-laccount');
         sentryForm.leaderDailyUsd = v('s-lday');
@@ -4408,6 +4451,11 @@
          */
         const sEng = document.getElementById('s-engine');
         if (sEng) { sEng.addEventListener('change', () => { readSentryForm(); render(); }); }
+        // ‼️ X-249 (2/n) — SAME REASON, ONE ROW DOWN. The leader's engine cuts its
+        // own model catalogue and its own account list, so the row has to be redrawn
+        // when it moves or the reader is choosing from the previous engine's words.
+        const sLEng = document.getElementById('s-lengine');
+        if (sLEng) { sLEng.addEventListener('change', () => { readSentryForm(); render(); }); }
         w('s-caret', () => { sentryOpen = !sentryOpen; render(); });
         w('s-new', () => { sentryFormOpen = true; sentryErr = ''; sentryOpen = true; render(); });
         w('s-cancel', () => { readSentryForm(); sentryFormOpen = false; sentryErr = ''; render(); });
@@ -4447,6 +4495,7 @@
                     // changing it tomorrow changes this campaign too. Sending
                     // today's placeholder back would freeze it on and nothing
                     // on any surface would say the campaign had been pinned.
+                    leaderEngine: sentryForm.leaderEngine.trim() || undefined,
                     leaderModel: sentryForm.leaderModel.trim() || undefined,
                     leaderAccount: sentryForm.leaderAccount.trim() || undefined,
                     leaderDailyUsd: String(sentryForm.leaderDailyUsd).trim() || undefined,

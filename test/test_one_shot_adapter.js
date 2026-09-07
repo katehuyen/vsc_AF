@@ -69,6 +69,40 @@ const M = require(path.join(ROOT, 'out', 'core', 'missions.js'));
         one.oneShotEnvelope('codex', env) === null);
 }
 
+// ---------- the SPAWN form: argv, because a prompt is not a shell argument ----------
+{
+    // ‼️ X-249 (2/n) — WHY A SECOND FORM RATHER THAN ONE.
+    //
+    // `line` builds a shell string and puts the prompt inside `-p "…"`. That is
+    // right for the fleet's short turns, whose prompts they shape themselves. It
+    // is WRONG for the leader turn: several kilobytes of the user's own words,
+    // quotation marks and newlines, which is exactly the class of damage a dozen
+    // inner rounds of `sanitizePrompt` exist to avoid. So the adapter publishes
+    // the same turn as an ARGUMENT VECTOR too, and the prompt goes down STDIN.
+    const a = one.oneShotArgv({ engine: 'claude', model: 'haiku', json: true });
+    ok('the spawn form names the command on its own', a && a.cmd === 'claude');
+    ok('…with the model as two arguments rather than one quoted word',
+        a && a.args.join(' ') === '--model haiku --output-format json -p');
+    ok('‼️ THE PROMPT IS NOT IN THE VECTOR — it goes down stdin, which is the point',
+        a && a.stdin === true
+        && !one.oneShotArgv({ model: 'haiku', prompt: 'quote " and newline' })
+            .args.some(function (x) { return x.indexOf('quote') >= 0; }));
+    ok('an unstated model asks for none, rather than inventing a default here',
+        one.oneShotArgv({ json: true }).args.join(' ') === '--output-format json -p');
+    ok('…and an unstated envelope asks for none either',
+        one.oneShotArgv({}).args.join(' ') === '-p');
+    ok('‼️ an engine nobody has written an adapter for is refused by name here too',
+        one.oneShotArgv({ engine: 'codex' }) === undefined);
+    // The shell form must be able to say the same two things, or a caller that
+    // moves between the forms silently loses its model.
+    ok('the shell form states the same dimensions',
+        one.oneShotLine({ model: 'haiku', json: true, prompt: 'x' })
+            === 'claude --model haiku --output-format json -p "x"');
+    ok('…and still takes the raw flag string the fleet already passes',
+        one.oneShotLine({ args: '--model sonnet', prompt: 'x' })
+            === 'claude --model sonnet -p "x"');
+}
+
 // ---------- ‼️ ONE READER: missions must not keep a second copy ----------
 {
     // `parsePlannerEnvelope` is the name four call sites already import. It
@@ -100,9 +134,14 @@ const M = require(path.join(ROOT, 'out', 'core', 'missions.js'));
     // nobody can read is worse than one that is refused — it burns a window and
     // reports silence.
     one.oneShotEngines().forEach(function (e) {
+        const ad = one.oneShotAdapter(e);
         ok('every engine that can be spawned can also be read: ' + e,
-            !!one.oneShotAdapter(e) && typeof one.oneShotAdapter(e).envelope === 'function'
-            && typeof one.oneShotAdapter(e).line === 'function');
+            !!ad && typeof ad.envelope === 'function' && typeof ad.line === 'function');
+        // ‼️ AND IT CAN BE SPAWNED BOTH WAYS. A registration carrying only the
+        // shell form leaves the leader — the one caller that must not go through a
+        // shell — with no way to run on that engine at all.
+        ok('…and spawned without a shell, which is what a long prompt needs: ' + e,
+            !!ad && typeof ad.argv === 'function');
     });
     ok('‼️ …and oneShotLine still refuses an unadapted engine by name',
         one.oneShotLine({ engine: 'codex', prompt: 'x' }) === undefined);

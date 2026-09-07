@@ -2,6 +2,58 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.428.0 - X-249: the leader turn chooses its engine, and an unwired one is refused by name (2026-09-07)
+
+**CLOSES X-249.** The user's own reading opened it: "we are building a sentry
+system, we are making the work multi-engine — but you cannot even pick an
+engine other than Claude for the leader agent; they have not made the system
+they just built multi anything."
+
+**`LEADER_ENGINE` is gone, and it was not laziness while it lasted.** Its own
+comment said what it was: the runner could spawn one engine and read one reply
+envelope, so a settable field over it would have been a box that lies. Both of
+those halves are the engine adapter's now (`core/oneShot.ts`, 3.427.0), so the
+constant became `LeaderCaps.engine` — a real axis, resolved campaign → setting
+→ default exactly as the model beside it is.
+
+**What the runner spells now: nothing.** It takes three engine-specific facts
+from the adapter and no more — ARGV, ENV and ENVELOPE. The command name and its
+flags come from `oneShotArgv`, the environment from `oneShotEnv` (the same
+assembly every other spawn in the farm goes through, so "the route wins over
+the account wins over the window" is argued once), and the reply is read by the
+adapter that built the line rather than by a Claude-shaped reader that would
+return `null` for anything else.
+
+**‼️ And the leader KEEPS its own process management, deliberately.** It was
+measured before it was moved: `execOneShot` builds a shell string and puts the
+prompt inside `-p "…"`. The leader's prompt is several kilobytes of the user's
+own words, quotation marks and newlines — putting it through a shell is exactly
+the class of damage a dozen inner rounds of `sanitizePrompt` exist to avoid. So
+the adapter publishes a SPAWN form beside the shell form (`argv(want)` → command
+and argument vector, prompt down stdin), and the leader keeps its own cut, its
+own kill sentence, its own streams, and its habit of handing the prose over when
+the envelope cannot be read. A plain move onto `execOneShot` would have been a
+regression wearing the shape of a cleanup.
+
+**An engine nobody has written an adapter for is refused BY NAME** — and the
+refusal names the ones that can really be spawned AND read. Never a
+fall-through to `claude`, which would spend a window on a model nobody chose
+and report it as the one they did.
+
+**On the form, a choice of one is not drawn.** The Leader row gets an Engine box
+only when a second adapter has really been measured; today there is one, so no
+box appears. When it does appear it cuts the two lists under it — the Model box
+offers the named engine's catalogue and the Account box only the sign-ins that
+engine can read, because a form offering one engine's models beside another
+engine's accounts draws a setup that cannot launch. Both states are pinned by
+page tests against the real page.
+
+Also: `agentFarm.sentryLeaderEngine` (the farm-wide answer when a campaign names
+none), `leaderEngine` on `sentry.start` and on the Missions form's own message.
+
+309 files + 1 · 19 new tests in `test_leader_engine.js`, 10 in
+`test_sentry_form.js`, 9 in `test_one_shot_adapter.js`.
+
 ## 3.427.0 - X-249 (2/n) · X-260 (2/n): a one-shot turn is a per-engine adapter, line and envelope together (2026-09-07)
 
 **Partial — the shared path both items were blocked on. Neither item closes here.**

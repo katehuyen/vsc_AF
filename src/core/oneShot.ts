@@ -59,8 +59,37 @@ export interface OneShotWant {
     engine?: string;
     /** Unstated leaves the choice to the resolver, exactly as a task does. */
     account?: string;
+    /**
+     * ‼️ X-249 (2/n) — A DIMENSION IS STATED, NOT SPELT.
+     *
+     * `args` is a raw flag string, which only the SHELL form can carry: an
+     * argument vector cannot be split back out of it without redoing the
+     * quoting the shell was going to do. `model` and `json` are the two things
+     * a caller actually means, so BOTH forms can express them and the flag
+     * names stay the engine adapter's business — which is the whole reason the
+     * engine is an axis rather than a constant.
+     */
+    model?: string;
+    /** Ask for the machine-readable envelope `envelope()` knows how to read. */
+    json?: boolean;
+    /** Extra flags, already formed, for the shell form only. */
     args?: string;
     prompt?: string;
+}
+
+/**
+ * The SPAWN form of one turn: a command and an argument vector, with the prompt
+ * going down STDIN rather than through a shell.
+ *
+ * ‼️ `stdin` IS NOT A SETTING, IT IS A STATEMENT ABOUT THIS ENGINE — the vector
+ * carries no prompt, so a caller that ignored it would spawn a turn asking
+ * nothing at all.
+ */
+export interface OneShotArgv {
+    cmd: string;
+    args: string[];
+    /** true = write the prompt to the child's stdin and close it. */
+    stdin: boolean;
 }
 
 export interface OneShotResult {
@@ -127,6 +156,18 @@ export interface OneShotAdapter {
     engine: string;
     /** Build the command line for one short turn. */
     line(want: OneShotWant): string;
+    /**
+     * ‼️ THE SAME TURN WITHOUT A SHELL, and it is not a convenience.
+     *
+     * The leader turn's prompt is several kilobytes of the user's own words,
+     * quotation marks and newlines. Putting that inside `-p "…"` is exactly the
+     * class of damage a dozen inner rounds of `sanitizePrompt` exist to avoid,
+     * so the one caller whose prompt it is spawns with an argument vector and
+     * writes the prompt to stdin. A registration carrying only `line` would
+     * leave that caller unable to run on the engine at all — which is why the
+     * test refuses one.
+     */
+    argv(want: OneShotWant): OneShotArgv;
     /** Read what the engine printed. `null` = not an envelope at all, which the
      *  caller must report honestly rather than treat as an empty reply. */
     envelope(stdout: string): OneShotEnvelope | null;
@@ -140,11 +181,24 @@ const asObj = (s: string): Record<string, unknown> | undefined => {
     } catch { return undefined; }
 };
 
+/**
+ * The stated dimensions, in this engine's own flags — written once so the two
+ * forms of the same turn cannot drift apart.
+ */
+const claudeFlags = (want: OneShotWant): string[] => [
+    ...(String(want.model ?? '').trim() ? ['--model', String(want.model).trim()] : []),
+    ...(want.json ? ['--output-format', 'json'] : [])
+];
+
 const claudeAdapter: OneShotAdapter = {
     engine: 'claude',
     line(want) {
-        const args = (want.args ?? '').trim();
-        return `claude ${args ? args + ' ' : ''}-p "${want.prompt ?? ''}"`;
+        const head = [...claudeFlags(want), (want.args ?? '').trim()].filter(Boolean).join(' ');
+        return `claude ${head ? head + ' ' : ''}-p "${want.prompt ?? ''}"`;
+    },
+    /** `-p` with no value: this CLI then reads the prompt from stdin. */
+    argv(want) {
+        return { cmd: 'claude', args: [...claudeFlags(want), '-p'], stdin: true };
     },
     /** Tolerates leading noise lines: the CLI prints warnings before the JSON. */
     envelope(stdout) {
@@ -218,6 +272,17 @@ export function oneShotEnvelope(engine: string | undefined, stdout: string): One
 export function oneShotLine(want: OneShotWant): string | undefined {
     const a = oneShotAdapter(engineOf(want));
     return a ? a.line(want) : undefined;
+}
+
+/**
+ * The same turn as a command and an argument vector, for the one caller that
+ * must not go through a shell. `undefined` is the same refusal by name
+ * `oneShotLine` gives — a caller that fell back to another engine would spend a
+ * window on a model nobody asked for.
+ */
+export function oneShotArgv(want: OneShotWant): OneShotArgv | undefined {
+    const a = oneShotAdapter(engineOf(want));
+    return a ? a.argv(want) : undefined;
 }
 
 /**

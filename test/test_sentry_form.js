@@ -547,5 +547,83 @@ const rotBtn = (r, id) => qsa(r, '[data-srot]').filter(e => e.dataset.srot === i
         !!m && m.input.pool === undefined && m.input.rotation === undefined);
 }
 
+// ------------------------------------------- X-249 (2/n): the leader's ENGINE
+//
+// The engine the leader turn spawns was a constant, and the form said so by
+// having no box for it. It is an axis now — but a select with ONE option is a
+// control nobody can use, so the box is drawn only when a second adapter has
+// really been measured. Both states are pinned here, because the failure that
+// matters is the one where a box appears offering a single choice, or where the
+// box appears and the two lists under it still belong to the previous engine.
+
+/** The options of one select, by id — no regex, so a page test never has to
+ *  reason about which of two selects a lazy match landed on. */
+function selectOf(H, id) {
+    const open = H.indexOf('<select id="' + id + '">');
+    if (open < 0) { return ""; }
+    const end = H.indexOf("</select>", open);
+    return end < 0 ? "" : H.slice(open, end);
+}
+{
+    const r = openForm();
+    ok("with one adapter the leader row draws NO engine box", !byId(r, 's-lengine'));
+    ok("…and the model box is still cut by the engine the setting names",
+        !!byId(r, 's-lmodel'));
+}
+function openFormTwoEngines() {
+    const d = fixture.data();
+    d.sentry.defaults.leader.engines = ['claude', 'codex'];
+    const r = runPage(fixture.script, d, fixture.window || {});
+    press(r, 's-new');
+    return r;
+}
+{
+    const r = openFormTwoEngines();
+    ok("‼️ a second measured adapter makes the engine box appear by itself",
+        !!byId(r, 's-lengine'));
+    ok("…with an empty option that names the setting in force, not a blank",
+        selectOf(html(r), 's-lengine').indexOf('— setting: claude —') > 0);
+
+    // ‼️ THE TWO LISTS UNDER IT FOLLOW. A form offering one engine's models
+    // beside another engine's sign-ins draws a setup that cannot launch.
+    typeIn(r, 's-lengine', 'codex');
+    byId(r, 's-lengine').fire('change');
+    const H2 = html(r);
+    const mbox = selectOf(H2, 's-lmodel');
+    ok("‼️ …the leader model box offers what the NAMED engine publishes",
+        mbox.indexOf('gpt-5-codex') > 0);
+    ok("‼️ …and not the other engine's aliases", mbox.indexOf('>sonnet<') < 0);
+    const abox = selectOf(H2, 's-laccount');
+    const codexIds = (fixture.data().sentry.accountPool || [])
+        .filter(a => a.engine === 'codex').map(a => a.id);
+    const claudeIds2 = (fixture.data().sentry.accountPool || [])
+        .filter(a => a.engine === 'claude').map(a => a.id);
+    ok("‼️ …and the account box names that engine's captured sign-ins",
+        codexIds.length > 0 && codexIds.every(id => abox.indexOf('"' + id + '"') > 0));
+    ok("‼️ …and none of the other engine's, which that engine never reads",
+        claudeIds2.length > 0 && claudeIds2.every(id => abox.indexOf('"' + id + '"') < 0));
+
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    ok("Start carries the engine that was picked", !!m && m.input.leaderEngine === 'codex');
+}
+{
+    // Untouched sends NOTHING, on the same rule as the purse beside it: an
+    // empty string would record a choice nobody made and freeze the setting.
+    const r = openFormTwoEngines();
+    typeIn(r, 's-project', 'p1');
+    typeIn(r, 's-agent', 'a1');
+    typeIn(r, 's-prompt', 'go');
+    r.posted.length = 0;
+    press(r, 's-start');
+    const m = r.posted.find(x => x.type === 'sentryStart');
+    ok("‼️ …and an untouched engine box sends nothing, so the setting goes on deciding",
+        !!m && m.input.leaderEngine === undefined);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
