@@ -135,3 +135,49 @@ export function reviveInit(row: ReviveSource & { sessionId?: string }): ReviveIn
     if (row.superpowers !== undefined) { out.superpowers = row.superpowers; }
     return out;
 }
+
+/**
+ * ‼️ X-266 — THE SCROLLBACK A REVIVE CANNOT REBUILD YET, AND WHY IT IS A
+ * PLACEHOLDER RATHER THAN A FAILURE.
+ *
+ * The revive runs inside `activate()`. The transcript index is built by an
+ * ASYNC scan that has not answered a single id by then, so the read that
+ * rebuilds a card's scrollback came back with "Agent Farm does not have this
+ * session in its index yet" — EVERY time, for EVERY card. Not a race and not a
+ * corpus problem: the index's map is empty until its scan swaps a new one in.
+ *
+ * The user's report is the exact shape of it: the session came back, said it
+ * had been taken up where it left off, and showed nothing above that line.
+ * Ending the card and resuming it from the shelf was the only way back to the
+ * conversation — which is the manual step the whole feature exists to remove.
+ *
+ * So the placeholder is kept (it is honest, and the seat is live while it
+ * shows), and it is SWAPPED for the real scrollback the moment the index can
+ * answer. Nothing restarts for this, and nothing the card has said since is
+ * dropped: the row is replaced where it stands, so the revive notice and
+ * anything the reader has already typed keep their order.
+ */
+export const REVIVE_PLACEHOLDER_ID = 'xh-note';
+
+/** A history that is nothing but the placeholder — i.e. a read that has not
+ *  happened yet rather than a conversation. Anything else is left alone. */
+export function isPlaceholderHistory(rows: { id: string }[] | undefined): boolean {
+    return !!rows && rows.length === 1 && rows[0].id === REVIVE_PLACEHOLDER_ID;
+}
+
+/**
+ * The placeholder's position, filled with what was finally read. `null` when
+ * there is nothing to do — no placeholder on the card, or nothing to put in its
+ * place — so a caller never has to decide whether a rewrite was a change.
+ */
+export function swapPlaceholder<T extends { id: string }>(
+    messages: T[] | undefined, rows: T[] | undefined,
+    placeholderId: string = REVIVE_PLACEHOLDER_ID
+): T[] | null {
+    if (!messages?.length || !rows?.length) { return null; }
+    const at = messages.findIndex(m => m.id === placeholderId);
+    if (at < 0) { return null; }
+    const next = messages.slice();
+    next.splice(at, 1, ...rows);
+    return next;
+}

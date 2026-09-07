@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.442.0 - the revived session that came back empty, and the resume that forgot whose account it was (2026-09-08)
+
+Both reported by the user, on the first restart that actually loaded a build.
+
+**A revived card could never rebuild its scrollback. Not sometimes — never.**
+`reviveAfterRestart()` runs inside `activate()`, and the transcript index is
+filled by an **async** `scanAll()` started in that same activation. So
+`index.all()` is empty for every id at that moment, and the read that rebuilds a
+card's history always took its "Agent Farm does not have this session in its
+index yet" branch. The session came back, said it had been taken up where it
+left off, and showed nothing above that line; clicking changed nothing, because
+"load older" goes through the same index. The only way back to the conversation
+was to end the card and resume it off the shelf by hand — which is precisely the
+manual step X-232 exists to remove.
+
+The placeholder was honest and stays. What was missing is the second read: the
+row is now **swapped for the real scrollback where it stands**, the moment the
+index can answer. Nothing restarts for it, and nothing the card has said since —
+the revive notice, anything already typed — is dropped or reordered. The
+subscription lets go of itself once the last seat has its history, and a seat
+closed in the meantime is simply dropped.
+
+**And the shelf's resume door stated no account.** It is the eleventh door onto
+a launch and it builds its `start` from a hand-written field list, so every
+dimension added since had to be remembered there by somebody — `account` never
+was. A conversation that had been running on a slot came back reading `Machine
+Global`. It now states the account the run actually used, read through
+`sessionAccountOf` — the one reader every other surface already asks. The
+transcript cannot answer this (every slot's `projects` folder is a junction onto
+one shared root, so the file names no owner); only the launch manifest recorded
+it at the spawn. A session with no manifest states nothing and takes the
+standing choice, which is the truth rather than a slot invented for it. A *fresh*
+session started from that door deliberately does not inherit it — it is not that
+conversation.
+
+`test_launch_parity.js` now measures that eleventh door against its source, the
+way it already measures the surfaces that live inside message handlers.
+
 ## 3.441.0 - the restart that restarted nothing: a host bounce never loads a build you just installed (2026-09-08)
 
 The user reported it: after `farm.restartExtensionHost` the whole window looked

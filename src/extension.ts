@@ -128,7 +128,9 @@ import {
 import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
 } from './core/sentryCampaign';
-import { planRevive, reviveInit, RevivePlan, ReviveRow, ReviveSkip } from './core/consoleRevive';
+import {
+    isPlaceholderHistory, planRevive, REVIVE_PLACEHOLDER_ID, reviveInit, RevivePlan, ReviveRow, ReviveSkip
+} from './core/consoleRevive';
 import { armedRestartWait, fleetWaits, FleetWait } from './core/waits';
 import {
     ArmedRestart, armedReady, liveBlockers, planRestart, RESTART_COMMANDS,
@@ -22530,8 +22532,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * own context from the id, and the card keeps what it already had
          * (ConsoleHost.start). This function only rebuilds the scrollback.
          */
+        // ‼️ X-266 — THE ID IS SHARED, NOT SPELLED TWICE. This row is what a
+        // revive swaps out once the index can answer (`consoleRevive.ts`), and
+        // two literals would drift the first time one of them was renamed.
         const note = (text: string): ConsoleMessage[] => [{
-            id: 'xh-note', ts: Date.now(), role: 'system', text
+            id: REVIVE_PLACEHOLDER_ID, ts: Date.now(), role: 'system', text
         }];
         const row = [...index.all(), ...index.external()].find(s => s.sessionId === sessionId);
         const file = row?.file;
@@ -22654,15 +22659,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!rows.length && !lost.length) { return; }
         clearRestartRevive();
         const back: string[] = [];
+        /** ‼️ X-266 — the seats whose scrollback could not be read YET. */
+        let pendingHistory: { seatId: string; sessionId: string }[] = [];
         for (const row of rows) {
             try {
                 const init = reviveInit(row);
                 const past = index.byId(row.sessionId);
-                consoleHost.start({
+                const readBack = consoleHistory(row.sessionId);
+                const seatId = consoleHost.start({
                     ...init,
                     engine: init.engine as EngineId | undefined,
                     history: [
-                        ...consoleHistory(row.sessionId),
+                        ...readBack,
                         {
                             id: 'xr-revived', ts: Date.now(), role: 'system',
                             text: `⚡ Agent Farm restarted on ${extVersion} and took this session up where `
@@ -22675,6 +22683,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ],
                     carried: past ? carriedTotals(past) : undefined
                 });
+                if (isPlaceholderHistory(readBack)) {
+                    pendingHistory.push({ seatId, sessionId: row.sessionId });
+                }
                 back.push(row.agentName);
             } catch (e) {
                 lost.push({
@@ -22682,6 +22693,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     reason: `could not be started again — ${String((e as Error)?.message ?? e)}`
                 });
             }
+        }
+        /**
+         * ‼️ X-266 — AND THE READ IS TRIED AGAIN, because the first one could
+         * never have worked.
+         *
+         * `reviveAfterRestart` runs inside `activate()`; `index.scanAll()` is
+         * started there too and is asynchronous, so the index answers `undefined`
+         * for EVERY id at this moment — not sometimes, always. Every revived card
+         * therefore came back carrying "Agent Farm does not have this session in
+         * its index yet" and an empty conversation above the notice, and the only
+         * way back to the transcript was to end the card and resume it off the
+         * shelf by hand: exactly the step X-232 exists to remove. The user
+         * reported it in those words.
+         *
+         * So the placeholder stands only until the index can answer. Nothing is
+         * restarted; the row is swapped where it sits, so everything the card has
+         * said since keeps its place. The subscription lets go of itself as soon
+         * as the last seat has its scrollback, and a seat the reader closed in
+         * the meantime is simply dropped.
+         */
+        if (pendingHistory.length) {
+            const sub = index.onDidUpdate(() => {
+                pendingHistory = pendingHistory.filter(p => {
+                    const rebuilt = consoleHistory(p.sessionId);
+                    // Still nothing but the placeholder: the scan has not reached
+                    // this id yet, so keep waiting rather than write the same row
+                    // over itself.
+                    if (isPlaceholderHistory(rebuilt)) { return true; }
+                    consoleHost.rebuildHistory(p.seatId, rebuilt);
+                    return false;
+                });
+                if (!pendingHistory.length) { sub.dispose(); }
+            });
+            context.subscriptions.push(sub);
         }
         void vscode.window.showInformationMessage(
             `Agent Farm ${extVersion}: ${back.length} console session(s) taken up where they left off`
@@ -22781,6 +22826,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         accountAxis: (engine: string) => canIsolateAccounts(engine),
         // …and its name, resolved once here so `@machine` never reaches a page.
         accountLabel: (stated: string | undefined) => statedAccountLabel(stated, storedAccounts()),
+        // ‼️ X-266 — the ONE reader (`sessionAccountOf`), reaching the shelf's
+        // resume door. Called lazily on purpose: it is declared further down this
+        // activation and only ever runs after a click.
+        sessionAccount: (sessionId: string) => sessionAccountOf(sessionId)?.id,
         lastLaunch: (agentId: string) => lastLaunchOf(agentId),
         rememberLaunch: (agentId: string, o: LaunchOptions, surface: RunSurface) =>
             void rememberLaunch(agentId, o, surface),

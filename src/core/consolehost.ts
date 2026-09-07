@@ -20,6 +20,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { AgyState, newAgyState, translateAgy } from './agyproto';
+import { swapPlaceholder } from './consoleRevive';
 import { CodexState, codexTotalsFromUsage, newCodexState, translateCodex } from './codexproto';
 import { GeminiState, newGeminiState, translateGemini } from './geminiproto';
 import { spawnEnvironment } from './providerRuntime';
@@ -666,6 +667,24 @@ export class ConsoleHost {
         const read = history ?? [];
         if (read.length >= prior.length) { return read.length ? read : undefined; }
         return prior.length ? prior : undefined;
+    }
+
+    /**
+     * ‼️ X-266 — THE SCROLLBACK A REVIVE COULD NOT REBUILD AT ACTIVATION TIME.
+     *
+     * The rule and the measurement are in `consoleRevive.ts`; this is the seat
+     * side of it. Nothing is restarted and nothing is dropped: the placeholder
+     * row is replaced WHERE IT STANDS, so the revive notice under it — and
+     * anything the reader has already typed into the card since — keeps both
+     * its place and its order.
+     */
+    rebuildHistory(id: string, rows: ConsoleMessage[] | undefined): boolean {
+        const h = this.sessions.get(id);
+        if (!h) { return false; }
+        const next = swapPlaceholder(h.state.messages, rows);
+        if (!next) { return false; }
+        this.mutate(id, s => ({ ...s, messages: next }));
+        return true;
     }
 
     /**

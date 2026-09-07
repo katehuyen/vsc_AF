@@ -265,6 +265,19 @@ export interface ConsoleDeps {
      *  so the sentinel never reaches a page and no surface invents a name. */
     accountLabel?(stated: string | undefined): string;
     /**
+     * ‼️ X-266 — WHICH SIGN-IN A RECORDED SESSION ACTUALLY RAN UNDER.
+     *
+     * The transcript cannot say it: every slot's `projects` folder is a junction
+     * onto one shared root, so five accounts write into the same directory and
+     * the file names no owner. The launch manifest recorded it at the spawn, and
+     * `sessionAccountOf` in `extension.ts` is the one reader every surface asks
+     * — this is that reader, reaching the door that resumes a session off the
+     * shelf. Without it that door started the session with no account stated at
+     * all, and the card came back reading `Machine Global` for a conversation
+     * that had been running on a slot. The user reported exactly that.
+     */
+    sessionAccount?(sessionId: string): string | undefined;
+    /**
      * ‼️ S-34 — WHAT ONE AGENT WAS LAST STARTED WITH, and where.
      *
      * The composer is one of ten doors onto the same launch, and it was the one
@@ -1825,6 +1838,16 @@ export class ConsolePanel {
                     projectId: this.deps.sessionProject({
                         sessionId, agentId: agent?.id, agentName: row.agentName, cwd: row.cwd
                     }),
+                    // ‼️ X-266 — …AND THE SIGN-IN IT RAN ON, for the same reason
+                    // the project above is here: a resurrection is only as honest
+                    // as its dimensions, and this door stated none — so a
+                    // conversation that had been running on a slot came back
+                    // reading `Machine Global`. Only the launch manifest knows
+                    // (the transcript cannot: every slot's `projects` folder is a
+                    // junction onto one shared root), so a session with no
+                    // manifest states nothing and takes the standing choice —
+                    // which is the truth rather than a slot invented for it.
+                    account: this.deps.sessionAccount?.(sessionId),
                     // ‼️ X-133 — …AND THE DISCIPLINE COMES BACK TOO, on the same
                     // flag and for the same measured reason: the appended system
                     // prompt does not survive `--resume`, so a conversation that

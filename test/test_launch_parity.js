@@ -669,5 +669,38 @@ const launchTs = read('src', 'core', 'launch.ts');
         && /' • your default'/.test(extTs));
 }
 
+// ---------- X-266: THE ELEVENTH DOOR — resuming a session off the shelf ----------
+// The ten doors above start a NEW session. This one picks a recorded one back
+// up, and it drifted for exactly the reason this file exists: it builds its
+// `host.start` from a hand-written field list, so every dimension added since
+// had to be remembered here by somebody, and `account` never was. The user
+// reported the consequence in one sentence — "why did it now open with Machine
+// Global" — for a conversation that had been running on a slot all along.
+//
+// Measured against the source, like every surface in this file that lives
+// inside a message handler and cannot be called from a test.
+{
+    const panelTs = read('src', 'panels', 'consolePanel.ts');
+    const at = panelTs.indexOf("case 'resume': {");
+    const door = at < 0 ? '' : panelTs.slice(at, panelTs.indexOf("case 'forgetLastWindow'", at));
+    ok('the shelf\'s resume door was found in the source', door.length > 500);
+    ok('‼️ …and it STATES the account the session ran under',
+        /account: this\.deps\.sessionAccount\?\.\(sessionId\)/.test(door));
+    ok('…through the one reader every other surface asks, not a second resolver',
+        /sessionAccount\?\(sessionId: string\)/.test(panelTs)
+        && /sessionAccount: \(sessionId: string\) => sessionAccountOf\(sessionId\)\?\.id/.test(extTs));
+    // The dimensions this door was already carrying, pinned so the next one
+    // removed is a failure rather than a silence.
+    for (const f of ['engine', 'model', 'effort', 'permissionMode', 'projectId', 'account']) {
+        // `engine,` is passed by shorthand, the rest by name — both are carrying it.
+        ok(`…and still carries ${f}`, new RegExp(`(^|[^\\w])${f}\\s*[:,]`, 'm').test(door));
+    }
+    // ‼️ A FRESH session started FROM that door is a different question: it is
+    // not that conversation, so it takes the composer's choice rather than a
+    // slot read off somebody else's run.
+    ok('‼️ …while "new session in the same folder" does NOT inherit it — it is not that session',
+        (door.match(/account: this\.deps\.sessionAccount/g) || []).length === 1);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

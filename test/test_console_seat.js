@@ -232,6 +232,36 @@ async function s29() {
     }
 }
 
+// ---- X-266: the scrollback a revive could not rebuild at activation time ----
+// Driven through the REAL host for the reason at the top of this file: the bug
+// was that a card came back EMPTY, and only the card can say whether it did.
+{
+    const host = new ConsoleHost(() => 'claude');
+    const ph = { id: 'xh-note', ts: 1, role: 'system', text: 'not in the index yet' };
+    const notice = { id: 'xr-revived', ts: 2, role: 'system', text: 'taken up where it left off' };
+    const seat = host.start(init({ resume: 'S-9', history: [ph, notice] }));
+
+    let fired = 0;
+    host.onChange(id => { if (id === seat) { fired++; } });
+
+    const rows = [
+        { id: 'xh0', ts: 0, role: 'user', text: 'the first thing said' },
+        { id: 'xh1', ts: 0, role: 'assistant', text: 'the answer' }
+    ];
+    ok('‼️ the scrollback the index could not give at activation goes in later',
+        host.rebuildHistory(seat, rows) === true);
+    const msgs = host.get(seat).messages;
+    ok('…in the placeholder\'s place, so the conversation reads in order',
+        msgs.map(m => m.id).join(',') === 'xh0,xh1,xr-revived');
+    ok('…and the panel is told, or the reader would be looking at the old draw',
+        fired === 1);
+
+    ok('a second attempt changes nothing — the placeholder is gone',
+        host.rebuildHistory(seat, rows) === false);
+    ok('a seat the reader already closed is not an error, just nothing to do',
+        host.rebuildHistory('cs-nope', rows) === false);
+}
+
 s29().then(() => {
     cp.spawn = realSpawn;
     cp.exec = realExec;

@@ -17,7 +17,9 @@ const path = require('path');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { planRevive, reviveInit } = require(path.join(__dirname, '..', 'out', 'core', 'consoleRevive.js'));
+const {
+    isPlaceholderHistory, planRevive, REVIVE_PLACEHOLDER_ID, reviveInit, swapPlaceholder
+} = require(path.join(__dirname, '..', 'out', 'core', 'consoleRevive.js'));
 
 // ---------- the dimensions, read out of the source of truth ----------
 const dims = (() => {
@@ -90,6 +92,49 @@ const live = (over = {}) => ({
     const empty = planRevive([]);
     ok('an empty window plans nothing', empty.rows.length === 0 && empty.skipped.length === 0);
     ok('…and a missing list is the same answer', planRevive(undefined).rows.length === 0);
+}
+
+// ---------- ‼️ X-266 — THE REVIVED CARD THAT CAME BACK EMPTY ----------
+// The user reported it: the session was taken up again, said so, and showed
+// NOTHING above that line — the conversation only came back after ending the
+// card and resuming it off the shelf by hand, which is the manual step X-232
+// exists to remove.
+//
+// The cause is an ordering nobody could have raced: `reviveAfterRestart()` runs
+// inside `activate()`, and the transcript index is filled by an ASYNC
+// `scanAll()` started in that same activation. `index.all()` is therefore EMPTY
+// for every id at that moment, so `consoleHistory` always took its "Agent Farm
+// does not have this session in its index yet" branch. Always, not sometimes.
+//
+// The placeholder is honest and stays; what was missing is the second read.
+{
+    ok('the placeholder has ONE id, shared with the row extension.ts writes',
+        REVIVE_PLACEHOLDER_ID === 'xh-note');
+
+    const ph = { id: REVIVE_PLACEHOLDER_ID, role: 'system', text: 'not in the index yet' };
+    ok('‼️ a history that is nothing but the placeholder is a read that has NOT happened',
+        isPlaceholderHistory([ph]));
+    ok('…while a real scrollback is never mistaken for one',
+        !isPlaceholderHistory([ph, { id: 'xh1' }]) && !isPlaceholderHistory([{ id: 'xh1' }]));
+    ok('…and neither empty nor missing counts as a placeholder to retry',
+        !isPlaceholderHistory([]) && !isPlaceholderHistory(undefined));
+
+    const card = [ph, { id: 'xr-revived' }, { id: 'u1' }];
+    const rebuilt = [{ id: 'xh0' }, { id: 'xh1' }, { id: 'xh2' }];
+    const out = swapPlaceholder(card, rebuilt);
+    ok('‼️ the scrollback replaces the placeholder WHERE IT STANDS',
+        out.map(m => m.id).join(',') === 'xh0,xh1,xh2,xr-revived,u1');
+    ok('‼️ …so the revive notice and anything the reader typed since keep their order',
+        out[out.length - 2].id === 'xr-revived' && out[out.length - 1].id === 'u1');
+
+    ok('a card with no placeholder is left exactly as it is',
+        swapPlaceholder([{ id: 'xh1' }], rebuilt) === null);
+    ok('…and so is one there is nothing to put into',
+        swapPlaceholder(card, []) === null && swapPlaceholder(card, undefined) === null);
+    ok('…and an empty card is not a place to write a scrollback into',
+        swapPlaceholder([], rebuilt) === null);
+    ok('the original is never mutated — the swap returns a new list',
+        card.length === 3 && card[0].id === REVIVE_PLACEHOLDER_ID);
 }
 
 console.log(`test_console_revive.js: ${pass} passed, ${fail} failed`);
