@@ -15456,9 +15456,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'farm.restartExtensionHost',
             describe: 'Restart the extension host so a build you just installed is the one running — the '
                 + 'window, its editors and its terminals survive, so an agent working in a terminal can do '
-                + 'this under itself. Live console sessions do NOT survive (their handles are in the host\'s '
-                + 'memory), so by default the restart is ARMED and fires by itself once the last one ends, '
-                + 'and the answer says what it is waiting for. Refused inside a 20s cooldown (a request that '
+                + 'this under itself. Console sessions do NOT survive (their handles are in the host\'s '
+                + 'memory), but only a TURN IN FLIGHT is a reason to wait: a card sitting idle waiting for '
+                + 'the user is not, so calling this from a console session works — the plan is armed while '
+                + 'your own turn runs and fires by itself the moment it ends. The answer says what it is '
+                + 'waiting for. Refused inside a 20s cooldown (a request that '
                 + 'outlived a restart would otherwise loop). args: when? (auto=default | now = refuse rather '
                 + 'than wait | idle = always wait for quiet | cancel = call off what is armed), force? '
                 + '(restart through live sessions and lose them), resume? (X-232 — take the live console '
@@ -21440,8 +21442,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             } : undefined;
         },
         isLive: (id) => live.sessions().some(s => s.sessionId === id),
+        /**
+         * ‼️ THE SIGN-IN TRAVELS ON THIS PATH TOO (audit A-02.5).
+         *
+         * X-260 gave `runContextCapture` an `account` because the spawn resumes
+         * the user's own session and passed no environment at all — and every
+         * slot's `projects` folder is a junction onto one shared root, so the
+         * transcript is found either way and the WRONG PLAN PAYS, silently. The
+         * viewer's button was wired to the resolver; this one, the path the
+         * FLEET uses (`sessions.context`), was left spawning as whatever
+         * account the VS Code window happened to hold.
+         *
+         * One fix, two doors: a rule that reaches one caller is not a rule.
+         */
         captureContext: (s) => new Promise<{ ok: boolean; report?: unknown; error?: string }>(resolve =>
-            runContextCapture(s.file, s.cwd ?? '', s.model, r => resolve(r))),
+            runContextCapture(s.file, s.cwd ?? '', s.model, r => resolve(r),
+                sessionAccountOf(s.sessionId)?.id)),
         defaultReportDir: () => expandEnvPath(cfg().get<string>('autoReportFolder', ''))
             || cfg().get<string[]>('agentRoots', []).find(r => fs.existsSync(r))
             || os.homedir()

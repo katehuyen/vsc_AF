@@ -118,8 +118,23 @@ const working = (id, agentName) => ({ id, agentName, status: 'working' });
     ok('a session that already failed is not a blocker', errored.length === 0);
     ok('a starting session IS a blocker', liveBlockers(
         world({ sessions: [{ id: 's', agentName: 'a', status: 'starting' }] }), 'extensionHost').length === 1);
-    ok('an idle session IS a blocker — its process is alive and waiting', liveBlockers(
-        world({ sessions: [{ id: 's', agentName: 'a', status: 'idle' }] }), 'extensionHost').length === 1);
+    // ‼️ AND THE ONE THAT COST THE MOST (audit A-02.4). An `idle` card is a
+    // seat, not a flow: its turn is over and it is waiting for a human. It used
+    // to block, and because the session ASKING for the restart is on the screen
+    // asking, what got armed could never fire — the protection removed the
+    // autonomy it was written to protect, and the user had to restart by hand.
+    ok('‼️ AN IDLE SESSION IS NOT A BLOCKER — a turn in flight blocks, a seat does not',
+        liveBlockers(world({ sessions: [{ id: 's', agentName: 'a', status: 'idle' }] }),
+            'extensionHost').length === 0);
+    ok('…so the caller\'s own restart FIRES once its turn ends, which is the whole '
+        + 'point: armed while working, ready the moment it goes idle',
+        !armedReady({ kind: 'extensionHost', armedAt: NOW, delayMs: RESTART_DELAY_MS, waitingFor: [] },
+            world({ sessions: [working('me', 'developer')] }))
+        && armedReady({ kind: 'extensionHost', armedAt: NOW, delayMs: RESTART_DELAY_MS, waitingFor: [] },
+            world({ sessions: [{ id: 'me', agentName: 'developer', status: 'idle' }] })));
+    ok('…and the sentence names the FLOW, not the cards on the screen',
+        /turn\(s\) still running/.test(planRestart({ kind: 'extensionHost' },
+            world({ sessions: [working('h1', 'developer')] })).reason || ''));
 }
 
 // ---------- auto: the default arms rather than refusing, and SAYS SO ----------
@@ -177,9 +192,12 @@ const working = (id, agentName) => ({ id, agentName, status: 'working' });
 // ---------- X-232: a session that will be TAKEN UP AGAIN is not a loss ----------
 {
     const withId = { id: 'h1', agentName: 'developer', status: 'working', sessionId: 'sess-1' };
-    const noId = { id: 'h2', agentName: 'basit', status: 'idle' };
+    // ‼️ IN FLIGHT, and unnamed by the engine — since A-02.4 an `idle` card is
+    // not a blocker at all, so a resume test written on one would measure the
+    // idle rule twice and X-232 not once.
+    const noId = { id: 'h2', agentName: 'basit', status: 'working' };
 
-    ok('without resume, a live session blocks whether or not the engine named it',
+    ok('without resume, a turn in flight blocks whether or not the engine named it',
         liveBlockers(world({ sessions: [withId, noId] }), 'extensionHost').length === 2);
 
     const saved = liveBlockers(world({ sessions: [withId, noId] }), 'extensionHost', true);

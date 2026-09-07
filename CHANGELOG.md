@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.440.0 - the first two audit findings: a restart that could never fire, and a rule wired to one of its two doors (2026-09-08)
+
+The retrospective audit's first pass over four closed sessions, and both repairs
+are for defects that every one of those sessions certified as done.
+
+**A turn in flight blocks a restart. A seat does not.** `farm.restartExtensionHost`
+counted every console session that was not `ended` or `error` as a live loss —
+including `idle`, which is a card whose turn is OVER and which is waiting for the
+user to type. The session that ASKS for the restart is on the screen asking, so
+what it armed could never fire: the note said "restart armed" and the user came
+back to find nothing had happened and had to restart by hand. Measured twice in
+the record, two days apart — one handover reports an arm that had been waiting
+**five hours** for a card nobody was going to close, and treats it as the user's
+job rather than a defect. A protection mechanism that removes the autonomy it
+was written to protect.
+
+`SESSION_IN_FLIGHT` is now `starting` and `working`, and nothing else. This
+dissolves the caller's special case without a special case: the asking session
+is `working` while it asks, so the plan is armed; its turn ends, it drops to
+`idle`, and the watcher fires within 5s. The waiting sentence counts turns now,
+not cards — "3 console turn(s) still running", because "3 console sessions"
+reads as three things on the screen and things on the screen stopped being a
+reason to wait. The old rule was pinned by tests; they were inverted rather than
+deleted, so it cannot drift back.
+
+**And X-260's `/context` account reached one of its two doors.** The reason that
+parameter exists is written in the code itself: the capture resumes the user's
+own session, and every slot's `projects` folder is a junction onto one shared
+root, so the transcript is found either way — *the capture succeeds and the
+wrong plan pays*, a failure with no symptom. The viewer's button was wired to
+the resolver. `sessions.context`, the door the FLEET uses, was left spawning as
+whatever account the VS Code window happened to hold. Now both are wired, and
+the test COUNTS the call sites out of the sources rather than spot-checking one,
+so a third door cannot reopen it silently. Measured: the test is red without the
+fix.
+
+Audit rows: `10_Notes/DENETİM - Sicil.md` → A-02.4/A-02.5, A-04.1/A-04.2.
+Suite: 319 files, 20029 passed, 0 failed.
+
 ## 3.439.0 - a retrospective audit, because "done" was the defendant's own testimony (2026-09-07)
 
 Twenty-eight sessions over five days closed item after item on the automatic

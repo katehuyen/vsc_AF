@@ -97,6 +97,37 @@ const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
     ok('‼️ …and the /context capture is given it, which is the whole point of the id',
         /runContextCapture\([\s\S]{0,900}deps\.accountFor/.test(viewerTs));
 
+    // ‼️ AND THE FLEET'S DOOR IS THE SAME DOOR (audit A-02.5).
+    //
+    // `sessions.context` resumes the user's own session exactly the way the
+    // viewer's button does, and it was left passing NO account: the spawn ran
+    // as whatever the VS Code window happened to hold. The junctioned
+    // `projects` root means the transcript is found either way, so the capture
+    // SUCCEEDS and the wrong plan pays — a failure with no symptom. That is
+    // why this is counted rather than spot-checked: a third caller added later
+    // must not be able to reopen it silently.
+    ok('‼️ EVERY runContextCapture caller names the sign-in — one door left out '
+        + 'is the whole bug back, and it fails without a symptom',
+        (() => {
+            const calls = [];
+            for (const src of [viewerTs, extTs]) {
+                const re = /runContextCapture\(/g;
+                let m;
+                while ((m = re.exec(src))) {
+                    if (/export function\s*$/.test(src.slice(0, m.index).slice(-40))) { continue; }
+                    // the argument list, to its matching close paren
+                    let i = m.index + m[0].length, depth = 1;
+                    for (; i < src.length && depth; i++) {
+                        if (src[i] === '(') { depth++; }
+                        else if (src[i] === ')') { depth--; }
+                    }
+                    calls.push(src.slice(m.index, i));
+                }
+            }
+            return calls.length >= 2
+                && calls.every(c => /accountFor/.test(c) || /sessionAccountOf/.test(c));
+        })());
+
     // ‼️ ONE READER FOR TWO SURFACES. Two resolvers would disagree the first
     // time one of them learned about a slot the other had not.
     ok('‼️ the host answers it in ONE place, off the manifest',

@@ -121,8 +121,30 @@ export type RestartPlan =
     | { decision: 'cancelled'; kind: RestartKind; was: ArmedRestart | null }
     | { decision: 'refused'; kind: RestartKind; reason: string; retryInMs?: number };
 
-/** A console session whose process is gone cannot be lost twice. */
-const SESSION_DEAD = new Set(['ended', 'error']);
+/**
+ * ‼️ WHAT BLOCKS A RESTART IS A FLOW, NOT A SEAT (audit A-02.4).
+ *
+ * This was `SESSION_DEAD = ['ended','error']` — everything else counted as a
+ * live loss. But a console session that has FINISHED its turn and is waiting
+ * for the user to type the next instruction is `idle`, and it stayed a blocker
+ * for as long as the card was on the screen. The consequence was not a delay,
+ * it was a DEADLOCK, and the user reported it in exactly those terms: the
+ * session that asks for the restart is on the screen asking, so the restart it
+ * armed could never fire, and "armed" was reported to a user who then had to
+ * restart by hand — a protection mechanism that removed the autonomy it was
+ * written to protect.
+ *
+ * The user's own rule, and the only one here now: **a turn in flight blocks; a
+ * seat does not.** `starting` and `working` are the flight. `idle` is somebody
+ * waiting for a human, and nothing is lost by restarting under it (X-232's
+ * `resume` takes the named ones up again on the other side anyway).
+ *
+ * This also dissolves the caller's special case without a special case: the
+ * session that asks IS `working` while it asks, so the plan is armed; its turn
+ * ends, it drops to `idle`, and the 5s watcher fires the restart. Waiting for
+ * the flow to end is the whole of the answer.
+ */
+const SESSION_IN_FLIGHT = new Set(['starting', 'working']);
 
 export function clampRestartDelay(v: unknown): number {
     const n = typeof v === 'number' && Number.isFinite(v) ? v : RESTART_DELAY_MS;
@@ -135,7 +157,7 @@ export function clampRestartDelay(v: unknown): number {
  */
 export function liveBlockers(world: RestartWorld, kind: RestartKind, resume = false): RestartBlocker[] {
     const out: RestartBlocker[] = (world.sessions ?? [])
-        .filter(s => !SESSION_DEAD.has(String(s.status)))
+        .filter(s => SESSION_IN_FLIGHT.has(String(s.status)))
         // ‼️ X-232 — A SESSION THE ENGINE HAS NAMED IS TAKEN UP AGAIN on the
         // other side, so it is not a loss to weigh against the restart. One it
         // never named has nothing to be resumed BY, and is still every bit the
@@ -160,7 +182,11 @@ const describe = (blockers: RestartBlocker[]): string => {
     const terminals = blockers.filter(b => b.kind === 'terminal');
     const parts: string[] = [];
     if (consoles.length) {
-        parts.push(`${consoles.length} live console session(s) (${consoles.map(b => b.name).join(', ')})`);
+        // The sentence names the FLOW, because that is now the only thing that
+        // holds it: "3 console sessions" would read as three cards on the
+        // screen, and cards on the screen stopped being a reason to wait.
+        parts.push(`${consoles.length} console turn(s) still running `
+            + `(${consoles.map(b => b.name).join(', ')})`);
     }
     if (terminals.length) {
         parts.push(`${terminals.length} open terminal(s) (${terminals.map(b => b.name).join(', ')})`);
