@@ -15,6 +15,19 @@ export interface TimelineDeps {
     tasks: TaskManager;
     /** Transcripts on disk — the money/token/turn figures a hook event cannot carry. */
     index: SessionIndex;
+    /**
+     * ‼️ X-251 — WHOSE PLAN THIS CARD'S SESSION RUNS ON.
+     *
+     * Not derivable here and not derivable anywhere else either: every slot's
+     * `projects` folder is a junction onto one shared root, so the transcript
+     * cannot name its owner. The launch manifest is the only witness, and the
+     * host holds it — so the card ASKS, exactly as it asks who owns the pid.
+     *
+     * `undefined` = nothing was recorded, and the card then says nothing. "It
+     * ran as this machine" would be the claim most likely to be wrong on a farm
+     * with five slots under one engine.
+     */
+    accountFor?: (sessionId: string) => { id: string; label: string } | undefined;
     /** Sessions a live CLI process owns right now (the CLI's own registry). */
     liveOwners: () => { sessionId: string; pid: number; entrypoint?: string; status?: string }[];
     /** Is that registry readable at all? Without it, "no process" means nothing. */
@@ -157,6 +170,9 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                  * rather than a dead one.
                  */
                 transcriptPath: s.transcriptPath || row?.file || undefined,
+                // ‼️ X-251 — the LABEL only. A card is something to read; the
+                // slot id is what a spawn needs, and this page spawns nothing.
+                account: deps.accountFor?.(s.sessionId)?.label ?? '',
                 // From the transcript (absent until the session's first turn lands).
                 title: row?.title ?? '',
                 firstPrompt: s.firstPrompt || row?.firstPrompt || '',

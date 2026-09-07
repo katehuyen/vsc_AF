@@ -477,6 +477,10 @@
             tline('Engine', window.AFEngine.label(eng)),
             tline('Events', hasHooks(s)
                 ? 'full — prompts, tools and turn ends' : 'lifecycle only — open and close'),
+            // ‼️ X-251 — WHOSE PLAN THIS CARD IS SPENDING. Same panel as the
+            // engine, because a sign-in is an answer to "what ran this"; empty
+            // where nothing was recorded, and `filter(Boolean)` drops the line.
+            s.account ? tline('Account', s.account) : '',
             tline('Model of the last reply', s.model),
             tline('Cost reported', s.cost ? C.fmtUSD(s.cost) : 'no — plan or account billing'),
             tline('Tokens', s.tokens ? C.fmtTok(s.tokens) : 'not published by this CLI'),

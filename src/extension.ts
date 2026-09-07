@@ -1337,6 +1337,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const showTimeline = (): void => {
         TimelinePanel.show({
             extensionUri: context.extensionUri, live, tasks: taskManager, index,
+            // ‼️ X-251 — THE SAME ONE READER THE SESSION PAGE ASKS. A card that
+            // resolved the sign-in itself would be a second answer to a
+            // question with one witness (the launch manifest), and the two
+            // would disagree the first time one of them met a slot the other
+            // had not. Declared later in activate() and reached through this
+            // closure, which only runs when the page is opened.
+            accountFor: sessionAccountOf,
             // A live card may only claim "no process" when the CLI's own
             // registry is there to be read — otherwise silence proves nothing.
             liveOwners: () => readCliSessions(claudeDir()),
@@ -18552,8 +18559,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             restart: () => live.start()
         }
     };
+    /**
+     * ‼️ X-251 — WHOSE PLAN A RECORDED SESSION RAN ON, ANSWERED IN ONE PLACE.
+     *
+     * The file cannot say: every slot's `projects` folder is a junction onto one
+     * shared root, so five accounts write their transcripts into the same
+     * directory. The account is knowable at exactly one moment — the launch —
+     * and X-251's first half recorded it on the LaunchManifest, which a session
+     * reaches by the `launchId` its binding wrote. So this reads the manifest
+     * and nothing else; there is no fallback, because a fallback here is an
+     * attribution nobody made.
+     *
+     * ‼️ ONE READER FOR EVERY SURFACE THAT ASKS. The viewer and the timeline
+     * both want it, and two resolvers would disagree the first time one of them
+     * learned about a slot the other had not — the same shape this family of
+     * items keeps closing.
+     *
+     * Both parts travel: the LABEL is a thing to read, the ID is a slot, and
+     * the viewer's `/context` capture spawns on the id.
+     */
+    const sessionAccountOf = (sessionId: string): { id: string; label: string } | undefined => {
+        const s = index.byId(sessionId);
+        const id = String(manifestOf(launchManifests(), s)?.account ?? '').trim();
+        if (!id) { return undefined; }
+        return { id, label: statedAccountLabel(id, storedAccounts()) || id };
+    };
     const viewerDeps = {
         extensionUri: context.extensionUri,
+        accountFor: sessionAccountOf,
         getPricing: () => pricing,
         maxMessages: () => cfg().get<number>('maxTranscriptMessages', 1500),
         contextLimitFor: (model: string) => {

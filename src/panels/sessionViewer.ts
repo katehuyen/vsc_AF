@@ -30,6 +30,24 @@ export interface ViewerDeps {
     /** Labels the user put on this session — read-only here; the same marks
      *  store the star comes from, so the header can say what the row says. */
     tagsFor?(sessionId: string): string[];
+    /**
+     * ‼️ X-251 — WHOSE PLAN THIS SESSION RAN ON, and why it is ASKED for.
+     *
+     * Every slot's `projects` folder is a junction onto one shared root, so
+     * five accounts write their transcripts into the same directory and the
+     * FILE cannot name its owner. The account is knowable at exactly one
+     * moment — the launch — and it was recorded there, on the manifest the
+     * session reaches by its `launchId`. Deriving it here would be inventing
+     * the one certainty this family refuses.
+     *
+     * ‼️ TWO PARTS, AND THEY ARE NOT INTERCHANGEABLE. The label is a thing to
+     * read; the id is a SLOT, and the `/context` capture resumes on it. A page
+     * given only the label could show the right sign-in while capturing on the
+     * wrong one — which is the exact failure this item exists to end.
+     *
+     * `undefined` = nothing recorded. That is silence, never "this machine".
+     */
+    accountFor?(sessionId: string): { id: string; label: string } | undefined;
     /** Export MD remembers the last folder saved to; falls back to session cwd / home. */
     lastExportDir?(): string | undefined;
     setLastExportDir?(dir: string): void;
@@ -362,12 +380,19 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         // S-37 — the index's verdict first, so this page and the row that
         // opened it cannot disagree about the same session.
         const verdict = deps.originFor?.(cli.sessionId);
+        // X-251 — the recorded sign-in, on the foreign-CLI path too: an account
+        // is a fact about the LAUNCH, and every engine's launch is recorded the
+        // same way. A field only Claude sessions carried would be a page that
+        // answers for one engine and shrugs at four.
+        const acct = deps.accountFor?.(cli.sessionId);
         return {
             ...cli,
             file,
             title: deps.titleFor?.(cli.sessionId) || cli.title || '(untitled session)',
             pinned: deps.pinnedFor?.(cli.sessionId) === true,
             tags: deps.tagsFor?.(cli.sessionId) ?? [],
+            account: acct?.label ?? '',
+            accountId: acct?.id ?? '',
             // S-41 — every fact the rule reads, written out even where the
             // answer is "this page cannot know": a foreign-CLI transcript
             // states no entrypoint, and the two facts only the index holds
@@ -708,9 +733,20 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
     // Now the index answers, and the page only decides when nothing has ever
     // indexed this file. See ViewerDeps.originFor.
     const verdict = deps.originFor?.(sessionId);
+    /**
+     * ‼️ X-251 — WHOSE PLAN PAID, AND THE ID THAT SPENDS IT.
+     *
+     * '' rather than a guess: a session with no manifest, or one whose launch
+     * injected no sign-in, is genuinely unattributed and the page says nothing.
+     * "It ran as this machine" would be a claim, and on a farm with five slots
+     * under one engine it is the claim most likely to be wrong.
+     */
+    const acct = deps.accountFor?.(sessionId);
     return {
         file,
         sessionId,
+        account: acct?.label ?? '',
+        accountId: acct?.id ?? '',
         title: deps.titleFor?.(sessionId) || title || '(untitled session)',
         // The shelf mark, so the page can show it and change it — the same fact
         // the Dashboard row's ★ shows, read from the same store.
@@ -1037,6 +1073,18 @@ export class SessionViewerPanel {
                     break;
                 }
                 this.capturing = true;
+                /**
+                 * X-251 — AND IT RESUMES ON THE SIGN-IN THE SESSION RAN ON.
+                 *
+                 * This spawn continues the USER'S OWN conversation, and it
+                 * passed no account: it ran as whatever the VS Code window
+                 * happened to hold. Because every slot's projects folder is a
+                 * junction onto one shared root the transcript is FOUND either
+                 * way, so the failure was silent by construction — the capture
+                 * succeeded and the wrong plan paid for it.
+                 *
+                 * The SLOT ID, not the label: a label is a thing to read.
+                 */
                 runContextCapture(
                     this.file,
                     typeof msg.cwd === 'string' ? msg.cwd : '',
@@ -1047,7 +1095,12 @@ export class SessionViewerPanel {
                         void this.panel.webview.postMessage(r.ok
                             ? { type: 'ctxCapture', status: 'ok', report: r.report }
                             : { type: 'ctxCapture', status: 'error', error: r.error });
-                    });
+                    },
+                    // ‼️ ASKED OF THE HOST, NOT TAKEN FROM THE PAGE. Which plan a
+                    // spawn spends is not a fact a webview should be able to
+                    // state — the same rule the origin verdict follows two
+                    // hundred lines up.
+                    this.deps.accountFor?.(path.basename(this.file, '.jsonl'))?.id);
                 break;
             }
             case 'resume': {

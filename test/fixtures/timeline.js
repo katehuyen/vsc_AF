@@ -31,6 +31,11 @@ const sessions = () => ([
         sessionId: '407c78cb-2f1a-4d55-9e10-1b2c3d4e5f60',
         agentName: 'developer', resolved: true, label: 'developer',
         source: undefined,                 // a Claude transcript states no engine
+        // ‼️ X-251 — WHOSE PLAN THIS CARD IS SPENDING. Drawn on ONE of the
+        // cards on purpose: the panel must be readable both when a sign-in was
+        // recorded and when nothing was, and the second case is the ordinary
+        // one for every session started before the manifest carried it.
+        account: 'wmmuratvural@gmail.com',
         status: 'tool', currentTool: 'Edit',
         lastPrompt: 'X-35 multi motor adaptasyonu — Live Timeline',
         // ‼️ U-81 — AND THE LAST PROMPT HAS TWO LENGTHS TOO. `lastPrompt` is the
@@ -68,6 +73,7 @@ const sessions = () => ([
         sessionId: '019ff43f-ff3d-7790-9431-63799a45b1b2',
         agentName: 'developer', resolved: true, label: 'developer #2',
         source: 'codex',
+        account: 'murposta2@gmail.com',
         status: 'working', currentTool: undefined,
         lastPrompt: 'rewrite the rollout parser and run the suite',
         startedAt: min(41), lastEventTs: min(0.2),

@@ -1179,6 +1179,13 @@
                 title: pinStarHtml() + C.esc(DATA.title) + tagChipsHtml()
                     + window.AFEngine.badge(DATA.engine, window.AFTip.lines([
                         'Engine: ' + window.AFEngine.label(DATA.engine),
+                        // ‼️ X-251 — WHOSE PLAN PAID, in the panel that already
+                        // answers "what ran this" (ONE SUBJECT). Empty on a run that
+                        // recorded no sign-in, and `lines` drops it: the file cannot
+                        // name its owner on any engine — every slot's projects folder
+                        // is a junction onto one shared root — so silence here means
+                        // "nothing was recorded", never "this machine".
+                        DATA.account ? 'Account: ' + DATA.account : '',
                         DATA.models && DATA.models.length ? 'Models: ' + DATA.models.join(', ') : '',
                         'Transcript: ' + (DATA.file ? 'on disk' : 'none this build can open')
                     ])),

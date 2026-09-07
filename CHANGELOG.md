@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.429.0 - X-251 (2/n): a session's own page and its timeline card say whose plan ran it (2026-09-07)
+
+**The half that was worse than a missing label.** The session viewer resumes the
+user's OWN conversation to capture `/context` (`claude --resume <id> -p
+"/context"`). `runContextCapture` has taken an `account` argument since X-260 —
+and nobody passed one, so the capture ran as whatever sign-in the VS Code window
+happened to hold. Because every slot's `projects` folder is a junction onto one
+shared root, the transcript is FOUND either way: the failure was silent by
+construction, the capture succeeded, and the wrong plan paid for it. It now
+spawns on the sign-in the session was recorded on.
+
+**And it is asked of the host, not taken from the page.** Which plan a spawn
+spends is not a fact a webview should be able to state — the same rule the
+origin verdict has followed since S-37.
+
+**Two surfaces that said nothing now say it.** The session viewer names the
+sign-in in the engine badge's own panel, and the Live Timeline card does the
+same — that panel already answers "what ran this", and a second panel for the
+sign-in would be the ONE SUBJECT rule broken. The sessions table keeps it in its
+launch panel, where the rest of the recorded setup lives; the other two pages
+have no launch panel, so the engine badge is the honest place.
+
+**One reader for both.** `sessionAccountOf` in the extension answers off the
+launch manifest and nothing else — `index.byId` → `manifestOf` → the slot, then
+its label. Two resolvers would disagree the first time one of them met a slot
+the other had not, which is the shape this family of items keeps closing. Both
+parts travel: the LABEL is a thing to read, the ID is a slot, and only the
+capture needs the id.
+
+**‼️ Absent stays absent.** A session with no manifest, or one whose launch
+injected no sign-in, says NOTHING — never "this machine", never a guess at the
+standing choice. On a farm with five slots under one engine that guess is the
+claim most likely to be wrong, and a gap is visible where a wrong attribution is
+not.
+
+Looked at: the timeline fixture now carries a recorded sign-in on two cards and
+none on the rest, so the panel is drawn in both states.
+
 ## 3.428.0 - X-249: the leader turn chooses its engine, and an unwired one is refused by name (2026-09-07)
 
 **CLOSES X-249.** The user's own reading opened it: "we are building a sentry
