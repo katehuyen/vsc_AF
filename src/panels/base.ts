@@ -373,6 +373,13 @@ export function htmlShell(
     // Four models carry a project now (Faz 5), so a mark invented per page is a
     // mark that disagrees per page.
     const project = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afProject.js'));
+    // Which sign-in a thing runs on, and how much of that plan is left (X-263).
+    // Ships everywhere for the reason the two badges above do, with a sharper
+    // one of its own: five pickers had hand-copied the same option body and two
+    // of them had since grown the five-hour figure, so the SAME account read
+    // `work •` on one page and `work • 42% used` on another — and the figure is
+    // the one thing the choice actually turns on.
+    const account = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAccount.js'));
     // The Telegram bridge card (U-84). Ships everywhere for the reason the
     // badges above do, with one extra: the fact it draws is "can your phone
     // reach the farm", and a card invented per page is a card that answers that
@@ -429,6 +436,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${dims}"></script>
 <script nonce="${nonce}" src="${engine}"></script>
 <script nonce="${nonce}" src="${project}"></script>
+<script nonce="${nonce}" src="${account}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>

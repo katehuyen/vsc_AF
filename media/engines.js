@@ -349,12 +349,12 @@
     const engineLabel = (id) =>
         ((DATA.engines || []).find(e => e.id === id) || {}).label || id;
 
-    function accountTurns(a) {
-        if (!a.resetsAt) { return ''; }
-        const mins = Math.max(0, Math.round((a.resetsAt - Date.now()) / 60000));
-        const wait = mins < 60 ? mins + 'm' : Math.round(mins / 60) + 'h';
-        return 'window turns over at ' + window.AFTime.clock(a.resetsAt) + ' (in ' + wait + ')';
-    }
+    // ‼️ X-263 — the sentence itself moved to the component, because the
+    // pickers now say it too: this card and the hover on a `<select>` row
+    // describing the same window in two different phrasings is the drift the
+    // component exists to stop. The card keeps its own layout; only the words
+    // about the window are shared.
+    const accountTurns = (a) => window.AFAccount.turns(a);
 
     /**
      * ONE CAPTURED SIGN-IN. The chip on the engine card answers "on whose plan"

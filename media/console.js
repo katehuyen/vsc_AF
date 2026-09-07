@@ -3290,11 +3290,12 @@
     }
     /** ‼️ X-211 — the machine's own sign-in, stated. The value is the sentinel
      *  the host and the core share; drawing '' here is what let the browser
-     *  select the first account while the session opened as somebody else. */
-    const MACHINE_ACCOUNT = '@machine';
-    /** …and what it is called in a picker — the badge is what makes it read as
-     *  a choice somebody made rather than a placeholder nobody filled in. */
-    const MACHINE_GLOBAL_ROW = '💻 Machine Global';
+     *  select the first account while the session opened as somebody else.
+     *  ‼️ X-263 — read from the component now: it was typed out in three page
+     *  files, and a picker that spells this row differently is a picker the
+     *  reader cannot recognise as the same choice. */
+    const MACHINE_ACCOUNT = window.AFAccount.MACHINE;
+    const MACHINE_GLOBAL_ROW = window.AFAccount.MACHINE_ROW;
     /** Is there actually something to choose? A picker whose only row is
      *  "Default" is a control with no referent, and the composer is not where a
      *  person learns that routes exist — Settings is. */
@@ -3651,22 +3652,10 @@
                 label: MACHINE_GLOBAL_ROW,
                 detail: 'the identity this machine itself is signed in as — no slot, '
                     + 'nothing injected, which is what every session ran as before accounts existed'
-            }].concat(accountRows().map(a => ({
-                id: a.id,
-                // ‼️ SHORTHAND — the row is a `<select>` line, so it carries the
-                // shortest unambiguous form: the label, a dot for the standing
-                // choice, a warning sign for a sign-in that has fallen over. The
-                // figures go in the hover, where there is room for them.
-                label: (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''),
-                detail: [
-                    a.health === 'ready' ? '' : 'this sign-in needs attention — capture it again',
-                    a.active ? 'the standing choice for this engine' : '',
-                    // X-170 — the figure the choice actually turns on. -1 is an
-                    // account nothing has measured, and saying nothing about it
-                    // is the honest answer: not knowing is not "plenty left".
-                    a.percent >= 0 ? a.percent + '% of the 5-hour window used' : ''
-                ].filter(Boolean).join(' · ')
-            })));
+            // ‼️ X-263 — SHORTHAND on the row, MIRROR in the hover, and both
+            // from the component: this body was hand-copied onto five pickers
+            // and only the Console's two had grown the five-hour figure.
+            }].concat(accountRows().map(a => window.AFAccount.row(a)));
             const tip = 'Which sign-in of this engine pays for the new session. '
                 + MACHINE_GLOBAL_ROW + ' is the identity this machine itself is signed in as. '
                 + 'A dot marks the standing choice — the account made active on the Engines page; '
@@ -3798,15 +3787,10 @@
             const rows = [{
                 id: MACHINE_ACCOUNT, label: MACHINE_GLOBAL_ROW,
                 detail: 'the identity this machine itself is signed in as'
-            }].concat((s.accountRows || []).map(a => ({
-                id: a.id,
-                label: (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''),
-                detail: [
-                    a.health === 'ready' ? '' : 'this sign-in needs attention — capture it again',
-                    a.active ? 'the standing choice for this engine' : '',
-                    a.percent >= 0 ? a.percent + '% of the 5-hour window used' : ''
-                ].filter(Boolean).join(' · ')
-            })));
+            // ‼️ X-263 — the same component the composer's box draws from, so
+            // the account a session is swapped TO reads exactly as it did when
+            // it was chosen.
+            }].concat((s.accountRows || []).map(a => window.AFAccount.row(a)));
             const shown = withCurrent(rows, cur);
             // MIRROR — the box is far too narrow for an address, so the first
             // line of its hover is what is actually sealed right now, and the

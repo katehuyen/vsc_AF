@@ -58,6 +58,12 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afProject.js was the eleventh — which project a thing belongs to, drawn
     // one way, once four models grew a projectId (Faz 5)
     'afProject.js',
+    // afAccount.js was the twentieth — which sign-in pays, and how much of that
+    // plan is left (X-263). Shared because it had ALREADY diverged: five
+    // pickers hand-copied one option body and two of them had since grown the
+    // five-hour figure, so one account read `work •` on the Tasks form and
+    // `work • 42% used` in the Console.
+    'afAccount.js',
     // afTelegram.js was the sixteenth — the Telegram bridge card (U-84).
     // Shared the moment the item asked for it in two places: the fact it draws
     // is "can your phone reach the farm", and a card invented per page is a

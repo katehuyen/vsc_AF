@@ -2862,8 +2862,12 @@ const html = allHtml;
     ok('‼️ the box OPENS on the standing account, so what is shown is what will run',
         /<option value="work-1"[^>]*selected/.test(html())
         && !/<option value="@machine"[^>]*selected/.test(html()));
+    // ‼️ X-263 — the figure now sits between the name and the standing dot, and
+    // it is drawn by media/afAccount.js for every picker on every page. The
+    // unread slot draws an em dash, NOT 0%: "nobody has read this window" and
+    // "none of it is used" are opposite facts (X-256).
     ok('…marked as the standing one, and a fallen-over sign-in warned about',
-        /work@studio •/.test(html()) && /⚠ spare@gmail/.test(html()));
+        /work@studio · 91% •/.test(html()) && /⚠ spare@gmail · —/.test(html()));
     ok('…and the machine own sign-in is still FIRST, so the way back is always there',
         html().indexOf('value="@machine"') < html().indexOf('value="work-1"'));
 }

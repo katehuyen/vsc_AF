@@ -1661,11 +1661,11 @@
         return (all[engine || 'claude'] || []).filter(a => a && a.id);
     }
     /** ‼️ X-223 — the machine's own sign-in, stated. The value is the sentinel
-     *  the host and the core share (core/accountStore.ts), never ''. */
-    const MACHINE_ACCOUNT = '@machine';
-    /** …and what it is called in a picker — the badge is what makes it read as
-     *  a choice somebody made rather than a placeholder nobody filled in. */
-    const MACHINE_GLOBAL_ROW = '💻 Machine Global';
+     *  the host and the core share (core/accountStore.ts), never ''.
+     *  ‼️ X-263 — read from the component now, for the reason the option body
+     *  below is: this pair was typed out in three page files. */
+    const MACHINE_ACCOUNT = window.AFAccount.MACHINE;
+    const MACHINE_GLOBAL_ROW = window.AFAccount.MACHINE_ROW;
     /**
      * ‼️ X-106 — A ROUTE BELONGS TO ONE ENGINE, AND A TIER TO ONE ROUTE.
      *
@@ -2151,16 +2151,11 @@
         C.option(MACHINE_ACCOUNT, MACHINE_GLOBAL_ROW, {
             selected: s.saccount === MACHINE_ACCOUNT,
             detail: 'The identity this machine itself is signed in as — nothing is injected. Unlike the empty row above, this is PINNED: it stays here whatever the Engines page is pointing at when the chain runs.'
-        })]
-            .concat(rows.map(a => C.option(a.id,
-                (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''), {
-                selected: a.id === s.saccount,
-                detail: [
-                    a.active ? 'The standing choice for this engine right now.' : '',
-                    a.health === 'ready' ? '' : (a.next || 'This slot needs signing in again before it can pay for a step.')
-                ].filter(Boolean).join('\n\n')
-            })))
-            .join('');
+        })].join('')
+            // ‼️ X-263 — the ACCOUNT rows come from the component, so this
+            // picker carries the five-hour figure the Console's already had.
+            // The two rows above are this SITE's sentence and stay here.
+            + window.AFAccount.options(rows, s.saccount, C);
         return `<label class="ntf" title="${C.esc('Which sign-in pays for THIS step. '
             + 'A chain runs headless with nobody in front of it, so a step that names none takes '
             + 'whichever account is standing when it fires — and three steps on one plan is how a '
@@ -2642,16 +2637,10 @@
             C.option(MACHINE_ACCOUNT, MACHINE_GLOBAL_ROW, {
                 selected: c.account === MACHINE_ACCOUNT,
                 detail: 'The identity this machine itself is signed in as — nothing is injected, which is what every run took before accounts existed. Unlike the empty row above, this is PINNED: it stays here whatever the Engines page is pointing at when the run fires.'
-            })]
-                .concat(rows.map(a => C.option(a.id,
-                    (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''), {
-                    selected: a.id === c.account,
-                    detail: [
-                        a.active ? 'The standing choice for this engine right now.' : '',
-                        a.health === 'ready' ? '' : (a.next || 'This slot needs signing in again before it can pay for a run.')
-                    ].filter(Boolean).join('\n\n')
-                })))
-                .join('');
+            })].join('')
+                // ‼️ X-263 — see the step card above: the account rows are the
+                // component's, the two fixed rows are this form's own sentence.
+                + window.AFAccount.options(rows, c.account, C);
             return `<label class="ntf" title="${C.esc('Which sign-in of this engine pays for the run. '
                 + 'Leave it empty and the ACTIVE account of that engine answers when the run fires — the '
                 + 'one the Engines page points at — and failing that the main sign-in, which is what '

@@ -12,33 +12,28 @@ const vm = require('vm');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-// afCtx.js is the right-click contract every row on this page publishes; the
-// page calls into it while it renders, so it loads before the page does.
-const code = fs.readFileSync(path.join(__dirname, '..', 'media', 'afFilters.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afCtx.js'), 'utf8')
-    // the search boxes are QUERIES now (media/afQuery.js), and the real grammar
-    // runs here rather than a stub
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afQuery.js'), 'utf8')
-    // …and every clock on the page goes through the one clock (media/afTime.js)
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTime.js'), 'utf8')
-    // …and the form narrows its model/effort boxes through the ONE rule
-    // (media/afLaunch.js, X-149) — the same file the extension host runs, so a
-    // stub here would be testing a form that answers the pair its own way
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afLaunch.js'), 'utf8')
-    // …and which ENGINE ran a task is drawn with the shared badge (X-35), the
-    // same component every other table uses — never a colour invented here
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afEngine.js'), 'utf8')
-    // …and the hover panel (media/afTip.js) — M-8 turned every column of both
-    // tables into one, so a stub here would be testing a different page
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTip.js'), 'utf8')
-    // …and the saved-prompt picker (M-24), which the page binds to every box
-    // that takes a prompt as it wires the form — a stub would not be the window
-    // that actually opens
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afTextTools.js'), 'utf8')
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afSnippets.js'), 'utf8')
-    // M-33 - the page routes the HOST push through the repaint guard now, so a
-    // stub would be testing a page that still throws the caret out of the box.
-    + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'afRepaint.js'), 'utf8')
+/**
+ * ‼️ THE SHARED SCRIPTS COME FROM THE ONE LIST (test/lib_shared_media.js).
+ *
+ * This file used to name them one by one — the ninth copy of a list that
+ * `lib_shared_media.js` was written to end, and it failed exactly the way its
+ * header predicts: afAccount.js (X-263) was added to the shell and to that
+ * list, tasksPage.js started asking for it, and THIS file died on
+ * "Cannot read properties of undefined (reading 'MACHINE')" — a message that
+ * says nothing about the real cause. The list is derived and checked against
+ * src/panels/base.ts in both directions, so a component added to the shell now
+ * reaches this sandbox without anybody remembering to come here.
+ *
+ * What the page genuinely needs out of it, and why, is recorded in that file:
+ * the right-click contract (afCtx), the query grammar (afQuery), the one clock
+ * (afTime), the ONE narrowing rule (afLaunch, X-149 — the same file the host
+ * runs), the engine badge (afEngine, X-35), the account row (afAccount, X-263),
+ * the hover panel (afTip, M-8), the saved-prompt picker (afSnippets, M-24) and
+ * the repaint guard (afRepaint, M-33). Every one of them is the REAL module
+ * here; a stub would be testing a different page.
+ */
+const { sharedMedia } = require(path.join(__dirname, 'lib_shared_media.js'));
+const code = sharedMedia()
     + '\n' + fs.readFileSync(path.join(__dirname, '..', 'media', 'tasksPage.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 const { charts } = require('./lib_charts_stub.js');

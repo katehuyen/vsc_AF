@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.425.0 - X-263: a sign-in picker says how much of that plan is left (2026-09-07)
+
+**Five pickers drew the same account, and they had already stopped agreeing.**
+The composer box, the live session box, a mission member’s delegation account,
+a workflow step’s account and the task form’s account each carried a
+hand-copied option body. The Console’s two had since grown the five-hour
+figure; the other three had not — so one account read `murvietnam-2 •` on the
+Tasks form and `murvietnam-2 • 42% used` in the Console, and the one figure the
+choice actually turns on lived on a third page.
+
+**An account is drawn in one place now** — `media/afAccount.js`, in the pattern
+`afEngine.js` and `afProject.js` set. It owns the SHORTHAND row label (warning
+sign, name, figure, standing-choice dot), the MIRROR hover under it, the two
+sentinels that had been typed into three page files, and the "window turns over
+at…" sentence the Engines page owned — six callers, one answer. Writing the
+figure into three more copies is how a sixth is born.
+
+**What is deliberately NOT in the component: the fixed rows.** Every one of
+those pickers opens with "— the standing choice —" and 💻 Machine Global, and each
+page says something different and correct in them: a mission round *spawns*, a
+workflow step *fires*, a console session *starts*. That prose is about the site,
+not about the account (ONE SUBJECT), so it stayed at the call site.
+
+**And the figure really reaches the pages.** Measured: `accountsFor` sent
+`percent`, but the three pickers that lacked it read `engineAccountMatrix`,
+which sent no figure at all — a component formatting a percentage nobody hands
+it would draw an em dash on every row for ever, with every test green. Both
+host readers now take `percent` and `resetsAt` from one `accountFigure()`, out
+of the same in-memory snapshot (X-170) the Engines page reads.
+
+**-1 is not 0% (X-256), restated where it gets broken.** "Nobody has read this
+account’s window" and "none of it is used" are opposite facts, and an empty
+space in a picker reads as good news. An unread account draws `· —` and says so
+in words; it never draws a zero.
+
+Also: the Console fixture now carries three sign-ins, so the account box is
+drawn in the looking glass at all — it never had been, and every change to it
+shipped blind. And `test_tasks_webview.js` builds its sandbox from the one
+shared list instead of the ninth hand-written copy of it, which is how this
+change first showed up: as `Cannot read properties of undefined`.
+
 ## 3.424.0 - X-261: a sign-in that falls over is announced whether or not a campaign is running (2026-09-07)
 
 **X-178's announcement was real, well written, and could only fire inside a

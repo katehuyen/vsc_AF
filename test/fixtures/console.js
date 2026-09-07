@@ -297,6 +297,25 @@ const data = () => ({
     grants: [{ mode: 'acceptEdits', label: 'Allow edits', detail: 'file edits auto-approved' }],
     engines: ENGINES,
     engine: 'codex',
+    /**
+     * ‼️ X-263 — THE ACCOUNT BOX, so it can actually be LOOKED AT.
+     *
+     * The composer's account picker had never been drawn in the looking glass:
+     * no fixture carried a sign-in, so the box was skipped ("a picker with no
+     * referent draws nothing") and every change to it shipped blind. These three
+     * rows are the three states the box has to survive — a measured standing
+     * choice, a slot nobody has read a figure for, and one whose sign-in has
+     * fallen over — which is also the widest label the box will ever hold.
+     */
+    composerAccountAxis: true,
+    composerAccount: 'work-1',
+    composerAccounts: [
+        { id: 'work-1', label: 'murvietnam-2', health: 'ready', active: true,
+            percent: 91, resetsAt: Date.now() + 42 * 60000 },
+        { id: 'spare', label: 'aicozums', health: 'ready', active: false, percent: -1 },
+        { id: 'old', label: 'claude-murvietnam', health: 'needs-signin', active: false,
+            percent: 12, resetsAt: Date.now() + 3 * 3600000 }
+    ],
     defaults: { engine: '', model: '', effort: '', permissionMode: '' },
     dropZone: true,
     attachMax: 20,

@@ -17543,15 +17543,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * about), so it is handed the whole matrix rather than one engine's slice —
      * exactly as `engineRouteMatrix` already is.
      */
+    /**
+     * ‼️ X-263 — HOW MUCH OF A SLOT'S PLAN IS LEFT, for the pickers that choose
+     * between them, out of ONE reader.
+     *
+     * Measured: `accountsFor` sent `percent` and the three pickers that lacked
+     * the figure read `engineAccountMatrix`, which sent none — so the same
+     * account read `work •` on the Tasks form and `work • 42% used` in the
+     * Console. Both readers now take the figure from here, because two of them
+     * deciding separately what "-1" means is the drift this closes.
+     *
+     * ‼️ -1 IS NOT 0 (X-256). `percent` is -1 when nothing has read this slot;
+     * `resetsAt` is 0 when the moment is unknown. The page draws an em dash for
+     * both, and never a zero — "unread" and "nothing used" are opposite facts.
+     */
+    const accountFigure = (slotId: string, usage: SlotUsage[]) => {
+        const u = usage.find(x => x.slotId === slotId);
+        return {
+            percent: u && u.percent >= 0 ? u.percent : -1,
+            resetsAt: u && u.resetsAt ? u.resetsAt : 0
+        };
+    };
     const engineAccountMatrix = (): Record<string,
-        { id: string; label: string; health: string; active: boolean }[]> => {
-        const out: Record<string, { id: string; label: string; health: string; active: boolean }[]> = {};
+        { id: string; label: string; health: string; active: boolean;
+            percent: number; resetsAt: number }[]> => {
+        const out: Record<string, { id: string; label: string; health: string; active: boolean;
+            percent: number; resetsAt: number }[]> = {};
         const active = activeAccounts();
+        // ‼️ THE USAGE IS AN IN-MEMORY SNAPSHOT (X-170), not a request — the
+        // service holds one budget per account and refreshes on its own beat, so
+        // reading it here costs nothing and a picker never waits on the network.
+        const usage = accountUsage.current();
         for (const sl of storedAccounts()) {
             (out[sl.engine] ??= []).push({
                 id: sl.id, label: slotLabel(sl),
                 health: slotIdentityFresh(sl).health,
-                active: active[sl.engine] === sl.id
+                active: active[sl.engine] === sl.id,
+                ...accountFigure(sl.id, usage)
             });
         }
         return out;
@@ -22311,15 +22339,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // the reader click to find out how much of a plan is left would be
             // the DENSITY rule broken on the one figure the choice turns on.
             const usage = accountUsage.current();
-            return slotsFor(storedAccounts(), engine).map(sl => {
-                const u = usage.find(x => x.slotId === sl.id);
-                return {
-                    id: sl.id, label: slotLabel(sl),
-                    health: slotIdentityFresh(sl).health,
-                    active: activeAccounts()[sl.engine] === sl.id,
-                    percent: u && u.percent >= 0 ? u.percent : -1
-                };
-            });
+            // ‼️ X-263 — the figure comes from the SAME reader the matrix uses,
+            // so a slot cannot be 42% on one picker and unread on another.
+            return slotsFor(storedAccounts(), engine).map(sl => ({
+                id: sl.id, label: slotLabel(sl),
+                health: slotIdentityFresh(sl).health,
+                active: activeAccounts()[sl.engine] === sl.id,
+                ...accountFigure(sl.id, usage)
+            }));
         },
         // X-213 — whether the axis exists on this engine at all, which is not
         // the same question as whether anything has been captured for it.

@@ -831,7 +831,9 @@
          */
         const accountRowsFor = (engine) =>
             ((DATA.accounts || {})[engine || 'claude'] || []).filter(a => a && a.id);
-        const MACHINE_ACCOUNT = '@machine';
+        // ‼️ X-263 — the sentinel and the row's name from the component; they
+        // were typed out in three page files.
+        const MACHINE_ACCOUNT = window.AFAccount.MACHINE;
         const accountOpts = (engine, sel) => {
             const rows = accountRowsFor(engine);
             if (!rows.length) { return ''; }
@@ -840,19 +842,17 @@
                 detail: 'The ACTIVE account of this engine answers when the delegation spawns — the one the'
                     + ' Engines page points at — and failing that the main sign-in. That is what every mission'
                     + ' written before this took, and it is not a decision recorded on the run.'
-            }), C.option(MACHINE_ACCOUNT, '💻 Machine Global', {
+            }), C.option(MACHINE_ACCOUNT, window.AFAccount.MACHINE_ROW, {
                 selected: sel === MACHINE_ACCOUNT,
                 detail: 'The identity this machine itself is signed in as — nothing is injected. Unlike the'
                     + ' empty row above this is PINNED: it stays here whatever the Engines page is pointing at'
                     + ' when the round fires, hours after anybody looked at this window.'
-            })].concat(rows.map(a => C.option(a.id,
-                (a.health === 'ready' ? '' : '⚠ ') + a.label + (a.active ? ' •' : ''), {
-                selected: a.id === sel,
-                detail: [
-                    a.active ? 'The standing choice for this engine right now.' : '',
-                    a.health === 'ready' ? '' : 'This slot needs signing in again before it can pay for a run.'
-                ].filter(Boolean).join('\n\n')
-            }))).join('');
+            })].join('')
+                // ‼️ X-263 — the ACCOUNT rows are drawn by the component, so
+                // this picker cannot fall behind the Console's on the one figure
+                // the choice turns on. The two rows above stay here because they
+                // are this SITE's sentence, not the account's (ONE SUBJECT).
+                + window.AFAccount.options(rows, sel, C);
         };
         // MIRROR: the box is narrow, so its tooltip opens with what it is set to
         // right now and then says what the field is.
