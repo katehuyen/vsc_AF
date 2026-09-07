@@ -232,7 +232,7 @@ import {
     slotsFor, statedAccountLabel
 } from './core/accountStore';
 import {
-    AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotCredentialsFile, slotIsUsable,
+    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotCredentialsFile, slotIsUsable,
     slotSessionDir
 } from './core/accountUsage';
  import * as accountQueue from './core/accountQueue';
@@ -14980,6 +14980,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             dismiss: (id) => noticesStore.dismiss(id)
         },
         writeAnswer,
+        /**
+         * ‼️ X-254 (d) — IS THIS SIGN-IN AT ITS WALL, from the one reader that
+         * already holds the figures.
+         *
+         * `accountUsage.current()` is an in-memory snapshot (X-170) refreshed on
+         * the service's own beat, so asking costs nothing and no caller waits on
+         * the network. The ceiling is `pickAccount`'s, not a second definition
+         * of "full" invented here.
+         *
+         * ‼️ `-1` IS NOT `100`. An account nobody has read answers "not at the
+         * wall" — "unknown" and "full" are opposite facts (X-256), and holding
+         * work back on an unread figure would stop the queue on a plan that may
+         * be empty.
+         */
+        accountWall: (account) => {
+            const u = accountUsage.current().find(x => x.slotId === account);
+            if (!u || typeof u.percent !== 'number' || u.percent < 0) { return undefined; }
+            return {
+                at: u.percent >= ACCOUNT_WALL_CEILING,
+                resetsAt: u.resetsAt, percent: u.percent
+            };
+        },
         resolveProject: (key) => projectStore.get(key)?.id,
         thresholds: () => ({
             groupSize: cfg().get<number>('queue.groupSize', 3),

@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.434.0 - X-254 (d): an item whose sign-in is at its wall WAITS (2026-09-07)
+
+**Closes X-254.** `queue.list` takes `ready: true`, which drops the items whose
+**stated** sign-in is full right now and reports how many were held and until
+when.
+
+**‼️ And this is not a new rule — it is the sibling of one already shipped.**
+`carryOnAccount` (X-211) moves a walled run onto another sign-in and refuses to
+for a run pinned to `@machine`, in its own words: *"'nothing is injected' is an
+instruction the user typed into the form, and a handover would inject one"*. That
+is the whole distinction, and it must not be reasoned about a second way: a
+**resolved** account may be handed over; a **stated** one is an instruction.
+`WorkItem.account` is always the stated kind.
+
+**Three answers that look like details and are not.** An item that names no
+sign-in is never held — empty means "the resolved account decides", and holding
+it would enforce a decision nobody made, leaving the queue quiet at 3 a.m. over
+plans no item ever asked for. `@machine` is never held: nothing is injected, so
+there is no window to be at the end of. And a sign-in nobody has **read** is not
+at the wall — `-1` and `100` are opposite facts (X-256), and this is the
+dangerous direction: treating unknown as full stops work on a plan that may be
+empty.
+
+**Off by default.** A list op that quietly started returning fewer rows would
+change what every caller written before today sees, and the rows it removed are
+the ones somebody is looking for. The caller about to take work asks, and gets
+both halves.
+
+"At the wall" is now one number (`ACCOUNT_WALL_CEILING`), named beside the
+rotation that already used it rather than invented a second time at the queue.
+
 ## 3.433.0 - X-254 (2/n): the Work Queue draws its fourth axis, and a dead sign-in cannot hide in it (2026-09-07)
 
 **The axis shipped in 3.430.0 and the page could not draw it**, because the page

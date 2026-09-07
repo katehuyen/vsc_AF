@@ -362,6 +362,91 @@ export function filterItems(list: WorkItem[], f: WorkItemFilter): WorkItem[] {
     return out;
 }
 
+/**
+ * ‼️ X-254 (d) — AN ITEM WHOSE SIGN-IN IS AT ITS WALL WAITS. IT IS NOT SLID
+ * ONTO ANOTHER PLAN.
+ *
+ * ‼️ AND THIS IS NOT A NEW RULE — it is the sibling of one already shipped, so
+ * do not reason about it a second way. `carryOnAccount` (`core/accountUsage.ts`,
+ * X-211) moves a walled run onto another sign-in, and it refuses to for a run
+ * PINNED to `@machine`, in its own words: "'nothing is injected' is an
+ * instruction the user typed into the form, and a handover would inject one".
+ * That is the whole distinction. A RESOLVED account may be handed over; a
+ * STATED one is an instruction. `WorkItem.account` is always the stated kind —
+ * somebody typed it into the row or passed it to `queue.add`.
+ *
+ * ‼️ AN ITEM THAT NAMES NO SIGN-IN IS NEVER HELD. Empty means "this item does
+ * not care, the resolved account decides" (the rule the other three axes
+ * follow), and holding it back would be enforcing a decision nobody made — the
+ * queue would go quiet at 3 a.m. over plans no item ever asked for.
+ * `@machine` is never held either: there is no directory to inject and no
+ * window to read, so there is no wall to be at.
+ *
+ * ‼️ AND THE QUEUE STILL DISPATCHES NOTHING. This does not park, retry or
+ * reschedule anything: it SORTS, so the caller that is about to take work can
+ * be told which items are takeable now and which are only waiting. The wall is
+ * read through an injected function because this module holds no usage and
+ * must not learn to — one reader (`accountUsage`), one threshold
+ * (`pickAccount`'s ceiling), no second definition of "full".
+ */
+export interface WallReading {
+    /** true = this sign-in is at or over the ceiling right now. */
+    at: boolean;
+    /** epoch ms its window turns over; 0 or absent when unknown. */
+    resetsAt?: number;
+    /** 0-100, or -1 for "nobody has read this account's window" (X-256). */
+    percent?: number;
+}
+
+export interface HeldItem {
+    item: WorkItem;
+    /** when the sign-in it asks for opens again; 0 = not known. */
+    until: number;
+    /** one sentence a caller can log or show, naming the sign-in. */
+    why: string;
+}
+
+export interface QueueByWall {
+    ready: WorkItem[];
+    waiting: HeldItem[];
+}
+
+/**
+ * Split a list into what can be taken now and what is only waiting on a plan.
+ *
+ * `atWall` answers for ONE slot id and may answer `undefined` for a sign-in it
+ * knows nothing about — which is NOT a wall. An account nobody has read is the
+ * em-dash case (X-256): "unknown" and "full" are opposite facts, and holding
+ * an item on an unread figure would stop work on a plan that may be empty.
+ */
+export function splitByWall(
+    list: WorkItem[],
+    atWall: (account: string) => WallReading | undefined
+): QueueByWall {
+    const ready: WorkItem[] = [];
+    const waiting: HeldItem[] = [];
+    for (const n of list) {
+        const want = String(n.account ?? '').trim();
+        if (!want || want === MACHINE_ON_QUEUE) { ready.push(n); continue; }
+        const w = atWall(want);
+        if (!w || !w.at) { ready.push(n); continue; }
+        const until = typeof w.resetsAt === 'number' && w.resetsAt > 0 ? w.resetsAt : 0;
+        waiting.push({
+            item: n, until,
+            why: `this item asks for ${want}, which is at ${
+                typeof w.percent === 'number' && w.percent >= 0 ? w.percent + '%' : 'its limit'
+            } of its window` + (until ? ` until ${new Date(until).toISOString()}` : '')
+                + ' — it waits rather than being moved onto a plan nobody named for it'
+        });
+    }
+    return { ready, waiting };
+}
+
+/** The machine's own sign-in, stated outright (X-211). Spelt here rather than
+ *  imported so this module keeps its one dependency; the value is shared with
+ *  `core/accountStore.ts` and a test pins the two together. */
+export const MACHINE_ON_QUEUE = '@machine';
+
 /** One row of the active-groups digest (GAP-3). */
 export interface GroupSummary {
     groupId: string;
@@ -793,6 +878,15 @@ export interface NoticesPort {
 
 export interface QueueOpsDeps {
     store: WorkQueueStore;
+    /**
+     * ‼️ X-254 (d) — IS THIS SIGN-IN AT ITS WALL RIGHT NOW.
+     *
+     * Injected because this module holds no usage figures and must not learn
+     * to: the host reads them once (`core/accountUsage.ts`, in memory, no
+     * network) and every surface asks the same reader. `undefined` for a slot
+     * nobody has read is NOT a wall — see `splitByWall`.
+     */
+    accountWall?: (account: string) => WallReading | undefined;
     /** Optional — enables queue.fromNotice cross-linking. */
     notices?: NoticesPort;
     /** Second leg for a DETAILED answer: persist markdown to 01_CEVAPLAR (a
@@ -895,23 +989,50 @@ export function registerQueueOps(bridge: BridgeRegistry, deps: QueueOpsDeps): vo
         },
         {
             op: 'queue.list',
-            describe: 'List work items, pinned/newest first. args: status? (captured|grouped|delegated|done|blocked|dropped), active? (bool — only non-terminal), author?, target?, engine?/model?/effort?/account? (X-49, X-254 — WHO the item asks for: pass your own engine id / model / effort / account slot id to get the items meant for you, or "(none)" on any axis for the ones nobody claimed there. Omitting an axis does NOT mean "unclaimed" — it means every item, claimed or not. So "the work for me and the work nobody asked anyone for" is TWO calls: engine="codex" then engine="(none)"), urgency?, groupId?, tag?, sourceNoticeId?, project? (id or name — or "(none)" for the ones nobody filed), limit? (default 50). Manager sweep: active=true (or status=captured) to find pending work; blocked items are the only ones that need the USER.',
-            handler: (args) => store.list({
-                status: optStr(args, 'status') || undefined,
-                active: args.active === true ? true : undefined,
-                author: optStr(args, 'author') || undefined,
-                target: optStr(args, 'target') || undefined,
-                engine: optStr(args, 'engine') || undefined,
-                model: optStr(args, 'model') || undefined,
-                effort: optStr(args, 'effort') || undefined,
-                account: optStr(args, 'account') || undefined,
-                urgency: optStr(args, 'urgency') || undefined,
-                groupId: optStr(args, 'groupId') || undefined,
-                tag: optStr(args, 'tag') || undefined,
-                sourceNoticeId: optStr(args, 'sourceNoticeId') || undefined,
-                projectId: projectFilter(optStr(args, 'project'), deps),
-                limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 50
-            })
+            describe: 'List work items, pinned/newest first. args: status? (captured|grouped|delegated|done|blocked|dropped), active? (bool — only non-terminal), author?, target?, engine?/model?/effort?/account? (X-49, X-254 — WHO the item asks for: pass your own engine id / model / effort / account slot id to get the items meant for you, or "(none)" on any axis for the ones nobody claimed there. Omitting an axis does NOT mean "unclaimed" — it means every item, claimed or not. So "the work for me and the work nobody asked anyone for" is TWO calls: engine="codex" then engine="(none)"), urgency?, groupId?, tag?, sourceNoticeId?, project? (id or name — or "(none)" for the ones nobody filed), limit? (default 50), ‼️ ready? (bool — X-254 (d): drop the items whose STATED sign-in is at its wall right now, and report how many were held and until when. Off by default, because an answer that silently narrowed would change what every existing caller sees. An item that names NO account is never held: empty means "the resolved account decides", and holding it would enforce a decision nobody made. ‼️ A held item WAITS — it is never slid onto another plan, because an account written on an item is an instruction, not a preference. The same distinction carryOnAccount already makes for a run pinned to @machine). Manager sweep: active=true (or status=captured) to find pending work; blocked items are the only ones that need the USER.',
+            handler: (args) => {
+                const out = store.list({
+                    status: optStr(args, 'status') || undefined,
+                    active: args.active === true ? true : undefined,
+                    author: optStr(args, 'author') || undefined,
+                    target: optStr(args, 'target') || undefined,
+                    engine: optStr(args, 'engine') || undefined,
+                    model: optStr(args, 'model') || undefined,
+                    effort: optStr(args, 'effort') || undefined,
+                    account: optStr(args, 'account') || undefined,
+                    urgency: optStr(args, 'urgency') || undefined,
+                    groupId: optStr(args, 'groupId') || undefined,
+                    tag: optStr(args, 'tag') || undefined,
+                    sourceNoticeId: optStr(args, 'sourceNoticeId') || undefined,
+                    projectId: projectFilter(optStr(args, 'project'), deps),
+                    limit: typeof args.limit === 'number' && args.limit > 0 ? args.limit : 50
+                });
+                /**
+                 * ‼️ X-254 (d) — ASKED FOR, NEVER APPLIED BY DEFAULT.
+                 *
+                 * A list op that quietly started returning fewer rows would
+                 * change what every caller written before today sees, and the
+                 * rows it removed are the ones somebody is looking for. So the
+                 * caller about to TAKE work says so, and gets both halves: the
+                 * items it may take, and the ones it may not, with the reason.
+                 *
+                 * ‼️ AND NOTHING IS SLID ONTO ANOTHER PLAN. A held item waits.
+                 * `carryOnAccount` may move a run whose account was RESOLVED;
+                 * an account written onto a queue item is an instruction
+                 * somebody typed, which is the same reason that function
+                 * refuses to move a run pinned to `@machine`.
+                 */
+                if (args.ready !== true || !deps.accountWall) { return out; }
+                const split = splitByWall(out, deps.accountWall);
+                return {
+                    items: split.ready,
+                    held: split.waiting.length,
+                    waiting: split.waiting.map(w => ({
+                        id: w.item.id, account: w.item.account ?? '',
+                        until: w.until || null, why: w.why
+                    }))
+                };
+            }
         },
         {
             op: 'queue.get',

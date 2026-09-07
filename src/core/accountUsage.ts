@@ -267,6 +267,21 @@ export function pickAccount(list: SlotUsage[], opts: PickAccountOptions = {}): S
  *  retry itself starts on, so a wait under it buys the work nothing. */
 export const CARRY_ON_FLOOR_MS = 60_000;
 
+/**
+ * ‼️ X-254 (d) — WHAT COUNTS AS "AT THE WALL", named ONCE.
+ *
+ * `pickAccount` has taken a `ceiling` since X-207 and every caller has been
+ * passing 100 or nothing. The work queue now asks the same question — "is
+ * this sign-in full right now" — and a second number invented over there is
+ * how two surfaces come to disagree about the same plan on the same night.
+ * So the default lives here, beside the rotation that already uses it.
+ *
+ * 100 rather than something cautious: the figure is a percentage of a window
+ * the CLI itself reports, and holding work back at 90 would idle a plan that
+ * still has a tenth of its window left.
+ */
+export const ACCOUNT_WALL_CEILING = 100;
+
 /** What a run that met a wall knows about itself when it asks to be carried on. */
 export interface CarryOnInput {
     /** the sign-in it was running as; empty = whichever one was active */
