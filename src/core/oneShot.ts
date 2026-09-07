@@ -99,13 +99,125 @@ export function oneShotEnv(want: OneShotWant): Record<string, string> | undefine
 }
 
 /**
+ * ‼️ X-249 (2/n) — WHAT CAME BACK, and it is why an engine axis is not a select.
+ *
+ * A one-shot turn is a PAIR of engine-specific facts, and the second one is the
+ * one that blocked X-249: the ENVELOPE. Claude's `--output-format json` prints
+ * an object carrying `result`, `session_id`, `total_cost_usd` and a `usage`
+ * block whose four token fields are summed. The flag, the field names and the
+ * cost field are all Claude's; a second engine publishes its own shape.
+ *
+ * So building the line and reading the reply are declared TOGETHER, per engine.
+ * Splitting them across two files is how an engine ends up spawnable but
+ * unreadable — which is worse than being refused, because it spends a window
+ * and comes back looking like a model that said nothing.
+ */
+export interface OneShotEnvelope {
+    /** The reply text. */
+    result: string;
+    /** The engine's own continuation handle, where it has one. */
+    sessionId?: string;
+    costUSD?: number;
+    tokens?: number;
+    isError: boolean;
+    subtype?: string;
+}
+
+export interface OneShotAdapter {
+    engine: string;
+    /** Build the command line for one short turn. */
+    line(want: OneShotWant): string;
+    /** Read what the engine printed. `null` = not an envelope at all, which the
+     *  caller must report honestly rather than treat as an empty reply. */
+    envelope(stdout: string): OneShotEnvelope | null;
+}
+
+const asObj = (s: string): Record<string, unknown> | undefined => {
+    try {
+        const j = JSON.parse(s) as unknown;
+        return j && typeof j === 'object' && !Array.isArray(j)
+            ? j as Record<string, unknown> : undefined;
+    } catch { return undefined; }
+};
+
+const claudeAdapter: OneShotAdapter = {
+    engine: 'claude',
+    line(want) {
+        const args = (want.args ?? '').trim();
+        return `claude ${args ? args + ' ' : ''}-p "${want.prompt ?? ''}"`;
+    },
+    /** Tolerates leading noise lines: the CLI prints warnings before the JSON. */
+    envelope(stdout) {
+        let o = asObj(stdout.trim());
+        if (!o || typeof o.result !== 'string') {
+            const lines = stdout.trim().split('\n');
+            for (let i = lines.length - 1; i >= 0; i--) {
+                const c = asObj(lines[i].trim());
+                if (c && typeof c.result === 'string') { o = c; break; }
+            }
+        }
+        if (!o || typeof o.result !== 'string') { return null; }
+        // usage: {input_tokens, output_tokens, cache_*_input_tokens} — sum = call total
+        let tokens: number | undefined;
+        if (o.usage && typeof o.usage === 'object') {
+            const u = o.usage as Record<string, unknown>;
+            const n = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']
+                .reduce((a, k) => a + (typeof u[k] === 'number' ? u[k] as number : 0), 0);
+            if (n > 0) { tokens = n; }
+        }
+        return {
+            result: o.result,
+            sessionId: typeof o.session_id === 'string' ? o.session_id : undefined,
+            costUSD: typeof o.total_cost_usd === 'number' ? o.total_cost_usd : undefined,
+            tokens,
+            isError: o.is_error === true
+                || (typeof o.subtype === 'string' && o.subtype.startsWith('error')),
+            subtype: typeof o.subtype === 'string' ? o.subtype : undefined
+        };
+    }
+};
+
+/**
+ * ‼️ THE REGISTRY, AND WHAT IS DELIBERATELY NOT IN IT.
+ *
+ * Only Claude. Codex's `exec` prints a different envelope and IT HAS NOT BEEN
+ * MEASURED — so there is no Codex adapter, and asking for one gets `undefined`
+ * exactly as `oneShotLine` has always refused by name. A guessed field name
+ * would not fail loudly: it would parse to `null` at 3 a.m. in the middle of a
+ * mission round and read as "the model replied with nothing".
+ *
+ * Adding an engine is a registration here, with BOTH halves, and the test
+ * refuses a row that has only one of them.
+ */
+const ADAPTERS: OneShotAdapter[] = [claudeAdapter];
+
+/** The adapter for an engine, or `undefined` where none has been written. */
+export function oneShotAdapter(engine: string | undefined): OneShotAdapter | undefined {
+    const id = (engine || '').trim() || 'claude';
+    return ADAPTERS.find(a => a.engine === id);
+}
+
+/** The engines a one-shot turn can actually be run on. */
+export function oneShotEngines(): string[] {
+    return ADAPTERS.map(a => a.engine);
+}
+
+/**
+ * Read one engine's reply. `null` = this engine has no adapter, or what it
+ * printed was not an envelope — both of which the caller reports honestly.
+ */
+export function oneShotEnvelope(engine: string | undefined, stdout: string): OneShotEnvelope | null {
+    const a = oneShotAdapter(engine);
+    return a ? a.envelope(stdout) : null;
+}
+
+/**
  * The command line, built once. `undefined` means this engine has no one-shot
  * form yet — the caller REFUSES rather than falling through to another engine.
  */
 export function oneShotLine(want: OneShotWant): string | undefined {
-    if (engineOf(want) !== 'claude') { return undefined; }
-    const args = (want.args ?? '').trim();
-    return `claude ${args ? args + ' ' : ''}-p "${want.prompt ?? ''}"`;
+    const a = oneShotAdapter(engineOf(want));
+    return a ? a.line(want) : undefined;
 }
 
 /**

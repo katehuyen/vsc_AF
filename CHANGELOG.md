@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.427.0 - X-249 (2/n) · X-260 (2/n): a one-shot turn is a per-engine adapter, line and envelope together (2026-09-07)
+
+**Partial — the shared path both items were blocked on. Neither item closes here.**
+
+**Why an engine axis was never "one more select".** X-260 (1/n) gave the
+fleet’s dozen short turns an account, and stopped at Claude: `oneShotLine`
+refuses any other engine by name rather than quietly spawning `claude`.
+X-249’s remaining half was measured to be blocked from the other side, and the
+blocker is not the command line — it is the ENVELOPE. `parsePlannerEnvelope`
+read Claude’s `--output-format json`: an object carrying `result`,
+`session_id`, `total_cost_usd` and a `usage` block whose four token fields are
+summed. The flag, the field names and the cost field are all Claude’s.
+
+**So the two halves are now declared together, per engine** (`OneShotAdapter`
+in `core/oneShot.ts`): build the line, read what came back. Splitting them
+across two files is how an engine ends up spawnable but unreadable — which is
+worse than being refused, because it spends a window and returns looking like a
+model that said nothing. The test refuses a registration that has only one half.
+
+**`parsePlannerEnvelope` kept its name and lost its copy.** Four call sites
+import it; the envelope is a fact about the ENGINE, not about missions, so the
+function now delegates to the adapter. Two readers of one envelope is exactly
+the shape this family of items keeps closing.
+
+**And no format is invented.** There is still only a Claude adapter. Codex’s
+`exec` envelope has not been measured, so asking for it returns `undefined` and
+reading with it returns `null` — the same refusal-by-name `oneShotLine` always
+had. A guessed field name would not fail loudly: it would parse to `null` at
+3 a.m. inside a mission round and read as an empty reply.
+
+**Still open on both items** (unchanged, and deliberately not decided here):
+the leader spawn at `extension.ts` still holds its own `cp.spawn` and has yet
+to move onto `execOneShot`; `LEADER_ENGINE` is still a constant; the headless
+`farmService` still has no account of its own (it has no extension to ask, so
+the account must travel in its `ServiceConfig`); and `OneShotCaps.runtime` is
+still uninstalled, because the route resolver answers per AGENT and a
+fleet-wide sweep has no agent to answer for — inventing one would be a policy
+nobody chose.
+
 ## 3.426.0 - X-262: a surface that inherits a sign-in says which one, before the click (2026-09-07)
 
 **The launch doors were never wrong.** `doors/projects.ts` and

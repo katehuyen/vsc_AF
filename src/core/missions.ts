@@ -17,6 +17,9 @@ import {
     PrimitiveName, PRIMITIVES, primitivesFor, TaskIntent, unknownActionError
 } from './missionPrimitives';
 import { describeFailure, failure, StepFailure } from './missionFailure';
+// ‼️ X-249 (2/n) — the engine's own envelope, declared beside the line that
+// produced it. This file keeps the NAME four call sites import, not the shape.
+import { OneShotEnvelope, oneShotEnvelope } from './oneShot';
 import {
     buildSpeakerPrompt, conversationDigest, conversationMessages, intentFlags, intentKind, LaneCarry,
     MessageIntent, messageIntentMenu, MESSAGE_VISIBILITY, MessageVisibility, MissionConversation,
@@ -29,7 +32,7 @@ import {
 import type { DelegateOrigin, DelegateRun } from './missionMode';
 import type { PlannerLaunch } from './plannerLaunch';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
-import { extractJson, tryParseJson } from './util';
+import { extractJson } from './util';
 
 export {
     deleteTrace, MISSION_TRACE_SCHEMA, MISSION_TRACE_TYPES, MissionTraceWriter, normalizeStrategy,
@@ -2864,38 +2867,13 @@ export function dupKey(agent: string, prompt: string): string {
  * the reply text plus session_id (planner continuity) and total_cost_usd.
  * Tolerates leading noise lines; null = not an envelope at all.
  */
-export function parsePlannerEnvelope(stdout: string): {
-    result: string; sessionId?: string; costUSD?: number; tokens?: number; isError: boolean; subtype?: string;
-} | null {
-    const asObj = (s: string): Record<string, unknown> | undefined => {
-        const j = tryParseJson(s);
-        return j && typeof j === 'object' && !Array.isArray(j) ? j as Record<string, unknown> : undefined;
-    };
-    let o = asObj(stdout.trim());
-    if (!o || typeof o.result !== 'string') {
-        const lines = stdout.trim().split('\n');
-        for (let i = lines.length - 1; i >= 0; i--) {
-            const c = asObj(lines[i].trim());
-            if (c && typeof c.result === 'string') { o = c; break; }
-        }
-    }
-    if (!o || typeof o.result !== 'string') { return null; }
-    // usage: {input_tokens, output_tokens, cache_*_input_tokens} — sum = call total
-    let tokens: number | undefined;
-    if (o.usage && typeof o.usage === 'object') {
-        const u = o.usage as Record<string, unknown>;
-        const n = ['input_tokens', 'output_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens']
-            .reduce((a, k) => a + (typeof u[k] === 'number' ? u[k] as number : 0), 0);
-        if (n > 0) { tokens = n; }
-    }
-    return {
-        result: o.result,
-        sessionId: typeof o.session_id === 'string' ? o.session_id : undefined,
-        costUSD: typeof o.total_cost_usd === 'number' ? o.total_cost_usd : undefined,
-        tokens,
-        isError: o.is_error === true || (typeof o.subtype === 'string' && o.subtype.startsWith('error')),
-        subtype: typeof o.subtype === 'string' ? o.subtype : undefined
-    };
+export function parsePlannerEnvelope(stdout: string): OneShotEnvelope | null {
+    // ‼️ X-249 (2/n) — THE SHAPE MOVED, THE NAME STAYED. Four call sites import
+    // this, and the envelope is not a fact about missions: it is a fact about
+    // the ENGINE, declared beside the command line that produced it
+    // (`core/oneShot.ts`). Keeping a second copy here is precisely how "the
+    // planner reads one envelope and the leader reads another" happens.
+    return oneShotEnvelope('claude', stdout);
 }
 
 // ---------------------------------------------------------------------------
