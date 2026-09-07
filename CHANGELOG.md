@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.431.0 - X-253: a saved launch profile remembers the sign-in, softly (2026-09-07)
+
+**Closes X-253, and the user chose the middle answer in their own words:** the
+profile remembers a sign-in, the launcher opens on it, it is not a lock, and a
+profile may be saved with the box deliberately empty.
+
+**The exemption this replaces was honest, and its risk is now answered by name
+rather than avoided.** `profileDoor` carried a written reason for dropping the
+account — "a profile is a SETUP and an account is a STATE; stored, it would pin
+a saved launch to a plan that may be exhausted by the time anybody presses it".
+That risk is real. Leaving the dimension out is not the only way to answer it,
+and it cost the reader the one fact a row offering to spend a plan should state
+before it is pressed. So all three halves are built instead: a profile pointing
+at a sign-in that is no longer on this machine opens EMPTY and says which one
+went, by name; a stored one is a seed the reader may move before starting; and a
+profile that stores none launches on the resolved account exactly as before.
+
+**‼️ And it is deliberately NOT a lock in `matchProfile`.** That function is what
+tells the launcher "you are looking at this profile", and every profile on this
+machine was saved before the account was a dimension while a launcher always
+carries a resolved one — so comparing it strictly would have made the row stop
+recognising all of them at once, which reads as "it forgot my profiles". A
+profile that says nothing about the sign-in matches whatever answered; one that
+names a sign-in must agree, because the reader may move the box after loading
+it and the row must not go on claiming a setup that is no longer on screen.
+
+**Empty stays a real answer.** "Says nothing" is the first row of the picker
+rather than an empty box — it is what every profile saved before this means, and
+it is what the user asked to stay possible. The row is drawn only where the
+engine can isolate a sign-in and at least one has been captured, the same rule
+the launcher's own Account row follows.
+
+`profile` is the last door on the launch matrix to carry the account; no door
+claims an exemption from it any more.
+
 ## 3.430.0 - X-254 (1/n): the work queue's fourth route axis — whose plan pays (2026-09-07)
 
 **The file counted three of four.** `WorkItem` carries `engine · model · effort`

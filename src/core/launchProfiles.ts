@@ -58,6 +58,26 @@ export const PROFILE_KEYS = [
      * which is how `surface` came to be stored on save and dropped on load.
      */
     'providerId', 'tier',
+    /**
+     * ‼️ X-253 — WHOSE PLAN THE SETUP SPENDS, and the user's own decision was
+     * the SOFT one: the profile remembers a sign-in, the box opens on it, and
+     * nothing is locked.
+     *
+     * It sits beside the route because it is the same question one axis over —
+     * the route says which endpoint answers, this says which sign-in is billed
+     * and rate-limited for it. The objection it was exempt for is real and is
+     * answered elsewhere rather than by leaving the dimension out: a profile
+     * pointing at a slot that is no longer on the machine arrives EMPTY and
+     * says so (`profileAccountGone`), and a stored one never outranks the box
+     * the reader can move before pressing (`matchProfile` treats it as a seed).
+     *
+     * ‼️ AND IT IS NOT A LOCK IN `matchProfile`, which is where the obvious
+     * implementation breaks: every profile on this machine was saved before
+     * this dimension existed and a launcher always carries a resolved account,
+     * so a strict comparison would have made the row stop recognising all of
+     * them at once — the same trap `surface` has its own clause for.
+     */
+    'account',
     'model', 'variant', 'effort', 'permissionMode', 'prompt'
 ] as const;
 
@@ -158,7 +178,18 @@ export function matchProfile(
 ): LaunchProfile | undefined {
     const mine = profileFrom(o, 'current', surface);
     return list.find(p =>
-        PROFILE_KEYS.every(k => (p[k] ?? '') === (mine[k] ?? ''))
+        PROFILE_KEYS.filter(k => k !== 'account')
+            .every(k => (p[k] ?? '') === (mine[k] ?? ''))
+        // ‼️ X-253 — THE ACCOUNT IS A SEED, NOT A LOCK, and this clause is the
+        // whole difference between the user's answer and the strict one they
+        // did not pick. A profile that says nothing about the sign-in matches
+        // whatever the launcher resolved — which is EVERY profile saved before
+        // this dimension existed, and the launcher always carries a resolved
+        // account, so without this the row would have stopped naming any of
+        // them the day this shipped. A profile that DOES name one must agree,
+        // because the reader may move the box after loading it and the row must
+        // not go on claiming a setup that is no longer on screen.
+        && (!p.account || (p.account ?? '') === (mine.account ?? ''))
         // ‼️ K-34 — a profile that says nothing about the discipline matches a
         // launcher that says nothing either, and a profile that DOES say must
         // agree — otherwise the row would go on claiming a profile after the
@@ -261,12 +292,53 @@ export function deleteProfile(list: LaunchProfile[], name: string): LaunchProfil
 export function describeProfile(p: LaunchProfile): string {
     const rest: LaunchOptions = { ...p };
     delete rest.name;
-    const said = describeLaunch(rest);
+    const bits = [describeLaunch(rest)];
+    /**
+     * ‼️ X-253 — AND WHOSE PLAN IT SPENDS, said HERE rather than in
+     * `describeLaunch`.
+     *
+     * That function describes a LAUNCH, where the account is resolved a moment
+     * later and naming it on every line would spend a column on an answer
+     * nobody chose. A profile is the one place it IS a chosen part of the
+     * setup — so a row offering to spend a particular plan says which one
+     * before it is pressed, and two profiles differing only in sign-in stop
+     * reading as the same row.
+     */
+    if (p.account?.trim()) { bits.push(`as ${p.account.trim()}`); }
     // ‼️ …and WHERE, because it is the dimension a reader notices first and the
     // one that was invisible: a row that reads "opus · effort high" says
     // nothing about the window the session will appear in.
     const where = profileSurface(p);
-    if (!where) { return said; }
-    const w = where === 'console' ? 'in the Console' : 'in a terminal';
-    return said === 'CLI defaults' ? w : `${said} · ${w}`;
+    if (where) { bits.push(where === 'console' ? 'in the Console' : 'in a terminal'); }
+    // "CLI defaults" is what `describeLaunch` says when nothing was chosen; it
+    // is a sentence, not a bit, so anything real crowds it out rather than
+    // standing beside it.
+    return bits.length > 1 && bits[0] === 'CLI defaults'
+        ? bits.slice(1).join(' · ') : bits.join(' · ');
+}
+
+/**
+ * ‼️ X-253 — THE SIGN-IN A PROFILE NAMES THAT IS NO LONGER ON THIS MACHINE.
+ *
+ * The risk the account exemption was written for, answered by name instead of
+ * by leaving the dimension out: a setup saved months ago points at a slot the
+ * user has since deleted, and pressing it must NOT quietly spend a different
+ * plan. So the caller asks this first, drops the dead answer, and SAYS which
+ * one it dropped — an empty box the reader can see beats a full one that is
+ * wrong.
+ *
+ * ‼️ AN EMPTY MACHINE IS NOT A MACHINE WHERE EVERYTHING IS GONE. With no slots
+ * captured at all the account axis does not apply, and answering "gone" there
+ * would put a warning in front of every profile on a fresh install — including
+ * every one saved before this dimension existed.
+ *
+ * Returns the slot id that is missing, or `undefined` when there is nothing to
+ * warn about.
+ */
+export function profileAccountGone(
+    p: LaunchProfile, known: readonly string[]
+): string | undefined {
+    const want = (p.account ?? '').trim();
+    if (!want || !known.length) { return undefined; }
+    return known.some(k => k === want) ? undefined : want;
 }

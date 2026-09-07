@@ -253,14 +253,26 @@ ok('…and answers with an object rather than throwing on a fixture',
      * promised: the planner spawned with no environment at all, so "each
      * delegate resolves the account at its own spawn" had no code behind it.
      */
-    ok('‼️ X-169 — the sign-in reaches every door that could state one',
+    /**
+     * ‼️ X-253 — AND `profile` IS ON THIS LIST NOW, TOO, which is the last door
+     * that was not.
+     *
+     * Its exemption said "a profile is a SETUP and an account is a STATE", and
+     * the risk it named was real: a saved launch pinned to a plan that may be
+     * exhausted — or deleted — by the time anybody presses it. The user's
+     * decision was the soft form, and the risk is answered by name instead of
+     * by dropping the dimension: `profileAccountGone` empties the box and says
+     * which sign-in went, `matchProfile` treats a stored one as a seed the
+     * reader may move, and a profile that stores none still launches on the
+     * resolved account exactly as it did before.
+     */
+    ok('‼️ X-169, X-253 — the sign-in reaches EVERY door now',
         ['composer', 'treeRow', 'treeMenu', 'launcher', 'surfacePick', 'projects',
-            'webviews', 'palette', 'bridge', 'task', 'automation', 'mission']
+            'webviews', 'palette', 'bridge', 'task', 'automation', 'mission', 'profile']
             .every(d => has(d, 'account')));
-    ok('…and the ONE that deliberately does not is SAID to, because a state is not a saved setup',
-        ['profile'].every(d =>
-            !has(d, 'account')
-            && !!doorExemptions(LAUNCH_DOORS.find(x => x.id === d)).account));
+    ok('‼️ …and no door claims an exemption from it any more — an exemption left '
+        + 'standing over a dimension the door DOES carry is a reason nobody reads again',
+        LAUNCH_DOORS.every(d => !doorExemptions(d).account));
     ok('‼️ the bridge collects from its ARGUMENTS and does not inherit — the one asymmetry',
         LAUNCH_DOORS.find(d => d.id === 'bridge').collect({
             agentId: 'a', seed: () => ({ model: 'from-the-record' }), picked: {}

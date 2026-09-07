@@ -62,7 +62,7 @@
     },
     "profile": {
       "engine": "carried",
-      "account": "exempt: X-169 - a profile is a SETUP and an account is a STATE. Stored, it would pin a saved launch to a plan that may be exhausted by the time anybody presses it, and it would outrank the use-this-next gesture the same way a per-agent memory would - which is the decision that item took. A launch from a profile still runs on the resolved account; it is simply not the profile that answers.",
+      "account": "carried",
       "providerId": "carried",
       "tier": "carried",
       "variant": "carried",

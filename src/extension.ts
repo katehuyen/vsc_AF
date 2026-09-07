@@ -199,7 +199,8 @@ import {
     StoredProviderProfile
 } from './core/providerProfiles';
 import {
-    applyProfile, deleteProfile, describeProfile, editProfile, matchProfile, profileFrom,
+    applyProfile, deleteProfile, describeProfile, editProfile, matchProfile,
+    profileAccountGone, profileFrom,
     profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile
 } from './core/launchProfiles';
 import {
@@ -20283,6 +20284,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     detail: 'which surface a session started from this profile opens in',
                     act: 'where'
                 },
+                /**
+                 * ‼️ X-253 — WHOSE PLAN THIS SETUP SPENDS, and the row is the
+                 * reason the dimension can be stored at all.
+                 *
+                 * The user's answer was the SOFT one: the profile remembers a
+                 * sign-in, the launcher opens on it, and it is not a lock. So
+                 * "says nothing" stays a real third answer offered by name —
+                 * it is what every profile saved before this means, and what a
+                 * setup that genuinely does not care should keep meaning.
+                 *
+                 * Drawn only where the engine can isolate a sign-in AND at
+                 * least one has been captured, the same rule the launcher's own
+                 * Account row follows: a row here on an engine that ignores the
+                 * variable would be a box that lies.
+                 */
+                ...(accountRowsFor(spec.id).length ? [{
+                    label: '$(account) Account',
+                    description: draft.account?.trim()
+                        ? (findSlot(storedAccounts(), draft.account.trim())
+                            ? slotLabel(findSlot(storedAccounts(), draft.account.trim())!)
+                            : `${draft.account.trim()} (not on this machine)`)
+                        : 'says nothing — the standing choice answers',
+                    detail: 'which sign-in a session started from this profile runs as. '
+                        + 'It is a SEED, not a lock: the launcher opens on it and you can '
+                        + 'move it before starting, and a profile pointing at a sign-in that '
+                        + 'is gone opens empty and says so.',
+                    act: 'account'
+                } as Row] : []),
                 {
                     label: '$(sparkle) Model', description: show(draft.model),
                     detail: em()?.note ?? 'which model the session runs on', act: 'model'
@@ -20385,6 +20414,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const v = await pickChoice('Reasoning effort for this profile',
                     effortsFor(em(), draft.model ?? ''), draft.effort ?? '', false);
                 if (v !== undefined) { draft.effort = v; }
+                continue;
+            }
+            /**
+             * ‼️ X-253 — AND "SAYS NOTHING" IS THE FIRST ROW, not an empty box.
+             *
+             * The launcher's own Account picker offers '' as "Main account",
+             * because there the question is which sign-in this ONE session runs
+             * as and the answer is always some identity. Here the question is
+             * what the SETUP stores, and leaving it unstored is a different
+             * answer from naming the main account — it is the profile saying
+             * "whatever is standing when you press me", which is what the user
+             * asked to stay possible ("istersen orayı boş olarak profili
+             * kaydedebilirsin").
+             */
+            if (pick.act === 'account') {
+                const v = await pickChoice(
+                    'Which sign-in should a session from this profile open on?',
+                    [{
+                        id: '', label: 'Says nothing',
+                        detail: 'the standing choice answers at launch — what every profile '
+                            + 'saved before this means'
+                    }, ...accountRowsFor(spec.id)],
+                    draft.account ?? '', false);
+                if (v !== undefined) {
+                    if (v.trim()) { draft.account = v.trim(); } else { delete draft.account; }
+                }
                 continue;
             }
             if (pick.act === 'perm') {
@@ -21019,7 +21074,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // own name alone. That is the whole load, in one call that a
                 // test can reach (src/core/launchProfiles.ts).
                 if (loaded) {
-                    o = applyProfile(o, loaded);
+                    /**
+                     * ‼️ X-253 — A SIGN-IN THAT IS NO LONGER HERE IS DROPPED AND
+                     * SAID, before the setup is applied.
+                     *
+                     * This is the risk the exemption on this door was written
+                     * for, answered rather than avoided: a setup saved months
+                     * ago names a slot the user has since deleted, and the one
+                     * outcome that must never happen is it quietly opening on
+                     * somebody else's plan. So the box arrives EMPTY — the
+                     * standing choice answers again, visibly — and the reader is
+                     * told which sign-in went, by name, so they can point the
+                     * profile at a live one instead of wondering what changed.
+                     */
+                    const gone = profileAccountGone(loaded, storedAccounts().map(s => s.id));
+                    const use = gone ? { ...loaded, account: undefined } : loaded;
+                    if (gone) {
+                        void vscode.window.showWarningMessage(
+                            `Agent Farm: “${loaded.name}” is saved on the sign-in "${gone}", `
+                            + 'which is not on this machine any more — the Account row is empty '
+                            + 'and the standing choice will answer. Pick one and save the '
+                            + 'profile again to pin it.');
+                    }
+                    o = applyProfile(o, use);
                     // ‼️ A-11 — INCLUDING THE SURFACE. Saving with the Console
                     // selected and loading back into a terminal was the loudest
                     // half of "it does not load the profile". A profile that

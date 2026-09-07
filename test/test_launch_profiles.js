@@ -52,8 +52,12 @@ const names = list => list.map(p => p.name).join(',');
     // serves it and whose key pays — and two profiles differing only in route
     // were indistinguishable to `matchProfile`, whose whole job is telling
     // setups apart. Ordered the way the answers depend on each other.
-    ok('the eight dimensions are exactly the setup', PROFILE_KEYS.join(',')
-        === 'engine,providerId,tier,model,variant,effort,permissionMode,prompt');
+    // X-253 — and the NINTH is the sign-in, by the user's decision and in the
+    // soft form: stored, preselected, never a lock. Its own rules are pinned in
+    // test_profile_account.js, because they are the part a later tidy-up would
+    // undo without noticing.
+    ok('the nine dimensions are exactly the setup', PROFILE_KEYS.join(',')
+        === 'engine,providerId,tier,account,model,variant,effort,permissionMode,prompt');
 }
 
 // ---------- loading one ----------
