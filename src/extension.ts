@@ -15095,6 +15095,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             .map(e => ({ id: e.id, label: e.label, takesEffort: engineTakesEffort(e.id) })),
         engineModels: () => engineModelMatrix(),
         efforts: () => EFFORT_CHOICES,
+        // ‼️ X-254 (2/n) — and the sign-ins, from the same one place the Tasks
+        // form and the Console read them. The queue starts nothing; this is the
+        // vocabulary its fourth route box needs to be a picker rather than a
+        // free-text field where `aicozums` and `aicozums-2` are equally true.
+        engineAccounts: () => engineAccountMatrix(),
         // ‼️ The whole list, closed ones included. A picker wants the open
         // projects; a ROW that is already stamped with a finished one still has
         // to draw its name, and dropping it would print an item's project as

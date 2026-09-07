@@ -14,9 +14,13 @@
     /** The engine filter's word for "nobody asked for one" — the page's own
      *  half of core/workqueue.ts NO_ROUTE, and never a real engine id. */
     const NO_ENGINE = '(none)';
-    const DEF = { fTarget: null, fEngine: null, fAuthor: null, fProject: null, query: '', showDropped: false, agentLaneOpen: false };
+    /** X-254 - and the same word for the sign-in axis, for the same reason:
+     *  an item nobody claimed a plan for is a BUCKET, not an absence. */
+    const NO_ACCOUNT = '(none)';
+    const DEF = { fTarget: null, fEngine: null, fAccount: null, fAuthor: null, fProject: null, query: '', showDropped: false, agentLaneOpen: false };
     let fTarget = Array.isArray(st.fTarget) ? st.fTarget : null;
     let fEngine = Array.isArray(st.fEngine) ? st.fEngine : null;
+    let fAccount = Array.isArray(st.fAccount) ? st.fAccount : null;
     let fAuthor = Array.isArray(st.fAuthor) ? st.fAuthor : null;
     // Which projects to list. Picked by ID rather than by name so a rename does
     // not silently empty the filter — the picker prints the name.
@@ -84,7 +88,7 @@
         return `<a href="#" class="q-live q-live-${m[2]} q-afnav" data-to="${to}" title="Live ${esc(lv.kind)} status — click to open${lv.title ? ': ' + esc(lv.title) : ''}">${m[0]} ${esc(m[1])}</a>`;
     }
 
-    function saveState() { if (vscode.setState) { vscode.setState({ fTarget, fEngine, fAuthor, query, showDropped, agentLaneOpen }); } }
+    function saveState() { if (vscode.setState) { vscode.setState({ fTarget, fEngine, fAccount, fAuthor, query, showDropped, agentLaneOpen }); } }
     function esc(s) { return C.esc(String(s == null ? '' : s)); }
     function fileBase(p) { return String(p || '').split(/[\\/]/).pop(); }
     function authorChip(a) { return a === 'user' ? '🧑 you' : '🤖 ' + esc(a); }
@@ -115,11 +119,15 @@
     function matchesQuery(n) {
         // the box is a QUERY, not a substring — media/afQuery.js
         return window.AFQuery.compile(query).test(
-            [n.text, n.target || '', n.engine || '', n.model || '', n.effort || '', n.author, n.resolution || '', n.stamp || '', (n.tags || []).join(' ')].join(' '));
+            [n.text, n.target || '', n.engine || '', n.account || '', n.model || '', n.effort || '', n.author, n.resolution || '', n.stamp || '', (n.tags || []).join(' ')].join(' '));
     }
     function passesFilters(n) {
         return (!fTarget || fTarget.indexOf(n.target || '') >= 0) &&
             (!fEngine || fEngine.indexOf(n.engine || NO_ENGINE) >= 0) &&
+            // X-254 - whose plan the item asks for, on the same terms as the
+            // engine above: the unclaimed ones answer to their own bucket so a
+            // sign-in filter never makes rows vanish with nothing naming them.
+            (!fAccount || fAccount.indexOf(n.account || NO_ACCOUNT) >= 0) &&
             (!fAuthor || fAuthor.indexOf(n.author) >= 0) &&
             // An unfiled item answers to the explicit "(none)" bucket, so a
             // project filter never makes rows disappear without a name for
@@ -385,10 +393,36 @@
         const eng = d.engine || '';
         const models = eng ? window.AFEngine.models(L, eng) : [];
         const efforts = eng ? window.AFEngine.efforts(L, eng, d.model || '') : [];
+        const accounts = eng ? engineAccounts(eng) : [];
         const at = `data-kind="${esc(kind)}" data-item="${esc(itemId || '')}"`;
         let h = `<span><select id="${prefix}-engine" data-route="engine" ${at}
             title="${esc(routeTitle('engine', eng ? window.AFEngine.label(eng) : ''))}">
             ${opt('', '— engine —', eng, 'No engine asked for — the item runs on whatever its agent resolves to.')}${engines.map(e => opt(e.id, e.label, eng, e.detail || '')).join('')}</select></span>`;
+        /**
+         * ‼️ X-254 (2/n) — THE FOURTH BOX, and it sits beside the engine for the
+         * reason the launcher puts it there: an account belongs to ONE engine,
+         * so it cannot be offered before one is named and it must be cut by the
+         * one that is.
+         *
+         * Drawn only where that engine really has sign-ins on this machine —
+         * on an engine whose identity cannot be isolated, or a machine that has
+         * captured none, a box here would be a question with no answers.
+         *
+         * The rows come from the component (X-263), so this picker carries the
+         * five-hour figure the Console's already had; the two rows ABOVE them
+         * are this SITE's own sentence, because what "no account" means is
+         * about the queue and not about the account (ONE SUBJECT).
+         */
+        if (eng && accounts.length) {
+            h += `<span><select id="${prefix}-account" data-route="account" ${at}
+                title="${esc(routeTitle('account', accountWords(d.account || '')))}">
+                ${opt('', '— account —', d.account || '',
+                'No sign-in asked for — whoever takes the item spends whatever their own '
+                + 'rotation resolves to. This is a real answer, and it is what "(none)" '
+                + 'filters for.')}${opt(window.AFAccount.MACHINE, window.AFAccount.MACHINE_ROW, d.account || '',
+                'The identity this machine itself is signed in as, asked for OUTRIGHT — '
+                + 'unlike the empty row above, this is a claim somebody made.')}${strayAccountOption(d.account || '', accounts, opt)}${window.AFAccount.options(accounts, d.account || '', C)}</select></span>`;
+        }
         if (eng && models.length) {
             h += `<span><select id="${prefix}-model" data-route="model" ${at}
                 title="${esc(routeTitle('model', d.model || ''))}">
@@ -402,12 +436,87 @@
         return h;
     }
 
+    /** X-254 — the sign-ins one engine has on this machine, or none. */
+    function engineAccounts(engine) {
+        const all = (DATA.launch || {}).accounts || {};
+        return (all[engine || ''] || []).filter(a => a && a.id);
+    }
+
+    /**
+     * ‼️ X-254 (2/n) — A ROW FOR THE SIGN-IN THE ITEM ASKS FOR WHEN IT IS NOT
+     * IN THE LIST, and without it this box would LIE.
+     *
+     * A `<select>` whose value matches no option falls back to its first one —
+     * which here is “— account —”, i.e. UNCLAIMED. So an item pinned to a slot
+     * the user has since deleted would read as work anybody can take, on the
+     * one surface where somebody is deciding what to hand out. The stray id is
+     * offered by name and marked, so the box says what the item says and
+     * picking anything else is a deliberate correction.
+     */
+    function strayAccountOption(cur, list, opt) {
+        const want = String(cur || '').trim();
+        if (!want || want === window.AFAccount.MACHINE) { return ''; }
+        if (list.some(a => a.id === want)) { return ''; }
+        return opt(want, '⚠ ' + want, want,
+            'This item asks for a sign-in that is not on this machine — it may have been '
+            + 'forgotten, or it belongs to another engine. Nothing will refuse the item, '
+            + 'but whoever picks it up cannot honour it: pick a live one, or clear it.');
+    }
+
+    /**
+     * SHORTHAND — the sign-in as a ROW can carry it: the name alone, the
+     * machine identity's own row, and a warning sign for one that is not here.
+     */
+    function accountShort(id) {
+        const want = String(id || '').trim();
+        if (!want) { return ''; }
+        if (want === window.AFAccount.MACHINE) { return window.AFAccount.MACHINE_ROW; }
+        const all = (DATA.launch || {}).accounts || {};
+        for (const k of Object.keys(all)) {
+            const hit = (all[k] || []).find(a => a && a.id === want);
+            if (hit) { return (hit.health === 'ready' ? '' : '⚠ ') + (hit.label || want); }
+        }
+        return '⚠ ' + want;
+    }
+
+    /** …and every engine's, for the FILTER — which asks "what is queued against
+     *  this plan", a question that does not stop at one engine. */
+    function allAccounts() {
+        const all = (DATA.launch || {}).accounts || {};
+        const out = [];
+        for (const k of Object.keys(all)) {
+            for (const a of (all[k] || [])) { if (a && a.id) { out.push(a); } }
+        }
+        return out;
+    }
+
+    /**
+     * X-254 — what an item's stored account is CALLED, for a place that has
+     * room for words rather than a row.
+     *
+     * ‼️ A slot the machine no longer holds is named and marked rather than
+     * printed as if it were fine: an item asking for a sign-in nobody can serve
+     * is exactly what somebody scanning the queue needs to see.
+     */
+    function accountWords(id) {
+        const want = String(id || '').trim();
+        if (!want) { return ''; }
+        if (want === window.AFAccount.MACHINE) { return window.AFAccount.MACHINE_ROW; }
+        const all = (DATA.launch || {}).accounts || {};
+        for (const k of Object.keys(all)) {
+            const hit = (all[k] || []).find(a => a && a.id === want);
+            if (hit) { return hit.label || want; }
+        }
+        return want + ' (not on this machine)';
+    }
+
     /** MIRROR — a box narrow enough to cut its own text says its CURRENT value
      *  first, then what the box is for. */
     function routeTitle(axis, cur) {
         const what = axis === 'engine'
             ? 'Which engine should take this item.'
-            : axis === 'model' ? 'Which model that engine should use.' : 'What effort it should run at.';
+            : axis === 'account' ? 'Whose plan should pay for it — a sign-in of that engine.'
+                : axis === 'model' ? 'Which model that engine should use.' : 'What effort it should run at.';
         return `${cur ? axis + ': ' + cur : 'no ' + axis + ' asked for'}\n\n${what}\n\n`
             + 'Optional. Nothing is started from here — the queue does not dispatch. '
             + 'It is what a task reads to pick out the work meant for it, so leaving it empty '
@@ -416,7 +525,9 @@
 
     /** The route in words, for a line of prose. '' when nobody claimed it. */
     function routeWords(n) {
-        return [n.engine ? window.AFEngine.label(n.engine) : '', n.model || '', n.effort || '']
+        // X-254 — the sign-in reads after the engine, where the box is.
+        return [n.engine ? window.AFEngine.label(n.engine) : '', accountWords(n.account),
+            n.model || '', n.effort || '']
             .filter(Boolean).join(' · ');
     }
 
@@ -424,10 +535,24 @@
      *  this thing carries on every other page (U-26), then the two words that
      *  narrow it. Nothing is drawn for an item nobody claimed. */
     function routeChip(n) {
-        if (!n.engine && !n.model && !n.effort) { return ''; }
-        const rest = [n.model, n.effort].filter(Boolean).join(' · ');
+        if (!n.engine && !n.account && !n.model && !n.effort) { return ''; }
+        /**
+         * SHORTHAND — the shortest unambiguous form of the sign-in, with the
+         * hover below carrying the long one.
+         *
+         * ‼️ X-254 (2/n) — AND A SIGN-IN THIS MACHINE NO LONGER HOLDS IS MARKED
+         * ON THE ROW ITSELF, not only in its hover. An item asking for a plan
+         * nobody can serve is broken work, and somebody scanning the queue for
+         * something to hand out is exactly who needs to see it without opening
+         * anything.
+         */
+        const acct = accountShort(n.account);
+        const rest = [acct, n.model, n.effort].filter(Boolean).join(' · ');
         const figures = [
             n.engine ? 'Engine: ' + window.AFEngine.label(n.engine) : 'Engine: any',
+            // MIRROR — the long form of what the chip abbreviates, and the one
+            // fact the queue's fourth axis exists for.
+            n.account ? 'Account: ' + accountWords(n.account) : 'Account: any',
             n.model ? 'Model: ' + n.model : 'Model: any',
             n.effort ? 'Effort: ' + n.effort : 'Effort: any'
         ].join('\n');
@@ -443,7 +568,7 @@
         if (!boxes) { return ''; }
         return `<div class="q-routerow" data-id="${esc(n.id)}">
             <label class="muted small">Who takes it</label>${boxes}
-            ${(n.engine || n.model || n.effort)
+            ${(n.engine || n.account || n.model || n.effort)
                 ? `<button class="secondary" data-act="routeclear" data-id="${esc(n.id)}"
                      title="Unclaim this item — it goes back to being work anyone can take">✕ unclaim</button>`
                 : '<span class="muted small">unclaimed — anyone can take it</span>'}
@@ -483,6 +608,26 @@
                 title: 'Which engine the item asks for — tick any combination. This is what it WANTS, not where it ran; the queue starts nothing.',
                 options: [{ v: NO_ENGINE, t: '— Unclaimed' }].concat(
                     ((DATA.launch || {}).engines || []).map(e => ({ v: e.id, t: e.label }))) },
+            /**
+             * ‼️ X-254 (2/n) — AND WHOSE PLAN, which is the question the engine
+             * filter beside it stopped answering the day one engine held five
+             * sign-ins.
+             *
+             * Drawn only where sign-ins have been captured at all: on a machine
+             * with none this is a picker with one row saying "unclaimed", which
+             * is a filter that cannot filter. Every engine's accounts are listed
+             * together, because the reader is asking "what is queued against
+             * this plan", not "what is queued against this engine" — they have
+             * the box above for that.
+             */
+            ...(allAccounts().length ? [{
+                id: 'q-account', label: 'Accounts', get: () => fAccount, set: v => { fAccount = v; },
+                title: 'Whose plan the item asks to be paid for by — tick any combination. '
+                    + 'This is what it WANTS: the queue starts nothing and spends nothing.',
+                options: [{ v: NO_ACCOUNT, t: '— Unclaimed' },
+                    { v: window.AFAccount.MACHINE, t: window.AFAccount.MACHINE_ROW }]
+                    .concat(allAccounts().map(a => ({ v: a.id, t: window.AFAccount.label(a) })))
+            }] : []),
             // U-52 — "mine" is one option, so a click on its name already gives
             // you it. Its opposite — everything the fleet put here — is as many
             // options as there are agents and had no name at all.
@@ -714,7 +859,7 @@
             onChange: sel => { p.set(sel); saveState(); render(); }
         }));
         bind('q-showdropped', 'change', e => { showDropped = e.target.checked; saveState(); render(); });
-        bind('q-reset', 'click', () => { fTarget = DEF.fTarget; fEngine = DEF.fEngine; fAuthor = DEF.fAuthor; fProject = DEF.fProject; query = DEF.query; saveState(); render(); });
+        bind('q-reset', 'click', () => { fTarget = DEF.fTarget; fEngine = DEF.fEngine; fAccount = DEF.fAccount; fAuthor = DEF.fAuthor; fProject = DEF.fProject; query = DEF.query; saveState(); render(); });
 
         // add form
         document.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
@@ -772,11 +917,31 @@
                 : addDraft;
             const want = {
                 engine: axis === 'engine' ? sel.value : (cur.engine || ''),
+                account: axis === 'account' ? sel.value : (cur.account || ''),
                 model: axis === 'model' ? sel.value : (cur.model || ''),
                 effort: axis === 'effort' ? sel.value : (cur.effort || '')
             };
             const fixed = window.AFEngine.narrow(DATA.launch || {}, want.engine, want.model, want.effort);
-            const route = { engine: want.engine, model: fixed.model, effort: fixed.effort };
+            /**
+             * ‼️ X-254 (2/n) — THE ENGINE CUTS THE ACCOUNT TOO, and this is the
+             * narrowing `AFEngine.narrow` cannot do because it knows nothing
+             * about sign-ins.
+             *
+             * An account belongs to ONE engine. Moving the engine box while an
+             * account of the old one is set would leave the row asking for a
+             * sign-in the new engine cannot read — a setup that looks answered
+             * and cannot be served. So it is dropped, and only then: switching
+             * back is the user's to redo, and silently keeping it would be the
+             * wrong half of the same choice. `@machine` is not an engine's
+             * account at all and survives.
+             */
+            const keepsAccount = !want.account
+                || want.account === window.AFAccount.MACHINE
+                || engineAccounts(want.engine).some(a => a.id === want.account);
+            const route = {
+                engine: want.engine, account: keepsAccount ? want.account : '',
+                model: fixed.model, effort: fixed.effort
+            };
             if (sel.dataset.kind === 'row') {
                 if (!id) { return; }
                 vscode.postMessage(Object.assign({ type: 'setRoute', id }, route));

@@ -55,6 +55,21 @@ const launch = {
         gemini: { models: [{ id: '', label: '— default' }, { id: 'gemini-3.1-pro', label: 'gemini-3.1-pro' }], efforts: {}, defaultEffort: {}, source: 'catalog' },
         agy: { models: [{ id: '', label: '— default' }, { id: 'gemini-3.1-pro-high', label: 'gemini-3.1-pro-high' }], efforts: {}, defaultEffort: {}, source: 'catalog' },
         opencode: { models: [{ id: '', label: '— default' }, { id: 'opencode/big-pickle', label: 'opencode/big-pickle' }], efforts: {}, defaultEffort: {}, source: 'catalog' }
+    },
+    // X-254 - the sign-ins each engine has, in the shape engineAccountMatrix
+    // hands over. Deliberately uneven: claude holds three (one of them fallen
+    // over, one unread), codex holds one, and the other three hold NONE - so
+    // the looking glass shows the box appearing and disappearing with the
+    // engine beside it rather than only the happy row.
+    accounts: {
+        claude: [
+            { id: 'claude-aicozums', label: 'aicozums', health: 'ready', active: true, percent: 52, resetsAt: T + 118 * M },
+            { id: 'claude-murvietnam-2', label: 'murvietnam-2', health: 'ready', active: false, percent: 91, resetsAt: T + 24 * M },
+            { id: 'claude-eski', label: 'eski hesap', health: 'stale', active: false, percent: -1, resetsAt: 0 }
+        ],
+        codex: [
+            { id: 'codex-is', label: 'is hesabi', health: 'ready', active: true, percent: 8, resetsAt: T + 240 * M }
+        ]
     }
 };
 
@@ -62,7 +77,7 @@ const items = [
     {
         id: 'q1', ts: T - 6 * M, author: 'user', status: 'captured', urgency: 'urgent',
         text: 'Konsol kutusunun yüksekliği ayarlandıktan sonra bir yere tıklayınca geri dönüyor — her seferinde değil ama sık.',
-        target: 'vsc_AgentFarm', engine: 'codex', model: 'GPT-5.6-Terra', effort: 'low',
+        target: 'vsc_AgentFarm', engine: 'codex', account: 'codex-is', model: 'GPT-5.6-Terra', effort: 'low',
         projectId: 'p1', tags: ['bug'], pinned: true
     },
     {
@@ -73,17 +88,19 @@ const items = [
     {
         id: 'q3', ts: T - 95 * M, author: 'manager', status: 'grouped', urgency: 'soon',
         text: 'Kuyruk hedefi çoklu motor öncesinden kalma; hangi motorun alacağı yazmıyor.',
-        engine: 'claude', model: 'opus-5', groupId: 'g1', projectId: 'p1', tags: ['debt']
+        engine: 'claude', account: 'claude-murvietnam-2', model: 'opus-5', groupId: 'g1', projectId: 'p1', tags: ['debt']
     },
     {
         id: 'q4', ts: T - 260 * M, author: 'manager', status: 'delegated', urgency: 'normal',
         text: 'Antigravity oturumu açılırken terminal penceresi çakıyor.',
-        engine: 'agy', taskId: 't9', projectId: 'p1', tags: []
+        engine: 'agy', account: '@machine', taskId: 't9', projectId: 'p1', tags: []
     },
     {
         id: 'q5', ts: T - 900 * M, author: 'user', status: 'blocked', urgency: 'normal',
         text: 'Rozet rengi kırmızı mı olsun? Hata rengiyle aynı aileden olması rahatsız edici.',
-        engine: 'claude', projectId: 'p1', tags: ['ux']
+        // X-254 - a sign-in the machine no longer holds. The row must NAME it
+        // and mark it rather than printing it as though it were fine.
+        engine: 'claude', account: 'claude-silinmis', projectId: 'p1', tags: ['ux']
     },
     {
         id: 'q6', ts: T - 1500 * M, author: 'developer', status: 'done', urgency: 'normal',
@@ -120,8 +137,8 @@ module.exports = {
         {
             id: 'noengines', label: 'Work Queue — no engines known: no route anywhere',
             data: data({
-                launch: { engines: [], efforts: [], engineModels: null },
-                items: items.map(n => ({ ...n, engine: undefined, model: undefined, effort: undefined }))
+                launch: { engines: [], efforts: [], engineModels: null, accounts: null },
+                items: items.map(n => ({ ...n, engine: undefined, account: undefined, model: undefined, effort: undefined }))
             })
         }
     ]

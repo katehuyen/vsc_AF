@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.433.0 - X-254 (2/n): the Work Queue draws its fourth axis, and a dead sign-in cannot hide in it (2026-09-07)
+
+**The axis shipped in 3.430.0 and the page could not draw it**, because the page
+was never handed the sign-ins at all. It has them now, from the one place the
+Tasks form and the Console read them, so the row's route boxes are four: engine,
+**account**, model, effort — in that order, because an account belongs to ONE
+engine and cannot be offered before one is named.
+
+**‼️ And the box would have LIED.** A `<select>` whose value matches no `<option>`
+falls back to its first one — here "— account —", i.e. UNCLAIMED. So an item
+pinned to a sign-in the user has since deleted would have read, on the one
+surface where somebody decides what to hand out, as work anybody can take. The
+stray id is offered by name and marked, and the row itself carries the mark too:
+that is broken work, and seeing it should not cost a click. Found by rendering
+the page and reading the markup; every string test passed over it.
+
+**Moving the engine drops a sign-in of the old one** — a narrowing
+`AFEngine.narrow` cannot do, because it knows nothing about accounts. A row
+asking for a sign-in the new engine cannot read is a setup that looks answered
+and cannot be served. 💻 Machine Global survives it: it is not any engine's
+account, it is the absence of one stated outright.
+
+**A fifth filter: Accounts.** "What is queued against this plan" is the question
+the engine filter stopped answering the day one engine held five sign-ins, and
+every engine's are listed together because the reader asking it is not asking
+about engines. Unclaimed is an option rather than an absence, on the same rule
+the engine and project filters follow. Drawn only where sign-ins have been
+captured — a picker whose only row is "unclaimed" is a filter that cannot
+filter.
+
+Each row in the picker carries the five-hour figure, because that is the fact
+the choice turns on; the queue still starts nothing and spends nothing.
+
+**Still open on X-254:** (d) — an item whose sign-in is at its wall WAITS rather
+than being slid onto another. It belongs to whatever TAKES the item, not to the
+queue, which dispatches nothing.
+
 ## 3.432.0 - X-260 (2/n): a turn fired while VS Code is closed spends the sign-in written on it (2026-09-07)
 
 **‼️ And the measurement this corrects is our own.** The item was paused as a

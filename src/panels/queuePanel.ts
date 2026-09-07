@@ -30,6 +30,22 @@ export interface QueueDeps {
     engineChoices?: () => { id: string; label: string; takesEffort?: boolean }[];
     engineModels?: () => Record<string, { models: { id: string; label: string }[]; efforts: Record<string, { id: string; label: string }[]>; defaultEffort?: Record<string, string>; note?: string }>;
     efforts?: () => { id: string; label: string }[];
+    /**
+     * ‼️ X-254 (2/n) — WHICH SIGN-INS EACH ENGINE HAS, so the fourth box on a
+     * row is a picker and not a text field.
+     *
+     * The core half shipped the axis in 3.430.0 and the page could not draw it,
+     * because the page was never handed the accounts at all. Same shape the
+     * Tasks form is given (`engineAccounts` in tasksPanel) for the same reason
+     * the engines are: two surfaces disagreeing about which sign-ins exist is a
+     * row offering a plan that cannot pay.
+     *
+     * ‼️ AND THE QUEUE STILL STARTS NOTHING. This is a vocabulary, exactly as
+     * `engineChoices` is: what an item ASKS for, which a runner filters on. The
+     * five-hour figure travels with each row because that is the fact the
+     * choice turns on, but nothing here spends it.
+     */
+    engineAccounts?: () => Record<string, { id: string; label: string; health: string; active: boolean; percent?: number; resetsAt?: number }[]>;
     /** Open projects, for the capture box, the row picker and the filter. */
     projects: () => ProjectRef[];
     /** The window's active project — what a capture made here is stamped with. */
@@ -88,7 +104,10 @@ function buildData(deps: QueueDeps, focusItem?: string): Record<string, unknown>
         launch: {
             engines: deps.engineChoices ? deps.engineChoices() : [],
             engineModels: deps.engineModels ? deps.engineModels() : null,
-            efforts: deps.efforts ? deps.efforts() : []
+            efforts: deps.efforts ? deps.efforts() : [],
+            // X-254 (2/n) — …and the sign-ins, keyed by engine, in the same
+            // shape the Tasks form reads them (`AFAccount` draws the row).
+            accounts: deps.engineAccounts ? deps.engineAccounts() : null
         },
         projects: deps.projects(),
         activeProjectId: deps.activeProjectId(),
@@ -218,7 +237,10 @@ export class QueuePanel {
                     s.setRoute(msg.id, {
                         engine: typeof msg.engine === 'string' ? msg.engine : undefined,
                         model: typeof msg.model === 'string' ? msg.model : undefined,
-                        effort: typeof msg.effort === 'string' ? msg.effort : undefined
+                        effort: typeof msg.effort === 'string' ? msg.effort : undefined,
+                        // X-254 — the fourth axis, on the same terms: passed
+                        // through even when empty, because '' is "unclaim it".
+                        account: typeof msg.account === 'string' ? msg.account : undefined
                     });
                     this.mutated();
                 }
