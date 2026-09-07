@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.441.0 - the restart that restarted nothing: a host bounce never loads a build you just installed (2026-09-08)
+
+The user reported it: after `farm.restartExtensionHost` the whole window looked
+like it had come back, and yet the Extensions card still carried its **Restart
+Extensions** button — as if everything had restarted except Agent Farm. Pressing
+that button restarted it a second time and the button went away.
+
+**The button was telling the truth.** Measured in VS Code 1.103.2's own
+`workbench.desktop.main.js`:
+
+- `workbench.action.restartExtensionHost` is `stopExtensionHosts()` then
+  `startExtensionHosts()` — with **no argument**. `startExtensionHosts(e)`
+  applies a delta only `if (e)`; otherwise it starts the hosts from
+  `_registry.getSnapshot()`. The extensions folder is never re-read, so the host
+  comes back running the **same folder** — the old version.
+- The card's button is `updateRunningExtensions()`, the one and only call site in
+  the whole bundle that passes `startExtensionHosts({toAdd, toRemove})`. That
+  delta is what swaps the code.
+- The button's own condition is `installedVersion !== runningVersion`. It is not
+  a stale badge; it is the difference, read live.
+
+So X-230's central promise — "restart the extension host so a build you just
+installed is the one running" — was false from the first day, and the poll loop
+it told every agent to run (*wait until `version` is the new one*) could never
+come true. Measured on this window: 3.440.0 was installed at 17:31, the host was
+restarted at 17:37 (the restart stamp records `fromVersion: 3.438.0`), and the
+running version only became 3.440.0 at 17:43 — when the user pressed the card
+button by hand.
+
+There is no command an extension can invoke for `updateRunningExtensions`, so the
+only thing that loads a newly installed build without a human is a **window
+reload**, which does re-scan. Therefore:
+
+- `farm.restartExtensionHost` now reads the version sitting in the extensions
+  folder and, when it differs from the running one, **plans a window reload
+  instead** — reporting it in `build.escalatedFrom` and in one `note` sentence
+  carried into the armed plan's own `reason`. `loadBuild:false` bounces the host
+  as asked and is told what it is leaving behind.
+- `farm.health` gained `build { installed, running, pending }`. That, not
+  `version`, is the reading that answers "did my build load?".
+- The escalation changes what blocks the restart — an open terminal blocks a
+  window reload — so an unattended build-load belongs in a Console session with
+  `resume:true`, and the wait says so instead of deadlocking in silence.
+
 ## 3.440.0 - the first two audit findings: a restart that could never fire, and a rule wired to one of its two doors (2026-09-08)
 
 The retrospective audit's first pass over four closed sessions, and both repairs

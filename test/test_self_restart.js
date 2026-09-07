@@ -240,5 +240,90 @@ const working = (id, agentName) => ({ id, agentName, status: 'working' });
     ok('…and fires once the window is empty', armedReady(winArm, world()));
 }
 
+// ---------- ‼️ THE BUILD ON DISK IS NOT THE BUILD IN THE REGISTRY ----------
+// The user reported this one: after farm.restartExtensionHost the Extensions
+// card still carried its "Restart Extensions" button, as if Agent Farm alone had
+// not been restarted. It had been — and the button was right. Measured in VS
+// Code 1.103.2's own workbench.desktop.main.js:
+//   `workbench.action.restartExtensionHost` = stopExtensionHosts() then
+//   startExtensionHosts() with NO argument, and startExtensionHosts(e) applies a
+//   delta only `if (e)` — otherwise it starts from _registry.getSnapshot(). The
+//   extensions folder is never re-read, so the OLD version comes back.
+//   The card's button is updateRunningExtensions(), the one and only call site
+//   in the bundle that passes startExtensionHosts({toAdd, toRemove}), and its
+//   own condition is `installedVersion !== runningVersion`.
+// So: a host restart asked for over a pending build is planned as the thing that
+// actually loads it, and every answer carries the two versions.
+{
+    const pending = { installed: '3.441.0', running: '3.440.0' };
+
+    const p = planRestart({ kind: 'extensionHost' }, world({ build: pending }));
+    ok('‼️ a host restart over a pending build is planned as a WINDOW RELOAD',
+        p.decision === 'restarting' && p.kind === 'window'
+        && p.command === RESTART_COMMANDS.window);
+    ok('…and says which ask it came from, so nothing is escalated silently',
+        p.build && p.build.escalatedFrom === 'extensionHost' && p.build.willLoad === true);
+    ok('…carrying both versions rather than making the caller ask a second op',
+        p.build.installed === '3.441.0' && p.build.running === '3.440.0');
+    ok('…and one sentence naming the two commands',
+        typeof p.note === 'string'
+        && p.note.includes('3.441.0') && p.note.includes('3.440.0')
+        && p.note.includes(RESTART_COMMANDS.window));
+
+    const asked = planRestart({ kind: 'extensionHost', loadBuild: false }, world({ build: pending }));
+    ok('loadBuild:false bounces the host as asked',
+        asked.decision === 'restarting' && asked.kind === 'extensionHost');
+    ok('‼️ …and is TOLD the build it is leaving on disk — the silence was the bug',
+        asked.build && asked.build.willLoad === false && !asked.build.escalatedFrom
+        && asked.note.includes('NOT load it'));
+
+    ok('a window reload over a pending build stays a window reload and reports it will load',
+        (() => {
+            const w = planRestart({ kind: 'window' }, world({ build: pending }));
+            return w.kind === 'window' && w.build.willLoad === true && !w.build.escalatedFrom;
+        })());
+
+    ok('the same version on both sides is not a pending build at all',
+        planRestart({ kind: 'extensionHost' },
+            world({ build: { installed: '3.440.0', running: '3.440.0' } })).kind === 'extensionHost');
+    ok('‼️ an UNKNOWN is never read as a mismatch — a development host has no extensions.json',
+        planRestart({ kind: 'extensionHost' }, world({ build: null })).kind === 'extensionHost'
+        && planRestart({ kind: 'extensionHost' },
+            world({ build: { installed: '', running: '3.440.0' } })).kind === 'extensionHost');
+    ok('…and a plan with no pending build carries no build field to be misread',
+        planRestart({ kind: 'extensionHost' }, world()).build === undefined);
+
+    // ‼️ The escalation changes what blocks it, and that has to be visible: a
+    // terminal never held a host restart back, and now it can — because the
+    // thing that loads a build is a window reload. Silence here would be the
+    // A-02.4 deadlock again, so the wait's own sentence carries the why.
+    const inTerminal = planRestart({ kind: 'extensionHost' },
+        world({ build: pending, terminals: [{ name: 'claude' }] }));
+    ok('‼️ escalated, an open terminal blocks it — and it is armed, not silently ignored',
+        inTerminal.decision === 'armed' && inTerminal.kind === 'window');
+    ok('…and the armed reason carries the build sentence, so farm.waits explains itself',
+        inTerminal.reason.includes('3.441.0') && inTerminal.reason.includes(RESTART_COMMANDS.window));
+    ok('when:"now" over a pending build refuses with the build sentence attached',
+        (() => {
+            const r = planRestart({ kind: 'extensionHost', when: 'now' },
+                world({ build: pending, terminals: [{ name: 'claude' }] }));
+            return r.decision === 'refused' && r.reason.includes('3.441.0');
+        })());
+    ok('force goes through the escalated window reload rather than the host',
+        (() => {
+            const f = planRestart({ kind: 'extensionHost', force: true },
+                world({ build: pending, terminals: [{ name: 'claude' }] }));
+            return f.decision === 'restarting' && f.kind === 'window' && f.killed.length === 1;
+        })());
+    ok('the cooldown still comes first and still refuses — a build never opens it',
+        planRestart({ kind: 'extensionHost' },
+            world({ build: pending, lastRestartAt: NOW - 1000 })).decision === 'refused');
+    ok('…and cancel still cancels, carrying the build reading with it',
+        (() => {
+            const c = planRestart({ kind: 'extensionHost', when: 'cancel' }, world({ build: pending }));
+            return c.decision === 'cancelled' && c.build.installed === '3.441.0';
+        })());
+}
+
 console.log(`test_self_restart.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

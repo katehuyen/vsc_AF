@@ -15350,12 +15350,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     let armedRestart: ArmedRestart | null = null;
     let armTimer: NodeJS.Timeout | null = null;
+    /**
+     * ‼️ THE VERSION SITTING IN THE EXTENSIONS FOLDER — the other half of fact 4
+     * in `core/selfRestart.ts`. `extensions.json` is rewritten by whatever
+     * installed the VSIX (the CLI, the Extensions view, the shared process); the
+     * version THIS host is running is the registry snapshot it booted with, and
+     * a host restart does not go back to disk for a new one. Read from our OWN
+     * extension path's parent rather than a guessed `~/.vscode/extensions`, so a
+     * portable install, an `--extensions-dir` or Insiders is followed instead of
+     * being wrong about. A development host has no such file — `null`, which the
+     * planner reads as "unknown", never as "mismatch".
+     */
+    const compareVersions = (a: string, b: string): number => {
+        const pa = a.split('.').map(n => parseInt(n, 10) || 0);
+        const pb = b.split('.').map(n => parseInt(n, 10) || 0);
+        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+            const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+            if (d) { return d; }
+        }
+        return 0;
+    };
+    const readInstalledVersion = (): string | null => {
+        try {
+            const file = path.join(path.dirname(context.extensionPath), 'extensions.json');
+            const rows = JSON.parse(fs.readFileSync(file, 'utf8')) as
+                { identifier?: { id?: string }; version?: string }[];
+            if (!Array.isArray(rows)) { return null; }
+            const id = context.extension.id.toLowerCase();
+            const mine = rows
+                .filter(r => String(r?.identifier?.id ?? '').toLowerCase() === id)
+                .map(r => String(r?.version ?? '').trim())
+                .filter(Boolean)
+                .sort(compareVersions);
+            return mine.length ? mine[mine.length - 1] : null;
+        } catch { return null; }
+    };
+    /** The armed watcher asks the world every 5s; the file behind this answer
+     *  changes about once a build, so it is read at most every 2s. */
+    let diskVersion: string | null = null;
+    let diskVersionAt = 0;
+    const installedVersion = (): string | null => {
+        const now = Date.now();
+        if (now - diskVersionAt >= 2000) { diskVersionAt = now; diskVersion = readInstalledVersion(); }
+        return diskVersion;
+    };
+    const buildOnDisk = () => {
+        const installed = installedVersion();
+        return installed ? { installed, running: extVersion } : null;
+    };
     const restartWorld = () => ({
         now: Date.now(),
         sessions: consoleHost.list().map(s => ({ id: s.id, agentName: s.agentName, status: s.status })),
         terminals: vscode.window.terminals.map(t => ({ name: t.name })),
         lastRestartAt: readRestartStamp()?.at ?? null,
-        armed: armedRestart
+        armed: armedRestart,
+        build: buildOnDisk()
     });
     const fireRestart = (kind: RestartKind, delayMs: number, resume = false): void => {
         // ‼️ X-232 — WHAT IS RUNNING IS WRITTEN DOWN BEFORE THE PROCESS DIES.
@@ -15390,7 +15439,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             when: typeof args.when === 'string' ? args.when as RestartWhen : undefined,
             force: args.force === true,
             delayMs: args.delayMs,
-            resume
+            resume,
+            // Only an explicit `false` opts out: an absent argument means "load
+            // the build", because that is what the caller who installed one wants
+            // and what the op said it would do.
+            loadBuild: args.loadBuild !== false
         }, restartWorld());
         if (plan.decision === 'refused') { throw new Error(plan.reason); }
         if (plan.decision === 'cancelled') {
@@ -15431,13 +15484,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'What is actually running: extension version, this activation\'s bootId (a new one '
                 + 'on every extension host start — compare it to prove a restart really happened), uptime, '
                 + 'live console sessions, open terminals, the armed restart if there is one, and the last '
-                + 'self-restart this window performed. args: none',
+                + 'self-restart this window performed. ‼️ `build` is the reading that matters after an '
+                + 'install: `installed` is the version in the extensions folder, `running` is the one this '
+                + 'host booted with, and `pending:true` means a build is on disk that IS NOT LOADED — a '
+                + 'host restart will not load it, only a window reload re-scans (farm.restartExtensionHost '
+                + 'plans one for you). args: none',
             handler: () => {
                 const w = restartWorld();
                 const live = liveBlockers(w, 'extensionHost');
                 const stamp = readRestartStamp();
+                const onDisk = w.build;
                 return {
                     version: extVersion,
+                    // ‼️ THE ONE FIGURE THAT ANSWERS "DID MY BUILD LOAD?" — and it
+                    // is not `version`, which is only ever the running one. A poll
+                    // loop told to wait for `version` to change had nothing to read
+                    // when the change never came.
+                    build: {
+                        installed: onDisk?.installed ?? null,
+                        running: extVersion,
+                        pending: !!onDisk && onDisk.installed !== extVersion
+                    },
                     bootId,
                     startedAt: new Date(bootAt).toISOString(),
                     uptimeMs: Date.now() - bootAt,
@@ -15454,20 +15521,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'farm.restartExtensionHost',
-            describe: 'Restart the extension host so a build you just installed is the one running — the '
-                + 'window, its editors and its terminals survive, so an agent working in a terminal can do '
-                + 'this under itself. Console sessions do NOT survive (their handles are in the host\'s '
-                + 'memory), but only a TURN IN FLIGHT is a reason to wait: a card sitting idle waiting for '
-                + 'the user is not, so calling this from a console session works — the plan is armed while '
-                + 'your own turn runs and fires by itself the moment it ends. The answer says what it is '
-                + 'waiting for. Refused inside a 20s cooldown (a request that '
+            describe: 'Bounce the extension host — the window, its editors and its terminals survive, so '
+                + 'an agent working in a terminal can do this under itself. Console sessions do NOT survive '
+                + '(their handles are in the host\'s memory), but only a TURN IN FLIGHT is a reason to '
+                + 'wait: a card sitting idle waiting for the user is not, so calling this from a console '
+                + 'session works — the plan is armed while your own turn runs and fires by itself the '
+                + 'moment it ends. ‼️ A HOST RESTART DOES NOT LOAD A BUILD YOU JUST INSTALLED: '
+                + 'workbench.action.restartExtensionHost restarts the hosts from the extension registry '
+                + 'the window already holds and never re-scans the extensions folder, so the old version '
+                + 'comes straight back (this is why the Extensions card keeps its "Restart Extensions" '
+                + 'button — it is reading the difference, not a stale badge). Only a window reload '
+                + 're-scans. So when farm.health reports build.pending, this op PLANS A WINDOW RELOAD '
+                + 'instead and says so in `build.escalatedFrom` and `note`; open terminals then block it '
+                + 'like any window reload, so an unattended build-load belongs in a console session with '
+                + 'resume:true rather than a terminal. Refused inside a 20s cooldown (a request that '
                 + 'outlived a restart would otherwise loop). args: when? (auto=default | now = refuse rather '
                 + 'than wait | idle = always wait for quiet | cancel = call off what is armed), force? '
                 + '(restart through live sessions and lose them), resume? (X-232 — take the live console '
                 + 'sessions up again on the other side, in their own seats, by the id their engine gave '
                 + 'them: what a resume saves stops being a reason to wait, and a session the engine never '
-                + 'named is still reported as lost), delayMs?. Then poll farm.health until bootId changes '
-                + 'and version is the new one.',
+                + 'named is still reported as lost), loadBuild? (false = bounce the host as asked and be '
+                + 'told what it is leaving on disk), delayMs?. Then poll farm.health until bootId changes '
+                + 'and build.pending is false.',
             handler: (args) => askRestart('extensionHost', args)
         },
         {
@@ -15475,8 +15550,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Reload the whole VS Code window (Developer: Reload Window). Heavier than '
                 + 'farm.restartExtensionHost: it also takes down every integrated terminal — including the '
                 + 'one an agent may be running in — so open terminals block it the same way live console '
-                + 'sessions do. Use it when package.json contributions changed. Same args and same cooldown '
-                + 'as farm.restartExtensionHost.',
+                + 'sessions do. ‼️ It is also the ONLY thing that loads a build you just installed, because '
+                + 'it is the only one that re-scans the extensions folder; use it when a new VSIX is on '
+                + 'disk or when package.json contributions changed. Same args and same cooldown as '
+                + 'farm.restartExtensionHost.',
             handler: (args) => askRestart('window', args)
         },
         {

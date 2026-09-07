@@ -41,6 +41,33 @@
  * decision was taken, what is being waited for and where to watch it
  * (`farm.health`), so a caller that is prepared to wait can wait knowingly, and
  * one that is not can say `when: 'now'` and be refused honestly.
+ *
+ * ‼️ 4. AND A HOST RESTART DOES NOT LOAD A BUILD YOU JUST INSTALLED. This one
+ * cost the user a whole shift and was reported by them, not by us: after
+ * `farm.restartExtensionHost` the Extensions card still carried its "Restart
+ * Extensions" button, as if nothing had been restarted. It had been — and the
+ * button was telling the truth. Measured in VS Code 1.103.2's own
+ * `workbench.desktop.main.js`:
+ *
+ *   - `workbench.action.restartExtensionHost` is `stopExtensionHosts()` then
+ *     `startExtensionHosts()` — with NO argument. `startExtensionHosts(e)`
+ *     applies a delta only `if (e)`, and otherwise starts the hosts from
+ *     `_registry.getSnapshot()`. The registry is never re-scanned, so the host
+ *     comes back running the SAME folder — the old version — and `farm.health`
+ *     reports the old version for ever.
+ *   - The card's button is `updateRunningExtensions()`, the one and only call
+ *     site in the whole bundle that passes `startExtensionHosts({toAdd,
+ *     toRemove})`. That delta is what swaps the code.
+ *   - The button's own condition is `installedVersion !== runningVersion`. It is
+ *     not a stale badge; it is the difference, read live.
+ *
+ * There is no command an extension can invoke for `updateRunningExtensions`. So
+ * the only thing in VS Code that loads a newly installed build without a human
+ * is a WINDOW RELOAD, which re-scans from disk. Therefore a host restart asked
+ * for while a different version sits in the extensions folder is planned as a
+ * window reload instead, and the answer says so — because the alternative is
+ * what happened: a restart that reports success, changes nothing, and sends the
+ * caller into a poll loop that can never come true.
  */
 
 export type RestartKind = 'extensionHost' | 'window';
@@ -98,6 +125,24 @@ export interface RestartWorld {
     /** When this window last restarted itself, read back from disk. */
     lastRestartAt?: number | null;
     armed?: ArmedRestart | null;
+    /** ‼️ THE BUILD IN THE EXTENSIONS FOLDER, WHICH IS NOT THE ONE RUNNING (fact
+     *  4 in the header). `installed` is read off `extensions.json`, `running` is
+     *  the registry snapshot this host booted with. Absent when nothing can be
+     *  read — an unknown is never treated as a mismatch. */
+    build?: { installed: string; running: string } | null;
+}
+
+/** What this plan will and will not do about the build on disk. Present only
+ *  when the two versions are known and differ. */
+export interface RestartBuild {
+    /** the version the extensions folder holds */
+    installed: string;
+    /** the version this extension host is running */
+    running: string;
+    /** whether the command this plan names actually loads `installed` */
+    willLoad: boolean;
+    /** set when a host restart was turned into a window reload to load it */
+    escalatedFrom?: RestartKind;
 }
 
 export interface RestartAsk {
@@ -107,9 +152,14 @@ export interface RestartAsk {
     delayMs?: unknown;
     /** X-232 — bring the live console sessions back on the other side (consoleRevive.ts). */
     resume?: boolean;
+    /** Default true. A host restart that would leave a newly installed build on
+     *  disk is planned as a window reload instead. `false` bounces the host as
+     *  asked and REPORTS the build it is leaving behind — for the caller that
+     *  wants a wedged host cleared, not a version swapped. */
+    loadBuild?: boolean;
 }
 
-export type RestartPlan =
+export type RestartPlan = (
     | {
         decision: 'restarting'; kind: RestartKind; command: string;
         delayMs: number; killed: RestartBlocker[];
@@ -119,7 +169,14 @@ export type RestartPlan =
         armedAt: number; waitingFor: RestartBlocker[]; reason: string; pollWith: 'farm.health';
     }
     | { decision: 'cancelled'; kind: RestartKind; was: ArmedRestart | null }
-    | { decision: 'refused'; kind: RestartKind; reason: string; retryInMs?: number };
+    | { decision: 'refused'; kind: RestartKind; reason: string; retryInMs?: number }
+) & {
+    /** Only when the two versions are known and differ — see `RestartBuild`. */
+    build?: RestartBuild;
+    /** The one sentence about the build, on every decision that has one. It is
+     *  carried into the armed plan's `reason` rather than written twice. */
+    note?: string;
+};
 
 /**
  * ‼️ WHAT BLOCKS A RESTART IS A FLOW, NOT A SEAT (audit A-02.4).
@@ -200,13 +257,33 @@ const describe = (blockers: RestartBlocker[]): string => {
  * fire, arm, or report the refusal.
  */
 export function planRestart(ask: RestartAsk, world: RestartWorld): RestartPlan {
-    const kind: RestartKind = ask.kind === 'window' ? 'window' : 'extensionHost';
+    const asked: RestartKind = ask.kind === 'window' ? 'window' : 'extensionHost';
     const when: RestartWhen = ask.when ?? 'auto';
-    const command = RESTART_COMMANDS[kind];
     const delayMs = clampRestartDelay(ask.delayMs);
 
+    // ‼️ FACT 4 IN THE HEADER, AND IT IS DECIDED FIRST — because what a restart
+    // can LOAD decides which command it is, and the command decides what blocks
+    // it. Working this out after the blockers were counted would count the
+    // wrong ones.
+    const pending = pendingBuild(world);
+    const escalate = pending !== null && asked === 'extensionHost' && ask.loadBuild !== false;
+    const kind: RestartKind = escalate ? 'window' : asked;
+    const command = RESTART_COMMANDS[kind];
+    const build: RestartBuild | undefined = pending
+        ? {
+            installed: pending.installed, running: pending.running,
+            willLoad: kind === 'window',
+            ...(escalate ? { escalatedFrom: asked } : {})
+        }
+        : undefined;
+    const note = buildNote(build);
+    /** The build sentence rides on every decision that has one, so no caller has
+     *  to ask a second op what happened to its build. */
+    const out = <T extends RestartPlan>(plan: T): RestartPlan =>
+        (build ? { ...plan, build, note } : plan);
+
     if (when === 'cancel') {
-        return { decision: 'cancelled', kind, was: world.armed ?? null };
+        return out({ decision: 'cancelled', kind, was: world.armed ?? null });
     }
 
     // ‼️ THE BOOT-LOOP GUARD COMES FIRST AND NOTHING OPENS IT. A stamp in the
@@ -215,42 +292,80 @@ export function planRestart(ask: RestartAsk, world: RestartWorld): RestartPlan {
     const since = world.now - last;
     if (last > 0 && since >= 0 && since < RESTART_COOLDOWN_MS) {
         const retryInMs = RESTART_COOLDOWN_MS - since;
-        return {
+        return out({
             decision: 'refused', kind, retryInMs,
             reason: `This window restarted ${Math.round(since / 1000)}s ago; the cooldown has `
                 + `${Math.ceil(retryInMs / 1000)}s left. A bridge request that outlived a restart `
                 + 'would otherwise be obeyed again on every activation — an endless loop. Wait and ask again.'
-        };
+        });
     }
 
     const blockers = liveBlockers(world, kind, ask.resume === true);
 
     if (ask.force) {
-        return { decision: 'restarting', kind, command, delayMs, killed: blockers };
+        return out({ decision: 'restarting', kind, command, delayMs, killed: blockers });
     }
 
     if (!blockers.length) {
-        return { decision: 'restarting', kind, command, delayMs, killed: [] };
+        return out({ decision: 'restarting', kind, command, delayMs, killed: [] });
     }
 
     if (when === 'now') {
-        return {
+        return out({
             decision: 'refused', kind,
             reason: `${command} would destroy ${describe(blockers)}. Pass force:true to do it anyway, `
                 + 'or when:"idle" to have it fire by itself once the window is quiet.'
-        };
+                + (note ? ` ${note}` : '')
+        });
     }
 
     // auto / idle — arm it, and say so loudly enough that a caller never has to
     // guess whether it is waiting.
     const armedAt = world.armed && world.armed.kind === kind ? world.armed.armedAt : world.now;
-    return {
+    return out({
         decision: 'armed', kind, command, delayMs, armedAt, waitingFor: blockers,
         pollWith: 'farm.health',
+        // ‼️ THE BUILD SENTENCE IS CARRIED, NOT RE-WRITTEN (X-231's rule). An
+        // armed plan's `reason` is what `farm.waits` reports, and a caller that
+        // was escalated to a window reload must be able to read WHY from the
+        // wait itself rather than from a second op.
         reason: `Waiting for ${describe(blockers)} to finish; ${command} will fire by itself when `
             + 'the last one is gone. Poll farm.health (restartArmed / bootId) to watch it, '
             + 'when:"cancel" to call it off, force:true to go now and lose them.'
-    };
+            + (note ? ` ${note}` : '')
+    });
+}
+
+/** The two versions, and only when both are known AND they differ. An unknown is
+ *  never read as a mismatch: an extension running from a development host has no
+ *  `extensions.json` to compare against, and turning its every host restart into
+ *  a window reload would be the cure killing the patient. */
+function pendingBuild(world: RestartWorld): { installed: string; running: string } | null {
+    const b = world.build;
+    if (!b) { return null; }
+    const installed = String(b.installed ?? '').trim();
+    const running = String(b.running ?? '').trim();
+    if (!installed || !running || installed === running) { return null; }
+    return { installed, running };
+}
+
+/** One sentence, three cases: it will load · it was escalated so it can load ·
+ *  it will not load and here is what would. */
+function buildNote(build: RestartBuild | undefined): string | undefined {
+    if (!build) { return undefined; }
+    const heads = `${build.installed} is installed and ${build.running} is running`;
+    if (build.escalatedFrom) {
+        return `${heads}. ${RESTART_COMMANDS.extensionHost} restarts the host from the registry `
+            + `snapshot it already has and would come back on ${build.running} again, so this is `
+            + `planned as ${RESTART_COMMANDS.window} — the only thing in VS Code that re-scans the `
+            + 'extensions folder. Pass loadBuild:false to bounce the host as asked instead.';
+    }
+    if (build.willLoad) {
+        return `${heads}; this reload re-scans the extensions folder, so it will load it.`;
+    }
+    return `${heads}, and this will NOT load it: ${RESTART_COMMANDS.extensionHost} restarts the host `
+        + `from the registry snapshot it already has. Use ${RESTART_COMMANDS.window} `
+        + '(farm.reloadWindow) when you mean to load the build.';
 }
 
 /** The event an armed plan waits for — nothing else, and no clock. */
