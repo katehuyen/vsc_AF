@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.445.0 - the hidden-lines banner, looked at (2026-09-08)
+
+U-133's third round, verified the way the item keeps asking for: rendered and
+read, in both themes and in both arities.
+
+The note moved into the transcript's frame in 3.444.0, at the top — as far from
+the ask card as the panel goes. Its rule was on the wrong side: as the frame's
+first child a `border-top` only doubled the wrapper's own border, and the
+comment beside it called the element a footer while it sat at the head. The rule
+is now on the bottom, where it separates the note from the lines it is about,
+and the comment says what the element is.
+
+Looked at: `console-asking-hidden` (one question and a show filter — the two
+things the user reported colliding, in one frame at last) and
+`console-asking-one` (no filter: the banner is absent and leaves no stray line),
+dark and light.
+
 ## 3.444.0 - the version string is not the build, and a boot the farm did not plan (2026-09-08)
 
 Both found by the audit walking into them, live, on this machine.

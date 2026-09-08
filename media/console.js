@@ -372,11 +372,14 @@
         .jump { position:absolute; left:50%; transform:translateX(-50%); bottom:10px; z-index:5;
             font-size:11px; padding:3px 12px; border-radius:12px; box-shadow:0 2px 8px #0005; }
         .jump[hidden] { display:none; }
-        /* the transcript's own footer strip: separated from the lines above it by
-           a rule, and held inside the frame so it can never read as the ask
-           card's first row (U-133 round 3) */
+        /* The transcript's own banner, at the TOP of the frame and as far from
+           the ask card as this panel goes — the collision the user reported was
+           this note landing on the card's corner. Its rule is on the BOTTOM: it
+           separates the note from the lines it is about, while the wrapper's own
+           border already draws the line above it, and a border-top here would
+           only double that one. (U-133 round 3) */
         .hiddenote { flex:none; font-size:10px; opacity:.6; padding:3px 6px;
-            border-top:1px solid var(--vscode-widget-border,#4443);
+            border-bottom:1px solid var(--vscode-widget-border,#4443);
             background:var(--vscode-editor-background); }
         .hiddenote:empty { display:none; }
         /* "still working" — between the conversation and the composer, so it
