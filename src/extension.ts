@@ -338,7 +338,7 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    argSessionIds, argStr, BridgeRegistry, bridgeDimsOut, bridgePage, bridgeRunDimensions,
+    argSessionIds, argStr, BridgeOutcome, BridgeRefusal, BridgeRegistry, bridgeDimsOut, bridgePage, bridgeRunDimensions,
     DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, ROUTE_NOTE, SUPERPOWERS_NOTE,
     needOneExecutor, needRoutableEngine, optBool, optNum, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
@@ -15402,7 +15402,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const restartWorld = () => ({
         now: Date.now(),
-        sessions: consoleHost.list().map(s => ({ id: s.id, agentName: s.agentName, status: s.status })),
+        // ‼️ `sessionId` IS PART OF THE WORLD, NOT DECORATION (audit A-02.10).
+        // `liveBlockers` exempts a session the engine has already named when
+        // `resume` is asked for — that is the whole of X-232's "a session that
+        // will be taken up again is not a loss". This map used to hand over
+        // three fields and drop the fourth, so the exemption could never match
+        // anything HERE while matching perfectly in a test that built its own
+        // world. The symptom was silent and looked like caution: every
+        // `resume:true` restart armed and waited instead of firing.
+        sessions: consoleHost.list().map(s => ({
+            id: s.id, agentName: s.agentName, status: s.status, sessionId: s.sessionId
+        })),
         terminals: vscode.window.terminals.map(t => ({ name: t.name })),
         lastRestartAt: readRestartStamp()?.at ?? null,
         armed: armedRestart,
@@ -15447,7 +15457,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // and what the op said it would do.
             loadBuild: args.loadBuild !== false
         }, restartWorld());
-        if (plan.decision === 'refused') { throw new Error(plan.reason); }
+        // ‼️ THE REFUSAL CARRIES THE PLAN IT REFUSED (audit A-02.11). This was a
+        // bare `Error`, so the one answer a caller gets most often — "a turn is
+        // still running" — arrived as a string the bridge then cut at 500
+        // characters, mid-word, exactly where it named `loadBuild:false`. And
+        // `kind` (already ESCALATED to a window reload) and `build.escalatedFrom`
+        // were not in the answer at all, though this op's own catalogue entry
+        // promises them. `ok` is still false: nothing was restarted.
+        if (plan.decision === 'refused') {
+            throw new BridgeRefusal(plan.reason, {
+                decision: 'refused', kind: plan.kind, retryInMs: plan.retryInMs,
+                build: plan.build, note: plan.note, bootId, version: extVersion
+            });
+        }
         if (plan.decision === 'cancelled') {
             armedRestart = null;
             if (armTimer) { clearInterval(armTimer); armTimer = null; }
@@ -15648,7 +15670,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!name.endsWith('.request.json')) { continue; }
                 const reqFile = path.join(bridgeDir, name);
                 const resFile = path.join(bridgeDir, name.replace(/\.request\.json$/, '.response.json'));
-                let outcome: { ok: boolean; result?: unknown; error?: string };
+                let outcome: BridgeOutcome;
                 let opName = '?';
                 try {
                     const parsed = parseBridgeRequest(fs.readFileSync(reqFile, 'utf8'));

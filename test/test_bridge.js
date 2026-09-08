@@ -9,7 +9,7 @@ const os = require('os');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { BridgeRegistry, parseBridgeRequest, need, argStr, optStr, argSessionIds, stageBridgeCli, stagedBridgeCliPath } =
+const { BridgeRefusal, BridgeRegistry, parseBridgeRequest, need, argStr, optStr, argSessionIds, stageBridgeCli, stagedBridgeCliPath } =
     require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 const { antigravityStatus, syncToAntigravity } =
     require(path.join(__dirname, '..', 'out', 'core', 'antigravity.js'));
@@ -5246,6 +5246,51 @@ const { opencodeStatus, syncToOpencode } =
         const armed = sr.slice(sr.indexOf('export interface ArmedRestart'),
             sr.indexOf('export interface RestartWorld'));
         ok('…which is why ArmedRestart carries a reason at all', /reason\?: string;/.test(armed));
+    }
+
+    // ---------- audit A-02.11: A REFUSAL IS AN ANSWER, AND AN ANSWER HAS FIELDS ----------
+    //
+    // Measured on the running 3.442.0: `farm.restartExtensionHost when=now` over
+    // a real pending build answered `{ok:false, error:"…"}` and NOTHING else —
+    // no `kind` (already escalated to a window reload), no `build.escalatedFrom`,
+    // no `retryInMs` — though the op's own catalogue entry promises the first two
+    // by name. And the sentence itself stopped at character 500, mid-word, on
+    // "Pass loadBuil", which is where it was naming the way out.
+    {
+        const reg = new BridgeRegistry();
+        const long = 'x'.repeat(900);
+        reg.register({
+            op: 'test.refuse', describe: 'refuses on purpose',
+            handler: () => { throw new BridgeRefusal('no, because ' + long, { kind: 'window', retryInMs: 4000 }); }
+        });
+        reg.register({
+            op: 'test.blowUp', describe: 'throws something nobody composed',
+            handler: () => { throw new Error(long); }
+        });
+
+        const refused = await reg.dispatch('test.refuse', {});
+        ok('a deliberate refusal is still ok:false — nothing happened and no caller changes its mind',
+            refused.ok === false);
+        ok('‼️ …and it carries its DECISION, not only a sentence about it',
+            refused.detail && refused.detail.kind === 'window' && refused.detail.retryInMs === 4000);
+        ok('‼️ …and the sentence we composed is not cut — that is where the way out is named',
+            refused.error.length === ('no, because ' + long).length && refused.error.endsWith('x'));
+
+        const blown = await reg.dispatch('test.blowUp', {});
+        ok('…while an exception nobody composed is still capped, because it has no bound',
+            blown.ok === false && blown.error.length === 500);
+        ok('…and carries no detail it never had', blown.detail === undefined);
+
+        // And the restart op is the caller this was found on: pin that it throws
+        // the refusal WITH the plan, or the fields go back to being unreachable.
+        const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const at = extTs.indexOf("if (plan.decision === 'refused')");
+        const site = at < 0 ? '' : extTs.slice(at, at + 500);
+        ok('‼️ farm.restartExtensionHost refuses with BridgeRefusal, not a bare Error',
+            /throw new BridgeRefusal\(plan\.reason/.test(site));
+        ok('‼️ …and hands over the escalated kind and the build reading it just worked out',
+            /kind: plan\.kind/.test(site) && /build: plan\.build/.test(site)
+            && /retryInMs: plan\.retryInMs/.test(site) && /note: plan\.note/.test(site));
     }
 
     console.log(`\n${pass} passed, ${fail} failed`);

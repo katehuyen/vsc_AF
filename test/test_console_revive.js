@@ -137,5 +137,40 @@ const live = (over = {}) => ({
         card.length === 3 && card[0].id === REVIVE_PLACEHOLDER_ID);
 }
 
+// ---- audit B-03.3: THE SWAP IS ONLY REACHABLE IF THE SUBSCRIPTION IS EARLIER ----
+//
+// ‼️ EVERY TEST ABOVE MEASURES THE SWAP; NONE MEASURES WHETHER IT CAN EVER BE
+// CALLED. The scrollback is put in by an `index.onDidUpdate` handler that
+// `reviveAfterRestart()` registers — and the event it waits for is fired ONCE,
+// at the end of `index.scanAll()`. `activate()` starts that scan thousands of
+// lines before it revives, so the whole thing rests on one unwritten fact: no
+// `await` sits between them. Add one — a single top-level `await` anywhere in
+// that stretch — and the scan's completion runs in the gap, fires into nobody,
+// and every revived card keeps its "not in the index yet" placeholder for ever.
+// That is the ORIGINAL bug back, with every test in this file still green.
+//
+// So the ordering is pinned here, where the reason for it is written down.
+{
+    const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const scanAt = extTs.indexOf('void index.scanAll().then(');
+    const reviveAt = extTs.indexOf('\n    reviveAfterRestart();');
+
+    ok('‼️ both ends of the window are findable — a renamed end must fail here, not go quiet',
+        scanAt >= 0 && reviveAt >= 0);
+    ok('‼️ the scan is started BEFORE the revive subscribes to its result',
+        scanAt < reviveAt);
+
+    const between = extTs.slice(scanAt, reviveAt);
+    const awaits = between.split(/\r?\n/).filter(l => /^    await\b/.test(l));
+    ok('‼️ …and NOTHING AWAITS in between, or the scan finishes before anyone is listening '
+        + `and every revived card stays empty (found: ${awaits.length})`,
+        awaits.length === 0);
+
+    ok('…and the revive really is what subscribes — the swap has no other caller',
+        /index\.onDidUpdate\(\(\) => \{[\s\S]{0,600}rebuildHistory/.test(extTs));
+    ok('…and it lets go of itself, so a window is not left holding a dead subscription',
+        /if \(!pendingHistory\.length\) \{ sub\.dispose\(\); \}/.test(extTs));
+}
+
 console.log(`test_console_revive.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

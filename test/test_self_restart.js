@@ -325,5 +325,51 @@ const working = (id, agentName) => ({ id, agentName, status: 'working' });
         })());
 }
 
+// ---------- audit A-02.10: THE WORLD THE PLANNER IS ACTUALLY HANDED ----------
+//
+// ‼️ EVERY RULE ABOVE IS MEASURED ON A WORLD THIS FILE BUILDS ITSELF, and that
+// is exactly how a rule can be green here and dead in the product. `resume`'s
+// exemption keys on `sessionId`; `restartWorld()` in `extension.ts` mapped the
+// console list down to `{id, agentName, status}` and dropped it, so the branch
+// the X-232 tests above pin could never be reached by the running extension —
+// every `resume:true` restart armed and waited for sessions it had promised to
+// bring back. No test failed, because no test had ever looked at the wiring.
+//
+// So the world's SHAPE is pinned here, against the source, next to the rules
+// that depend on it. A field the planner reads and the wiring does not send is
+// the bug that reports nothing.
+{
+    const fs = require('fs');
+    const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const world = (() => {
+        const m = /const restartWorld = \(\) => \(\{/.exec(extTs);
+        if (!m) { return ''; }
+        let i = m.index + m[0].length - 2, depth = 0;
+        for (; i < extTs.length; i++) {
+            if (extTs[i] === '(') { depth++; }
+            else if (extTs[i] === ')') { depth--; if (!depth) { break; } }
+        }
+        return extTs.slice(m.index, i);
+    })();
+
+    ok('restartWorld() is findable — this test is worthless if the shape moved and it did not notice',
+        world.length > 0);
+    ok('‼️ the console mapping carries sessionId, or resume can never exempt anything in the product',
+        /sessions:\s*consoleHost\.list\(\)\.map\([\s\S]*?sessionId/.test(world));
+    // The other three the planner reads, pinned the same way for the same reason.
+    ok('…and it still carries the three the blockers themselves are built from',
+        /\bid:\s*s\.id/.test(world) && /agentName:\s*s\.agentName/.test(world)
+        && /status:\s*s\.status/.test(world));
+    ok('…and terminals, lastRestartAt, armed and build are all still sent',
+        /terminals:/.test(world) && /lastRestartAt:/.test(world)
+        && /armed:/.test(world) && /build:/.test(world));
+
+    // And the field is real on the state it is read off, not an invention here.
+    const proto = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'core', 'consoleproto.ts'), 'utf8');
+    ok('‼️ …and sessionId is a real field of ConsoleSessionState, not a hopeful spelling',
+        /interface ConsoleSessionState \{[\s\S]*?\n\}/.exec(proto)[0].includes('sessionId?: string'));
+}
+
 console.log(`test_self_restart.js: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

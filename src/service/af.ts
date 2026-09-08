@@ -263,12 +263,30 @@ Examples:
 `);
 }
 
+/**
+ * What the bridge writes back. Declared here rather than imported: this file is
+ * staged as a STANDALONE script, so it may not pull `core/bridge` (and the whole
+ * extension behind it) in after itself.
+ *
+ * ‼️ `detail` is the decision behind a deliberate refusal (`BridgeRefusal`,
+ * audit A-02.11) — the escalated `kind`, the `build` reading, a `retryInMs`. It
+ * was passing through this helper untyped and therefore invisible to anyone
+ * reading the contract here; it is printed either way, because the parsed reply
+ * is resolved whole.
+ */
+interface BridgeReply {
+    ok: boolean;
+    result?: unknown;
+    error?: string;
+    detail?: unknown;
+}
+
 export async function executeBridgeRequest(
     op: string,
     args: Record<string, unknown>,
     bridgeDir: string,
     timeoutMs: number
-): Promise<{ ok: boolean; result?: unknown; error?: string }> {
+): Promise<BridgeReply> {
     fs.mkdirSync(bridgeDir, { recursive: true });
 
     const reqId = `af_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
@@ -291,7 +309,7 @@ export async function executeBridgeRequest(
                 clearInterval(interval);
                 try {
                     const resContent = fs.readFileSync(resFile, 'utf8').replace(/^\uFEFF/, '').trim();
-                    const parsed = JSON.parse(resContent) as { ok: boolean; result?: unknown; error?: string };
+                    const parsed = JSON.parse(resContent) as BridgeReply;
                     cleanup();
                     resolve(parsed);
                 } catch (e) {

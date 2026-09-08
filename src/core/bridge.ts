@@ -39,6 +39,34 @@ export interface BridgeOutcome {
     ok: boolean;
     result?: unknown;
     error?: string;
+    /** Only on a `BridgeRefusal` — the decision that says NO, as data. */
+    detail?: unknown;
+}
+
+/**
+ * ‼️ A REFUSAL IS AN ANSWER, AND AN ANSWER HAS FIELDS (audit A-02.11).
+ *
+ * An op that decides not to act has computed something: WHY not, what it would
+ * have done instead, how long the caller should wait. Thrown as a plain `Error`
+ * all of that collapses into one string — and then into 500 characters of one
+ * string, because the `catch` below has to assume an arbitrary exception and
+ * caps it. Measured on `farm.restartExtensionHost`: the op's own catalogue entry
+ * promises the escalation is reported "in `build.escalatedFrom` and `note`", and
+ * on the refusal path neither field reached the caller at all, while the
+ * sentence that named the way out (`loadBuild:false`) was cut off mid-word at
+ * character 500.
+ *
+ * So a deliberate refusal says so with this, and carries its decision beside the
+ * sentence. `ok` stays `false` — nothing happened, and no caller that reads only
+ * `ok` changes its mind — and the message is NOT truncated, because we wrote it
+ * and it is as long as it needed to be. An arbitrary exception is still capped:
+ * that one is not ours and has no bound.
+ */
+export class BridgeRefusal extends Error {
+    constructor(message: string, readonly detail?: unknown) {
+        super(message);
+        this.name = 'BridgeRefusal';
+    }
 }
 
 export class BridgeRegistry {
@@ -98,6 +126,10 @@ export class BridgeRegistry {
         try {
             return { ok: true, result: await spec.handler(args) };
         } catch (e) {
+            // A refusal we composed ourselves: whole sentence, and its decision.
+            if (e instanceof BridgeRefusal) {
+                return { ok: false, error: e.message, ...(e.detail !== undefined ? { detail: e.detail } : {}) };
+            }
             return { ok: false, error: String((e as Error)?.message ?? e).slice(0, 500) };
         }
     }

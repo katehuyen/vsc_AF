@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.443.0 - the resume exemption that was tested on a world the product never sends (2026-09-08)
+
+Found by the retrospective audit, in the wiring rather than the rule.
+
+**`resume:true` could never exempt a single session.** X-232's promise is that a
+console session the engine has already named is not a loss to weigh against a
+restart — it comes back on the other side, so it is not a reason to wait.
+`liveBlockers()` implements exactly that, keyed on `sessionId`, and eight tests
+pin it. But `restartWorld()` in `extension.ts` mapped the console list down to
+`{id, agentName, status}` and dropped the fourth field, so the branch those
+tests cover was unreachable from the running extension: every `resume:true`
+restart counted its resumable sessions as blockers, armed, and waited for them.
+Nothing failed — the tests built their own world and handed it the field the
+product does not send. The map now carries `sessionId`, and the shape of the
+world `restartWorld()` actually sends is pinned against the source next to the
+rules that read it.
+
+**And the swap that rebuilds a revived card's scrollback rests on an ordering
+nobody had written down.** It is put in by an `index.onDidUpdate` handler that
+`reviveAfterRestart()` registers, and the event fires once, at the end of
+`index.scanAll()` — which `activate()` starts thousands of lines earlier. The
+only thing that makes the subscription earlier than the event is that no
+top-level `await` sits between them. One added anywhere in that stretch would
+put every revived card back to a permanent "not in the index yet" placeholder,
+with all 3.442.0's tests still green. That ordering is now a test.
+
 ## 3.442.0 - the revived session that came back empty, and the resume that forgot whose account it was (2026-09-08)
 
 Both reported by the user, on the first restart that actually loaded a build.
