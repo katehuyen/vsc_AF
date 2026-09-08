@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.446.0 - a revived session takes the WORK up again, not only the conversation (2026-09-08)
+
+The user's decision, in their own words: *kaldığı yerden devam etsin.*
+
+X-230's header says the thing it exists to stop is a deadlock on an unattended
+night shift — the loop stops until a human comes back. X-232 got the card back
+into its seat with its whole transcript, and then it sat `idle`: `reviveInit`
+carries no prompt and nothing spoke into it. So the night shift still stopped,
+one step later than before, and the card said "ask again" to a room with nobody
+in it.
+
+A revived seat is now asked to carry on. **Only one that was mid-turn** — that
+figure was already measured for the notice, and it is the honest scope: a
+session sitting idle was waiting for a human, so nudging it would not be
+resuming work, it would be inventing it.
+
+Measured rather than assumed, and the assumption written first was wrong: a
+resumed seat comes back `starting`, not idle — it has a transcript to load
+before it says anything. So the nudge waits for the engine's own first quiet
+moment. It also may not wait for ever: an engine that never announces itself
+would leave the shift stopped in the one way nothing reports, and a prompt
+written into a `starting` seat IS delivered (the message lands and the seat goes
+to `working`). After 30s it is sent slightly early rather than not at all.
+
+The prompt names what was lost and what was not, and it ends by telling a model
+that cannot tell where it was to say so and stop rather than guess at work it
+may already have done.
+
 ## 3.445.0 - the hidden-lines banner, looked at (2026-09-08)
 
 U-133's third round, verified the way the item keeps asking for: rendered and

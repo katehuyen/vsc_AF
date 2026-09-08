@@ -137,6 +137,58 @@ const live = (over = {}) => ({
         card.length === 3 && card[0].id === REVIVE_PLACEHOLDER_ID);
 }
 
+// ---- audit B-03.7: THE REVIVE TAKES THE WORK UP, NOT ONLY THE CONVERSATION ----
+//
+// ‼️ X-232 put the card back in its seat with its whole transcript and then let
+// it sit `idle`, because `reviveInit` carries no prompt and nothing spoke into
+// it. So the unattended night shift X-230's header exists to save still stopped
+// — one step later — and the card said "ask again" to an empty room. The user's
+// decision: it carries on.
+//
+// The scope is the part that can go wrong quietly, so it is pinned hardest: a
+// seat that was IDLE when the host went down was waiting for a human, and
+// nudging that one would not be resuming work, it would be inventing it.
+{
+    const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const nudge = (() => {
+        const at = extTs.indexOf('const nudgeRevived = (seatId: string): void => {');
+        return at < 0 ? '' : extTs.slice(at, extTs.indexOf('\n    };', at));
+    })();
+
+    ok('the nudge is findable — a renamed one must fail here rather than go quiet', nudge.length > 200);
+    ok('‼️ it waits for the seat to be idle — a prompt into `starting` is a prompt into a guess',
+        /st\.status !== 'idle'/.test(nudge) && /return;/.test(nudge));
+    ok('‼️ …and checks immediately too, because a Claude seat is ALREADY idle when start() returns',
+        /attempt\(sub\);\s*$/.test(nudge.trim()) || /^\s*attempt\(sub\);/m.test(nudge));
+    ok('…it fires at most once', /let done = false;/.test(nudge) && /done = true;/.test(nudge));
+    ok('‼️ …and it may not wait for ever: an engine that never announces itself would leave '
+        + 'the night shift stopped in the one way nothing reports',
+        /grace = setTimeout\(\(\) => \{ if \(!done\) \{ fire\(sub, 'grace'\); \} \}, 30_000\);/.test(nudge));
+    ok('…the grace timer is cleared when the nudge goes, and on dispose',
+        /clearTimeout\(grace\)/.test(nudge));
+    ok('…a seat that ended or errored on the way back is left alone, not spoken to',
+        /status === 'ended' \|\| st\.status === 'error'/.test(nudge));
+    ok('…and it lets go of its subscription either way — on the nudge and on a dead seat',
+        (nudge.match(/sub\.dispose\(\);/g) || []).length >= 2);
+
+    // ‼️ THE SCOPE. This is the assertion that stops a future edit from nudging
+    // every revived seat, which would start spending on conversations that were
+    // waiting for the user.
+    ok('‼️ ONLY a seat that was mid-turn is nudged — an idle one was waiting for a human',
+        /if \(row\.midTurn\) \{ nudgeRevived\(seatId\); \}/.test(extTs));
+
+    // And the sentence the reader sees no longer tells them to do it by hand.
+    ok('…and the card no longer says "ask again" while the farm is asking for them',
+        !/ask again, nothing before it is missing/.test(extTs)
+        && /asked to carry on from where it was/.test(extTs));
+
+    const { REVIVE_NUDGE } = require(path.join(__dirname, '..', 'out', 'core', 'consoleRevive.js'));
+    ok('the nudge names what was lost and what was not',
+        /lost on the way/.test(REVIVE_NUDGE) && /nothing before it is missing/.test(REVIVE_NUDGE));
+    ok('‼️ …and it tells a model that cannot tell where it was to SAY SO rather than invent work',
+        /say so and stop/.test(REVIVE_NUDGE) && /do not guess/.test(REVIVE_NUDGE));
+}
+
 // ---- audit B-03.3: THE SWAP IS ONLY REACHABLE IF THE SUBSCRIPTION IS EARLIER ----
 //
 // ‼️ EVERY TEST ABOVE MEASURES THE SWAP; NONE MEASURES WHETHER IT CAN EVER BE

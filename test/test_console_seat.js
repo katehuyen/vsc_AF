@@ -262,6 +262,36 @@ async function s29() {
         host.rebuildHistory('cs-nope', rows) === false);
 }
 
+// ---- audit B-03.7: THE NUDGE REACHES A SEAT THAT WAS JUST RESUMED ----------
+// Driven through the REAL host, because the question is not "would the rule say
+// yes" but "does a prompt written into a seat that `start()` has only just
+// returned actually land in that conversation". The extension's `nudgeRevived`
+// waits for `idle` and then calls exactly this.
+{
+    const host = new ConsoleHost(() => 'claude');
+    const seat = host.start(init({ resume: 'S-NUDGE' }));
+
+    // ‼️ MEASURED, AGAINST THE ASSUMPTION THAT WAS WRITTEN FIRST. A resumed seat
+    // is `starting`, NOT idle: the engine has a transcript to load before it
+    // says anything. `nudgeRevived` therefore has to wait for the seat's own
+    // first quiet moment rather than speak the instant `start()` returns, and
+    // this is the assertion that says so.
+    ok('‼️ a resumed Claude seat comes back `starting` — it has a transcript to load first',
+        host.get(seat).status === 'starting');
+
+    const before = host.get(seat).messages.length;
+    const r = host.send(seat, 'carry on from where you were');
+    ok('‼️ …and a prompt is DELIVERED rather than held — `queued:false` is "sent now", not "dropped"',
+        r && r.queued === false && !r.refused);
+    ok('…it lands in THAT conversation, on the seat that was revived',
+        host.get(seat).messages.length === before + 1);
+    ok('…and the seat is working again, which is the whole point of the nudge',
+        host.get(seat).status === 'working');
+
+    ok('a seat that is gone refuses the nudge instead of throwing',
+        host.send('cs-nobody', 'anything') === undefined);
+}
+
 s29().then(() => {
     cp.spawn = realSpawn;
     cp.exec = realExec;

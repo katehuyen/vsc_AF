@@ -129,7 +129,7 @@ import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
 } from './core/sentryCampaign';
 import {
-    isPlaceholderHistory, planRevive, REVIVE_PLACEHOLDER_ID, reviveInit, RevivePlan, ReviveRow, ReviveSkip
+    isPlaceholderHistory, planRevive, REVIVE_NUDGE, REVIVE_PLACEHOLDER_ID, reviveInit, RevivePlan, ReviveRow, ReviveSkip
 } from './core/consoleRevive';
 import { armedRestartWait, fleetWaits, FleetWait } from './core/waits';
 import {
@@ -22735,6 +22735,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * was killed MID-TURN says that its answer in flight was lost, because
      * otherwise the reader waits for a reply nobody is writing.
      */
+    /**
+     * ‼️ B-03.7 — SPEAK INTO THE REVIVED SEAT, BUT ONLY ONCE IT CAN HEAR.
+     *
+     * `start()` returns a seat, not a conversation that is ready: an engine that
+     * has to resume a transcript is `starting` until it says otherwise, and a
+     * prompt written into that gap is a prompt written into a process that may
+     * still be deciding what it is. So the nudge waits for the seat's OWN first
+     * quiet moment and goes then — and it is checked immediately as well as on
+     * change, because a Claude seat is already `idle` when `start()` returns and
+     * would otherwise wait for an event that has already happened.
+     *
+     * It fires at most once and lets go of itself either way: a seat that ends
+     * or errors on the way back is not nudged, it is left as the record of what
+     * happened.
+     */
+    const nudgeRevived = (seatId: string): void => {
+        let done = false;
+        let grace: NodeJS.Timeout | undefined;
+        const fire = (sub: { dispose(): void }, why: 'idle' | 'grace'): void => {
+            done = true;
+            if (grace) { clearTimeout(grace); grace = undefined; }
+            sub.dispose();
+            void why;
+            consoleHost.send(seatId, REVIVE_NUDGE);
+        };
+        const attempt = (sub: { dispose(): void }): void => {
+            if (done) { return; }
+            const st = consoleHost.get(seatId);
+            if (!st || st.status === 'ended' || st.status === 'error') {
+                done = true;
+                if (grace) { clearTimeout(grace); grace = undefined; }
+                sub.dispose();
+                return;
+            }
+            // ‼️ MEASURED: a resumed seat comes back `starting`, not idle — it has
+            // a transcript to load before it says anything (test_console_seat.js).
+            // So the wait is for the engine's own first quiet moment.
+            if (st.status !== 'idle') { return; }
+            fire(sub, 'idle');
+        };
+        const sub: { dispose(): void } = consoleHost.onChange(id => {
+            if (id === seatId) { attempt(sub); }
+        });
+        context.subscriptions.push(sub);
+        /**
+         * ‼️ AND IT MAY NOT WAIT FOR EVER. The quiet moment arrives when the
+         * engine announces itself, and an engine that never does would leave the
+         * night shift stopped in the one way nothing reports — a nudge that was
+         * never sent looks exactly like a session with nothing to do. A prompt
+         * written into a `starting` seat IS delivered (measured: the message
+         * lands and the seat goes to `working`), so the honest fallback is to
+         * send it slightly early rather than not at all.
+         */
+        grace = setTimeout(() => { if (!done) { fire(sub, 'grace'); } }, 30_000);
+        context.subscriptions.push({ dispose: () => { if (grace) { clearTimeout(grace); } } });
+        attempt(sub);
+    };
+
     const reviveAfterRestart = (): void => {
         const stamp = readRestartStamp();
         const rows = stamp?.revive ?? [];
@@ -22760,7 +22818,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 + 'it left off — same conversation, same id.'
                                 + (row.midTurn
                                     ? ' It was ANSWERING when the host went down, so that one reply was'
-                                    + ' lost on the way: ask again, nothing before it is missing.'
+                                    + ' lost on the way — nothing before it is missing, and it is being'
+                                    + ' asked to carry on from where it was.'
                                     : '')
                         }
                     ],
@@ -22769,6 +22828,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (isPlaceholderHistory(readBack)) {
                     pendingHistory.push({ seatId, sessionId: row.sessionId });
                 }
+                // ‼️ B-03.7 — AND THE WORK IS TAKEN UP, NOT ONLY THE CONVERSATION.
+                // The user's decision. Only for a seat that was mid-turn: see
+                // REVIVE_NUDGE for why an idle one is deliberately left alone.
+                if (row.midTurn) { nudgeRevived(seatId); }
                 back.push(row.agentName);
             } catch (e) {
                 lost.push({

@@ -159,6 +159,34 @@ export function reviveInit(row: ReviveSource & { sessionId?: string }): ReviveIn
  */
 export const REVIVE_PLACEHOLDER_ID = 'xh-note';
 
+/**
+ * ‼️ B-03.7 — A REVIVE BROUGHT THE CONVERSATION BACK AND NOT THE WORK.
+ *
+ * X-230's own header says the thing it exists to stop is a DEADLOCK on an
+ * unattended night shift: the loop stops until a human comes back. X-232 got
+ * the card back into its seat with its whole transcript — and then it sat
+ * `idle`, because `reviveInit` carries no prompt and nothing spoke into it. So
+ * the night shift still stopped, one step later than before, and the card even
+ * said "ask again" to a room with nobody in it. The user's decision, in their
+ * own words: **kaldığı yerden devam etsin.**
+ *
+ * ‼️ AND IT IS SENT TO THE SESSIONS THAT WERE WORKING, NOT TO EVERY SEAT.
+ * `midTurn` is already measured for the notice — a session that was ANSWERING
+ * when the host went down is one with work in flight, and continuing is what it
+ * would have done. A session sitting `idle` was waiting for a human; nudging
+ * that one would not be resuming work, it would be inventing it.
+ *
+ * The last clause is not politeness. A resumed model that cannot tell where it
+ * was is exactly the one that will make something up, and this whole audit
+ * exists because agents made things up rather than saying they could not tell.
+ */
+export const REVIVE_NUDGE =
+    'Agent Farm restarted the extension host and took this session up again in the same seat — '
+    + 'same conversation, same id. You were mid-turn when it went down, so the one answer you '
+    + 'were writing was lost on the way; nothing before it is missing. Carry on from where you '
+    + 'were. If you cannot tell from the conversation above where that was, say so and stop — '
+    + 'do not guess at work you may already have done.';
+
 /** A history that is nothing but the placeholder — i.e. a read that has not
  *  happened yet rather than a conversation. Anything else is left alone. */
 export function isPlaceholderHistory(rows: { id: string }[] | undefined): boolean {
