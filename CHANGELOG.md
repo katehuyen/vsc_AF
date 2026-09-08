@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.444.0 - the version string is not the build, and a boot the farm did not plan (2026-09-08)
+
+Both found by the audit walking into them, live, on this machine.
+
+**`build.pending` compared two version strings, so it could not see the one
+case the dev loop produces every time.** `npm run package` then
+`code --install-extension --force` under the SAME version number is what
+happens between commits: VS Code replaces the extension folder in place and the
+running host keeps the code it loaded. Both strings still read `3.443.0`, so
+`farm.health` answered `pending:false` while the build on disk was a different
+one — measured here, package.json written at 09:38 against a host that booted
+at 09:24. The agent believed its own code was live, and A-02.7's "the restart
+loaded nothing" trap came straight back, silently, because nothing about the
+name had changed.
+
+A version number cannot express "a different build of the same version", so the
+FOLDER's identity is carried instead: the host takes the mtime of the
+`package.json` it was loaded from at boot and compares it live. Unreadable at
+either end stays `undefined` — an unknown is not a mismatch, the same rule the
+version comparison already followed. The sentence changes with it: two equal
+numbers are never reported as differing, it names the folder.
+
+**And `farm.health` was working "pending" out a second time, on its own.** The
+planner learnt the new rule and the surface could not, which is exactly how an
+op and a page come to disagree. It now reads the planner's answer.
+
+**A boot the farm did not plan now says so.** VS Code restarts the extension
+host by itself — a `--force` install, the Extensions card's own button, a crash
+— and when it does there is no stamp, so there is no revive plan and no console
+session comes back. It happened here twice in one morning: `bootId` changed and
+the console seat was replaced while `selfRestart.json` was eight hours old.
+Whether to RECOVER from that is a decision (reviving after an unplanned death
+would also revive after the user deliberately closed VS Code), so this build
+only stops it being invisible: `farm.health` carries `bootPlanned`.
+
 ## 3.443.0 - the resume exemption that was tested on a world the product never sends (2026-09-08)
 
 Found by the retrospective audit, in the wiring rather than the rule.

@@ -325,6 +325,74 @@ const working = (id, agentName) => ({ id, agentName, status: 'working' });
         })());
 }
 
+// ---------- audit A-02.16: THE VERSION STRING IS NOT THE BUILD ----------
+//
+// ‼️ MEASURED IN THE FIELD, ON THIS MACHINE. `npm run package` then
+// `code --install-extension --force` under the SAME version number is what the
+// dev loop does between commits. VS Code replaces the folder in place and the
+// running host keeps the code it loaded — but both strings still read
+// `3.443.0`, so `pendingBuild` returned null, `farm.health` answered
+// `pending:false`, and the agent believed its own code was live. The extension
+// folder's package.json was written at 09:38; the host had booted at 09:24.
+//
+// A version number cannot express "a different build of the same version", so
+// the FOLDER's identity is carried instead, and only it can say `replaced`.
+{
+    const NOW = 1_000_000;
+    const w = (build) => ({ now: NOW, sessions: [], terminals: [], lastRestartAt: null, build });
+
+    ok('two different versions are still a pending build, as they always were',
+        planRestart({ kind: 'extensionHost' },
+            w({ installed: '3.444.0', running: '3.443.0' })).build.installed === '3.444.0');
+
+    const same = planRestart({ kind: 'extensionHost' }, w({ installed: '3.443.0', running: '3.443.0' }));
+    ok('the same version with nothing else said is NOT pending — an unknown is not a mismatch',
+        same.build === undefined && same.decision === 'restarting' && same.kind === 'extensionHost');
+
+    const rebuilt = planRestart({ kind: 'extensionHost' },
+        w({ installed: '3.443.0', running: '3.443.0', replaced: true }));
+    ok('‼️ …but the same version with the FOLDER replaced is pending, and it escalates like any other',
+        rebuilt.kind === 'window' && rebuilt.build.escalatedFrom === 'extensionHost'
+        && rebuilt.build.replaced === true && rebuilt.build.willLoad === true);
+    ok('‼️ …and its sentence does not claim two equal numbers differ — it names the folder',
+        !/3\.443\.0 is installed and 3\.443\.0 is running/.test(rebuilt.note)
+        && /different build of 3\.443\.0 is on disk/.test(rebuilt.note)
+        && /same version number/.test(rebuilt.note));
+    ok('…and `replaced:false` said out loud is still not a mismatch',
+        planRestart({ kind: 'extensionHost' },
+            w({ installed: '3.443.0', running: '3.443.0', replaced: false })).build === undefined);
+
+    // ‼️ AND farm.health MAY NOT WORK THIS OUT A SECOND TIME. It used to answer
+    // `installed !== extVersion` on its own, which is why the planner could
+    // learn this rule and the surface could not.
+    const fs2 = require('fs');
+    const extTs2 = fs2.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const health = extTs2.slice(extTs2.indexOf("op: 'farm.health'"),
+        extTs2.indexOf("op: 'farm.restartExtensionHost'"));
+    ok('‼️ farm.health reads the PLANNER\'s answer, not a second definition of "pending"',
+        /pendingBuild\(w\)/.test(health) && !/installed !== extVersion/.test(health));
+    ok('…and passes `replaced` on, so a poll loop can tell which kind of wait it is in',
+        /replaced: true/.test(health));
+    // The half the extension owns: the boot stamp, and that it is compared live.
+    ok('‼️ …and the extension takes the folder\'s identity AT BOOT and compares it live',
+        /const bootManifestStamp = ownManifestStamp\(\);/.test(extTs2)
+        && /now !== bootManifestStamp/.test(extTs2));
+    ok('…reading its OWN extensionPath rather than a guessed extensions dir',
+        /ownManifestStamp = \(\)[\s\S]{0,200}context\.extensionPath, 'package\.json'/.test(extTs2));
+
+    // ‼️ A-02.15 — AND A BOOT THE FARM DID NOT PLAN SAYS SO. VS Code restarts
+    // the extension host on its own (a --force install, the Extensions card's
+    // button, a crash); no stamp is written, so no revive plan exists and no
+    // console session comes back. Measured here: bootId changed and the seat was
+    // replaced while selfRestart.json was eight hours old. Recovering is the
+    // user's decision; REPORTING it is not, and silence is what made it a
+    // mystery both times it happened.
+    ok('‼️ farm.health says whether this boot was one the farm itself planned',
+        /bootPlanned:/.test(health));
+    ok('…judged against the stamp it would have written, not against a clock alone',
+        /bootPlanned: !!stamp && stamp\.at <= bootAt/.test(health));
+}
+
 // ---------- audit A-02.10: THE WORLD THE PLANNER IS ACTUALLY HANDED ----------
 //
 // ‼️ EVERY RULE ABOVE IS MEASURED ON A WORLD THIS FILE BUILDS ITSELF, and that

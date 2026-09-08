@@ -226,7 +226,7 @@ function main() {
 
     const css = fs.readFileSync(path.join(ROOT, 'media', 'common.css'), 'utf8');
     const sections = variants.map(v => {
-        const r = runPage(fixture.script, v.data, fixture.window || {});
+        const r = runPage(fixture.script, v.data, fixture.window || {}, v.state);
         // A view that is reached by pressing something is reached by pressing
         // it here too — the shim binds the same handlers the webview does, so a
         // variant never has to reach into the page's private state.

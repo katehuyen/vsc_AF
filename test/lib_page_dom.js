@@ -28,7 +28,19 @@ const CTX_ATTR_LEN = 'data-vscode-context="'.length;
  * page to use a formatter nobody stubbed dies with "not a function" in a
  * message that says nothing about the real cause.
  */
-function runPage(scriptFile, DATA, extraWindow) {
+/**
+ * ‼️ `initialState` — THE SCENES A PAGE CAN ONLY BE IN IF IT REMEMBERS SOMETHING.
+ *
+ * `vscode.getState()` used to start as `{}` here, so every fixture drew the page
+ * as a reader who had never touched it. Whole layouts live on the other side of
+ * that: the Console's `show` filter is per card and stored, and the
+ * "N line(s) hidden by show" note only exists when it is set — so the note and
+ * the ask card could never be drawn in one picture, and the collision the user
+ * reported was invisible to every render this repo takes (U-133, round 3).
+ * A variant may now hand over the state it needs; it is copied, so one scene
+ * cannot leak into the next.
+ */
+function runPage(scriptFile, DATA, extraWindow, initialState) {
     // charts.js and sessionsTable.js are shipped to every page by htmlShell but
     // are not in lib_shared_media's list (older tests load them themselves, and
     // adding them there would double-load). Here they belong: a page that
@@ -41,7 +53,7 @@ function runPage(scriptFile, DATA, extraWindow) {
     const onMessage = [];
     const els = {};
     const elCache = new Map();
-    let state = {};
+    let state = initialState ? JSON.parse(JSON.stringify(initialState)) : {};
     /**
      * ‼️ FOCUS IS MODELLED, BECAUSE LOSING IT IS A BUG PAGES ACTUALLY SHIP.
      *

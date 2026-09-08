@@ -129,7 +129,25 @@ export interface RestartWorld {
      *  4 in the header). `installed` is read off `extensions.json`, `running` is
      *  the registry snapshot this host booted with. Absent when nothing can be
      *  read — an unknown is never treated as a mismatch. */
-    build?: { installed: string; running: string } | null;
+    build?: {
+        installed: string; running: string;
+        /**
+         * ‼️ THE VERSION STRING IS NOT THE BUILD (audit A-02.16). An agent
+         * developing this extension packages and installs with `--force` many
+         * times under ONE version number — that is what the dev loop does — and
+         * two different builds then compare equal. Measured: the extension
+         * folder's `package.json` was rewritten at 09:38, the host had booted at
+         * 09:24, and `farm.health` still answered `pending:false` because both
+         * strings read `3.443.0`. So the agent believed its code was live, no
+         * surface could say otherwise, and A-02.7's "it did not load" trap came
+         * back silently.
+         *
+         * This is the folder's own identity rather than its name: true when the
+         * `package.json` THIS host booted from has been rewritten since. Unknown
+         * (undefined) is never read as replaced.
+         */
+        replaced?: boolean;
+    } | null;
 }
 
 /** What this plan will and will not do about the build on disk. Present only
@@ -143,6 +161,11 @@ export interface RestartBuild {
     willLoad: boolean;
     /** set when a host restart was turned into a window reload to load it */
     escalatedFrom?: RestartKind;
+    /** A-02.16 — the two versions READ THE SAME and the folder was still
+     *  replaced. Carried so a caller can tell "3.444.0 is waiting" from "the
+     *  build you just packaged over 3.443.0 is waiting", which is the case a
+     *  version number can never express. */
+    replaced?: boolean;
 }
 
 export interface RestartAsk {
@@ -273,7 +296,8 @@ export function planRestart(ask: RestartAsk, world: RestartWorld): RestartPlan {
         ? {
             installed: pending.installed, running: pending.running,
             willLoad: kind === 'window',
-            ...(escalate ? { escalatedFrom: asked } : {})
+            ...(escalate ? { escalatedFrom: asked } : {}),
+            ...(pending.replaced ? { replaced: true } : {})
         }
         : undefined;
     const note = buildNote(build);
@@ -340,20 +364,32 @@ export function planRestart(ask: RestartAsk, world: RestartWorld): RestartPlan {
  *  never read as a mismatch: an extension running from a development host has no
  *  `extensions.json` to compare against, and turning its every host restart into
  *  a window reload would be the cure killing the patient. */
-function pendingBuild(world: RestartWorld): { installed: string; running: string } | null {
+export function pendingBuild(world: RestartWorld): { installed: string; running: string; replaced: boolean } | null {
     const b = world.build;
     if (!b) { return null; }
     const installed = String(b.installed ?? '').trim();
     const running = String(b.running ?? '').trim();
-    if (!installed || !running || installed === running) { return null; }
-    return { installed, running };
+    if (!installed || !running) { return null; }
+    if (installed !== running) { return { installed, running, replaced: false }; }
+    // ‼️ SAME NAME, DIFFERENT BUILD (A-02.16). The folder this host booted from
+    // has been written again since, which is the dev loop's own normal case and
+    // the one the version comparison above can never see.
+    if (b.replaced === true) { return { installed, running, replaced: true }; }
+    return null;
 }
 
 /** One sentence, three cases: it will load · it was escalated so it can load ·
  *  it will not load and here is what would. */
 function buildNote(build: RestartBuild | undefined): string | undefined {
     if (!build) { return undefined; }
-    const heads = `${build.installed} is installed and ${build.running} is running`;
+    // ‼️ A-02.16 — when the two names are equal the usual sentence would read
+    // "3.443.0 is installed and 3.443.0 is running", which says the opposite of
+    // what is true. Name the FOLDER instead, because that is what differs.
+    const heads = build.replaced
+        ? `a different build of ${build.installed} is on disk from the one this host loaded `
+        + '(the extensions folder was written again since it booted — same version number, '
+        + 'different code)'
+        : `${build.installed} is installed and ${build.running} is running`;
     if (build.escalatedFrom) {
         return `${heads}. ${RESTART_COMMANDS.extensionHost} restarts the host from the registry `
             + `snapshot it already has and would come back on ${build.running} again, so this is `

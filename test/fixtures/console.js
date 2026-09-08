@@ -793,6 +793,25 @@ module.exports = {
             id: 'console-asking',
             label: 'Console — a question holding the turn: the card that can be folded down to its line (U-133)',
             data: askingData()
+        },
+        /**
+         * ‼️ U-133 ROUND 3 — THE SCENE THE USER IS ACTUALLY LOOKING AT.
+         *
+         * Their report is one sentence: the "50 line(s) hidden by show" note is
+         * sitting on the ask card's top-left corner, on top of what is there.
+         * No picture in this repo could ever have shown it, because that note
+         * only exists when the card's `show` filter is set — and the filter is
+         * STORED state, which every fixture started without. So the two things
+         * that collide were never in one frame.
+         *
+         * One question, because that is the arity an agent usually asks in and
+         * the one round 2 was caught by.
+         */
+        {
+            id: 'console-asking-hidden',
+            label: 'Console — one question AND a show filter: the note and the card in one frame (U-133)',
+            data: askingOneData(),
+            state: { afConsole: { kindsBy: { cs2: ['user', 'ask'] } } }
         }
     ]
 };

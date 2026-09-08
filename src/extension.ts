@@ -133,7 +133,7 @@ import {
 } from './core/consoleRevive';
 import { armedRestartWait, fleetWaits, FleetWait } from './core/waits';
 import {
-    ArmedRestart, armedReady, liveBlockers, planRestart, RESTART_COMMANDS,
+    ArmedRestart, armedReady, liveBlockers, pendingBuild, planRestart, RESTART_COMMANDS,
     RESTART_COOLDOWN_MS, RestartKind, RestartWhen
 } from './core/selfRestart';
 import { SENTRY_DEFAULT_STALL_MIN, slotHealth } from './core/sentryWatch';
@@ -15396,9 +15396,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (now - diskVersionAt >= 2000) { diskVersionAt = now; diskVersion = readInstalledVersion(); }
         return diskVersion;
     };
+    /**
+     * ‼️ THE FOLDER'S IDENTITY, TAKEN AT BOOT (audit A-02.16).
+     *
+     * `installedVersion()` answers what the extensions folder is CALLED. It
+     * cannot answer what it CONTAINS, and the two come apart on the one path
+     * this extension is developed through: `npm run package` then
+     * `code --install-extension … --force` under the SAME version number, which
+     * is what the dev loop does between commits. VS Code replaces the folder in
+     * place; the running host keeps the code it loaded; and both strings still
+     * read `3.443.0`, so `build.pending` said `false` while the build on disk
+     * was a different one. Measured, on this machine: package.json written
+     * 09:38, host booted 09:24, `pending:false`.
+     *
+     * So the boot reads the mtime of the package.json THIS host was loaded from
+     * and keeps it. A later read that differs means the folder was written
+     * again — a different build, whatever it is called. Unreadable at either
+     * end is `undefined`, never `true`: an unknown is not a mismatch (the same
+     * rule the version comparison already follows).
+     */
+    const ownManifestStamp = (): number | undefined => {
+        try { return fs.statSync(path.join(context.extensionPath, 'package.json')).mtimeMs; }
+        catch { return undefined; }
+    };
+    const bootManifestStamp = ownManifestStamp();
     const buildOnDisk = () => {
         const installed = installedVersion();
-        return installed ? { installed, running: extVersion } : null;
+        if (!installed) { return null; }
+        const now = ownManifestStamp();
+        const replaced = bootManifestStamp !== undefined && now !== undefined
+            ? now !== bootManifestStamp
+            : undefined;
+        return { installed, running: extVersion, ...(replaced === undefined ? {} : { replaced }) };
     };
     const restartWorld = () => ({
         now: Date.now(),
@@ -15524,14 +15553,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // is not `version`, which is only ever the running one. A poll
                     // loop told to wait for `version` to change had nothing to read
                     // when the change never came.
-                    build: {
-                        installed: onDisk?.installed ?? null,
-                        running: extVersion,
-                        pending: !!onDisk && onDisk.installed !== extVersion
-                    },
+                    // ‼️ AND IT IS THE PLANNER'S OWN READING, NOT A SECOND ONE
+                    // (audit A-02.16). This used to work the answer out here —
+                    // by comparing the two version strings itself — while `planRestart` worked it
+                    // out in `pendingBuild`. Two definitions of "pending" is how
+                    // a surface and an op come to disagree, and they did: the
+                    // planner learnt that a folder replaced under one version
+                    // number is a pending build, and this line could not, so
+                    // `farm.health` went on answering `false` to the very case
+                    // the dev loop produces every time.
+                    build: (() => {
+                        const p = pendingBuild(w);
+                        return {
+                            installed: onDisk?.installed ?? null,
+                            running: extVersion,
+                            pending: !!p,
+                            ...(p?.replaced ? { replaced: true } : {})
+                        };
+                    })(),
                     bootId,
                     startedAt: new Date(bootAt).toISOString(),
                     uptimeMs: Date.now() - bootAt,
+                    /**
+                     * ‼️ WAS THIS BOOT OURS? (audit A-02.15.)
+                     *
+                     * Agent Farm plans a restart, stamps it, and takes its console
+                     * sessions up again on the other side. Nothing stops VS CODE
+                     * from restarting the extension host on its own — an install
+                     * with `--force`, the Extensions card's own button, a crash —
+                     * and when it does there is no stamp, therefore no revive plan,
+                     * therefore no session comes back. It happened here: `bootId`
+                     * changed and the console seat was replaced while
+                     * `selfRestart.json` had not been written for eight hours.
+                     *
+                     * The recovery is a decision the user has to make (reviving
+                     * after an unplanned death would also revive after they closed
+                     * VS Code deliberately). Reporting it is not: an agent that
+                     * finds itself in a new boot can now ASK whether the farm meant
+                     * it, instead of assuming the sessions it left are still there.
+                     */
+                    bootPlanned: !!stamp && stamp.at <= bootAt && bootAt - stamp.at <= 120_000,
                     pid: process.pid,
                     sessions: { live: live.length, list: live },
                     terminals: w.terminals.map(t => t.name),

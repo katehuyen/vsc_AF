@@ -350,9 +350,19 @@
         .srow .m .af-tipw.acw { display:inline-block; vertical-align:bottom; }
         .srow > .af-tipw.t2w { display:block; min-width:0; }
         .dot { width:8px; height:8px; border-radius:50%; flex:none; display:inline-block; }
-        .talkwrap { position:relative; display:flex; flex-direction:column; flex:1 1 auto; min-height:0; }
+        /* ‼️ U-133 (round 3) — THE FRAME IS THE WRAPPER'S, NOT THE SCROLLER'S.
+           "N line(s) hidden by show" describes the TRANSCRIPT, and it used to be
+           drawn outside the transcript's border, in the gap above the ask card —
+           so on screen it sat on the card's top-left corner, tangled with the
+           badge and tag that live there. The user reported exactly that, and no
+           picture in this repo could have shown it: the note only exists when
+           the card's show filter is set, and that is stored state no fixture
+           had (see test/fixtures/console.js, variant console-asking-hidden).
+           Moving the border out to the wrapper puts the note INSIDE the panel it
+           is about, and puts a frame between it and the card. */
+        .talkwrap { position:relative; display:flex; flex-direction:column; flex:1 1 auto; min-height:0;
+            border:1px solid var(--vscode-widget-border,#4443); border-radius:8px; overflow:hidden; }
         .talk { flex:1 1 auto; min-height:0; overflow-y:auto; padding:4px 2px 10px;
-            border:1px solid var(--vscode-widget-border,#4443); border-radius:8px;
             display:flex; flex-direction:column; }
         /* A short conversation sits ON the composer, the way a terminal does —
            margin-top:auto rather than justify-content:flex-end, which would make
@@ -362,7 +372,12 @@
         .jump { position:absolute; left:50%; transform:translateX(-50%); bottom:10px; z-index:5;
             font-size:11px; padding:3px 12px; border-radius:12px; box-shadow:0 2px 8px #0005; }
         .jump[hidden] { display:none; }
-        .hiddenote { font-size:10px; opacity:.6; padding:3px 4px 0; }
+        /* the transcript's own footer strip: separated from the lines above it by
+           a rule, and held inside the frame so it can never read as the ask
+           card's first row (U-133 round 3) */
+        .hiddenote { flex:none; font-size:10px; opacity:.6; padding:3px 6px;
+            border-top:1px solid var(--vscode-widget-border,#4443);
+            background:var(--vscode-editor-background); }
         .hiddenote:empty { display:none; }
         /* "still working" — between the conversation and the composer, so it
            never moves either of them (flex:none: it takes its own height) */
@@ -3922,9 +3937,9 @@
                 </div>
                 <div class="cmain">
                     <div class="talkwrap">
+                        <div class="hiddenote" id="c-hidden"></div>
                         <div class="talk" id="talk"><div class="talkinner" id="talkinner"></div></div>
                         <button class="jump" id="c-jump" hidden></button>
-                        <div class="hiddenote" id="c-hidden"></div>
                     </div>
                     <div class="askbox" id="c-ask"></div>
                     <div class="working" id="c-working"></div>
