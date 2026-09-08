@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.447.0 - the badge got three states and the sentence under it kept two (2026-09-08)
+
+X-220 split the account verdict into three because the two bad ones are not the
+same fact: 🟠 knows whose account it is and cannot refresh it, 🔴 cannot tell you
+even that. Its own tooltip says so out loud — *"this is NOT an expired sign-in"*.
+
+Two lines below that, the window line said **"needs signing in again, so nothing
+was read"**, and its panel said *"the stored credential no longer refreshes"* —
+🟠's sentence, word for word, under a 🔴 badge. The reader was told the opposite
+thing twice in two lines, and the one that was wrong was the one carrying the
+detail. The engine chip's own list did the same: every non-ready account was
+captioned "needs signing in again" there too.
+
+**Why nobody saw it.** The third state had never been on a screen. It was
+checked by mutating the payload inside a test — which proves a string and
+photographs nothing — while every fixture the page is drawn from carried only
+🟢 and 🟠. So the caption could go on testing `health !== 'ready'` for as long as
+it liked and the whole suite stayed green.
+
+- Three silences, three sentences: read it and it was dead · read it and nothing
+  could be made of it · nobody has looked yet. The 🔴 panel names the difference
+  rather than repeating 🟠's, and points at the 🔑 beside it, which is the thing
+  that actually fixes this one.
+- The state now has its own SCENE — `enginesbroken`, a variant of the engines
+  panel fixture, with all three verdicts on it at once. It is a variant and not
+  a sixth row in the existing picture, because that picture's counts are pinned
+  on purpose (four quiet greens against one yellow is the design) and a state is
+  not made visible by spoiling the picture that proves something else.
+- Drawn and looked at, dark and light, at 760 px: `node test/render_page.js
+  enginespanel --only enginesbroken` → `node test/shoot_page.js enginespanel`.
+
+Found by the retrospective audit track (A-06.7), which also confirmed the two
+halves that were sound: X-219's 🔑 really is on screen and really is drawn only
+where there is something to renew, and X-220's duplicate protection really does
+match on engine+address, refuse to guess at an unreadable address, and refuse a
+hand-arranged directory by name instead of quietly dissolving it.
+
 ## 3.446.0 - a revived session takes the WORK up again, not only the conversation (2026-09-08)
 
 The user's decision, in their own words: *kaldığı yerden devam etsin.*

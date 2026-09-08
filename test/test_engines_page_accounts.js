@@ -368,9 +368,51 @@ const sec = () => {
         h.includes('this figure was read 40s ago'));
     ok('…and whose plan it is, so the percentage has an owner',
         h.includes('plan: max20x'));
-    ok('‼️ …and an account with NO figure says which of the two silences it is',
+    ok('‼️ …and an account with NO figure says which of the silences it is',
         h.includes('The stored credential no longer refreshes')
         && h.includes('Nothing has asked for it yet'));
+}
+
+// ---------- ‼️ AUDIT A-06.7 — THREE VERDICTS, THREE SENTENCES ----------
+//
+// X-220 split the badge into 🟢 / 🟠 / 🔴 on the ground that the two bad states
+// are DIFFERENT FACTS, and no fixture ever drew the third — so the line under
+// the badge went on testing `health !== 'ready'` and captioned a 🔴 row with
+// 🟠's words. The badge said "this is NOT an expired sign-in" and the sentence
+// two lines below said the credential no longer refreshes. Both cannot be true,
+// and the reader believes the one with the detail in it.
+//
+// So the 🔴 row is now IN the fixture, and what is pinned is that its caption
+// is its own.
+{
+    // The variant that really carries all three at once — and it is a VARIANT,
+    // so `node test/render_page.js enginespanel --only enginesbroken` draws it.
+    // The scene is the point: this state was string-checked and never seen.
+    const h = runPage('engines.js', fixture.brokenData()).html();
+    ok('‼️ the third verdict is on screen at all — 🔴 unreadable is drawn',
+        h.includes('🔴 unreadable'));
+    ok('…beside the other two, so the scene photographs the distinction X-220 made',
+        h.includes('🟢 ready') && h.includes('🟠 needs signing in'));
+
+    // ‼️ The unreadable CARD, on its own, taken by splitting on the card
+    // wrapper — not by searching the page for its address. The chip's own panel
+    // at the top of the page lists every account by name, so a slice starting
+    // at the first "broken@gmail" would run through every OTHER card on the way
+    // down and inherit the expired wording it is supposed to prove is absent.
+    const row = ('<div class="accard' + h.split('<div class="accard').slice(1)
+        .find(c => c.indexOf('data-acforget="broken"') >= 0)) || '';
+    ok('the unreadable row is findable — this test is worthless if the fixture lost it',
+        row.length > 0);
+    ok('‼️ …and it does NOT tell the reader to sign in again, which is the one thing '
+        + 'nobody can know it needs',
+        !row.includes('needs signing in again'));
+    ok('…it says what actually happened instead — the sign-in could not be read',
+        row.includes('the sign-in could not be read, so nothing was read'));
+    ok('…and its panel names the difference rather than repeating the expired sentence',
+        row.includes('this is not an expired sign-in')
+        && !row.includes('The stored credential no longer refreshes'));
+    ok('‼️ …and the 🔑 is drawn on BOTH bad states, not on the expired one alone',
+        row.includes('data-acreauth="broken"'));
 }
 
 console.log(`test_engines_page_accounts: ${pass} passed, ${fail} failed`);

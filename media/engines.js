@@ -165,7 +165,11 @@
         const lines = mine.map(a =>
             (a.active ? '→ ' : '   ') + (a.label || a.id)
             + (a.email && a.email !== a.label ? ' · ' + a.email : '')
-            + (a.health === 'ready' ? '' : ' · needs signing in again')
+            // ‼️ …and the same three states here (audit A-06.7): this list said
+            // "needs signing in again" for an unreadable row too, which is the
+            // one thing that row cannot be known to need.
+            + (a.health === 'ready' ? ''
+                : a.health === 'unreadable' ? ' · could not be read' : ' · needs signing in again')
             + [spent(a), turns(a)].filter(Boolean).map(x => ' · ' + x).join(''));
         const head = on ? 'Next session: ' + (on.label || on.id) : 'Next session: the main account';
         const body = lines.join('\n')
@@ -406,6 +410,25 @@
         // that is certainly wrong there.
         const winName = a.window
             || (a.quotaSource === 'session-tail' ? 'usage window' : 'five-hour window');
+        /**
+         * ‼️ THE BADGE GOT THREE STATES AND THE SENTENCE UNDER IT KEPT TWO
+         * (audit A-06.7).
+         *
+         * X-220 split the two bad verdicts precisely because they are not the
+         * same fact — 🟠 knows whose account this is and cannot refresh it, 🔴
+         * cannot tell you even that. This line tested `health !== 'ready'`, so a
+         * 🔴 row was captioned "needs signing in again" and its panel said "the
+         * stored credential no longer refreshes": the 🟠 sentence, word for
+         * word, directly beneath a badge whose own tooltip says "this is NOT an
+         * expired sign-in". The reader is told the opposite thing twice in two
+         * lines, and the one that is wrong is the one with the detail in it.
+         *
+         * Three silences, therefore three sentences: read it and it was dead ·
+         * read it and it was gibberish · nobody has looked yet.
+         */
+        const silence = a.health === 'unreadable' ? 'unreadable'
+            : (a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired') ? 'dead'
+                : 'unread';
         const window5 = read
             ? T.wrap('<div class="acwin">'
                 + '<div class="acwt"><span>' + esc(winName) + '</span><strong>' + a.percent + '%</strong></div>'
@@ -429,22 +452,27 @@
                         + 'ceiling to decide whether this sign-in is worth opening a round on.')
                 ]), 'acwinw')
             : T.wrap('<div class="acnone">' + esc(winName) + ' — '
-                + (a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired'
-                    ? 'needs signing in again, so nothing was read'
-                    : 'not read yet') + '</div>',
+                + (silence === 'unreadable' ? 'the sign-in could not be read, so nothing was read'
+                    : silence === 'dead' ? 'needs signing in again, so nothing was read'
+                        : 'not read yet') + '</div>',
                 'No figure for this window',
                 T.lines([
                     'state: ' + (a.usageState || 'unread'),
                     'read: ' + readAge,
                     '',
                     // ‼️ -1 IS NOT 0%. The card refuses to draw an empty bar for
-                    // an unread account, and the panel says which of the two
+                    // an unread account, and the panel says which of the three
                     // silences this is rather than leaving it to the wording.
-                    a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired'
-                        ? 'The stored credential no longer refreshes, so there is nothing to read a '
-                        + 'figure from. Sign in again in a terminal and capture it once more.'
-                        : 'Nothing has asked for it yet. Press ⟳ to read this one account now — '
-                        + 'accounts are read one at a time and never less than five seconds apart.'
+                    silence === 'unreadable'
+                        ? 'Nothing could be made of this account\'s credentials file, so there is no '
+                        + 'figure to read and nothing to refresh — this is not an expired sign-in, '
+                        + 'which would at least know whose account it is. Signing in again writes the '
+                        + 'file afresh, which is what the 🔑 beside this does.'
+                        : silence === 'dead'
+                            ? 'The stored credential no longer refreshes, so there is nothing to read a '
+                            + 'figure from. Sign in again in a terminal and capture it once more.'
+                            : 'Nothing has asked for it yet. Press ⟳ to read this one account now — '
+                            + 'accounts are read one at a time and never less than five seconds apart.'
                 ]), 'acwinw');
         /**
          * ‼️ X-217 — THE SHAPE OF THE CONTROL STATES THE ARITHMETIC OF THE CHOICE.

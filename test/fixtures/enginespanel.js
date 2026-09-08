@@ -236,8 +236,46 @@ const data = () => {
     };
 };
 
+/**
+ * ‼️ X-220's THIRD VERDICT, AS A SCENE (audit A-06.7).
+ *
+ * The whole of X-220 is that the two bad states are DIFFERENT FACTS — 🟠 knows
+ * whose account it is and cannot refresh it, 🔴 cannot tell you even that — and
+ * until this variant existed the red one had never been on a screen. It was
+ * checked by mutating the payload inside a test, which proves the string and
+ * photographs nothing; the caption under the badge went on saying "needs
+ * signing in again" on a 🔴 row for exactly as long.
+ *
+ * It is its own variant rather than a sixth row in the scene above, because
+ * that scene's counts are pinned on purpose (four quiet greens against one
+ * yellow is the design, not an accident) and a state is not made visible by
+ * spoiling the picture that proves something else.
+ *
+ * The row carries no address and no plan: an unreadable credential cannot say
+ * whose account it is, and a fixture that gave it one would be drawing the
+ * yellow state in red.
+ */
+const brokenData = () => {
+    const d = data();
+    d.accounts = d.accounts.concat([{
+        id: 'broken', engine: 'claude', label: 'broken@gmail',
+        email: '', plan: '', health: 'unreadable', active: false,
+        percent: -1, resetsAt: 0,
+        usageState: 'no-auth',
+        note: 'The credentials file is there and nothing could be made of it.',
+        quotaSource: 'oauth-credentials', capturedAt: NOW - 9 * 24 * 3600 * 1000,
+        fetchedAt: 0, queue: 'idle', queuePlace: 0,
+        dir: 'C:/Users/mv/AppData/agent-farm/accounts/broken'
+    }]);
+    return d;
+};
+
 module.exports = {
     script: 'engines.js',
     data,
-    variants: () => [{ id: 'enginespanel', label: 'Engines panel', data: data() }]
+    brokenData,
+    variants: () => [
+        { id: 'enginespanel', label: 'Engines panel', data: data() },
+        { id: 'enginesbroken', label: 'Engines panel — all three verdicts', data: brokenData() }
+    ]
 };
