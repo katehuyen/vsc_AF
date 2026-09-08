@@ -2,6 +2,68 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.448.0 - the night shift stopped at the restart, and nobody was there to press start (2026-09-08)
+
+X-232 got a Console card across a restart of the extension host, and it was
+tested live and it works. The half beside it was never given a verdict: the one
+headless test ever run died 25 seconds in, on a weekly plan limit, before the
+restart could even be fired. Both halves turned out to be broken, and the ledger
+had the second one recorded as working.
+
+**What a headless run actually did.** The reload sweep puts it back on the queue
+— and `launch()` clears `autoStart` before it spawns, while `pump()` only ever
+picks up rows that have it. So a run cut by a restart sits `queued` with
+`autoStart` false, which is a row nothing relaunches. Not "it starts again from
+the beginning", which is what the audit ledger said: it does not start at all.
+The manager's own comment says exactly this about the terminal case — *"nothing
+on this earth relaunches it"* — and the plain headless case had the same hole
+with a sentence addressed to a person in it: *"press start to run it again"*. At
+three in the morning that is nobody.
+
+- A restart that says `resume` now carries the headless runs too, in the same
+  breath as the console sessions and for the same reason. The run is picked up
+  in its OWN conversation — `runSessionId` was written down when the launch
+  bound and it survives in the store — with the continuation words M-10 wrote
+  for exactly this, never the original prompt, which would tell an engine with
+  no memory to redo work it cannot see.
+- It goes through the same copy path a retry goes through, so it runs the way
+  the original ran (engine, model, effort, route, account, folder, sound). A
+  resurrection is only as honest as its dimensions. What it is NOT is
+  "(retry 4)": the work did not fail three times, the window went down under it,
+  so the row says `continued` and the event says `resumed`.
+- **Only on a restart that asked for continuity.** An ordinary window reload, a
+  crash or an update leaves the runs exactly where they were. Spawning CLI
+  processes that spend money on every reload is not a default anybody chose.
+- Three refusals, each with its reason written on the ROW and not only in a
+  toast that is gone in five seconds: no session id (nothing to resume BY), a
+  run somebody already started, and a run picked up 3 times already — the
+  boot-loop guard's sibling, because a host restarting in a loop would otherwise
+  respawn the same work all night.
+- Workflow steps are untouched: still cancelled, still offered to a person. That
+  was a deliberate decision ("a resumed run can spend money/agent time, so the
+  user decides") and changing it is a separate one.
+
+**And the wall that killed the test is now recognised as a wall.** The run
+printed `You've hit your weekly limit · resets 7pm (Asia/Bangkok)` and its own
+record answered *"no retry — the failure was not a session limit, and this run
+only retries those"*. `isLimitFailure` knew every phrasing of the SESSION limit
+and none of the weekly one — and that one predicate gates three things at once:
+whether to retry, whether to hand the run to another sign-in (X-226), and how
+the session is diagnosed. A weekly-walled night run therefore did not wait, did
+not move to a free account, and simply died.
+
+- The weekly wall is a limit failure, and `limitWindow()` says which of the two
+  it was. A monthly SPEND ceiling deliberately stays out: nothing reopens it but
+  a person raising it, so a run that waits for it waits for ever.
+- `resets 7pm` with no day is not an answer for a window that resets in days.
+  `parseLimitReset` now reports which branch produced its number, and the weekly
+  window refuses a bare clock reading rather than waking at a 7pm nobody said
+  was today — and says so in the sentence on the record. An absolute stamp or a
+  duration carries its own calendar and is trusted for either window.
+
+Found by the retrospective audit track (B-03.8), whose own recorded measurement
+of this row was wrong and has been corrected against the code.
+
 ## 3.447.0 - the badge got three states and the sentence under it kept two (2026-09-08)
 
 X-220 split the account verdict into three because the two bad ones are not the

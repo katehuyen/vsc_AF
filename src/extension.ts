@@ -15625,7 +15625,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '(restart through live sessions and lose them), resume? (X-232 — take the live console '
                 + 'sessions up again on the other side, in their own seats, by the id their engine gave '
                 + 'them: what a resume saves stops being a reason to wait, and a session the engine never '
-                + 'named is still reported as lost), loadBuild? (false = bounce the host as asked and be '
+                + 'named is still reported as lost. ‼️ B-03.8 — resume ALSO carries the HEADLESS runs this '
+                + 'restart cuts: a running task is picked back up in its own conversation with the '
+                + 'continuation words, never the original prompt, and never more than 3 times in case the '
+                + 'host is restarting in a loop. Without resume they go back on the queue and wait for a '
+                + 'person, which is what an unattended night shift does not have. Workflow steps are NOT '
+                + 'in this: they are still cancelled and offered, by an earlier decision), loadBuild? (false = bounce the host as asked and be '
                 + 'told what it is leaving on disk), delayMs?. Then poll farm.health until bootId changes '
                 + 'and build.pending is false.',
             handler: (args) => askRestart('extensionHost', args)
@@ -22797,7 +22802,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const stamp = readRestartStamp();
         const rows = stamp?.revive ?? [];
         const lost = [...(stamp?.skipped ?? [])];
-        if (!rows.length && !lost.length) { return; }
+        /**
+         * ‼️ B-03.8 — WHETHER THIS RESTART ASKED FOR CONTINUITY AT ALL, which is
+         * a different question from whether there was a Console card to carry.
+         *
+         * `revive` is written ONLY on a restart that said `resume` — and it is
+         * written as an array even when that restart had no sessions open. So
+         * the presence of the key is the intent, and the length is the cargo.
+         * The headless side needs the intent: a run cut by a resume-restart is
+         * picked back up, and a run cut by an ordinary reload, a crash or an
+         * update is not.
+         */
+        const askedForResume = Array.isArray(stamp?.revive);
+        if (!rows.length && !lost.length && !askedForResume) { return; }
         clearRestartRevive();
         const back: string[] = [];
         /** ‼️ X-266 — the seats whose scrollback could not be read YET. */
@@ -22874,10 +22891,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             context.subscriptions.push(sub);
         }
+        /**
+         * ‼️ B-03.8 — AND THE HEADLESS RUNS THE SAME RESTART CUT.
+         *
+         * X-232 carried the conversations; the tasks running beside them went
+         * back on the queue with `autoStart` already cleared by their own
+         * launch, which means nothing relaunched them — measured, and stated in
+         * the manager's own comment. So the night shift stopped at the exact
+         * moment it was supposed to be invisible.
+         *
+         * The manager owns every rule about which of them may come back and in
+         * what conversation (`reviveCutRuns`); this only decides WHEN to ask,
+         * and the answer is "on a restart that asked for continuity, and never
+         * on an ordinary reload".
+         */
+        const runs = askedForResume
+            ? taskManager.reviveCutRuns()
+            : { resumed: [], skipped: [] as { title: string; reason: string }[] };
         void vscode.window.showInformationMessage(
             `Agent Farm ${extVersion}: ${back.length} console session(s) taken up where they left off`
             + (back.length ? ` (${back.join(', ')})` : '')
-            + (lost.length ? ` · ${lost.length} could not be: ${lost.map(s => s.agentName).join(', ')}` : ''));
+            + (lost.length ? ` · ${lost.length} could not be: ${lost.map(s => s.agentName).join(', ')}` : '')
+            + (runs.resumed.length
+                ? ` · ${runs.resumed.length} headless run(s) carried on (${runs.resumed.map(r => r.title).join(', ')})`
+                : '')
+            + (runs.skipped.length
+                ? ` · ${runs.skipped.length} run(s) could not be: ${runs.skipped.map(r => r.title).join(', ')}`
+                : ''));
     };
     reviveAfterRestart();
 

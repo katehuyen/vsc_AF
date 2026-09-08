@@ -606,6 +606,18 @@ export type TaskEventKind =
  *  would otherwise grow without bound; the newest are the ones being read. */
 export const TASK_EVENTS_MAX = 40;
 
+/**
+ * ‼️ B-03.8 — HOW MANY TIMES ONE RUN MAY BE PICKED BACK UP ACROSS RESTARTS.
+ *
+ * The sibling of the boot-loop guard in `core/selfRestart.ts`: a host that
+ * restarts in a loop would otherwise respawn the same work on every boot, all
+ * night, each spawn spending a plan window. Counted on `attempt`, which is the
+ * number of times this work has been launched again by anything — a retry and a
+ * revive are both "this run, once more", and a bound that only counted one of
+ * them would be a bound the other walks around.
+ */
+export const REVIVE_MAX_ATTEMPTS = 3;
+
 /** Append one line to a task's own record. Exported pure so the reducer is
  *  testable without a manager, and so nothing has to remember the cap. */
 export function noteTaskEvent(task: FarmTask, kind: TaskEventKind, note?: string): void {
@@ -1908,6 +1920,13 @@ export class TaskManager implements vscode.Disposable {
                     // timestamp, so the two together tell the whole story.
                     noteTaskEvent(t, 'parked',
                         'the VS Code window closed mid-run — back on the queue, press start to run it again');
+                    // ‼️ B-03.8 — AND THE ROW IS REMEMBERED, because "press
+                    // start" is an instruction to a person and the night shift
+                    // has none. Nothing is launched from here: `load()` runs
+                    // from the constructor's first line and may not spend money.
+                    // The list is what `reviveCutRuns` reads when — and only
+                    // when — the restart that caused this asked for continuity.
+                    this.cutByReload.push(t.id);
                 }
                 if (t.workflowRunId !== undefined && t.stepIndex !== undefined) {
                     t.status = 'cancelled';
@@ -1942,6 +1961,108 @@ export class TaskManager implements vscode.Disposable {
             // permanent. It happens once; every later load finds them there.
             if (staleChanged || migrated) { this.save(); }
         } catch { /* first run */ }
+    }
+
+    // ---------- B-03.8: headless runs a restart cut ----------
+
+    /**
+     * The plain headless runs THIS load found `running` and put back on the
+     * queue. In memory on purpose: it describes one reload, and a list that
+     * survived into the next one would offer to continue work that has been
+     * sitting queued for a week.
+     */
+    private cutByReload: string[] = [];
+
+    /**
+     * ‼️ B-03.8 — THE HEADLESS SIDE OF X-232, AND THE ANSWER TO "WHO PRESSES
+     * START AT THREE IN THE MORNING".
+     *
+     * X-232 gave a Console card a way across a restart of the extension host;
+     * a headless run had none, and the sweep in `load()` puts it back on the
+     * queue with `autoStart` already cleared by its own launch — so nothing
+     * relaunches it. Measured, and the manager's own comment says as much about
+     * the terminal case ("nothing on this earth relaunches it"). What a person
+     * saw was a task that simply stopped.
+     *
+     * ‼️ IT IS NOT A RERUN. `runSessionId` was written down when the launch
+     * bound (`setRunProgress`) and it survives in the store, so the run is
+     * picked up in its OWN conversation with the continuation words M-10 wrote
+     * for exactly this — never the original prompt, which would tell an engine
+     * with no memory to redo the work it cannot see.
+     *
+     * ‼️ AND IT IS ASKED FOR, NEVER ASSUMED. The caller passes the list only
+     * when the restart that killed these runs said `resume`; an ordinary window
+     * reload, a crash or an update leaves them exactly where M-21 left them. A
+     * restart is not the only reason a host dies, and spawning CLI processes
+     * that spend money on every reload is not a thing to switch on by default.
+     *
+     * Three refusals, each reported rather than swallowed:
+     *   · the run has no session id — there is nothing to resume BY;
+     *   · somebody already started it, so it is not queued any more;
+     *   · it has been picked up `REVIVE_MAX_ATTEMPTS` times already, which is
+     *     the boot-loop guard's sibling: a host that restarts in a loop would
+     *     otherwise respawn the same run on every boot for ever.
+     */
+    reviveCutRuns(): { resumed: { id: string; title: string }[]; skipped: { title: string; reason: string }[] } {
+        const resumed: { id: string; title: string }[] = [];
+        const skipped: { title: string; reason: string }[] = [];
+        const ids = this.cutByReload;
+        this.cutByReload = [];
+        if (!this.runner()) { return { resumed, skipped }; }
+        /**
+         * ‼️ A REFUSAL GOES ON THE ROW. The toast that reports this is gone in
+         * five seconds and the run that was NOT picked back up is precisely the
+         * one somebody has to act on — so the reason is written where a reader
+         * will be standing when they ask why it is still sitting there.
+         */
+        const refuse = (t: FarmTask, reason: string): void => {
+            noteTaskEvent(t, 'parked', `not carried on after the restart — ${reason}`);
+            skipped.push({ title: t.title, reason });
+        };
+        for (const id of ids) {
+            const t = this.tasks.find(x => x.id === id);
+            if (!t) { continue; }
+            if (t.status !== 'queued') {
+                // Not refused ON the row: it is running again, so a "not carried
+                // on" line under a live run would be the contradiction M-12 is
+                // about. It is still reported to the caller.
+                skipped.push({ title: t.title, reason: 'it is not on the queue any more — somebody started it first' });
+                continue;
+            }
+            const sid = String(t.runSessionId ?? '').trim();
+            if (!sid) {
+                refuse(t, `${t.engine || 'the CLI'} never named this run's session, so there is nothing `
+                    + 'to resume it by — it stays on the queue');
+                continue;
+            }
+            if ((t.attempt ?? 0) >= REVIVE_MAX_ATTEMPTS) {
+                refuse(t, `it has already been picked back up ${REVIVE_MAX_ATTEMPTS} times — `
+                    + 'a restart loop is not a reason to keep spawning it');
+                continue;
+            }
+            const words = fillContinuation(continuationPromptFor(t.retry ?? {}, 1), {
+                taskTitle: t.title,
+                attempt: String((t.attempt ?? 0) + 1),
+                failureReason: 'the VS Code window restarted while this run was working',
+                resetAt: '',
+                // The sweep cleared `startedAt`, so there are no minutes to report
+                // here — only what the transcript binding managed to count. An
+                // empty answer is said in words rather than left as a hole in a
+                // sentence the user may have written around it.
+                progressSummary: describeFailurePhase(t)
+                    || 'what it had already done is not recorded — the transcript above is the record'
+            });
+            const copy = this.retryTask(t, words, {
+                as: 'revive',
+                resumeSessionId: sid,
+                ...(t.engine ? { resumedEngine: t.engine } : {}),
+                resumedFrom: t.title
+            });
+            if (copy) { resumed.push({ id: copy.id, title: copy.title }); }
+            else { refuse(t, 'it could not be copied — its agent is gone'); }
+        }
+        if (skipped.length) { this.save(); }
+        return { resumed, skipped };
     }
 
     // ---------- F1: interrupted workflow runs ----------
@@ -4828,7 +4949,19 @@ export class TaskManager implements vscode.Disposable {
      */
     retryTask(
         task: FarmTask, newPrompt?: string,
-        over?: { agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean }
+        over?: {
+            agent?: AgentInfo; title?: string; mode?: TaskMode; autoStart?: boolean;
+            /**
+             * ‼️ B-03.8 — WHAT THE COPY *IS*, and it is the only thing this
+             * changes. A run picked back up after the host restarted carries
+             * exactly the dimensions a retry carries — that is the whole reason
+             * it comes through here rather than growing a second copy path (the
+             * defect M-32 is named for). What it is NOT is attempt number four:
+             * "(retry 4)" on the board would say the work failed three times
+             * when what actually happened is that the window went down under it.
+             */
+            as?: 'retry' | 'revive';
+        }
             & Partial<Pick<FarmTask,
                 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'workDir'
                 | 'providerId' | 'tier' | 'account'
@@ -4847,13 +4980,19 @@ export class TaskManager implements vscode.Disposable {
             void vscode.window.showWarningMessage(`Agent Farm: agent for "${task.title}" not found.`);
             return undefined;
         }
-        const baseTitle = (over?.title ?? task.title).replace(/ \(retry \d+\)$/i, '');
+        const revive = over?.as === 'revive';
+        const baseTitle = (over?.title ?? task.title)
+            .replace(/ \(retry \d+\)$/i, '').replace(/ \(continued(?: \d+)?\)$/i, '');
         const attempt = (task.attempt ?? 0) + 1;
         // ‼️ THE RETRY RUNS THE WAY THE ORIGINAL RAN. Only `projectId` was
         // carried, so a task launched on haiku at low effort came back as a
         // retry with no --model and no --effort at all: the same prompt on a
         // different, more expensive command line, silently.
-        const copy = this.addTask(agent, `${baseTitle} (retry ${attempt})`, newPrompt ?? task.prompt,
+        const copy = this.addTask(agent,
+            revive
+                ? `${baseTitle} (continued${attempt > 2 ? ' ' + (attempt - 1) : ''})`
+                : `${baseTitle} (retry ${attempt})`,
+            newPrompt ?? task.prompt,
             over?.mode ?? task.mode,
             {
                 // The retry belongs to the ORIGINAL's project, not to whatever the
@@ -4942,7 +5081,12 @@ export class TaskManager implements vscode.Disposable {
             if (engine) { copy.resumedEngine = engine; }
             if (from) { copy.resumedFrom = from; }
         }
-        noteTaskEvent(copy, 'retried', `attempt ${attempt} of "${task.title}"`);
+        if (revive) {
+            noteTaskEvent(copy, 'resumed',
+                `the window restarted mid-run — this picks "${task.title}" up in its own conversation`);
+        } else {
+            noteTaskEvent(copy, 'retried', `attempt ${attempt} of "${task.title}"`);
+        }
         // A retry started by hand from a form can be queued rather than run —
         // the same "start it now" bargain every other route offers.
         if (over?.autoStart === false) {

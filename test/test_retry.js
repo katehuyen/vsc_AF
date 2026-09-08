@@ -17,7 +17,7 @@ const {
     DEFAULT_RETRY, describeRetry, isLimitFailure, normalizeRetry, resolveRetry,
     retryDecision, retryWaitMin, RETRY_MAX_ATTEMPTS, RETRY_MAX_DELAY_MIN, RETRY_MAX_WAIT_MIN,
     compileRetryFormula, retryFormulaError, retryRefusal, parseLimitReset, planLimitReset,
-    RETRY_DEFAULT_SAFETY_MIN
+    RETRY_DEFAULT_SAFETY_MIN, limitWindow
 } = require(path.join(__dirname, '..', 'out', 'core', 'retry.js'));
 
 const LIMIT = 'Claude usage limit reached. You have hit your session limit · resets 6:50pm';
@@ -111,6 +111,56 @@ const BROKE = 'Error: ENOENT: no such file or directory';
         isLimitFailure('You have hit your session limit, resets at 3pm')
         && isLimitFailure('usage limit reached'));
     ok('and an ordinary crash is not one', !isLimitFailure(BROKE) && !isLimitFailure(''));
+}
+
+// ---------- B-03.8: the WEEKLY wall, measured off a real run ----------
+{
+    // ‼️ VERBATIM. This is what the CLI actually printed into the output file of
+    // the headless run that was supposed to test surviving a restart
+    // (task mts68fy13zrrk, 2026-09-08). The run died in 25 seconds and its own
+    // record said "no retry — the failure was not a session limit, and this run
+    // only retries those": the wall was real, the classifier had never been
+    // shown this wording, and so nothing retried it and — worse — the account
+    // handover (X-226) never fired either, because it asks the SAME question.
+    const WEEKLY = "You've hit your weekly limit · resets 7pm (Asia/Bangkok)";
+    ok('‼️ the weekly wall is a limit failure — the run that proved it was called something else',
+        isLimitFailure(WEEKLY));
+    ok('…and it names itself as the weekly window', limitWindow(WEEKLY) === 'weekly');
+    ok('…while the session wording still names itself as the session window',
+        limitWindow(LIMIT) === 'session');
+    ok('…and a crash names no window at all', limitWindow(BROKE) === undefined);
+    // ‼️ A BILLING CEILING IS NOT A WINDOW. Nothing reopens it but a person
+    // raising it, so a run that waits for it waits for ever.
+    ok('…and a monthly SPEND ceiling is still not a limit failure',
+        !isLimitFailure('hit your monthly spend limit · raise it at claude.ai/settings/usage'));
+
+    // The reset reading: "7pm" with no day is not an answer for a weekly window.
+    const now = new Date('2026-09-08T11:30:00+07:00').getTime();
+    const asSession = planLimitReset({ now, output: WEEKLY, safetyBufferMin: 0, fallbackMin: 40 });
+    ok('‼️ read WITHOUT the window, the clock is taken at face value — the old behaviour',
+        asSession.source === 'output');
+    const asWeekly = planLimitReset({
+        now, output: WEEKLY, safetyBufferMin: 0, fallbackMin: 40, window: 'weekly'
+    });
+    ok('‼️ but a weekly window will NOT wake at a 7pm nobody said was today',
+        asWeekly.source === 'none' && asWeekly.at === now + 40 * 60_000);
+    ok('…and it says exactly why, rather than reporting "nothing was printed"',
+        /no day/.test(asWeekly.why) && /7pm/.test(asWeekly.why));
+    // A calendar the sentence actually carries is trusted for either window.
+    const stamped = planLimitReset({
+        now, output: 'resets at 2026-09-12T19:00:00+07:00', safetyBufferMin: 0,
+        fallbackMin: 40, window: 'weekly'
+    });
+    ok('…while an absolute stamp is trusted, because it carries its own calendar',
+        stamped.source === 'output');
+    ok('…and so is a duration', planLimitReset({
+        now, output: 'resets in 2h 15m', safetyBufferMin: 0, fallbackMin: 40, window: 'weekly'
+    }).source === 'output');
+    // The branch tag the judgement rests on.
+    ok('the parser says which branch produced the number',
+        parseLimitReset(WEEKLY, now).kind === 'clock'
+        && parseLimitReset('resets in 30 minutes', now).kind === 'relative'
+        && parseLimitReset('resets at 2026-09-12T19:00:00Z', now).kind === 'absolute');
 }
 
 // ---------- what it says about itself ----------

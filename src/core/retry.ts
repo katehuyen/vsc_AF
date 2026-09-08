@@ -577,8 +577,30 @@ export function fillContinuation(text: string, vars: Record<string, string>): st
  * getting the guess instead.
  */
 export function isLimitFailure(output: string): boolean {
-    return /hit your session limit|session limit[^.]*reset|usage limit reached|rate.?limit(ed)? (reached|exceeded)|quota exceeded|resource_exhausted|429 |too many requests/i
+    return /hit your (session|weekly) limit|(session|weekly) limit[^.]*reset|usage limit reached|rate.?limit(ed)? (reached|exceeded)|quota exceeded|resource_exhausted|429 |too many requests/i
         .test(String(output ?? ''));
+}
+
+/**
+ * ‼️ B-03.8 — WHICH WALL IT WAS, because the two do not reset on the same
+ * calendar. Both are plan windows and both are retryable — that is why they are
+ * one question above — but a session window reopens in hours and a weekly one
+ * in days, and only the second makes a bare clock time an incomplete answer
+ * (see `planLimitReset`).
+ *
+ * A run walled by the WEEKLY window is also the case the account handover
+ * (X-226) exists for: the wait it would otherwise sleep is measured in days,
+ * and another sign-in is free right now.
+ *
+ * Deliberately NOT here: `monthly spend limit`, which is a billing ceiling
+ * rather than a window — nothing reopens it but a person raising it, so a run
+ * that waits for it waits for ever.
+ */
+export function limitWindow(output: string): LimitWindow | undefined {
+    const text = String(output ?? '');
+    if (/\bweekly limit\b/i.test(text)) { return 'weekly'; }
+    if (isLimitFailure(text)) { return 'session'; }
+    return undefined;
 }
 
 /**
@@ -725,6 +747,14 @@ export interface LimitReset {
     text: string;
     /** The stated moment had already passed when this was read. */
     past: boolean;
+    /**
+     * ‼️ B-03.8 — WHICH BRANCH PRODUCED THIS, because a bare clock time is the
+     * only one that carries no calendar. `resets 7pm` is a complete answer for
+     * a window that resets today and an incomplete one for a window that resets
+     * on some later day; the caller cannot tell the two apart unless the shape
+     * of the evidence travels with the number.
+     */
+    kind: 'absolute' | 'relative' | 'clock';
 }
 
 const DAY_MS = 24 * 3600_000;
@@ -777,14 +807,14 @@ export function parseLimitReset(output: string, now: number): LimitReset | undef
     const iso = /reset[^0-9]{0,20}(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)/i.exec(line);
     if (iso) {
         const at = Date.parse(iso[1].replace(' ', 'T'));
-        if (Number.isFinite(at)) { return { at, text: iso[1], past: at <= now }; }
+        if (Number.isFinite(at)) { return { at, text: iso[1], past: at <= now, kind: 'absolute' }; }
     }
     // …and the same thing as a number of seconds, the way Codex writes it
     const epoch = /resets?_at["'\s:]+(\d{10,13})/i.exec(line);
     if (epoch) {
         const raw = Number(epoch[1]);
         const at = raw > 1e12 ? raw : raw * 1000;
-        return { at, text: epoch[1], past: at <= now };
+        return { at, text: epoch[1], past: at <= now, kind: 'absolute' };
     }
 
     // 2) "in 45 minutes" / "in 2h 15m" — a duration, so no calendar at all
@@ -794,7 +824,7 @@ export function parseLimitReset(output: string, now: number): LimitReset | undef
         for (const m of rel[1].matchAll(/(\d+)\s*(h|hr|hrs|hour|hours|m|min|mins|minute|minutes)/gi)) {
             ms += Number(m[1]) * (/^h/i.test(m[2]) ? 3600_000 : 60_000);
         }
-        if (ms > 0) { return { at: now + ms, text: rel[1].trim(), past: false }; }
+        if (ms > 0) { return { at: now + ms, text: rel[1].trim(), past: false, kind: 'relative' }; }
     }
 
     // 3) a clock time, the common case
@@ -843,11 +873,14 @@ export function parseLimitReset(output: string, now: number): LimitReset | undef
     // The next occurrence — see the header. Two minutes of tolerance so a reset
     // reported a moment late is "now", not "tomorrow".
     if (at < now - 2 * 60_000) { at += DAY_MS; }
-    return { at, text: clock[0].trim(), past: false };
+    return { at, text: clock[0].trim(), past: false, kind: 'clock' };
 }
 
 /** Where a reset time came from. Priority order, highest first. */
 export type ResetSource = 'engine' | 'output' | 'none';
+
+/** ‼️ B-03.8 — which plan window walled the run. See `limitWindow`. */
+export type LimitWindow = 'session' | 'weekly';
 
 export interface ResetPlan {
     /** Absolute moment the first retry may go, epoch ms. */
@@ -881,6 +914,11 @@ export function planLimitReset(o: {
     safetyBufferMin?: number;
     /** What the ordinary policy would have waited, in minutes. */
     fallbackMin: number;
+    /**
+     * ‼️ B-03.8 — WHICH WALL, when the caller knows. Absent behaves exactly as
+     * this function did before the field existed.
+     */
+    window?: LimitWindow;
 }): ResetPlan {
     const buffer = clamp(Math.round(o.safetyBufferMin ?? RETRY_DEFAULT_SAFETY_MIN), 0, RETRY_MAX_SAFETY_MIN);
     const use = (at: number, source: Exclude<ResetSource, 'none'>, note: string): ResetPlan => {
@@ -897,11 +935,23 @@ export function planLimitReset(o: {
         return use(o.engineResetAt, 'engine', 'the engine\'s own usage data');
     }
     const parsed = parseLimitReset(o.output ?? '', o.now);
-    if (parsed) { return use(parsed.at, 'output', `read from the run's output ("${parsed.text}")`); }
+    // ‼️ B-03.8 — A WEEKLY WALL PRINTS A CLOCK AND NOT A CALENDAR, and reading
+    // it as today's clock is how a run wakes hours early, fails on the same
+    // wall, and spends an attempt proving it. Measured, verbatim:
+    // "You've hit your weekly limit · resets 7pm (Asia/Bangkok)" — nothing in
+    // that sentence says WHICH 7pm, and this window's answer is very rarely
+    // today. The absolute and relative readings are unaffected: both carry
+    // their own calendar, so they are trusted for either window.
+    if (parsed && !(o.window === 'weekly' && parsed.kind === 'clock')) {
+        return use(parsed.at, 'output', `read from the run's output ("${parsed.text}")`);
+    }
     const go = o.now + Math.max(1, o.fallbackMin) * 60_000;
     return {
         at: go, source: 'none',
-        why: `no reset time was published or printed, so the ordinary first wait was used — retry ${hhmm(go)} (${o.fallbackMin} min)`
+        why: parsed
+            ? `the weekly window printed a clock time ("${parsed.text}") and no day, which cannot say `
+                + `WHICH one — the ordinary first wait was used instead — retry ${hhmm(go)} (${o.fallbackMin} min)`
+            : `no reset time was published or printed, so the ordinary first wait was used — retry ${hhmm(go)} (${o.fallbackMin} min)`
     };
 }
 
@@ -1026,7 +1076,10 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
     if (p.resetAware && wasLimit && attempt === 1) {
         const plan = planLimitReset({
             now, engineResetAt: o.engineResetAt, output: o.output,
-            safetyBufferMin: p.safetyBufferMin, fallbackMin: wait
+            safetyBufferMin: p.safetyBufferMin, fallbackMin: wait,
+            // ‼️ B-03.8 — the wall names itself, so the reading of its reset can
+            // be judged rather than taken.
+            ...(limitWindow(o.output ?? '') ? { window: limitWindow(o.output ?? '')! } : {})
         });
         return held({
             retry: true,
