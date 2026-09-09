@@ -1482,14 +1482,28 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // turn the user's last resort into a dead button: a second press means "that
     // did not take", and killing a pid that is already gone costs nothing. Only
     // what must happen once — denying the parked question — is skipped.
+    // ‼️ THESE TWO ARE ORDERINGS, SO THEY ARE MEASURED AS ORDERINGS — NOT AS A
+    // CHARACTER BUDGET. Both used to read `A[\s\S]{0,1400}B`, which is a claim
+    // about how much prose fits between two statements, and it went red when a
+    // comment in `close()` grew by NINETEEN characters: the guarantee held, the
+    // suite said it did not, and the red then sat there long enough to be filed
+    // as "pre-existing". A budget cannot fail honestly — it fails for editing.
+    const closeAt = host.indexOf('const again = h.closed === true;');
+    const inClose = closeAt < 0 ? '' : host.slice(closeAt);
+    const markedAt = inClose.indexOf('h.closed = true;');
+    const killedAt = inClose.indexOf('killTree(child);');
     ok('a second press re-issues the kill instead of being swallowed',
         /const again = h\.closed === true;/.test(host)
         && /if \(!again && h\.state\.pendingAsk\)/.test(host)
-        && /h\.closed = true;[\s\S]{0,1400}killTree\(child\);/.test(host));
+        // …and closing still marks and still kills, in that order: the flag is
+        // what makes the SECOND press a no-op for the parked question only.
+        && markedAt >= 0 && killedAt > markedAt);
     // ‼️ S-29 (reopened) — and the pipe is STILL shut before the kill, which is
     // the ordering the fault above was about. What moved is only the spawning.
+    const shutAt = inClose.indexOf('stdin?.end();');
+    const reapAt = inClose.indexOf('const reap = ');
     ok('…and the pipe is shut before anything is killed, still',
-        /stdin\?\.end\(\);[\s\S]{0,900}const reap = /.test(host));
+        shutAt >= 0 && reapAt > shutAt);
     // Every route that ends a hosted session goes through the one close().
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');

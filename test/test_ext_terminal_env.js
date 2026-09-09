@@ -32,7 +32,15 @@ const path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
-const read = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8');
+// ‼️ LINE ENDINGS ARE PER FILE IN THIS REPO, AND A SHAPE ASSERTION THAT FORGETS
+// IT GOES RED WITHOUT THE CODE HAVING MOVED. Every guarantee below is written as
+// a regex over the source, and several of them span lines (`…\n\s*env\n\s*}`).
+// `src/core/tasks.ts` is CRLF, so `env\r\n` never matched `env\n` and two of
+// them sat red for days while the code they check was correct the whole time —
+// which is exactly how a suite stops being read. The newline is normalised here,
+// once, so a shape assertion is about the shape.
+const read = (...p) =>
+    fs.readFileSync(path.join(ROOT, ...p), 'utf8').replace(/\r\n/g, '\n');
 
 const EXT = require(path.join(ROOT, 'out', 'core', 'extTerminal.js'));
 const { terminalEnvOverlay } = require(path.join(ROOT, 'out', 'core', 'providerRuntime.js'));

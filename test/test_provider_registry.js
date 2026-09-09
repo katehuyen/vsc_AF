@@ -278,8 +278,14 @@ const deps = () => ({
 // registry goes back to being a library nobody invokes.
 {
     const fs = require('fs');
-    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    const tasks = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    // ‼️ NEWLINES NORMALISED, AND THAT IS NOT COSMETIC. The guarantees below are
+    // regexes over source and some of them span lines; `src/core/tasks.ts` is
+    // CRLF, so `env\r\n` never matched `env\n` and the "same map to both doors"
+    // assertion sat red for days with the code it checks correct throughout. A
+    // shape assertion must fail for a change of shape and nothing else.
+    const src = (...p) => fs.readFileSync(path.join(ROOT, ...p), 'utf8').replace(/\r\n/g, '\n');
+    const ext = src('src', 'extension.ts');
+    const tasks = src('src', 'core', 'tasks.ts');
 
     // ---- the spawn sites ----
     ok('‼️ the runner builds its environment through the shared function',

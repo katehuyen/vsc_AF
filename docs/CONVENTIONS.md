@@ -351,6 +351,31 @@ gaps found by a hand scan, and a hand scan rots the day it finishes.
 
 ---
 
+## A shape assertion is measured as a SHAPE, never as a character budget
+
+Dozens of guarantees in this suite are regexes over `src/` text — "the overlay
+is built above the branch", "the same map reaches both doors". They are the
+right instrument for a wiring rule no unit test can see. Two ways they lie, and
+both were found red and dismissed as "pre-existing failures" for days while the
+code they check was correct the whole time:
+
+- **A distance budget fails for editing, not for breaking.** `A[\s\S]{0,1400}B`
+  is not the claim "A happens before B", it is the claim "no more than 1 400
+  characters of prose fit between them" — and a comment in `close()` grew by
+  **nineteen** characters. Write the ordering: take the two indexes and compare
+  them. If the two really must be near each other, say why in a comment; if they
+  merely are today, the budget is measuring the author's typing.
+- **Line endings are per file in this repo, so a regex with a literal `\n` is
+  reading one of them.** `src/core/tasks.ts` is CRLF: `env\r\n` never matched
+  `env\n`, and two assertions about a correct guarantee went red without a line
+  of the guarantee having moved. **Read source through one helper that
+  normalises** (`.replace(/\r\n/g, '\n')`) — the assertion is about the shape,
+  and the newline is not part of it.
+
+A red test nobody can explain gets fixed or deleted in the turn it is found. It
+does not get carried in a handover note as a known failure: the moment a suite's
+number is "N passed, 4 failed, the same four", nobody reads the four again.
+
 ## The wiring gate — a callback that defaults to a no-op can be left off (X-267)
 
 **What happened.** `ConsoleHost` was given a ninth constructor parameter,
