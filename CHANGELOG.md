@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.449.0 - the play button on a named row asked which agent, and the view was being rebuilt four times a second (2026-09-09)
+
+S-48 was closed once. The user pressed the inline play on an agent row, was
+shown "Select an agent" again, and said so a second time: *"every single thing
+they do gets broken one more time."* It was the same defect and the cure had
+been the wrong shape.
+
+**What actually happens under the pointer.** Read out of the running extension
+host: when `onDidChangeTreeData` fires with no argument, VS Code empties the
+whole handle-to-element map for that view (`tb()` -> `this.j.clear()`) and
+rebuilds the rows. A play pressed into an action bar that is being replaced
+arrives at its command with **no argument at all**. S-48 answered that with a
+250 ms throttle, which narrows the window and never closes it: `live` fires on
+every hook event of every session, so a busy fleet rebuilt the view four times
+a second, for ever, and almost every one of those rebuilds drew the same eight
+rows.
+
+- **The redraw is now gated on the drawing.** `AgentsTreeProvider.refreshIfChanged()`
+  renders the top-level rows and reads back what a person would see - label,
+  description, icon, context value - and fires only when that differs from the
+  last drawing. Not a hand-written list of "the fields that matter", which would
+  drift the first time a row learns to show something new: the signature is the
+  drawing itself, so a token count that reaches the row only through its
+  `description` still redraws at once. A quiet fleet now costs the view nothing,
+  and the bar under the pointer stops being replaced for no reason.
+- **The row’s play is its own command, because only the palette is entitled to
+  ask.** `agentfarm.startSession` is reached from a row (which names the agent),
+  from another command (which names it too) and from the Command Palette (which
+  names nobody and MUST ask) - so an empty argument meant two opposite things on
+  one id, and it kept resolving that clash the palette’s way. The row now has
+  `agentfarm.startSessionRow`: kept out of the palette, it resolves the argument,
+  then the view’s own selected row, and if neither can name an agent it **says
+  so and stops**. A press that does nothing and explains itself is recoverable;
+  a session quietly started as somebody else is not. The start itself is not
+  reimplemented - it is the same door, called with the agent named.
+- **And a run that was carried on stops telling you to start it.** Measured live
+  on 3.448.0: the headless revive works, and the original row’s last event still
+  read *"back on the queue, press start to run it again"* - written by the reload
+  sweep minutes before the decision to carry it on was taken. A person doing what
+  the row says pays for a second run of the original prompt beside the
+  continuation that is already working. The carry-on now writes itself onto the
+  row it came from, the way a refusal already did.
+
 ## 3.448.0 - the night shift stopped at the restart, and nobody was there to press start (2026-09-08)
 
 X-232 got a Console card across a restart of the extension host, and it was

@@ -3803,7 +3803,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (agentsTreePulse) { return; }
         agentsTreePulse = setTimeout(() => {
             agentsTreePulse = undefined;
-            agentsTree.refresh();
+            // ‼️ S-48 (reopened) — …AND THE PULSE ONLY REDRAWS WHEN THE ROWS
+            // WOULD LOOK DIFFERENT. The throttle above bounds how OFTEN the
+            // action bar under the pointer can be replaced; this decides
+            // whether it has to be replaced at all. See `refreshIfChanged`.
+            agentsTree.refreshIfChanged();
         }, 250);
     };
     context.subscriptions.push({
@@ -31155,6 +31159,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 if (!startClaudeSession(agent, o, undefined, undefined, chosen.projectId)) { return; }
                 await rememberLaunch(agent.id, o, 'terminal');
+            }),
+
+        /**
+         * ‼️ S-48 (reopened) — THE ROW'S ▶ IS ITS OWN COMMAND, BECAUSE ONLY THE
+         * PALETTE IS ENTITLED TO ASK WHICH AGENT.
+         *
+         * `agentfarm.startSession` is reached from three kinds of caller that
+         * know different amounts: an agent row (which names the agent), another
+         * command (which names it too) and the Command Palette (which names
+         * nobody and MUST ask). So an EMPTY argument meant two opposite things
+         * on one command id — "the palette: ask them" and "a row whose action
+         * bar was replaced under the press: do not ask" — and one id can only
+         * do one of them. It did the palette's thing, which is why pressing ▶
+         * on a named row has twice now landed the user in "Select an agent".
+         *
+         * The row gets its own id, it is kept out of the palette, and it never
+         * opens that picker: the argument, then the view's own row (S-48's
+         * belt), and if neither can name an agent it SAYS so and stops. A press
+         * that does nothing and explains itself is recoverable; a session
+         * quietly started as somebody else is not. The start itself is not
+         * reimplemented — it is the same door, called with the agent named.
+         */
+        vscode.commands.registerCommand('agentfarm.startSessionRow',
+            async (arg: AgentArg & { surface?: RunSurface }) => {
+                const named = resolveAgentArg(withAgentsRow(arg), agents);
+                if (!named.agent) {
+                    void vscode.window.showWarningMessage(named.stale
+                        ? `Agent Farm: "${named.stale}" is not in the fleet any more — the row this ▶ `
+                          + 'belongs to is out of date. Refresh the Agents view and press it again.'
+                        : 'Agent Farm: ▶ arrived without its row, so there is no agent to start — '
+                          + 'press it again. (It will not guess, and it will not ask you to pick one: '
+                          + 'you already pressed the agent.)');
+                    return;
+                }
+                await vscode.commands.executeCommand('agentfarm.startSession', {
+                    agentId: named.agent.id,
+                    ...(arg?.surface ? { surface: arg.surface } : {})
+                });
             }),
 
         vscode.commands.registerCommand('agentfarm.continueSession',

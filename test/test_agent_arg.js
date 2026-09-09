@@ -133,5 +133,172 @@ const FLEET = [dev, mgr];
     }
 }
 
+// ===========================================================================
+// S-48 REOPENED — the user said it a second time, so the cure was not one.
+//
+// The throttle bounded how OFTEN the action bar under the pointer could be
+// replaced; it never asked whether it had to be replaced at all. `live` fires
+// on every hook event of every session, so on a busy fleet the view was rebuilt
+// four times a second for ever, and almost every one of those rebuilds drew the
+// same rows. Two things are held below:
+//
+//   1. THE REDRAW IS GATED ON THE DRAWING. Not on a hand-written list of the
+//      fields that matter — that list would drift the first time a row learns
+//      to show something new — but on what the rows actually render.
+//   2. THE ROW'S ▶ CANNOT ASK. It is its own command id, kept out of the
+//      palette, and when it cannot name an agent it says so instead of opening
+//      the picker. One id could not mean both "the palette: ask" and "a lost
+//      row: never ask", and it had been resolving that clash the wrong way.
+// ===========================================================================
+{
+    const Module = require('module');
+    class EventEmitter {
+        constructor() { this.fired = 0; this.event = () => ({ dispose() { } }); }
+        fire() { this.fired++; }
+    }
+    class TreeItem {
+        constructor(label, state) { this.label = label; this.collapsibleState = state; }
+    }
+    class ThemeIcon { constructor(id, color) { this.id = id; this.color = color; } }
+    class ThemeColor { constructor(id) { this.id = id; } }
+    class MarkdownString { constructor(v) { this.value = v; } }
+    const fakeVscode = {
+        EventEmitter, TreeItem, ThemeIcon, ThemeColor, MarkdownString,
+        TreeItemCollapsibleState: { None: 0, Collapsed: 1, Expanded: 2 },
+        Uri: { file: (p) => ({ fsPath: p }) },
+        // Answered here on purpose: `cfgValueRaw` falls back to reading the
+        // real user's settings.json when the registry says undefined, and a
+        // test must never depend on this machine (X-265).
+        workspace: { getConfiguration: () => ({ get: (k, d) => (k === 'agentFarm.agentRowCostUnit' ? 'tokens' : d) }) }
+    };
+    const origLoad = Module._load;
+    Module._load = function (request, parent, isMain) {
+        if (request === 'vscode') { return fakeVscode; }
+        return origLoad.call(this, request, parent, isMain);
+    };
+
+    let treesOk = true;
+    let Trees;
+    try { Trees = require(path.join(ROOT, 'out/views/trees.js')); }
+    catch (e) { treesOk = false; console.log('  (trees.js not loadable: ' + e.message + ')'); }
+    ok('the Agents tree provider loads with no window', treesOk && !!Trees.AgentsTreeProvider);
+
+    if (treesOk) {
+        const agent = (id, name) => ({
+            id, name, dir: 'D:/a/' + name,
+            contextLoad: { total: 0, claudeMd: 0 },
+            memoryFiles: [], toolFiles: [], permissionSummary: ''
+        });
+        const world = {
+            agents: [agent('a-dev', 'developer'), agent('a-mgr', 'manager')],
+            active: new Set(),
+            tokens: 0
+        };
+        const state = {
+            getAgents: () => world.agents,
+            getInsights: () => [],
+            index: {
+                isAgentActive: (id) => world.active.has(id),
+                latestSessionForAgent: () => undefined,
+                forAgent: () => (world.tokens
+                    ? [{ daily: { [require(path.join(ROOT, 'out/core/util.js')).dayKey(Date.now())]:
+                        { cost: 0, usage: { input: world.tokens, output: 0, cacheRead: 0, cacheWrite: 0 } } } }]
+                    : [])
+            }
+        };
+        const tree = new Trees.AgentsTreeProvider(state);
+        const em = tree.emitter;
+
+        const before = em.fired;
+        ok('‼️ the first gated redraw fires — there was no previous drawing',
+            tree.refreshIfChanged() === true && em.fired === before + 1);
+        ok('‼️ …and an identical drawing does NOT fire, so the row under the pointer survives',
+            tree.refreshIfChanged() === false && em.fired === before + 1);
+        ok('…twice over: a quiet fleet costs the view nothing at all',
+            tree.refreshIfChanged() === false && em.fired === before + 1);
+
+        world.active.add('a-dev');
+        ok('‼️ a row whose text really changed redraws AT ONCE — nothing is delayed',
+            tree.refreshIfChanged() === true && em.fired === before + 2);
+        ok('…and settles again straight afterwards',
+            tree.refreshIfChanged() === false && em.fired === before + 2);
+
+        // ‼️ THE GATE IS DERIVED, NOT DECLARED. This figure reaches the row only
+        // through its `description`; a signature built from a hand-written list
+        // of "the fields that matter" would miss it, and the row would go stale.
+        world.tokens = 12345;
+        ok('‼️ …and a change that only shows in the description is caught too',
+            tree.refreshIfChanged() === true && em.fired === before + 3);
+
+        world.agents.push(agent('a-new', 'youtuber'));
+        ok('a new agent in the fleet is a new drawing',
+            tree.refreshIfChanged() === true && em.fired === before + 4);
+
+        const n = em.fired;
+        tree.refresh();
+        ok('an unconditional refresh still fires — commands are not gated',
+            em.fired === n + 1);
+        ok('‼️ …and it invalidates the baseline, so nothing is swallowed after it',
+            tree.refreshIfChanged() === true && em.fired === n + 2);
+
+        // A provider that cannot draw is not allowed to freeze the view.
+        const broken = new Trees.AgentsTreeProvider({
+            getAgents: () => { throw new Error('fleet gone'); },
+            getInsights: () => [], index: {}
+        });
+        const bf = broken.emitter.fired;
+        ok('‼️ a signature that cannot be taken falls back to redrawing, not to silence',
+            broken.refreshIfChanged() === true && broken.emitter.fired === bf + 1);
+    }
+
+    Module._load = origLoad;
+}
+
+// ------------------------------------------------- the wiring, in the sources
+{
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+
+    ok('‼️ the pulse asks whether the rows changed before it rebuilds them',
+        /agentsTree\.refreshIfChanged\(\);/.test(ext));
+    ok('…and the unconditional rebuild is gone from the pulse',
+        !/agentsTreePulse = undefined;\s*\n\s*agentsTree\.refresh\(\);/.test(ext));
+
+    const rowCmd = 'agentfarm.startSessionRow';
+    const menus = pkg.contributes.menus['view/item/context'] || [];
+    const onAgentRow = (group) => menus.find(m =>
+        m.group === group && /view == agentfarm\.agents && viewItem == agent/.test(m.when || ''));
+    ok('‼️ the inline ▶ on an agent row is the ROW\'s own command',
+        onAgentRow('inline@1')?.command === rowCmd);
+    ok('…and so is the same action in that row\'s right-click menu',
+        onAgentRow('1_actions@1')?.command === rowCmd);
+    ok('the row command is contributed and carries the play icon',
+        pkg.contributes.commands.some(c => c.command === rowCmd && c.icon === '$(play)'));
+    ok('‼️ …and it is NOT in the Command Palette — the palette has nobody to name',
+        (pkg.contributes.menus.commandPalette || [])
+            .some(m => m.command === rowCmd && m.when === 'false'));
+    ok('the palette door is untouched and still exists',
+        pkg.contributes.commands.some(c => c.command === 'agentfarm.startSession'));
+
+    // The door ends where the NEXT registration begins — a fixed byte count
+    // read the neighbour's `resolveAgent(` and failed the assertion below on
+    // code that is not this command's.
+    const i = ext.indexOf(`registerCommand('${rowCmd}'`);
+    const next = i > 0 ? ext.indexOf('vscode.commands.registerCommand(', i + 20) : -1;
+    const door = i > 0 ? ext.slice(i, next > 0 ? next : i + 1400) : '';
+    ok('‼️ the row door never reaches the agent PICKER — it resolves, it does not ask',
+        i > 0 && !/resolveAgent\(/.test(door)
+        && /resolveAgentArg\(withAgentsRow\(arg\), agents\)/.test(door));
+    ok('‼️ …and when it cannot name an agent it SAYS so and stops',
+        /arrived without its row, so there is no agent to start/.test(door)
+        && /showWarningMessage/.test(door));
+    ok('…a stale row is refused by name there too',
+        /is not in the fleet any more/.test(door));
+    ok('‼️ …and the start itself is not reimplemented — the same door, agent named',
+        /executeCommand\('agentfarm\.startSession', \{\s*\n\s*agentId: named\.agent\.id/.test(door));
+    ok('…carrying a surface the caller had already settled, when there was one',
+        /\.\.\.\(arg\?\.surface \? \{ surface: arg\.surface \} : \{\}\)/.test(door));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

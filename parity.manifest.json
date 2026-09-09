@@ -5871,6 +5871,15 @@
       ]
     },
     {
+      "capability": "startSessionRow",
+      "ui": [
+        "cmd:agentfarm.startSessionRow"
+      ],
+      "ops": [
+        "sessions.start"
+      ]
+    },
+    {
       "capability": "startSessionWith",
       "ui": [
         "cmd:agentfarm.startSessionWith"

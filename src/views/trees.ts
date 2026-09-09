@@ -63,7 +63,53 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
 
     constructor(private state: FarmState) {}
 
-    refresh(): void { this.emitter.fire(); }
+    refresh(): void { this.rowSignature = undefined; this.emitter.fire(); }
+
+    /** the last drawing of the top-level rows, as the reader would see it */
+    private rowSignature?: string;
+
+    /**
+     * ‼️ S-48 (reopened) — A REDRAW THAT CHANGES NOTHING IS THE RACE, AND IT
+     * WAS COSTING NOTHING TO ANYBODY.
+     *
+     * Every rebuild of this view replaces the inline action bar the pointer is
+     * resting on, and a ▶ pressed into a bar that is being replaced reaches a
+     * command with NO argument. S-48 throttled the rebuilds to one per 250 ms,
+     * which narrowed the window and did not close it: `live` fires on every
+     * hook event of every session, so on a busy fleet the view was being
+     * rebuilt four times a second, for ever, and the great majority of those
+     * rebuilds drew exactly the same eight rows.
+     *
+     * So the gate is what the rows SAY. The signature is not a hand-written
+     * list of the fields that matter — that list would drift the first time a
+     * row learns to show something new — it is the drawing itself: every
+     * top-level row is rendered and its label, description, icon and context
+     * value are read back. Identical drawing, no rebuild, no lost press.
+     *
+     * A row whose text really did change (a status, a token count, `relTime`
+     * ticking over) still redraws at once — this delays nothing and hides
+     * nothing. Returns whether it fired, so a caller can measure the saving.
+     */
+    refreshIfChanged(): boolean {
+        let sig: string;
+        try {
+            sig = this.getChildren().map(n => {
+                const item = this.getTreeItem(n);
+                const icon = item.iconPath instanceof vscode.ThemeIcon ? item.iconPath.id : '';
+                return [item.label, item.description, icon, item.contextValue].join('\u0001');
+            }).join('\u0002');
+        } catch {
+            // A signature that cannot be taken is not an excuse to stop
+            // redrawing the view: fall back to the unconditional refresh.
+            this.rowSignature = undefined;
+            this.emitter.fire();
+            return true;
+        }
+        if (sig === this.rowSignature) { return false; }
+        this.rowSignature = sig;
+        this.emitter.fire();
+        return true;
+    }
 
     getTreeItem(node: AgentNode): vscode.TreeItem {
         if (node.kind === 'agent') {

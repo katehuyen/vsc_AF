@@ -2058,10 +2058,25 @@ export class TaskManager implements vscode.Disposable {
                 ...(t.engine ? { resumedEngine: t.engine } : {}),
                 resumedFrom: t.title
             });
-            if (copy) { resumed.push({ id: copy.id, title: copy.title }); }
+            if (copy) {
+                /**
+                 * ‼️ B-03.16 — AND THE ROW THAT WAS CARRIED ON MUST STOP SAYING
+                 * THE OPPOSITE. Measured live on 3.448.0: the revive works, and
+                 * the original row's last event still read "back on the queue,
+                 * press start to run it again" — written by `load()` minutes
+                 * before this decision was taken, because that is when the sweep
+                 * runs. A person reading the row does what it says and pays for
+                 * a SECOND run of the original prompt, beside the continuation
+                 * that is already working. A refusal goes on the row (see
+                 * `refuse`); so does a carry-on.
+                 */
+                noteTaskEvent(t, 'resumed',
+                    `carried on after the restart as "${copy.title}" — nothing to start here`);
+                resumed.push({ id: copy.id, title: copy.title });
+            }
             else { refuse(t, 'it could not be copied — its agent is gone'); }
         }
-        if (skipped.length) { this.save(); }
+        if (skipped.length || resumed.length) { this.save(); }
         return { resumed, skipped };
     }
 

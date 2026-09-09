@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.448.0",
+  "version": "3.449.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -404,6 +404,12 @@
       {
         "command": "agentfarm.startSession",
         "title": "Start Session (your default engine)",
+        "category": "Agent Farm",
+        "icon": "$(play)"
+      },
+      {
+        "command": "agentfarm.startSessionRow",
+        "title": "Start Session for this agent (your default engine)",
         "category": "Agent Farm",
         "icon": "$(play)"
       },
@@ -3661,7 +3667,7 @@
           "group": "1_session@5"
         },
         {
-          "command": "agentfarm.startSession",
+          "command": "agentfarm.startSessionRow",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "inline@1"
         },
@@ -3671,7 +3677,7 @@
           "group": "inline@2"
         },
         {
-          "command": "agentfarm.startSession",
+          "command": "agentfarm.startSessionRow",
           "when": "view == agentfarm.agents && viewItem == agent",
           "group": "1_actions@1"
         },
@@ -6133,6 +6139,11 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "agentfarm.startSessionRow",
+          "when": "false",
+          "group": "ctx"
+        },
         {
           "command": "agentfarm.ctx.backlogGo",
           "when": "false",
