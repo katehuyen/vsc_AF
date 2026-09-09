@@ -141,6 +141,18 @@ export interface TrackRecord {
      *  caption ("root cause not found"). */
     note?: string;
     /**
+     * ‼️ True only when the note hit `TRACK_NOTE_MAX` — the twin of `prevCut`,
+     * and it was missing for a release.
+     *
+     * The ceiling here is editorial and deliberate (a note is a note, the report
+     * goes in the vault), so a cut is not a defect — being unable to SEE the cut
+     * is. `prevText` said so on the record and a note only trailed off in a `…`,
+     * which is exactly the ambiguity this whole area was built to remove: a
+     * reader cannot tell a ceiling from a writer who stopped, and the caller was
+     * told nothing at all. Absent is the normal case.
+     */
+    noteCut?: boolean;
+    /**
      * ‼️ X-36 — THE WORDS THE ITEM HAD WHEN IT WAS REOPENED. Only ever set on a
      * `reopen`, and it is the whole mechanism behind "a reopened item carries
      * its rounds".
@@ -275,6 +287,7 @@ export function serializeTrack(rec: TrackRecord): string {
     out.by = rec.by;
     if (rec.uncertain) { out.uncertain = rec.uncertain; }
     if (rec.note) { out.note = rec.note; }
+    if (rec.noteCut) { out.noteCut = true; }
     if (rec.prevText) { out.prevText = rec.prevText; }
     if (rec.prevCut) { out.prevCut = true; }
     if (rec.prevGuess) { out.prevGuess = true; }
@@ -314,6 +327,7 @@ export function parseTrack(text: string): TrackRecord[] {
             ...(o.agent ? { agent: String(o.agent) } : {}),
             ...(TRACK_DOUBTS.includes(doubt) ? { uncertain: doubt } : {}),
             ...(o.note ? { note: String(o.note).replace(/\s+/g, ' ').trim() } : {}),
+            ...(o.noteCut === true ? { noteCut: true } : {}),
             ...(o.prevText ? { prevText: String(o.prevText).replace(/\s+/g, ' ').trim() } : {}),
             ...(o.prevCut === true ? { prevCut: true } : {}),
             ...(o.prevGuess === true ? { prevGuess: true } : {}),
@@ -486,7 +500,9 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
         ? raw.map(r => {
             const fix = noteFixes.get(r.ts);
             return fix?.note && CLOSING.includes(r.event)
-                ? { ...r, note: fix.note, noteRestored: true } : r;
+                // The correction's OWN ceiling travels with it: recovered words
+                // that were themselves cut must not read as a whole note.
+                ? { ...r, note: fix.note, noteRestored: true, noteCut: fix.noteCut } : r;
         })
         : raw;
     const runs: TrackSessionRun[] = [];
@@ -580,8 +596,12 @@ export function summarizeCode(code: string, records: TrackRecord[]): TrackSummar
  *  reason it is said on the card: recovered words are right, but they are not a
  *  record of the moment, and only the reader can decide what that is worth. */
 export function closingNoteSuffix(r: TrackRecord | undefined): string {
-    return r?.noteRestored
-        ? ' _(note recovered later — the one written at the time was cut)_' : '';
+    // Two independent facts, and a note can carry both: where the words came
+    // from, and whether they are all of them.
+    return (r?.noteRestored
+        ? ' _(note recovered later — the one written at the time was cut)_' : '')
+        + (r?.noteCut
+            ? ' _(cut — the note was longer than the ledger keeps)_' : '');
 }
 
 /** Every code the ledger knows about, in the order it first saw them. */

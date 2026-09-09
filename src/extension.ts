@@ -12821,10 +12821,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     `those words do not continue the note actually recorded on that closing. It was CUT, `
                     + `so the full note has to START with it: "${core.slice(0, 80)}…". `
                     + 'Check you are repairing the right closing, or pass force: true if the stored fragment is itself wrong.');
+                /**
+                 * ‼️ A REPAIR THAT REPAIRS NOTHING IS NOT ALLOWED TO REPORT ONE.
+                 *
+                 * Measured on this very op: a 2,407-character note was handed
+                 * in, `capNote` cut it back to the same 2,000 the stored note
+                 * already had, and the answer said the note was "recovered" —
+                 * after which every surface marks it recovered for ever, while
+                 * the missing words are still missing. The ceiling is editorial
+                 * and stays; what cannot stay is a correction that is not one.
+                 * A note that really is longer than the ledger keeps belongs in
+                 * the vault, with the note pointing at it.
+                 */
+                const fixed = capNote(note);
+                need(fixed.note.length > had.length,
+                    `that would restore nothing: the ledger keeps ${TRACK_NOTE_MAX} characters of a `
+                    + `closing note and yours is ${note.replace(/\s+/g, ' ').trim().length}, so it comes `
+                    + `back cut to the same ${had.length} the closing already has. Shorten it to fit, or `
+                    + 'put the long version in the vault and let the note point at it.');
                 const rec: TrackRecord = {
                     code, event: 'touch', ts: Date.now(), by: 'agent',
                     restoresTs: t.ts, restoresNote: true,
-                    note: capNote(note)
+                    ...fixed
                 };
                 const wrote = appendTrack(trackLedgerOf(folder), rec);
                 need(wrote.ok, wrote.error ?? 'the correction could not be appended to the ledger');
@@ -12834,9 +12852,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     project: project.name, code,
                     closedAt: localStamp(t.ts), event: t.event,
                     was: had.length, now: rec.note?.length ?? 0,
+                    ...(rec.noteCut ? { cut: true } : {}),
                     ledger: relDoc(folder, trackLedgerOf(folder)),
                     note: 'the closing record is untouched; this is a correction beside it, and Track and'
                         + ' Backloglog now show the note as recovered rather than captured at the time.'
+                        + (rec.noteCut
+                            ? ` It is itself cut at ${TRACK_NOTE_MAX} characters and says so — more was`
+                              + ' recovered than was there, but not all of it.'
+                            : '')
                 };
             }
         },
@@ -26824,10 +26847,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch { return ''; }
     };
 
-    /** A note, in one line, long enough to be a closing note and cut visibly. */
-    const capNote = (s: string): string => {
+    /**
+     * A note, in one line, long enough to be a closing note and cut visibly.
+     *
+     * ‼️ AND THE CUT IS ON THE RECORD, not only in the text. It returns the same
+     * shape as `capPrev` for the same reason: a trailing `…` cannot be told from
+     * a writer who stopped there, so the fact is stored (`noteCut`) and every
+     * reader can say it out loud. The ceiling itself stays — a note is a note,
+     * and a report belongs in the vault with the note pointing at it.
+     */
+    const capNote = (s: string): { note: string; noteCut?: boolean } => {
         const one = s.replace(/\s+/g, ' ').trim();
-        return one.length > TRACK_NOTE_MAX ? one.slice(0, TRACK_NOTE_MAX - 1) + '…' : one;
+        return one.length > TRACK_NOTE_MAX
+            ? { note: one.slice(0, TRACK_NOTE_MAX - 1) + '…', noteCut: true }
+            : { note: one };
     };
 
     /**
@@ -26884,7 +26917,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // nobody could tell whether the writer had stopped there. The ledger
             // is one JSON line per record, so the room costs nothing; where a
             // note really is longer than this the cut is DRAWN.
-            ...(o.note ? { note: capNote(o.note) } : {})
+            ...(o.note ? capNote(o.note) : {})
         };
         appendTrack(trackLedgerOf(o.folder), rec);
 

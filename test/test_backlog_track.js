@@ -11,6 +11,7 @@
 //     session id looks exactly like a right one.
 //   - a torn ledger line costs one record, not the history.
 const path = require('path');
+const fs = require('fs');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -800,6 +801,70 @@ const RECORDS = [
         && save.indexOf('if (blob === outsideSeenBlob)') < save.indexOf('writeFileSync'));
     ok('…with the blob remembered only after the write actually succeeded',
         save.indexOf('fs.writeFileSync') < save.indexOf('outsideSeenBlob = blob'));
+}
+
+
+// ---------------------------------------------------------------------------
+// ‼️ A CLOSING NOTE THAT HIT THE CEILING SAYS SO — AND A "REPAIR" THAT REPAIRS
+// NOTHING IS REFUSED.
+//
+// The ceiling is editorial and stays: a note is a note, and a report belongs in
+// the vault with the note pointing at it. What was missing is the same thing
+// `prevCut` was added for on the other field — a trailing "…" cannot be told
+// from a writer who stopped there, and the caller was told nothing at all.
+// Measured on the live op: a 2,407-character note came back cut to the 2,000
+// the closing already had, and the answer called it recovered.
+// ---------------------------------------------------------------------------
+{
+    const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const T0 = Date.UTC(2026, 8, 9, 8, 40);
+
+    const line = T.serializeTrack({
+        code: 'S-48', event: 'done', ts: T0, by: 'agent',
+        note: 'kapandı, kök sebep ölçüldü…', noteCut: true
+    });
+    ok('‼️ the cut travels ON the record, not only in the text',
+        /"noteCut":true/.test(line));
+    ok('…and it comes back off the disk', T.parseTrack(line)[0].noteCut === true);
+    ok('a note that fits carries no flag at all',
+        !/noteCut/.test(T.serializeTrack({
+            code: 'S-48', event: 'done', ts: T0, by: 'agent', note: 'kısa ve tam'
+        })));
+
+    ok('‼️ …and every reader can say it out loud',
+        / _\(cut — the note was longer than the ledger keeps\)_/
+            .test(T.closingNoteSuffix({ code: 'S-48', event: 'done', ts: T0, by: 'agent', noteCut: true })));
+    ok('a whole note is not marked as anything',
+        T.closingNoteSuffix({ code: 'S-48', event: 'done', ts: T0, by: 'agent' }) === '');
+
+    // Recovered AND still cut is an ordinary pair: 300 -> 2,000 is a real gain
+    // and it is still not all of the words.
+    const recovered = T.summarizeCode('S-48', [
+        { code: 'S-48', event: 'done', ts: T0, by: 'agent', note: 'kapandı ve cümle burada…' },
+        {
+            code: 'S-48', event: 'touch', ts: T0 + 5000, by: 'agent',
+            restoresTs: T0, restoresNote: true,
+            note: 'kapandı ve cümle burada bitmiyordu, devamı da vardı ama o da uzundu…', noteCut: true
+        }
+    ]);
+    const closed = recovered.closed;
+    ok('‼️ a correction that is ITSELF cut does not read as a whole note',
+        closed.noteRestored === true && closed.noteCut === true);
+    ok('…and both facts are said, in that order',
+        T.closingNoteSuffix(closed)
+            === ' _(note recovered later — the one written at the time was cut)_'
+            + ' _(cut — the note was longer than the ledger keeps)_');
+
+    // ------------------------------------------------- the wiring, in the source
+    ok('‼️ P-14 — the cap reports the cut instead of swallowing it',
+        /noteCut: true \}\s*\n\s*: \{ note: one \};/.test(ext));
+    ok('…and the record is built from that shape, not from a bare string',
+        /\.\.\.\(o\.note \? capNote\(o\.note\) : \{\}\)/.test(ext));
+    ok('‼️ a restore that would gain NOTHING is refused, with the arithmetic',
+        /need\(fixed\.note\.length > had\.length,/.test(ext)
+        && /that would restore nothing/.test(ext));
+    ok('…and one that gains something but is still cut says so in the answer',
+        /\.\.\.\(rec\.noteCut \? \{ cut: true \} : \{\}\)/.test(ext));
 }
 
 console.log(`${pass} passed, ${fail} failed`);
