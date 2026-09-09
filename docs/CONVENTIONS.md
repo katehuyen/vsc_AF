@@ -481,6 +481,20 @@ node test/shoot_page.js  track --light                 → BOTH take --light
 - `shoot_page.js` photographs it with a headless Chrome **already on the
   machine** — no Playwright download. It uses a throwaway profile: the user's
   own browser windows are never touched, which is not a nicety.
+- **‼️ AND IT PHOTOGRAPHS THE WHOLE PAGE, WHICH IT DID NOT UNTIL A-12.10.**
+  Chrome's `--screenshot` captures the VIEWPORT, and this tool used to hand it a
+  fixed `--window-size=<w>,2400` — so every fixture taller than that was cut at
+  2400 and nothing said so. Measured: `missions` is **18,449px over 19 scenes**,
+  and scenes 4–19 had never appeared in any picture anybody looked at. The
+  height is measured off the laid-out page now (`--dump-dom`, the same route
+  `measure_page.js` takes — never a debug port), and the tool prints the size it
+  took.
+- **‼️ READ A MONTAGE ONE SCENE AT A TIME.** Nothing is lost any more, but
+  18,449px scaled down to fit a reader is ~100px a scene, which is not looking
+  either. `node test/shoot_page.js <fixture> --scenes` numbers them; `--scene N`
+  removes the others before measuring and writes `<fixture>.sN.png` at the
+  scene's own size. **The scene you photograph is the one that carries the thing
+  you changed** — a montage's first scene is almost never it.
 - **Fixtures live in `test/fixtures/`** and their shape is the point. A fixture
   with one open item and one closed one makes any palette look balanced; a real
   ledger is mostly `done`, which is how a scheme that shouts on `done` becomes
@@ -519,7 +533,10 @@ node test/shoot_page.js  track --light                 → BOTH take --light
 
 It asserts nothing and is not in `npm test` — a page that looks right proves
 the CSS, never the behaviour. It is the looking glass, and looking is the part
-that kept being skipped.
+that kept being skipped. The looking glass ITSELF is in `npm test`, though
+(`test/test_shoot_page.js`): a tool that quietly hands back a third of the
+evidence is worse than no tool, because everything downstream of it reads as
+measured.
 
 **‼️ …AND WHEN THE QUESTION IS A NUMBER, MEASURE IT.** A picture answers "does
 this look right"; it does not answer "how wide is that box, and what is
