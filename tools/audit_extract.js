@@ -55,6 +55,29 @@ function loadIndex() {
     return byId;
 }
 
+// -------------------------------------------------------------------- clock
+// ‼ ONE CLOCK, AND IT IS NAMED. Every commit this file prints comes from
+// `git log --date=format:`, which renders the LOCAL time of the machine.
+// Printing the session window beside it with `toISOString()` put two clocks on
+// one page — here (Asia/Bangkok) a 7-hour skew, so a dossier showed a window of
+// 09:54→12:17 above commits stamped 17:35 and 19:13 and called them "in the
+// window". The SELECTION was always right (it bounds on real instants); only
+// the reader was misled — and a ledger row that compares those two printed
+// numbers by eye would be evidence of nothing. A-01.6 is the row that looked
+// like it had been: it was measured and it stands, because both of ITS numbers
+// happened to be local. That is luck, not a guarantee, and this is the fix.
+const CLOCK = (() => {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'yerel'; }
+    catch (e) { return 'yerel'; }
+})();
+
+function localStamp(ts) {
+    const d = new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+        + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
 // ------------------------------------------------------------------- corpus
 function list(pattern) {
     const re = pattern ? new RegExp(pattern, 'i') : null;
@@ -64,7 +87,7 @@ function list(pattern) {
     for (const i of rows) {
         console.log([
             i.sessionId.slice(0, 8),
-            new Date(i.firstTs).toISOString().slice(0, 16).replace('T', ' '),
+            localStamp(i.firstTs),
             (i.models || []).join('/') || '?',
             'turns:' + (i.userTurns || 0),
             'tools:' + (i.toolCalls || 0),
@@ -277,8 +300,9 @@ function toMarkdown(d, opts) {
     L.push('# Dosya — ' + d.title);
     L.push('');
     L.push('- **Oturum:** `' + d.sessionId + '`');
-    L.push('- **Pencere:** ' + d.started.slice(0, 16).replace('T', ' ')
-        + ' → ' + d.ended.slice(0, 16).replace('T', ' '));
+    L.push('- **Pencere:** ' + localStamp(Date.parse(d.started))
+        + ' → ' + localStamp(Date.parse(d.ended))
+        + ' · saat: ' + CLOCK + ' (commit listesiyle AYNI saat)');
     L.push('- **Motor:** ' + d.models.join('/') + ' · **tool:** ' + d.toolCalls);
     L.push('- **Geçen kodlar:** ' + (d.codes.join(' ') || '—'));
     L.push('');
@@ -343,4 +367,4 @@ function main() {
 }
 
 if (require.main === module) main();
-module.exports = { loadIndex, resolve, build, toMarkdown };
+module.exports = { loadIndex, resolve, build, toMarkdown, localStamp, CLOCK };

@@ -3797,6 +3797,11 @@ const { opencodeStatus, syncToOpencode } =
                     op: 'projects.backlog.archive',
                     describe: 'archive every closed item, or only old ones. args: project, olderThanDays?',
                     handler: a => {
+                        const aimed = ['code', 'item', 'line', 'note'].filter(k => a[k] !== undefined);
+                        need(aimed.length === 0,
+                            'projects.backlog.archive sweeps the CLOSED items of a whole file; it takes no '
+                            + 'aim at one, so ' + aimed.join(', ') + ' would have been IGNORED. Use '
+                            + 'projects.backlog.check.');
                         const days = a.olderThanDays === undefined ? undefined : Number(a.olderThanDays);
                         need(days === undefined || (Number.isInteger(days) && days >= 0),
                             'olderThanDays must be a whole number');
@@ -3993,6 +3998,35 @@ const { opencodeStatus, syncToOpencode } =
             ok('…and the bridge refuses an invalid threshold instead of changing the file',
                 !badAge.ok && /whole number/.test(badAge.error));
 
+            // ‼️ AND IT REFUSES TO BE AIMED AT ONE ITEM, RATHER THAN IGNORING THE AIM.
+            // Measured in the audit (A-25): a session cancelled X-179 by calling this
+            // op with `{ code, note }`, got `ok: true` back because both arguments were
+            // silently dropped, and reported the cancellation in its closing summary and
+            // its handover note. The item was still open. The next session paid for it.
+            // An op that answers ok to work it did not do is the failure this whole
+            // suite exists to catch, so the refusal is pinned here and in the source.
+            const beforeAimed = readBacklog();
+            const aimed = await reg.dispatch('projects.backlog.archive',
+                { project: 'Agent Farm', code: 'P-2', note: 'cancelled because…' });
+            ok('‼️ archive REFUSES a single-item aim instead of dropping it and answering ok',
+                !aimed.ok && /takes no aim at one/.test(aimed.error));
+            ok('…and it names the arguments it would have ignored, so the caller can see the trap',
+                !aimed.ok && /code/.test(aimed.error) && /note/.test(aimed.error));
+            ok('…and it names the op that DOES do that job, because the caller still needs it done',
+                !aimed.ok && aimed.error.includes('projects.backlog.check'));
+            ok('…and the file is untouched by the refusal', readBacklog() === beforeAimed);
+
+            {
+                const extSrc = fs.readFileSync(
+                    path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+                const at = extSrc.indexOf("op: 'projects.backlog.archive',");
+                ok('…and the REAL op carries the same guard, not just this harness',
+                    at > 0 && extSrc.slice(at, at + 4000)
+                        .includes("const aimed = ['code', 'item', 'line', 'note']"));
+                ok('…and its contract SAYS it refuses, so nobody has to run it to find out',
+                    /takes no aim at one item/i.test(extSrc.slice(at, at + 4000)));
+            }
+
             // ---- the track: a code joined to the turns it was worked in ----
             // Same reasoning as above — the real ops need the project store and
             // the live monitor. What is exercised here is the contract shape an
@@ -4171,8 +4205,12 @@ const { opencodeStatus, syncToOpencode } =
             src.indexOf("op: 'projects.backlog.check'") + 2900);
         ok('‼️ backlog.check\'s contract states the one-character promise',
             /EXACTLY ONE CHARACTER/.test(blCheckBlock));
+        // 4000, not 2600: the op grew a guard and a comment that says WHY it
+        // refuses a single-item aim, and the window has to still reach the
+        // evidence at the bottom of the handler. The next op begins at +4034,
+        // so this reads the archive op and nothing else — measured, not padded.
         const blArchiveBlock = src.slice(src.indexOf("op: 'projects.backlog.archive'"),
-            src.indexOf("op: 'projects.backlog.archive'") + 2600);
+            src.indexOf("op: 'projects.backlog.archive'") + 4000);
         ok('M-4: the real archive op catalogues and uses the age threshold',
             /olderThanDays/.test(blArchiveBlock) && /backlogClosedAt/.test(blArchiveBlock));
         ok('…and tells the caller that closing an item is also RECORDED, with a note it can write',

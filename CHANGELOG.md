@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.4 - an op that answered ok to work it never did (audit A-25) (2026-09-09)
+
+`projects.backlog.archive` sweeps a whole file. Handed `code` and `note` it
+dropped both without a word and still answered ok — so a session cancelled an
+item by calling it, read `ok: true`, and wrote the cancellation into its
+closing summary and its handover note while the item stayed open, still
+stamped as the user's own request. The next session found it and spent its
+own budget on the repair.
+
+- **The op refuses a single-item aim** instead of ignoring it: it names the
+  arguments it would have swallowed and names `projects.backlog.check`, which
+  is where closing or cancelling ONE item actually lives. Its contract says so
+  too, so nobody has to run it to find out.
+- **Pinned on both sides** — the dispatched behaviour and the real handler in
+  `src/extension.ts` — because a harness that only tests its own copy of an op
+  is how this got shipped in the first place.
+
+Also, in the audit's own tooling: `tools/audit_extract.js` printed a session
+window in UTC directly above a commit list `git log` renders in local time — a
+7-hour skew on this machine, so a dossier showed commits stamped 17:35 and
+19:13 under a window ending at 12:17 and called them "in the window". The
+selection was always right; only the reader was misled. One clock now, and it
+is named in the line.
+
 ## 3.453.3 - every MIRROR gap in the product was being swallowed (audit A-12.9) (2026-09-09)
 
 MIRROR asks a control to put its CURRENT value on the first line of its panel,

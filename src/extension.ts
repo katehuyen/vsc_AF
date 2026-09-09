@@ -12769,8 +12769,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.archive',
-            describe: 'Move closed items (done, and cancelled unless you say otherwise) under an archive heading AT THE END OF THE SAME FILE. Omit `olderThanDays` for the original sweep-all operation; pass a whole number (7, 30, 360…) to move only items whose recorded closing time is MORE than that many days old. Closing time comes from the track ledger, then ✅ metadata; an item with no date stays visible rather than being guessed old. Deliberately not a separate file: a code must never be handed out twice, and the cheapest guarantee of that is that every code the project has ever used is still in the file the generator reads. args: project (id or name), cancelled? (default true — also archive cancelled items), olderThanDays? (integer >= 0)',
+            describe: 'Move closed items (done, and cancelled unless you say otherwise) under an archive heading AT THE END OF THE SAME FILE. Omit `olderThanDays` for the original sweep-all operation; pass a whole number (7, 30, 360…) to move only items whose recorded closing time is MORE than that many days old. Closing time comes from the track ledger, then ✅ metadata; an item with no date stays visible rather than being guessed old. Deliberately not a separate file: a code must never be handed out twice, and the cheapest guarantee of that is that every code the project has ever used is still in the file the generator reads. ‼️ IT TAKES NO AIM AT ONE ITEM: naming `code` (or `item`/`line`/`note`) is REFUSED rather than ignored — that job is projects.backlog.check, and this op quietly answering ok to it once cost a session and its successor. args: project (id or name), cancelled? (default true — also archive cancelled items), olderThanDays? (integer >= 0)',
             handler: (args) => {
+                /**
+                 * ‼️ THIS OP TAKES NO AIM AT ONE ITEM, AND REFUSING SAYS SO.
+                 *
+                 * It used to accept `code` and `note`, ignore both, sweep the
+                 * file and answer ok. Measured (audit A-25): a session cancelled
+                 * X-179 with `{ code, note }`, read `ok: true`, and wrote the
+                 * cancellation into its closing summary AND its handover note —
+                 * while the item stayed open, still stamped as the user's own
+                 * request, waiting for the next agent to act on a premise the
+                 * user had already withdrawn. The next session found it and
+                 * spent its own budget on the repair.
+                 *
+                 * An op that answers ok to work it did not do is the exact
+                 * failure the audit track exists for, so a caller who named one
+                 * item is stopped and told where that job actually lives.
+                 */
+                const aimed = ['code', 'item', 'line', 'note'].filter(k => args[k] !== undefined);
+                need(aimed.length === 0,
+                    'projects.backlog.archive sweeps the CLOSED items of a whole file; it takes no aim at '
+                    + 'one, so ' + aimed.join(', ') + ' would have been IGNORED and this would still have '
+                    + 'answered ok. To close or cancel a single item use projects.backlog.check '
+                    + '(state: "done" | "cancelled", with its note); archiving it afterwards is a '
+                    + 'separate sweep.');
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 let moved = 0;
                 let undated = 0;

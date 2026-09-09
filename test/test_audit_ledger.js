@@ -115,5 +115,46 @@ const has = (errs, needle) => errs.some(e => e.includes(needle));
     }
 }
 
+// ---------- one clock, or the evidence is worthless ----------
+// ‼️ THE DOSSIER AND ITS COMMIT LIST ARE ON ONE CLOCK. The commits a dossier
+// prints come from `git log --date=format:`, i.e. LOCAL time. The window above
+// them used to be printed with `toISOString()`, i.e. UTC — on this machine a
+// 7-hour skew, and a dossier that showed a 09:54→12:17 window over commits
+// stamped 17:35 and 19:13 while calling them "in the window". Nobody noticed,
+// because both numbers look like times, and the tool asserted the conclusion
+// itself. No ledger row was ultimately argued off it — A-01.6 was checked and
+// both of its numbers were local — but that was luck, so the rule is pinned
+// here rather than left to the next reader's arithmetic.
+{
+    const X = require(path.join(__dirname, '..', 'tools', 'audit_extract.js'));
+    const src = fs.readFileSync(
+        path.join(__dirname, '..', 'tools', 'audit_extract.js'), 'utf8');
+
+    ok('the extractor exposes the clock it prints in', typeof X.localStamp === 'function');
+
+    // the stamp must be the LOCAL rendering of the instant, not the UTC one —
+    // measured against an instant whose two clocks differ by whole hours here.
+    const ms = Date.parse('2026-09-04T12:13:37Z');
+    const d = new Date(ms);
+    const pad = n => String(n).padStart(2, '0');
+    const local = d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+        + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    ok('…and it renders an instant in local time, the clock git prints in',
+        X.localStamp(ms) === local);
+    if (d.getTimezoneOffset() !== 0) {
+        ok('…so on a machine that is not UTC it DIFFERS from the ISO rendering '
+            + '(the whole defect: the two used to sit side by side unlabelled)',
+            X.localStamp(ms) !== new Date(ms).toISOString().slice(0, 16).replace('T', ' '));
+    }
+
+    // and the idiom that caused it may not come back anywhere in the file.
+    ok('‼️ NO UTC STAMP IS PRINTED ANYWHERE IN THE DOSSIER — the ban is the rule, '
+        + 'not a list of the two places it happened to be',
+        !src.includes('toISOString().slice(0, 16)'));
+
+    ok('…and the window says which clock it is in, so the next reader never guesses',
+        src.includes("saat: ' + CLOCK"));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
