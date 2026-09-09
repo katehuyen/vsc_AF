@@ -21939,7 +21939,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ X-169 — and the account's own variable, from the same side, for the
         // same reason: the slot list and the "use this next" map are settings,
         // and the variable's NAME is the engine adapter's to state.
-        (engine, account) => launchAccountEnv({ engine, account }));
+        (engine, account) => launchAccountEnv({ engine, account }),
+        // ‼️ X-267 — AND THE CONSOLE'S PIN IS TAKEN HERE OR NOWHERE. The host
+        // defaults this to a no-op, so leaving it off the call site does not
+        // fail: it compiles, the whole pin suite stays green against the pure
+        // rule, and every console conversation quietly never files its context.
+        // Measured: with the argument missing the `pinned/` folder was never
+        // created at all, and every revive re-composed the brief it was meant
+        // to reuse. `test_wiring.js` now reads this call and counts it.
+        pinProjectContext);
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).
     consoleHostRef = consoleHost;

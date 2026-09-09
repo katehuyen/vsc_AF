@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.1 - the pin was written, tested and never plugged in (2026-09-09)
+
+**X-267, the second half.** 3.453.0 shipped the pinned-context mechanism with
+twenty-nine green assertions and it did nothing at all. `ConsoleHost` takes
+`pinProjectContext` as its ninth constructor parameter, defaulted — like every
+one of its siblings — to `() => {}`. `extension.ts` was never changed to pass
+it. The build compiled, the suite stayed green (it constructs the host itself,
+with all nine arguments), and the Console silently never pinned a single
+conversation: measured on a live session started under 3.453.0, the `pinned/`
+folder had not even been created. Every revive went on re-composing the brief
+the pin existed to reuse.
+
+- **The wire.** `extension.ts` — the `new ConsoleHost(…)` call site now passes
+  `pinProjectContext` as its ninth argument. Headless rounds and the mission
+  planner were already wired (they pass their callbacks by name, in an options
+  object, where a missing one is a compile error).
+- **The gate that would have caught it, `test/test_wiring.js`.** A missing
+  *argument* is invisible to the type checker — that is what the default is for
+  — and invisible to a suite that builds its own object — that is what a mock is
+  for. It can only be caught by reading the call site, so that is what this
+  does, derived rather than declared: the parameter list is parsed out of the
+  class, the argument list out of the `new`, and neither is written down in the
+  test to drift. **The rule:** a constructor parameter whose default is a
+  no-op-shaped callback must be passed at every `new` site in `src/`. A `?`
+  optional parameter is exempt (absent means something there); a real default
+  (`= 'claude'`) is exempt too (leaving it off asks for that value). Run over
+  the whole of `src/core`, this was the only such gap in the codebase.
+
 ## 3.453.0 - a resume was regenerating its own system prompt, and paying for the whole conversation again (2026-09-09)
 
 **X-267.** Console session `4b0c8af8` was resumed after a 29-second extension-host
