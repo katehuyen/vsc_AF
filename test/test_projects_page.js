@@ -96,8 +96,12 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         /const sessionOwnProject = \(/.test(extTs)
         && /if \(s\?\.sessionId && s\.projectId && !s\.resumed\)/.test(extTs)
         && /projectId: sessionOwnProject\(s\)/.test(extTs));
+    // ‼️ X-267 — re-told with the SAME BYTES: a resume names the conversation it
+    // is continuing, and is handed that conversation's pinned copy. A
+    // regenerated brief is a changed system prompt and re-bills the whole thread
+    // (test/test_context_pin.js).
     ok('…and a terminal resume is re-told too — the flag does not survive --resume',
-        /const own = sessionOwnProject\(s\);[\s\S]{0,600}projectContextFile: systemPromptFileFor\(own \|\| undefined, 'session',/.test(extTs));
+        /const own = sessionOwnProject\(s\);[\s\S]{0,900}projectContextFile: systemPromptFileFor\(own \|\| undefined, 'session',[\s\S]{0,80}s\.sessionId\)/.test(extTs));
     ok('…a terminal launch takes the project at LAUNCH time, not when the id turns up',
         /const projectId = \(project !== undefined \? project : activeProjectId\(\)\) \|\| undefined;/.test(extTs)
         // ‼️ `sessionId: laneId` since X-35: on a first-class external engine

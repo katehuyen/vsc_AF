@@ -867,6 +867,13 @@ export function hostArgs(o: {
     // place a hosted session's command line is built, which is what makes
     // "every spawn" true by construction instead of by everyone remembering.
     //
+    // ‼️ X-267 — AND ON A RESUME IT IS THE SAME BYTES, not the same subject.
+    // What arrives here for a resumed session is the conversation's PINNED copy
+    // (`core/projectContext.ts`); this line does not know the difference and
+    // must not, but a caller that regenerates the file instead throws away the
+    // prefix cache holding the whole thread — measured at 303,987 tokens
+    // re-billed for a 29-second extension restart.
+    //
     // Quoted because the spawn runs under `shell: true`: an unquoted path
     // through a folder with a space in it arrives cut at the space.
     if (isQuotableContextPath(o.projectContextFile ?? '')) {

@@ -131,6 +131,14 @@ export function reviveInit(row: ReviveSource & { sessionId?: string }): ReviveIn
     // under (its own, never the window's — the context does not survive a
     // resume, so this spawn is the one that re-tells it) and whether it carried
     // the skills discipline.
+    //
+    // ‼️ X-267 — BOTH OF THESE ARE PART OF THE PIN'S KEY, which is why they are
+    // carried rather than re-derived. `resume` above says which conversation to
+    // re-tell with the SAME BYTES; these two say which file those bytes were.
+    // A revive that guessed the window's project, or the agent's current
+    // Superpowers default, would look for a pin that does not exist and
+    // regenerate the system prompt — which is the whole defect, in the one path
+    // it was actually measured in.
     if (row.projectId) { out.projectId = row.projectId; }
     if (row.superpowers !== undefined) { out.superpowers = row.superpowers; }
     return out;

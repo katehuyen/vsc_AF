@@ -138,18 +138,28 @@ const brief = (s, d) => {
     const plannerSrc = fs.readFileSync(
         path.join(__dirname, '..', 'src', 'core', 'plannerLaunch.ts'), 'utf8');
     ok('the planner call asks for the project\'s context file',
-        /const ctxFile = resumeSessionId \? undefined : systemPromptFileFor\(spec\.projectId, 'mission'\);/.test(ext));
+        /const ctxFile = systemPromptFileFor\(\s*spec\.projectId, 'mission', false, resumeSessionId\);/.test(ext));
     // ‼️ X-94 — AND IT ASKS FOR THE MISSION'S COPY, which is a different text:
     // no open plan items, no backlog, no worklog, no write-back protocol. The
     // audience argument is the whole of that difference, so a refactor that
     // drops it silently puts the project's standing queues back in front of
     // every planner call and every delegation.
     ok('‼️ …the MISSION\'s copy of it, not a session\'s',
-        /systemPromptFileFor\(spec\.projectId, 'mission'\)/.test(ext));
+        /systemPromptFileFor\(\s*spec\.projectId, 'mission',/.test(ext));
     ok('‼️ …and a mission DELEGATION reads the same copy — `missionId` is the discriminator',
         /systemPromptFileFor\(\s*\n?\s*task\.projectId, task\.missionId \? 'mission' : 'session',/.test(ext));
-    ok('‼️ …and ONLY when it is not resuming — a resume already has it in the conversation',
-        /resumeSessionId \? undefined :/.test(ext));
+    // ‼️ X-267 — THIS USED TO READ "and ONLY when it is not resuming — a resume
+    // already has it in the conversation", and BOTH halves of that were wrong.
+    // An appended system prompt is not a message and does not survive `--resume`
+    // (measured, smoke_project_context.mjs), so every mission round after the
+    // first ran with no project at all. And it was not even the cheap option:
+    // REMOVING a block from a system prompt changes it exactly as much as
+    // rewriting one, so round 2 threw away round 1's prefix cache anyway. A
+    // round now gets the conversation's PINNED copy — same bytes, brief intact.
+    ok('‼️ …and a round is given the SAME BYTES, not nothing and not a fresh copy',
+        /systemPromptFileFor\(\s*spec\.projectId, 'mission', false, resumeSessionId\)/.test(ext)
+        && !/resumeSessionId \? undefined :/.test(ext)
+        && /if \(!resumeSessionId && ctxFile && r\.sessionId\) \{\s*pinProjectContext\(r\.sessionId, ctxFile\);/.test(ext));
     // ‼️ X-121 — the planner's command line is built by `core/plannerLaunch.ts`
     // now, so that is where these two claims are read. The claim is unchanged:
     // the brief is passed as a QUOTED FILE, and a path that would break the

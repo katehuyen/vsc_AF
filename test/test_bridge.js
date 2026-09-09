@@ -3175,13 +3175,21 @@ const { opencodeStatus, syncToOpencode } =
                     /planner: \{[^]{0,240}effort: sp\?\.plannerEffort \?\? null/.test(src)
                     && /WHAT THE ORCHESTRATOR ITSELF IS RUNNING ON/.test(src));
                 // ‼️ X-122 — FRESH AND RESUME ARE THE SAME COMMAND on this pair.
-                // The project brief is deliberately first-call-only (a --resume
-                // already has it in the conversation); the model and the effort
-                // are built before `resumeSessionId` is read at all, so round 7
-                // thinks with what round 1 was given — and the pair the
-                // capability gate approved is the pair every round rides on.
-                ok('‼️ X-122 — only the brief is first-call-only: model and effort ride every round',
-                    /const ctxFile = resumeSessionId \? undefined : systemPromptFileFor/.test(src)
+                // The model and the effort are built before `resumeSessionId` is
+                // read at all, so round 7 thinks with what round 1 was given —
+                // and the pair the capability gate approved is the pair every
+                // round rides on.
+                //
+                // ‼️ X-267 — AND THE BRIEF IS NO LONGER THE EXCEPTION. It used to
+                // be first-call-only, on the belief that a `--resume` already had
+                // it in the conversation; it does not (an appended system prompt
+                // is not a message), so every round after the first ran with no
+                // project — and dropping the block changed the system prompt just
+                // as much as rewriting it, re-billing the whole thread. Every
+                // round now carries the conversation's PINNED copy: same bytes,
+                // brief intact, cache intact.
+                ok('‼️ X-122 — the pair rides every round, and X-267 — so does the brief',
+                    /const ctxFile = systemPromptFileFor\(\s*spec\.projectId, 'mission', false, resumeSessionId\)/.test(src)
                     && !/const model = [^\n]*resumeSessionId/.test(src)
                     && !/const effort = [^\n]*resumeSessionId/.test(src));
             }

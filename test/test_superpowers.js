@@ -218,11 +218,14 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
     ok('‼️ …and a launcher, a tree row or a saved profile can now say otherwise',
         /superpowers\?: boolean;/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'launch.ts'), 'utf8')));
     ok('‼️ …and a terminal RESUME is re-told, because the flag does not survive --resume',
-        /projectContextFile: systemPromptFileFor\(own \|\| undefined, 'session',\s*\n\s*superpowersOnFor\(s\.agentName\)\)/.test(ext));
+        /projectContextFile: systemPromptFileFor\(own \|\| undefined, 'session',\s*\n\s*superpowersOnFor\(s\.agentName\), s\.sessionId\)/.test(ext));
 
     const host = fs.readFileSync(path.join(ROOT, 'src', 'core', 'consolehost.ts'), 'utf8');
+    // ‼️ X-267 — still EVERY spawn, and on a resume it is the conversation's
+    // pinned copy rather than a fresh composition of the same subject.
     ok('‼️ the hosted spawn carries it on EVERY spawn, on the one line that builds the command',
-        /projectContextFile: this\.projectContextFile\(projectId, superpowers\)/.test(host));
+        /const ctxFile = this\.projectContextFile\(projectId, superpowers, init\.resume\);/.test(host)
+        && /hostArgs\(\{ \.\.\.init, permission, projectContextFile: ctxFile \}\)/.test(host));
     ok('‼️ …and a card retaking its own seat is asked what it was started with, before that record is dropped',
         /const seatSuperpowers = seat \? !!this\.sessions\.get\(seat\.id\)\?\.state\.superpowers : false;/.test(host)
         && host.indexOf('const seatSuperpowers') < host.indexOf('this.sessions.delete(seat.id)'));

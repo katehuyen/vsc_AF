@@ -187,8 +187,13 @@ const seed = { project, roles, repos: project.repos, decisions, now: Date.UTC(20
         /const brief = buildBrief\(seed\);/.test(ext));
     ok('…while the INJECTED copy is the one that takes it',
         /brief: buildBrief\(\{ \.\.\.seed, maxChars: PROJECT_BRIEF_MAX, audience \}\)/.test(ext));
+    // X-267 moved this ONE line earlier — the name is now resolved before
+    // anything is composed, because the pinned copy is named after it and a
+    // resume must be able to look for its pin without generating a brief first.
+    // The audience is still in it, which is what this check is about.
     ok('…and the context file path carries the audience so the two never collide',
-        /contextFileName\(c\?\.project\.id \?\? '', audience, !!hook\)/.test(ext));
+        /base: contextFileName\(\s*\(projectId \? projectStore\.get\(projectId\)\?\.id : ''\) \?\? '', audience, !!hook\)/
+            .test(ext));
 }
 
 // ========================= 7. the form can say which project, in three ways

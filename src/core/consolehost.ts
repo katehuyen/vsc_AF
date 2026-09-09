@@ -447,6 +447,16 @@ interface Hosted {
      */
     retryOnGrant?: string;
     /**
+     * ‼️ X-267 — THE CONTEXT FILE THIS SPAWN REALLY SENT, kept until the CLI
+     * says which conversation it opened.
+     *
+     * The pinned copy has to be taken from the bytes that WENT OUT, and the id
+     * to file them under only arrives in the `init` event a moment later — so
+     * the path waits here in between. Cleared once pinned: a session pins once,
+     * at its first spawn, and never again (see `pinnedContextFileName`).
+     */
+    pinFrom?: string;
+    /**
      * The session was ENDED from a panel (see `close`). A killed process is not
      * a silent one — whatever it already wrote is still in the pipe — and every
      * line read after the end used to be reduced as if the session were alive.
@@ -487,11 +497,19 @@ export class ConsoleHost {
          * Write the project's context file and return its path.
          *
          * Called on EVERY spawn, first start and resume alike — the appended
-         * system prompt does not survive `--resume` (measured), and the brief
-         * it carries has to be current anyway.
+         * system prompt does not survive `--resume` (measured).
+         *
+         * ‼️ X-267 — …BUT A RESUME SAYS WHICH CONVERSATION IT IS CONTINUING, and
+         * is answered with that conversation's PINNED copy instead of today's
+         * text. A regenerated brief is a CHANGED system prompt, and a changed
+         * system prompt throws away the prefix cache holding the whole thread:
+         * measured at 303,987 tokens re-billed for a 29-second restart. The
+         * caller owns the pin; see `core/projectContext.ts`.
          */
         private projectContextFile: (
-            projectId: string | undefined, superpowers?: boolean
+            projectId: string | undefined, superpowers?: boolean,
+            /** the CLI session id this spawn resumes, when it is one */
+            resume?: string
         ) => string | undefined = () => undefined,
         /**
          * ‼️ X-43 — WHAT THE WINDOW IS HOLDING, ON AN ENGINE THAT DOES NOT SAY.
@@ -559,7 +577,19 @@ export class ConsoleHost {
             // "the machine's own sign-in", stated outright, is the absence of
             // the engine's config variable and not merely the absence of a
             // layer, because the window this runs in may carry one already.
-        ) => Record<string, string | null> | undefined
+        ) => Record<string, string | null> | undefined,
+        /**
+         * ‼️ X-267 — TAKE THE PINNED COPY of what this spawn's command line
+         * really carried, now that the conversation has an id.
+         *
+         * The host cannot do it itself: the pinned copy lives beside the context
+         * file, and where that folder is belongs to the side that writes it. All
+         * this end knows is "these bytes opened that conversation" — which is
+         * exactly the fact the pin needs and the only one the host has.
+         */
+        private pinProjectContext: (
+            sessionId: string, file: string
+        ) => void = () => {}
     ) {}
 
     /** The shared OpenCode runtime, made on demand. `undefined` when this build
@@ -841,10 +871,9 @@ export class ConsoleHost {
             // rejected: bypass on the card, a permission window on the screen.
             return this.refusePermissionMismatch(id, init, projectId, prior, permission);
         }
-        const args = hostArgs({
-            ...init, permission,
-            projectContextFile: this.projectContextFile(projectId, superpowers)
-        });
+        // ‼️ X-267 — a resume asks for its OWN conversation's context, pinned.
+        const ctxFile = this.projectContextFile(projectId, superpowers, init.resume);
+        const args = hostArgs({ ...init, permission, projectContextFile: ctxFile });
         // shell:true — `claude` is a .cmd shim on Windows. Nothing user-typed
         // reaches the command line: prompts travel on stdin as JSON, and the
         // flag values come from fixed vocabularies (launch.ts).
@@ -913,7 +942,11 @@ export class ConsoleHost {
         const carriedMessages = this.resumeMessages(prior, init.history);
         const hosted: Hosted = {
             state: carriedMessages ? { ...base, messages: carriedMessages } : base,
-            child, engine, buffer: '', reqSeq: 0
+            child, engine, buffer: '', reqSeq: 0,
+            // ‼️ X-267 — only a FRESH spawn has a pin to take. A resume was
+            // already handed the pinned copy (or wrote one itself), so there is
+            // nothing here to file and nothing that may overwrite it.
+            ...(init.resume || !ctxFile ? {} : { pinFrom: ctxFile })
         };
         this.sessions.set(id, hosted);
 
@@ -2002,6 +2035,16 @@ export class ConsoleHost {
             const r = reduceEvent(h.state, parsed, now);
             h.state = r.state;
             changed = changed || r.changed;
+            // ‼️ X-267 — the `init` line is where the conversation gets its id,
+            // and therefore where its context can finally be filed under it.
+            // Once only: `pinFrom` is cleared whether or not the copy succeeds,
+            // because a retry on every subsequent line would be a filesystem
+            // call per event for a fact that is not going to change.
+            if (h.pinFrom && h.state.sessionId) {
+                const from = h.pinFrom;
+                h.pinFrom = undefined;
+                this.pinProjectContext(h.state.sessionId, from);
+            }
             // The nudge waits for the CLI's yes (see retryOnGrant). "Agreed"
             // means the pending switch resolved AND the mode really moved —
             // a refusal clears the pending field too, and must say nothing.

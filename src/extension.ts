@@ -302,8 +302,8 @@ import {
     setBacklogQueue, setBacklogState, stampBacklogClosed, tidyBacklogFile
 } from './core/projectBacklog';
 import {
-    buildProjectContext, contextFileName, isQuotableContextPath, PROJECT_BRIEF_MAX,
-    ProjectAudience
+    buildProjectContext, contextFileName, isPinnableSessionId, isQuotableContextPath,
+    pinnedContextFileName, PROJECT_BRIEF_MAX, ProjectAudience, resolveContextTarget
 } from './core/projectContext';
 import { collectEdits, fileStats, groupByFile } from './core/codeedits';
 import { contentAtHead, gitRoot, recentCommits, repoRelative } from './core/gitfile';
@@ -2883,19 +2883,92 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return { project: p, folder, hasFolder, brief, text };
     };
 
+    /** Where a conversation's pinned copy lives — see `pinnedContextFileName`. */
+    const pinnedDir = path.join(contextDir, 'pinned');
+
+    /**
+     * The pinned copy's path for a conversation, or undefined when this spawn
+     * has nothing to pin by. `base` is the ordinary context file's NAME, which
+     * already carries the project, the audience and the Superpowers switch — so
+     * a session resumed with any of those changed looks for a different pin and
+     * gets a correctly regenerated one instead of a stale one.
+     */
+    const pinnedPathFor = (
+        sessionId: string | undefined, base: string
+    ): string | undefined => (
+        isPinnableSessionId(sessionId)
+            ? path.join(pinnedDir, pinnedContextFileName(String(sessionId).trim(), base))
+            : undefined
+    );
+
+    /**
+     * ‼️ X-267 — TAKE THE COPY, at the spawn that OPENED the conversation.
+     *
+     * Called when a fresh run finally reports the CLI session id it was given —
+     * which is always after the spawn, on every engine (S-31). The bytes copied
+     * are the ones that really went out on that command line, not a fresh
+     * composition of them: a re-composed "identical" file is what this whole
+     * mechanism exists to stop (`pinnedContextFileName`).
+     *
+     * Never overwrites: the first copy IS the conversation's system prompt, and
+     * a later spawn writing over it would be the bug wearing the fix's name.
+     */
+    const pinProjectContext = (sessionId: string, file: string | undefined): void => {
+        const src = String(file ?? '').trim();
+        if (!src) { return; }
+        const dest = pinnedPathFor(sessionId, path.basename(src));
+        // A file already inside the pinned folder IS a pinned copy — re-pinning
+        // it would prefix the id twice and orphan the original.
+        if (!dest || path.dirname(path.resolve(src)) === path.resolve(pinnedDir)) { return; }
+        try {
+            if (fs.existsSync(dest)) { return; }
+            fs.mkdirSync(pinnedDir, { recursive: true });
+            fs.copyFileSync(src, dest);
+        } catch { /* a pin that cannot be taken costs a cache miss, not a session */ }
+        prunePinnedContext();
+    };
+
+    /**
+     * The pinned folder gets one ~2.5 KB file per conversation and nothing ever
+     * deletes them, so it needs a floor. Once per window, and by AGE rather than
+     * by count: a conversation nobody has resumed in three months has almost
+     * certainly ended, and the cost of being wrong is one cache miss on the
+     * resume that finds no pin — which then takes a fresh one.
+     */
+    let pinPruned = false;
+    const PIN_KEEP_MS = 90 * 24 * 60 * 60 * 1000;
+    const prunePinnedContext = (): void => {
+        if (pinPruned) { return; }
+        pinPruned = true;
+        try {
+            const cut = Date.now() - PIN_KEEP_MS;
+            for (const name of fs.readdirSync(pinnedDir)) {
+                const f = path.join(pinnedDir, name);
+                try {
+                    if (fs.statSync(f).mtimeMs < cut) { fs.unlinkSync(f); }
+                } catch { /* another window may be reading it — leave it */ }
+            }
+        } catch { /* no folder yet, or it is not readable: nothing to prune */ }
+    };
+
     /**
      * Write it, and hand back the path the CLI is given. Called once per spawn.
      *
      * The brief also goes into the project's OWN folder, where it is useful on
      * its own: a session the user starts in their own terminal never gets the
      * flag (measured), but it can still read `_AF/BRIEF.md`.
+     *
+     * ‼️ X-267 — `resume` IS THE CONVERSATION THIS SPAWN CONTINUES, and it is
+     * answered with the pinned copy rather than with today's text. See
+     * `pinnedContextFileName`: regenerating the appended system prompt on a
+     * resume is what billed 304k tokens for a 29-second restart.
      */
     const systemPromptFileFor = (
         projectId: string | undefined,
         audience: ProjectAudience = 'session',
-        superpowers = false
+        superpowers = false,
+        resume?: string
     ): string | undefined => {
-        const c = composeProjectContext(projectId, audience);
         // ‼️ X-133 — AND THIS IS WHY THERE IS ONE FUNCTION RATHER THAN TWO.
         // `--append-system-prompt-file` takes exactly ONE file (measured), so a
         // session cannot be handed its project context and its engineering
@@ -2905,15 +2978,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Either half alone is a valid file — the switch is worth turning on in
         // a session that belongs to no project, and that used to be impossible
         // because this returned `undefined` the moment there was no project.
+        //
+        // It is resolved BEFORE the pin is looked up because the file's NAME
+        // depends on it: `superpowers` is what was asked for, `hook` is what
+        // there turned out to be, and a pin named after the request would never
+        // match the file named after the answer.
         const hook = superpowers ? superpowersText() : '';
+        // Asked BEFORE anything is composed: on a pinned hit there is nothing to
+        // compose, nothing to write, and — deliberately — no `_AF/BRIEF.md`
+        // refresh either. A resumed conversation is not re-briefed; that is the
+        // point. The freshest brief is always one `_AF/BRIEF.md` read away.
+        // The rule itself is `resolveContextTarget`, where it can be measured.
+        const target = resolveContextTarget({
+            contextDir, pinnedDir, resume, join: path.join,
+            base: contextFileName(
+                (projectId ? projectStore.get(projectId)?.id : '') ?? '', audience, !!hook),
+            exists: f => { try { return fs.statSync(f).size > 0; } catch { return false; } }
+        });
+        if (target.serve) {
+            return isQuotableContextPath(target.serve) ? target.serve : undefined;
+        }
+        const c = composeProjectContext(projectId, audience);
         if (!c && !hook) { return undefined; }
         // ‼️ X-94 — only a SESSION spawn refreshes the folder's own copy; see
         // `composeProjectContext`. A mission writes nothing into the project.
         if (c && c.hasFolder && audience === 'session') { writeBrief(c.folder, c.brief); }
         const text = [c?.text, hook].filter(t => !!t).join('\n\n');
-        const file = path.join(contextDir, contextFileName(c?.project.id ?? '', audience, !!hook));
+        const file = target.write as string;
         try {
-            fs.mkdirSync(contextDir, { recursive: true });
+            fs.mkdirSync(path.dirname(file), { recursive: true });
             fs.writeFileSync(file, text, 'utf8');
         } catch {
             return undefined;   // no context beats a half-written one
@@ -3230,9 +3323,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // dropping their answer silently is the one outcome neither rule
             // was written for. Absent (`undefined`) leaves the line exactly as
             // it was — every task written before this behaves identically.
+            // ‼️ X-267 — A ROUND IS A RESUME, so it is handed the conversation's
+            // PINNED context (`pinnedContextFileName`). Round 2 used to be given
+            // a freshly generated one, which changed the system prompt and threw
+            // away the prefix cache holding round 1 — the whole conversation,
+            // re-billed as cache creation, on every round.
             projectContextFile: (task) => systemPromptFileFor(
                 task.projectId, task.missionId ? 'mission' : 'session',
-                task.superpowers ?? (!task.missionId && superpowersOnFor(task.agentName))),
+                task.superpowers ?? (!task.missionId && superpowersOnFor(task.agentName)),
+                task.resumeSessionId),
+            pinProjectContext,
             // I5: rule-based model routing + quota-pressure downgrade.
             modelArgsFor: (task) => {
                 const quotaPct = windowPct();
@@ -5209,10 +5309,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // there is one brief and one budget for it — never a second
                 // copy pasted into the briefing prose.
                 //
-                // ‼️ ON THE FIRST CALL ONLY. Every later round is a `--resume`
-                // of the same session: the brief is already in that
-                // conversation, and repeating it would pay for the same tokens
-                // once per round for the whole run.
+                // ‼️ X-267 — ON EVERY CALL, AND ON A ROUND IT IS THE PINNED COPY.
+                //
+                // This used to be first-call-only, on the belief that "the brief
+                // is already in that conversation". It is not: an appended system
+                // prompt is not a message and does not survive `--resume`
+                // (measured, smoke_project_context.mjs), so every round after the
+                // first ran with no project at all. And it was not even cheap —
+                // REMOVING a block from the system prompt changes it exactly as
+                // much as rewriting one does, so round 2 threw away round 1's
+                // prefix cache and re-billed the whole conversation. Same defect
+                // as the Console's, running the other way round.
                 //
                 // ‼️ X-94 — AND IT IS THE MISSION'S COPY OF THE BRIEF, not a
                 // session's. The lead is told what the project IS and where its
@@ -5221,7 +5328,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // instruction to write into any of them. A mission arrives with
                 // an objective — the project's standing queues are a different
                 // subject, and they were being paid for on every run.
-                const ctxFile = resumeSessionId ? undefined : systemPromptFileFor(spec.projectId, 'mission');
+                const ctxFile = systemPromptFileFor(
+                    spec.projectId, 'mission', false, resumeSessionId);
                 const command = plannerCommand({
                     launch,
                     disallowedTools: MISSION_PLANNER_DISALLOWED_TOOLS,
@@ -5231,6 +5339,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 let settled = false;
                 const done = (r: PlannerResult & { subtype?: string }) => {
+                    // ‼️ X-267 — and the round that follows is told the same
+                    // thing in the same bytes, so file them under the
+                    // conversation this call turned out to open.
+                    if (!resumeSessionId && ctxFile && r.sessionId) {
+                        pinProjectContext(r.sessionId, ctxFile);
+                    }
                     if (!settled) { settled = true; resolve(r); }
                 };
                 try {
@@ -21807,7 +21921,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         () => 'claude',
         sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid,
         () => activeProjectId() || undefined,
-        (projectId, superpowers) => systemPromptFileFor(projectId, 'session', !!superpowers),
+        (projectId, superpowers, resume) =>
+            systemPromptFileFor(projectId, 'session', !!superpowers, resume),
         (threadId, force) => codexCtxProbe.read(threadId, { force: !!force }),
         // ‼️ K-25 — ONE shared `opencode acp` process for the whole window, and
         // it is handed IN rather than built inside the host: the host has to stay
@@ -29039,8 +29154,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // bypass session that quietly starts asking is the same
                         // failure with a longer fuse.
                         permission: resolveLaunchPermission(merged.permissionMode, cwd ?? ''),
+                        // ‼️ X-267 — …and a resume gets the conversation's PINNED
+                        // context, not a fresh one: regenerating it changes the
+                        // system prompt and re-bills the whole thread.
                         projectContextFile: systemPromptFileFor(own || undefined, 'session',
-                            superpowersOnFor(s.agentName))
+                            superpowersOnFor(s.agentName), s.sessionId)
                     }),
                     launchAccountEnv({ engine, account }),
                     // '' = do not stamp. A resume does not decide where a session

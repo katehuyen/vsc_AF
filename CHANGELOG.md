@@ -2,6 +2,62 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.0 - a resume was regenerating its own system prompt, and paying for the whole conversation again (2026-09-09)
+
+**X-267.** Console session `4b0c8af8` was resumed after a 29-second extension-host
+restart. Anthropic's answer on the first turn back, from the transcript:
+
+```
+"diagnostics": { "cache_miss_reason": {
+    "type": "system_changed", "cache_missed_input_tokens": 219488 } },
+"usage": { "cache_creation_input_tokens": 303987, "cache_read_input_tokens": 14811 }
+```
+
+**303,987 tokens re-billed as cache creation** on a conversation that had not
+changed by one character — the 5-hour window went from 72% to 96% in a second.
+`system_changed` names it exactly: Agent Farm re-**generated** the project
+context on every spawn, and that text carries a `generated HH:MM` stamp and the
+project's latest worklog lines — lines the resumed session had itself just
+written. A prefix cache matches from byte zero, so one changed minute in the
+system prompt throws away every token behind it.
+
+The context genuinely does **not** survive `--resume` (measured long ago,
+`smoke_project_context.mjs`), so dropping the flag would delete the feature to
+save the cache. What a resume gets now is the **pinned copy**: the same bytes
+that opened the conversation.
+
+- **The pin.** `core/projectContext.ts` — `pinnedContextFileName` (the CLI
+  session id plus the ordinary file's name, so project, audience and the
+  Superpowers switch are all still in the key) and `resolveContextTarget`, which
+  is the whole rule with no filesystem in it: serve the pin · write **into** the
+  pinned slot when a resume has none yet · use the shared per-project file on a
+  fresh spawn.
+- **Three resume paths were regenerating it.** The **Console** (`consolehost.ts`
+  now names the conversation it is continuing, and takes the pin itself once the
+  `init` line reports the id), **headless rounds** (`tasks.ts` — the loudest
+  case: a round is a `--resume`, so the whole thread was re-billed once per
+  round), and the **OS terminal resume**.
+- **And a fourth was DROPPING it, which is the same defect running the other
+  way.** The mission planner passed no context file on a round at all, on the
+  belief that the brief was already in the conversation. It was not — an
+  appended system prompt is not a message and does not survive `--resume` — so
+  every mission round after the first ran with **no project**; and removing a
+  block from a system prompt changes it exactly as much as rewriting one, so it
+  re-billed the thread regardless. It now gets the pinned copy like everything
+  else, which restores the brief *and* the cache.
+- **A resume is no longer re-briefed, on purpose.** A pinned hit composes
+  nothing and does not refresh `_AF/BRIEF.md` either. The freshest brief is
+  always one `_AF/BRIEF.md` read away; a fresher worklog line is not worth the
+  conversation's whole prefix cache.
+- **And it fixed the overwrite race for free.** A resume with no pin writes into
+  its own slot, so another window spawning under the same project can no longer
+  replace the bytes underneath it.
+- **Known limit, stated rather than hidden:** a conversation that started before
+  this build has no pin, so its *next* resume composes one and pays one last
+  cache miss. Every resume after that is free.
+- `test_context_pin.js` (29) pins the rule, both wirings and all four call
+  sites.
+
 ## 3.452.0 - the page that came back came back twice, so it was taken back out (2026-09-09)
 
 The half of 3.451.0 that reopened the Console PAGE after a revive is withdrawn.
@@ -32,7 +88,7 @@ asked before it is built.
 
 X-232 brings a Console conversation through a restart. Two things it did not
 bring, both reported by the user in one breath, and both the same measured
-fact as X-266: inside `activate()` the transcript index has answered NOTHING
+fact as X-267: inside `activate()` the transcript index has answered NOTHING
 yet, so everything read off it at that moment comes back empty.
 
 - **What the conversation already spent comes back too.** `carried` is read off

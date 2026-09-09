@@ -176,8 +176,15 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         // ‼️ And the project context goes on EVERY spawn built here — first
         // start and resume alike, because it is not inherited across --resume
         // (measured: test/smoke_project_context.mjs).
+        //
+        // ‼️ X-267 — …AND A RESUME SAYS WHICH CONVERSATION IT IS, so it is
+        // answered with that conversation's PINNED copy rather than with today's
+        // text. Regenerating it changes the system prompt, and a changed system
+        // prompt throws away the prefix cache holding the whole thread — 303,987
+        // tokens re-billed for a 29-second restart (test/test_context_pin.js).
         ok('…and the same spawn asks for that project\'s context file',
-            /hostArgs\(\{[\s\S]{0,160}projectContextFile: this\.projectContextFile\(projectId, superpowers\)[\s\S]{0,20}\}\)/.test(host));
+            /hostArgs\(\{[\s\S]{0,200}projectContextFile: ctxFile[\s\S]{0,20}\}\)/.test(host)
+            && /const ctxFile = this\.projectContextFile\(projectId, superpowers, init\.resume\);/.test(host));
         // ‼️ K-22 — and the SAME spawn carries the resolved permission decision,
         // not the raw picker value: the flag that enforces bypass is chosen
         // from this, and choosing it anywhere else is how a card came to say

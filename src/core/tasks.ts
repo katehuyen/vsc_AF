@@ -1546,8 +1546,21 @@ export interface TaskManagerOptions {
      * project the task was CREATED under (`task.projectId`). Undefined = no
      * project, and then no flag is added at all: a session with no project must
      * look exactly as it did before this existed.
+     *
+     * ‼️ X-267 — …EXCEPT ON A ROUND, which is a `--resume` of the conversation
+     * the previous round spoke in. There the caller answers with that
+     * conversation's PINNED context (it reads `task.resumeSessionId`), because a
+     * regenerated one is a CHANGED system prompt and pays for the whole thread
+     * again as cache creation — see `core/projectContext.ts`.
      */
     projectContextFile?: (task: FarmTask) => string | undefined;
+    /**
+     * ‼️ X-267 — file the bytes this run really sent under the conversation it
+     * turned out to open, so its next round can be given them unchanged. Called
+     * once per run, at the moment the transcript binding names the session
+     * (`setRunProgress`).
+     */
+    pinProjectContext?: (sessionId: string, file: string) => void;
     /** The window's active project, read when a task is CREATED (see addTask). */
     activeProjectId?: () => string | undefined;
     /** J5: alternative CLI profiles ({prompt}/{args} templates). */
@@ -1644,6 +1657,16 @@ function putPlanRow<T extends PlanDefinition>(list: T[], at: number, item: T): n
 
 export class TaskManager implements vscode.Disposable {
     tasks: FarmTask[] = [];
+    /**
+     * ‼️ X-267 — the context file a RUNNING task's command line carried, waiting
+     * for the transcript binding to say which conversation it opened.
+     *
+     * In memory on purpose: it is only meaningful between a spawn and the
+     * binding that follows it minutes later, and a window that restarts in
+     * between has no run left to pin for. It costs at most one cache miss on
+     * that run's next round, which then pins itself.
+     */
+    private pinSource = new Map<string, string>();
     schedules: FarmSchedule[] = [];
     templates: FarmTemplate[] = [];
     workflows: FarmWorkflow[] = [];
@@ -2145,6 +2168,15 @@ export class TaskManager implements vscode.Disposable {
         if (!t) { return false; }
         let changed = false;
         if (p.sessionId && t.runSessionId !== p.sessionId) { t.runSessionId = p.sessionId; changed = true; }
+        // ‼️ X-267 — and now that the run has a conversation, the context it was
+        // launched with can be filed under it for the next round. Once per run:
+        // this is re-derived on every pump, and the pin must be the FIRST
+        // spawn's bytes rather than whichever call happened to look last.
+        const pinSrc = p.sessionId ? this.pinSource.get(taskId) : undefined;
+        if (p.sessionId && pinSrc) {
+            this.pinSource.delete(taskId);
+            this.opts.pinProjectContext?.(p.sessionId, pinSrc);
+        }
         if (p.file && !t.costSessionFile) { t.costSessionFile = p.file; changed = true; }
         const next: RunProgress = {
             assistantSteps: p.assistantSteps, toolCalls: p.toolCalls,
@@ -3725,6 +3757,11 @@ export class TaskManager implements vscode.Disposable {
         const ctxFile = this.opts.projectContextFile?.(task);
         if (ctxFile && !ctxFile.includes('"') && !perTurn) {
             extra = (extra ? extra + ' ' : '') + `--append-system-prompt-file "${ctxFile}"`;
+            // ‼️ X-267 — remember what really went out, so the round that
+            // resumes this conversation can be handed the same bytes. Only a
+            // run that is OPENING one: a round was already given the pin, and
+            // re-filing it would be the fix overwriting itself.
+            if (!task.resumeSessionId) { this.pinSource.set(task.id, ctxFile); }
         }
         // ‼️ S-19 — CLAUDE'S RESUME, ON CLAUDE'S PATH. The persistent engine's
         // task command is a string, so its resume flag joins the other flags —

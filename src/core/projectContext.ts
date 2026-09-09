@@ -20,6 +20,9 @@
  *    at the space.
  *  - The context is LOST on `--resume`. It has to be passed again on every
  *    spawn — see `hostArgs`, which is the single place that does it.
+ *  - ‼️ …AND ON A RESUME IT IS PASSED AS THE **PINNED COPY**, byte for byte,
+ *    or the prefix cache behind the whole conversation is thrown away — see
+ *    `pinnedContextFileName` for the measurement that cost 304k tokens.
  *
  * Everything here is pure: text in, text out. The file writing lives with the
  * caller that has a filesystem to write to.
@@ -197,6 +200,80 @@ export function contextFileName(
     const id = String(projectId ?? '').replace(/[^A-Za-z0-9_-]/g, '') || 'noproject';
     const sp = superpowers ? '-sp' : '';
     return audience === 'mission' ? `${id}-mission${sp}.txt` : `${id}${sp}.txt`;
+}
+
+/**
+ * ‼️ X-267 — THE PINNED COPY: the same bytes this conversation was started with.
+ *
+ * The context has to be passed again on every spawn (the measurement above) —
+ * but a system prompt that is REGENERATED on a resume is a system prompt that
+ * has CHANGED, and the whole prefix cache dies with it. Measured on session
+ * `4b0c8af8` (Console, an extension-host restart 29 seconds long): Anthropic
+ * answered `cache_miss_reason: {type: "system_changed"}` and billed
+ * **303,987 tokens as cache creation** against 14,811 read — one restart took
+ * the 5-hour window from 72% to 96%. Nothing in the conversation had changed;
+ * the brief's own `generated HH:MM` stamp and a worklog line the session itself
+ * had just written were enough.
+ *
+ * So the file a resume is given is a COPY, taken at the spawn that opened the
+ * conversation and never rewritten: same text, same bytes, cache intact. The
+ * name carries the CLI's session id and the ordinary name of the file it was
+ * taken from — so project, audience and the Superpowers switch are all still in
+ * it, and changing any of them is a different pin rather than a stale one being
+ * served silently.
+ */
+export function pinnedContextFileName(sessionId: string, base: string): string {
+    const sid = String(sessionId ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) || 'nosession';
+    return `${sid}--${base}`;
+}
+
+/** A CLI session id we can key a pinned copy by. Junk (an empty id, a path
+ *  fragment) is refused rather than collapsed into a shared `nosession` slot
+ *  that two conversations would then take turns overwriting. */
+export function isPinnableSessionId(sessionId: string | undefined): boolean {
+    return /^[A-Za-z0-9_-]{6,64}$/.test(String(sessionId ?? '').trim());
+}
+
+/** Which file this spawn is handed, and whether anything has to be composed
+ *  into it first. Exactly one of the two is set. */
+export interface ContextTarget {
+    /** hand this over untouched — the conversation's own pinned copy */
+    serve?: string;
+    /** compose today's text and write it HERE, then hand that over */
+    write?: string;
+}
+
+/**
+ * ‼️ X-267 — THE WHOLE DECISION, in one place and with no filesystem in it.
+ *
+ * Three cases and they are genuinely different:
+ *
+ *  - **a resume with a pin** → serve it. Nothing is composed, nothing is
+ *    written, `_AF/BRIEF.md` is not refreshed: a conversation is not re-briefed
+ *    mid-flight, because doing so is what costs its whole prefix cache.
+ *  - **a resume with no pin yet** → compose, but write it INTO the pinned slot
+ *    rather than the shared per-project file. Two things at once: this
+ *    conversation's next resume is free, and the bytes cannot be overwritten in
+ *    between by another window spawning under the same project — which is the
+ *    race that would make a "pin" a copy of somebody else's system prompt.
+ *  - **a fresh spawn** → the shared per-project file, exactly as before. Its pin
+ *    is taken later, from these bytes, once the CLI says which conversation they
+ *    opened.
+ *
+ * `exists` and `join` are injected so the rule can be exercised without a disk
+ * and without a platform; the caller owns the reading and the writing
+ * (`extension.ts`, which passes `path.join`).
+ */
+export function resolveContextTarget(o: {
+    contextDir: string; pinnedDir: string; base: string; resume?: string;
+    exists: (file: string) => boolean;
+    join: (dir: string, name: string) => string;
+}): ContextTarget {
+    const pin = isPinnableSessionId(o.resume)
+        ? o.join(o.pinnedDir, pinnedContextFileName(String(o.resume).trim(), o.base))
+        : '';
+    if (pin) { return o.exists(pin) ? { serve: pin } : { write: pin }; }
+    return { write: o.join(o.contextDir, o.base) };
 }
 
 /**
