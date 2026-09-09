@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.6 - the sentry scenes were drawn in words the product does not have (audit B-02) (2026-09-10)
+
+The surface sweep of Missions, the most-touched page in the corpus. A-12.8 had
+added four scenes because the sentry chip's own states had never been drawn —
+and three of them were drawn from vocabulary nobody writes.
+
+- **BLOCKED said `no-item`, and there is no such rule.** An empty backlog is not
+  blocked at all: it is `idle` / `nothing-to-take`, because only the user ends a
+  campaign. Its sentence ended in a bare `⛔` — a mark that belongs on a backlog
+  line, not a word — so on screen the reason read as cut off mid-thought. The
+  scene added to prove "the panel carries the reason" was carrying a reason
+  nobody could ever meet. It now carries `pool-empty` verbatim, the longest one
+  the product really writes, which is also the honest test of this line's 150
+  character cap and its panel.
+- **WAITING said `finish` / `round-ended`.** `finish` belongs to MISSIONS, a
+  different machine; `SentryAction` is `start | sleep | idle | blocked |
+  stopped`. The chip reaches WAITING as its fall-through, so an invented action
+  landed on the right picture for the wrong reason while the panel's header read
+  "finish — round-ended" over a `why` about starting X-178.
+- **Five scenes were idle and mid-round at once.** Every state derived from
+  `sentry-live` sets `running: false, live: null` and went on inheriting a round
+  table whose last row said `running` with no `endedAt`.
+- **And settling that row exposed a real one: `Took -24m`.** The round table's
+  duration was `Math.round(endedAt - createdAt)` with no floor, so a row whose
+  stamps are out of order printed a round that finished before it began. The run
+  table one screen up in the same file already clamps the identical figure.
+- **`test_sentry_fixture_truth.js`** reads the vocabulary out of `src/` — the
+  declared union for actions, a scrape that understands ternaries for rules —
+  and holds every fixture against it, so the next invented word is red before it
+  is ever photographed. Bitten four ways.
+- The why panel is named `sentry-why`, so `render_page.js --tip` can open it.
+  Past 150 characters that panel is the only place the whole reason exists.
+
+Looked at, not read, one scene at a time: `missions.s8.png` · `s9.png` ·
+`s10.png` · `missions.light.s10.png`. 325 files, 20,323 passed, 0 failed.
+
 ## 3.453.5 - a picker standing in the middle of the text, over nothing (audit B-01) (2026-09-10)
 
 The Live Timeline's "Swim lanes" paragraph explains the controls that live IN A

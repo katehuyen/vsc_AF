@@ -776,6 +776,25 @@ const SENTRY_LIVE = Object.assign({
     ]
 }, SENTRY_DEFAULTS);
 
+/**
+ * ‼️ B-02 — A SCENE WITH NOTHING ON THE BOARD MAY NOT SHOW A ROUND STILL
+ * RUNNING. Every state below `sentry-live` is derived from it and sets
+ * `running: false, live: null` — and every one of them went on inheriting a
+ * round table whose last row said `running` with no `endedAt`. Five pictures,
+ * each of a campaign that is simultaneously idle and mid-round, and each of
+ * them signed off. This settles the open round the way the real one would be:
+ * it ended, and the table says when. */
+const settled = (endedMinsAgo) => SENTRY_LIVE.rounds.map(r => r.status !== 'running' ? r
+    // ‼️ AND IT MOVES THE START TOO. The live round opened 12 minutes ago; a
+    // scene that ended it "36 minutes ago" and left that start where it was drew
+    // `Took -24m` on the screen — a round that finished before it began. The
+    // whole row moves: it ran its hour and ended when this scene says it did.
+    : Object.assign({}, r, {
+        status: 'done',
+        createdAt: Date.now() - (endedMinsAgo + 60) * 60 * 1000,
+        endedAt: Date.now() - endedMinsAgo * 60 * 1000
+    }));
+
 /** Paused, asleep, and carrying the words it will open on when it is let go. */
 const SENTRY_HELD = Object.assign({}, SENTRY_LIVE, {
     campaign: Object.assign({}, SENTRY_LIVE.campaign, {
@@ -785,7 +804,7 @@ const SENTRY_HELD = Object.assign({}, SENTRY_LIVE, {
             + 'earliest reset plus 3 minutes of safety',
         wakeAt: Date.now() + 96 * 60 * 1000
     }),
-    running: false,
+    rounds: settled(31), running: false,
     live: null,
     nextWords: {
         code: 'X-178',
@@ -820,25 +839,46 @@ const SENTRY_SLEEPING = Object.assign({}, SENTRY_LIVE, {
         lastWhy: 'every account is at or above 95% of its five-hour window',
         wakeAt: Date.now() + 96 * 60 * 1000
     }),
-    running: false, live: null
+    rounds: settled(36), running: false, live: null
 });
 
-/** It wanted to open a round and could not — a block is not a stop. */
+/** It wanted to open a round and could not — a block is not a stop.
+ *
+ * ‼️ B-02 — THE RULE AND THE SENTENCE ARE THE PRODUCT'S OWN, VERBATIM. This
+ * scene used to draw `no-item` and a sentence ending in a bare `⛔`, and neither
+ * exists: the product writes seven blocked rules (`user-paused` · `gate:*` ·
+ * `no-prompt` · `no-usable-account` · `pool-empty` · `no-agent` · `no-backlog`)
+ * and an empty backlog is not one of them at all — that case is `idle` /
+ * `nothing-to-take`, because only the user ends a campaign. So the picture
+ * A-12.8 added to prove "the panel has to carry the reason" was carrying a
+ * reason nobody could ever meet, and the reader met a sentence that reads as
+ * cut off. `pool-empty` is used here because it is the longest one the product
+ * really writes, which makes it the honest test of how this line wraps.
+ * Source: src/core/sentryRun.ts and the `applySentry` calls in src/extension.ts.
+ */
 const SENTRY_BLOCKED = Object.assign({}, SENTRY_LIVE, {
     campaign: Object.assign({}, SENTRY_LIVE.campaign, {
-        status: 'running', lastAction: 'blocked', lastRule: 'no-item',
-        lastWhy: 'the project backlog has no item this campaign may take: every open one is '
-            + 'either a container or is waiting on an unfinished ⛔'
+        status: 'running', lastAction: 'blocked', lastRule: 'pool-empty',
+        lastWhy: 'none of the accounts this campaign is allowed to use is captured any more '
+            + '(murvietnam@gmail.com, murposta2@gmail.com) — capture them again on the Engines '
+            + 'page, or stop the campaign and start it on a pool that exists'
     }),
-    running: false, live: null
+    rounds: settled(18), running: false, live: null
 });
 
-/** Between rounds: nothing on the board and nothing in the way. */
+/** Between rounds: nothing on the board and nothing in the way.
+ *
+ * ‼️ B-02 — IT KEEPS THE PLAN THAT STARTED THE ROUND THAT JUST ENDED, because
+ * that is the last plan there was. It used to say `finish` / `round-ended`, and
+ * neither exists: `SentryAction` is `start | sleep | idle | blocked | stopped`
+ * (`finish` belongs to MISSIONS, a different machine), and no rule of that name
+ * is written anywhere. The chip reaches WAITING as the FALL-THROUGH — not sleep,
+ * not blocked, not running — so an invented action landed on the right picture
+ * for the wrong reason, and the panel's own header read "finish — round-ended"
+ * over a `why` about starting X-178. */
 const SENTRY_WAITING = Object.assign({}, SENTRY_LIVE, {
-    campaign: Object.assign({}, SENTRY_LIVE.campaign, {
-        status: 'running', lastAction: 'finish', lastRule: 'round-ended'
-    }),
-    running: false, live: null,
+    campaign: Object.assign({}, SENTRY_LIVE.campaign, { status: 'running' }),
+    rounds: settled(5), running: false, live: null,
     nextWords: {
         code: 'X-178', at: Date.now() - 4 * 60 * 1000,
         prompt: 'Take the next item on PRS.MuratVural_DEV_VSC.AgentFarm: X-178.'
@@ -852,7 +892,7 @@ const SENTRY_STOPPED = Object.assign({}, SENTRY_LIVE, {
         stoppedWhy: 'three rounds failed in a row — the failure brake stopped it',
         failStreak: 3
     }),
-    running: false, live: null
+    rounds: settled(19), running: false, live: null
 });
 
 const data = (over) => Object.assign({

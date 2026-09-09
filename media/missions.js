@@ -3393,10 +3393,17 @@
     function sentryWhy(c) {
         if (!c || !c.lastWhy) { return ''; }
         const short = C.esc(c.lastWhy.length > 150 ? c.lastWhy.slice(0, 150) + '…' : c.lastWhy);
+        // ‼️ B-02 — NAMED, so `render_page.js --tip sentry-why` can open it. Once
+        // the line is over 150 characters this panel is the ONLY place the whole
+        // reason exists, and an unnamed panel can be reached only by counting
+        // every `af-tipw` on the page — which moves the moment anything else
+        // grows a hover. The longest reason the product really writes
+        // (`pool-empty`) is past the cap, so this is not a hypothetical.
         return window.AFTip.wrap(
             `<span class="swhy">${short}</span>`,
             `${c.lastAction || 'plan'} — ${c.lastRule || ''}`,
-            window.AFTip.lines([c.lastWhy, '', 'decided ' + sentryWhen(c.lastAt)]));
+            window.AFTip.lines([c.lastWhy, window.AFTip.GAP, 'decided ' + sentryWhen(c.lastAt)]),
+            'sentry-why');
     }
 
     /**
@@ -3471,7 +3478,14 @@
         const rows = s.rounds.slice().reverse().slice(0, 12).map(r => {
             const cls = r.status === 'done' ? 'ok' : (r.status === 'failed' ? 'bad'
                 : (r.status === 'cancelled' ? 'wait' : 'live'));
-            const mins = r.endedAt && r.createdAt ? Math.round((r.endedAt - r.createdAt) / 60000) : null;
+            // ‼️ B-02 — NEVER NEGATIVE. A row whose `endedAt` is before its
+            // `createdAt` drew `Took -24m` on the screen: a round that finished
+            // before it began, printed without a word. The run table one screen
+            // up already clamps the same figure (`Math.max(0, …)`); this is that
+            // rule, not a new one. The stamps themselves stay in the panel, so
+            // an inconsistent record is still readable rather than hidden.
+            const mins = r.endedAt && r.createdAt
+                ? Math.max(0, Math.round((r.endedAt - r.createdAt) / 60000)) : null;
             /**
              * ‼️ X-196 — A THIN CELL IS A BUG. `20m` and a full date each imply
              * three or four figures the row already knows, and every one of
