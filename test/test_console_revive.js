@@ -225,15 +225,19 @@ const live = (over = {}) => ({
 }
 
 // ---------------------------------------------------------------------------
-// ‼️ THE TWO HALVES THE REVIVE USED TO LEAVE BEHIND: what the conversation had
-// already SPENT, and the PAGE that was showing it.
+// ‼️ WHAT THE CONVERSATION HAD ALREADY SPENT, which the revive used to leave
+// behind — the same measured fact as the scrollback retry above: inside
+// `activate()` the transcript index has answered NOTHING yet, so `carried` was
+// always `undefined` and the card came back counting from zero.
 //
-// Both come from the same measured fact as the scrollback retry — inside
-// index answers `undefined` for every id — and both were reported by the user
-// in the same breath: the card came back counting from zero, and the Console
-// page did not come back at all (VS Code restores no webview of ours; there is
-// no panel serializer, which is asserted below so that adding one later cannot
-// leave two mechanisms fighting over the same tab).
+// ‼️ AND THE HALF THAT WAS TAKEN BACK OUT, written down so nobody adds it
+// again the same way. Reopening the Console PAGE from the revive gives the
+// reader TWO pages — measured on the user's screen: VS Code leaves the old
+// webview tab where it is (there is no serializer to re-attach it) and a page
+// opened by us is a second one beside it. The tab is VS Code's to restore, so
+// the only honest way in is a `WebviewPanelSerializer` that adopts the tab
+// that is already there. Until that exists, the revive brings the conversation
+// back and the page stays the reader's to open.
 // ---------------------------------------------------------------------------
 {
     const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
@@ -247,31 +251,15 @@ const live = (over = {}) => ({
     ok('…the baseline is read off the same index row the resume list reads',
         /const past = index\.byId\(p\.sessionId\);[\s\S]{0,200}carriedTotals\(past\)/.test(extTs));
 
-    ok('‼️ the stamp records whether the PAGE was open, while the host is still up',
-        /consoleOpen: ConsolePanel\.isOpen\(\)/.test(extTs));
-    ok('…and a page that was NOT open is not opened for the reader',
-        /if \(!stamp\?\.consoleOpen\) \{ reopenConsoleSeat = undefined; \}/.test(extTs));
-    ok('…the seat it reopens on is the one that was mid-turn, else the first',
-        /if \(!reopenConsoleSeat \|\| row\.midTurn\) \{ reopenConsoleSeat = seatId; \}/.test(extTs));
-
-    // ‼️ THE ORDER IS THE WHOLE REASON THIS IS A VARIABLE. `reviveAfterRestart`
-    // runs before the panel's dependencies exist, so opening the page from
-    // inside it would be a use-before-declaration — a crash on every restart.
-    const declAt = extTs.indexOf('let reopenConsoleSeat: string | undefined;');
-    const reviveAt = extTs.indexOf('const reviveAfterRestart = (): void => {');
-    const depsAt = extTs.indexOf('const consoleDeps = {');
-    const showAt = extTs.indexOf('ConsolePanel.show(consoleDeps, { sessionId: seat })');
-    ok('‼️ all four landmarks are findable — a rename must fail here, not go quiet',
-        declAt > 0 && reviveAt > 0 && depsAt > 0 && showAt > 0);
-    ok('the seat is declared before the revive that fills it', declAt < reviveAt);
-    ok('‼️ …and the page is opened AFTER the panel\'s dependencies are built',
-        depsAt < showAt);
-    ok('…deferred, because activation is not the place to build a webview',
-        /setTimeout\(\(\) => \{\s*\n\s*try \{ ConsolePanel\.show\(consoleDeps, \{ sessionId: seat \}\); \}/.test(extTs));
-    ok('…and a page that will not open never takes the revive down with it',
-        /catch \{ \/\* the seat is live either way; the page is the extra \*\/ \}/.test(extTs));
-
-    ok('‼️ …and there is still no webview serializer, which is why this exists at all',
+    // ‼️ THE WITHDRAWN HALF, pinned as an absence. Two of these three would
+    // have to change together for the page to be restored honestly, and a
+    // serializer arriving on its own — or a `show` call from the revive on its
+    // own — is the two-tab bug coming back.
+    ok('‼️ no page is opened from the revive — the old tab is still on screen',
+        !/reopenConsoleSeat/.test(extTs));
+    ok('…and nothing records whether it was open, because nothing acts on it',
+        !/consoleOpen/.test(extTs));
+    ok('…and there is still no webview serializer, which is WHY the tab cannot be re-attached; whoever adds one owns that tab and must not open a second',
         !/registerWebviewPanelSerializer/.test(extTs));
 }
 

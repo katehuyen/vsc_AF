@@ -752,19 +752,6 @@ export class ConsolePanel {
         ConsolePanel.current?.refresh();
     }
 
-    /**
-     * Is the Console page open at all?
-     *
-     * ‼️ X-232 — the restart stamp asks this before the host goes down, because
-     * a revive that brings the CONVERSATION back and leaves the reader looking
-     * at an empty editor has done half the job: the session is live, the page
-     * that shows it is not, and nothing on screen says the card exists. VS Code
-     * restores no webview of ours by itself (there is no panel serializer), so
-     * this is the only record that the page was there.
-     */
-    static isOpen(): boolean {
-        return !!ConsolePanel.current;
-    }
 
     /**
      * Is the user looking at THIS conversation right now?

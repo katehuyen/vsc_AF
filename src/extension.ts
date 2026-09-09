@@ -15348,10 +15348,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         at: number; kind: string; fromBootId: string; fromVersion: string;
         /** X-232 — the sessions to take up on the other side, and the ones that could not be */
         revive?: ReviveRow[]; skipped?: ReviveSkip[];
-        /** X-232 — whether the Console PAGE was open when the host went down, so
-         *  the revive can put it back rather than leaving a live card behind an
-         *  editor nobody opened (see `ConsolePanel.isOpen`). */
-        consoleOpen?: boolean;
     }
     const readRestartStamp = (): RestartStamp | null => {
         try { return JSON.parse(fs.readFileSync(restartStampFile, 'utf8')) as RestartStamp; }
@@ -15366,8 +15362,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             fs.mkdirSync(path.dirname(restartStampFile), { recursive: true });
             fs.writeFileSync(restartStampFile, JSON.stringify({
                 at: Date.now(), kind, fromBootId: bootId, fromVersion: extVersion,
-                revive: plan?.rows, skipped: plan?.skipped,
-                consoleOpen: ConsolePanel.isOpen()
+                revive: plan?.rows, skipped: plan?.skipped
             }, null, 2), 'utf8');
         } catch { /* the cooldown is a guard, not a precondition */ }
     };
@@ -22830,15 +22825,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         attempt(sub);
     };
 
-    /**
-     * ‼️ X-232 — THE SEAT WHOSE PAGE HAS TO BE PUT BACK ON SCREEN.
-     *
-     * Set by the revive, read once `consoleDeps` exists — which is why it is a
-     * variable and not a call: the revive runs before the panel's dependencies
-     * are built, and reaching for them there would be a use-before-declaration.
-     */
-    let reopenConsoleSeat: string | undefined;
-
     const reviveAfterRestart = (): void => {
         const stamp = readRestartStamp();
         const rows = stamp?.revive ?? [];
@@ -22897,9 +22883,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // The user's decision. Only for a seat that was mid-turn: see
                 // REVIVE_NUDGE for why an idle one is deliberately left alone.
                 if (row.midTurn) { nudgeRevived(seatId); }
-                // The page comes back on the seat the reader would want: the one
-                // that was mid-turn if there is one, otherwise the first.
-                if (!reopenConsoleSeat || row.midTurn) { reopenConsoleSeat = seatId; }
                 back.push(row.agentName);
             } catch (e) {
                 lost.push({
@@ -22908,11 +22891,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
             }
         }
-        // ‼️ …AND ONLY IF THE PAGE WAS THERE. A Console session can outlive the
-        // page that started it — the reader closes the tab and the conversation
-        // keeps working — and opening an editor nobody asked for is not a
-        // recovery. The stamp recorded the answer while the host was still up.
-        if (!stamp?.consoleOpen) { reopenConsoleSeat = undefined; }
         /**
          * ‼️ AND THE READ IS TRIED AGAIN, because the first one could
          * never have worked.
@@ -23193,30 +23171,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return id;
     };
 
-    /**
-     * ‼️ X-232 — THE PAGE COMES BACK WITH THE CONVERSATION.
-     *
-     * The revive puts the seat back and says so in a notification; until now
-     * that was the only sign of it, because VS Code restores no webview of ours
-     * (we register no panel serializer) and the reader was left with a live card
-     * behind an editor that never reopened. So the session was working and the
-     * screen said nothing — which is the same complaint X-232 was opened for,
-     * one layer up.
-     *
-     * Deferred rather than opened inline: activation is not the place to build a
-     * webview, and a page that opens one tick later opens on a window that has
-     * finished starting. It is a best effort by design — a failure here must
-     * never take the revive down with it, because the conversation is the part
-     * that matters.
-     */
-    if (reopenConsoleSeat) {
-        const seat = reopenConsoleSeat;
-        reopenConsoleSeat = undefined;
-        setTimeout(() => {
-            try { ConsolePanel.show(consoleDeps, { sessionId: seat }); }
-            catch { /* the seat is live either way; the page is the extra */ }
-        }, 0);
-    }
 
     /**
      * What that hosted conversation is doing, in the words the queue asks in.

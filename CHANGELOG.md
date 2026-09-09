@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.452.0 - the page that came back came back twice, so it was taken back out (2026-09-09)
+
+The half of 3.451.0 that reopened the Console PAGE after a revive is withdrawn.
+Measured on the user's screen: the reader got **two Console tabs**. VS Code
+leaves the old webview tab exactly where it was when the host went down — it
+just never re-attaches it, because we register no panel serializer — so a page
+opened by the revive is a *second* tab beside the dead one, not a recovery.
+
+- **Withdrawn:** `consoleOpen` on the restart stamp, `ConsolePanel.isOpen()`,
+  and the deferred `ConsolePanel.show()` at the end of the revive.
+- **Kept:** everything the same release fixed about the numbers. The revived
+  card still carries its conversation's own totals (turns, tokens, cost) rather
+  than counting from zero — that half was verified live, twice, and is not
+  touched here.
+- **Pinned as an absence, not as a comment.** `test_console_revive.js` now
+  asserts that none of the three exist: no `reopenConsoleSeat`, no
+  `consoleOpen`, and still no `registerWebviewPanelSerializer`. All three have
+  to move together, because a serializer arriving on its own — or a `show` from
+  the revive on its own — is the two-tab bug walking straight back in.
+
+The honest way in, when someone takes it up again: adopt the tab VS Code is
+already holding with a `WebviewPanelSerializer`. The tab is VS Code's; the job
+is to re-attach it, never to open another one beside it. That changes how the
+Console panel is constructed — the product's most critical surface — so it is
+asked before it is built.
+
 ## 3.451.0 - the revived card counted from zero, and the page that was showing it never came back (2026-09-09)
 
 X-232 brings a Console conversation through a restart. Two things it did not
