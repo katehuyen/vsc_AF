@@ -395,5 +395,35 @@ ok('a refused test says so', /not run/.test(three.html) && /nothing selected/.te
         /Asking you · ask-double/.test(mine.html));
 }
 
+
+// ---------------------------------------------------------------------------
+// ‼️ B-01.2 — THE ARITY NOBODY HAD DRAWN: NO ROWS AT ALL.
+//
+// The paragraph under "Swim lanes" explains the controls that live IN A ROW,
+// and it carries a live `<select>` for the ⏱ rehearsal button — which is also
+// in a row. With no rows it was still printed in full: a picker standing in the
+// middle of prose about furniture that is not on the screen, which is exactly
+// what a reader opening this page on a quiet morning met first. Two fixtures
+// (`timeline-empty`, `timeline-one`) draw both sides of this now.
+{
+    const empty = boot(base([], {}, []));
+    ok('‼️ WITH NO LANES THERE IS NO STRAY PICKER — the ⏱ it rehearses is in a row, '
+        + 'and there are no rows',
+        !/id="testevent"/.test(empty.html));
+    ok('…and the paragraph explaining the row controls is not printed either',
+        !/Left toggles/.test(empty.html));
+    ok('…but the section still says what it is, rather than vanishing',
+        /Swim lanes/.test(empty.html) && /No lanes yet/.test(empty.html));
+
+    const one = boot(base(
+        [sess('E1aaaaaa-1111', 'dev #1')],
+        {},
+        [{ ts: Date.now() - 60000, sessionId: 'E1aaaaaa-1111', agentName: 'dev', kind: 'prompt' }]
+    ));
+    ok('‼️ AND ONE ROW BRINGS BOTH BACK — the fix removes the picker where it has no '
+        + 'subject, it does not remove the picker',
+        /id="testevent"/.test(one.html) && /Left toggles/.test(one.html));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

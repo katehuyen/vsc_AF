@@ -339,6 +339,24 @@ const data = base;
  *  leaves the other engines' swim lanes above them is the bug, not the fix — so
  *  the lanes have to be in the picture as well. */
 const variants = () => ([
+    /**
+     * ‼️ THE SMALLEST FIRST (audit B-01.2). Six rows and a filtered six were the
+     * only two pictures this page had, and a six-row montage is the arity that
+     * makes any layout look considered: the lane gutter is full, the card grid
+     * wraps, the legend has something to stand under. NONE is what a reader
+     * actually opens the page to on a quiet morning, and ONE is what they get
+     * the moment they start a session — those are separate layouts wherever a
+     * grid, a wrap or a legend is involved, and neither had ever been drawn.
+     */
+    { id: 'timeline-empty', label: 'Live Timeline — nothing running yet', data: Object.assign(base(), { sessions: [], events: [] }) },
+    {
+        id: 'timeline-one',
+        label: 'Live Timeline — one session, one lane',
+        data: Object.assign(base(), {
+            sessions: sessions().slice(0, 1),
+            events: events().filter(e => e.sessionId === sessions()[0].sessionId)
+        })
+    },
     { id: 'timeline', label: 'Live Timeline — every engine at once', data: base() },
     {
         id: 'timeline-one-engine',

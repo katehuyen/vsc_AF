@@ -1647,6 +1647,13 @@
         const hasAny = density ? !!(HISTORY && HISTORY.density && HISTORY.density.totalEvents) : allEvents.length > 0;
 
         let lanesHtml;
+        // ‼️ B-01.2 — HOW MANY ROWS THERE ACTUALLY ARE, because the paragraph
+        // under the heading explains the CONTROLS THAT LIVE IN A ROW. With no
+        // rows it explained furniture that is not on the screen, and carried a
+        // live `<select>` into the middle of the prose for a ⏱ button there was
+        // nothing to press — a stray box standing over the text, which is what
+        // a reader opening this page on a quiet morning met first.
+        let laneCount = 0;
         if (density) {
             if (HISTORY && HISTORY.hours === windowMin / 60) {
                 lanesHtml = densitySvg(HISTORY.density, winMs);
@@ -1655,7 +1662,9 @@
                 lanesHtml = '<p class="muted">Loading history…</p>';
             }
         } else {
-            lanesHtml = lanesSvg(buildLanes(events, now, winMs), now, winMs);
+            const built = buildLanes(events, now, winMs);
+            laneCount = built.length;
+            lanesHtml = lanesSvg(built, now, winMs);
         }
         const runsData = density && HISTORY && HISTORY.hours === windowMin / 60
             ? (HISTORY.workflowRuns || [])
@@ -1716,7 +1725,7 @@
             })}
             ${emptyHint}
             <h2>${density ? 'Activity density' : 'Swim lanes'}</h2>
-            ${density ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds as ${testEventSelect()}. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures — and <b>hover any dot or bar</b> for the moment itself: which conversation, what was sent or run, what came back, and where in the turn it fell. Click opens the transcript at that moment; <b>right-click a dot or a bar</b> for <b>Copy Corpus</b> — that step's own words, whole, without opening anything — and the session's actions under it (rename · terminal · interrupt · end · clear).</div>`}
+            ${density || !laneCount ? '' : `<div class="muted small" style="margin:-4px 0 6px">Left toggles — when <b>this row's session</b> hits <b>YOUR TURN</b>: ${TURN_ACTIONS.map(a => a.glyph + ' ' + a.label.split(' ')[0].toLowerCase()).join(' · ')}, then <b>⏱</b> to try them in 3 seconds as ${testEventSelect()}. Every row is one session and carries its own choices — three concurrent runs of one agent are three rows and three independent settings, and they fire even while this panel is closed. A row drawing only history has them disabled. <b>Hover a row's name</b> for that session's figures — and <b>hover any dot or bar</b> for the moment itself: which conversation, what was sent or run, what came back, and where in the turn it fell. Click opens the transcript at that moment; <b>right-click a dot or a bar</b> for <b>Copy Corpus</b> — that step's own words, whole, without opening anything — and the session's actions under it (rename · terminal · interrupt · end · clear).</div>`}
             <div class="card chartbox">${lanesHtml}<div class="legend">${legend}</div></div>
             ${density ? '' : alertTestStrip()}
             ${workflowRunsSvg(runsData, now, winMs)}

@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.5 - a picker standing in the middle of the text, over nothing (audit B-01) (2026-09-10)
+
+The Live Timeline's "Swim lanes" paragraph explains the controls that live IN A
+ROW — ♪ ◎ ▣ ▭ and the ⏱ that rehearses them — and carries a live `<select>`
+mid-sentence for which edge the ⏱ should try. With no rows on the page it was
+printed in full anyway: a working picker floating in prose about furniture that
+is not on the screen, with "No lanes yet." directly under it. That is the first
+thing a reader opening this page on a quiet morning met.
+
+- **The paragraph now follows the rows.** `laneCount` comes off `buildLanes`'s
+  own output rather than a second definition of "empty"; at zero neither the
+  paragraph nor the picker is drawn, and the heading still says what the section
+  is. One row brings both back — the picker was not removed, it was removed from
+  where it has no subject.
+- **Two fixture scenes that had never existed**, and the defect was living in
+  one of them. The page had `many` and `many, filtered`; six rows is the arity
+  that makes any layout look considered. `timeline-empty` and `timeline-one` are
+  the two the convention puts FIRST, and all four scenes were photographed one
+  at a time, the empty one in both themes.
+
+Looked at, not read: `dist/render/timeline.s1.png` · `timeline.light.s1.png` ·
+`timeline.s2.png` · `timeline.s4.png`. 324 files, 20,307 passed, 0 failed.
+
 ## 3.453.4 - an op that answered ok to work it never did (audit A-25) (2026-09-09)
 
 `projects.backlog.archive` sweeps a whole file. Handed `code` and `note` it
