@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.450.0 - one row ticking was clearing the handles of all eight, and the play took the selected row for the pressed one (2026-09-09)
+
+3.449.0 stopped the play button on an agent row from asking which agent. The
+user pressed it and got the other half of the same defect: no picker, but
+sometimes *"▶ arrived without its row"* — and once, an agent they had not
+pressed. Both are the same mechanism, read out of the running extension host
+rather than guessed at.
+
+**A change event with no argument clears every handle in the view.** `sb(t)`
+deletes only the CHILDREN of the elements it is given and leaves each row’s own
+handle standing; an empty event runs `tb()`, which empties the map for the
+whole view. An inline ▶ whose handle is not in that map reaches its command
+with no argument at all. Gating the redraw on whether the rows changed (3.449.0)
+did not help where it mattered: on a live fleet a token count on ONE row
+genuinely ticks every few seconds, and every one of those ticks was throwing
+away the handles of all the others.
+
+- **The row that changed is refreshed by name.** The Agents view now fires with
+  the elements that actually changed, so the other rows keep their handles and
+  a press between two draws still knows which agent it belongs to. The rows are
+  the same objects from draw to draw, because the host finds a refreshed
+  element by object identity — one built fresh on every draw is found nowhere
+  and would go stale in silence. The view is still cleared outright when the
+  rows themselves change (an agent added, removed, renamed, reordered), which
+  is the one thing no per-row event can say.
+- **And the row’s play no longer falls back to the SELECTED row.** Pressing an
+  inline action does not select its row, so the selection is whatever was last
+  clicked: press ▶ on one agent while another is still selected, lose the
+  argument, and a session starts as somebody else with nothing on screen saying
+  so. That belt was a reasonable recovery while the argument was lost several
+  times a minute; now that the loss is the rare case, a rare dead press that
+  explains itself is worth more than a rare silent impersonation. The Command
+  Palette door keeps the belt — there the selection is the only thing the
+  caller has, and the surface dialog names the agent before anything starts.
+
 ## 3.449.0 - the play button on a named row asked which agent, and the view was being rebuilt four times a second (2026-09-09)
 
 S-48 was closed once. The user pressed the inline play on an agent row, was

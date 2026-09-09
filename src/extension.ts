@@ -31208,15 +31208,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * on a named row has twice now landed the user in "Select an agent".
          *
          * The row gets its own id, it is kept out of the palette, and it never
-         * opens that picker: the argument, then the view's own row (S-48's
-         * belt), and if neither can name an agent it SAYS so and stops. A press
-         * that does nothing and explains itself is recoverable; a session
-         * quietly started as somebody else is not. The start itself is not
-         * reimplemented — it is the same door, called with the agent named.
+         * opens that picker: it reads the argument, and if that cannot name an
+         * agent it SAYS so and stops. A press that does nothing and explains
+         * itself is recoverable; a session quietly started as somebody else is
+         * not. The start itself is not reimplemented — it is the same door,
+         * called with the agent named.
+         *
+         * ‼️ AND IT DOES NOT FALL BACK TO THE SELECTED ROW (`withAgentsRow`),
+         * WHICH IS THE ONE WAY THIS COMMAND COULD START THE WRONG AGENT.
+         * Pressing an inline action does not select its row, so the selection
+         * is whatever the person last CLICKED — press ▶ on `manager` while
+         * `developer` is still selected, lose the argument, and the belt starts
+         * `developer` with nothing on screen saying so. It was a reasonable
+         * recovery while the argument was lost several times a minute; now that
+         * the view is refreshed a row at a time (`refreshIfChanged`) the loss is
+         * the rare case, and a rare dead press is worth more than a rare silent
+         * impersonation. The palette door keeps the belt: there the selection is
+         * the only thing the caller has, and the surface dialog names the agent
+         * before anything starts.
          */
         vscode.commands.registerCommand('agentfarm.startSessionRow',
             async (arg: AgentArg & { surface?: RunSurface }) => {
-                const named = resolveAgentArg(withAgentsRow(arg), agents);
+                const named = resolveAgentArg(arg, agents);
                 if (!named.agent) {
                     void vscode.window.showWarningMessage(named.stale
                         ? `Agent Farm: "${named.stale}" is not in the fleet any more — the row this ▶ `

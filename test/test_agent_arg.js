@@ -149,12 +149,19 @@ const FLEET = [dev, mgr];
 //      palette, and when it cannot name an agent it says so instead of opening
 //      the picker. One id could not mean both "the palette: ask" and "a lost
 //      row: never ask", and it had been resolving that clash the wrong way.
+//   3. AND THE ROW THAT DID CHANGE IS REFRESHED BY NAME. The extension host
+//      clears every handle in the view for an argument-less event and only the
+//      element's children for one that carries elements, so a token count
+//      ticking on one row must not invalidate the other seven. It is looked up
+//      by OBJECT IDENTITY, which is why the rows are the same objects each
+//      draw — and why the ▶ no longer falls back to the SELECTED row, which is
+//      not the row that was pressed.
 // ===========================================================================
 {
     const Module = require('module');
     class EventEmitter {
-        constructor() { this.fired = 0; this.event = () => ({ dispose() { } }); }
-        fire() { this.fired++; }
+        constructor() { this.fired = 0; this.last = 'never'; this.event = () => ({ dispose() { } }); }
+        fire(data) { this.fired++; this.last = data; }
     }
     class TreeItem {
         constructor(label, state) { this.label = label; this.collapsibleState = state; }
@@ -212,14 +219,27 @@ const FLEET = [dev, mgr];
         const before = em.fired;
         ok('‼️ the first gated redraw fires — there was no previous drawing',
             tree.refreshIfChanged() === true && em.fired === before + 1);
+        ok('…and it is the WHOLE view, because no row had been drawn to compare',
+            em.last === undefined);
         ok('‼️ …and an identical drawing does NOT fire, so the row under the pointer survives',
             tree.refreshIfChanged() === false && em.fired === before + 1);
         ok('…twice over: a quiet fleet costs the view nothing at all',
             tree.refreshIfChanged() === false && em.fired === before + 1);
 
+        // ‼️ THE ROWS ARE THE SAME OBJECTS FROM DRAW TO DRAW. The host finds a
+        // refreshed element by object identity (`this.m.get(t)`); a node built
+        // fresh every time is not found and the row is refreshed NOWHERE.
+        const draw1 = tree.getChildren();
+        const draw2 = tree.getChildren();
+        ok('‼️ the top-level rows are the same objects from one draw to the next',
+            draw1.length === 2 && draw1[0] === draw2[0] && draw1[1] === draw2[1]);
+
         world.active.add('a-dev');
         ok('‼️ a row whose text really changed redraws AT ONCE — nothing is delayed',
             tree.refreshIfChanged() === true && em.fired === before + 2);
+        ok('‼️ …and ONLY that row is refreshed — the other seven keep their handles',
+            Array.isArray(em.last) && em.last.length === 1
+            && em.last[0].agent.id === 'a-dev' && em.last[0] === draw1[0]);
         ok('…and settles again straight afterwards',
             tree.refreshIfChanged() === false && em.fired === before + 2);
 
@@ -229,15 +249,24 @@ const FLEET = [dev, mgr];
         world.tokens = 12345;
         ok('‼️ …and a change that only shows in the description is caught too',
             tree.refreshIfChanged() === true && em.fired === before + 3);
+        ok('…as a per-row event, still not a rebuild of the view',
+            Array.isArray(em.last) && em.last.length === 2);
 
         world.agents.push(agent('a-new', 'youtuber'));
         ok('a new agent in the fleet is a new drawing',
             tree.refreshIfChanged() === true && em.fired === before + 4);
+        ok('‼️ …and THAT one clears the view, because no per-row event can say it',
+            em.last === undefined);
+
+        world.agents.pop();
+        tree.refreshIfChanged();
+        ok('…a row that left the fleet clears the view too, and its node is dropped',
+            em.last === undefined && tree.getChildren().length === 2);
 
         const n = em.fired;
         tree.refresh();
         ok('an unconditional refresh still fires — commands are not gated',
-            em.fired === n + 1);
+            em.fired === n + 1 && em.last === undefined);
         ok('‼️ …and it invalidates the baseline, so nothing is swallowed after it',
             tree.refreshIfChanged() === true && em.fired === n + 2);
 
@@ -288,7 +317,11 @@ const FLEET = [dev, mgr];
     const door = i > 0 ? ext.slice(i, next > 0 ? next : i + 1400) : '';
     ok('‼️ the row door never reaches the agent PICKER — it resolves, it does not ask',
         i > 0 && !/resolveAgent\(/.test(door)
-        && /resolveAgentArg\(withAgentsRow\(arg\), agents\)/.test(door));
+        && /resolveAgentArg\(arg, agents\)/.test(door));
+    ok('‼️ …and it does not fall back to the SELECTED row either — pressing an inline',
+        !/withAgentsRow/.test(door));
+    ok('…while the palette door, which has nothing else to go on, keeps that belt',
+        /resolveAgent\(withAgentsRow\(arg\)\)/.test(ext));
     ok('‼️ …and when it cannot name an agent it SAYS so and stops',
         /arrived without its row, so there is no agent to start/.test(door)
         && /showWarningMessage/.test(door));

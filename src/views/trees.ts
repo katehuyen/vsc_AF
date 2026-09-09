@@ -58,15 +58,45 @@ const MCP_USAGE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 const SESSIONS_CHILD_N = 15;
 
 export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
-    private emitter = new vscode.EventEmitter<void>();
+    private emitter = new vscode.EventEmitter<AgentNode[] | undefined>();
     readonly onDidChangeTreeData = this.emitter.event as vscode.Event<void | AgentNode | AgentNode[] | null | undefined>;
 
     constructor(private state: FarmState) {}
 
-    refresh(): void { this.rowSignature = undefined; this.emitter.fire(); }
+    refresh(): void { this.rowSignature = undefined; this.emitter.fire(undefined); }
 
-    /** the last drawing of the top-level rows, as the reader would see it */
-    private rowSignature?: string;
+    /** the last drawing of each top-level row, keyed by agent id */
+    private rowSignature?: Map<string, string>;
+
+    /**
+     * ‼️ S-48 (reopened) — THE TOP-LEVEL ROWS ARE THE SAME OBJECTS FROM ONE
+     * DRAW TO THE NEXT, because that identity is what lets the view be
+     * refreshed one row at a time.
+     *
+     * `onDidChangeTreeData.fire(rows)` is looked up in the extension host by
+     * OBJECT IDENTITY: a node built fresh on every `getChildren` is not found,
+     * and the host falls straight back to clearing the whole view — the very
+     * thing the per-row refresh exists to avoid. So the node is kept and its
+     * `agent` is replaced with the newer scan, which also means every open
+     * subtree keeps pointing at live data.
+     */
+    private agentNodes = new Map<string, { kind: 'agent'; agent: AgentInfo }>();
+
+    private rootNodes(): AgentNode[] {
+        const live = new Set<string>();
+        const rows = this.state.getAgents().map(agent => {
+            live.add(agent.id);
+            const kept = this.agentNodes.get(agent.id);
+            if (kept) { kept.agent = agent; return kept; }
+            const made = { kind: 'agent' as const, agent };
+            this.agentNodes.set(agent.id, made);
+            return made;
+        });
+        for (const id of [...this.agentNodes.keys()]) {
+            if (!live.has(id)) { this.agentNodes.delete(id); }
+        }
+        return rows;
+    }
 
     /**
      * ‼️ S-48 (reopened) — A REDRAW THAT CHANGES NOTHING IS THE RACE, AND IT
@@ -84,30 +114,56 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
      * list of the fields that matter — that list would drift the first time a
      * row learns to show something new — it is the drawing itself: every
      * top-level row is rendered and its label, description, icon and context
-     * value are read back. Identical drawing, no rebuild, no lost press.
+     * value are read back. Identical drawing, no event at all.
      *
-     * A row whose text really did change (a status, a token count, `relTime`
-     * ticking over) still redraws at once — this delays nothing and hides
-     * nothing. Returns whether it fired, so a caller can measure the saving.
+     * ‼️ AND THE ROW THAT DID CHANGE IS REFRESHED BY NAME, NOT BY CLEARING
+     * THE WHOLE VIEW — which is the half that was still losing the press.
+     * Read out of the running extension host: a change event carrying
+     * ELEMENTS deletes only those elements’ CHILDREN from the handle map and
+     * leaves each row’s own handle standing (`sb(t)`), while an empty one runs
+     * `tb()` and clears every handle in the view. A ▶ whose handle is no longer
+     * in that map reaches its command with no argument at all. So a live fleet
+     * — where a token count on ONE row genuinely ticks every few seconds — was
+     * invalidating the handles of EVERY row, several times a minute, for a
+     * figure on one of them.
+     *
+     * The rows are the same objects from draw to draw (`rootNodes`), because
+     * the host finds them by object identity and an element it cannot find is
+     * refreshed NOWHERE — stale, silently. The view is cleared outright only
+     * when the ROWS THEMSELVES changed (an agent added, removed, renamed or
+     * reordered), which is the one change no per-row event can express.
+     *
+     * Returns whether anything was fired, so a caller can measure the saving.
      */
     refreshIfChanged(): boolean {
-        let sig: string;
+        let drawn: { node: AgentNode; id: string; sig: string }[];
         try {
-            sig = this.getChildren().map(n => {
-                const item = this.getTreeItem(n);
+            drawn = this.rootNodes().map(node => {
+                const item = this.getTreeItem(node);
                 const icon = item.iconPath instanceof vscode.ThemeIcon ? item.iconPath.id : '';
-                return [item.label, item.description, icon, item.contextValue].join('\u0001');
-            }).join('\u0002');
+                return {
+                    node,
+                    id: String(item.id ?? item.label ?? ''),
+                    sig: [item.label, item.description, icon, item.contextValue].join('\u0001')
+                };
+            });
         } catch {
             // A signature that cannot be taken is not an excuse to stop
             // redrawing the view: fall back to the unconditional refresh.
             this.rowSignature = undefined;
-            this.emitter.fire();
+            this.emitter.fire(undefined);
             return true;
         }
-        if (sig === this.rowSignature) { return false; }
-        this.rowSignature = sig;
-        this.emitter.fire();
+        const was = this.rowSignature;
+        this.rowSignature = new Map(drawn.map(d => [d.id, d.sig]));
+        // The row LIST itself changed (added · removed · renamed · reordered);
+        // no per-row event can say that, so the view is rebuilt.
+        const sameList = !!was && was.size === drawn.length
+            && [...was.keys()].join('\u0002') === drawn.map(d => d.id).join('\u0002');
+        if (!sameList) { this.emitter.fire(undefined); return true; }
+        const changed = drawn.filter(d => was!.get(d.id) !== d.sig);
+        if (!changed.length) { return false; }
+        this.emitter.fire(changed.map(d => d.node));
         return true;
     }
 
@@ -402,7 +458,7 @@ export class AgentsTreeProvider implements vscode.TreeDataProvider<AgentNode> {
 
     getChildren(node?: AgentNode): AgentNode[] {
         if (!node) {
-            return this.state.getAgents().map(agent => ({ kind: 'agent', agent }));
+            return this.rootNodes();
         }
         if (node.kind === 'agent') {
             const a = node.agent;
@@ -621,7 +677,7 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<SessionInfo
 
     constructor(private state: FarmState) {}
 
-    refresh(): void { this.emitter.fire(); }
+    refresh(): void { this.emitter.fire(undefined); }
 
     getTreeItem(s: SessionInfo): vscode.TreeItem {
         return sessionTreeItem(s, this.state.index, true);
@@ -647,7 +703,7 @@ export class InsightsTreeProvider implements vscode.TreeDataProvider<Insight> {
 
     setHistory(store: InsightHistoryStore): void { this.history = store; }
 
-    refresh(): void { this.emitter.fire(); }
+    refresh(): void { this.emitter.fire(undefined); }
 
     getTreeItem(ins: Insight): vscode.TreeItem {
         // Honest reminder row: dismissed findings are hidden, not gone.
@@ -745,7 +801,7 @@ export class FeedTreeProvider implements vscode.TreeDataProvider<FeedItem> {
 
     constructor(private state: FarmState) {}
 
-    refresh(): void { this.emitter.fire(); }
+    refresh(): void { this.emitter.fire(undefined); }
 
     getTreeItem(e: FeedItem): vscode.TreeItem {
         const item = new vscode.TreeItem(e.label, vscode.TreeItemCollapsibleState.None);
