@@ -669,7 +669,7 @@ const launchTs = read('src', 'core', 'launch.ts');
         && /' • your default'/.test(extTs));
 }
 
-// ---------- X-266: THE ELEVENTH DOOR — resuming a session off the shelf ----------
+// ---------- THE ELEVENTH DOOR — resuming a session off the shelf ----------
 // The ten doors above start a NEW session. This one picks a recorded one back
 // up, and it drifted for exactly the reason this file exists: it builds its
 // `host.start` from a hand-written field list, so every dimension added since

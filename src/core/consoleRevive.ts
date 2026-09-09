@@ -137,7 +137,7 @@ export function reviveInit(row: ReviveSource & { sessionId?: string }): ReviveIn
 }
 
 /**
- * ‼️ X-266 — THE SCROLLBACK A REVIVE CANNOT REBUILD YET, AND WHY IT IS A
+ * ‼️ THE SCROLLBACK A REVIVE CANNOT REBUILD YET, AND WHY IT IS A
  * PLACEHOLDER RATHER THAN A FAILURE.
  *
  * The revive runs inside `activate()`. The transcript index is built by an

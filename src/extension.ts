@@ -22652,7 +22652,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * own context from the id, and the card keeps what it already had
          * (ConsoleHost.start). This function only rebuilds the scrollback.
          */
-        // ‼️ X-266 — THE ID IS SHARED, NOT SPELLED TWICE. This row is what a
+        // ‼️ THE ID IS SHARED, NOT SPELLED TWICE. This row is what a
         // revive swaps out once the index can answer (`consoleRevive.ts`), and
         // two literals would drift the first time one of them was renamed.
         const note = (text: string): ConsoleMessage[] => [{
@@ -22858,7 +22858,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!rows.length && !lost.length && !askedForResume) { return; }
         clearRestartRevive();
         const back: string[] = [];
-        /** ‼️ X-266 — the seats whose scrollback could not be read YET. */
+        /** ‼️ the seats whose scrollback could not be read YET. */
         let pendingHistory: { seatId: string; sessionId: string }[] = [];
         /** ‼️ …and the seats whose TOTALS could not be read yet, for the same
          *  reason and with the same cure — see `ConsoleHost.applyCarried`. */
@@ -22914,7 +22914,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // recovery. The stamp recorded the answer while the host was still up.
         if (!stamp?.consoleOpen) { reopenConsoleSeat = undefined; }
         /**
-         * ‼️ X-266 — AND THE READ IS TRIED AGAIN, because the first one could
+         * ‼️ AND THE READ IS TRIED AGAIN, because the first one could
          * never have worked.
          *
          * `reviveAfterRestart` runs inside `activate()`; `index.scanAll()` is
@@ -23077,7 +23077,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         accountAxis: (engine: string) => canIsolateAccounts(engine),
         // …and its name, resolved once here so `@machine` never reaches a page.
         accountLabel: (stated: string | undefined) => statedAccountLabel(stated, storedAccounts()),
-        // ‼️ X-266 — the ONE reader (`sessionAccountOf`), reaching the shelf's
+        // ‼️ the ONE reader (`sessionAccountOf`), reaching the shelf's
         // resume door. Called lazily on purpose: it is declared further down this
         // activation and only ever runs after a click.
         sessionAccount: (sessionId: string) => sessionAccountOf(sessionId)?.id,

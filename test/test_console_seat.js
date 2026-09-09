@@ -232,7 +232,7 @@ async function s29() {
     }
 }
 
-// ---- X-266: the scrollback a revive could not rebuild at activation time ----
+// ---- the scrollback a revive could not rebuild at activation time -------
 // Driven through the REAL host for the reason at the top of this file: the bug
 // was that a card came back EMPTY, and only the card can say whether it did.
 {
@@ -262,7 +262,7 @@ async function s29() {
         host.rebuildHistory('cs-nope', rows) === false);
 }
 
-// ---- X-266’s twin: the FIGURES a revive could not read either -------------
+// ---- its twin: the FIGURES a revive could not read either ----------------
 // The scrollback was retried when the index caught up and the totals were not,
 // so a revived card sat under an hour-old conversation reading "0 tokens, 0
 // turns this session". Driven through the REAL host for the same reason as the

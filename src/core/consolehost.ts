@@ -670,7 +670,7 @@ export class ConsoleHost {
     }
 
     /**
-     * ‼️ X-266 — THE SCROLLBACK A REVIVE COULD NOT REBUILD AT ACTIVATION TIME.
+     * ‼️ THE SCROLLBACK A REVIVE COULD NOT REBUILD AT ACTIVATION TIME.
      *
      * The rule and the measurement are in `consoleRevive.ts`; this is the seat
      * side of it. Nothing is restarted and nothing is dropped: the placeholder
@@ -688,7 +688,7 @@ export class ConsoleHost {
     }
 
     /**
-     * ‼️ X-266's TWIN — THE FIGURES A REVIVE COULD NOT READ EITHER, AND THE
+     * ‼️ THE SCROLLBACK RETRY'S TWIN — THE FIGURES A REVIVE COULD NOT READ, AND THE
      * HALF THAT WAS LEFT COUNTING FROM ZERO.
      *
      * `carried` is read off the index row, and inside `activate()` the index

@@ -265,7 +265,7 @@ export interface ConsoleDeps {
      *  so the sentinel never reaches a page and no surface invents a name. */
     accountLabel?(stated: string | undefined): string;
     /**
-     * ‼️ X-266 — WHICH SIGN-IN A RECORDED SESSION ACTUALLY RAN UNDER.
+     * ‼️ WHICH SIGN-IN A RECORDED SESSION ACTUALLY RAN UNDER.
      *
      * The transcript cannot say it: every slot's `projects` folder is a junction
      * onto one shared root, so five accounts write into the same directory and
@@ -1852,7 +1852,7 @@ export class ConsolePanel {
                     projectId: this.deps.sessionProject({
                         sessionId, agentId: agent?.id, agentName: row.agentName, cwd: row.cwd
                     }),
-                    // ‼️ X-266 — …AND THE SIGN-IN IT RAN ON, for the same reason
+                    // ‼️ …AND THE SIGN-IN IT RAN ON, for the same reason
                     // the project above is here: a resurrection is only as honest
                     // as its dimensions, and this door stated none — so a
                     // conversation that had been running on a slot came back

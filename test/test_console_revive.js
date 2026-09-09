@@ -94,7 +94,7 @@ const live = (over = {}) => ({
     ok('…and a missing list is the same answer', planRevive(undefined).rows.length === 0);
 }
 
-// ---------- ‼️ X-266 — THE REVIVED CARD THAT CAME BACK EMPTY ----------
+// ---------- ‼️ THE REVIVED CARD THAT CAME BACK EMPTY ----------
 // The user reported it: the session was taken up again, said so, and showed
 // NOTHING above that line — the conversation only came back after ending the
 // card and resuming it off the shelf by hand, which is the manual step X-232
@@ -228,7 +228,7 @@ const live = (over = {}) => ({
 // ‼️ THE TWO HALVES THE REVIVE USED TO LEAVE BEHIND: what the conversation had
 // already SPENT, and the PAGE that was showing it.
 //
-// Both come from the same measured fact as X-266 — inside `activate()` the
+// Both come from the same measured fact as the scrollback retry — inside
 // index answers `undefined` for every id — and both were reported by the user
 // in the same breath: the card came back counting from zero, and the Console
 // page did not come back at all (VS Code restores no webview of ours; there is
