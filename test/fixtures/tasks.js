@@ -578,6 +578,78 @@ const variants = () => ([
             });
         }
     },
+    /**
+     * ‼️ X-228 — THE STEP CARD AT ITS SMALLEST ARITY: ONE NEW STEP, EVERY
+     * LAUNCH BOX AT DEFAULT.
+     *
+     * `tasks-step-account` photographs the card with a chain already in it and
+     * an account picked — the state the X-224 row exists for. That is the LARGE
+     * arity, and it is not the one X-228 is about: what X-228 added is the six
+     * launch boxes themselves (engine · model · effort · permissions · route ·
+     * tier), and the state every one of them is first seen in is the state
+     * nobody had drawn — a step just added, nothing chosen, every box reading
+     * `Default`. That is where a box that says nothing about what empty MEANS,
+     * or a row that falls out of the grid because it has no value to hold, is
+     * visible; a card already filled in hides both (U-133 shipped twice for
+     * exactly this reason).
+     *
+     * It is reached the way a person reaches it — open the composer, move the
+     * kind picker to `workflow`, press `+ Add a step` — rather than by seeding
+     * a draft, so the picture is of a card the page itself built.
+     */
+    {
+        id: 'tasks-step-launch',
+        label: 'Tasks → a brand-new workflow step, every launch box at Default (X-228)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            // The kind picker is the door into the chain form, exactly as in
+            // `tasks-rounds-schedule`: the composer opens on a task.
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+        }
+    },
+    /**
+     * ‼️ X-228 — …AND THE ONE BOX OF THE SIX THAT IS NOT DRAWN UNTIL SOMETHING
+     * IS PICKED: THE TIER.
+     *
+     * `ntRouteRows` draws the Route box wherever the engine has a provider
+     * axis, but the Tier box ONLY once a route is chosen — a tier belongs to a
+     * route and there is nothing to offer before one is named. So the two
+     * default scenes photograph the step card WITHOUT the tier, and the half
+     * of X-228 that says the tier reached the step card is invisible in them.
+     * This is that half: the route is moved on the card itself, so the picture
+     * is of the row the page grew in response to the gesture rather than of a
+     * draft handed to it already containing one.
+     */
+    {
+        id: 'tasks-step-route',
+        label: 'Tasks → a workflow step pointed at a route, and the Tier row it grows (X-228)',
+        data: data(),
+        act: (r) => {
+            r.query('#nt-open')[0].click();
+            drive(r, { 'nt-kind': 'workflow' }, 'nt-kind');
+            r.query('#nt-stadd')[0].click();
+            // Picking the route is what makes the Tier box exist, so it goes
+            // first and on its own: before this fires there is no tier box in
+            // the page to drive.
+            const draft = { 'nt-st-title': 'Kimi rotasında koş', 'nt-st-sproviderId': 'kimi-work' };
+            drive(r, draft, 'nt-st-sproviderId');
+            // ‼️ AND THE CHOSEN TIER HAS TO BE REPAINTED TO BE PHOTOGRAPHED.
+            // `nt-st-stier` reads back into the draft and deliberately does NOT
+            // redraw (nothing on the card depends on it — a repaint under the
+            // pointer is what the redraw list is for), and a <select> shows the
+            // option marked `selected` in the MARKUP, not its live `.value`. So
+            // driving it alone paints the default and the picture would lie
+            // about a control that works — the same trap `tasks-rounds`
+            // documents for textareas. `nt-st-stype` is fired last because it
+            // re-reads the whole card and redraws it, and it is left on `agent`.
+            Object.assign(draft, { 'nt-st-stier': 'opus' });
+            drive(r, draft, 'nt-st-stier');
+            Object.assign(draft, { 'nt-st-stype': 'agent' });
+            drive(r, draft, 'nt-st-stype');
+        }
+    },
     // ‼️ S-19 — the form when the run continues a conversation instead of
     // opening one. The picker, its search box, the count line and the held-row
     // warning are all drawn by this state and by nothing else.
