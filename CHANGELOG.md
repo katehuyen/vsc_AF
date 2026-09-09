@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.2 - the sentry chip's own state had never been drawn (audit A-12.8) (2026-09-09)
+
+Retrospective audit of X-196's hover sweep. Three of its five claims hold and
+were photographed holding; two did not.
+
+- **The state the item is named after was on no screen.** X-196 exists because
+  WAITING and SLEEPING are the same picture to a reader who does not already
+  know the difference. `sentryChip` answers seven words — and the fixtures could
+  reach three of them. `SENTRY_HELD` is labelled "paused, asleep" and carries
+  `lastAction: 'sleep'`, but the chip tests `status === 'paused'` first, so it
+  has only ever drawn PAUSED. Four scenes added (`sentry-sleeping`,
+  `sentry-waiting`, `sentry-blocked`, `sentry-stopped`), and the chip's wrapper
+  is now named `sentry-chip` so `render_page.js --tip` can open it: an unnamed
+  panel can only be reached by counting every `af-tipw` on the page, which moves
+  the moment anything else grows a hover.
+- **Two prose tooltips survived the sweep, in the strip.** The `main sign-in`
+  chip carried two sentences inside a native `title`, and the `N/M barren` chip
+  carried a definition — where the rule asks for figures. Both are AFTips now,
+  and barren carries the figures that say how close the brake is (`in a row now`
+  · `brake at` · `one more barren round leaves`). The third branch,
+  `rotates … accounts`, had no tooltip at all and now has one.
+- **Three of the setup form's eight boxes had neither panel nor MIRROR** —
+  Project, Runs as and Model. Model is the one that matters: `— engine default —`
+  names no model, so the reader could not tell it from a model they chose that
+  happens to be the default.
+
+Verified by looking: seven chip states × two themes, panels open, plus the form
+and the account card. `dist/render/A128-*.png`.
+
 ## 3.453.1 - the pin was written, tested and never plugged in (2026-09-09)
 
 **X-267, the second half.** 3.453.0 shipped the pinned-context mechanism with

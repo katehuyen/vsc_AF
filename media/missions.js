@@ -3323,8 +3323,15 @@
                     c.lastRule ? `last decision: ${c.lastAction || 'plan'} — ${c.lastRule}` : '',
                     c.lastAt ? `decided ${sentryWhen(c.lastAt)}` : ''
                 ] : []));
+            // ‼️ A-12.8 — THE WRAPPER IS NAMED SO THE PANEL CAN BE PHOTOGRAPHED.
+            // `render_page.js --tip <class>` opens a panel by the class on its
+            // wrapper; an unnamed one can only be reached by counting every
+            // `af-tipw` on the page, which changes the moment anything else
+            // grows a hover. This chip's panel is the whole of X-196, so it is
+            // the last thing that should be hard to look at.
             return window.AFTip.wrap(
-                `<span class="mchip ${cls}">${word}</span>`, `Sentry — ${word.toLowerCase()}`, body);
+                `<span class="mchip ${cls}">${word}</span>`, `Sentry — ${word.toLowerCase()}`,
+                body, 'sentry-chip');
         };
         if (!c) {
             return mark('', 'OFF', 'No campaign has ever been set up on this machine.', [
@@ -4127,6 +4134,9 @@
 
     const engineName = (id) =>
         ((DATA.engines || []).find(e => e.id === id) || {}).label || id || '';
+    /** A-12.8 — the NAME behind an id, for a MIRROR line on a box that cuts it. */
+    const listName = (list, id) =>
+        !id ? '' : (((list || []).find(x => x.id === id) || {}).name || id);
     const permName = (s, id) => {
         const m = (s.permissionModes || []).find(x => x.id === id);
         return m ? m.label : '';
@@ -4143,10 +4153,33 @@
         return `<div class="sform">
             ${sentryErr ? `<div class="formerr">${C.esc(sentryErr)}</div>` : ''}
             <div class="srow">
-                <label>Project<select id="s-project">${C.option('', '— pick one —', { selected: !sentryForm.project, detail: 'A sentry campaign is filed under a project; nothing runs until one is named.' })}
-                    ${opt(DATA.projects, sentryForm.project, 'id', 'name')}</select></label>
-                <label>Runs as<select id="s-agent">${C.option('', '— pick one —', { selected: !sentryForm.agent, detail: 'Every round of this campaign opens in that agent\'s own folder, under its own rules.' })}
-                    ${opt(DATA.agents, sentryForm.agent, 'id', 'name')}</select></label>
+                ${tipLabel(
+                    `Project<select id="s-project">${C.option('', '— pick one —', { selected: !sentryForm.project, detail: 'A sentry campaign is filed under a project; nothing runs until one is named.' })}
+                    ${opt(DATA.projects, sentryForm.project, 'id', 'name')}</select>`,
+                    'Whose backlog the rounds are taken from',
+                    [
+                        // ‼️ A-12.8 — MIRROR, ON THE THREE BOXES THE SWEEP MISSED.
+                        // Four boxes share this row and every one of them cuts the
+                        // name inside it, so none can be read for its own value.
+                        // X-196 gave Engine, Permissions and the three numbers a
+                        // panel; Project, Runs as and Model stayed plain labels.
+                        'Now: ' + (listName(DATA.projects, sentryForm.project)
+                            || 'nothing named, so nothing can start'),
+                        '',
+                        'Each round takes the next item off THIS project\'s backlog and is filed '
+                        + 'against it. The campaign cannot start without one.'
+                    ])}
+                ${tipLabel(
+                    `Runs as<select id="s-agent">${C.option('', '— pick one —', { selected: !sentryForm.agent, detail: 'Every round of this campaign opens in that agent\'s own folder, under its own rules.' })}
+                    ${opt(DATA.agents, sentryForm.agent, 'id', 'name')}</select>`,
+                    'Whose folder and whose rules each round opens in',
+                    [
+                        'Now: ' + (listName(DATA.agents, sentryForm.agent)
+                            || 'nobody named, so nothing can start'),
+                        '',
+                        'Every round is an ordinary unattended session in that agent\'s own folder, '
+                        + 'under its own rules — the campaign adds no identity of its own.'
+                    ])}
                 ${tipLabel(
                     `Engine<select id="s-engine">${C.option('', 'main sign-in only', { selected: !sentryForm.engine, detail: 'No engine named, so no account rotation: every round runs on the main sign-in, because choosing an account would mean assuming an engine.' })}
                     ${opt((DATA.engines || []).map(e => ({ id: e.id, name: e.label })), sentryForm.engine, 'id', 'name')}</select>`,
@@ -4160,8 +4193,23 @@
                         + 'account would mean assuming an engine, so nothing is chosen and every round '
                         + 'opens as the identity this machine is signed in as.'
                     ])}
-                <label>Model<select id="s-model">${
-    modelOptsFor(sentryForm.engine, sentryForm.model, '— engine default —')}</select></label>
+                ${tipLabel(
+                    `Model<select id="s-model">${
+                        modelOptsFor(sentryForm.engine, sentryForm.model, '— engine default —')}</select>`,
+                    'The model every round of this campaign runs on',
+                    [
+                        // ‼️ A-12.8 — the emptiest of the three, and the one whose
+                        // emptiness means the most: "— engine default —" names no
+                        // model at all, so the reader cannot tell it from a model
+                        // they chose that happens to be the default.
+                        'Now: ' + (sentryForm.model
+                            || 'no model named — the engine\'s own default decides, round by round'),
+                        '',
+                        'A campaign runs unattended for hours, so this is the box that decides what '
+                        + 'the night costs. Left empty, the agent\'s own setting and the fleet\'s '
+                        + 'model-policy rules stay in charge, exactly as they do for a hand-started '
+                        + 'session.'
+                    ])}
             </div>
             <div class="srow">
                 ${tipLabel(
@@ -4293,12 +4341,36 @@
             const ids = (c.pool || []);
             const known = s.accountPool || [];
             const gone = s.poolMissing || [];
+            // ‼️ A-12.8 — THE TWO POOL-LESS BRANCHES ARE PANELS TOO. X-196 swept
+            // the strip and stopped at the branch that HAS a pool: the "main
+            // sign-in" chip kept two sentences inside a native `title` (which
+            // the rule reserves for a handful of figures), and the "rotates …
+            // accounts" chip carried nothing at all — the widest state of the
+            // three, and the only one that could not be asked what it meant.
             if (!ids.length) {
                 return s.rotatesAccounts
-                    ? `<span class="mchip prov">rotates ${C.esc(c.engine)} accounts</span>`
-                    : '<span class="mchip prov" title="No engine and no pool were named, so every round '
-                        + 'runs on the main sign-in — choosing an account would mean assuming an engine.'
-                        + '">main sign-in</span>';
+                    ? window.AFTip.wrap(
+                        `<span class="mchip prov">rotates ${C.esc(c.engine)} accounts</span>`,
+                        `Every captured ${engineName(c.engine) || c.engine} sign-in is in play`,
+                        window.AFTip.lines([
+                            'No pool was named, so the campaign is not held to a subset: every account '
+                            + 'captured for this engine on this machine may be spent.',
+                            '',
+                            `captured for this engine: ${known.filter(a => a.engine === c.engine).length}`,
+                            'Naming a pool is how a campaign is fenced to particular sign-ins — the '
+                            + 'setup form does it, and the chip then carries the count instead of this.'
+                        ]), 'sentry-pool')
+                    : window.AFTip.wrap(
+                        '<span class="mchip prov">main sign-in</span>',
+                        'No account rotation at all',
+                        window.AFTip.lines([
+                            'No engine and no pool were named, so every round runs on the identity this '
+                            + 'machine is signed in as.',
+                            '',
+                            'Choosing an account would mean assuming an engine, so nothing is chosen: '
+                            + 'the absence of a slot IS the main account. Name an engine on the setup '
+                            + 'form and rotation turns on.'
+                        ]), 'sentry-pool');
             }
             const of = (id) => known.find(a => a.id === id);
             const engines = [];
@@ -4341,7 +4413,21 @@
                     <b>${C.esc(s.projectName || '')}</b> as <b>${C.esc(s.agentName || '')}</b>
                     <span class="mchip prov">${c.rounds || 0} round(s)</span>
                     ${poolChip}
-                    ${s.failLimit ? `<span class="mchip ${s.failStreak ? 'bad' : 'prov'}" title="Barren rounds in a row against the brake that stops the campaign.">${s.failStreak}/${s.failLimit} barren</span>` : ''}
+                    ${s.failLimit ? window.AFTip.wrap(
+                        `<span class="mchip ${s.failStreak ? 'bad' : 'prov'}">${s.failStreak}/${s.failLimit} barren</span>`,
+                        'The failure brake, and how close it is',
+                        window.AFTip.lines([
+                            // ‼️ A-12.8 — the definition used to be the whole of a native
+                            // `title`; a cell hover is figures, and the figures are what
+                            // say whether the next barren round is the last one.
+                            `in a row now: ${s.failStreak || 0}`,
+                            `brake at: ${s.failLimit}`,
+                            `one more barren round leaves: ${Math.max(0, s.failLimit - (s.failStreak || 0) - 1)}`,
+                            '',
+                            'A barren round is one that ended having changed nothing. This many in a '
+                            + 'ROW stops the campaign outright — a round that does work resets it to 0, '
+                            + 'so the count is a streak and not a total.'
+                        ]), 'sentry-barren') : ''}
                     ${leaderSpend}
                     ${words}
                 </div>

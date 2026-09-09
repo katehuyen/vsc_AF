@@ -796,6 +796,65 @@ const SENTRY_HELD = Object.assign({}, SENTRY_LIVE, {
     }
 });
 
+/**
+ * ‼️ A-12.8 — THE FOUR STATES OF THE CHIP THAT COULD NOT BE DRAWN.
+ *
+ * X-196's whole claim is that each word on the sentry chip now carries a panel
+ * saying what it means — WAITING and SLEEPING being the pair a reader cannot
+ * tell apart without one. `sentryChip` answers seven words, and until now the
+ * fixtures could reach three of them: OFF, PAUSED and RUNNING.
+ *
+ * `SENTRY_HELD` is why, and it is the trap worth naming: it was labelled
+ * "paused, asleep" and carries `lastAction: 'sleep'`, but the chip tests
+ * `status === 'paused'` FIRST, so it has only ever drawn PAUSED. The state the
+ * item was really about was never on any screen.
+ *
+ * Each of these turns exactly one of the chip's branches on, so the picture is
+ * of that branch and nothing else.
+ */
+
+/** Sitting out a quota wall — the state WAITING is confused with. */
+const SENTRY_SLEEPING = Object.assign({}, SENTRY_LIVE, {
+    campaign: Object.assign({}, SENTRY_LIVE.campaign, {
+        status: 'running', lastAction: 'sleep', lastRule: 'wait-for-reset',
+        lastWhy: 'every account is at or above 95% of its five-hour window',
+        wakeAt: Date.now() + 96 * 60 * 1000
+    }),
+    running: false, live: null
+});
+
+/** It wanted to open a round and could not — a block is not a stop. */
+const SENTRY_BLOCKED = Object.assign({}, SENTRY_LIVE, {
+    campaign: Object.assign({}, SENTRY_LIVE.campaign, {
+        status: 'running', lastAction: 'blocked', lastRule: 'no-item',
+        lastWhy: 'the project backlog has no item this campaign may take: every open one is '
+            + 'either a container or is waiting on an unfinished ⛔'
+    }),
+    running: false, live: null
+});
+
+/** Between rounds: nothing on the board and nothing in the way. */
+const SENTRY_WAITING = Object.assign({}, SENTRY_LIVE, {
+    campaign: Object.assign({}, SENTRY_LIVE.campaign, {
+        status: 'running', lastAction: 'finish', lastRule: 'round-ended'
+    }),
+    running: false, live: null,
+    nextWords: {
+        code: 'X-178', at: Date.now() - 4 * 60 * 1000,
+        prompt: 'Take the next item on PRS.MuratVural_DEV_VSC.AgentFarm: X-178.'
+    }
+});
+
+/** Over — by a hand or by the failure brake, and it says which. */
+const SENTRY_STOPPED = Object.assign({}, SENTRY_LIVE, {
+    campaign: Object.assign({}, SENTRY_LIVE.campaign, {
+        status: 'stopped', stoppedAt: Date.now() - 18 * 60 * 1000,
+        stoppedWhy: 'three rounds failed in a row — the failure brake stopped it',
+        failStreak: 3
+    }),
+    running: false, live: null
+});
+
 const data = (over) => Object.assign({
     newForm: false,
     sentry: SENTRY_OFF,
@@ -975,10 +1034,36 @@ module.exports = {
             data: data({ sentry: SENTRY_LIVE })
         },
         {
-            // Paused and asleep, carrying the words it will open on. The two
-            // states that used to be one, drawn apart.
-            id: 'sentry-held', label: 'Sentry — paused, asleep, holding its next sentence',
+            // PAUSED — you stopped the next round by hand, and it carries the
+            // words it will open on when it is let go. ‼️ It is NOT the sleeping
+            // picture: the chip tests `status === 'paused'` before it looks at
+            // `lastAction`, so this scene can only ever draw PAUSED (A-12.8).
+            id: 'sentry-held', label: 'Sentry — paused, holding its next sentence',
             data: data({ sentry: SENTRY_HELD })
+        },
+        {
+            // ‼️ A-12.8 — SLEEPING, the word WAITING is confused with. The whole
+            // difference is the clock, so the picture exists to show that the
+            // panel really carries a wake time.
+            id: 'sentry-sleeping', label: 'Sentry — sitting out a quota wall',
+            data: data({ sentry: SENTRY_SLEEPING })
+        },
+        {
+            // ‼️ A-12.8 — WAITING, the other half of that pair. Same chip
+            // colour, same shape, and only the panel separates them.
+            id: 'sentry-waiting', label: 'Sentry — between rounds',
+            data: data({ sentry: SENTRY_WAITING })
+        },
+        {
+            // ‼️ A-12.8 — BLOCKED, which used to say nothing at all about what
+            // was blocking it. The panel has to carry the reason.
+            id: 'sentry-blocked', label: 'Sentry — it could not open a round',
+            data: data({ sentry: SENTRY_BLOCKED })
+        },
+        {
+            // ‼️ A-12.8 — STOPPED, and the panel says by whose hand.
+            id: 'sentry-stopped', label: 'Sentry — over, and why',
+            data: data({ sentry: SENTRY_STOPPED })
         },
         {
             // ‼️ The team rows with members PICKED, because an unchecked row
