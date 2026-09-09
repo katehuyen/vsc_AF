@@ -340,6 +340,45 @@ gaps found by a hand scan, and a hand scan rots the day it finishes.
 
 ---
 
+## The wiring gate — a callback that defaults to a no-op can be left off (X-267)
+
+**What happened.** `ConsoleHost` was given a ninth constructor parameter,
+`pinProjectContext`, defaulted — like every one of its siblings — to `() => {}`.
+`extension.ts` was never changed to pass it. The build compiled, the twenty-nine
+assertions of `test_context_pin.js` stayed green, and the Console silently never
+pinned a conversation: measured on a live session, the `pinned/` folder had not
+even been created. Every revive went on re-composing the brief the pin existed
+to reuse — the 304k-token cache miss the release was named after.
+
+Neither of the two things that normally catch a mistake can catch this one. The
+**type checker** cannot: a default is precisely what makes the argument
+optional. A **suite** cannot: it constructs the object itself, with every
+argument, which is what a mock is for. It is only visible at the call site, so
+that is where it is measured.
+
+**The rule.** A constructor parameter whose default is a **no-op-shaped
+callback** (`() => {}`, `() => undefined`, `sid => undefined`) MUST be passed at
+every `new` site in `src/`. Two exemptions, both meaning something:
+
+- a `?` **optional** parameter — absent is a real answer there;
+- a **real** default (`= 'claude'`, `= 200`) — leaving it off asks for that
+  value, which is a decision rather than a silent nothing.
+
+`test/test_wiring.js` enforces it, derived rather than declared: the parameter
+list is parsed out of the class and the argument list out of the `new`, so
+neither is written down in the test to drift from the code. With the argument
+removed it reports `new ConsoleHost(…8 args) drops pinProjectContext` and exits
+1. Run over the whole of `src/core` it found exactly one gap — this one.
+
+**And the design lesson underneath it.** Callbacks passed **by name**, in an
+options object, cannot be lost this way: `tasks.ts` and the mission planner take
+`pinProjectContext` as a named field and a missing one is a compile error. They
+were both correct on the day the Console was not. Prefer an options object for
+anything past two or three constructor arguments; a long positional list with
+defaults is a place where a wire can go missing in silence.
+
+---
+
 ## Adding a mission primitive (X-69)
 
 **A primitive is a row in two places, and both are checked.** `PRIMITIVES` in
