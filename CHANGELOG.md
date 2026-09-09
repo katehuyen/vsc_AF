@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.451.0 - the revived card counted from zero, and the page that was showing it never came back (2026-09-09)
+
+X-232 brings a Console conversation through a restart. Two things it did not
+bring, both reported by the user in one breath, and both the same measured
+fact as X-266: inside `activate()` the transcript index has answered NOTHING
+yet, so everything read off it at that moment comes back empty.
+
+- **What the conversation already spent comes back too.** `carried` is read off
+  the index row, so on a revive it was always `undefined` and the card started
+  at zero: an hour-old conversation under a line reading "$0.0000 · 0 tokens ·
+  0 turns this session" — the composer describing this window’s turn at the
+  session instead of the session, which is the exact reading `CarriedTotals`
+  exists to prevent. The scrollback was already retried when the scan caught
+  up; the totals now wait in the same subscription and go in the same way. The
+  baseline is ADDED, never assigned, because a seat that was mid-turn is nudged
+  to carry on the moment it comes back and may have spent something of its own
+  by then. A context reading already on the card is left alone — live beats
+  disk — and Codex’s per-turn baseline is set only if that thread has not
+  already completed a turn in this seat.
+- **And the Console page comes back with it.** VS Code restores no webview of
+  ours (there is no panel serializer), so a revive put the seat back and left
+  the reader looking at an editor that never reopened: the session was working
+  and the screen said nothing about it. The restart stamp now records whether
+  the page was open while the host is still up, and the revive reopens it on
+  the seat that was mid-turn — or the first one, if none was. A page that was
+  NOT open is not opened: a Console session can outlive the tab that started
+  it, and opening an editor nobody asked for is not a recovery. It is deferred
+  by a tick and wrapped, because activation is not the place to build a webview
+  and the conversation must never go down with the page.
+
 ## 3.450.0 - one row ticking was clearing the handles of all eight, and the play took the selected row for the pressed one (2026-09-09)
 
 3.449.0 stopped the play button on an agent row from asking which agent. The

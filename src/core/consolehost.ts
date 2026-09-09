@@ -688,6 +688,57 @@ export class ConsoleHost {
     }
 
     /**
+     * ‼️ X-266's TWIN — THE FIGURES A REVIVE COULD NOT READ EITHER, AND THE
+     * HALF THAT WAS LEFT COUNTING FROM ZERO.
+     *
+     * `carried` is read off the index row, and inside `activate()` the index
+     * answers `undefined` for every id — the same measured fact that made the
+     * scrollback come back as a placeholder. The scrollback was retried; the
+     * totals were not. So a revived card showed an hour-old conversation above
+     * a line reading "$0.0000 · 0 tokens · 0 turns this session": the composer
+     * described this window's turn at the session instead of the session, which
+     * is the exact reading `CarriedTotals` exists to prevent.
+     *
+     * The baseline is ADDED, never assigned. A seat that was mid-turn is nudged
+     * to carry on the moment it comes back, so by the time the index catches up
+     * the card may already have spent something of its own, and assigning would
+     * throw that away. Context is the other way round: a live reading is newer
+     * than the transcript's last one, so it is only filled in where the card
+     * has none.
+     */
+    applyCarried(id: string, c: CarriedTotals | undefined): boolean {
+        const h = this.sessions.get(id);
+        if (!h || !c) { return false; }
+        // Codex reports the THREAD's running total, so its per-turn arithmetic
+        // needs the same baseline (see codexTurnUsage). A thread that has
+        // already completed a turn in this seat has one of its own — touching
+        // that would charge the next turn with the whole conversation, which is
+        // the failure the baseline exists to prevent.
+        if (h.codex && !h.codex.spent) {
+            const spent = codexTotalsFromUsage(c.usage);
+            if (spent) { h.codex.spent = spent; }
+        }
+        this.mutate(id, s => ({
+            ...s,
+            costUSD: s.costUSD + (c.costUSD ?? 0),
+            tokens: s.tokens + (c.tokens ?? 0),
+            wTokens: s.wTokens + (c.wTokens ?? 0),
+            turns: s.turns + (c.turns ?? 0),
+            ...(!s.contextTokens && c.contextTokens
+                ? {
+                    contextTokens: c.contextTokens,
+                    contextSource: 'transcript-last-call' as const,
+                    contextStale: true
+                }
+                : {}),
+            ...(!s.contextWindowTokens && c.contextWindowTokens
+                ? { contextWindowTokens: c.contextWindowTokens }
+                : {})
+        }));
+        return true;
+    }
+
+    /**
      * ‼️ K-22 — what this session's permission control ACTUALLY means, read off
      * Claude's own settings layers rather than assumed from the picker.
      *

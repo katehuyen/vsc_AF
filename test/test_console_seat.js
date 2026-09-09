@@ -262,6 +262,56 @@ async function s29() {
         host.rebuildHistory('cs-nope', rows) === false);
 }
 
+// ---- X-266’s twin: the FIGURES a revive could not read either -------------
+// The scrollback was retried when the index caught up and the totals were not,
+// so a revived card sat under an hour-old conversation reading "0 tokens, 0
+// turns this session". Driven through the REAL host for the same reason as the
+// block above: only the card can say what the card shows.
+{
+    const host = new ConsoleHost(() => 'claude');
+    const seat = host.start(init({ resume: 'S-11' }));
+
+    let fired = 0;
+    host.onChange(id => { if (id === seat) { fired++; } });
+
+    ok('a revived seat starts at zero — the index had not answered yet',
+        host.get(seat).tokens === 0 && host.get(seat).turns === 0
+        && host.get(seat).costUSD === 0);
+
+    ok('‼️ the baseline the index could not give at activation goes in later',
+        host.applyCarried(seat, {
+            costUSD: 1.25, tokens: 40000, wTokens: 12000, turns: 3,
+            contextTokens: 90000, contextWindowTokens: 200000
+        }) === true);
+    {
+        const st = host.get(seat);
+        ok('…and the card counts the CONVERSATION, not this window\'s turn at it',
+            st.costUSD === 1.25 && st.tokens === 40000 && st.wTokens === 12000
+            && st.turns === 3);
+        ok('…the context reading comes with it, marked as read off the transcript',
+            st.contextTokens === 90000 && st.contextWindowTokens === 200000
+            && st.contextSource === 'transcript-last-call' && st.contextStale === true);
+        ok('…and the panel is told, or the reader would be looking at the old draw',
+            fired === 1);
+    }
+
+    // ‼️ ADDED, NEVER ASSIGNED. A seat that was mid-turn is nudged to carry on
+    // the moment it comes back, so it can spend something of its own before the
+    // scan catches up; assigning would throw that away.
+    ok('a second baseline ADDS — what the seat spent meanwhile is not thrown away',
+        host.applyCarried(seat, { costUSD: 0.75, tokens: 1000, turns: 1 }) === true
+        && host.get(seat).costUSD === 2 && host.get(seat).tokens === 41000
+        && host.get(seat).turns === 4);
+    ok('…but a context reading already on the card is NOT overwritten — live beats disk',
+        host.applyCarried(seat, { contextTokens: 5 }) === true
+        && host.get(seat).contextTokens === 90000);
+
+    ok('nothing to carry is not an error, and changes nothing',
+        host.applyCarried(seat, undefined) === false);
+    ok('a seat the reader already closed is not an error either',
+        host.applyCarried('cs-nope', { tokens: 1 }) === false);
+}
+
 // ---- audit B-03.7: THE NUDGE REACHES A SEAT THAT WAS JUST RESUMED ----------
 // Driven through the REAL host, because the question is not "would the rule say
 // yes" but "does a prompt written into a seat that `start()` has only just

@@ -221,7 +221,58 @@ const live = (over = {}) => ({
     ok('…and the revive really is what subscribes — the swap has no other caller',
         /index\.onDidUpdate\(\(\) => \{[\s\S]{0,600}rebuildHistory/.test(extTs));
     ok('…and it lets go of itself, so a window is not left holding a dead subscription',
-        /if \(!pendingHistory\.length\) \{ sub\.dispose\(\); \}/.test(extTs));
+        /if \(!pendingHistory\.length && !pendingCarried\.length\) \{ sub\.dispose\(\); \}/.test(extTs));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ THE TWO HALVES THE REVIVE USED TO LEAVE BEHIND: what the conversation had
+// already SPENT, and the PAGE that was showing it.
+//
+// Both come from the same measured fact as X-266 — inside `activate()` the
+// index answers `undefined` for every id — and both were reported by the user
+// in the same breath: the card came back counting from zero, and the Console
+// page did not come back at all (VS Code restores no webview of ours; there is
+// no panel serializer, which is asserted below so that adding one later cannot
+// leave two mechanisms fighting over the same tab).
+// ---------------------------------------------------------------------------
+{
+    const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+
+    ok('‼️ the totals are waited for exactly like the scrollback is',
+        /pendingCarried = pendingCarried\.filter\(p => \{[\s\S]{0,400}applyCarried/.test(extTs));
+    ok('…the wait starts when EITHER half is missing, not only the scrollback',
+        /if \(pendingHistory\.length \|\| pendingCarried\.length\) \{/.test(extTs));
+    ok('…and it lets go only when BOTH are done — a half-done wait is a leak',
+        /if \(!pendingHistory\.length && !pendingCarried\.length\) \{ sub\.dispose\(\); \}/.test(extTs));
+    ok('…the baseline is read off the same index row the resume list reads',
+        /const past = index\.byId\(p\.sessionId\);[\s\S]{0,200}carriedTotals\(past\)/.test(extTs));
+
+    ok('‼️ the stamp records whether the PAGE was open, while the host is still up',
+        /consoleOpen: ConsolePanel\.isOpen\(\)/.test(extTs));
+    ok('…and a page that was NOT open is not opened for the reader',
+        /if \(!stamp\?\.consoleOpen\) \{ reopenConsoleSeat = undefined; \}/.test(extTs));
+    ok('…the seat it reopens on is the one that was mid-turn, else the first',
+        /if \(!reopenConsoleSeat \|\| row\.midTurn\) \{ reopenConsoleSeat = seatId; \}/.test(extTs));
+
+    // ‼️ THE ORDER IS THE WHOLE REASON THIS IS A VARIABLE. `reviveAfterRestart`
+    // runs before the panel's dependencies exist, so opening the page from
+    // inside it would be a use-before-declaration — a crash on every restart.
+    const declAt = extTs.indexOf('let reopenConsoleSeat: string | undefined;');
+    const reviveAt = extTs.indexOf('const reviveAfterRestart = (): void => {');
+    const depsAt = extTs.indexOf('const consoleDeps = {');
+    const showAt = extTs.indexOf('ConsolePanel.show(consoleDeps, { sessionId: seat })');
+    ok('‼️ all four landmarks are findable — a rename must fail here, not go quiet',
+        declAt > 0 && reviveAt > 0 && depsAt > 0 && showAt > 0);
+    ok('the seat is declared before the revive that fills it', declAt < reviveAt);
+    ok('‼️ …and the page is opened AFTER the panel\'s dependencies are built',
+        depsAt < showAt);
+    ok('…deferred, because activation is not the place to build a webview',
+        /setTimeout\(\(\) => \{\s*\n\s*try \{ ConsolePanel\.show\(consoleDeps, \{ sessionId: seat \}\); \}/.test(extTs));
+    ok('…and a page that will not open never takes the revive down with it',
+        /catch \{ \/\* the seat is live either way; the page is the extra \*\/ \}/.test(extTs));
+
+    ok('‼️ …and there is still no webview serializer, which is why this exists at all',
+        !/registerWebviewPanelSerializer/.test(extTs));
 }
 
 console.log(`test_console_revive.js: ${pass} passed, ${fail} failed`);
