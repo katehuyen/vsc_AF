@@ -115,6 +115,17 @@ short readout of figures that will never grow.
 Say **"put an AFTip on it"**; the component ships to every page from
 `htmlShell`, so there is nothing to wire and no excuse to hand-roll one.
 
+**‼️ A BLANK LINE INSIDE A PANEL IS `AFTip.GAP`, NEVER `''` (audit A-12.9).**
+`AFTip.lines` drops an empty string, because that is how a caller writes a
+conditional line — so `''` cannot also mean "blank line here", and for as long
+as it was written that way **not one MIRROR gap in the product was drawn**: the
+rule read as applied and every panel ran its value straight into its paragraph.
+`AFTip.GAP` is a single space, which survives `lines`, `filter(Boolean)`, a bare
+`.join('\n')` and a native `title` alike, so a gap means the same thing wherever
+a page writes one. `test/test_aftip_gap.js` holds both halves apart and refuses
+a bare `''` written on its own line anywhere in `media/` — it is either a gap
+(use the marker) or an argument (put it on its neighbour's line).
+
 **‼️ The one place a `title` is not a compromise: an `<option>` (U-128, U-130).**
 A `<select>` cuts its own text and the popup it opens is drawn by the operating
 system — no `AFTip` can reach into it, so the option's native `title` is the
@@ -472,7 +483,11 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   preference: a variant's own `act(r)` **presses** what a reader presses (the
   shim binds the same handlers, so this is the honest one — it is how the wiki's
   row editor is drawn); `--tip <class>[:n]` opens a hover panel with the
-  component's own stay-open class; and `--menu [id]` takes the `hidden`
+  component's own stay-open class — ‼️ it could not open an `AFTip.cell` panel
+  at all until A-12.9 (`cell` writes `class="turncol af-tipw"` and the matcher
+  was anchored at `class="af-tipw`), and it said so in one line and rendered the
+  page anyway, so the shot that followed photographed a closed panel; a `--tip`
+  that opens nothing now **exits non-zero**; and `--menu [id]` takes the `hidden`
   attribute off a filter menu, which is needed because the page shim does not
   wire `afFilters` at all (its stub menus have no `querySelectorAll`), so no
   press can open one.

@@ -441,7 +441,7 @@
                     accountTurns(a) || 'reset: no time was read, so nothing is claimed about when it turns over',
                     'this figure was ' + readAge,
                     a.plan ? 'plan: ' + a.plan : '',
-                    '',
+                    T.GAP,
                     // ‼️ X-215 — WHERE THE NUMBER CAME FROM, IN ITS OWN WORDS.
                     // This paragraph claimed the figure was Anthropic's, which
                     // is true of a Claude row and false of the engine this card
@@ -459,7 +459,7 @@
                 T.lines([
                     'state: ' + (a.usageState || 'unread'),
                     'read: ' + readAge,
-                    '',
+                    T.GAP,
                     // ‼️ -1 IS NOT 0%. The card refuses to draw an empty bar for
                     // an unread account, and the panel says which of the three
                     // silences this is rather than leaving it to the wording.

@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.3 - every MIRROR gap in the product was being swallowed (audit A-12.9) (2026-09-09)
+
+MIRROR asks a control to put its CURRENT value on the first line of its panel,
+**then a blank line**, then the description. Every panel in the product was
+written that way and **not one of them drew the blank line**: `AFTip.lines`
+drops an empty string, because that is how a caller passes a conditional line.
+The rule read as applied everywhere and the screen ran the value straight into
+its paragraph — the failure Principle 1 is about, in a shared component.
+
+- **`AFTip.GAP`** — the second intention with its own name. It is a single
+  space: a line that IS there and is blank, so it survives `lines`,
+  `filter(Boolean)`, a bare `.join('\n')` and a native `title` alike, and no
+  joiner has to learn about it. 57 separators across ten pages moved onto it.
+  `media/missions.js` had already found the problem and kept a local `GAP = ' '`
+  to itself, fixing exactly one panel; that copy is gone.
+- **`test/test_aftip_gap.js`** holds the two intentions apart (an empty string is
+  still dropped, a `GAP` is still drawn) and refuses a bare `''` written on its
+  own line anywhere in `media/` — it is either a gap or an argument, and both
+  read better named.
+- **‼️ `render_page.js --tip` could not open an `AFTip.cell` panel at all.**
+  `cell` writes the caller's classes and then `af-tipw` (`class="turncol
+  af-tipw"`), and the matcher was anchored at `class="af-tipw` — so every cell
+  panel in the product answered "nothing carries it", and the tool **rendered
+  the page anyway**, so the screenshot that followed photographed a closed panel
+  and was filed as evidence. Every class attribute is read now, and a `--tip`
+  that opens nothing exits non-zero.
+
+Looked at, not read: `dist/render/A129-barren-gap.png` (the brake's three
+figures now stand off their paragraph) and `A129-turns-gap.png` (the same
+through a page that joins its own lines with `filter(Boolean)`).
+
 ## 3.453.2 - the sentry chip's own state had never been drawn (audit A-12.8) (2026-09-09)
 
 Retrospective audit of X-196's hover sweep. Three of its five claims hold and

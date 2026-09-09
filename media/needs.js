@@ -95,7 +95,7 @@
         return window.AFTip.lines([
             `${item.agentName} · ${(KIND_META[item.kind] || {}).label || item.kind}`,
             window.AFTip.sizeNote(full),
-            '',
+            window.AFTip.GAP,
             full
         ]);
     }

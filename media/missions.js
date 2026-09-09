@@ -732,7 +732,7 @@
         const lines = [
             f.class + (retry ? ' — retry: ' + retry : ''),
             kind.says || '',
-            '',
+            window.AFTip.GAP,
             'Attempted: ' + (f.attempted || '—'),
             f.detail ? 'Reported: ' + f.detail : '',
             f.refs && f.refs.outputFile ? 'Output file: ' + f.refs.outputFile : '',
@@ -1769,7 +1769,7 @@
             window.AFTip.lines([
                 'Requested → resolved, and who decided each part:',
                 ...provLines(dims, applied),
-                '',
+                window.AFTip.GAP,
                 applied === null || applied === undefined
                     ? 'The engine reported nothing back: its session is not in the index (yet, or at all).'
                     : (SCOPE_LINE[scopeOf(applied)] || SCOPE_LINE.session)(applied.turns || 0),
@@ -2615,7 +2615,7 @@
             INTENT_LONG[m.intent] || m.intent,
             m.carried ? CARRY_LONG[m.carried] || m.carried : '',
             m.ask ? 'the lead asked for: ' + m.ask : '',
-            '',
+            window.AFTip.GAP,
             failed ? 'This turn produced NO message: ' + (m.note || 'it did not come back.')
                 : waiting ? 'This turn is ORDERED and has not come back — nothing has been said yet.'
                     : body
@@ -2685,7 +2685,7 @@
             const cast = (c.participants || []).map(p => speakerName(run, p));
             const headTip = window.AFTip.lines([
                 (k ? 'Council ' + k.id : 'Conversation ' + c.id) + ' — ' + ((k && k.question) || c.objective || ''),
-                '',
+                window.AFTip.GAP,
                 'participants: ' + (cast.join(', ') || '—'),
                 k ? 'chair: ' + speakerName(run, k.chair) : '',
                 k && k.options && k.options.length ? 'options: ' + k.options.join(' | ') : '',
@@ -2698,7 +2698,7 @@
                         + ' → ' + (v.unclear ? 'named no option' : v.choice)).join(' · ')
                     : '',
                 k && k.exit ? 'ended: ' + k.exit : c.closedAt ? 'closed: ' + (c.closeReason || 'closed') : 'open',
-                '',
+                window.AFTip.GAP,
                 'opened ' + fmtTime(c.openedAt)
             ]);
             const votes = k && k.votes && k.votes.length
@@ -2892,12 +2892,12 @@
                 ${provWrap(`<span class="mchip prov">${C.esc(pl ? (describeEffective(plannerDims) || 'CLI chooses') : 'not recorded')}${provMark(plannerDims, run.plannerApplied)}</span>`,
                     sp.leadAgentName + ' — planner', plannerDims, run.plannerApplied,
                     [
-                        '',
+                        window.AFTip.GAP,
                         ...plannerSaid,
                         plannerGone,
                         pl ? '' : 'Either this run predates the record, or its planner has not been called yet. Working it out now would read TODAY\'S agentFarm.taskExtraArgs and today\'s lead-folder Claude settings — an answer about this run built out of this morning\'s files, which is the guess this record exists to refuse.',
                         'The planner ALWAYS runs on Claude Code and in the LEAD AGENT\'S own folder — not the mission workdir, which is where the delegations run. It takes no permission mode at all: its write and spawn tools are cut off by name instead.'
-                    ].filter((s, i) => i === 0 || s).join('\n'), 'tip-planner')}
+                    ].filter(Boolean).join('\n'), 'tip-planner')}
                 ${pt ? `<a data-opensession="${C.esc(pt)}" title="Open the lead's full planner conversation (briefings, thoughts, decisions) in the session viewer">transcript</a>`
                     : `<span class="muted small" title="The planner's own session has not been indexed — there is nothing to open yet.">no transcript yet</span>`}
             </div>
@@ -3073,16 +3073,17 @@
                 `  observed cost: ${usd(g.avgCostUSD)} · ${C.fmtTok(g.avgTokens)} per run`
                     + ' (recorded so a person can read it; no decision anywhere looks at it)',
                 `  last: ${fmtTime(g.lastAt)}`,
-                ''
+                window.AFTip.GAP
             ].join('\n');
         };
 
-        // ‼️ `AFTip.lines` DROPS an empty string — that is how a caller passes a
-        // conditional line, and it means '' cannot also mean "blank line here".
-        // A space survives the filter and is what separates the paragraphs; a
-        // panel this long run together is the wall this component exists to
-        // avoid.
-        const GAP = ' ';
+        // ‼️ A-12.9 — THIS PAGE FOUND IT FIRST AND KEPT THE ANSWER TO ITSELF.
+        // `AFTip.lines` drops an empty string (that is how a caller passes a
+        // conditional line), so '' cannot also mean "blank line here" — and the
+        // local `GAP = ' '` that used to live here fixed exactly one panel
+        // while every MIRROR tooltip in the product went on running its value
+        // into its paragraph. The marker belongs to the component now.
+        const GAP = window.AFTip.GAP;
         const body = window.AFTip.lines([
             `${o.total} finished run(s) recorded, in ${(o.groups || []).length}`
                 + `${o.more > 0 ? '+' : ''} shape(s).`,
@@ -4064,7 +4065,7 @@
                 { label: 'Model', now: d.model || 'engine default', mirror: d.model || 'the engine default' },
                 'The leader turn is short and mechanical work — the constitution\'s own cost rule is that '
                 + 'an unattended loop does not run on an expensive model. Raise it deliberately, having read the figure beside it.',
-                '',
+                /* extra input attrs: none, this box is a select */ '',
                 // ‼️ THE ENGINE IS THE HOST'S ANSWER, NOT A WORD TYPED HERE. `d.engine`
                 // is the engine the leader runner can actually spawn; a page that spelt
                 // it would be a second copy of that fact, and X-249 is about to make it
@@ -4127,7 +4128,7 @@
                 : (d
                     ? `Now: ${d}${unit} — the setting's default, because this box is empty`
                     : 'Now: nothing — neither this box nor the setting names a figure'),
-            '',
+            window.AFTip.GAP,
             long
         ]);
     };
@@ -4165,7 +4166,7 @@
                         // panel; Project, Runs as and Model stayed plain labels.
                         'Now: ' + (listName(DATA.projects, sentryForm.project)
                             || 'nothing named, so nothing can start'),
-                        '',
+                        window.AFTip.GAP,
                         'Each round takes the next item off THIS project\'s backlog and is filed '
                         + 'against it. The campaign cannot start without one.'
                     ])}
@@ -4176,7 +4177,7 @@
                     [
                         'Now: ' + (listName(DATA.agents, sentryForm.agent)
                             || 'nobody named, so nothing can start'),
-                        '',
+                        window.AFTip.GAP,
                         'Every round is an ordinary unattended session in that agent\'s own folder, '
                         + 'under its own rules — the campaign adds no identity of its own.'
                     ])}
@@ -4188,7 +4189,7 @@
                         sentryForm.engine
                             ? `Now: ${engineName(sentryForm.engine)} — rounds rotate across its captured sign-ins`
                             : 'Now: no engine named, so every round runs on the main sign-in',
-                        '',
+                        window.AFTip.GAP,
                         'Naming an engine is what turns account rotation ON: without one, choosing an '
                         + 'account would mean assuming an engine, so nothing is chosen and every round '
                         + 'opens as the identity this machine is signed in as.'
@@ -4204,7 +4205,7 @@
                         // they chose that happens to be the default.
                         'Now: ' + (sentryForm.model
                             || 'no model named — the engine\'s own default decides, round by round'),
-                        '',
+                        window.AFTip.GAP,
                         'A campaign runs unattended for hours, so this is the box that decides what '
                         + 'the night costs. Left empty, the agent\'s own setting and the fleet\'s '
                         + 'model-policy rules stay in charge, exactly as they do for a hand-started '
@@ -4218,7 +4219,7 @@
                     'What a round may do without asking',
                     [
                         'Now: ' + (permName(s, sentryForm.permissionMode) || 'the CLI\'s own default'),
-                        '',
+                        window.AFTip.GAP,
                         '‼️ An unattended round that stops to ask has nobody to answer it and never ends, '
                         + 'so this is the one setting a campaign cannot afford to leave narrow.'
                     ])}
@@ -4227,7 +4228,7 @@
                     'Superpowers, on every round of this campaign',
                     [
                         'Now: ' + (sentryForm.superpowers ? 'on' : 'off'),
-                        '',
+                        window.AFTip.GAP,
                         'The skills discipline is loaded into every session the campaign opens, exactly '
                         + 'as if the box on a hand-started session were ticked.'
                     ], 'scheck')}
@@ -4355,7 +4356,7 @@
                         window.AFTip.lines([
                             'No pool was named, so the campaign is not held to a subset: every account '
                             + 'captured for this engine on this machine may be spent.',
-                            '',
+                            window.AFTip.GAP,
                             `captured for this engine: ${known.filter(a => a.engine === c.engine).length}`,
                             'Naming a pool is how a campaign is fenced to particular sign-ins — the '
                             + 'setup form does it, and the chip then carries the count instead of this.'
@@ -4366,7 +4367,7 @@
                         window.AFTip.lines([
                             'No engine and no pool were named, so every round runs on the identity this '
                             + 'machine is signed in as.',
-                            '',
+                            window.AFTip.GAP,
                             'Choosing an account would mean assuming an engine, so nothing is chosen: '
                             + 'the absence of a slot IS the main account. Name an engine on the setup '
                             + 'form and rotation turns on.'
@@ -4423,7 +4424,7 @@
                             `in a row now: ${s.failStreak || 0}`,
                             `brake at: ${s.failLimit}`,
                             `one more barren round leaves: ${Math.max(0, s.failLimit - (s.failStreak || 0) - 1)}`,
-                            '',
+                            window.AFTip.GAP,
                             'A barren round is one that ended having changed nothing. This many in a '
                             + 'ROW stops the campaign outright — a round that does work resets it to 0, '
                             + 'so the count is a streak and not a total.'

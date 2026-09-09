@@ -1295,7 +1295,7 @@
                     ? 'Measured: ' + relTime(s.contextMeasuredAt) + ' ago'
                         + (s.contextStale ? ' — the last good reading, not a live one' : '')
                     : '',
-                '',
+                window.AFTip.GAP,
                 'This is what the window is HOLDING after the last model call. '
                     + 'What the conversation has SPENT is the figure beside it and can '
                     + 'exceed the window many times over — a turn that calls tools makes '
@@ -2799,7 +2799,7 @@
         const last = rounds[rounds.length - 1];
         const lw = last && last.why;
         const lastWhy = !lw ? [] : [
-            '',
+            window.AFTip.GAP,
             `${last.title || 'the last round'} — ` + (last.whyMark === 'L'
                 ? 'a leader turn chose its words'
                 : (last.whyMark === 'M!'
@@ -2829,13 +2829,13 @@
         const tip = window.AFTip.lines([
             c.lastWhy || '',
             ...lastWhy,
-            '',
+            window.AFTip.GAP,
             `${s.projectName || c.project || ''} · as ${s.agentName || c.agent || ''}`
                 + ` · ${c.rounds || 0} round(s)`,
             c.wakeAt ? `wakes ${window.AFTime.stamp(c.wakeAt)}` : '',
             s.nextWords && s.nextWords.prompt
                 ? `\nThe next round already has its words:\n${s.nextWords.prompt}` : '',
-            '',
+            window.AFTip.GAP,
             'Press for the campaign itself — its setup, its rounds and its controls.'
         ]);
         return window.AFTip.wrap(

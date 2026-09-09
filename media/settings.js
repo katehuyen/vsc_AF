@@ -1575,7 +1575,7 @@
             `\${${v.name}}`,
             window.AFTip.lines([
                 v.value || 'Nothing on this machine — a path using it is SKIPPED rather than pointed somewhere wrong.',
-                '',
+                window.AFTip.GAP,
                 v.describe
             ]),
             'tip-pathvar')).join('')}

@@ -536,7 +536,7 @@
                 'Stamps the ticked notices with a project — or everything shown, when nothing is ticked.',
                 'The stamp is what puts a notice on that project\'s Work tab, in its timeline and behind its filters.',
                 '"— take out of any project" is the same move in reverse: it lifts the stamp off.',
-                '',
+                window.AFTip.GAP,
                 projects.length
                     ? 'Projects: ' + projects.map(p => (p.icon ? p.icon + ' ' : '') + p.name).join(' · ')
                     : 'No projects declared yet — make one on the ◧ Projects page.'

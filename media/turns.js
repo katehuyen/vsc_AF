@@ -527,7 +527,7 @@
         ]),
         label: r => cell('turncol', C.esc(r.label || '—'), 'Turn', [
             r.label || '(no prompt recorded)',
-            '',
+            window.AFTip.GAP,
             line('Turn', `${r.n} of ${r.of}`),
             line('When', stamp(r.ts)),
             line('Session', r.session),
@@ -535,7 +535,7 @@
         ]),
         session: r => cell('sesscol', C.esc(r.session || '—'), 'Session', [
             r.session || '(unnamed)',
-            '',
+            window.AFTip.GAP,
             line('Turn', `${r.n} of ${r.of}`),
             line('Agent', r.agent),
             line('Engine', engineLabel(r)),

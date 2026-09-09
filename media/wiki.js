@@ -252,7 +252,7 @@
                 which === 'rules' && !found
                     ? 'The wiki\'s own law outranks the agent procedure, so a compile is refused until it exists.'
                     : '',
-                '',
+                T.GAP,
                 window.AFCtx.HINT
             ]), 'wk-tipw');
         };
@@ -288,7 +288,7 @@
                 v.exists ? `${v.pages || 0} page(s) in ${cats} categor${cats === 1 ? 'y' : 'ies'}` : 'This folder does not exist.',
                 cats ? 'Categories: ' + (v.categories || []).join(' · ') : '',
                 (v.misplaced || []).length ? `${v.misplaced.length} page(s) nested deeper than one category` : '',
-                '', rootLive ? 'Press it to show the folder — ' + window.AFCtx.HINT : window.AFCtx.HINT]), 'wk-tipw');
+                T.GAP, rootLive ? 'Press it to show the folder — ' + window.AFCtx.HINT : window.AFCtx.HINT]), 'wk-tipw');
         /**
          * ‼️ X-138/U-122 — THE DROP BOX, ON THE STRIP RATHER THAN IN A NOTE.
          *
@@ -307,7 +307,7 @@
                 v.rawReady ? '' : 'The folder is not there yet — it is made the next time the pool is read.',
                 `${waiting} transcript(s) waiting${Number(v.doneFiles) ? ` · ${v.doneFiles} already archived in _DONE_` : ''}`,
                 'Drop a browser export here (.md or .txt) and it becomes a candidate on the next read — nothing else to do.',
-                '', rawLive ? 'Press it to open the folder — ' + window.AFCtx.HINT : window.AFCtx.HINT]), 'wk-tipw');
+                T.GAP, rawLive ? 'Press it to open the folder — ' + window.AFCtx.HINT : window.AFCtx.HINT]), 'wk-tipw');
         /**
          * ‼️ U-122 — THE AGENT PROCEDURE WAS A DEAD `<span>`. It is the file a
          * compile is told to read first, named on the one page that starts
@@ -524,7 +524,7 @@
     function markTip(c) {
         return T.lines([
             c.label || '(no opening line recorded)',
-            '',
+            T.GAP,
             c.raw ? `File: ${c.rawFile}` : `Session ${c.sessionId}`,
             c.raw ? (c.sessionFile || '') : (c.agent ? `Agent: ${c.agent}` : ''),
             c.raw ? 'Dropped into _RAW_ — it did not happen in a CLI on this machine.'
@@ -532,7 +532,7 @@
             scopeWords(c),
             c.note ? '' : null,
             c.note ? 'Note: ' + c.note : null,
-            '',
+            T.GAP,
             `Marked by ${c.addedBy || 'agent'} · ${window.AFTime.full(c.addedAt)}`,
             c.compiledAt ? `Compiled ${window.AFTime.full(c.compiledAt)}` : '',
             c.compiling ? 'A compile is running for this mark — it is not offered again until that run ends.' : ''
@@ -555,7 +555,7 @@
             chips || '<span class="wk-seedcat">pick a category…</span>',
             'Topics', T.lines([
                 (c.topics || []).join(' · ') || 'Filed under nothing yet.',
-                '',
+                T.GAP,
                 'This is the filing key: the compile opens or amends a page per concept under it.',
                 (c.topics || []).length ? 'Click to edit.'
                     : 'Click to pick one — the compile cannot run until it has one.'
@@ -629,10 +629,10 @@
                 // A ⚠ with no sentence behind it is a badge, not an answer.
                 ...(st.label === 'failed'
                     ? ['', c.lastError || '', c.lastErrorAt ? '(' + window.AFTime.ago(c.lastErrorAt) + ')' : '',
-                        '', 'Press ↻ to clear it and put the mark back in the queue, or simply compile it again.']
+                        T.GAP, 'Press ↻ to clear it and put the mark back in the queue, or simply compile it again.']
                     : st.label === 'needs a topic'
                         ? ['', 'A topic is the key the compile files the page under — it is the one thing a scan cannot supply, so nothing is offered for compiling until you give it one.',
-                            '', 'Click to pick a category and leave a note for the compiling agent.']
+                            T.GAP, 'Click to pick a category and leave a note for the compiling agent.']
                         : ['', 'Only a run reporting back closes a mark.'])
             ]))}
             ${c.raw
@@ -646,9 +646,9 @@
                     'External file', T.lines([c.rawFile || c.sessionId,
                         c.sessionFile || '',
                         c.rawDone ? 'Archived — a compile has moved it into _RAW_/_DONE_.' : 'Waiting in _RAW_.',
-                        '', 'Dropped into the wiki\'s _RAW_ folder, not run in a CLI on this machine — so it has no turns, no agent and no engine.',
+                        T.GAP, 'Dropped into the wiki\'s _RAW_ folder, not run in a CLI on this machine — so it has no turns, no agent and no engine.',
                         scopeWords(c),
-                        '', 'Click to open the file.']))
+                        T.GAP, 'Click to open the file.']))
                 : T.cell('wk-sess', `data-session="${esc(c.sessionId)}" role="button" tabindex="0"`,
                     `<span class="wk-rawicon">💬</span> <code>${esc(c.session)}</code> <span class="wk-turns${(c.excludeTurns || []).length ? ' cut' : ''}">${esc(c.turns)}</span>`,
                     'Where it came from', T.lines([`Session ${c.sessionId}`, c.agent ? 'Agent: ' + c.agent : '',
@@ -661,7 +661,7 @@
                         scopeWords(c),
                         (c.excludeTurns || []).length
                             ? `Excluded: ${c.excludeTurns.join(', ')} — the compile is told in so many words not to read them.` : '',
-                        '', 'Click to open the transcript.']))}
+                        T.GAP, 'Click to open the transcript.']))}
             ${topicsCell(c)}
             ${T.cell('wk-label', '', esc(c.label || '—') + (c.note ? ` <span class="wk-note">— ${esc(c.note)}</span>` : ''),
             'What was said', markTip(c))}

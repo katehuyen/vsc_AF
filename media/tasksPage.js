@@ -221,7 +221,7 @@
                         f.due.length
                             ? 'Next after this: ' + f.due[0].title + ' at ' + until(f.due[0].nextAt)
                             : 'Nothing is scheduled to wake up next — the pause was holding triggers and queued work only.',
-                        '',
+                        window.AFTip.GAP,
                         'A pause never dropped an occurrence: a schedule whose time passed while it was'
                         + ' held is deferred, not cancelled, so resuming can produce a run immediately.'
                     ]))
@@ -238,7 +238,7 @@
                         f.due.length
                             ? 'First wake-up it would hold: ' + f.due[0].title + ' at ' + until(f.due[0].nextAt)
                             : 'No schedule is due, so this holds triggers and queued work only.',
-                        '',
+                        window.AFTip.GAP,
                         'Nothing is lost. A due occurrence is deferred to the moment you resume.'
                     ]))}
                        <span class="btngroup">
@@ -254,7 +254,7 @@
                                 + ' inside that window and would be deferred to the end of it.'
                                 : 'No schedule is due inside that window, so this holds triggers'
                                 + ' and queued work only.')(f.wakeIn(mins)),
-                            '',
+                            window.AFTip.GAP,
                             'Same hold as ⏸ Pause all, with an end on it.'
                         ]))).join('\n                         ')}
                        </span>`}
@@ -266,7 +266,7 @@
                     g.quietFrom
                         ? 'Between those two times nothing wakes on its own.'
                         : 'No nightly window is set — the farm wakes at any hour.',
-                    '',
+                    window.AFTip.GAP,
                     'A schedule due inside the window is DEFERRED to the moment the window ends,'
                     + ' never dropped: the occurrence still happens, later.',
                     'Work you start by hand is not affected, and a run already going is not stopped.',
@@ -276,7 +276,7 @@
                     g.quietFrom && f.due.length
                         ? 'Next wake-up as it stands: ' + f.due[0].title + ' at ' + until(f.due[0].nextAt)
                         : undefined,
-                    '', 'Press to change the window.'
+                    window.AFTip.GAP, 'Press to change the window.'
                 ]))}
             </div>
             ${/**
@@ -306,7 +306,7 @@
                     f.running.length ? '' : undefined,
                     ...someOf(f.running, 6, r => '· ' + r.agentName + ' — ' + r.title
                         + (r.durMin !== undefined ? '  (' + r.durMin + 'm)' : '')),
-                    '',
+                    window.AFTip.GAP,
                     s.running >= s.runLimit
                         ? 'The ceiling is full, so nothing new starts until one of these ends.'
                         : plural(s.runLimit - s.running, 'slot') + ' free — a queued task can launch now.',
@@ -337,7 +337,7 @@
                         (d.needs || []).length ? '' : undefined,
                         ...someOf(d.needs || [], 8, i => '· ' + i.agentName + ' — ' + i.title
                             + '  (' + i.kind.replace('-', ' ') + ')'),
-                        '', 'Press to open the Needs page and answer them.'
+                        window.AFTip.GAP, 'Press to open the Needs page and answer them.'
                     ])) : ''}
                 ${htip(`<span class="stat">📅 <b>${s.plansOn}</b>/${s.plansSwitchable} switched on</span>`,
                     s.plansOn + ' of ' + s.plansSwitchable + ' switchable definitions are on',
@@ -382,7 +382,7 @@
                                 f.plan.reduce((a, p) => a + (p.runs7d || 0), 0)),
                         'Work you started by hand is not in this figure: it is what the farm spent'
                         + ' on its OWN, which is the number a ceiling is set against.',
-                        '',
+                        window.AFTip.GAP,
                         ...someOf(f.plan.filter(p => p.cost7d > 0).sort((a, b) => b.cost7d - a.cost7d),
                             5, p => '· ' + fmtUSD(p.cost7d) + ' — ' + p.title
                                 + (p.runs7d ? '  (' + p.runs7d + ' run(s))' : '')),
@@ -402,7 +402,7 @@
                             + ' would have cost was never spent.'
                             : undefined)(s.savedWakeups7d
                                 + f.plan.filter(p => p.skipped7d > 0).reduce((a, p) => a + (p.runs7d || 0), 0)),
-                        '',
+                        window.AFTip.GAP,
                         ...someOf(f.plan.filter(p => p.skipped7d > 0).sort((a, b) => b.skipped7d - a.skipped7d),
                             5, p => '· ' + p.skipped7d + ' skipped of '
                                 + (p.skipped7d + (p.runs7d || 0)) + ' — ' + p.title
@@ -414,11 +414,11 @@
                     window.AFTip.lines([
                         'Only rows that are switched ON (or cannot be switched off) are counted —'
                         + ' a problem in something deliberately disabled is not a problem.',
-                        '',
+                        window.AFTip.GAP,
                         ...someOf(f.plan.filter(p => p.issues.length && (p.enabled || !p.switchable)), 6,
                             p => '· ' + p.title + ' — '
                                 + p.issues.map(i => (ISSUE[i] || [i])[0]).join(', ')),
-                        '', 'Press to filter the Plan tab down to exactly these rows.'
+                        window.AFTip.GAP, 'Press to filter the Plan tab down to exactly these rows.'
                     ])) : ''}
             </div>
         </div>`;
@@ -505,13 +505,13 @@
                 window.AFTip.lines([
                     'A schedule, a trigger, a workflow or a template: the thing that DECIDES a run,'
                     + ' not the run. Editing one here changes every future execution and no past one.',
-                    '',
+                    window.AFTip.GAP,
                     ['schedule', 'trigger', 'workflow', 'template'].map(k => {
                         const n = f.plan.filter(p => p.kind === k).length;
                         return n ? KIND[k].icon + ' ' + n + ' ' + KIND[k].label.toLowerCase()
                             + (n === 1 ? '' : 's') + ' — ' + KIND[k].hint : undefined;
                     }).filter(Boolean).join('\n'),
-                    '',
+                    window.AFTip.GAP,
                     f.due.length
                         ? 'Next to wake: ' + f.due[0].title + ' at ' + until(f.due[0].nextAt)
                         : 'Nothing here is due to wake up on its own.',
@@ -523,11 +523,11 @@
                 window.AFTip.lines([
                     'One row is one execution — what a definition on the Plan tab actually did, or'
                     + ' what you started by hand. Nothing here can be edited; it has already happened.',
-                    '',
+                    window.AFTip.GAP,
                     f.running.length + ' running · ' + f.queued.length + ' queued · '
                     + f.parked.length + ' parked',
                     'Today: ' + d.summary.doneToday + ' finished, ' + d.summary.failedToday + ' failed.',
-                    '',
+                    window.AFTip.GAP,
                     'The list is capped and the oldest rows are filed month by month — ⌛ Archive'
                     + ' in the toolbar reads them back.'
                 ])]

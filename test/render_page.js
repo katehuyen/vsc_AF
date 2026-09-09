@@ -270,30 +270,44 @@ function main() {
     // rule (A-12) yields to, so the panel comes back at its own size with its
     // own border and background — nothing about it is restated here.
     const opened = !tipCls ? sections : (() => {
-        const W = 'class="af-tipw';
-        const carries = new RegExp(`class="[^"]*\\b${tipCls}\\b[^"]*"`, 'g');
+        // ‼️ THE WRAPPER'S OWN CLASS IS NOT ALWAYS FIRST, AND THAT USED TO MEAN
+        // "NO PANEL" IN SILENCE. `AFTip.cell` writes the caller's classes and
+        // THEN `af-tipw` (`class="turncol af-tipw"`), so an expression anchored
+        // at `class="af-tipw` matched no cell panel anywhere in the product —
+        // and the second pass skipped the same elements by name. `--tip
+        // turncol` printed "nothing carries it" and went on to write the page,
+        // so the shot that followed photographed a closed panel and was filed
+        // as evidence. Every attribute is read now, wrapper or not.
+        const attrRe = /class="([^"]*)"/g;
+        const has = (cls, want) => new RegExp(`(^|\\s)${want}(\\s|$)`).test(cls);
         const marks = new Set();
-        // the wrapper itself
         let m;
-        const wre = /class="af-tipw[^"]*"/g;
-        while ((m = wre.exec(sections))) {
-            if (new RegExp(`\\b${tipCls}\\b`).test(m[0])) { marks.add(m.index); }
-        }
-        // …and the first wrapper inside an element that carries the class
-        while ((m = carries.exec(sections))) {
-            if (m[0].indexOf('af-tipw') >= 0) { continue; }
-            const at = sections.indexOf(W, m.index);
+        while ((m = attrRe.exec(sections))) {
+            if (!has(m[1], tipCls)) { continue; }
+            // the wrapper itself…
+            if (has(m[1], 'af-tipw')) { marks.add(m.index); continue; }
+            // …or the first wrapper inside an element that carries the class
+            const at = sections.indexOf('class="af-tipw', m.index);
             if (at >= 0) { marks.add(at); }
         }
-        if (!marks.size) { console.error(`--tip ${tipCls}: nothing carries it`); }
+        // ‼️ AND IT FAILS RATHER THAN CERTIFYING AN EMPTY PICTURE. A render
+        // asked to open a panel and opening none is not a render of that panel.
+        if (!marks.size) {
+            console.error(`--tip ${tipCls}: nothing carries it — NO PANEL IS OPEN in this render`);
+            process.exitCode = 1;
+        }
         let picked = [...marks].sort((a, b) => a - b);
         if (tipNth) {
             console.log(`--tip ${tipCls}: ${picked.length} panels, opening #${tipNth}`);
+            if (tipNth > picked.length) {
+                console.error(`--tip ${tipCls}:${tipNth} — only ${picked.length} to choose from`);
+                process.exitCode = 1;
+            }
             picked = picked.slice(tipNth - 1, tipNth);
         }
         let out = '', last = 0;
         for (const at of picked) {
-            const end = sections.indexOf('"', at + W.length);
+            const end = sections.indexOf('"', at + 'class="'.length);
             out += sections.slice(last, end) + ' af-on';
             last = end;
         }

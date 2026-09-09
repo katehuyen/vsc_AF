@@ -3683,7 +3683,7 @@
             `Doing: ${every.doing} · ${tops.doing}`,
             `Done: ${every.done} · ${tops.done}`,
             `Parts: ${parts} of ${(all || []).length} items are part of another`,
-            '',
+            window.AFTip.GAP,
             'Press to switch. The area chips below count by the same rule, so the two lines can never disagree.',
             // M-31 — the press narrows the list as well, and the hover has to
             // say so BEFORE it happens: a filter that moves on its own is only
@@ -3859,8 +3859,7 @@
                         </select>`,
                         'Work type · Canonical #tags',
                         BL_TYPES_TIP_BODY + '\n\nOptional. Leave empty for inbox / unclassified.',
-                        '',
-                        'data-aftip-open="1000"'
+                        '', 'data-aftip-open="1000"'
                     )}
                     <select id="bl-prio" title="Priority">
                         ${PRIO_ORDER.slice().reverse().map(p =>
@@ -5462,7 +5461,7 @@
             `Log: ${d.path || 'not created yet'}`,
             `Ledger: ${d.ledger}`,
             `Records: ${d.events}`,
-            '',
+            window.AFTip.GAP,
             'The log is shared — its data lines are rewritten from the ledger and every line you write in it is kept. The ledger is append-only and is never edited in place.'
         ]))}">${C.esc(d.path || 'Backloglog.md')} · <code>${C.esc(d.ledger)}</code></span>
             <span class="grow"></span>
@@ -5567,7 +5566,7 @@
             ${trkStat(s.events, 'events', window.AFTip.lines([
             `Events shown: ${s.events} of ${d.events}`,
             ...trkCountLines(s.byEvent, TRK_EVENTS.map(e => e.id)),
-            '',
+            window.AFTip.GAP,
             ...trkCountLines(s.bySource, TRK_SOURCES.map(x => x.id))
         ]))}
             ${trkStat(s.sessions, 'sessions', window.AFTip.lines([
@@ -5592,7 +5591,7 @@
                 title="${C.esc(window.AFTip.lines([
             `Records whose attribution is a best effort: ${gaps.uncertain}`,
             ...trkCountLines(s.byDoubt, TRK_DOUBTS.map(x => x.id)),
-            '',
+            window.AFTip.GAP,
             'Press to show only those.'
         ]))}"><b>${gaps.uncertain}</b> uncertain</button>` : ''}
             ${gaps.untracked ? `<button class="pj-trk-stat" data-trkview="gaps"
@@ -6053,7 +6052,7 @@
             const known = TRK_DOUBTS.find(x => x.id === d);
             return `<span class="pj-trk-doubt" title="${C.esc(window.AFTip.lines([
                 known ? known.tip : 'The attribution is a best effort.',
-                '',
+                window.AFTip.GAP,
                 'Everything else on this card is recorded, not guessed.'
             ]))}">${C.esc(d)}?</span>`;
         }).join('');

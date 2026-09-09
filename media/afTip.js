@@ -26,8 +26,26 @@
             .replace(/"/g, '&quot;');
     }
 
-    /** Lines → one block, empties dropped. The caller writes `label: value`
-     *  pairs; nothing here adds words of its own. */
+    /**
+     * ‼️ A DELIBERATE BLANK LINE IS `GAP`, NOT `''` (audit A-12.9).
+     *
+     * MIRROR asks for "the current value, THEN A BLANK LINE, then the
+     * description" — and every panel written that way was drawing the value
+     * stuck to its paragraph, because `lines()` drops `''`. It has to: a
+     * conditional line says "nothing here" by evaluating to `''`, and that is
+     * the far more common case, so the two intentions cannot share one value.
+     *
+     * `GAP` is a line that IS there and is blank — a single space. That is not
+     * a trick, it is the cheapest form the intention has: it survives `''`
+     * filters, `filter(Boolean)`, a plain `.join('\n')` and a native `title`
+     * alike, so a gap means the same thing wherever a page writes one and no
+     * joiner has to learn about it. `white-space: pre-wrap` on the panel draws
+     * it as the empty line the rule asks for.
+     */
+    const GAP = ' ';
+
+    /** Lines → one block, empties dropped (`GAP` is not empty). The caller
+     *  writes `label: value` pairs; nothing here adds words of its own. */
     function lines(parts) {
         return (parts || []).filter(function (p) {
             return p !== '' && p !== undefined && p !== null;
@@ -672,5 +690,7 @@
         }
     }
 
-    window.AFTip = { wrap: wrap, cell: cell, label: label, lines: lines, sizeNote: sizeNote, esc: esc };
+    window.AFTip = {
+        wrap: wrap, cell: cell, label: label, lines: lines, sizeNote: sizeNote, esc: esc, GAP: GAP
+    };
 })();
