@@ -130,10 +130,12 @@ const variants = () => ([
     {
         // ‼️ The panel IS the change. Shut, the row gains one chip; the field
         // table, the allowed values and the example only exist inside it — so
-        // it is photographed with `--tip tip-shape:<n>` (U-81), which opens it
-        // with the component's own stay-open class at its real size.
-        id: 'jsonsettings-open',
-        label: 'Settings — the shape panel, open (shoot with --tip tip-shape:1)',
+        // the scene NAMES the panel it is a picture of (U-81) and the renderer
+        // opens it with the component's own stay-open class at its real size.
+        // Said here rather than in the label as an instruction to a person:
+        // a flag nobody passes is a scene that draws the page beside it.
+        id: 'jsonsettings-open', tip: 'tip-shape:1',
+        label: 'Settings — the shape panel, open',
         data: data()
     }
 ]);

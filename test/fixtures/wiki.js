@@ -320,11 +320,12 @@ module.exports = {
          *
          * The menu is not opened by an `act`: the page shim does not wire the
          * filter component at all (its stub menus have no `querySelectorAll`),
-         * so pressing the trigger here does nothing. The picture is taken with
-         *   node test/render_page.js wiki --only topics --menu wk-topic
-         * which takes off the one attribute that hides it.
+         * so pressing the trigger here does nothing. The scene NAMES it instead
+         * (`menu: 'wk-topic'`) and the renderer takes off the one attribute that
+         * hides it — a flag somebody has to remember is a scene that draws the
+         * page beside it in every shot nobody remembered on.
          */
-        { id: 'topics', label: 'Wiki — the topic filter: one searchable menu instead of a stack of badges', data: data() },
+        { id: 'topics', label: 'Wiki — the topic filter: one searchable menu instead of a stack of badges', menu: 'wk-topic', data: data() },
         /**
          * ‼️ U-95 — WHAT TICKING ROWS BRINGS, AND WHAT A COMPILE SAYS BEFORE IT
          * SPENDS ANYTHING. Both only exist after a press, and both are about

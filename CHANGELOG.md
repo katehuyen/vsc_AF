@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.7 - columns that were not columns, and a name squeezed to zero pixels (audit B-02 · B-03) (2026-09-10)
+
+Four layout defects, none of which could fail a string test: the markup was
+correct in every one of them. They were found by measuring the laid-out page
+instead of reading it, and each repair now carries a test that measures too.
+
+- **The Missions delegation table drew its column headers in the right third of
+  the page.** `Agent · Task · Status · Tokens · Cost · Evidence` sat at
+  x≈918–1356 while their own data sat at x≈60. The cause was a NAME, not a
+  layout: `.srow` was also the mission composer's `display:flex` form row, 350
+  lines away in the same file, so the `<tr>` became a flex container, its cells
+  stopped being table cells, and the `<thead>` was left to lay itself out
+  against nothing. The step row is `.steprow` now, and
+  `test/test_table_row_display.js` reads every page script for the collision.
+- **Three team rows of the same five axes, none of them in the same column.**
+  The account picker is drawn only where this machine holds a sign-in for that
+  member's engine (X-225, and right: a box with no referent is forbidden). But
+  `.tmrow` is a flex row, so dropping the sixth control let the other five grow
+  — one member's ENGINE box sat under the row above's MODEL and its PERMISSIONS
+  under that row's ACCOUNT. The box still is not drawn; what holds its place
+  says why the axis is missing, which is more than the hole was saying.
+- **A session card's first fact — whose session it is — was not on the screen.**
+  The list is a fixed 250px column on every window, so a card carrying engine +
+  route + tokens + 🔖 beside the name is the ordinary case. Measured: the name
+  was squeezed to **zero** pixels, and below one character there is not even an
+  ellipsis to say something is missing; on the tightest row the eight-character
+  id was clipped too and the card read `(#:`. The badges are one group now, so
+  the line breaks between the identity and them rather than through them, and
+  the identity has a floor.
+- **A round table that clamps its duration, a scene that answers the host, and
+  scenes that were photographing the scene above them.** `missions/history` is
+  labelled "the recorded history strip, panel open" and had no way to open one;
+  `missions/form-preview` exists to prove the refusal list a draft collects and
+  had never drawn one, because it answered with a token the page discards. A
+  scene now names the panel or menu it needs on itself, and
+  `test/test_scenes_differ.js` refuses an undeclared duplicate — it found two
+  more in other fixtures.
+
 ## 3.453.6 - the sentry scenes were drawn in words the product does not have (audit B-02) (2026-09-10)
 
 The surface sweep of Missions, the most-touched page in the corpus. A-12.8 had

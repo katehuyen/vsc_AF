@@ -529,7 +529,49 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   that opens nothing now **exits non-zero**; and `--menu [id]` takes the `hidden`
   attribute off a filter menu, which is needed because the page shim does not
   wire `afFilters` at all (its stub menus have no `querySelectorAll`), so no
-  press can open one.
+  press can open one. A `--menu` that opens nothing exits non-zero too.
+- **‼️ …AND A SCENE THAT NEEDS ONE OF THOSE NAMES IT ON ITSELF** — `tip: 'tip-hist'`,
+  `menu: 'wk-topic'` on the variant, beside its `label`. A flag is something a
+  person has to remember, and the measurement of what happens when they do not
+  is `missions/history`: labelled "the recorded history strip, **panel open**",
+  it had no `act` and no tip, so every photograph ever taken of it was byte for
+  byte the scene above it and the panel existed only in the label. Two more were
+  in the same state (`jsonsettings-open`, `wiki/topics`), one of them carrying
+  the flag in its label as an instruction. `test/test_scenes_differ.js` draws
+  every scene of every fixture and refuses an **undeclared** duplicate; a scene
+  that really is a twin of another (the Console's palette needs a press this
+  shim cannot make) says `twin: '<id>'` and says why in a comment.
+- **‼️ AND A SCENE THAT ANSWERS THE HOST HAS TO BE ANSWERING WHAT THE PAGE ASKED.**
+  `missions/form-preview` exists to prove the refusal list a draft collects and
+  a row drawing its own engine's catalogue. It showed neither, for its whole
+  life: the page accepts a resolution only when its token matches the draft as
+  it stands (`previewSeq`), and the scene invented `seq: 0`, which the first
+  render has already moved past. A fixture may give the shim a real
+  `setTimeout` (`window: { setTimeout: (fn) => { fn(); return 0; } }`) so the
+  page's own debounced request is really posted, then read that request out of
+  `r.posted` and answer with **its** `seq` — which is all the host ever does
+  (`missionsPanel.ts`, `case 'preview'`).
+
+**‼️ AND SOME DEFECTS ARE ONLY VISIBLE TO A MEASUREMENT, so they get a test that
+measures.** Three were found in one audit session and not one of them could
+fail a string assertion — the markup was correct in every case:
+
+- `test/test_table_row_display.js` — a class on a `<tr>`/`<td>`/`<th>` may not
+  be given a non-table `display`. The Missions delegation table drew its column
+  headers in the right third of the page because `.srow` was ALSO the mission
+  composer's `display:flex` form row, 350 lines away; a `<tr>` turned into a
+  flex container leaves its `<thead>` laying itself out alone.
+- `test/test_team_row_columns.js` — a repeated row grid draws the same slots in
+  every row. Dropping the account picker on a member whose engine has no
+  sign-ins (right: a box with no referent is forbidden) let the other five
+  controls grow, so three rows of the same five axes had none of them in the
+  same column. The box still is not drawn; the SLOT is held.
+- `test/test_console_identity_width.js` — nothing is drawn narrower than one
+  character of itself, and every session card shows its whole name and id. The
+  session list is a fixed 250px column, and a card with four badges squeezed
+  the agent name to **zero** pixels; below one character there is not even an
+  ellipsis to say something is missing. It runs Chrome and skips itself when
+  there is none, like `test_shoot_page.js`.
 
 It asserts nothing and is not in `npm test` — a page that looks right proves
 the CSS, never the behaviour. It is the looking glass, and looking is the part

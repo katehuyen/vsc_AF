@@ -976,7 +976,17 @@
                      the five engines cannot isolate one at all. */''}
                 ${accountRowsFor(eng).length ? `<select id="ac-${i}" class="mdl${ovr(form.accounts[a.id])}" data-account="${C.esc(a.id)}"
                     title="${C.esc(mirror(pv, 'account', accountTitle(eng, form.accounts[a.id] || '')))}"
-                    ${inRow ? '' : 'disabled'}>${accountOpts(eng, form.accounts[a.id] || '')}</select>` : ''}
+                    ${inRow ? '' : 'disabled'}>${accountOpts(eng, form.accounts[a.id] || '')}</select>`
+                    // ‼️ B-02.2 — …BUT THE COLUMN KEEPS ITS PLACE. Measured: on a
+                    // row whose engine has no sign-ins, dropping the sixth child
+                    // let the other five grow, so that row's Engine box sat under
+                    // the row above's Model and its Permissions under that row's
+                    // Account — three rows of the same five axes and not one of
+                    // them in the same column. The box is still not drawn (X-225
+                    // stands: nothing here offers a choice that has no referent);
+                    // what stands in its place says WHY the axis is missing,
+                    // which is more than the hole was saying.
+                    : `<span class="tmnone" title="${C.esc(engLabel + ' keeps no separate sign-ins on this machine, so there is nothing to choose on this axis — every delegation of this member runs on whatever account that CLI is already signed in as.')}">—</span>`}
                 ${narrowNote[a.id] ? `<span class="narrownote" title="This row's own words were cleared because the engine it is on does not offer them — said here rather than left as a value that quietly vanished.">${C.esc(narrowNote[a.id])}</span>` : ''}
             </div>`;
         }).join('');
@@ -1838,7 +1848,7 @@
             // the output entry: an action that cannot act is not offered.
             afSession: !!s.transcript
         });
-        return `<tr class="srow" data-step="${C.esc(s.id)}" ${ctx}
+        return `<tr class="steprow" data-step="${C.esc(s.id)}" ${ctx}
             title="Click to open this delegation: full prompt + live output — ${window.AFCtx.HINT}">
             <td class="stoggle">${open ? '▾' : '▸'}</td>
             <td>${stepProv(s)}${stepLive(s)}</td>
@@ -5032,6 +5042,11 @@
                 .tmrow label { flex:0 1 180px; min-width:130px; }
                 .tmrow input[type=text] { flex:2 1 170px; min-width:110px; max-width:340px; }
                 .tmrow select { flex:1 1 132px; min-width:96px; max-width:168px; margin-top:0; }
+                /* The account column when the engine has none — the SAME flex
+                   slot as the select it stands in for, or the row above and the
+                   row below stop being columns (B-02.2). */
+                .tmnone { flex:1 1 132px; min-width:96px; max-width:168px;
+                    text-align:center; opacity:.45; font-size:12px; cursor:default; }
                 .limrow { display:flex; gap:14px; flex-wrap:wrap; }
                 .limfield { font-size:11px; }
                 .limfield input { width:90px; display:block; margin-top:3px; }
@@ -5158,7 +5173,15 @@
                 .lerow { font-size:11px; padding:2px 0; border-bottom:1px dotted var(--vscode-widget-border, #2a2a2a); cursor:pointer; }
                 .lerow:hover { background:var(--vscode-list-hoverBackground); }
                 .lerow.alert { color:var(--vscode-inputValidation-warningBorder, #d0a500); }
-                .srow { cursor:pointer; }
+                /* B-02.3 — this row is a TABLE row and its name may not be one
+                   the composer already owns. It was .srow, which the mission
+                   form above declares display:flex; a table row turned into a
+                   flex container leaves the <thead> laying itself out alone, so
+                   the delegation headers drifted into the right third of the
+                   page while their own data stayed on the left. Nothing here
+                   may set display on a <tr>/<td>/<th> class — test/test_table_row_display.js
+                   reads every page script and fails on the collision. */
+                .steprow { cursor:pointer; }
                 .stoggle { width:14px; opacity:.7; }
                 /* X-96 — the evidence cell holds two links on one line; the row
                    is already narrow, so it never wraps mid-word. */

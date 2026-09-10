@@ -997,6 +997,23 @@ const fire = (el, ev) => {
 
 module.exports = {
     script: 'missions.js',
+    /**
+     * ‼️ B-02.2 — THE DEBOUNCE IS RUN, so a scene can answer the question the
+     * page actually asked.
+     *
+     * The form debounces its `preview` request by 220ms, and the shim's
+     * `setTimeout` never fires — so the request was never posted and the token
+     * it carries (`previewSeq`) never left the page. A scene that then invented
+     * `seq: 0` was thrown away by the page's own staleness guard, because the
+     * first render has already moved `previewSeq` past 0. The one picture that
+     * exists to prove the refusal list therefore showed a form with NO host
+     * resolution at all — measured, and for its whole life.
+     *
+     * Running the timer inline makes the request real. `preview` and
+     * `sentryProbe` are the only two timers this page has, both are debounced
+     * posts, and the shim's `postMessage` only records — so nothing re-enters.
+     */
+    window: { setTimeout: (fn) => { fn(); return 0; } },
     data,
     variants: () => [
         {
@@ -1183,10 +1200,25 @@ module.exports = {
                     agentId: id, agentName: name, kind: 'worker',
                     requested: {}, effective: eff, origin, note, problems
                 });
+                // ‼️ THE DRAFT IS TYPED FIRST, AND THE ANSWER COMES BACK TO THE
+                // DRAFT THAT ASKED. The page only accepts a resolution whose
+                // token matches the draft as it stands, so the boxes are filled,
+                // the change is fired, and only then is the request the page
+                // itself posted answered — with ITS `seq`, which is all the host
+                // ever does with it (`missionsPanel.ts` case 'preview').
+                el('f-goal').value = SPEC.goal;
+                el('f-lead').value = 'a0';
+                el('tm-1').checked = true;
+                el('tm-2').checked = true;
+                el('rl-1').value = 'implements';
+                el('rl-2').value = 'reviewer';
+                el('pm-2').value = 'plan';
+                el('ef-2').value = 'high';
+                fire(el('tm-1'), 'change');
+                const asked = r.posted.filter(m => m && m.type === 'preview').pop();
+                if (!asked) { throw new Error('the form never asked for a preview — the debounce did not run'); }
                 r.send({
-                    // seq 0 is the token a host PUSH carries; the debounced
-                    // ask that normally raises the number needs a real timer.
-                    type: 'preview', seq: 0,
+                    type: 'preview', seq: asked.seq,
                     preview: {
                         ok: false, mode: 'classic', title: '', goal: SPEC.goal,
                         lead: { agentId: 'a0', agentName: 'manager', origin: 'requested' },
@@ -1206,20 +1238,6 @@ module.exports = {
                         ]
                     }
                 });
-                // The typing comes AFTER the answer: a host message re-reads the
-                // form, and this shim's textarea does not carry its own value
-                // back out of the markup — so filling the boxes first would
-                // photograph a form that had been emptied by the shim rather
-                // than by the page.
-                el('f-goal').value = SPEC.goal;
-                el('f-lead').value = 'a0';
-                el('tm-1').checked = true;
-                el('tm-2').checked = true;
-                el('rl-1').value = 'implements';
-                el('rl-2').value = 'reviewer';
-                el('pm-2').value = 'plan';
-                el('ef-2').value = 'high';
-                fire(el('tm-1'), 'change');
             }
         },
         {
@@ -1264,6 +1282,11 @@ module.exports = {
             // fine as text and comes out as a wall. Shoot it with
             // `render_page.js missions --only history --tip tip-hist`.
             id: 'history', label: 'The recorded history strip, panel open',
+            // ‼️ B-02.2 — AND IT IS REALLY OPEN NOW. This scene had no `act` and
+            // no tip, so it rendered exactly the page above it and its label was
+            // the only place the panel existed. `tip-hist` is the class
+            // `outcomeStripHtml` puts on the wrapper for precisely this.
+            tip: 'tip-hist',
             data: data({})
         },
         {

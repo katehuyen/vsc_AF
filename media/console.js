@@ -246,13 +246,29 @@
            remove. The phase owns the colour; selection owns the outline. */
         .srow.sel { border-color:var(--vscode-focusBorder);
             box-shadow:inset 0 0 0 1px var(--vscode-focusBorder); }
-        .srow .h { display:flex; align-items:center; gap:6px; justify-content:space-between; }
+        /* ‼️ B-03.1 — THE BADGES WRAP; THE IDENTITY DOES NOT VANISH. The list
+           column is a fixed 250px on every window (.clist is flex 0 0 250px), so
+           a card carrying engine + route + tokens + 🔖 beside the name is the
+           ordinary case, not a docked-narrow one. The measurement: the identity
+           was squeezed to 65px, its NAME to zero, and the card's first fact —
+           whose session this is — was not on the screen at all; on the tightest
+           row it fell to 29px and the id was clipped too, so the card read
+           "(#:". A row that cannot fit its badges puts them on a second line,
+           which costs 14px; a row that cannot fit its name says nothing. */
+        .srow .h { display:flex; align-items:center; gap:6px; justify-content:space-between;
+            flex-wrap:wrap; row-gap:3px; }
+        /* the badge shelf: one unit, kept together, and pushed to the end of
+           whichever line it lands on */
+        .srow .hb { display:flex; align-items:center; gap:6px; flex:0 0 auto;
+            margin-left:auto; }
         /* ‼️ K-13 — the identity line is two things, and only ONE of them may be
            cut. The name is the flexible half; the id is a fixed eight characters
-           that mean nothing at all once an ellipsis reaches them. */
+           that mean nothing at all once an ellipsis reaches them.
+           and the half that may be cut may not be cut to NOTHING: the floor is
+           the dot, enough name to recognise, and whatever the id asks for. */
         .srow .n { font-weight:600; font-size:12px; display:flex; align-items:center; gap:5px;
-            overflow:hidden; white-space:nowrap; }
-        .srow .n .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+            overflow:hidden; white-space:nowrap; min-width:120px; }
+        .srow .n .nm { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:4ch; }
         .srow .m { font-size:10px; color:var(--vscode-descriptionForeground); margin-top:2px; }
         /* A meta line too long for 250px wraps at a "·", never inside a figure:
            "ctx" on one line and "132.0k" on the next is not a reading. */
@@ -2075,18 +2091,22 @@
                 <div class="h">
                     ${cardTip(`<span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>`,
                         twho.head, twho.body, 'nw')}
-                    ${engineBadge(s)}${routeBadge(s)}
-                    ${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}
-                    ${/* ‼️ U-94 — the card's own 🔖 keeps the WHOLE conversation.
+                    ${/* ‼️ B-03.1 — THE BADGES ARE ONE THING, so the line breaks
+                          BETWEEN the identity and them rather than through them.
+                          Four badges beside a name do not fit a 250px column,
+                          and until this they took the space by force: the name
+                          shrank to nothing. Grouped, the row keeps the name
+                          whole and moves the whole shelf of badges down a line
+                          when it has to — one break, not four orphans. */''}
+                    <span class="hb">${engineBadge(s)}${routeBadge(s)}${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}${/* ‼️ U-94 — the card's own 🔖 keeps the WHOLE conversation.
                           The rows below carry one each, but only for the card
                           being read; from a card in the list the whole thing is
                           the only unit there is, and it was reachable only from
                           the right-click menu. `wikiKept` is the turn each mark
                           starts at, which is all a badge needs and all a list of
-                          cards can afford to carry. */''}
-                    ${s.sessionId && window.AFWiki ? window.AFWiki.badge({
+                          cards can afford to carry. */''}${s.sessionId && window.AFWiki ? window.AFWiki.badge({
                         session: s.sessionId, whole: true, kept: s.wikiKept || []
-                    }) : ''}
+                    }) : ''}</span>
                 </div>
                 ${colorDot(s.sessionId, s.color, 'live')}
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}

@@ -1,0 +1,113 @@
+/**
+ * Guard: NO TEXT ON THE CONSOLE IS SQUEEZED TO NOTHING — measured, not read.
+ *
+ * Found in audit B-03.1. The session list is a fixed 250px column on every
+ * window (`.clist` is `flex: 0 0 250px`), and a card carrying engine + route +
+ * tokens + 🔖 beside the agent name is the ordinary case rather than a
+ * docked-narrow one. Measured on it:
+ *
+ *   .n  65px   .nm  0/54    .sid 53/53     → "(#019fe860)", and no name
+ *   .n  29px   .nm  0/33    .sid 51/51     → "(#:"
+ *
+ * The name — the card's first fact — was not on the screen at all, and on the
+ * tightest row the id K-13 calls "meaningless once an ellipsis reaches it" was
+ * clipped too. Nothing in the suite could see it: the markup was correct, every
+ * string was present, and the AFTip carried the whole name on hover. It is a
+ * LAYOUT defect, so only a layout measurement can hold it.
+ *
+ * The rule is written as a rule rather than as a list of the two classes that
+ * happened to break: an element that carries text and is cut by its own
+ * overflow must still show some of it. At zero width there is not even an
+ * ellipsis to tell the reader that something is missing.
+ *
+ * Scope is the Console because that is the surface this finding is on; a later
+ * sweep that repairs another page adds it here. Cost is one Chrome pass.
+ *
+ *   node test/test_console_identity_width.js
+ */
+const fs = require('fs');
+const path = require('path');
+const { execFileSync } = require('child_process');
+
+let pass = 0, fail = 0;
+const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail++; console.log('FAIL  ' + n); } };
+
+const ROOT = path.resolve(__dirname, '..');
+
+const CANDIDATES = [
+    process.env.AF_CHROME,
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'
+];
+
+// The structural half runs everywhere: the badges are ONE group, so the line
+// breaks between the identity and them rather than through them.
+{
+    const src = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
+    ok('the card header can wrap at all', /\.srow \.h \{[^}]*flex-wrap:wrap/.test(src));
+    ok('…and the badges beside the name are one group, not four loose children',
+        /<span class="hb">/.test(src) && /\.srow \.hb \{/.test(src));
+    ok('…and the identity has a floor, so the half that may be cut is not cut to nothing',
+        /\.srow \.n \{[^}]*min-width:\s*\d/.test(src)
+        && /\.srow \.n \.nm \{[^}]*min-width:/.test(src));
+}
+
+if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
+    console.log('  (no Chrome or Edge on this machine — the measured half is skipped)');
+} else {
+    const node = (args) => execFileSync(process.execPath, args, { cwd: ROOT, encoding: 'utf8', timeout: 240000, stdio: ['ignore', 'pipe', 'pipe'] });
+    node([path.join('test', 'render_page.js'), 'console']);
+
+    // Anything that carries its own text, is cut by its own overflow, and has
+    // less than this much of itself on the screen. Eight pixels is under one
+    // character at any size this page uses — below it there is nothing to read
+    // and no ellipsis either.
+    // ‼️ A CLOSED HOVER PANEL IS NOT ON THE SCREEN, BUT ITS TRIGGER IS. `AFTip`
+    // keeps its head and body in the markup and collapses them until the
+    // pointer arrives, so every shut panel reports zero width with content
+    // behind it; judging those would be judging a picture nobody is looking at.
+    // The exclusion is the PANEL (`.af-tip`), never the wrapper — skipping the
+    // whole `.af-tipw` subtree would also skip the trigger, which is exactly
+    // where this defect lived: the agent name is a trigger, and it was the
+    // thing at zero width.
+    const EXPR = "(()=>{const out=[];document.querySelectorAll('*').forEach(e=>{"
+        + "if(e.children.length)return;const t=(e.textContent||'').trim();if(!t)return;"
+        + "if(e.closest('.af-tip'))return;"
+        + "const r=e.getBoundingClientRect();if(!r.height)return;"
+        + "if(e.scrollWidth<=Math.ceil(r.width)+1)return;"
+        + "if(r.width>=8)return;"
+        + "out.push(e.tagName+'.'+String(e.className)+' '+Math.round(r.width)+'/'+e.scrollWidth+' :: '+t.slice(0,30));});"
+        + "return [...new Set(out)];})()";
+    const raw = node([path.join('test', 'measure_page.js'), 'console', EXPR]);
+    let found;
+    try { found = JSON.parse(raw); } catch { found = null; }
+
+    ok('the page was measured and answered', Array.isArray(found));
+    ok('‼️ NO TEXT ON THE CONSOLE IS DRAWN NARROWER THAN ONE CHARACTER OF ITSELF'
+        + (found && found.length ? '\n      ' + found.join('\n      ') : ''),
+        Array.isArray(found) && found.length === 0);
+
+    // …and the instance this was written for, named: every session card shows
+    // its whole agent name and its whole id.
+    const CARDS = "(()=>{const out=[];document.querySelectorAll('.srow .n').forEach(e=>{"
+        + "const nm=e.querySelector('.nm'),sid=e.querySelector('.sid');if(!nm)return;"
+        + "const cut=[];const w=(x)=>Math.round(x.getBoundingClientRect().width);"
+        + "if(w(nm)<nm.scrollWidth-1){cut.push('name '+w(nm)+'/'+nm.scrollWidth);}"
+        + "if(sid&&w(sid)<sid.scrollWidth-1){cut.push('id '+w(sid)+'/'+sid.scrollWidth);}"
+        + "if(cut.length){out.push((nm.textContent||'').trim()+': '+cut.join(' · '));}});"
+        + "return {rows:document.querySelectorAll('.srow .n').length,cut:out};})()";
+    let cards;
+    try { cards = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', CARDS])); } catch { cards = null; }
+    ok('there are session cards to measure', cards && cards.rows > 3);
+    ok('‼️ EVERY SESSION CARD SHOWS ITS WHOLE NAME AND ITS WHOLE ID'
+        + (cards && cards.cut.length ? ' — ' + cards.cut.join(' · ') : '')
+        + (cards ? ` (${cards.rows} rows)` : ''),
+        cards && cards.cut.length === 0);
+}
+
+console.log(`${pass} passed, ${fail} failed`);
+if (fail) { process.exitCode = 1; }

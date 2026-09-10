@@ -662,6 +662,12 @@ module.exports = {
          */
         {
             id: 'console-color',
+            // ‼️ A DECLARED TWIN, and the paragraph above is why: the palette
+            // this scene is named for only exists after a press this harness
+            // cannot make. Saying so on the scene is what keeps
+            // test/test_scenes_differ.js honest — an UNdeclared duplicate is a
+            // promise nobody kept, this one is a gap somebody measured.
+            twin: 'console',
             label: 'Console — the colour label on every card kind in the panel',
             data: data()
         },

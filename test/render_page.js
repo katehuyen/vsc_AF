@@ -173,6 +173,84 @@ function listFixtures() {
     return fs.readdirSync(FIXTURES).filter(f => f.endsWith('.js')).map(f => f.replace(/\.js$/, ''));
 }
 
+/**
+ * Take the `hidden` attribute off the filter menus — every one, or the one
+ * named. The page shim does not wire the picker component (its stub menus have
+ * no `querySelectorAll`), so an `act` cannot press the trigger; `hidden` is the
+ * only thing between the markup and the picture, and this is it.
+ */
+function openMenus(markup, id, who) {
+    let n = 0;
+    const out = markup.replace(/<div class="(afms-menu[^"]*)" data-afms-menu="([^"]*)"([^>]*?) hidden>/g,
+        (whole, cls, mid, rest) => {
+            if (id && mid !== id) { return whole; }
+            n++;
+            return `<div class="${cls}" data-afms-menu="${mid}"${rest}>`;
+        });
+    console.log(`${who}${id ? ' ' + id : ''}: ${n} menu(s) opened`);
+    // ‼️ AND IT FAILS RATHER THAN CERTIFYING AN EMPTY PICTURE, on `openTips`'
+    // rule: a render asked to open a menu and opening none is not a render of
+    // that menu.
+    if (!n) { process.exitCode = 1; }
+    return out;
+}
+
+/**
+ * Open every AFTip panel whose wrapper carries `<class>[:<n>]`, using the
+ * component's OWN stay-open class (`af-on`, the one afTip writes when a repaint
+ * takes `:hover` away) — never a rule invented here, so the panel is
+ * photographed at its real size, in its real place, with its real background.
+ *
+ * ‼️ THE WRAPPER'S OWN CLASS IS NOT ALWAYS FIRST, AND THAT USED TO MEAN "NO
+ * PANEL" IN SILENCE. `AFTip.cell` writes the caller's classes and THEN
+ * `af-tipw` (`class="turncol af-tipw"`), so an expression anchored at
+ * `class="af-tipw` matched no cell panel anywhere in the product — and the
+ * second pass skipped the same elements by name. `--tip turncol` printed
+ * "nothing carries it" and went on to write the page, so the shot that followed
+ * photographed a closed panel and was filed as evidence. Every attribute is
+ * read now, wrapper or not.
+ *
+ * `who` is what the failure is blamed on — the flag, or the scene that asked.
+ */
+function openTips(markup, arg, who) {
+    const cls = String(arg).split(':')[0];
+    const nth = Number(String(arg).split(':')[1] || 0);
+    const attrRe = /class="([^"]*)"/g;
+    const has = (on, want) => new RegExp(`(^|\\s)${want}(\\s|$)`).test(on);
+    const marks = new Set();
+    let m;
+    while ((m = attrRe.exec(markup))) {
+        if (!has(m[1], cls)) { continue; }
+        // the wrapper itself…
+        if (has(m[1], 'af-tipw')) { marks.add(m.index); continue; }
+        // …or the first wrapper inside an element that carries the class
+        const at = markup.indexOf('class="af-tipw', m.index);
+        if (at >= 0) { marks.add(at); }
+    }
+    // ‼️ AND IT FAILS RATHER THAN CERTIFYING AN EMPTY PICTURE. A render asked
+    // to open a panel and opening none is not a render of that panel.
+    if (!marks.size) {
+        console.error(`${who} ${cls}: nothing carries it — NO PANEL IS OPEN in this render`);
+        process.exitCode = 1;
+    }
+    let picked = [...marks].sort((a, b) => a - b);
+    if (nth) {
+        console.log(`${who} ${cls}: ${picked.length} panels, opening #${nth}`);
+        if (nth > picked.length) {
+            console.error(`${who} ${cls}:${nth} — only ${picked.length} to choose from`);
+            process.exitCode = 1;
+        }
+        picked = picked.slice(nth - 1, nth);
+    }
+    let out = '', last = 0;
+    for (const at of picked) {
+        const end = markup.indexOf('"', at + 'class="'.length);
+        out += markup.slice(last, end) + ' af-on';
+        last = end;
+    }
+    return out + markup.slice(last);
+}
+
 function main() {
     const args = process.argv.slice(2);
     if (!args.length || args.indexOf('--list') >= 0) {
@@ -263,56 +341,22 @@ function main() {
         // at the full window instead, and every picture of it was of a layout the
         // user cannot produce. A width argued about off a render is a width
         // measured on the wrong page.
-        return `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page"><div id="app">${body}</div>${loose}</div>`;
+        const section = `<h1 class="rndr-h">${v.label || v.id}</h1>\n<div class="rndr-page"><div id="app">${body}</div>${loose}</div>`;
+        // ‼️ A SCENE THAT SAYS "PANEL OPEN" OPENS IT ITSELF (B-02.2). `--tip` is
+        // a flag somebody has to remember, and `history` — whose whole label is
+        // "the recorded history strip, panel open" — had no `act`, so every
+        // photograph ever taken of it was byte-identical to the scene above it
+        // and showed no panel at all. A scene that needs a panel names it, and
+        // then it is open in every render and every `--scene` shot of it.
+        let out = v.tip ? openTips(section, v.tip, `${name}/${v.id} tip`) : section;
+        if (v.menu) { out = openMenus(out, v.menu, `${name}/${v.id} menu`); }
+        return out;
     }).join('\n');
 
     // The wrappers asked for, opened. `af-on` is the wrapper state the collapse
     // rule (A-12) yields to, so the panel comes back at its own size with its
     // own border and background — nothing about it is restated here.
-    const opened = !tipCls ? sections : (() => {
-        // ‼️ THE WRAPPER'S OWN CLASS IS NOT ALWAYS FIRST, AND THAT USED TO MEAN
-        // "NO PANEL" IN SILENCE. `AFTip.cell` writes the caller's classes and
-        // THEN `af-tipw` (`class="turncol af-tipw"`), so an expression anchored
-        // at `class="af-tipw` matched no cell panel anywhere in the product —
-        // and the second pass skipped the same elements by name. `--tip
-        // turncol` printed "nothing carries it" and went on to write the page,
-        // so the shot that followed photographed a closed panel and was filed
-        // as evidence. Every attribute is read now, wrapper or not.
-        const attrRe = /class="([^"]*)"/g;
-        const has = (cls, want) => new RegExp(`(^|\\s)${want}(\\s|$)`).test(cls);
-        const marks = new Set();
-        let m;
-        while ((m = attrRe.exec(sections))) {
-            if (!has(m[1], tipCls)) { continue; }
-            // the wrapper itself…
-            if (has(m[1], 'af-tipw')) { marks.add(m.index); continue; }
-            // …or the first wrapper inside an element that carries the class
-            const at = sections.indexOf('class="af-tipw', m.index);
-            if (at >= 0) { marks.add(at); }
-        }
-        // ‼️ AND IT FAILS RATHER THAN CERTIFYING AN EMPTY PICTURE. A render
-        // asked to open a panel and opening none is not a render of that panel.
-        if (!marks.size) {
-            console.error(`--tip ${tipCls}: nothing carries it — NO PANEL IS OPEN in this render`);
-            process.exitCode = 1;
-        }
-        let picked = [...marks].sort((a, b) => a - b);
-        if (tipNth) {
-            console.log(`--tip ${tipCls}: ${picked.length} panels, opening #${tipNth}`);
-            if (tipNth > picked.length) {
-                console.error(`--tip ${tipCls}:${tipNth} — only ${picked.length} to choose from`);
-                process.exitCode = 1;
-            }
-            picked = picked.slice(tipNth - 1, tipNth);
-        }
-        let out = '', last = 0;
-        for (const at of picked) {
-            const end = sections.indexOf('"', at + 'class="'.length);
-            out += sections.slice(last, end) + ' af-on';
-            last = end;
-        }
-        return out + sections.slice(last);
-    })();
+    const opened = !tipCls ? sections : openTips(sections, tipArg, '--tip');
 
     /**
      * ‼️ AND A FILTER MENU HAS TO BE PHOTOGRAPHABLE FOR THE SAME REASON (U-92).
@@ -330,17 +374,7 @@ function main() {
      */
     const mIdx = args.indexOf('--menu');
     const menuId = mIdx >= 0 ? String(args[mIdx + 1] || '').replace(/^--.*/, '') : '';
-    const withMenus = mIdx < 0 ? opened : (() => {
-        let n = 0;
-        const out = opened.replace(/<div class="(afms-menu[^"]*)" data-afms-menu="([^"]*)"([^>]*?) hidden>/g,
-            (whole, cls, id, rest) => {
-                if (menuId && id !== menuId) { return whole; }
-                n++;
-                return `<div class="${cls}" data-afms-menu="${id}"${rest}>`;
-            });
-        console.log(`--menu${menuId ? ' ' + menuId : ''}: ${n} menu(s) opened`);
-        return out;
-    })();
+    const withMenus = mIdx < 0 ? opened : openMenus(opened, menuId, '--menu');
 
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"><title>${name} — ${theme}</title>

@@ -109,7 +109,7 @@ const kinds = t => (t.events || []).map(e => e.kind);
 
 // ---------- the restart that asked for continuity ----------
 {
-    const { mgr, launched } = reload([{ ...base, id: 't1', title: 'a long count' }]);
+    const { mgr, launched, storage } = reload([{ ...base, id: 't1', title: 'a long count' }]);
     const out = mgr.reviveCutRuns();
     ok('a cut headless run is carried on', out.resumed.length === 1 && out.skipped.length === 0);
     ok('…and something was actually launched, not merely queued', launched.length === 1);
@@ -126,6 +126,29 @@ const kinds = t => (t.events || []).map(e => e.kind);
         kinds(copy).includes('resumed') && !kinds(copy).includes('retried'));
     ok('…and the board does not call it a retry either',
         copy.title === 'a long count (continued)' && !/retry/i.test(copy.title));
+    // ‼️ B-03.16 — AND THE ROW IT WAS CARRIED ON FROM SAYS SO. Nothing pinned
+    // this half: the sweep writes "back on the queue, press start to run it
+    // again" minutes before the carry-on is decided, and until B-03.17 nobody
+    // went back and corrected it — so the row a person reads asked them to pay
+    // for a second run of work that was already going on in the copy. A refusal
+    // was written onto the row; a carry-on was not.
+    const original = mgr.tasks.find(t => t.id === 't1') || {};
+    const events = original.events || [];
+    ok('‼️ …and the ORIGINAL row says it was carried on, instead of asking for a press',
+        events.some(e => e.kind === 'resumed'
+            && /carried on after the restart as "a long count \(continued\)"/.test(e.note || '')
+            && /nothing to start here/.test(e.note || '')));
+    ok('…and that is the LAST thing it says, so "press start" is not what a reader sees',
+        !/press start to run it again/.test((events[events.length - 1] || {}).note || ''));
+    // ‼️ …AND IT REACHED THE DISK. `save()` used to be called only when
+    // something was SKIPPED, so the carry-on note lived in memory and the row
+    // the next window read still asked for a press. The board is rebuilt from
+    // this file, so a note that is not in it was never written.
+    const onDisk = JSON.parse(fs.readFileSync(storage, 'utf8')).tasks
+        .find(t => t.id === 't1') || {};
+    ok('‼️ …and the note is in the file the board is rebuilt from, not only in memory',
+        (onDisk.events || []).some(e => e.kind === 'resumed'
+            && /carried on after the restart/.test(e.note || '')));
     // ‼️ A RESURRECTION IS ONLY AS HONEST AS ITS DIMENSIONS (consoleRevive's
     // rule, and the same one here): a run brought back on another engine or
     // model is a different run wearing the same name.
