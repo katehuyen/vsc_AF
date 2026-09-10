@@ -126,6 +126,27 @@ const byAttr = (p, attr, key) =>
         + ' the chain runs out of steps and the row says the event would be'
         + ' SILENT, which is the one state nothing else can reveal',
         html.indexOf('data-alertplay="' + VOICES.DEFAULT_VOICE.error + '" disabled') >= 0);
+    // ‼️ audit B-05 — THE BADGE AND THE TABLE POINT AT THE SAME ROW.
+    //
+    // Measured colours, not markup: `error` was armed with nothing able to play
+    // it — the row the badge counts — and drew in the ordinary foreground
+    // rgb(204,204,204), while the two rows that fell through to a WORKING
+    // default drew in warning yellow. The badge said "1 armed event cannot be
+    // played" and the only marked rows were the two that ring. So the counts
+    // are asserted against each other rather than against a number typed here.
+    {
+        const rows = fx.broken().alerts.events;
+        const dead = rows.filter(e => e.on && !e.playable).length;
+        const fell = rows.filter(e => e.chosen && e.chosen !== e.voice).length;
+        ok(`‼️ the row the badge counts is the row drawn as SILENT (${dead})`,
+            dead > 0 && (html.match(/alertplays silent/g) || []).length === dead);
+        ok('‼️ …and a fallback that still rings is a WARNING, never the same mark'
+            + ` (${fell})`,
+            fell > 0 && (html.match(/alertplays bad/g) || []).length === fell);
+        ok('‼️ …and the silent row does not claim in its own tooltip that it plays'
+            + ' the sound it cannot play',
+            /is armed and NOTHING plays it/.test(html));
+    }
     ok('a format nothing here opens says THAT instead',
         /nothing here plays it/.test(html));
 }

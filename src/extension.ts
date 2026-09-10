@@ -35192,8 +35192,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     } catch (e) { chatLastError = String((e as Error).message ?? e); }
                 }
                 const c = chatCfg();
+                // audit B-05 — the ceiling is read BEFORE the state, because it
+                // is one of the states: a bridge at its daily cap refuses every
+                // run and must not report itself as `connected`.
+                const budget = budgetReading(chatState().ledger, c.maxDailyUSD, dayKey(Date.now()));
                 const status = bridgeStatus({
                     enabled: c.enabled, hasToken, allowCount: c.allow.length,
+                    blocked: budget.blocked,
                     ...(chatLastError ? { lastError: chatLastError } : {})
                 });
                 return {
@@ -35202,7 +35207,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(chatBotName ? { botUsername: chatBotName } : {}),
                     allowedChats: c.allow.length,
                     defaultAgent: c.defaultAgent,
-                    budget: budgetReading(chatState().ledger, c.maxDailyUSD, dayKey(Date.now()))
+                    budget
                 };
             }
         }

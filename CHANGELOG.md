@@ -2,6 +2,73 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.455.0 - the search grammar under "Mute the farm", and a bridge that said "answering" while it refused (audit B-05) (2026-09-10)
+
+The Farm Settings surface was opened for the audit ledger: seven fixtures,
+nineteen scenes, every one of them photographed at its own size and the three
+machine sweeps run over each. Five defects, and two of them were in the
+pictures themselves.
+
+- **Twenty-one controls on Alert sounds explained boolean search syntax.**
+  `AFQuery.tip(subject)` is the SEARCH BOX's tooltip - it returns the subject
+  and then the whole query grammar - and it reads like a generic "make me a
+  tooltip", so it was used as one. Hovering `🔇 Mute the farm` taught you that
+  `OR must be uppercase`; so did `Quiet hours`, `rate`, `vol`, the reminder
+  tone, the voice picker, the announcement template, the five per-event sound
+  pickers, the three sound-library name fields and all four column headers of
+  the table. Exactly one of the twenty-two was a search box. No string test
+  could fail on it: every sentence was well-formed and every SUBJECT was
+  right - the defect was the paragraph bolted on after it. Measured from two
+  ends now (`test_tooltip_subject.js`): every `AFQuery.tip` call says what is
+  SEARCHED, and on a laid-out page only an `<input>` you type a query into
+  carries the grammar.
+
+- **The alert table painted the rows that still ring, and left the silent one
+  plain.** On the scene whose own title is "armed events whose sound cannot be
+  played", `error` was armed with nothing on this machine able to play it -
+  SILENT - and drew in the ordinary foreground, while the two rows that fell
+  through to a working default drew in warning yellow. The badge above them
+  said "1 armed event cannot be played" and pointed at the one row the table
+  did not mark. A fallback is a warning; an armed event nothing can play is
+  silence, and it is now the badge's own expression that decides the colour,
+  so the two cannot drift apart.
+
+- **The Telegram card said "Polling Telegram and answering the chats on the
+  allowlist" over a red, over-budget bar.** `chatRunPrompt` refuses every
+  prompt in that state ("Today's chat budget is used up"), so a green
+  `connected` badge was telling somebody their phone could start a run when it
+  could not - the exact failure the card's own header was written about.
+  `over-budget` is a sixth bridge state now, ranked below an empty allowlist
+  (nothing reaches the budget at all with one) and above `connected`, and it
+  says which number to raise. `/status`, `/agent` and `/cancel` still answer,
+  and the sentence says so.
+
+- **`wikiEngine` drew a picker with nothing in it.** `agentFarm.wikiEngine`
+  and `agentFarm.wikiEffort` name `''` in their own enum and default to it, so
+  the schema-driven picker rendered an option whose text was the empty string:
+  a blank box three rows under one reading `high`. Unset, broken and still
+  loading all looked identical. It reads `— not set —` now, with the panel
+  saying the setting is left out and whoever starts the work decides.
+
+- **Two boxes narrower than the value they hold**, on the surface the width
+  sweep had never been run against: the per-event sound picker (a user-named
+  sound plus its state, 185px in 170px) and the announcement voice (every real
+  voice on this machine, 333px in 306px, with 830px of unused row beside it).
+  Both ceilings moved to where a real value fits, out of a column that had
+  slack.
+
+- **And the scenes themselves were wrong in two places.** The Superpowers
+  fixture typed its rows out by hand and left `shape` off, so all three of its
+  scenes had been photographing the raw JSON box U-110 replaced - a control the
+  product does not have, in the file whose whole job is to say what that
+  section looks like. The Sentry fixture built the refusal sentence itself
+  under a comment claiming it was the resolver's, verbatim, and hardcoded
+  `${vault}` into every one: the no-vault scene showed the `${projectNotes}`
+  row warning about a variable that row does not contain. Both are derived from
+  the product now, and `test_settings_fixture_truth.js` holds every settings
+  fixture against `buildSettingsModel` and every refused path against the
+  variables its own template carries.
+
 ## 3.454.0 - a box that says nothing but "Default", and a percentage under the wrong window (audit B-03/B-04) (2026-09-10)
 
 Two defects of the same family, found by looking at scenes nobody had looked

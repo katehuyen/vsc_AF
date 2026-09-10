@@ -64,14 +64,37 @@ const T = require(path.join(ROOT, 'out', 'core', 'telegramCockpit.js'));
     eq('an error beats an empty allowlist — the network is the louder problem',
         st({ allowCount: 0, lastError: 'boom' }).state, 'error');
 
-    // The four tones are what the page paints. Kept as an answer rather than an
-    // `if` on the page, so a sixth state cannot arrive with no colour.
-    eq('every state carries a tone the page can paint',
-        ['disabled', 'no-token', 'no-chats', 'connected', 'error'].map(s => T.TONE_OF[s]),
-        ['off', 'bad', 'warn', 'ok', 'bad']);
+    /**
+     * ‼️ audit B-05 — THE CEILING IS A STATE, and it was not one.
+     *
+     * `dist/render/tgsettings.s4.png` — the scene whose own title is "the day's
+     * ceiling is reached" — drew `$0.4102 / $0.25` with the bar in red under a
+     * green `● connected` badge reading "Polling Telegram and answering the
+     * chats on the allowlist". `chatRunPrompt` refuses every prompt in that
+     * state ("Today's chat budget is used up"), so the badge was telling
+     * somebody their phone could start a run when it could not.
+     */
+    eq('a bridge at its daily ceiling is not "connected"',
+        st({ blocked: true }).state, 'over-budget');
+    ok('…and the poller is still alive, because it is the RUNS that are refused',
+        st({ blocked: true }).running === true);
+    ok('…and it says which number to raise',
+        /maxDailyUSD/.test(st({ blocked: true }).next || ''));
+    eq('…but an empty allowlist beats it — nothing reaches the budget at all',
+        st({ blocked: true, allowCount: 0 }).state, 'no-chats');
+    eq('…and a network error beats it too',
+        st({ blocked: true, lastError: 'boom' }).state, 'error');
+
+    // The tones are what the page paints. Kept as an answer rather than an `if`
+    // on the page, so a new state cannot arrive with no colour — and the list
+    // is READ off the answer rather than typed here, which is how the sixth
+    // state was added with this assertion still green.
+    const STATES = Object.keys(T.TONE_OF);
+    ok(`every state the module declares carries a tone (${STATES.length})`,
+        STATES.length >= 6
+        && STATES.every(s => ['off', 'ok', 'warn', 'bad'].indexOf(T.TONE_OF[s]) >= 0));
     ok('every state has a sentence a person can read',
-        ['disabled', 'no-token', 'no-chats', 'connected', 'error']
-            .every(s => typeof T.DETAIL_OF[s] === 'string' && T.DETAIL_OF[s].length > 20));
+        STATES.every(s => typeof T.DETAIL_OF[s] === 'string' && T.DETAIL_OF[s].length > 20));
 }
 
 // ---------- ADDING A CHAT ID: the refusals are the feature ----------

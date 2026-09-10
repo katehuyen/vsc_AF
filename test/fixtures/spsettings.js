@@ -19,18 +19,46 @@ const settings = (items) => ([{
     id: 'superpowers', label: 'Superpowers & Engineering Discipline', items
 }]);
 
-const ITEMS = (root) => ([
-    {
-        key: 'agentFarm.superpowersPath', type: 'string', default: '', browse: 'folder',
-        value: root, modified: !!root,
-        description: 'Folder that holds the Superpowers engineering-discipline skills (one folder per skill, each with a SKILL.md, plus using-superpowers/SKILL.md — the root hook). Empty = found next to your agents.'
-    },
-    {
-        key: 'agentFarm.superpowersDefaults', type: 'object', default: {},
-        value: { developer: true }, modified: true,
-        description: 'Which agents start a session with the Superpowers engineering discipline already switched on, keyed by the agent\'s NAME.'
+/**
+ * ‼️ audit B-05 — THE ROWS ARE DERIVED FROM THE REAL MANIFEST, NOT TYPED HERE.
+ *
+ * They were typed here, and one field was missing: `shape`. The host derives it
+ * (`shapeOf` says `agentFarm.superpowersDefaults` is a map of name → boolean),
+ * so the product draws a pairs editor — and all three of these scenes drew the
+ * raw JSON textarea instead, which is the box U-110 replaced. Three pictures of
+ * a control the product does not have, in the file whose whole job is to say
+ * what the section looks like.
+ *
+ * Same construction as `jsonsettings`: `buildSettingsModel` is handed the
+ * manifest's own properties, so a field added to the schema reaches the scene
+ * without anybody remembering to copy it.
+ */
+const spPath = require('path');
+const spOps = require(spPath.join(__dirname, '..', '..', 'out', 'core', 'settingsops.js'));
+const spManifest = require(spPath.join(__dirname, '..', '..', 'package.json'));
+
+// Path first, defaults second — the order the section reads in, which the
+// category map (alphabetical) does not give.
+const SP_KEYS = ['agentFarm.superpowersPath', 'agentFarm.superpowersDefaults'];
+
+const ITEMS = (root) => {
+    const props = {};
+    for (const k of SP_KEYS) { props[k] = spManifest.contributes.configuration.properties[k]; }
+    const values = {
+        'agentFarm.superpowersPath': root,
+        'agentFarm.superpowersDefaults': { developer: true }
+    };
+    const cats = spOps.buildSettingsModel(props,
+        (key) => (values[key] !== undefined ? values[key] : props[key].default));
+    const out = [];
+    for (const key of SP_KEYS) {
+        for (const c of cats) {
+            const hit = (c.items || []).find(i => i.key === key);
+            if (hit) { out.push(hit); }
+        }
     }
-]);
+    return out;
+};
 
 const REAL = 'D:\\zone\\agent\\ajanlar\\_SKILLS\\superpowers';
 

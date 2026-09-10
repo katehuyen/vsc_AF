@@ -48,21 +48,32 @@ const POOL = [
     '${agentDir}\\memory\\nobet-tembihleri.md'
 ];
 
-/** The host's answer for one list — the same shape `previewPathList` returns. */
-const preview = (templates, vault) => templates.map(t => {
-    const missing = !vault && /\$\{(vault|projectFolder|projectNotes)\}/.test(t);
-    if (missing) {
-        // ‼️ The resolver's own sentence, verbatim (core/pathVars.ts). A fixture
-        // that invents its own copy is a picture of a page that does not exist.
-        return {
-            template: t, path: '', ok: false,
-            why: '${vault} has nothing behind it on this machine.'
-        };
-    }
-    let v = t;
-    for (const x of VARS(vault)) { v = v.split('${' + x.name + '}').join(x.value); }
-    return { template: t, path: v, ok: true, why: '' };
-});
+/**
+ * The host's answer for one list.
+ *
+ * ‼️ audit B-05 — IT IS THE RESOLVER'S ANSWER, NOT A COPY OF IT. This helper
+ * used to build the refusal sentence itself, under a comment claiming it was
+ * "the resolver's own sentence, verbatim" — and it hardcoded `${vault}` into
+ * every one. So the no-vault scene showed the `${projectNotes}` row saying
+ * «⚠ ${vault} has nothing behind it on this machine», naming a variable that is
+ * not in that row at all. The real resolver names the variables the TEMPLATE
+ * carries, one row at a time, so it is called instead of imitated.
+ */
+const previewPathList = require(
+    require('path').join(__dirname, '..', '..', 'out', 'core', 'pathVars.js')
+).previewPathList;
+
+/** `${today}` must not be a clock: the scene's dates are fixed, so the resolver
+ *  is handed the same instant the VARS strip above is written for. */
+const NOW = Date.UTC(2026, 8, 5, 12, 0, 0);
+
+const ctxOf = (vault) => {
+    const ctx = { now: NOW };
+    for (const v of VARS(vault)) { ctx[v.name] = v.value; }
+    return ctx;
+};
+
+const preview = (templates, vault) => previewPathList(templates, ctxOf(vault));
 
 const ITEMS = () => ([
     {

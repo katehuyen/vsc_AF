@@ -864,10 +864,27 @@
             // the OS, so the name goes on the option itself. The one fact the
             // list already implies and nobody can see: which of them is the
             // value this setting falls back to when it is left alone.
+            /**
+             * ‼️ audit B-05 — AND AN EMPTY MEMBER IS NOT AN EMPTY BOX.
+             *
+             * `agentFarm.wikiEngine` and `agentFarm.wikiEffort` name `''` in
+             * their own enum and default to it, so this map drew an option
+             * whose text was the empty string: on the page, a picker with
+             * NOTHING in it, three rows under one saying `high` and one saying
+             * `opus`. Nothing on the screen said whether it was unset, broken
+             * or still loading. The value is real and it means "left out" —
+             * so it is written down, the same way the Claude-config picker
+             * three hundred lines below already writes it.
+             */
+            const label = (o) => o === '' ? '— not set —' : o;
+            const why = (o) => [
+                o === '' ? 'Left out of your settings, so whoever starts the work decides it.' : '',
+                String(it.default ?? '') === o ? `The default for ${shortKey(it.key)}.` : ''
+            ].filter(Boolean).join(' ');
             return `<select id="${id}" data-set="${C.esc(it.key)}">${it.enum.map(o =>
-                C.option(o, o, {
+                C.option(o, label(o), {
                     selected: String(it.value) === o,
-                    detail: String(it.default ?? '') === o ? `The default for ${shortKey(it.key)}.` : ''
+                    detail: why(o)
                 })).join('')}</select>`;
         }
         /**
@@ -1900,7 +1917,7 @@
     function alertVoiceSelect(al, row) {
         // MIRROR — the box is narrow enough to cut its own text, so its
         // tooltip opens with what it is set to right now.
-        const tip = window.AFQuery.tip(
+        const tip = (
             (row.chosen ? `Set to: ${alertVoiceName(al, row.chosen)}` : `Not set — falls back to ${alertVoiceName(al, row.fallback)}`)
             + `\n\nWhich sound this event plays for every session. Clearing it does not mute the event: it falls back to the built-in default.`);
         return `<select data-alertvoice="${C.esc(row.event)}" title="${C.esc(tip)}">
@@ -1927,9 +1944,27 @@
         // user typed and `voice` is what the chain answered, and the two differ
         // exactly when something is wrong — a deleted file, a renamed sound.
         const wrong = row.chosen && row.chosen !== row.voice;
+        /**
+         * ‼️ audit B-05 — AND THE COLOUR WAS ON THE ROWS THAT STILL MAKE A NOISE.
+         *
+         * Measured on the scene whose own title is "armed events whose sound
+         * cannot be played": `error` was armed with nothing on this machine able
+         * to play it — SILENT — and drew in the ordinary foreground, while the
+         * two rows that fell through to a working default and DO ring drew in
+         * warning yellow. The badge above them said "1 armed event cannot be
+         * played" and pointed at the one row the table did not mark.
+         *
+         * So there are two states and they are not the same size: a fallback
+         * happened (there is still a sound) and NOTHING WILL BE HEARD. The
+         * second is the badge's own expression — `e.on && !e.playable`, read
+         * from `alertsCard` — so the row and the badge cannot drift apart.
+         */
+        const silent = row.on && !row.playable;
         const plays = window.AFTip.wrap(
-            `<span class="alertplays${wrong ? ' bad' : ''}">${C.esc(alertVoiceName(al, row.voice))}<span class="alertorigin"> · ${C.esc(ALERT_ORIGIN_TEXT[row.origin] || row.origin)}</span></span>`,
-            `${text[0]} plays ${alertVoiceName(al, row.voice)}`,
+            `<span class="alertplays${silent ? ' silent' : wrong ? ' bad' : ''}">${C.esc(alertVoiceName(al, row.voice))}<span class="alertorigin"> · ${C.esc(ALERT_ORIGIN_TEXT[row.origin] || row.origin)}</span></span>`,
+            silent
+                ? `${text[0]} is armed and NOTHING plays it`
+                : `${text[0]} plays ${alertVoiceName(al, row.voice)}`,
             `Chosen by ${ALERT_ORIGIN_TEXT[row.origin] || row.origin}.\n${row.file || '(no file)'}`
             + (row.playable ? '' : '\n\n⚠ Nothing on this machine can play that file — this event would be silent.')
             + ((row.skipped || []).length
@@ -1974,7 +2009,7 @@
             <span class="wikimark ${v.playable ? 'ok' : 'no'}">${v.playable ? '♪' : '✗'}</span>
             <input class="wikirel alertname" type="text" value="${C.esc(v.label)}"
                 data-alertrename="${C.esc(v.id)}" data-alertlabel="${C.esc(v.label)}"
-                title="${C.esc(window.AFQuery.tip(`Named: ${v.label}\n\nWhat every picker shows. The id it was given (${v.id}) never moves, so renaming cannot unpick this sound anywhere it was chosen.`))}">
+                title="${C.esc((`Named: ${v.label}\n\nWhat every picker shows. The id it was given (${v.id}) never moves, so renaming cannot unpick this sound anywhere it was chosen.`))}">
             ${window.AFTip.wrap(`<span class="wikipath">${C.esc(v.file)}${C.esc(state)}</span>`,
                 `${v.label} — ${v.id}`,
                 v.file + (v.playable
@@ -2016,13 +2051,13 @@
                   + 'nothing on screen saying why.'
                 : 'Nothing is holding the gate shut. Whether a particular event makes a noise is '
                   + 'the table below — armed, and with a tone this machine can play.');
-        const muteTip = window.AFQuery.tip(
+        const muteTip = (
             (muted ? 'Muted — nothing in the farm makes a sound' : 'Not muted')
             + '\n\nThe same switch as the 🔇 in the status bar. It clears nothing: every armed '
             + 'event and chosen tone stays exactly as it is, so unmuting restores your setup '
             + 'rather than the defaults.\n\nSounds only — the notification, the modal and the '
             + 'focus jump are separate branches with their own switches.');
-        const quietTip = window.AFQuery.tip(
+        const quietTip = (
             (q.error ? `⚠ ${q.error}` : q.line || `Quiet hours off (${q.from || '23:00'}–${q.to || '08:00'})`)
             + '\n\nThe window WRAPS MIDNIGHT: 23:00–08:00 is quiet from 23:00 through 07:59 the '
             + 'next morning. The start is included and the end is not, so at 08:00 sounds are '
@@ -2046,7 +2081,7 @@
         const nOn = n.on === true;
         const nMin = Number(n.minutes) > 0 ? Number(n.minutes) : ((n.defaults || {}).minutes || 3);
         const nRep = Number(n.repeat) > 0 ? Number(n.repeat) : ((n.defaults || {}).repeat || 2);
-        const nudgeTip = window.AFQuery.tip(
+        const nudgeTip = (
             (nOn
                 ? `On — a reminder ${nMin} min after an unanswered question, up to ${nRep} time${nRep === 1 ? '' : 's'}`
                 : 'Off — a question that goes unanswered is announced once and then left alone')
@@ -2068,7 +2103,7 @@
                 value="${C.esc(String(nRep))}" data-alertn="${C.esc(String(nRep))}"
                 title="${C.esc('How many reminders at most, then it gives up on that question. Ceiling 20 — a chime that never ends is one you mute for good.')}">
             <span class="alertgatedash">×</span>
-            <select id="alertnudgetone" title="${C.esc(window.AFQuery.tip(
+            <select id="alertnudgetone" title="${C.esc((
             `Reminder tone: ${alertVoiceName(al, n.voice)}\n\nDeliberately its own, and lighter than the `
             + 'alert it follows: this is a second tap on the shoulder, not the news again.\n\n'
             + 'A sound this machine cannot play is refused rather than stored — it would fall '
@@ -2132,7 +2167,7 @@
         const chosen = String(sp.voice || '');
         // MIRROR — the box is narrow enough to cut its own text, so it opens
         // with what it is set to right now.
-        const onTip = window.AFQuery.tip(
+        const onTip = (
             (sp.on ? 'On — the fleet says which agent out loud' : 'Off — tones only')
             + '\n\nLocal and free: no network, no account, no model. The sentence rides BEHIND '
             + 'the tone in the same queue ticket, and goes through the same mute, the same quiet '
@@ -2147,7 +2182,7 @@
          * question the page cannot answer, and it says that instead.
          */
         const bad = chosen && !sp.resolved && sp.voicesLoaded && !sp.voicesError;
-        const voiceTip = window.AFQuery.tip(
+        const voiceTip = (
             (chosen
                 ? (sp.resolved
                     ? `Set to "${chosen}" — which reaches ${sp.resolved}`
@@ -2239,16 +2274,16 @@
             <button class="secondary small" id="alertspeakrescan"
                 title="${C.esc('Ask Windows again. A language pack you installed from Settings a minute ago is exactly what this is for — and it is the same free list at Settings ▸ Time & language ▸ Speech ▸ Add voices.')}">↻</button>
             <span class="alertgatebar"></span>
-            <label class="alertgatelbl" title="${C.esc(window.AFQuery.tip(`Rate: ${sp.rate === 0 ? '0 — the voice\'s own normal speed' : sp.rate}\n\nSAPI's own scale, −10 (slow) to 10 (fast). An announcement you have heard a hundred times can be read faster than one you have not.`))}">rate
+            <label class="alertgatelbl" title="${C.esc((`Rate: ${sp.rate === 0 ? '0 — the voice\'s own normal speed' : sp.rate}\n\nSAPI's own scale, −10 (slow) to 10 (fast). An announcement you have heard a hundred times can be read faster than one you have not.`))}">rate
                 <input class="alertqtime" type="number" id="alertspeakrate" min="-10" max="10"
                     value="${C.esc(String(sp.rate === undefined ? 0 : sp.rate))}" data-alertsp="${C.esc(String(sp.rate === undefined ? 0 : sp.rate))}"></label>
-            <label class="alertgatelbl" title="${C.esc(window.AFQuery.tip(`Volume: ${sp.volume === undefined ? 100 : sp.volume} of 100\n\nThe SENTENCE's volume, and separate from the tone's — that one is the OS mixer's. A quiet name behind a loud chime is a real setting: the chime carries down the corridor, the name only has to reach the next room.`))}">vol
+            <label class="alertgatelbl" title="${C.esc((`Volume: ${sp.volume === undefined ? 100 : sp.volume} of 100\n\nThe SENTENCE's volume, and separate from the tone's — that one is the OS mixer's. A quiet name behind a loud chime is a real setting: the chime carries down the corridor, the name only has to reach the next room.`))}">vol
                 <input class="alertqtime" type="number" id="alertspeakvol" min="0" max="100"
                     value="${C.esc(String(sp.volume === undefined ? 100 : sp.volume))}" data-alertsp="${C.esc(String(sp.volume === undefined ? 100 : sp.volume))}"></label>
             <span class="alertgatebar"></span>
             <input class="alertspeaktpl" type="text" id="alertspeaktpl" maxlength="${Number(sp.max) || 160}"
                 value="${C.esc(String(sp.template || ''))}" data-alertsp="${C.esc(String(sp.template || ''))}"
-                title="${C.esc(window.AFQuery.tip(`Says: ${sp.template}\n\n{agent}, {event} and {session} are filled in; everything else is spoken exactly as typed.`))}">
+                title="${C.esc((`Says: ${sp.template}\n\n{agent}, {event} and {session} are filled in; everything else is spoken exactly as typed.`))}">
             <button class="secondary small" id="alertspeaktest"
                 title="${C.esc('Say it now, where you are standing. ‼️ It speaks even when announcements are OFF and even inside quiet hours — "can this machine talk at all" and "is the feature switched on" are two questions, and a test that answers the second when asked the first teaches nobody anything.')}">▶</button>
             ${state}
@@ -2302,10 +2337,10 @@
             ${err}
             <table class="settbl alerttbl">
                 <thead><tr>
-                    <th class="setth" title="${C.esc(window.AFQuery.tip('What happened. Tick one and its sound plays on every session in the fleet.'))}">Event</th>
-                    <th class="setth" title="${C.esc(window.AFQuery.tip('Also SAY WHICH AGENT, out loud, after this event\'s tone. A tone answers "what kind of news is this?" and nothing else; with several lanes running the question from the next room is WHICH ONE, and no palette can carry a name. Out of the box only question is spoken — the one event where an agent is STOPPED and the cost of not knowing is the whole run standing still.'))}">🗣</th>
-                    <th class="setth" title="${C.esc(window.AFQuery.tip('Your choice for everybody. Leave it on Default and the built-in answer stands — turn-ready and question deliberately differ, so the two can be told apart from another room without configuring anything.'))}">Sound</th>
-                    <th class="setth" title="${C.esc(window.AFQuery.tip('What would ACTUALLY play, and which step of the chain chose it: this session > this agent > your choice here > the built-in default. A sound whose file has gone falls through to the next step rather than going silent.'))}">Plays</th>
+                    <th class="setth" title="${C.esc(('What happened. Tick one and its sound plays on every session in the fleet.'))}">Event</th>
+                    <th class="setth" title="${C.esc(('Also SAY WHICH AGENT, out loud, after this event\'s tone. A tone answers "what kind of news is this?" and nothing else; with several lanes running the question from the next room is WHICH ONE, and no palette can carry a name. Out of the box only question is spoken — the one event where an agent is STOPPED and the cost of not knowing is the whole run standing still.'))}">🗣</th>
+                    <th class="setth" title="${C.esc(('Your choice for everybody. Leave it on Default and the built-in answer stands — turn-ready and question deliberately differ, so the two can be told apart from another room without configuring anything.'))}">Sound</th>
+                    <th class="setth" title="${C.esc(('What would ACTUALLY play, and which step of the chain chose it: this session > this agent > your choice here > the built-in default. A sound whose file has gone falls through to the next step rather than going silent.'))}">Plays</th>
                     <th class="setthx"></th>
                 </tr></thead>
                 <tbody>${(al.events || []).map(e => alertEventRow(al, e)).join('')}</tbody>
@@ -2587,7 +2622,13 @@
                    sits beside it rather than at the far end of the row. */
                 .alerttbl th:nth-child(2), .alerttbl td.alertsay { width:30px; text-align:center; }
                 .alerttbl td.alertsay .alertonlbl { justify-content:center; }
-                .alerttbl th:nth-child(3), .alerttbl td:nth-child(3) { width:210px; }
+                /* audit B-05 — 210px cut its own picker: a sound named by the
+                   user and suffixed with its state ("Studio take — not playable
+                   here") measured 185px against 170px of room, while the Plays
+                   column beside it drew 456px for content needing 155. The
+                   ceiling stays (one long name may not eat the row); it moved
+                   to where a real name fits, out of the column that had slack. */
+                .alerttbl th:nth-child(3), .alerttbl td:nth-child(3) { width:250px; }
                 .alerttbl th.setthx, .alerttbl td.alertbtn { width:34px; padding-right:0; }
                 .alerttbl td.alertbtn button { width:100%; padding:0 4px; }
                 .alertonlbl { display:flex; gap:6px; align-items:center; cursor:pointer;
@@ -2603,6 +2644,11 @@
                     border-bottom:1px dotted var(--vscode-widget-border, #4444); }
                 .alertplays { font-family:var(--vscode-editor-font-family); }
                 .alertplays.bad { color:var(--vscode-charts-yellow, #d7ba7d); }
+                /* audit B-05 — the row the badge is counting. A fallback is a
+                   warning (something still rings); an armed event nothing can
+                   play is SILENCE, and silence is the one the eye has to find
+                   first. */
+                .alertplays.silent { color:var(--vscode-errorForeground); }
                 .alertorigin { font-family:var(--vscode-font-family); opacity:.55; font-size:10px; }
                 /* A-22 — the gate strip. ONE LINE above the table: three
                    authorities and what they add up to right now, in the order
@@ -2644,7 +2690,12 @@
                    order they take effect (is anything heard → what does it say).
                    The voice box is the wide one because a voice's LANGUAGE is
                    what the reader is choosing on, and a cut label hides it. */
-                .alertspeak #alertspeakvoice { flex:1 1 260px; min-width:180px; max-width:340px; }
+                /* audit B-05 — …and 340px was not wide enough to keep that
+                   promise: every real voice on this machine overflowed it
+                   ("Microsoft David - English (United States) · en-US · onecore"
+                   is 333px against 306px of room) with 830px unused to its
+                   right. */
+                .alertspeak #alertspeakvoice { flex:1 1 260px; min-width:180px; max-width:380px; }
                 .alertspeak .alertqtime { width:56px; }
                 .alertspeak .alertspeaktpl { flex:1 1 200px; min-width:120px; max-width:280px;
                     font-family:var(--vscode-editor-font-family); }

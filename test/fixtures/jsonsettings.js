@@ -71,8 +71,25 @@ const FOLDERS = {
 // What the user has actually put in each box. A live value beside a derived
 // shape is the whole reading: "this is what is in there, this is what may be".
 const VALUES = {
+    /**
+     * ‼️ TWO CLAIMS IN ONE ENTRY, and each needs the other's field.
+     *
+     * `command` is a key `agentFarm.cliProfiles` does NOT declare, and it is
+     * here on purpose: `test_settings_form.js` proves that a build which knows
+     * nothing about a key is not the build that deletes it (the hidden REST
+     * cell). But it was the ONLY field, so — audit B-05 — the scene under the
+     * title "a plain list is a list of boxes, not a JSON document" drew a
+     * profile row with all three of its columns EMPTY, which is the opposite of
+     * what it is there to show. `headless` is a declared field with a real
+     * template in it, so the table draws a profile AND the undeclared key is
+     * still being carried through it.
+     */
     'agentFarm.cliProfiles': [
-        { name: 'gece-tarayici', command: 'my-cli --headless "{prompt}"' }
+        {
+            name: 'gece-tarayici',
+            headless: 'my-cli --headless "{prompt}"',
+            command: 'my-cli --headless "{prompt}"'
+        }
     ],
     'agentFarm.browserAllowHosts': ['docs.anthropic.com', 'code.visualstudio.com'],
     'agentFarm.agentRoots': ['D:/zone/agent/ajanlar', 'D:/zone/dev/git/miropharm'],

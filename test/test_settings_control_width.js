@@ -77,18 +77,58 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         + "out.push({t:t,need:Math.round(w),room:Math.round(inner),"
         + "free:Math.round(rb.right-b.right),id:s.id||s.className});});"
         + "return out;})()";
-    const raw = node([path.join('test', 'measure_page.js'), 'engines', expr]);
-    let boxes = [];
-    try { boxes = JSON.parse(raw.slice(raw.indexOf('['))); } catch { boxes = []; }
+    const measure = (fixture) => {
+        node([path.join('test', 'render_page.js'), fixture]);
+        const raw = node([path.join('test', 'measure_page.js'), fixture, expr]);
+        try { return JSON.parse(raw.slice(raw.indexOf('['))); } catch { return []; }
+    };
 
+    const boxes = measure('engines');
     ok(`the page answered with controls to measure (${boxes.length})`, boxes.length > 0);
 
-    const cut = boxes.filter(b => b.need > b.room + 1);
-    ok('‼️ NO CONTROL IS NARROWER THAN THE VALUE IT HOLDS'
-        + (cut.length ? '\n      ' + cut.slice(0, 6).map(b =>
-            `${JSON.stringify(b.t)} needs ${b.need}px in ${b.room}px (${b.free}px free beside it) [${b.id}]`
-        ).join('\n      ') : ''),
-        cut.length === 0);
+    const report = (fixture, list) => {
+        const cut = list.filter(b => b.need > b.room + 1);
+        ok(`‼️ ${fixture}: NO CONTROL IS NARROWER THAN THE VALUE IT HOLDS`
+            + (cut.length ? '\n      ' + cut.slice(0, 6).map(b =>
+                `${JSON.stringify(b.t)} needs ${b.need}px in ${b.room}px (${b.free}px free beside it) [${b.id}]`
+            ).join('\n      ') : ''),
+            cut.length === 0);
+    };
+    report('engines', boxes);
+
+    // ‼️ audit B-05 — THE SAME PAGE, ITS OTHER HALF. `media/settings.js` draws
+    // the Alert Sounds section too, and the sweep found two boxes cut there
+    // that no test looked at: the per-event sound picker (a user-named sound
+    // plus its state, 185px in 170px) and the announcement voice (every real
+    // voice on this machine, 333px in 306px, with 830px free beside it).
+    const alerts = measure('alertsettings');
+    ok(`the alert surface answered with controls to measure (${alerts.length})`,
+        alerts.length > 0);
+    report('alertsettings', alerts);
+    ok('the alert fixture still carries a sound name long enough to test the box',
+        alerts.some(b => /Studio take/.test(b.t))
+        && alerts.some(b => /Microsoft \w+ - English/.test(b.t)));
+
+    // ‼️ audit B-05 — …AND A BOX WITH NOTHING IN IT AT ALL, which is the same
+    // defect at width zero. `agentFarm.wikiEngine` names `''` in its own enum
+    // and defaults to it, so the schema-driven picker drew an option whose text
+    // was the empty string: on the page, a blank box three rows under one
+    // reading `high`. Unset, broken and still-loading all look identical.
+    const blankExpr = "(function(){var o=[];document.querySelectorAll('select').forEach(function(s){"
+        + "var b=s.getBoundingClientRect();if(b.width<=0||b.height<=0){return;}"
+        + "for(var i=0;i<s.options.length;i++){if(String(s.options[i].text).trim()===''){"
+        + "o.push((s.id||String(s.className))+'['+i+']');}}});return Array.from(new Set(o));})()";
+    for (const fixture of ['engines', 'alertsettings', 'wikisettings']) {
+        node([path.join('test', 'render_page.js'), fixture]);
+        let blanks = [];
+        try {
+            const raw = node([path.join('test', 'measure_page.js'), fixture, blankExpr]);
+            blanks = JSON.parse(raw.slice(raw.indexOf('[')));
+        } catch { blanks = []; }
+        ok(`‼️ ${fixture}: NO PICKER OFFERS AN OPTION WITH NOTHING WRITTEN ON IT`
+            + (blanks.length ? ' — ' + blanks.slice(0, 6).join(', ') : ''),
+            blanks.length === 0);
+    }
 
     // …and the value this was found on is really on the page, at its full length.
     const long = boxes.find(b => /nemotron-3\.5-lightning-free/.test(b.t));
