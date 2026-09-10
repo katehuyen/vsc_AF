@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.454.0 - a box that says nothing but "Default", and a percentage under the wrong window (audit B-03/B-04) (2026-09-10)
+
+Two defects of the same family, found by looking at scenes nobody had looked
+at: a control that does not say what it controls, and a figure that does not
+say what it is a figure OF. Plus the sweep that had been blind to both.
+
+- **The row that starts a session drew three boxes reading nothing but
+  "Default".** Which was model, which was effort and which was permissions was
+  answerable only by hover, while the RUNNING row four inches below names all
+  four of its boxes. The axis travels inside the value now - `effort: high`
+  when somebody chose it, `perm -> Default` when the engine decides - and the
+  hover is an AFTip panel rather than a native title: the axis spelled out in
+  full, what it is set to, and what that choice means, without the standing
+  sentence being repeated. A separate label was refused by measurement, not
+  taste: `.crow` is `flex-wrap:nowrap` and had 69px of slack where four labels
+  want ~166. The same thing was true of the agent chips on Farm Settings
+  (`developer [gpt-5.6-terra] [high]`), and they got the same treatment.
+
+- **Seven places named an account's quota window and only one was right.** The
+  Codex card read `Current week 72%` while its own hover panel said `72% of the
+  five-hour window used` - the same figure under two window names, one of them
+  a lie with a real number in it. Each of the seven had typed the words out;
+  the seventh had a capital F and survived the sweep that found the other six.
+  The reading names its own window now and the host fills the silence exactly
+  once (`windowNameOf`), so no page derives anything. Two silences, filled
+  differently: an engine that named none is on the five-hour window, but a
+  disk-backed reading nobody has taken yet is a `usage window`, because its
+  length is IN the reading it has not had.
+
+- **A model id was cut to 25 characters on a row with 1,106px to spare.**
+  `opencode/nemotron-3.5-lightning-free` needs 173px; the box was pinned at
+  150. The ceiling was raised, not removed. And the reason nine surfaces of
+  audit walked past it: a native `<select>` is invisible to both standing
+  sweeps - its `scrollWidth` never exceeds its box and its value is not a text
+  node. A third sweep measures the option's text in the select's own font;
+  over all 30 fixtures it answers with 77 clipped boxes on four surfaces.
+
+- Also: the settings subtitle said "1 settings".
+
 ## 3.453.9 - a window that turned over hours ago said "in 0m" (audit B-04) (2026-09-10)
 
 The Engines surface was opened for the audit ledger. Two cards in one picture,

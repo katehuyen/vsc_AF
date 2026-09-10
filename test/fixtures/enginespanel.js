@@ -44,7 +44,11 @@ const data = () => {
                 id: 'work-1', engine: 'claude', label: 'work@studio',
                 email: 'work@studio.example', plan: 'max20x', health: 'ready', active: true,
                 percent: 91, resetsAt: NOW + 37 * 60 * 1000,
-                usageState: 'ok', note: '', quotaSource: 'oauth-credentials',
+                // ‼️ audit B-04.3 — the window arrives NAMED. The host fills the
+                // silence (`windowNameOf`), so a page never derives it and the
+                // five surfaces that each derived it their own way cannot drift.
+                usageState: 'ok', note: '', window: 'five-hour window',
+                quotaSource: 'oauth-credentials',
                 capturedAt: NOW - 6 * 24 * 3600 * 1000,
                 // X-206 — the figure's own age, and the refresh line: this one
                 // is being read right now, the next is waiting behind it.
@@ -55,7 +59,8 @@ const data = () => {
                 id: 'personal', engine: 'claude', label: 'personal@gmail',
                 email: 'personal@gmail.com', plan: 'pro', health: 'ready', active: false,
                 percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000,
-                usageState: 'ok', note: '', quotaSource: 'oauth-credentials',
+                usageState: 'ok', note: '', window: 'five-hour window',
+                quotaSource: 'oauth-credentials',
                 capturedAt: NOW - 2 * 3600 * 1000,
                 fetchedAt: NOW - 3 * 3600 * 1000, queue: 'queued', queuePlace: 1,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
@@ -65,6 +70,7 @@ const data = () => {
                 email: 'spare@gmail.com', plan: 'pro', health: 'needs-signin', active: false,
                 percent: -1, resetsAt: 0,
                 usageState: 'no-auth', note: 'The refresh token was rejected.',
+                window: 'five-hour window',
                 quotaSource: 'oauth-credentials', capturedAt: NOW - 21 * 24 * 3600 * 1000,
                 fetchedAt: NOW - 26 * 3600 * 1000, queue: 'queued', queuePlace: 2,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/spare'
@@ -96,7 +102,10 @@ const data = () => {
                 id: 'codex-spare', engine: 'codex', label: 'spare@chatgpt',
                 email: 'spare@chatgpt.example', plan: '', health: 'ready', active: false,
                 percent: -1, resetsAt: 0,
-                usageState: 'error', window: '', quotaSource: 'session-tail',
+                // ‼️ …and this is the silence the host fills DIFFERENTLY: a
+                // disk-backed reading nobody has taken has no window length yet,
+                // so it is named for what it is rather than for five hours.
+                usageState: 'error', window: 'usage window', quotaSource: 'session-tail',
                 note: 'Not read yet — this account\'s own transcripts hold the figure, so reading it '
                     + 'costs no request and no place in any line. It fills in as soon as something looks.',
                 capturedAt: NOW - 20 * 60 * 1000,
@@ -263,6 +272,7 @@ const brokenData = () => {
         percent: -1, resetsAt: 0,
         usageState: 'no-auth',
         note: 'The credentials file is there and nothing could be made of it.',
+        window: 'five-hour window',
         quotaSource: 'oauth-credentials', capturedAt: NOW - 9 * 24 * 3600 * 1000,
         fetchedAt: 0, queue: 'idle', queuePlace: 0,
         dir: 'C:/Users/mv/AppData/agent-farm/accounts/broken'

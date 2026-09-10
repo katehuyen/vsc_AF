@@ -134,17 +134,29 @@ const rollout = (used, windowMinutes, resetsAtSec, plan) => JSON.stringify({
 // number in it.
 // ===========================================================================
 {
+    // ‼️ audit B-04.3 — THE FALLBACK MOVED, so two of these three claims are
+    // now the opposite of the rule. This block asserted that the page keeps ONE
+    // copy of the words "five-hour window" — and one copy on this page is
+    // exactly what let six other copies exist elsewhere, each deriving the name
+    // its own way, five of them wrong. The page names nothing now; the host
+    // fills the silence once. Inverted, not deleted.
     const page = fs.readFileSync(path.join(ROOT, 'media', 'engines.js'), 'utf8');
     ok('‼️ X-215 — the card names the window the figure belongs to',
         /const winName = a\.window/.test(page));
-    ok('…and it appears in exactly ONE place — the fallback for a row whose '
-        + 'engine named no window, which is every row written before this',
-        (page.match(/five-hour window/g) || []).length === 1);
+    // ‼️ LINE BY LINE, WITH THE COMMENTS TAKEN OUT. A quote-pair regex run over
+    // the whole file matches across newlines, so the prose two lines above the
+    // code read as a string literal and this assertion failed on its own comment.
+    const spelt = page.replace(/\r/g, '').split('\n')
+        .filter(ln => !/^\s*(\/\/|\*|\/\*)/.test(ln))
+        .filter(ln => (ln.match(/'[^']*'|"[^"]*"|`[^`]*`/g) || [])
+            .some(q => /five-hour window/.test(q)));
+    ok('‼️ …and the page no longer keeps a copy of the name to fall back on'
+        + (spelt.length ? ' — ' + spelt[0].trim().slice(0, 70) : ''), spelt.length === 0);
     ok('…the panel heading is that same name rather than a second constant',
         /winName\.charAt\(0\)/.test(page));
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
-    ok('…and the host sends it, or the page has nothing to name it with',
-        /window: u\?\.window/.test(ext));
+    ok('…and the host NAMES it before it leaves, or the page has nothing to draw',
+        /window: windowNameOf\(u\?\.window/.test(ext));
     const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'enginesPanel.ts'), 'utf8');
     ok('…and the contract between them says so', /window: string/.test(panel));
 

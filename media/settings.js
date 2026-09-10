@@ -1058,15 +1058,25 @@
         // the mystery this item was filed about; `per.resolved` is computed by
         // core/agentDefaults.ts and carries both the value and who decided it.
         const res = per.resolved || {};
-        const zero = res.value ? `Default \u2192 ${res.value}` : 'Default (the CLI decides)';
+        // ‼️ B-04.1 / B-03.21 — THE BOX SAYS WHICH AXIS IT IS, IN ITS OWN TEXT.
+        //
+        // Measured on dist/render/engines.s2.png: the chip read `developer
+        // [gpt-5.6-terra] [high]` and nothing on the screen said that `high`
+        // was an EFFORT rather than a second model. The zero rows already
+        // half-knew this (`effort: default`, `Default → haiku`) and the chosen
+        // rows did not, so the axis appeared and vanished with the choice.
+        //
+        // `:` is a choice somebody made here, `→` is what it resolves to when
+        // nobody has — the distinction this page already drew with its arrow.
+        const zero = res.value ? `model \u2192 ${res.value}` : 'model \u2192 default (the CLI decides)';
         return `<select class="agmodel" data-agmodel="${C.esc(c.dir)}"
             title="${C.esc('Default model for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
             ${C.option('', zero, { selected: !cur, detail: res.note || 'This agent names no model of its own.' })}
-            ${opts.map(m => C.option(m, m, {
+            ${opts.map(m => C.option(m, 'model: ' + m, {
                 selected: cur === m,
                 detail: aliases.indexOf(m) < 0 ? 'Set by hand — this engine does not list this model.' : ''
             })).join('')}
-            ${C.option('__custom__', 'custom…', { detail: 'Type a model id this engine is not offering here.' })}
+            ${C.option('__custom__', 'model: custom…', { detail: 'Type a model id this engine is not offering here.' })}
         </select>`;
     }
 
@@ -1081,11 +1091,14 @@
         if (!list.length) { return ''; }
         const cur = per.effort || '';
         const res = per.resolvedEffort || {};
-        const zero = res.value ? `effort \u2192 ${res.value}` : 'effort: default';
+        // ‼️ …and the same two forms here. `effort: default` used to be the ONE
+        // row that said the axis, and it said it with a colon — which reads as
+        // "somebody chose the value `default`", the opposite of what it means.
+        const zero = res.value ? `effort \u2192 ${res.value}` : 'effort \u2192 default';
         return `<select class="agmodel" data-ageffort="${C.esc(c.dir)}"
             title="${C.esc('Default reasoning effort for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
             ${C.option('', zero, { selected: !cur, detail: res.note || 'This agent names no effort of its own.' })}
-            ${list.map(e => C.option(e.id, e.label || e.id, { selected: cur === e.id, detail: e.detail || '' })).join('')}
+            ${list.map(e => C.option(e.id, 'effort: ' + (e.label || e.id), { selected: cur === e.id, detail: e.detail || '' })).join('')}
         </select>`;
     }
 
@@ -2505,7 +2518,16 @@
                 .agchip .agex:hover, .agchip.agexcl a:hover { opacity:1; }
                 .agchip.agexcl { opacity:.55; text-decoration:line-through; }
                 .agchip.agexcl a { text-decoration:none; }
-                .agchip .agmodel { font-size:10px; margin-left:6px; padding:0 2px; max-width:150px; }
+                /* ‼️ audit B-04.1 — THE CEILING WAS UNDER THE VALUE IT HAD TO HOLD.
+                   Measured on the OpenCode scene, whose whole reason for existing
+                   is that a model id there is a sentence: the box was pinned to
+                   150px, "opencode/nemotron-3.5-lightning-free" needs 173px, and
+                   the row it sits in had 1,106px of unused width to its right. So
+                   the reader saw "opencode/nemotron-3.5-lig" and the only way to
+                   tell it from the next id was hover — the same defect this audit
+                   already called one in B-02.4. The ceiling stays (one pathological
+                   id may not eat the row) and is raised to where a real id fits. */
+                .agchip .agmodel { font-size:10px; margin-left:6px; padding:0 2px; max-width:300px; }
                 .agchip .agcustom { width:200px; max-width:200px; padding:1px 4px; }
                 .promptlist { margin-top:10px; border:1px solid var(--vscode-widget-border, #3333);
                     border-radius:5px; max-height:340px; overflow:auto; }
@@ -2635,7 +2657,7 @@
             ${window.AFHeader.html({
                 page: 'settings',
                 title: 'Farm Settings',
-                sub: `Every <code>agentFarm.*</code> setting — schema-driven, so new settings appear here automatically. ${total} settings · ${modified} changed from default. Changes save immediately to your user settings.`,
+                sub: `Every <code>agentFarm.*</code> setting — schema-driven, so new settings appear here automatically. ${total} setting${total === 1 ? '' : 's'} · ${modified} changed from default. Changes save immediately to your user settings.`,
                 guide: 'dashboard'
             })}
             ${profileBar()}

@@ -682,12 +682,22 @@ const SENTRY_DEFAULTS = {
              * answers; and one nobody has read, because an unread account is
              * usable and must not be drawn as 0%.
              */
+            // ‼️ audit B-04.3 — AND WHICH WINDOW EACH PERCENTAGE IS OF. The
+            // leader picker's panel used to say "41% of its five-hour window is
+            // used" about a Codex slot whose window is a WEEK — the same figure
+            // under two window names, one of them a lie with a real number in
+            // it. The host names it now and the row carries the name.
             accountPool: [
-                { id: 'slot-1', label: 'wmmuratvural@gmail.com', engine: 'claude', percent: 23, state: 'ok' },
-                { id: 'slot-2', label: 'aicozums@gmail.com', engine: 'claude', percent: 4, state: 'ok' },
-                { id: 'slot-3', label: 'murvietnam@gmail.com', engine: 'claude', percent: 97, state: 'ok' },
-                { id: 'slot-x1', label: 'murposta@gmail.com', engine: 'codex', percent: null, state: 'no-source' },
-                { id: 'slot-x2', label: 'murposta2@gmail.com', engine: 'codex', percent: 41, state: 'ok' }
+                { id: 'slot-1', label: 'wmmuratvural@gmail.com', engine: 'claude', percent: 23, state: 'ok',
+                    window: 'five-hour window' },
+                { id: 'slot-2', label: 'aicozums@gmail.com', engine: 'claude', percent: 4, state: 'ok',
+                    window: 'five-hour window' },
+                { id: 'slot-3', label: 'murvietnam@gmail.com', engine: 'claude', percent: 97, state: 'ok',
+                    window: 'five-hour window' },
+                { id: 'slot-x1', label: 'murposta@gmail.com', engine: 'codex', percent: null, state: 'no-source',
+                    window: 'usage window' },
+                { id: 'slot-x2', label: 'murposta2@gmail.com', engine: 'codex', percent: 41, state: 'ok',
+                    window: 'Current week' }
             ]
         };
     })()
@@ -730,7 +740,8 @@ const SENTRY_LIVE = Object.assign({
     live: {
         id: 't9', title: 'Sentry R7 · X-178', status: 'running',
         startedAt: Date.now() - 12 * 60 * 1000,
-        account: 'slot-2', accountPercent: 38, accountResetsAt: Date.now() + 2 * 3600 * 1000
+        account: 'slot-2', accountPercent: 38, accountWindow: 'five-hour window',
+        accountResetsAt: Date.now() + 2 * 3600 * 1000
     },
     // ‼️ X-195 — ALL FOUR STATES OF THE RECORD ARE HERE, because the mark is the
     // whole point and three of the four are indistinguishable if only one is

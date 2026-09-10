@@ -76,6 +76,39 @@ export interface SlotUsage {
     note?: string;
 }
 
+/**
+ * ‼️ X-215 / audit B-04.3 — WHAT THIS PERCENTAGE'S WINDOW IS CALLED, DECIDED ONCE.
+ *
+ * The Engines card got this right and five other places did not, because each
+ * of them had typed the words out: the account chip's panel, the picker's
+ * MIRROR (`media/afAccount.js`), the campaign strip, the leader picker and the
+ * “Resume as…” quick pick all said “five-hour window” unconditionally. Measured
+ * on the Codex card: it read “Current week 72%” while its own hover panel said
+ * “72% of the five-hour window used” — the same figure under two window names,
+ * one of them a lie with a real number in it.
+ *
+ * So the reading names its own window (`SlotUsage.window`) and this is the only
+ * thing that fills the silence: an engine that named nothing is on the five-hour
+ * window, which is what every row written before a second engine had a figure
+ * meant — EXCEPT a disk-backed reading nobody has taken yet, where the length of
+ * the window is IN the reading, so “five-hour” would be the one claim that is
+ * certainly wrong. The host names it before it leaves; no page derives it.
+ */
+export function windowNameOf(named: string | undefined, engine: string): string {
+    const stated = (named || '').trim();
+    if (stated) { return stated; }
+    return adapterFor(engine).quotaSource().kind === 'session-tail'
+        ? 'usage window' : 'five-hour window';
+}
+
+/** …the same name INSIDE A SENTENCE. A reading names its window as a heading
+ *  (“Current week”), and a heading dropped mid-sentence reads as a proper noun.
+ *  The page-side twin is `AFAccount.windowPhrase` — two runtimes, one rule. */
+export function windowPhraseOf(named: string | undefined, engine: string): string {
+    const n = windowNameOf(named, engine);
+    return n.charAt(0).toLowerCase() + n.slice(1);
+}
+
 /** The five-hour row out of a snapshot, or nothing. */
 export function fiveHourBar(snap: PlanUsageSnapshot | undefined): PlanBar | undefined {
     return snap?.bars.find(b => b.id === FIVE_HOUR);

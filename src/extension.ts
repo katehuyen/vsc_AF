@@ -236,7 +236,7 @@ import {
 } from './core/accountStore';
 import {
     ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotCredentialsFile, slotIsUsable,
-    slotSessionDir
+    slotSessionDir, windowNameOf, windowPhraseOf
 } from './core/accountUsage';
  import * as accountQueue from './core/accountQueue';
 import {
@@ -17662,10 +17662,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             percent: u?.percent ?? -1,
             resetsAt: u?.resetsAt ?? 0,
             usageState: u?.state ?? 'error',
-            // X-215 — the NAME of the window that percentage is of. Empty = the
-            // five-hour one, which is what every row meant before a second
-            // engine had a figure at all.
-            window: u?.window ?? '',
+            // X-215 — the NAME of the window that percentage is of, and it is
+            // NEVER empty: `windowNameOf` fills the silence host-side so no page
+            // has to derive it, which is how five surfaces came to disagree with
+            // this one (audit B-04.3).
+            window: windowNameOf(u?.window, slot.engine),
             // ‼️ X-215 — AND WHERE THE FIGURE COMES FROM AT ALL. The ⟳ button's
             // panel promised "one request, never less than five seconds apart"
             // on every card; on one whose figure is a file on this disk that is
@@ -17978,7 +17979,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 detail: [
                     health === 'ready' ? '' : 'this sign-in needs attention — capture it again',
                     u && u.percent >= 0
-                        ? `${u.percent}% of the 5-hour window used`
+                        // ‼️ audit B-04.3 — the window is NAMED BY THE READING, and
+                        // this row said `5-hour` to a Codex slot whose window is a
+                        // week.
+                        ? `${u.percent}% of the ${windowPhraseOf(u.window, sl.engine)} used`
                         : 'nothing has measured this account\'s window yet'
                 ].filter(Boolean).join(' · ')
             };
@@ -18044,18 +18048,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * `resetsAt` is 0 when the moment is unknown. The page draws an em dash for
      * both, and never a zero — "unread" and "nothing used" are opposite facts.
      */
-    const accountFigure = (slotId: string, usage: SlotUsage[]) => {
-        const u = usage.find(x => x.slotId === slotId);
+    const accountFigure = (slot: { id: string; engine: string }, usage: SlotUsage[]) => {
+        const u = usage.find(x => x.slotId === slot.id);
         return {
             percent: u && u.percent >= 0 ? u.percent : -1,
-            resetsAt: u && u.resetsAt ? u.resetsAt : 0
+            resetsAt: u && u.resetsAt ? u.resetsAt : 0,
+            // ‼️ audit B-04.3 — AND WHAT THAT WINDOW IS CALLED. The pickers drew
+            // the figure and then named its window themselves, always "five-hour";
+            // one reader sends both, so a Codex slot cannot read `72%` under a
+            // window it does not have.
+            window: windowNameOf(u?.window, slot.engine)
         };
     };
     const engineAccountMatrix = (): Record<string,
         { id: string; label: string; health: string; active: boolean;
-            percent: number; resetsAt: number }[]> => {
+            percent: number; resetsAt: number; window: string }[]> => {
         const out: Record<string, { id: string; label: string; health: string; active: boolean;
-            percent: number; resetsAt: number }[]> = {};
+            percent: number; resetsAt: number; window: string }[]> = {};
         const active = activeAccounts();
         // ‼️ THE USAGE IS AN IN-MEMORY SNAPSHOT (X-170), not a request — the
         // service holds one budget per account and refreshes on its own beat, so
@@ -18066,7 +18075,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 id: sl.id, label: slotLabel(sl),
                 health: slotIdentityFresh(sl).health,
                 active: active[sl.engine] === sl.id,
-                ...accountFigure(sl.id, usage)
+                ...accountFigure(sl, usage)
             });
         }
         return out;
@@ -20615,7 +20624,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 id: slot.id, label: slotLabel(slot),
                 health: slotIdentityFresh(slot).health,
                 active: activeAccounts()[slot.engine] === slot.id,
-                ...accountFigure(slot.id, usage)
+                ...accountFigure(slot, usage)
             } : null
         };
     };
@@ -23193,7 +23202,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 id: sl.id, label: slotLabel(sl),
                 health: slotIdentityFresh(sl).health,
                 active: activeAccounts()[sl.engine] === sl.id,
-                ...accountFigure(sl.id, usage)
+                ...accountFigure(sl, usage)
             }));
         },
         // X-213 — whether the axis exists on this engine at all, which is not
@@ -26415,6 +26424,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     label: accountLabelOf(sl),
                     engine: sl.engine,
                     percent: u && u.state === 'ok' && u.percent >= 0 ? u.percent : null,
+                    // audit B-04.3 — the picker under this pool names the window it
+                    // draws a percentage of, so the name travels with it.
+                    window: windowNameOf(u?.window, sl.engine),
                     state: u?.state ?? 'unread'
                 };
             }),
@@ -26482,6 +26494,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     startedAt: live.startedAt ?? live.createdAt,
                     account: live.account ?? '',
                     accountPercent: slot && slot.state === 'ok' && slot.percent >= 0 ? slot.percent : null,
+                    // audit B-04.3 — the strip says how much of the window is LEFT,
+                    // so it has to know which window that is.
+                    accountWindow: slot ? windowNameOf(slot.window, slot.engine) : '',
                     accountResetsAt: slot?.resetsAt ?? null
                 }
                 : null,

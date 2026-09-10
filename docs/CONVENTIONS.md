@@ -597,6 +597,26 @@ fail a string assertion — the markup was correct in every case:
   measured on the three cases whose obvious repairs break each other (a short
   scene of a body-pinning page · an open panel hanging below its page box · the
   whole montage of that same page).
+- `test/test_settings_control_width.js` — **‼️ A NATIVE `<select>` IS INVISIBLE
+  TO BOTH OF THE SWEEPS ABOVE**, and nine surfaces of audit walked past this
+  because of it: its `scrollWidth` never exceeds its box, and its value is not a
+  text node at all — the browser paints it. So neither "an `overflow:hidden` box
+  whose content overflows" nor "a text node drawn narrower than one character"
+  can ever fire on one. The third sweep measures the **selected option's text in
+  the select's own font** against the select's own content box:
+
+  ```
+  var cs = getComputedStyle(s); c.font = cs.fontStyle+' '+cs.fontWeight+' '+cs.fontSize+' '+cs.fontFamily;
+  var need = c.measureText((s.options[s.selectedIndex]||{}).text||'').width;
+  var room = s.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 16;   // 16 = the arrow
+  ```
+
+  Found: `opencode/nemotron-3.5-lightning-free` needing 173px in a box pinned to
+  150px, **on a row with 1,106px of unused width beside it** — and the scene's
+  own title was "where a model id is a sentence". Run over all 30 fixtures it
+  answers with **77 clipped boxes on four surfaces**; not every one is a defect
+  (a placeholder 11px short is not), but `💻 Machine Global` in 44px and `low`
+  in 12px are. Judge each on its own surface; the sweep only finds them.
 
 It asserts nothing and is not in `npm test` — a page that looks right proves
 the CSS, never the behaviour. It is the looking glass, and looking is the part
@@ -1064,6 +1084,33 @@ The `title` follows the hover rule above: **figures, `Label: value`**. What an
 engine *changes about talking to it* is a separate affordance (the `?` beside
 the composer's engine box), never the badge.
 
+### A percentage is named by whoever MEASURED it
+
+**‼️ NO SURFACE MAY NAME AN ACCOUNT'S QUOTA WINDOW.** The reading names its own
+window (`SlotUsage.window`), the host fills the silence exactly once
+(`windowNameOf` / `windowPhraseOf`, `src/core/accountUsage.ts`), and every page
+prints what it was handed.
+
+The reason is arithmetic, not style. Seven places drew an account's window and
+each had typed the words out; exactly **one** of them had been taught that Codex
+publishes a **week**. Measured on one screenshot: the Codex card read
+`Current week 72%` while its own hover panel, three inches away, read
+`72% of the five-hour window used` — the same figure under two window names, one
+of them a lie with a real number in it. The seventh copy had a capital F
+(`Five-hour window:`) and survived the first sweep that went looking for the
+other six.
+
+Two silences, and they are filled differently: an engine that named no window is
+on the five-hour one (what every row meant before a second engine had a figure);
+a **disk-backed reading nobody has taken yet** has no window length — it is *in*
+the reading — so it is `usage window`, because "five-hour" is the one claim
+about it that is certainly wrong.
+
+Gate: `test/test_account_window_name.js`. The rule it measures is agreement, not
+wording — *the same figure never appears beside two different window names* —
+plus a case-insensitive source sweep, because case is where the seventh copy
+hid.
+
 ---
 
 ## "Default" never stands alone
@@ -1079,6 +1126,39 @@ resolves the layers (the agent's own file · Agent Farm's per-engine store ·
 the fleet-wide `launchDefaults` · the CLI) and returns the sentence with the
 value, so the words the box prints and the value the launcher sends come from
 one function and cannot disagree.
+
+**‼️ …AND IT NAMES ITS AXIS, NOT ONLY ITS VALUE.** The rule above fixes *which
+sonnet*; it does not fix *which box*. Measured (audit B-03.21, B-04.1): the
+Console's new-session row drew three boxes in a row reading nothing but
+`Default`, and Farm Settings drew `developer [gpt-5.6-terra] [high]` where
+nothing on the screen said `high` was an effort rather than a second model.
+Worse, the axis appeared and vanished **with the choice** — the zero rows half
+knew it (`effort: default`) and the chosen rows did not.
+
+So the axis travels **inside the value**, and the two separators are load-bearing:
+
+```
+effort: high        somebody chose this here
+effort → low        nobody did; this is what it resolves to
+perm  → Default     …and the engine decides
+```
+
+A separate `<label>` is the other way and is right where there is room — the
+Console's RUNNING row uses `permlbl`, the route and account use `rtlbl`. It was
+refused on the starting row by measurement, not taste: `.crow` is
+`flex-wrap:nowrap` and had 69px of slack where four labels want ~166.
+
+The cost is that the value is clipped harder, so **the hover carries the whole
+answer and is an `AFTip` panel, never a native `title`**: the heading is the
+axis spelled out in full (`perm` in the box, `permissions` in the panel) with
+what it is set to, and the body is the chosen row's own words followed by the
+standing sentence, **once**. A panel that repeats its own heading is a panel
+nobody finishes reading.
+
+Gates: `test/test_console_axis_labels.js` (the rule is *no two boxes on a row
+read the same thing* — "these four words are present" would go green on a row
+where every box said only `axis`) and the chip half of
+`test/test_settings_control_width.js`.
 
 ---
 

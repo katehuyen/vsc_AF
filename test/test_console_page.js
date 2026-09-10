@@ -726,10 +726,14 @@ const html = allHtml;
     });
 
     push(onEngine('claude'));
+    // ‼️ B-03.21 — THE OPTION CARRIES ITS AXIS NOW (`effort → high`), so a test
+    // asking for `>high<` is asking for the shape this row had while three of
+    // its boxes read nothing but "Default". The CLAIM is unchanged — this
+    // engine's vocabulary and not the other's — only the shape it is read in.
     ok('the composer opens on Claude, offering Claude\'s vocabulary',
         /value="claude" selected/.test(composer())
         && composer().includes('Sonnet') && !composer().includes('GPT 5.6 Terra')
-        && composer().includes('>high<') && !composer().includes('>xhigh<'));
+        && composer().includes('>effort: high<') && !composer().includes('>effort: xhigh<'));
 
     // ‼️ THE HAND IS STILL ON THE PICKER. This is not a contrivance: it is what
     // a native select does after a choice, and it is the only condition under
@@ -746,7 +750,7 @@ const html = allHtml;
         + 'a round trip or for the hand to leave the control',
         composer().includes('GPT 5.6 Terra') && !composer().includes('Sonnet'));
     ok('‼️ …and so is the effort box, which is looked up by engine and model both',
-        composer().includes('>xhigh<') && !composer().includes('>high<'));
+        composer().includes('>effort: xhigh<') && !composer().includes('>effort: high<'));
     ok('‼️ …and the hint that says what this engine changes about the composer',
         composer().includes('Codex · ready'));
     ok('…with the picker itself showing the engine that was chosen',

@@ -840,10 +840,29 @@
         .crow .rtlbl { min-width:0; flex:0 1 auto; font-size:10px;
             display:flex; align-items:center; gap:4px; }
         .crow .rtlbl > span { opacity:.6; flex:none; }
-        #c-model, #c-model-live { flex:1 1 112px; max-width:112px; }
-        #c-effort, #c-effort-live { flex:1 1 82px; max-width:82px; }
+        #c-model-live { flex:1 1 112px; max-width:112px; }
+        #c-effort-live { flex:1 1 82px; max-width:82px; }
         #c-perm { flex:3 1 104px; max-width:104px; }
-        #c-proj { flex:3 1 104px; max-width:104px; }
+        /* ‼️ B-03.21 — THE FOUR BOXES THAT CARRY THEIR OWN AXIS ARE WIDER, and
+           the WRAPPER is what is sized. Two measured reasons, both of which
+           broke something on the first attempt:
+           (1) the box is inside an AFTip now, so the SPAN is the flex child —
+               left on the select, every one of these flex rules was dead and
+               the row stopped shrinking with the panel altogether;
+           (2) the value grew by its axis: "permissions -> Default" measures
+               132px of text where "acceptEdits" was 66, and the row had 69px
+               of slack in its spacer. The bases below are that measurement
+               (model 105 · effort 101 · perm 97 · project 138 of text), and
+               the spacer gives up the slack first: a gap holds no information.
+           The inner selects are pinned by id because #c-perm and #c-proj are
+           also the RUNNING row's, where the label does this job instead. */
+        .crow .axisw { min-width:0; display:flex; align-items:center; }
+        .axisw #c-model, .axisw #c-effort, .axisw #c-perm, .axisw #c-proj {
+            width:100%; max-width:none; flex:none; }
+        .crow .axisw:has(#c-model) { flex:1 1 118px; max-width:118px; }
+        .crow .axisw:has(#c-effort) { flex:1 1 108px; max-width:108px; }
+        .crow .axisw:has(#c-perm) { flex:3 1 104px; max-width:104px; }
+        .crow .axisw:has(#c-proj) { flex:3 1 146px; max-width:146px; }
         /* the label wrappers of the running composer are sized by their select */
         .crow .permlbl { min-width:0; flex:0 1 auto; }
         /* ‼️ THE RIGHT-HAND GROUP IS FIXED. Whatever else gives way, these keep
@@ -3668,6 +3687,67 @@
             return (now ? now + '\n\n' : '') + standard;
         };
         /**
+         * ‼️ B-03.21 — A BOX SAYS WHICH AXIS IT IS, IN ITS OWN TEXT.
+         *
+         * The RUNNING row names its four axes with a `permlbl` (`model` ·
+         * `effort` · `account` · `permissions`). The row that STARTS a session
+         * named none of them, so it drew three boxes in a row reading nothing
+         * but `Default`, and a fourth reading `high` beside a model id —
+         * measured on dist/render/console.s4.png and console.s8.png. Which box
+         * was which was answerable only by hover, and this audit has already
+         * called that a defect twice (B-02.4, B-04.1).
+         *
+         * A separate `<label>` was the other way and is refused by the row:
+         * `.crow` is `flex-wrap:nowrap` and had 69px spare where four labels
+         * want ~166. So the AXIS TRAVELS IN THE OPTION, which costs the value
+         * a few characters and nothing else. A native `<select>` draws the
+         * selected option and nothing beside it, so every option carries it —
+         * the open list reads as a column of one axis, which is what it is.
+         *
+         * The two forms are not decoration: `→` is what the engine RESOLVES
+         * to when nothing is named here, `:` is a choice somebody made. The
+         * page already used exactly this distinction in the agent chips on
+         * Farm Settings; it is not a second vocabulary.
+         */
+        const axisOpts = (axis, list, cur) => (list || []).map(o => {
+            const label = String(o.label || o.id || '');
+            const named = String(o.id ?? '') !== '';
+            const shown = axis + (named ? ': ' : ' → ') + label;
+            return `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}`
+                + ` title="${C.esc(optionTip(shown, o.detail))}">${C.esc(shown)}</option>`;
+        }).join('');
+        /**
+         * …and the hover is a PANEL, not a native title. The user asked for the
+         * whole answer to be readable from the hover alone — what this axis is,
+         * and what it is set to — without the standing sentence being repeated
+         * on every one of them. So: the heading is the axis and its value (the
+         * changing half, which is what is being asked about), and the body is
+         * the standing explanation, once.
+         */
+        const axisBox = (axis, id, list, cur, standard, longName) => {
+            const row = (list || []).find(o => String(o.id ?? '') === String(cur ?? ''));
+            const now = row ? String(row.label || row.id || '') : '';
+            const named = row && String(row.id ?? '') !== '';
+            // ‼️ THE PANEL SPELLS OUT WHAT THE BOX ABBREVIATES. `perm` fits the
+            // row; `permissions` is what it is called everywhere else, and the
+            // hover is where there is room to say so. The heading carries the
+            // CHANGING half — the axis and what it is set to — because that is
+            // the half being asked about; the standing sentence follows once.
+            const head = (longName || axis) + (now ? (named ? ': ' : ' → ') + now : '');
+            // ‼️ AND WHAT THE CHOSEN ROW ITSELF SAYS, which is the half that
+            // changes when the box does. Without it `effort` opened a panel
+            // reading "Reasoning effort" under a heading reading "effort →
+            // Default" — the same two words twice and nothing about what was
+            // actually chosen. The standing sentence follows it, once; a panel
+            // that repeats itself is a panel nobody finishes reading.
+            const why = row && String(row.detail || '').trim();
+            return window.AFTip.wrap(
+                `<select id="${id}">${axisOpts(axis, list, cur)}</select>`,
+                head,
+                window.AFTip.lines(why && why !== String(standard || '').trim()
+                    ? [why, window.AFTip.GAP, standard] : [standard]), 'axisw');
+        };
+        /**
          * ‼️ X-105 — THE ROUTE, AS A CONTROL RATHER THAN A CARRIED VALUE.
          *
          * X-103 made the route pickable in the launcher and X-105 (2/n) made the
@@ -3959,15 +4039,18 @@
                 ${engineHintHtml(engineNow())}
                 ${routeBoxesHtml()}
                 ${accountBoxHtml()}
-                <select id="c-model" title="${C.esc(boxTip(withCurrent(composerModels(engineNow()), st.model), st.model, 'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow())))}">${opts(withCurrent(composerModels(engineNow()), st.model), st.model)}</select>
+                ${axisBox('model', 'c-model', withCurrent(composerModels(engineNow()), st.model), st.model,
+                    'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow()))}
                 ${drawsEffort(engineNow())
-                    ? `<select id="c-effort" title="${C.esc(boxTip(withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort, 'Reasoning effort' + flagOf(engineNow(), 'effort')))}">${opts(withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort)}</select>`
+                    ? axisBox('effort', 'c-effort', withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort,
+                        'Reasoning effort' + flagOf(engineNow(), 'effort'))
                     : ''}
-                <select id="c-perm" title="${C.esc(boxTip(DATA.permissions, st.permissionMode, startPermTip))}">${opts(DATA.permissions, st.permissionMode)}</select>
-                <select id="c-proj" title="${C.esc(boxTip([{ id: '', label: '◧ No project' }, ...(DATA.projects || []).map(p => ({ id: p.id, label: (p.icon || '◧') + ' ' + p.name }))], DATA.activeProjectId || '', 'Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar\'s active project is the window\'s answer, not this session\'s, and neither writes the other.'))}">
-                    <option value=""${DATA.activeProjectId ? '' : ' selected'} title="${C.esc(optionTip('◧ No project', 'the session is told about no project and is filed under none'))}">◧ No project</option>
-                    ${(DATA.projects || []).map(p => `<option value="${C.esc(p.id)}"${p.id === DATA.activeProjectId ? ' selected' : ''} title="${C.esc((p.icon ? p.icon + ' ' : '◧ ') + p.name)}">${p.icon ? C.esc(p.icon) + ' ' : '◧ '}${C.esc(p.name)}</option>`).join('')}
-                </select>
+                ${axisBox('perm', 'c-perm', DATA.permissions, st.permissionMode, startPermTip, 'permissions')}
+                ${axisBox('project', 'c-proj',
+                    [{ id: '', label: '◧ No project', detail: 'the session is told about no project and is filed under none' },
+                        ...(DATA.projects || []).map(p => ({ id: p.id, label: (p.icon || '◧') + ' ' + p.name }))],
+                    DATA.activeProjectId || '',
+                    'Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar\'s active project is the window\'s answer, not this session\'s, and neither writes the other.')}
                 <span class="grow"></span>
                 <span id="c-live"></span>
                 <button id="c-send">Start session</button>`;

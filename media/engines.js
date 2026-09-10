@@ -158,7 +158,11 @@
         if (!mine.length) { return ''; }
         const T = window.AFTip;
         const on = mine.find(a => a.active);
-        const spent = (a) => a.percent >= 0 ? a.percent + '% of the 5-hour window used' : '';
+        // ‼️ audit B-04.3 — NAMED BY THE READING, not by this line. It said
+        // `5-hour` to every row, including the Codex slot whose window is a week
+        // and whose card, four inches below, said so.
+        const spent = (a) => a.percent >= 0
+            ? a.percent + '% of the ' + (window.AFAccount.windowPhrase(a) || 'window') + ' used' : '';
         // The countdown is accountTurns' — the card below says the same thing,
         // and one page may not hold two answers to one question.
         const turns = accountTurns;
@@ -405,11 +409,13 @@
          * window's own minutes) and the five-hour wording is what an engine
          * that named nothing still gets — which is every row written before.
          */
-        // …and an UNREAD disk-backed row has no name yet either, because the
-        // window's length is in the reading. "five-hour" would be the one claim
-        // that is certainly wrong there.
-        const winName = a.window
-            || (a.quotaSource === 'session-tail' ? 'usage window' : 'five-hour window');
+        // ‼️ audit B-04.3 — and the fallback that used to live here is gone,
+        // because it lived in six places and only this copy was right. The HOST
+        // names the window now (`windowNameOf`, src/core/accountUsage.ts) — an
+        // engine that named none is on the five-hour window, except an UNREAD
+        // disk-backed row, whose window's length is in the reading it has not
+        // had, so "five-hour" would be the one claim certainly wrong about it.
+        const winName = a.window || '';
         /**
          * ‼️ THE BADGE GOT THREE STATES AND THE SENTENCE UNDER IT KEPT TWO
          * (audit A-06.7).

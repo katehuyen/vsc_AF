@@ -3366,8 +3366,10 @@
         if (s.running) {
             return mark('live', 'RUNNING', 'A round is on the board right now.', [
                 s.live ? `${s.live.title || ''}${s.live.account ? ' on ' + s.live.account : ' on the main sign-in'}` : '',
+                // audit B-04.3 — the window is the reading's, not this line's.
                 s.live && typeof s.live.accountPercent === 'number'
-                    ? `${Math.max(0, 100 - s.live.accountPercent)}% of that account's five-hour window is left` : ''
+                    ? `${Math.max(0, 100 - s.live.accountPercent)}% of that account's `
+                    + `${window.AFAccount.windowPhrase({ window: s.live.accountWindow }) || 'window'} is left` : ''
             ]);
         }
         if (c.lastAction === 'sleep') {
@@ -3787,6 +3789,13 @@
             ? 'not read' : a.percent + '%');
         const engines = [];
         for (const a of all) { if (!engines.includes(a.engine)) { engines.push(a.engine); } }
+        /** The window's name at the head of a line — the reading's own word, with
+         *  the capital a heading takes. `windowPhrase` is the same name for the
+         *  middle of a sentence; neither of them decides what it is called. */
+        const windowHead = (a) => {
+            const n = window.AFAccount.windowPhrase(a) || 'window';
+            return n.charAt(0).toUpperCase() + n.slice(1);
+        };
         const chip = (a) => {
             const at = picked.indexOf(a.id);
             const on = at >= 0;
@@ -3799,7 +3808,11 @@
                     ? `Picked ${at + 1}${at === 0 ? 'st' : at === 1 ? 'nd' : at === 2 ? 'rd' : 'th'} in the pool. `
                         + 'Under the tiered strategy the pool order decides which engine is tried first.'
                     : 'Not in the pool. While the pool has anything in it, this account is never touched.')
-                + '\n\nFive-hour window: ' + (a.percent === null || a.percent === undefined
+                // ‼️ audit B-04.3 — THE SEVENTH COPY, and the one the first sweep
+                // missed because it had a capital F. It sat over a pool of BOTH
+                // engines: the Codex chip beside it read 41% under the words
+                // "Five-hour window", and that account's window is a week.
+                + '\n\n' + windowHead(a) + ': ' + (a.percent === null || a.percent === undefined
                     ? 'nobody has read it. That does NOT block it — an allowance this engine does not '
                         + 'publish is not an allowance that is spent, so the account stays usable.'
                     : a.percent + '% used, ' + (100 - a.percent) + '% left.')
@@ -4034,7 +4047,8 @@
             selected: a.id === sel,
             detail: (a.percent === null || a.percent === undefined
                 ? 'Nobody has read this account\'s window yet.'
-                : a.percent + '% of its five-hour window is used.')
+                // audit B-04.3 — named by the reading, the same as everywhere else.
+                : a.percent + '% of its ' + (window.AFAccount.windowPhrase(a) || 'window') + ' is used.')
                 + (a.health && a.health !== 'ready'
                     ? '\n\nThis slot needs signing in again before it can pay for a turn.' : '')
         }))).join('');

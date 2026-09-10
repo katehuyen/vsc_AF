@@ -121,6 +121,26 @@
     }
 
     /**
+     * ‼️ audit B-04.3 — THE WINDOW'S NAME, INSIDE A SENTENCE.
+     *
+     * The name itself is not decided here and never was decided twice: the
+     * READING names its own window and the host fills the silence once
+     * (`windowNameOf`, src/core/accountUsage.ts), so a row arrives already
+     * carrying `five-hour window`, `Current week` or `usage window`. What is
+     * left is typography — a reading names its window as a HEADING, and a
+     * heading dropped mid-sentence reads as a proper noun ("72% of the Current
+     * week used").
+     *
+     * This line said `five-hour window` unconditionally, which made the picker's
+     * own panel contradict the Engines card three inches above it: the card read
+     * "Current week 72%" and the panel "72% of the five-hour window used".
+     */
+    function windowPhrase(a) {
+        const n = String((a && a.window) || '');
+        return n ? n.charAt(0).toLowerCase() + n.slice(1) : '';
+    }
+
+    /**
      * MIRROR — what the narrow box cannot hold, one fact per line.
      *
      * The order is the order the reader needs it in: what is WRONG with this
@@ -137,7 +157,8 @@
         }
         if (a.active) { out.push('The standing choice for this engine right now.'); }
         if (typeof a.percent === 'number' && a.percent >= 0) {
-            out.push(a.percent + '% of the five-hour window used.');
+            const w = windowPhrase(a);
+            out.push(a.percent + '% of the ' + (w || 'window') + ' used.');
             const t = turns(a, now);
             if (t) { out.push(t.charAt(0).toUpperCase() + t.slice(1) + '.'); }
         } else {
@@ -173,6 +194,7 @@
     return {
         MACHINE: MACHINE, MACHINE_ROW: MACHINE_ROW,
         figure: figure, turns: turns, label: label, detail: detail,
+        windowPhrase: windowPhrase,
         row: row, options: options
     };
 });

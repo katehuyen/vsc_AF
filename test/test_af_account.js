@@ -101,9 +101,17 @@ const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
 // ---------- the detail: MIRROR, the full sentence the narrow box cannot hold ----------
 {
+    // ‼️ audit B-04.3 — THE ROW CARRIES ITS WINDOW'S NAME NOW, and this line
+    // used to prove the opposite: it handed `detail` a row with NO window and
+    // asserted the words "five-hour window" came out anyway. That was the whole
+    // defect — the panel naming the window instead of printing the one the
+    // reading carried — pinned as if it were the rule. Inverted, not deleted.
     const d = A.detail({ label: 'work', health: 'ready', percent: 42,
-        resetsAt: Date.now() + 3600000, active: true });
+        window: 'five-hour window', resetsAt: Date.now() + 3600000, active: true });
     ok('the detail names the figure in words', /42% of the five-hour window/.test(d));
+    const wk = A.detail({ label: 'work', health: 'ready', percent: 72, window: 'Current week' });
+    ok('‼️ …in the window the READING named, not one of its own',
+        /72% of the current week used\./.test(wk) && !/five-hour|5-hour/.test(wk));
     ok('…says it is the standing choice', /standing choice/.test(d));
     ok('…and says when the window turns over', /turns over at/.test(d));
 

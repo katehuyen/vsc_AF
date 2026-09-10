@@ -831,11 +831,15 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('‼️ a live card\'s account is in the shell key, VALUE and all',
         /function liveAccountShape\(s\)/.test(js)
         && /\(s\.account \|\| ''\) \+ '>' \+ \(s\.accountNext \|\| ''\)/.test(js));
+    // ‼️ B-03.21 — the four unlabelled boxes go through `axisBox` now, so the
+    // literal `id="c-proj"` lives in that helper rather than in the row. The
+    // CLAIM is unchanged: the row that starts a session still draws a project
+    // box. Inverted, not deleted.
     ok('…while the project box stays, which is the point of not spawning',
         (() => {
             const c = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));
             const newRow = c.slice(c.indexOf(': `${pinnedAgentHtml()'));
-            return /id="c-proj"/.test(newRow) && /pinnedAgentHtml\(\) \|\|/.test(newRow);
+            return /axisBox\('project', 'c-proj'/.test(newRow) && /pinnedAgentHtml\(\) \|\|/.test(newRow);
         })());
     ok('a new session starts under NO project until it is chosen',
         /It starts at No project every time/.test(js));
@@ -1549,10 +1553,12 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('a session under a finished project is still named, off its own row',
         /s\.projectId === id && s\.projectName/.test(js));
     ok('…and the picker still answers for the new session it is about',
-        // U-128 put a title on the option; the fact under test is that the
-        // EMPTY option is the selected one when no project is picked, so the
-        // match stops before whatever else the tag now carries.
-        /<option value=""\$\{DATA\.activeProjectId \? '' : ' selected'\}/.test(js));
+        // U-128 put a title on the option; B-03.21 then folded the hand-written
+        // fixed row into the LIST, so the same fact — the empty option is the
+        // selected one when no project is picked — is now read off the list and
+        // the current value handed to `axisBox`, which is what marks `selected`.
+        /\{ id: '', label: '◧ No project', detail:/.test(js)
+        && /DATA\.activeProjectId \|\| '',/.test(js));
 }
 
 // ---------- X-18/X-19: which engine is answering, on the surface ----------
@@ -1611,9 +1617,14 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // U-28 — the row is a row: declared widths, a chosen shrink order, no wrap.
     ok('‼️ the composer row cannot wrap its buttons onto a second line',
         /\.crow \{ display:flex; gap:6px; align-items:center; flex-wrap:nowrap;/.test(js));
+    // ‼️ B-03.21 — the four axis boxes are inside an AFTip now, so the SPAN is
+    // the flex child and the declared width moved onto it. Left on the select
+    // these rules were dead and the row stopped shrinking with the panel at
+    // all — measured, and the reason the claim is read off `.axisw` here.
     ok('…every box has a declared width instead of its longest option',
         /#c-agent \{ flex:1 1 120px/.test(js) && /#c-engine \{ flex:2 1 118px/.test(js)
-        && /#c-perm \{ flex:3 1 104px/.test(js) && /#c-proj \{ flex:3 1 104px/.test(js));
+        && /\.crow \.axisw:has\(#c-perm\) \{ flex:3 1 104px/.test(js)
+        && /\.crow \.axisw:has\(#c-proj\) \{ flex:3 1 146px/.test(js));
     ok('…and the right-hand buttons never give up a pixel',
         /\.crow #c-live, \.crow #c-send, \.crow button \{ flex:none; \}/.test(js));
     ok('‼️ …and the tail is re-pinned AFTER the live strip has taken its height',
