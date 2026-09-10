@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.8 - the tool that every visual verdict rests on was measuring the window (audit B-03) (2026-09-10)
+
+The Console surface was swept scene by scene, and the first thing the sweep
+found was the camera. Three defects, one of them in the measuring instrument
+itself.
+
+- **`shoot_page.js --scene N` answered 1400x2305 for all seventeen scenes of the
+  Console** - the height of the measuring window, not of the scene. A fixture
+  carries the PAGE's stylesheet, and `media/console.js` declares
+  `html, body { height:100% }`, so `body.scrollHeight` reports the window back
+  whatever is inside it. Measured: sixteen of seventeen scenes removed, the
+  surviving `#app` 55..418, the body still 2308. Nothing said so - the picture
+  was right at the top and empty below, and a reader scaling 2305px to fit shrank
+  a 418px scene to a fifth for nothing. This is A-12.10's defect from the other
+  end, where the tool CUT instead. The height is the lowest edge anything is
+  DRAWN at now: a closed AFTip panel (a 5,169px block inside a fixed shell) is
+  not painted and is left out, a scrolled-away row is clipped and is left out,
+  and the body is not treated as a clipper. All thirty fixtures were compared
+  against the old figure - twenty-eight identical to the pixel, and the one that
+  moved was 85px of invisible panel the old number had been counting.
+- **A letter fragment floating beside the open "/" picker.** The picker hangs off
+  the composer's textarea wrapper (309..1339) and covers the "still working"
+  strip on its way up - but the strip was on a ruler of its own, `padding: 4px`
+  against the composer's 1px border plus 8px, so its right-aligned meta line
+  ended at 1344. Five pixels, and with the picker open they were the only part of
+  the covered line still on the screen. The strip is on the composer's ruler now;
+  `test/test_console_column_ruler.js` measures the column rather than the number.
+- **A card's whole spend beside "0 turns".** The two halves of the session line
+  counted different things: `sessionSpend` adds the RUNNING turn to the cost and
+  the tokens (that is what the `~` means) and the turn count is of FINISHED
+  turns. Measured on a live card: 23,928,519 tokens, 149 api calls, `turns: 0`.
+  Every figure was right; reading them side by side was not. The running turn is
+  named now (`2 turns - 1 running`) instead of being left for the reader to add
+  back.
+
 ## 3.453.7 - columns that were not columns, and a name squeezed to zero pixels (audit B-02 · B-03) (2026-09-10)
 
 Four layout defects, none of which could fail a string test: the markup was

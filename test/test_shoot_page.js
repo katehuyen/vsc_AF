@@ -31,10 +31,25 @@ ok('‼️ THE SCREENSHOT PASS IS NOT GIVEN A FIXED HEIGHT — a literal beside 
 
 ok('…and the height it IS given comes from a measurement', /--window-size=\$\{width\},\$\{height\}/.test(src));
 
-ok('‼️ THE BODY IS WHAT IS MEASURED. `documentElement.scrollHeight` never falls '
-    + 'below the viewport, so a short page reports the measuring window back at you',
-    /document\.body\.scrollHeight/.test(src)
-    && /var h=b\|\|document\.documentElement\.scrollHeight/.test(src));
+// ‼️ THIS RULE WAS NAILED DOWN THE OTHER WAY UP, AND WAS WRONG — audit B-03.1.
+// It used to require exactly `var h=b||document.documentElement.scrollHeight`,
+// i.e. the body's scroll height, on the reasoning that the documentElement
+// never falls below the viewport. Half true: the BODY does not either, once a
+// fixture's own stylesheet pins it. `media/console.js` declares
+// `html, body { height:100% }`, so every `--scene N` of the Console answered
+// 2305px — the measuring window — for scenes as short as 418px. The rule is
+// reversed rather than deleted: what is measured now is what is DRAWN, and the
+// old expression may not come back. test/test_shot_height.js measures the
+// numbers; this says the shape.
+ok('‼️ NEITHER SCROLL HEIGHT IS THE ANSWER ON ITS OWN — both stop at the '
+    + 'measuring window when the page pins the body to it',
+    !/var h=b\|\|document\.documentElement\.scrollHeight/.test(src)
+    && /var h=drawn\|\|b\|\|document\.documentElement\.scrollHeight/.test(src));
+
+ok('…so the height is the lowest edge that is actually drawn, with what is not '
+    + 'painted and what is clipped taken out',
+    /checkVisibility/.test(src) && /clipOf/.test(src)
+    && /overflowY!=="visible"/.test(src));
 
 ok('‼️ THE SCENE TITLES ARE READ BEFORE THE CROP — taken after, a `--scene 6` '
     + 'measures a page of one and refuses itself as out of range',

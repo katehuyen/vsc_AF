@@ -489,6 +489,20 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   height is measured off the laid-out page now (`--dump-dom`, the same route
   `measure_page.js` takes — never a debug port), and the tool prints the size it
   took.
+- **‼️ …AND THE HEIGHT IS WHAT IS DRAWN, NOT WHAT THE PAGE SAYS IT IS.** A-12.10
+  fixed the cutting; the same expression was still inflating. A fixture carries
+  the PAGE's stylesheet, and `media/console.js` declares
+  `html, body { height:100% }` — so `body.scrollHeight` answered the measuring
+  window and **every `--scene N` of the Console came back 1400×2305**, five
+  times its own height, for scenes as short as 418px. Nothing said so: the
+  picture was right at the top and empty below, and a reader scaling 2305px to
+  fit shrank the scene to a fifth for nothing. The height is now the lowest edge
+  anything is **drawn** at — `checkVisibility` leaves out a closed AFTip panel
+  (a 5,169px block inside a `position:fixed` shell), every clipping ancestor is
+  intersected (a scrolled-away row is not on the screen), and the body itself is
+  not counted as a clipper (it declares its own overflow, and counting it threw
+  away every scene past the first). `test/test_shot_height.js` measures all
+  three cases; `test_shoot_page.js` pins the shape.
 - **‼️ READ A MONTAGE ONE SCENE AT A TIME.** Nothing is lost any more, but
   18,449px scaled down to fit a reader is ~100px a scene, which is not looking
   either. `node test/shoot_page.js <fixture> --scenes` numbers them; `--scene N`
@@ -572,6 +586,17 @@ fail a string assertion — the markup was correct in every case:
   the agent name to **zero** pixels; below one character there is not even an
   ellipsis to say something is missing. It runs Chrome and skips itself when
   there is none, like `test_shoot_page.js`.
+- `test/test_console_column_ruler.js` — blocks stacked in one column share one
+  left edge and one right edge. The "still working" strip carried 4px of
+  padding where the composer has a 1px border and 8px, so its right-aligned
+  meta line ended 5px past every row below it. Five pixels nobody would find by
+  looking at the strip — until the "/" picker opens over it, hanging off
+  `.tawrap`, and those five pixels are the only part of the covered line left on
+  the screen: the tail of a letter floating beside the panel.
+- `test/test_shot_height.js` — the picture is as tall as what is drawn on it,
+  measured on the three cases whose obvious repairs break each other (a short
+  scene of a body-pinning page · an open panel hanging below its page box · the
+  whole montage of that same page).
 
 It asserts nothing and is not in `npm test` — a page that looks right proves
 the CSS, never the behaviour. It is the looking glass, and looking is the part

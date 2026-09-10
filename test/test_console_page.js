@@ -1131,6 +1131,18 @@ const html = allHtml;
     // engine's own reading of its last call, not an estimate of anything.
     ok('…the context the window is holding', /ctx 24100t/.test(status()));
     ok('…and how many turns it took', /3 turns/.test(status()));
+    ok('…and an idle session does not invent a running one', !/running/.test(status()));
+
+    // ‼️ B-03.11 — THE TWO HALVES OF THIS LINE COUNT THE SAME TURNS.
+    // `sessionSpend` adds the RUNNING turn to the cost and the tokens; the turn
+    // count is of FINISHED turns. On a card whose first turn is still going
+    // that printed the whole spend and "0 turns" three words apart — measured
+    // on a live card at 23 928 519 tokens, 149 api calls and `turns: 0`. The
+    // running turn is named rather than left for the reader to add back.
+    push(data(CONVO.slice(), { status: 'working', turns: 0, cost: 0, tokens: 1842345, turnCost: 0.4 }));
+    ok('‼️ A SPEND THAT INCLUDES THE RUNNING TURN DOES NOT SIT BESIDE A COUNT THAT EXCLUDES IT',
+        /0 turns · 1 running/.test(status()));
+    ok('…and the spend beside it is still marked as carrying an estimate', /~/.test(status()));
 
     // ‼️ X-43 — THE TWO FIGURES ON ONE STRIP, AND THEY MUST NOT BE THE SAME
     // NUMBER. A real Codex thread held 220 471 of a 258 400 window while having

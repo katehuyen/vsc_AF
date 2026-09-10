@@ -408,7 +408,16 @@
            right-aligned, exactly where the eye already goes for a total. The
            gap between them is deliberately nothing: this is one strip printed
            on two rows, not two strips. */
-        .working { flex:none; font-size:11px; padding:5px 4px 0; display:flex;
+        /* ‼️ …AND ON THE COMPOSER'S RULER, NOT ITS OWN. The strip is printed
+           directly above the composer and belongs to the same column, but it
+           carried 4px of padding where the composer has a 1px border and 8px:
+           its meta line ended at 1344 while every row of the composer ended at
+           1339. Five pixels is not a thing anybody would notice — until the "/"
+           picker opens. It hangs off .tawrap (309..1339) and covers this strip,
+           so the five pixels the strip stuck out the far side stayed on screen
+           as the tail of a letter, floating beside the panel with nothing
+           around it. Measured on dist/render/console.s3.png. */
+        .working { flex:none; font-size:11px; padding:5px 9px 0; display:flex;
             flex-direction:column; gap:0; line-height:1.3;
             color:var(--vscode-descriptionForeground); }
         .working:empty { display:none; }
@@ -2715,6 +2724,23 @@
         // (The turn that is running has its own line above the box — the two
         // used to say "ctx" at each other and nothing else.)
         const sp = sessionSpend(s);
+        /**
+         * ‼️ B-03.11 — THE TWO HALVES OF THIS LINE COUNTED DIFFERENT THINGS.
+         *
+         * `sessionSpend` adds the RUNNING turn to the cost and the tokens (that
+         * is what the `~` in front of them means) and the turn count did not:
+         * a card whose first turn was still going printed its whole spend and
+         * "0 turns" on the same line, three words apart. Measured on a live
+         * card: `tokens 23 928 519` · `turnApiCalls 149` · `turns 0` — nothing
+         * is wrong with any of those figures, only with reading them side by
+         * side. A turn is counted when it FINISHES (consoleproto.ts), which is
+         * right; so the one that has not finished is NAMED here rather than
+         * left for the reader to add back.
+         */
+        const running = s.status === 'working';
+        const turnsTip = running
+            ? 'Turns that have FINISHED — and the one still running, said here because the spend beside it already includes what that turn has cost so far.'
+            : 'Turns that have finished. A conversation you resumed brings its earlier turns with it.';
         const spTip = s.reportsCost === false
             ? NO_PRICE_TIP
             : sp.est
@@ -2726,7 +2752,7 @@
         // the whole scheme is there — every glyph, and what each one costs.
         return `${s.sessionId
             ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
-            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · ${s.turns} turn${s.turns === 1 ? '' : 's'}
+            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}

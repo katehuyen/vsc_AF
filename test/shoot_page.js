@@ -87,12 +87,60 @@ function instrument(html, scene) {
         + 'var t=hs.map(function(e){return e.textContent;});'
         + keep
         + 'if(location.search.indexOf("af=measure")<0){return;}'
-        // ‼️ THE BODY, NOT THE DOCUMENT ELEMENT. `documentElement.scrollHeight`
-        // never falls below the viewport, so a page SHORTER than the measuring
-        // window reports the window back — scene 6 alone is 580px and answered
-        // 2305, which is the measuring pass measuring itself.
+        // ‼️ MEASURE WHAT IS DRAWN, NOT WHAT THE PAGE SAYS IT IS.
+        //
+        // `documentElement.scrollHeight` never falls below the viewport, so a
+        // page SHORTER than the measuring window reports the window back.
+        // Switching to `body.scrollHeight` was supposed to fix that and did not,
+        // because a fixture carries the PAGE's stylesheet: media/console.js:189
+        // is `html, body { height:100% }`, which pins the body to the viewport
+        // whatever is inside it. Measured: with sixteen of seventeen scenes
+        // removed, the surviving `#app` was 55..418 and the body still answered
+        // 2308 — every `--scene N` of the Console came out 1400×2305, five times
+        // its own height, and a reader scaling that to fit shrank the scene to a
+        // fifth for nothing. The whole-page shot hid it: there the content is
+        // taller than the window, so the same expression was right.
+        //
+        // So the height is the lowest edge anything is actually DRAWN at. Two
+        // things have to be subtracted from "every element's bottom", and both
+        // were measured on fixtures in this repo rather than guessed:
+        //   · a CLOSED AFTip panel is a 5,169px static block inside a
+        //     `position:fixed` shell — laid out, never painted. It answers
+        //     `checkVisibility` with false, which is what excludes it (taking
+        //     the frame alone instead would have cut the OPEN panel of
+        //     missions/history, which hangs 685px past its page box);
+        //   · a row scrolled out of a list is still a rect below the list —
+        //     scene 19's council reached 18,923px inside a box ending at
+        //     18,407px. Every ancestor that clips is intersected, memoised once
+        //     per element so the sweep stays one `getComputedStyle` deep.
+        // The scene titles and page boxes are added last so an EMPTY page still
+        // has a height of its own.
+        + 'var clip=new Map();'
+        // ‼️ …AND THE BODY IS NOT ONE OF THE CLIPPERS. media/console.js:189 is
+        // `html, body { height:100% }` with the page's own `overflow`, so
+        // treating the body as a clipping ancestor clamped the WHOLE Console
+        // montage to 2,317px — the eleven scenes below the first three simply
+        // stopped existing. A full-page shot scrolls; the body does not clip it.
+        + 'function clipOf(el){'
+        + 'if(!el||el===document.body||el===document.documentElement){return Infinity;}'
+        + 'if(clip.has(el)){return clip.get(el);}'
+        + 'var v=clipOf(el.parentElement);'
+        + 'var cs=getComputedStyle(el);'
+        + 'if(cs.overflowY!=="visible"){var cb=el.getBoundingClientRect().bottom;if(cb<v){v=cb;}}'
+        + 'clip.set(el,v);return v;}'
+        + 'var low=0;'
+        + 'var all=[].slice.call(document.body?document.body.querySelectorAll("*"):[]);'
+        + 'all=all.concat([].slice.call(document.querySelectorAll("h1.rndr-h,div.rndr-page")));'
+        + 'for(var k=0;k<all.length;k++){var e=all[k];'
+        + 'if(e.checkVisibility&&!e.checkVisibility({checkOpacity:true,checkVisibilityCSS:true})){continue;}'
+        + 'var r=e.getBoundingClientRect();'
+        + 'if(r.width<=0&&r.height<=0){continue;}'
+        + 'var bot=Math.min(r.bottom,clipOf(e.parentElement));'
+        + 'if(bot>low){low=bot;}}'
+        + 'var pad=document.body?(parseFloat(getComputedStyle(document.body).paddingBottom)||0):0;'
+        + 'var drawn=low>0?Math.ceil(low+pad):0;'
         + 'var b=document.body?document.body.scrollHeight:0;'
-        + 'var h=b||document.documentElement.scrollHeight;'
+        + 'var h=drawn||b||document.documentElement.scrollHeight;'
         + 'var out=JSON.stringify({h:h,scenes:t});'
         + 'document.documentElement.innerHTML='
         + JSON.stringify('<pre id="' + MARK + '"></pre>') + ';'
@@ -211,4 +259,9 @@ function main() {
     }
 }
 
-main();
+// ‼️ THE MEASURING PASS IS THE PART THAT LIES WHEN IT IS WRONG, so it is
+// reachable on its own: test/test_shot_height.js builds the same instrumented
+// page and reads the same number back, instead of a test that reads the source
+// and agrees with it. Requiring this file must not take a photograph.
+if (require.main === module) { main(); }
+module.exports = { instrument, browser, MARK, FALLBACK_HEIGHT };
