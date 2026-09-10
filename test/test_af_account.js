@@ -83,8 +83,20 @@ const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
     const later = A.turns({ percent: 10, resetsAt: now + 3 * 3600000 }, now);
     ok('over an hour it is counted in hours (got ' + later + ')',
         /window turns over at .+ \(in 3h\)/.test(later));
-    ok('a reset already past waits zero, never a negative',
-        /\(in 0m\)/.test(A.turns({ resetsAt: now - 5000 }, now)));
+    // ‼️ THIS RULE WAS NAILED DOWN THE WRONG WAY UP — audit B-04.1. It used to
+    // require "(in 0m)" for a reset already past, on the reasoning that zero is
+    // better than a negative. It is: both are wrong, and "in 0m" is the one that
+    // reads as true. `resetsAt` comes off a READING, so an account nobody has
+    // run on for hours carries a turnover that has been and gone — and two
+    // cards in one picture then said 02:17 and 05:40, both "(in 0m)"
+    // (dist/render/enginespanel.s2.png). Reversed, not deleted.
+    const past = A.turns({ percent: 91, resetsAt: now - 3 * 3600000 }, now);
+    ok('‼️ A TURNOVER THAT HAS BEEN AND GONE IS NOT DRESSED AS ONE ABOUT TO HAPPEN (got ' + past + ')',
+        !/\(in 0m\)/.test(past) && /turned over at/.test(past));
+    ok('…and it says the figure beside it belongs to the window before',
+        /read before that/.test(past));
+    ok('a turnover seconds away is still counted forwards, not backwards',
+        /\(in 0m\)/.test(A.turns({ resetsAt: now + 5000 }, now)));
 }
 
 // ---------- the detail: MIRROR, the full sentence the narrow box cannot hold ----------

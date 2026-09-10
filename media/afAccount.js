@@ -79,7 +79,29 @@
     function turns(a, now) {
         if (!a || !a.resetsAt) { return ''; }
         const at = typeof now === 'number' ? now : Date.now();
-        const mins = Math.max(0, Math.round((a.resetsAt - at) / 60000));
+        const left = a.resetsAt - at;
+        /**
+         * ‼️ A TURNOVER IN THE PAST IS NOT "IN 0m" — audit B-04.1.
+         *
+         * The wait used to be `Math.max(0, …)`, which kept a negative from
+         * being printed and printed "about to happen" instead. `resetsAt` comes
+         * off a READING of the account's usage file, so an account nobody has
+         * run on for hours carries a turnover that has already been and gone —
+         * and the row then said "window turns over at 02:17 (in 0m)" for ever.
+         * Measured on dist/render/enginespanel.s2.png: two cards in one
+         * picture, 02:17 and 05:40, both "(in 0m)". They cannot both be right,
+         * and the reader can see it.
+         *
+         * The percentage beside it is the reason this matters rather than being
+         * a wording nit: it is what an account rotation is decided on, and once
+         * the window has turned over that figure belongs to the OLD window. The
+         * row says so instead of dressing a stale reading as a fresh one.
+         */
+        if (left <= 0) {
+            return 'window turned over at ' + clockOf(a.resetsAt)
+                + ' — the figure beside it was read before that';
+        }
+        const mins = Math.round(left / 60000);
         const wait = mins < 60 ? mins + 'm' : Math.round(mins / 60) + 'h';
         return 'window turns over at ' + clockOf(a.resetsAt) + ' (in ' + wait + ')';
     }

@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.453.9 - a window that turned over hours ago said "in 0m" (audit B-04) (2026-09-10)
+
+The Engines surface was opened for the audit ledger. Two cards in one picture,
+two different clock times, both reading **(in 0m)** - and they cannot both be
+right.
+
+- **A five-hour window that has already turned over was drawn as one about to.**
+  `resetsAt` comes off a READING of the account's usage file, so an account
+  nobody has run on for hours carries a turnover that has been and gone. The
+  wait was `Math.max(0, ...)`, which kept a negative from being printed and
+  printed "about to happen" instead: `work@studio` said "turns over at 02:17
+  (in 0m)" beside `personal@gmail` saying "turns over at 05:40 (in 0m)". It
+  matters because of the percentage next to it - that is what an account
+  rotation is decided on (X-169, X-226), and once the window has turned over the
+  figure belongs to the OLD one. The row says so now, in the past tense, and
+  names the staleness the line beside it was already admitting ("this figure was
+  read 3h ago"). The wrong rule was nailed down in `test_af_account.js` ("a
+  reset already past waits zero, never a negative") - reversed, not deleted.
+
 ## 3.453.8 - the tool that every visual verdict rests on was measuring the window (audit B-03) (2026-09-10)
 
 The Console surface was swept scene by scene, and the first thing the sweep
