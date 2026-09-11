@@ -1071,29 +1071,49 @@
         }
         const aliases = modelAliases();
         const opts = cur && aliases.indexOf(cur) < 0 ? [cur].concat(aliases) : aliases;
-        // ‼️ THE FIRST ROW NAMES WHAT IT RESOLVES TO. "Default" on its own is
-        // the mystery this item was filed about; `per.resolved` is computed by
-        // core/agentDefaults.ts and carries both the value and who decided it.
+        /**
+         * ‼️ B-03.21 (round 2), APPLIED HERE TOO — THE AXIS IS THE
+         * HEADING OF THE LIST, NOT A PREFIX ON EVERY VALUE IN IT.
+         *
+         * Round 1 answered "which box is this?" by writing the axis into every
+         * option (`model: sonnet`). The Console measured that and found it the
+         * worse of the two halves: the prefix is the part that never changes,
+         * so it is the part that survives the clipping, and the VALUE — the
+         * only half a reader is looking for — is what gets cut. A native
+         * `<optgroup>` label is a heading the browser draws at the top of the
+         * OPEN list and refuses to let anybody select, so the axis is named
+         * exactly where the choosing happens, once, and costs the collapsed box
+         * nothing at all. The Console moved and this page did not, which left
+         * one question answered two ways in one product.
+         *
+         * ‼️ AND THE ZERO ROW IS RESOLVED WITHOUT THIS AGENT'S OWN ANSWER.
+         * `per.resolved` walks every layer INCLUDING the value this very box
+         * holds, so on an agent whose model is `sonnet` the row that means
+         * "clear my choice" read `Default → sonnet` — the name of the one
+         * thing you cannot get by picking it. `per.resolvedZero` is the same
+         * resolver with this agent's own layers left out: what would really
+         * apply if the box were cleared. `res` is still the box's own hover,
+         * because that sentence is about what applies NOW.
+         *
+         * The explanation that used to be IN the label — "(the CLI decides)"
+         * — is in the hover, where the rest of that sentence already was.
+         */
         const res = per.resolved || {};
-        // ‼️ B-04.1 / B-03.21 — THE BOX SAYS WHICH AXIS IT IS, IN ITS OWN TEXT.
-        //
-        // Measured on dist/render/engines.s2.png: the chip read `developer
-        // [gpt-5.6-terra] [high]` and nothing on the screen said that `high`
-        // was an EFFORT rather than a second model. The zero rows already
-        // half-knew this (`effort: default`, `Default → haiku`) and the chosen
-        // rows did not, so the axis appeared and vanished with the choice.
-        //
-        // `:` is a choice somebody made here, `→` is what it resolves to when
-        // nobody has — the distinction this page already drew with its arrow.
-        const zero = res.value ? `model \u2192 ${res.value}` : 'model \u2192 default (the CLI decides)';
+        const zeroRes = per.resolvedZero || {};
+        const zero = zeroRes.value ? `Default → ${zeroRes.value}` : 'Default';
         return `<select class="agmodel" data-agmodel="${C.esc(c.dir)}"
             title="${C.esc('Default model for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
-            ${C.option('', zero, { selected: !cur, detail: res.note || 'This agent names no model of its own.' })}
-            ${opts.map(m => C.option(m, 'model: ' + m, {
+            <optgroup label="model">
+            ${C.option('', zero, {
+                selected: !cur,
+                detail: zeroRes.note || 'This agent names no model of its own.'
+            })}
+            ${opts.map(m => C.option(m, m, {
                 selected: cur === m,
                 detail: aliases.indexOf(m) < 0 ? 'Set by hand — this engine does not list this model.' : ''
             })).join('')}
-            ${C.option('__custom__', 'model: custom…', { detail: 'Type a model id this engine is not offering here.' })}
+            ${C.option('__custom__', 'custom…', { detail: 'Type a model id this engine is not offering here.' })}
+            </optgroup>
         </select>`;
     }
 
@@ -1108,14 +1128,19 @@
         if (!list.length) { return ''; }
         const cur = per.effort || '';
         const res = per.resolvedEffort || {};
-        // ‼️ …and the same two forms here. `effort: default` used to be the ONE
-        // row that said the axis, and it said it with a colon — which reads as
-        // "somebody chose the value `default`", the opposite of what it means.
-        const zero = res.value ? `effort \u2192 ${res.value}` : 'effort \u2192 default';
+        // ‼️ …and the same shape here: the axis is the optgroup's heading, and
+        // the zero row is resolved WITHOUT this agent's own answer.
+        const zeroRes = per.resolvedEffortZero || {};
+        const zero = zeroRes.value ? `Default → ${zeroRes.value}` : 'Default';
         return `<select class="agmodel" data-ageffort="${C.esc(c.dir)}"
             title="${C.esc('Default reasoning effort for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
-            ${C.option('', zero, { selected: !cur, detail: res.note || 'This agent names no effort of its own.' })}
-            ${list.map(e => C.option(e.id, 'effort: ' + (e.label || e.id), { selected: cur === e.id, detail: e.detail || '' })).join('')}
+            <optgroup label="effort">
+            ${C.option('', zero, {
+                selected: !cur,
+                detail: zeroRes.note || 'This agent names no effort of its own.'
+            })}
+            ${list.map(e => C.option(e.id, e.label || e.id, { selected: cur === e.id, detail: e.detail || '' })).join('')}
+            </optgroup>
         </select>`;
     }
 

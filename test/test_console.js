@@ -795,7 +795,9 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /c-model-live/.test(liveRow) && /type: 'setModel'/.test(js));
     ok('…and so is the effort, because /effort is apply_flag_settings',
         /c-effort-live/.test(liveRow) && /type: 'setEffort'/.test(js));
-    ok('…alongside the permission mode', /id="c-perm"/.test(liveRow));
+    // ‼️ B-03.21 (round 2) — every box on the row goes through `axisBox` now,
+    // so the id is an argument rather than markup. The claim is unchanged.
+    ok('…alongside the permission mode', /id: 'c-perm'/.test(liveRow));
     // The composer's two modes offer the same three dimensions, so nothing is
     // reachable from one entry point and missing from the other.
     {
@@ -839,7 +841,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         (() => {
             const c = js.slice(js.indexOf('const controls = s'), js.indexOf("getElementById('app').innerHTML"));
             const newRow = c.slice(c.indexOf(': `${pinnedAgentHtml()'));
-            return /axisBox\('project', 'c-proj'/.test(newRow) && /pinnedAgentHtml\(\) \|\|/.test(newRow);
+            return /axis: 'Project', id: 'c-proj'/.test(newRow) && /pinnedAgentHtml\(\) \|\|/.test(newRow);
         })());
     ok('a new session starts under NO project until it is chosen',
         /It starts at No project every time/.test(js));
@@ -1575,7 +1577,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
     ok('the composer has an engine box, and only when starting a session',
-        /<select id="c-engine"/.test(js) && /type: 'setEngine'/.test(js));
+        /axis: 'Engine', id: 'c-engine'/.test(js) && /type: 'setEngine'/.test(js));
     ok('‼️ …offering an engine that cannot run here as DISABLED rather than hiding it',
         /\$\{e\.ready \? '' : ' disabled'\}/.test(js));
     ok('…with the one thing to do about it on the row itself',
@@ -1617,14 +1619,17 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // U-28 — the row is a row: declared widths, a chosen shrink order, no wrap.
     ok('‼️ the composer row cannot wrap its buttons onto a second line',
         /\.crow \{ display:flex; gap:6px; align-items:center; flex-wrap:nowrap;/.test(js));
-    // ‼️ B-03.21 — the four axis boxes are inside an AFTip now, so the SPAN is
-    // the flex child and the declared width moved onto it. Left on the select
-    // these rules were dead and the row stopped shrinking with the panel at
-    // all — measured, and the reason the claim is read off `.axisw` here.
+    // ‼️ B-03.21 (round 2) — EVERY box on the row is inside an AFTip now, so
+    // the SPAN is the flex child and every declared width is read off `.axisw`.
+    // Left on the select these rules were dead and the row stopped shrinking
+    // with the panel at all — measured, twice.
     ok('…every box has a declared width instead of its longest option',
-        /#c-agent \{ flex:1 1 120px/.test(js) && /#c-engine \{ flex:2 1 118px/.test(js)
-        && /\.crow \.axisw:has\(#c-perm\) \{ flex:3 1 104px/.test(js)
-        && /\.crow \.axisw:has\(#c-proj\) \{ flex:3 1 146px/.test(js));
+        ['c-agent', 'c-engine', 'c-route', 'c-tier', 'c-account', 'c-model', 'c-effort',
+            'c-perm', 'c-proj', 'c-model-live', 'c-effort-live', 'c-account-live']
+            .every(id => new RegExp('\\.crow \\.axisw:has\\(#' + id
+                + '\\) \\{ flex:\\d+ 1 \\d+px; max-width:\\d+px; \\}').test(js)));
+    ok('…and NO width is left on a bare select, where the wrapper would swallow it',
+        !/\n\s*#c-(agent|engine|route|tier|account|model|effort|perm|proj)(-live)? \{ flex:/.test(js));
     ok('…and the right-hand buttons never give up a pixel',
         /\.crow #c-live, \.crow #c-send, \.crow button \{ flex:none; \}/.test(js));
     ok('‼️ …and the tail is re-pinned AFTER the live strip has taken its height',
@@ -1633,7 +1638,8 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /const live = !s \|\| s\.steerable !== false;/.test(js)
         && /There is no running process to ask\./.test(js));
     ok('…and the permission list is the START vocabulary there, not the live one',
-        /opts\(live \? \(DATA\.livePermissions \|\| DATA\.permissions\) : DATA\.permissions, s\.permissionMode\)/.test(js));
+        /list: live \? \(DATA\.livePermissions \|\| DATA\.permissions\) : DATA\.permissions/.test(js)
+        && /cur: s\.permissionMode, standard: permTip/.test(js));
 
     // X-19 — the money half.
     ok('‼️ a plan-billed session shows TOKENS where the dollars would be',

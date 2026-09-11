@@ -177,6 +177,30 @@ export interface ConsoleDeps {
     engines(): EngineOption[];
     launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
     /**
+     * ‼️ THE AGENT'S OWN DEFAULT FOR THIS ENGINE — the layer that sits BETWEEN
+     * the composer's boxes and the fleet-wide `launchDefaults`.
+     *
+     * Farm Settings draws a model and an effort box on every agent chip and
+     * writes `agentFarm.agentEngineDefaults[<agent>][<engine>]`. Every other
+     * launch door resolves through it (`withAgentEngineDefaults` in
+     * extension.ts) — the ▶ on an agent row, `sessions.start` on the bridge,
+     * a terminal start. The Console composer was the one door that did not:
+     * it read `launchDefaults()` and nothing else, so an empty box jumped
+     * straight over the per-agent answer to the fleet one. An agent set to
+     * `xhigh` in Settings started at the fleet effort and nothing said so —
+     * the U-29 shape again, a control that stores what it is told and changes
+     * nothing.
+     *
+     * It is the SAME function the other doors call, handed in as a dep rather
+     * than reimplemented here: a second reader would be a second answer to
+     * "what does this agent run as", and the resolution walks layers only the
+     * host can see (the agent's own Claude settings file among them).
+     *
+     * Optional, like every other read dep here: a host that cannot answer
+     * leaves the chain exactly as it was.
+     */
+    agentEngineDefaults?(dir: string, engine: string): { model?: string; effort?: string };
+    /**
      * ‼️ X-105 — WHICH ROUTE A CARD IS ON, DESCRIBED BY THE ENGINE'S OWN
      * ADAPTER.
      *
@@ -1137,8 +1161,25 @@ export class ConsolePanel {
             lastWindow: this.deps.lastWindow().map(r => ({
                 ...r, color: r.sessionId ? (this.deps.colorFor?.(r.sessionId) ?? '') : ''
             }))
-                .filter(r => !hosted.some(h => h.sessionId === r.sessionId
-                    && h.status !== 'ended' && h.status !== 'error')),
+                /**
+                 * ‼️ S-55 — A SESSION THIS WINDOW IS SHOWING A CARD FOR IS NOT
+                 * "WHERE YOU LEFT OFF", WHATEVER STATE THAT CARD IS IN.
+                 *
+                 * This used to hide a shelf row only while a LIVE card held the
+                 * same session, so the moment a card ended, the same
+                 * conversation was drawn twice in one column — the ended card
+                 * and its shelf twin, same agent, same title, same id. And it
+                 * is the whole of "End & remove does not remove the card": the
+                 * card left `host.list()`, this filter stopped hiding the row,
+                 * and the session reappeared one section down in the same
+                 * breath. It had not stayed; it had moved.
+                 *
+                 * The shelf is for what the LAST window left. A card in this
+                 * one answers for the session already, and the removal itself
+                 * now dismisses the shelf row too (agentfarm.consoleEndAndRemove),
+                 * so the row cannot come back the instant the card goes.
+                 */
+                .filter(r => !hosted.some(h => h.sessionId === r.sessionId)),
             // The project a new session will be started under, and the exact
             // text it will be given. Open projects only: starting work under an
             // archived project is not a thing anybody means to do.
@@ -1645,10 +1686,21 @@ export class ConsolePanel {
                  * Seeding is the mechanism; a second layer at the last moment
                  * would make the visible setup a lie.
                  */
+                /**
+                 * ‼️ …AND THE AGENT'S OWN SETTING IS THE LAYER UNDER THE BOX.
+                 *
+                 * An empty box means "the default, please" — and the default
+                 * this agent has is the one on its chip in Farm Settings, not
+                 * the fleet's. Reading only `launchDefaults()` here made the
+                 * per-agent model and effort boxes on that page decorative for
+                 * every session started from this composer. Order: the box →
+                 * this agent on this engine → the fleet.
+                 */
+                const own = this.deps.agentEngineDefaults?.(agent.dir, engine) ?? {};
                 const started: LaunchOptions = {
                     engine: engine as EngineId,
-                    model: str('model') || d.model,
-                    effort: str('effort') || d.effort,
+                    model: str('model') || own.model || d.model,
+                    effort: str('effort') || own.effort || d.effort,
                     permissionMode: str('permissionMode') || d.permissionMode,
                     superpowers: msg.superpowers === true,
                     // ‼️ X-103 — from the composer's carried value, NOT from the
@@ -1782,8 +1834,14 @@ export class ConsolePanel {
                     if (choice !== 'New session in the same folder') { return; }
                     const agentForNew = this.deps.getAgents().find(a => a.name === row.agentName);
                     const dn = this.deps.launchDefaults();
+                    // …and the same three-layer order as the composer: the box,
+                    // then THIS agent's own Settings row, then the fleet.
+                    const ownNew = agentForNew
+                        ? this.deps.agentEngineDefaults?.(agentForNew.dir, engine) ?? {}
+                        : {};
                     const fresh = narrowLaunch(this.engineModelsFor(engine),
-                        str('model') || dn.model, str('effort') || dn.effort);
+                        str('model') || ownNew.model || dn.model,
+                        str('effort') || ownNew.effort || dn.effort);
                     this.selected = host.start({
                         agentId: agentForNew?.id ?? '', agentName: row.agentName ?? 'session',
                         cwd: row.cwd, engine,
@@ -1820,9 +1878,14 @@ export class ConsolePanel {
                 // carried back from a transcript can never grant more than
                 // starting a fresh session in that folder would.
                 const inherit = lastRunDimensions(row);
+                // …with this agent's own Settings row between the box and the
+                // fleet, exactly as the composer resolves it.
+                const ownBack = agent
+                    ? this.deps.agentEngineDefaults?.(agent.dir, engine) ?? {}
+                    : {};
                 const back = narrowLaunch(this.engineModelsFor(engine),
-                    inherit.model || str('model') || d.model,
-                    inherit.effort || str('effort') || d.effort);
+                    inherit.model || str('model') || ownBack.model || d.model,
+                    inherit.effort || str('effort') || ownBack.effort || d.effort);
                 this.selected = host.start({
                     agentId: agent?.id ?? '', agentName: row.agentName ?? 'session',
                     cwd: row.cwd, resume: sessionId, engine,
@@ -2152,9 +2215,21 @@ export class ConsolePanel {
             case 'close':
                 host.close(str('id'));
                 break;
-            case 'forget':
+            case 'forget': {
+                // ‼️ S-55 — AND THE SHELF ROW GOES WITH THE CARD.
+                // `rememberLastWindow` unions this window's own hosted
+                // sessions into "where you left off", and drops a row from
+                // that file only when it is resumed or dismissed — so
+                // removing the card used to hand the same conversation
+                // straight back one section up the column, which is the
+                // whole of "the card does not go away". The id is read
+                // BEFORE the removal, because afterwards there is nothing
+                // left to read it off.
+                const gone = host.get(str('id'))?.sessionId;
                 host.forget(str('id'));
+                if (gone) { this.deps.forgetLastWindow(gone); }
                 break;
+            }
             case 'openFile':
                 void vscode.commands.executeCommand('agentfarm.openEditedFile',
                     { file: str('file'), diff: msg.diff === true });

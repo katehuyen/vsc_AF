@@ -250,6 +250,14 @@
         // control the user had not asked to have redecorated — and read as a
         // stray bracket beside the box.
         const button = `<button type="button" class="secondary afms-btn" data-afms="${esc(o.id)}"` +
+            // ‼️ …AND IT PUBLISHES THAT WIDTH AS `--afms-w`.
+            //
+            // The reserved width is knowable only here, and a row that wants
+            // this button to give ground when it is crowded needs a number to
+            // compute a floor from. Hard-coding one in the page would be a
+            // second answer that goes stale the moment an option's text
+            // changes; publishing the one that was actually reserved cannot.
+            // Nothing changes for a page that does not read it.
             ` style="width:${buttonWidth(o, opts)}ch"` +
             `${o.disabled ? ' disabled' : ''} aria-label="${esc(selectionLine(o, opts, sel))}">` +
             `${esc(buttonText(o, opts, sel))} ▾</button>`;
@@ -266,7 +274,18 @@
             ? window.AFTip.wrap(button, selectionLine(o, opts, sel), explanation,
                 `tip-free${o.align === 'right' ? ' tip-right' : ''}`, tipAttrs)
             : button;
-        return `<span class="afms${openId === o.id ? ' afms-on' : ''}" data-afms-wrap="${esc(o.id)}">` +
+        // ‼️ …AND THE WRAPPER PUBLISHES THAT WIDTH AS `--afms-w`.
+        //
+        // The reserved width is knowable only here, and a row that wants this
+        // picker to give ground when it is crowded needs a number to compute a
+        // floor from. A number typed into the page would be a second answer
+        // that goes stale the first time an option's text changes; the one
+        // that was actually reserved cannot. It is on the WRAPPER because that
+        // is the element a flex row lays out, and because a custom property
+        // inherits downwards — the button reads it too. Nothing changes for a
+        // page that does not read it.
+        return `<span class="afms${openId === o.id ? ' afms-on' : ''}" data-afms-wrap="${esc(o.id)}"` +
+            ` style="--afms-w:${buttonWidth(o, opts)}ch">` +
             trigger +
             `<div class="afms-menu${o.align === 'right' ? ' right' : ''}" data-afms-menu="${esc(o.id)}"${style}${openId === o.id ? '' : ' hidden'}>` +
             `<div class="afms-tools"><a data-afms-act="all">Select all</a>${presetHtml} · <a data-afms-act="none">Clear</a></div>` +

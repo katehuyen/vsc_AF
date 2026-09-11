@@ -393,6 +393,29 @@ export class FarmSettingsPanel {
                             }),
                             resolvedEffort: resolveDefault(id, 'effort', {
                                 farm: own.effort, launch: launch.effort, engineLabel: label
+                            }),
+                            /**
+                             * ‼️ WHAT THE **Default** ROW REALLY MEANS — the same
+                             * resolver with THIS AGENT'S OWN LAYERS LEFT OUT.
+                             *
+                             * The two above walk every layer including the value
+                             * the box itself holds, which is right for the box's
+                             * hover ("what applies now") and wrong for its zero
+                             * row: that row means "clear my choice", so the value
+                             * beside it has to be what would apply AFTER the
+                             * clearing. Measured on the `engines` fixture before
+                             * this existed: an agent set to `sonnet` drew
+                             * `model → sonnet` on the row that removes `sonnet`.
+                             *
+                             * The agent file goes out with the farm value because
+                             * it is this agent's answer too — on Claude it is the
+                             * very file this page writes.
+                             */
+                            resolvedZero: resolveDefault(id, 'model', {
+                                launch: launch.model, engineLabel: label
+                            }),
+                            resolvedEffortZero: resolveDefault(id, 'effort', {
+                                launch: launch.effort, engineLabel: label
                             })
                         };
                     }

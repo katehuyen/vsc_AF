@@ -1213,7 +1213,50 @@ export function reduceEvent(
             id?: unknown; model?: unknown; content?: unknown; usage?: Record<string, unknown>;
         } | undefined;
         const blocks = Array.isArray(msg?.content) ? msg!.content as Record<string, unknown>[] : [];
-        let next = state;
+        /**
+         * ‼️ S-57 — A TURN NOBODY IN THIS WINDOW STARTED IS STILL A TURN, AND
+         * IT IS OPENED HERE.
+         *
+         * Three places open a turn — `acceptUserText`, `shiftQueued` and
+         * `releaseShared` — and all three are the WINDOW speaking. A resumed
+         * conversation has a fourth case none of them cover: the CLI answers on
+         * its own, because the prompt was given to it before this window
+         * existed (a reload, a revive, an `--resume` of a session that was
+         * mid-turn). This branch used to handle that by setting `status` to
+         * `working` and nothing else, so the turn ran with no clock, no token
+         * baseline, no round-trip counter and no model/effort — and the
+         * `result` line then closed it with `undefined` for every one of them.
+         *
+         * Measured through the reducer alone, on the exact shape S-57 reported:
+         *   lastTurn = { cost: 20.94, steps: 1, outcome: 'done' }
+         * which the strip prints as `$20.94 · 1step · your turn now` — the
+         * whole of the complaint. Nothing was being LOST; it was never
+         * collected, because the turn was never opened.
+         *
+         * ‼️ AND IT IS OPENED BEFORE THE BLOCKS ARE READ, not after. The loop
+         * below adds this very line's tokens to `tokens`, its round trip to
+         * `turnApiCalls` and its usage to `turnUsage`; a turn opened afterwards
+         * would take its baseline from figures this line had already moved and
+         * charge the turn nothing for the call that started it.
+         *
+         * `turnStartedAt` is `now` — the first line this window SAW. The real
+         * start is a few seconds earlier, in a process that was running before
+         * we were listening, and there is nowhere honest to read it from; a
+         * duration that is slightly short is worth incomparably more than the
+         * blank this replaces.
+         */
+        const opening = state.turnStartedAt === undefined && blocks.length > 0
+            ? {
+                turnStartedAt: now, turnTokensAt: state.tokens,
+                turnUsage: emptyUsage(), turnApiCalls: 0,
+                turnWTokens: 0, turnSteps: 0, turnThinking: 0,
+                // the ball has left your court again: the previous turn's
+                // summary is what a new turn clears (see lastTurn)
+                lastTurn: undefined,
+                ...turnBrain(state)
+            }
+            : {};
+        let next = { ...state, ...opening };
         let changed = false;
         // What THIS call spent, to hang on its first visible block (see the
         // `charge` below). Stays 0 on a repeated line, which is the point.
@@ -1335,6 +1378,10 @@ export function reduceEvent(
                 changed = true;
             }
         }
+        // ‼️ THE UNCHANGED BRANCH STILL RETURNS `next`, NOT `state`: a repeated
+        // usage line renders nothing and is still the only place `lastUsageKey`
+        // is recorded, and dropping it would let the next copy of the same line
+        // be counted a second time.
         return { state: changed ? { ...next, status: 'working' } : next, changed };
     }
 

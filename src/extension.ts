@@ -23179,6 +23179,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ‼️ X-169 — and the sign-ins each engine has, through the one reader.
         engineAccounts: () => engineAccountMatrix(),
         launchDefaults: () => launchDefaults(),
+        /**
+         * ‼️ THE LAYER THE COMPOSER USED TO JUMP OVER — the agent's own model
+         * and effort for this engine, from Farm Settings.
+         *
+         * It is `withAgentEngineDefaults` itself rather than a reader written
+         * for the panel: that function is what `startClaudeSession`,
+         * `startConsoleSession` and the bridge's `sessions.start` all resolve
+         * through, and it carries rules a second copy would lose — Claude's
+         * model deliberately comes back EMPTY, because its CLI reads the
+         * agent's own settings file and passing the same value again would be
+         * a second source of truth (X-145).
+         *
+         * The route is not returned: the composer settles that on its own row
+         * (`composerRoute`), and handing a credential's identity to a caller
+         * that asked for a model name is what `storedRoute` was split off to
+         * stop.
+         */
+        agentEngineDefaults: (dir: string, engine: string) => {
+            const o = withAgentEngineDefaults(
+                { dir } as AgentInfo, { engine: engine as EngineId });
+            return { model: o.model ?? '', effort: o.effort ?? '' };
+        },
         // ‼️ S-34 — the per-agent record, read and written through the SAME two
         // functions every other door uses. The panel gets no copy of its own:
         // a second store would be a second answer to "what did this agent last
@@ -30629,8 +30651,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.consoleEndAndRemove', (arg?: { hostId?: string }) => {
             const id = consoleRowId(arg);
             if (!id) { return; }
+            // ‼️ S-55 — AND THE SHELF ROW GOES WITH IT, or the card does not
+            // go away at all: `rememberLastWindow` unions this window's own
+            // hosted sessions into "where you left off", and the row is
+            // dropped from that file only when it is resumed or dismissed.
+            // So removing the card used to hand the same conversation
+            // straight back one section up the column. Dismissing it here is
+            // what makes the gesture mean what its label says.
+            const sid = consoleHost.get(id)?.sessionId;
             // One gesture, one repaint — see consoleEndSession above.
             consoleHost.forget(id);
+            if (sid) { forgetLastWindow(sid); }
         }),
 
         vscode.commands.registerCommand('agentfarm.consoleForgetSession', (arg?: { hostId?: string }) => {
@@ -30647,7 +30678,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             // the transcript stays on disk; this only takes the row off the panel
             // (one gesture, one repaint — see consoleEndSession above)
+            // ‼️ S-55 — …including its "where you left off" row, for the same
+            // reason End & remove does: a row this window put on that shelf
+            // itself would otherwise take the card's place the moment it went.
+            const sid = s?.sessionId;
             consoleHost.forget(id);
+            if (sid) { forgetLastWindow(sid); }
         }),
 
         // From a session row: pick that conversation back up INSIDE the panel.

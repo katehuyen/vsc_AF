@@ -111,79 +111,88 @@ const engines = () => ([
  * than only asserted as a string. The two agents below are the two cases that
  * matter: one with a Claude default set in its own file and nothing for the
  * other engines, and one with the opposite.
+ *
+ * ‼️ AND THE RESOLUTIONS ARE DERIVED, NOT TYPED — the same rule B-05.6 applied
+ * to the Superpowers and Sentry scenes. Typed by hand they had already drifted
+ * into a contradiction no string test could see: `basit` claimed
+ * `agentFarm.launchDefaults` gave it `haiku` on Claude and Codex, while the
+ * same agent on Gemini claimed nothing was set fleet-wide at all. One
+ * `launchDefaults` cannot be both, so at least one of the boxes in the
+ * photograph was showing a state the product cannot produce. `resolveDefault`
+ * is the function the host calls; asking it here is what makes the scene a
+ * measurement of the product rather than of somebody's memory of it.
  */
-const resolved = (value, origin, note) => ({ value, origin, note });
+const { resolveDefault } = require('../../out/core/agentDefaults.js');
+
+/** The fleet-wide answer this scene is set up with (`agentFarm.launchDefaults`). */
+const FLEET = { model: 'haiku', effort: 'low' };
+const ENGINE_LABEL = {
+    claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini',
+    agy: 'Antigravity', opencode: 'OpenCode'
+};
+
+/**
+ * One agent's row for one engine, resolved exactly as `settingsPanel.ts` does
+ * it — including the two ZERO resolutions, which are the same walk with this
+ * agent's own layers left out. That is what the **Default** option is allowed
+ * to name: what would apply if the box were cleared, never what is in it.
+ */
+const engineRow = (engine, own = {}, agentFile = '') => {
+    const file = engine === 'claude' ? (agentFile || '') : '';
+    const label = ENGINE_LABEL[engine] || engine;
+    return {
+        model: file || own.model || '',
+        effort: own.effort || '',
+        resolved: resolveDefault(engine, 'model', {
+            agentFile: file, farm: own.model, launch: FLEET.model, engineLabel: label
+        }),
+        resolvedEffort: resolveDefault(engine, 'effort', {
+            farm: own.effort, launch: FLEET.effort, engineLabel: label
+        }),
+        resolvedZero: resolveDefault(engine, 'model', {
+            launch: FLEET.model, engineLabel: label
+        }),
+        resolvedEffortZero: resolveDefault(engine, 'effort', {
+            launch: FLEET.effort, engineLabel: label
+        })
+    };
+};
+
+/** Every engine's row for one agent, from what that agent actually has set. */
+const engineRows = (own, agentFile) => {
+    const out = {};
+    for (const id of Object.keys(ENGINE_LABEL)) {
+        out[id] = engineRow(id, own[id] || {}, agentFile);
+    }
+    return out;
+};
 
 const folders = () => ({
     excludes: [],
     reports: [{
-        root: 'D:\\zone\\agent\\ajanlar',
+        root: 'D:\zone\agent\ajanlar',
         kind: 'nest',
         duplicate: false,
         candidates: [
             {
-                dir: 'D:\\zone\\agent\\ajanlar\\developer', name: 'developer',
+                dir: 'D:\zone\agent\ajanlar\developer', name: 'developer',
                 excluded: false, agentId: 'developer', model: 'sonnet',
-                engines: {
-                    claude: {
-                        model: 'sonnet', effort: '',
-                        resolved: resolved('sonnet', 'agent-file',
-                            'sonnet — this agent\u2019s own .claude/settings.local.json, which Claude Code reads itself.'),
-                        resolvedEffort: resolved('', 'cli', 'Claude Code decides.')
-                    },
-                    codex: {
-                        model: 'gpt-5.6-terra', effort: 'high',
-                        resolved: resolved('gpt-5.6-terra', 'farm',
-                            'gpt-5.6-terra — set here for this agent on Codex; passed as --model.'),
-                        resolvedEffort: resolved('high', 'farm', 'high — passed as --effort.')
-                    },
-                    gemini: {
-                        model: '', effort: '',
-                        resolved: resolved('', 'cli', 'Gemini decides — nothing is set for this agent.'),
-                        resolvedEffort: resolved('', 'cli', 'Gemini decides.')
-                    },
-                    agy: {
-                        model: '', effort: '',
-                        resolved: resolved('', 'cli', 'Antigravity decides — nothing is set for this agent.'),
-                        resolvedEffort: resolved('', 'cli', 'Antigravity decides.')
-                    },
-                    // ‼️ U-59 — THE BOX THE USER WAS NEVER OFFERED. The per-agent
-                    // engines were a hand-typed list that stopped at four, so
-                    // OpenCode simply had no row here. Its model is
-                    // `provider/model`, which is the widest label in this
-                    // section — drawn on purpose, because the long-label case is
-                    // where a picker's width fails and no string test would say so.
-                    opencode: {
-                        model: 'opencode/nemotron-3.5-lightning-free', effort: '',
-                        resolved: resolved('opencode/nemotron-3.5-lightning-free', 'farm',
-                            'opencode/nemotron-3.5-lightning-free — set here for this agent on OpenCode; passed as -m.'),
-                        resolvedEffort: resolved('', 'cli',
-                            'OpenCode decides. Effort is `--variant` here and only on models that declare one.')
-                    }
-                }
+                // ‼️ U-59 — OpenCode's row is here because the hand-typed engine
+                // list stopped at four and left this agent with no OpenCode box
+                // at all. Its model is `provider/model`, the widest label in the
+                // section, drawn on purpose: the long-label case is where a
+                // picker's width fails and no string test would say so.
+                engines: engineRows({
+                    codex: { model: 'gpt-5.6-terra', effort: 'high' },
+                    opencode: { model: 'opencode/nemotron-3.5-lightning-free' }
+                }, 'sonnet')
             },
             {
-                dir: 'D:\\zone\\agent\\ajanlar\\basit', name: 'basit',
+                // The empty case beside the set one: nothing chosen anywhere, so
+                // the fleet default stands and every box says so.
+                dir: 'D:\zone\agent\ajanlar\basit', name: 'basit',
                 excluded: false, agentId: 'basit', model: '',
-                engines: {
-                    claude: {
-                        model: '', effort: '',
-                        resolved: resolved('haiku', 'launch-defaults',
-                            'haiku — from agentFarm.launchDefaults, which applies to every agent.'),
-                        resolvedEffort: resolved('low', 'launch-defaults', 'low — from agentFarm.launchDefaults.')
-                    },
-                    codex: {
-                        model: '', effort: '',
-                        resolved: resolved('haiku', 'launch-defaults',
-                            'haiku — from agentFarm.launchDefaults, which applies to every agent and every engine.'),
-                        resolvedEffort: resolved('low', 'launch-defaults', 'low — from agentFarm.launchDefaults.')
-                    },
-                    gemini: { model: '', effort: '', resolved: resolved('', 'cli', 'Gemini decides.'), resolvedEffort: resolved('', 'cli', '') },
-                    agy: { model: '', effort: '', resolved: resolved('', 'cli', 'Antigravity decides.'), resolvedEffort: resolved('', 'cli', '') },
-                    // The empty case beside the set one: nothing chosen, so the
-                    // engine's own default stands and the box says which.
-                    opencode: { model: '', effort: '', resolved: resolved('', 'cli', 'OpenCode decides — nothing is set for this agent.'), resolvedEffort: resolved('', 'cli', 'OpenCode decides.') }
-                }
+                engines: engineRows({}, '')
             }
         ]
     }]

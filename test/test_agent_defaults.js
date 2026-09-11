@@ -106,8 +106,13 @@ const { agentKey, storedDefault, withAgentDefault, resolveDefault, defaultLabel 
 
     // ‼️ the word that started all this never appears alone again
     ok('‼️ "Default" names what it resolves to', defaultLabel(farm) === 'Default → gpt-5.6-terra');
-    ok('…and says who decides when it resolves to nothing',
-        defaultLabel(none) === 'Default (the CLI decides)');
+    // ‼️ …AND THE EXPLANATION IS NOT IN THE LABEL. `Default (the CLI decides)`
+    // put a sentence inside a box whose job is to hold a value; the sentence is
+    // in `note`, which the hover draws in full and which names the engine.
+    ok('…and is the bare word when it resolves to nothing',
+        defaultLabel(none) === 'Default');
+    ok('…while the sentence that used to be in it is in the note, naming the engine',
+        /Gemini decides/.test(none.note) && !/(the CLI decides)/.test(defaultLabel(none)));
 }
 
 // ---------- X-101 · WHICH ROUTE THIS AGENT RUNS CLAUDE ON ----------

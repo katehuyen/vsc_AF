@@ -31,7 +31,12 @@ module.exports = function createAfmsDom(getHtml) {
         // class the hover panel reads to know it is covered), so the class
         // attribute is matched loosely. Pinning it to exactly "afms" made every
         // open picker invisible to this shim.
-        const wrapRe = /<span class="afms[^"]*" data-afms-wrap="([^"]*)">([\s\S]*?)<\/div><\/span>/g;
+        // ‼️ ANY FURTHER ATTRIBUTE IS ALLOWED AFTER THE ID. This insisted the
+        // tag ENDED at `data-afms-wrap`, so the day the component added a second
+        // attribute (`--afms-w`, the width it reserved) eleven page tests stopped
+        // finding a picker at all and failed with "no picker in the rendered
+        // html" — one parser breaking, reported as eleven pages breaking.
+        const wrapRe = /<span class="afms[^"]*" data-afms-wrap="([^"]*)"[^>]*>([\s\S]*?)<\/div><\/span>/g;
         let w;
         while ((w = wrapRe.exec(html))) {
             const id = w[1];

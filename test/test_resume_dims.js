@@ -216,10 +216,19 @@ ok('SESSION_PARSER_VERSION was bumped past the build that had neither field',
     const cp = read('src', 'panels', 'consolePanel.ts');
     ok('the Console resume reads the row it already looked up',
         /const\s+inherit\s*=\s*lastRunDimensions\(row\)/.test(cp));
+    // ‼️ …AND THE AGENT'S OWN SETTINGS ROW MAY SIT BETWEEN THE BOX AND THE
+    // FLEET (`ownBack`), which is the order the composer resolves in. The
+    // claim here is the ORDER OF THE ENDS — the transcript first, the fleet
+    // last — so the middle is written as optional rather than pinned: a rung
+    // added between them is not a violation of it, and a test that failed on
+    // one would be pinning the line rather than the rule.
     ok('…and the transcript comes FIRST in the model chain',
-        /inherit\.model\s*\|\|\s*str\('model'\)\s*\|\|\s*d\.model/.test(cp));
+        /inherit\.model\s*\|\|\s*str\('model'\)\s*\|\|\s*(?:\w+\.model\s*\|\|\s*)?d\.model/.test(cp));
     ok('…and in the effort chain',
-        /inherit\.effort\s*\|\|\s*str\('effort'\)\s*\|\|\s*d\.effort/.test(cp));
+        /inherit\.effort\s*\|\|\s*str\('effort'\)\s*\|\|\s*(?:\w+\.effort\s*\|\|\s*)?d\.effort/.test(cp));
+    // …and the fleet default is still the LAST word on both, never skipped.
+    ok('‼️ the fleet default still closes both chains',
+        /str\('model'\)[^;]*d\.model/.test(cp) && /str\('effort'\)[^;]*d\.effort/.test(cp));
     ok('…and in the permission chain',
         /inherit\.permissionMode\s*\|\|\s*str\('permissionMode'\)\s*\|\|\s*d\.permissionMode/.test(cp));
     ok('…and the pair still goes through narrowLaunch',

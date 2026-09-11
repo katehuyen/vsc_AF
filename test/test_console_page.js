@@ -726,14 +726,15 @@ const html = allHtml;
     });
 
     push(onEngine('claude'));
-    // ‼️ B-03.21 — THE OPTION CARRIES ITS AXIS NOW (`effort → high`), so a test
-    // asking for `>high<` is asking for the shape this row had while three of
-    // its boxes read nothing but "Default". The CLAIM is unchanged — this
-    // engine's vocabulary and not the other's — only the shape it is read in.
+    // ‼️ B-03.21 (round 2) — THE OPTION CARRIES ITS VALUE AND NOTHING ELSE. The
+    // axis moved to the list's own `<optgroup>` heading, where it costs the
+    // value no characters at all; round 1 had put it in front of every option
+    // and it was the VALUE that got clipped away. The CLAIM is unchanged —
+    // this engine's vocabulary and not the other's — only the shape.
     ok('the composer opens on Claude, offering Claude\'s vocabulary',
         /value="claude" selected/.test(composer())
         && composer().includes('Sonnet') && !composer().includes('GPT 5.6 Terra')
-        && composer().includes('>effort: high<') && !composer().includes('>effort: xhigh<'));
+        && composer().includes('>high<') && !composer().includes('>xhigh<'));
 
     // ‼️ THE HAND IS STILL ON THE PICKER. This is not a contrivance: it is what
     // a native select does after a choice, and it is the only condition under
@@ -750,7 +751,7 @@ const html = allHtml;
         + 'a round trip or for the hand to leave the control',
         composer().includes('GPT 5.6 Terra') && !composer().includes('Sonnet'));
     ok('‼️ …and so is the effort box, which is looked up by engine and model both',
-        composer().includes('>effort: xhigh<') && !composer().includes('>effort: high<'));
+        composer().includes('>xhigh<') && !composer().includes('>high<'));
     ok('‼️ …and the hint that says what this engine changes about the composer',
         composer().includes('Codex · ready'));
     ok('…with the picker itself showing the engine that was chosen',
@@ -839,16 +840,17 @@ const html = allHtml;
 
     push(base('claude', claudeForm(null), null));
     ok('a Claude composer with a route set up draws a route box, in the engine\'s own noun',
-        /<select id="c-route">/.test(composer()) && /<span>route<\/span>/.test(composer())
+        /<select id="c-route">/.test(composer()) && /<optgroup label="Route">/.test(composer())
         && composer().includes('Kimi'));
-    // ‼️ …and the WORD is the quiet half, not the value. `.permlbl` dims its
-    // whole wrapper, which is right where three labelled boxes read as one group
-    // and wrong among six unlabelled selects: a dimmed value reads as a disabled
-    // control. Its own class, so the running composer's row is untouched.
-    ok('…with the label dimmed and the value at full strength',
-        /class="rtlbl"/.test(composer())
-        && /\.crow \.rtlbl > span \{ opacity:\.6/.test(composer())
-        && !/class="permlbl"[^>]*>route/.test(composer()));
+    // ‼️ B-03.21 (round 2) — AND THE WORD COSTS THE VALUE NOTHING. A word beside
+    // the box and a word in front of the value are the same theft of width,
+    // measured twice; an `<optgroup>` heading is drawn by the browser at the top
+    // of the OPEN list, cannot be selected, and takes no room on the row. So no
+    // box on this row wears a label, and every one of them is the same shape.
+    ok('…with the axis as the list\'s heading and the whole box left to the value',
+        !/class="rtlbl"/.test(composer()) && !/class="permlbl"/.test(composer())
+        && !/>route<\/span>/.test(composer())
+        && /<span class="af-tipw axisw" data-axis-name="Route"/.test(composer()));
     ok('…with no tier box, because a tier is a question about a route and none is picked',
         !/id="c-tier"/.test(composer()));
     ok('‼️ …and the hover carries what makes the box auditable: the scope, and WHY '
@@ -1283,17 +1285,24 @@ const html = allHtml;
     // `<select>` shows its chosen value cut and the only way to READ it was to
     // OPEN the box — a gesture that means "I am about to change this",
     // performed by somebody who only wanted to look.
-    const tipOf = re => (re.exec(allHtml()) || [, ''])[1];
-    const permTip = () => tipOf(/title="([^"]*)"[^>]*>permissions/);
+    // ‼️ B-03.21 (round 2) — the hover is an AFTip PANEL, not a native title, and
+    // the value is in its HEADING: the axis spelled out, then what it is set to.
+    // The claim is the one K-16 made and is read off the panel it lives in now.
+    const panelOf = id => {
+        const m = new RegExp('id="' + id + '"[\\s\\S]*?<span class="af-tiph">([^<]*)<\\/span>'
+            + '<span class="af-tipb">([^<]*)<\\/span>').exec(allHtml());
+        return m ? { head: m[1], body: m[2] } : { head: '', body: '' };
+    };
     ok('‼️ the permissions box names its current value before explaining itself',
-        /^default\n\n/.test(permTip()));
+        panelOf('c-perm').head === 'Permissions: default');
     ok('…and the standing explanation is still there, underneath',
-        /applied live|SANDBOX/.test(permTip()));
+        /applied live|SANDBOX/.test(panelOf('c-perm').body));
     // ‼️ …and a box whose list this build has nothing for names NOTHING rather
-    // than printing an empty line above the explanation: the hover's first line
-    // is a value, and a blank one would read as a value that is blank.
+    // than printing an empty line above the explanation: the heading's second
+    // half is a value, and a blank one would read as a value that is blank.
     ok('a box with no list to name from opens on the explanation, not on a gap',
-        /^How hard it thinks/.test(tipOf(/title="([^"]*)"[^>]*>effort/)));
+        panelOf('c-effort-live').head === 'Effort'
+        && /^How hard it thinks/.test(panelOf('c-effort-live').body));
 
     // ---------- U-59: the THIRD shape, which agreed with neither sentence ----
     //
@@ -2966,24 +2975,36 @@ const html = allHtml;
     });
 
     push(live());
-    if(!/id="c-account-live"/.test(html())){ const m=html().match(/permlbl[^>]*>[a-z →]*/g); console.log('DEBUG labels:', m && m.slice(0,10)); }
     ok('‼️ a LIVE session has the account box too — the lock is what X-211 is about',
         /id="c-account-live"/.test(html()));
     ok('…opened on what the card is really sealed to',
         /<option value="@machine"[^>]*selected/.test(html()));
 
-    const tipOf = re => (re.exec(html()) || [, ''])[1];
+    const panelOf = id => {
+        const m = new RegExp('id="' + id + '"[\\s\\S]*?<span class="af-tiph">([^<]*)<\\/span>'
+            + '<span class="af-tipb">([^<]*)<\\/span>').exec(html());
+        return m ? { head: m[1], body: m[2] } : { head: '', body: '' };
+    };
     ok('MIRROR — the hover opens with the sign-in that is actually running',
-        /^Running as: Machine Global/.test(tipOf(/title="([^"]*)"[^>]*>account/)));
+        /^Account: .*Machine Global$/.test(panelOf('c-account-live').head));
 
     push(live({ accountNext: 'work-1', accountNextLabel: 'work@studio' }));
-    ok('‼️ a pending swap is on the LABEL, not only in the hover',
-        /class="permlbl pend"/.test(html()) && />account →/.test(html()));
+    // ‼️ B-03.21 (round 2) — the label that used to carry this is gone, so the
+    // BOX wears the promise: an arrow beside it and the colour on the value
+    // itself. The claim is the one X-213 made — a promise about the next turn
+    // is not something a reader should have to hover to find.
+    ok('‼️ a pending swap is on the BOX, not only in the hover',
+        /class="af-tipw axisw pend"/.test(html())
+        && /<span class="pendmark" aria-hidden="true">→<\/span>/.test(html())
+        && /\.crow \.axisw\.pend > select \{ color:var\(--vscode-charts-yellow/.test(html()));
     ok('…the box shows what the NEXT message will run as',
-        /<option value="work-1"[^>]*selected/.test(html()));
-    ok('…and the hover says what happens and that nothing is lost',
-        /Next message runs as: work@studio/.test(tipOf(/title="([^"]*)"[^>]*>account →/))
-        && /nothing that has been said is lost/.test(tipOf(/title="([^"]*)"[^>]*>account →/)));
+        /<option value="work-1"[^>]*selected/.test(html())
+        && /^Account: work@studio\b/.test(panelOf('c-account-live').head));
+    // The chosen row's own line comes first (it is the half that changes with
+    // the box), then the standing sentence — which is where the promise lives.
+    ok('…and the hover says what is still running and that nothing is lost',
+        panelOf('c-account-live').body.includes('Running as: Machine Global until the next message')
+        && /nothing said is lost/.test(panelOf('c-account-live').body));
 
     push(live({ accountAxis: false }));
     ok('an engine that cannot hold a second sign-in has no live box either',

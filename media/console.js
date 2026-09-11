@@ -288,6 +288,19 @@
             background:transparent; border:1px solid var(--vscode-descriptionForeground,#888);
             opacity:.45; transition:opacity .12s, transform .12s; }
         .srow:hover .cdotc { opacity:.9; }
+        /* S-55 — END AND REMOVE, WHERE THE CARD IS. The same thing the
+           right-click menu does, one gesture instead of two, and drawn
+           only under the pointer: a permanent ✕ on every card in a
+           column of them is an invitation to lose a conversation by
+           aiming badly. It sits opposite the phase dot, in the corner the
+           badges leave alone, and it is kept out of the flow (absolute)
+           so no name loses a character to it. */
+        .srowx { position:absolute; right:4px; top:3px; z-index:2;
+            background:none; border:none; padding:0 3px; line-height:1;
+            font-size:11px; cursor:pointer; opacity:0; transition:opacity .12s;
+            color:var(--vscode-descriptionForeground,#888); }
+        .srow:hover .srowx { opacity:.55; }
+        .srowx:hover { opacity:1; color:var(--vscode-errorForeground,#f48771); }
         .cdotc:hover { opacity:1; transform:scale(1.15); }
         /* A colour that has been chosen is not a hint — it stays at full strength
            whatever the pointer is doing, or the whole point (glanceability) is
@@ -536,6 +549,21 @@
            its menu opens upwards instead of off the edge */
         .crow .afms-menu { top:auto; bottom:calc(100% + 4px); }
         .crow .afms-btn { font-size:11px; }
+        /* ‼️ …AND IT GIVES GROUND WHEN THE ROW IS CROWDED, DOWN TO HALF.
+           Measured at 1030px: this was the WIDEST control on the strip (142px
+           of nine boxes plus Send) and the only one that could not shrink —
+           afFilters reserves its widest possible text and every other box on
+           the row can already shrink. So on a narrow window the boxes
+           that hold a VALUE were squeezed while the one holding a word that
+           never changes kept all of its width.
+           The floor is half of what the component reserved (--afms-w, which
+           it publishes for exactly this) rather than a number typed here: a
+           value can still be read at half width, and text-overflow in
+           common.css plus the hover carry the rest. With room to spare it is
+           unchanged: flex-grow is 0, so it never takes more than it reserved. */
+        .crow .afms { display:flex; flex:0 1 auto; min-width:calc(var(--afms-w, 24ch) / 2); }
+        .crow .afms > * { display:flex; min-width:0; max-width:100%; }
+        .crow .afms-btn { max-width:100%; min-width:0; box-sizing:border-box; }
         .msg { margin:8px 10px; display:flex; gap:9px; align-items:flex-start; }
         .msg .who { flex:none; width:56px; font-size:10px; opacity:.65; padding-top:3px; text-transform:uppercase; }
         /* the step-kind chip lives in this gutter (see messageHtml): the column
@@ -813,58 +841,45 @@
         .crow { display:flex; gap:6px; align-items:center; flex-wrap:nowrap; margin-top:7px; min-width:0; }
         .crow select { font-size:11px; padding:2px 4px; min-width:0; }
         .crow .grow { flex:1 1 0; min-width:0; }
+        /* ‼️ B-03.21 (round 2) — EVERY BOX ON THIS ROW IS AN AFTip WRAPPER, so
+           the WRAPPER is the flex child and the WRAPPER is what is sized. Left
+           on the select, every one of these rules is dead and the row stops
+           shrinking with the panel at all — measured in round 1, on the four
+           boxes that were wrapped then.
+           The bases are the VALUE's own width: no axis rides in front of it any
+           more (it is the list's optgroup heading), and no label sits beside it,
+           so a box narrowed to four characters shows four characters of the
+           thing the reader is looking for. The spacer gives up its slack first:
+           a gap holds no information. (No backticks in this block: the whole
+           stylesheet is a template literal, and one would end it.) */
+        .crow .axisw { min-width:0; flex:0 1 auto; display:flex; align-items:center; gap:3px; }
+        .crow .axisw > select { width:100%; max-width:none; flex:none; }
         /* the identity end of the row: sized, shrinkable, in that order */
-        #c-agent { flex:1 1 120px; max-width:120px; }
-        #c-engine { flex:2 1 118px; max-width:118px; }
+        .crow .axisw:has(#c-agent) { flex:1 1 132px; max-width:132px; }
+        .crow .axisw:has(#c-engine) { flex:2 1 118px; max-width:118px; }
         /* ‼️ X-105 — the route and its tier. Sized like the engine and the
            effort beside them because that is what they are: the route decides
            what the model row MEANS, the tier is a short word. Both are drawn
            only where the engine has the axis AND something is set up, so the row
            measured above is unchanged for everybody else. */
-        #c-route { flex:2 1 112px; max-width:112px; }
-        #c-tier { flex:1 1 74px; max-width:74px; }
+        .crow .axisw:has(#c-route) { flex:2 1 112px; max-width:112px; }
+        .crow .axisw:has(#c-tier) { flex:1 1 74px; max-width:74px; }
         /* ‼️ X-169 — the sign-in, sized like the route because it is the same
            kind of answer one axis over: the route says which endpoint, this says
            whose plan pays. Drawn only where the engine can isolate an account
            AND at least one has been captured, so the row measured above is
            unchanged for everybody else. */
-        #c-account { flex:2 1 118px; max-width:118px; }
-        /* ‼️ THE LABEL IS THE QUIET HALF, THE VALUE IS NOT. .permlbl dims the
-           whole wrapper, which is right on the RUNNING row — three boxes, all
-           labelled, reading as one group — and wrong here, where these two sit
-           among six unlabelled selects: a dimmed value among full-strength ones
-           reads as a disabled control, which is the opposite of what a route
-           somebody just chose should look like. Its own class, so the running
-           row is untouched. (No backticks in this block: the whole stylesheet is
-           a template literal, and one would end it.) */
-        .crow .rtlbl { min-width:0; flex:0 1 auto; font-size:10px;
-            display:flex; align-items:center; gap:4px; }
-        .crow .rtlbl > span { opacity:.6; flex:none; }
-        #c-model-live { flex:1 1 112px; max-width:112px; }
-        #c-effort-live { flex:1 1 82px; max-width:82px; }
-        #c-perm { flex:3 1 104px; max-width:104px; }
-        /* ‼️ B-03.21 — THE FOUR BOXES THAT CARRY THEIR OWN AXIS ARE WIDER, and
-           the WRAPPER is what is sized. Two measured reasons, both of which
-           broke something on the first attempt:
-           (1) the box is inside an AFTip now, so the SPAN is the flex child —
-               left on the select, every one of these flex rules was dead and
-               the row stopped shrinking with the panel altogether;
-           (2) the value grew by its axis: "permissions -> Default" measures
-               132px of text where "acceptEdits" was 66, and the row had 69px
-               of slack in its spacer. The bases below are that measurement
-               (model 105 · effort 101 · perm 97 · project 138 of text), and
-               the spacer gives up the slack first: a gap holds no information.
-           The inner selects are pinned by id because #c-perm and #c-proj are
-           also the RUNNING row's, where the label does this job instead. */
-        .crow .axisw { min-width:0; display:flex; align-items:center; }
-        .axisw #c-model, .axisw #c-effort, .axisw #c-perm, .axisw #c-proj {
-            width:100%; max-width:none; flex:none; }
-        .crow .axisw:has(#c-model) { flex:1 1 118px; max-width:118px; }
-        .crow .axisw:has(#c-effort) { flex:1 1 108px; max-width:108px; }
+        .crow .axisw:has(#c-account) { flex:2 1 132px; max-width:132px; }
+        .crow .axisw:has(#c-model) { flex:1 1 112px; max-width:112px; }
+        .crow .axisw:has(#c-effort) { flex:1 1 82px; max-width:82px; }
         .crow .axisw:has(#c-perm) { flex:3 1 104px; max-width:104px; }
         .crow .axisw:has(#c-proj) { flex:3 1 146px; max-width:146px; }
-        /* the label wrappers of the running composer are sized by their select */
-        .crow .permlbl { min-width:0; flex:0 1 auto; }
+        .crow .axisw:has(#c-model-live) { flex:1 1 112px; max-width:112px; }
+        .crow .axisw:has(#c-effort-live) { flex:1 1 82px; max-width:82px; }
+        .crow .axisw:has(#c-account-live) { flex:2 1 132px; max-width:132px; }
+        /* the two chips on the row that are FACTS rather than choices, wrapped
+           in the same hover panel as everything beside them */
+        .crow .fixw { min-width:0; flex:0 1 auto; display:flex; align-items:center; }
         /* ‼️ THE RIGHT-HAND GROUP IS FIXED. Whatever else gives way, these keep
            their size and their place: a button that moves is a button you have
            to look for. */
@@ -899,11 +914,14 @@
         .fixed.pinned .only { background:none; border:none; opacity:.5; cursor:pointer;
             font-size:11px; padding:0 3px; color:inherit; }
         .fixed.pinned .only:hover { opacity:1; }
-        .permlbl { font-size:10px; opacity:.75; display:flex; align-items:center; gap:4px; }
-        /* X-213 — a promise about the next turn is not the quiet half of the
-           strip: the label comes up to full weight so the reader can see, at a
-           glance across the row, that the next message moves account. */
-        .permlbl.pend { opacity:1; color:var(--vscode-charts-yellow,#cca700); font-weight:600; }
+        /* X-213 — a promise about the next turn is not something a reader
+           should have to hover to find, and the label that used to carry it is
+           gone. The box itself wears it: the arrow says the direction, the
+           colour says it has not happened yet, and both are drawn ONLY while a
+           swap is pending, so the row is unchanged for everybody else. */
+        .crow .axisw .pendmark { flex:none; font-size:11px; font-weight:600;
+            color:var(--vscode-charts-yellow,#cca700); }
+        .crow .axisw.pend > select { color:var(--vscode-charts-yellow,#cca700); font-weight:600; }
         .owned { opacity:.5; }
         .owned .n::after { content:' · open elsewhere'; font-weight:400; opacity:.8; }
         .empty { padding:26px 12px; color:var(--vscode-descriptionForeground); font-size:12px; }
@@ -2110,6 +2128,14 @@
                      afConsoleLive: !dead, afConsoleEnded: dead,
                      afConsoleWorking: s.status === 'working'
                  })}>
+                ${cardTip(`<button class="srowx" data-endremove="${C.esc(s.id)}">✕</button>`,
+                    dead ? 'Remove this card' : 'End this session and remove the card',
+                    window.AFTip.lines([
+                        dead
+                            ? 'The process is already over. This takes the card off the list.'
+                            : 'Stops the process and takes the card off the list — the same thing the right-click menu calls End & remove.',
+                        '\nThe transcript stays on disk and the conversation can be resumed from the Resume list; only the card goes.'
+                    ]), 'srowxw')}
                 ${/* ‼️ U-50 — THE CARD ITSELF CARRIES NO `title` ANY MORE. It used
                       to repeat the name that is drawn two lines down and then add
                       the same closing sentence to every card; worse, a native
@@ -3121,10 +3147,16 @@
         if (!id) { return ''; }
         const a = (DATA.agents || []).find(x => x.id === id);
         if (!a) { return ''; }
-        return `<span class="fixed pinned" title="You came here from ${C.esc(a.name)} — the session will open in its folder. ✕ gives the picker back.">
-                ${C.esc(a.name)}
-                <button class="only" id="c-unpin" title="Choose a different agent instead">✕</button>
-            </span>`;
+        // The same hover surface as every box beside it: one row, one way of
+        // answering "what is this?" (B-03.21 round 2).
+        return window.AFTip.wrap(
+            `<span class="fixed pinned">${C.esc(a.name)}`
+            + '<button class="only" id="c-unpin" title="Choose a different agent instead">✕</button></span>',
+            'Agent: ' + a.name,
+            window.AFTip.lines([
+                a.dir || '', a.dir ? window.AFTip.GAP : '',
+                'You came here from this agent, so the session will open in its folder. ✕ gives the picker back.'
+            ]), 'fixw');
     }
 
     /**
@@ -3141,6 +3173,7 @@
         return (DATA.engines || []).map(e => {
             const mark = e.ready ? '' : ' — ' + (e.auth === 'none' ? 'not signed in' : 'not installed');
             return `<option value="${C.esc(e.id)}"${e.id === cur ? ' selected' : ''}${e.ready ? '' : ' disabled'}
+                    data-why="${C.esc(String(e.next || ''))}"
                     title="${C.esc(optionTip(e.label + mark, e.next))}">${C.esc(e.label)}${C.esc(mark)}</option>`;
         }).join('');
     }
@@ -3664,88 +3697,90 @@
         return (em && em.note) || '';
     }
 
+    /** The folder an agent runs in, as the page already knows it from the agent
+     *  list — a running card carries the agent's id, not its path. */
+    const agentDirOf = id => ((DATA.agents || []).find(a => a.id === id) || {}).dir || '';
+
     function buildShell(s) {
+        // `data-why` is the row's own sentence, kept on the option so the panel
+        // above can be rebuilt from the box itself when the choice changes —
+        // see AFTip.syncAxis. The native `title` stays: the open list is drawn
+        // by the operating system and no panel of ours can reach into it.
         const opts = (list, cur) => (list || []).map(o =>
-            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''} title="${C.esc(optionTip(o.label || o.id, o.detail))}">${C.esc(o.label || o.id)}</option>`).join('');
+            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}`
+            + ` data-why="${C.esc(String(o.detail || ''))}"`
+            + ` title="${C.esc(optionTip(o.label || o.id, o.detail))}">${C.esc(o.label || o.id)}</option>`).join('');
         /**
-         * ‼️ K-16 — A BOX'S HOVER SAYS WHAT IS IN IT, THEN WHAT IT IS FOR.
+         * ‼️ B-03.21 (round 2) — THE AXIS IS THE HEADING OF THE LIST, NOT A
+         * PREFIX ON EVERY VALUE IN IT.
          *
-         * This row is eight pickers wide in a panel that is rarely wide, so a
-         * `<select>` shows its chosen value cut ("Default → son…", "acceptEd…")
-         * and the only way to read it was to OPEN the box — a gesture that
-         * means "I am about to change this", performed by somebody who only
-         * wanted to look. The hover was right there and spent all of itself on
-         * a sentence that never changes.
+         * Round 1 answered "which box is this?" by writing the axis into every
+         * option (`effort → Default`). Measured on dist/render/console.s9.png
+         * that is the worst of the two halves: these boxes are ~100px wide, so
+         * the part that survives the clipping is the part that never changes,
+         * and the VALUE — the only half a reader is looking for — is what gets
+         * cut. The row drew `model → Defa`, `effort → Def`, `perm → De`, and
+         * `xhigh` stopped showing even its first letter, which it had before.
          *
-         * So: the current value, a blank line, then the same standing
-         * explanation the box has always carried. The order is the point — the
-         * changing half first, because that is the half being asked about.
+         * A native `<optgroup>` label is a heading the browser draws at the top
+         * of the OPEN list and refuses to let anybody select. So the axis is
+         * named exactly where the choosing happens, once, and costs the
+         * collapsed box nothing at all — no prefix, and no separate `<label>`
+         * stealing width from the row either.
+         *
+         * While the list is SHUT the axis is answered by the hover, and that is
+         * the other half of the repair: AFTip.syncAxis rebuilds the panel on
+         * every change, because a mirror still showing the value the page was
+         * drawn with is worse than no mirror.
+         *
+         * ‼️ AND EVERY BOX ON THE ROW HAS THIS ONE SHAPE. Round 1 left four
+         * boxes with an AFTip and five with a native `title`, two of those with
+         * a `<span>` label beside them — three vocabularies on one row of nine
+         * controls. A row where the same question is answered three ways is not
+         * a design; it is three unfinished ones.
          */
-        const boxTip = (list, cur, standard) => {
-            const row = (list || []).find(o => String(o.id ?? '') === String(cur ?? ''));
+        const axisRow = (list, cur) => (list || []).find(o => String(o.id ?? '') === String(cur ?? ''));
+        /** `:` is a choice somebody made, `→` is what the engine resolves to
+         *  when nothing is named here. Two different facts, two marks. */
+        const axisHead = (name, list, cur) => {
+            const row = axisRow(list, cur);
             const now = row ? String(row.label || row.id || '') : '';
-            return (now ? now + '\n\n' : '') + standard;
+            return name + (now ? (String(row.id ?? '') !== '' ? ': ' : ' → ') + now : '');
         };
         /**
-         * ‼️ B-03.21 — A BOX SAYS WHICH AXIS IT IS, IN ITS OWN TEXT.
-         *
-         * The RUNNING row names its four axes with a `permlbl` (`model` ·
-         * `effort` · `account` · `permissions`). The row that STARTS a session
-         * named none of them, so it drew three boxes in a row reading nothing
-         * but `Default`, and a fourth reading `high` beside a model id —
-         * measured on dist/render/console.s4.png and console.s8.png. Which box
-         * was which was answerable only by hover, and this audit has already
-         * called that a defect twice (B-02.4, B-04.1).
-         *
-         * A separate `<label>` was the other way and is refused by the row:
-         * `.crow` is `flex-wrap:nowrap` and had 69px spare where four labels
-         * want ~166. So the AXIS TRAVELS IN THE OPTION, which costs the value
-         * a few characters and nothing else. A native `<select>` draws the
-         * selected option and nothing beside it, so every option carries it —
-         * the open list reads as a column of one axis, which is what it is.
-         *
-         * The two forms are not decoration: `→` is what the engine RESOLVES
-         * to when nothing is named here, `:` is a choice somebody made. The
-         * page already used exactly this distinction in the agent chips on
-         * Farm Settings; it is not a second vocabulary.
+         * The panel's body: what the CHOSEN row says, then the standing
+         * sentence, once. Both halves are needed and neither is repeated —
+         * without the row's own line `effort` opened a panel reading
+         * "Reasoning effort" under a heading reading "effort → Default", the
+         * same two words twice and nothing about what was actually picked.
          */
-        const axisOpts = (axis, list, cur) => (list || []).map(o => {
-            const label = String(o.label || o.id || '');
-            const named = String(o.id ?? '') !== '';
-            const shown = axis + (named ? ': ' : ' → ') + label;
-            return `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}`
-                + ` title="${C.esc(optionTip(shown, o.detail))}">${C.esc(shown)}</option>`;
-        }).join('');
-        /**
-         * …and the hover is a PANEL, not a native title. The user asked for the
-         * whole answer to be readable from the hover alone — what this axis is,
-         * and what it is set to — without the standing sentence being repeated
-         * on every one of them. So: the heading is the axis and its value (the
-         * changing half, which is what is being asked about), and the body is
-         * the standing explanation, once.
-         */
-        const axisBox = (axis, id, list, cur, standard, longName) => {
-            const row = (list || []).find(o => String(o.id ?? '') === String(cur ?? ''));
-            const now = row ? String(row.label || row.id || '') : '';
-            const named = row && String(row.id ?? '') !== '';
-            // ‼️ THE PANEL SPELLS OUT WHAT THE BOX ABBREVIATES. `perm` fits the
-            // row; `permissions` is what it is called everywhere else, and the
-            // hover is where there is room to say so. The heading carries the
-            // CHANGING half — the axis and what it is set to — because that is
-            // the half being asked about; the standing sentence follows once.
-            const head = (longName || axis) + (now ? (named ? ': ' : ' → ') + now : '');
-            // ‼️ AND WHAT THE CHOSEN ROW ITSELF SAYS, which is the half that
-            // changes when the box does. Without it `effort` opened a panel
-            // reading "Reasoning effort" under a heading reading "effort →
-            // Default" — the same two words twice and nothing about what was
-            // actually chosen. The standing sentence follows it, once; a panel
-            // that repeats itself is a panel nobody finishes reading.
+        const axisBody = (list, cur, standard) => {
+            const row = axisRow(list, cur);
             const why = row && String(row.detail || '').trim();
+            const std = String(standard || '').trim();
+            return window.AFTip.lines(why && why !== std ? [why, window.AFTip.GAP, std] : [std]);
+        };
+        /**
+         * One box on a control row.
+         *   axis     — the heading at the top of the open list (short: it sits
+         *              over a ~100px column)
+         *   name     — what the PANEL calls it, spelled out where there is room
+         *              (`perm` in the list, `permissions` in the hover)
+         *   inner    — ready-made options, for the one list that builds its own
+         *   before   — a state mark drawn beside the box (the pending account
+         *              swap, and nothing else: it costs width)
+         */
+        const axisBox = (o) => {
+            const name = o.name || o.axis;
             return window.AFTip.wrap(
-                `<select id="${id}">${axisOpts(axis, list, cur)}</select>`,
-                head,
-                window.AFTip.lines(why && why !== String(standard || '').trim()
-                    ? [why, window.AFTip.GAP, standard] : [standard]), 'axisw');
+                (o.before || '')
+                + `<select id="${o.id}">`
+                + `<optgroup label="${C.esc(o.axis)}">${o.inner || opts(o.list, o.cur)}</optgroup>`
+                + '</select>',
+                axisHead(name, o.list, o.cur),
+                axisBody(o.list, o.cur, o.standard),
+                'axisw' + (o.cls ? ' ' + o.cls : ''),
+                `data-axis-name="${C.esc(name)}" data-axis-std="${C.esc(String(o.standard || '').trim())}"`);
         };
         /**
          * ‼️ X-105 — THE ROUTE, AS A CONTROL RATHER THAN A CARRIED VALUE.
@@ -3777,24 +3812,28 @@
             const f = composerForm();
             const pick = routePick();
             const cur = pick.providerId || '';
-            const routeTip = [
-                'Which ' + f.noun.toLowerCase() + ' the new session is served by — the endpoint '
-                + 'the process really talks to, which the engine badge does not say. '
-                + 'Default leaves this window\'s own environment alone.',
+            // One fact per line rather than one paragraph joined by `·`: these
+            // are four separate answers (what the axis is, how far the pick
+            // reaches, why the variants, why the list is empty) and a panel is
+            // tall, not wide.
+            const routeTip = window.AFTip.lines([
+                'Which ' + f.noun.toLowerCase() + ' serves the new session — the endpoint the '
+                + 'process really talks to, which the engine badge does not say. Default leaves '
+                + 'this window\'s own environment alone.',
                 f.scopeNote || '',
                 f.variantsWhy || '',
                 f.empty || ''
-            ].filter(Boolean).join(' · ');
+            ]);
             const rows = withCurrent(f.providers || [], cur);
-            const route = `<label class="rtlbl" title="${C.esc(boxTip(rows, cur, routeTip))}"><span>${C.esc(f.noun.toLowerCase())}</span>
-                    <select id="c-route">${opts(rows, cur)}</select>
-                </label>`;
+            const route = axisBox({
+                axis: f.noun, id: 'c-route', list: rows, cur: cur, standard: routeTip
+            });
             if (!tierAxisOn()) { return route; }
             const tcur = pick.tier || '';
             const trows = withCurrent(f.sub.choices || [], tcur);
-            return route + `<label class="rtlbl" title="${C.esc(boxTip(trows, tcur, f.sub.note))}"><span>${C.esc(f.sub.label.toLowerCase())}</span>
-                    <select id="c-tier">${opts(trows, tcur)}</select>
-                </label>`;
+            return route + axisBox({
+                axis: f.sub.label, id: 'c-tier', list: trows, cur: tcur, standard: f.sub.note
+            });
         };
         /**
          * ‼️ X-169 — WHOSE PLAN PAYS FOR THE NEXT SESSION.
@@ -3833,16 +3872,14 @@
             // from the component: this body was hand-copied onto five pickers
             // and only the Console's two had grown the five-hour figure.
             }].concat(accountRows().map(a => window.AFAccount.row(a)));
-            const tip = 'Which sign-in of this engine pays for the new session. '
-                + MACHINE_GLOBAL_ROW + ' is the identity this machine itself is signed in as. '
-                + 'A dot marks the standing choice — the account made active on the Engines page; '
-                + 'the box OPENS on it, and what you see here is what the session will really '
-                + 'run as. Changing it overrules the standing choice for THIS session only, '
-                + 'because an account is a state and not a preference and nothing here is remembered.';
+            const tip = window.AFTip.lines([
+                'Which sign-in of this engine pays for the new session.',
+                'A dot marks the standing choice made on the Engines page; the box opens on it. '
+                + 'Changing it here overrules that for THIS session only — an account is a state, '
+                + 'not a preference, so nothing here is remembered.'
+            ]);
             const shown = withCurrent(rows, cur);
-            return `<label class="rtlbl" title="${C.esc(boxTip(shown, cur, tip))}"><span>account</span>
-                    <select id="c-account">${opts(shown, cur)}</select>
-                </label>`;
+            return axisBox({ axis: 'Account', id: 'c-account', list: shown, cur: cur, standard: tip });
         };
         const dead = s && (s.status === 'ended' || s.status === 'error');
         const placeholder = s
@@ -3972,45 +4009,55 @@
             // MIRROR — the box is far too narrow for an address, so the first
             // line of its hover is what is actually sealed right now, and the
             // second says what is about to change if the two differ.
-            const nowLine = 'Running as: ' + (s.accountLabel || MACHINE_GLOBAL_ROW);
+            // The box shows what is CHOSEN, and while a swap is pending that is
+            // the account it is moving TO — so the panel's own heading says the
+            // destination and the first line under it says what is still
+            // running. With nothing pending the two would be the same sentence
+            // twice, so it is drawn only when it differs.
             const nextLine = s.accountNext
-                ? 'Next message runs as: ' + (s.accountNextLabel || s.accountNext)
-                    + ' — this process is ended and the same conversation is resumed on it, '
-                    + 'so nothing that has been said is lost'
+                ? 'Running as: ' + (s.accountLabel || MACHINE_GLOBAL_ROW)
+                    + ' until the next message — then this process is ended and the same '
+                    + 'conversation is resumed on the new sign-in, so nothing said is lost'
                 : '';
-            const tip = [nowLine, nextLine,
+            const tip = window.AFTip.lines([nextLine,
                 'Change it when a plan runs out mid-task: the conversation continues on the other '
-                + 'sign-in instead of waiting for the window to reset. '
-                + MACHINE_GLOBAL_ROW + ' is the identity this machine itself is signed in as.'
-            ].filter(Boolean).join('\n\n');
-            // The pending swap is on the LABEL, not only in the hover: a promise
-            // about the next turn that you have to hover to find is a promise
-            // the reader will not know was made.
-            const word = s.accountNext ? 'account →' : 'account';
-            return `<label class="permlbl${s.accountNext ? ' pend' : ''}" title="${C.esc(tip)}">${word}
-                    <select id="c-account-live">${opts(shown, cur)}</select>
-                </label>`;
+                + 'sign-in instead of waiting for the window to reset.'
+            ]);
+            // The pending swap is drawn on the BOX, not only in the hover: a
+            // promise about the next turn that you have to hover to find is a
+            // promise the reader will not know was made.
+            return axisBox({
+                axis: 'Account', id: 'c-account-live', list: shown, cur: cur, standard: tip,
+                cls: s.accountNext ? 'pend' : '',
+                before: s.accountNext ? '<span class="pendmark" aria-hidden="true">→</span>' : ''
+            });
         };
         const effortBox = (engineId, model, cur, id, tip) => {
             if (!drawsEffort(engineId)) { return ''; }
-            const rows = effortsForModel(engineId, model);
-            return `<label class="permlbl" title="${C.esc(boxTip(rows, cur, tip))}">effort
-                    <select id="${id}">${opts(rows, cur)}</select>
-                </label>`;
+            return axisBox({
+                axis: 'Effort', id: id, list: effortsForModel(engineId, model), cur: cur, standard: tip
+            });
         };
         const controls = s
-            ? `<span class="fixed" title="The folder this session opened in — decided when the process started, and the one thing that cannot change">
-                    ${C.esc(s.agentName)}
-                </span>
+            ? `${window.AFTip.wrap(`<span class="fixed">${C.esc(s.agentName)}</span>`,
+                'Agent: ' + s.agentName,
+                window.AFTip.lines([
+                    agentDirOf(s.agentId), agentDirOf(s.agentId) ? window.AFTip.GAP : '',
+                    'The folder this session opened in — decided when the process started, and the '
+                    + 'one dimension on this row that cannot change.'
+                ]), 'fixw')}
                 ${engineBadge(s)}${routeBadge(s)}${engineHintHtml(s.engine)}
-                <label class="permlbl" title="${C.esc(boxTip(modelsFor(s.engine), s.model, modelTip + ' · ' + modelNote(s.engine)))}">model
-                    <select id="c-model-live">${opts(modelsFor(s.engine), s.model)}</select>
-                </label>
+                ${axisBox({
+                    axis: 'Model', id: 'c-model-live', list: modelsFor(s.engine), cur: s.model,
+                    standard: window.AFTip.lines([modelTip, modelNote(s.engine)])
+                })}
                 ${effortBox(s.engine, s.model, s.effort, 'c-effort-live', effortTip)}
                 ${liveAccountBoxHtml(s)}
-                <label class="permlbl" title="${C.esc(boxTip(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode, permTip))}">permissions
-                    <select id="c-perm">${opts(live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions, s.permissionMode)}</select>
-                </label>
+                ${axisBox({
+                    axis: 'Perm', name: 'Permissions', id: 'c-perm',
+                    list: live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions,
+                    cur: s.permissionMode, standard: permTip
+                })}
                 ${window.AFFilter.multi({
                     // allLabel is what follows "show: " — repeating the word
                     // here is how the button came to read "show: show: …"
@@ -4031,26 +4078,61 @@
                 <span class="grow"></span>
                 <span id="c-live"></span>
                 <button id="c-send"${dead ? ' disabled' : ''}>Send</button>`
-            : `${pinnedAgentHtml() || `<select id="c-agent" title="${C.esc(boxTip((DATA.agents || []).map(a => ({ id: a.id, label: a.name })), st.agentId, 'Which agent — the session opens in its folder'))}">
-                    <option value="" title="${C.esc(optionTip('Choose an agent…', 'the session opens in that agent\'s own folder'))}">Choose an agent…</option>
-                    ${(DATA.agents || []).map(a => `<option value="${C.esc(a.id)}"${a.id === st.agentId ? ' selected' : ''} title="${C.esc(optionTip(a.name, a.dir))}">${C.esc(a.name)}</option>`).join('')}
-                </select>`}
-                <select id="c-engine" title="${C.esc(boxTip((DATA.engines || []), engineNow(), 'Which engine this session runs on. An engine that is not installed or not signed in here is offered but cannot be chosen — hover it for the one thing to do about that. Set the one you use most as the default in Farm Settings → launchDefaults.'))}">${engineOptionsHtml(engineNow())}</select>
+            : `${pinnedAgentHtml() || axisBox({
+                    axis: 'Agent', id: 'c-agent', cur: st.agentId || '',
+                    list: [{ id: '', label: 'Choose an agent…', detail: 'nothing is chosen yet' },
+                        ...(DATA.agents || []).map(a => ({ id: a.id, label: a.name, detail: a.dir }))],
+                    standard: 'Which agent the session belongs to — it opens in that agent\'s own folder.'
+                })}
+                ${axisBox({
+                    axis: 'Engine', id: 'c-engine', cur: engineNow(),
+                    // the same rows the options are drawn from, with the engine's
+                    // own "what to do about it" line where the panel looks for it
+                    list: (DATA.engines || []).map(e => ({ id: e.id, label: e.label, detail: e.next })),
+                    inner: engineOptionsHtml(engineNow()),
+                    standard: window.AFTip.lines([
+                        'Which engine this session runs on.',
+                        'One that is not installed or not signed in here is still offered but cannot be '
+                        + 'chosen — hover it in the list for the one thing to do about that. The engine '
+                        + 'you use most is set in Farm Settings → launchDefaults.'
+                    ])
+                })}
                 ${engineHintHtml(engineNow())}
                 ${routeBoxesHtml()}
                 ${accountBoxHtml()}
-                ${axisBox('model', 'c-model', withCurrent(composerModels(engineNow()), st.model), st.model,
-                    'Model for the new session' + flagOf(engineNow(), 'model') + '. ' + modelNote(engineNow()))}
+                ${axisBox({
+                    axis: 'Model', id: 'c-model', cur: st.model,
+                    list: withCurrent(composerModels(engineNow()), st.model),
+                    standard: window.AFTip.lines([
+                        'Model for the new session' + flagOf(engineNow(), 'model') + '.',
+                        modelNote(engineNow())
+                    ])
+                })}
                 ${drawsEffort(engineNow())
-                    ? axisBox('effort', 'c-effort', withCurrent(effortsForModel(engineNow(), st.model), st.effort), st.effort,
-                        'Reasoning effort' + flagOf(engineNow(), 'effort'))
+                    ? axisBox({
+                        axis: 'Effort', id: 'c-effort', cur: st.effort,
+                        list: withCurrent(effortsForModel(engineNow(), st.model), st.effort),
+                        standard: 'How hard the model thinks before it answers'
+                            + flagOf(engineNow(), 'effort')
+                            + ' — more effort costs more time and more tokens, and buys nothing on work '
+                            + 'that needs no plan.'
+                    })
                     : ''}
-                ${axisBox('perm', 'c-perm', DATA.permissions, st.permissionMode, startPermTip, 'permissions')}
-                ${axisBox('project', 'c-proj',
-                    [{ id: '', label: '◧ No project', detail: 'the session is told about no project and is filed under none' },
+                ${axisBox({
+                    axis: 'Perm', name: 'Permissions', id: 'c-perm',
+                    list: DATA.permissions, cur: st.permissionMode, standard: startPermTip
+                })}
+                ${axisBox({
+                    axis: 'Project', id: 'c-proj', cur: DATA.activeProjectId || '',
+                    list: [{ id: '', label: '◧ No project', detail: 'the session is told about no project and is filed under none' },
                         ...(DATA.projects || []).map(p => ({ id: p.id, label: (p.icon || '◧') + ' ' + p.name }))],
-                    DATA.activeProjectId || '',
-                    'Project for THIS session — it is told about it before you type, and is filed under it. It starts at No project every time: the status bar\'s active project is the window\'s answer, not this session\'s, and neither writes the other.')}
+                    standard: window.AFTip.lines([
+                        'The project THIS session belongs to — it is told about it before you type, and '
+                        + 'its work is filed under it.',
+                        'It starts at No project every time: the status bar\'s active project is the '
+                        + 'window\'s answer, not this session\'s, and neither writes the other.'
+                    ])
+                })}
                 <span class="grow"></span>
                 <span id="c-live"></span>
                 <button id="c-send">Start session</button>`;
@@ -4461,10 +4543,20 @@
             document.querySelectorAll('[data-back]').forEach(r =>
                 r.addEventListener('click', ev => {
                     if (ev.target && ev.target.dataset && ev.target.dataset.backforget) { return; }
+                    if (ev.target && ev.target.dataset && ev.target.dataset.endremove) { return; }
                     vscode.postMessage({
                         type: 'resume', sessionId: r.dataset.back,
                         model: st.model, effort: st.effort, permissionMode: st.permissionMode
                     });
+                }));
+            // S-55 — the card's own ✕: end and remove, in one gesture. The
+            // press must not also SELECT the card it is standing on, which
+            // is what the row's own click handler would do underneath it.
+            document.querySelectorAll('[data-endremove]').forEach(b =>
+                b.addEventListener('click', ev => {
+                    ev.stopPropagation();
+                    if (ev.preventDefault) { ev.preventDefault(); }
+                    vscode.postMessage({ type: 'forget', id: b.dataset.endremove });
                 }));
             document.querySelectorAll('[data-backforget]').forEach(b =>
                 b.addEventListener('click', ev => {

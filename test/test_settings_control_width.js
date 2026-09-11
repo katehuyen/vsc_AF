@@ -155,26 +155,58 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     // the same user decision as B-03.21 on the Console. The chip read
     // `developer [gpt-5.6-terra] [high]` and nothing on the screen said `high`
     // was an effort; the axis appeared only on the rows nobody had chosen.
-    const chipExpr = "(function(){var out=[];document.querySelectorAll('.aglist .agchip').forEach(function(c){"
-        + "var vals=[];c.querySelectorAll('select').forEach(function(s){"
-        + "vals.push((s.options[s.selectedIndex]||{}).text||'');});"
-        + "if(vals.length){out.push(vals);}});return out;})()";
+    //
+    // ‼️ BUT IT SAYS IT AS THE HEADING OF ITS LIST, NOT AS A PREFIX ON EVERY
+    // VALUE IN IT. Round 1 of this gate REQUIRED the prefix (`model: sonnet`),
+    // which is round 1 of the Console's repair — measured there to be the worse
+    // of the two halves, because the prefix is the part that never changes and
+    // therefore the part that survives the clipping, while the VALUE is what
+    // gets cut. So the gate asks the two questions separately now:
+    //   (a) every chip box carries an `<optgroup>` whose label is its axis, and
+    //   (b) NO option text carries the axis as a prefix any more.
+    // (b) is what stops the prefix coming back on the next pass.
+    const chipExpr = "(function(){var out=[];document.querySelectorAll('.aglist .agchip select').forEach(function(s){"
+        + "var g=s.querySelector('optgroup');"
+        + "out.push({axis:g?(g.label||''):'',"
+        + "sel:(s.options[s.selectedIndex]||{}).text||'',"
+        + "opts:Array.prototype.map.call(s.options,function(o){return o.text;})});"
+        + "});return out;})()";
     let chips = [];
     try {
         const r3 = node([path.join('test', 'measure_page.js'), 'engines', chipExpr]);
         chips = JSON.parse(r3.slice(r3.indexOf('[')));
     } catch { chips = []; }
-    const nameless = [];
-    let chipBoxes = 0;
-    for (const vals of chips) {
-        for (const v of vals) {
-            chipBoxes++;
-            if (!/^(model|effort)\s*[:→]/.test(v)) { nameless.push(JSON.stringify(v)); }
+    const nameless = chips.filter(b => !/^(model|effort)$/.test(b.axis))
+        .map(b => JSON.stringify(b.sel));
+    ok(`‼️ EVERY AGENT-CHIP BOX NAMES ITS AXIS, AS ITS LIST'S HEADING (${chips.length} boxes)`
+        + (nameless.length ? ' — ' + nameless.slice(0, 4).join(', ') : ''),
+        chips.length > 0 && nameless.length === 0);
+
+    // …and the value is the whole of what an option says: no `model: ` in front
+    // of it, because that prefix is what the box is too narrow to show past.
+    const prefixed = [];
+    for (const b of chips) {
+        for (const t of (b.opts || [])) {
+            if (/^(model|effort)s*[:→]/.test(t)) { prefixed.push(JSON.stringify(t)); }
         }
     }
-    ok(`‼️ EVERY AGENT-CHIP BOX NAMES ITS AXIS (${chipBoxes} boxes)`
-        + (nameless.length ? ' — ' + nameless.slice(0, 4).join(', ') : ''),
-        chipBoxes > 0 && nameless.length === 0);
+    ok('‼️ …and NO option repeats the axis in its own text'
+        + (prefixed.length ? ` (${prefixed.length}) — ` + prefixed.slice(0, 4).join(', ') : ''),
+        chips.length > 0 && prefixed.length === 0);
+
+    // ‼️ AND THE **Default** ROW NAMES WHAT CLEARING THE BOX WOULD REALLY GIVE.
+    // `per.resolved` includes the agent's OWN value, so before `resolvedZero`
+    // existed an agent set to `sonnet` drew `Default → sonnet` on the very row
+    // that removes `sonnet`. Measured here on the one chip that has a chosen
+    // model: its zero row must not be naming that same model back.
+    const liars = chips.filter(b => {
+        const z = (b.opts || [])[0] || '';
+        const arrow = /^Defaults*→s*(.+)$/.exec(z);
+        return !!arrow && b.sel !== z && arrow[1].trim() === b.sel.trim();
+    }).map(b => JSON.stringify([b.sel, (b.opts || [])[0]]));
+    ok('‼️ the Default row never names the value the box is already set to'
+        + (liars.length ? ' — ' + liars.slice(0, 4).join(', ') : ''),
+        chips.length > 0 && liars.length === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed`);

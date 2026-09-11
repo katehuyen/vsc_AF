@@ -690,7 +690,90 @@
         }
     }
 
+    /**
+     * ‼️ MIRROR IS A LIVE RULE, AND EVERY PANEL BUILT WITH `wrap` WAS FROZEN.
+     *
+     * A panel is written into the markup once, when the page draws itself. The
+     * rule it exists to serve — "a control too narrow for its own text puts its
+     * CURRENT value on the first line of its hover" — is about a value that
+     * CHANGES. So the moment somebody used the control, the hover was answering
+     * about the value it no longer held: the box read `xhigh` and the panel
+     * underneath it still said `high`, which is worse than saying nothing.
+     *
+     * `set` rewrites the two halves of an already-drawn panel in place. It is
+     * `textContent`, not markup, for the same reason `panel()` escapes: nothing
+     * a caller passes can become an element.
+     */
+    /** The one direct child of `el` carrying `cls`. Walked rather than selected
+     *  on purpose: a wrapper may contain another wrapper (a trigger with its own
+     *  hover inside it), and `querySelector` would reach into it and rewrite the
+     *  wrong panel. */
+    function kid(el, cls) {
+        const ch = (el && el.children) || [];
+        for (let i = 0; i < ch.length; i++) {
+            if (ch[i].classList && ch[i].classList.contains(cls)) { return ch[i]; }
+        }
+        return null;
+    }
+
+    function set(w, head, body) {
+        const p = kid(w, 'af-tip');
+        if (!p) { return; }
+        const h = kid(p, 'af-tiph');
+        const b = kid(p, 'af-tipb');
+        if (h) { h.textContent = String(head === undefined || head === null ? '' : head); }
+        if (b) { b.textContent = String(body === undefined || body === null ? '' : body); }
+    }
+
+    /**
+     * ‼️ AN AXIS BOX KEEPS ITS OWN PANEL IN STEP — AND THE COMPONENT DOES IT.
+     *
+     * A `<select>` narrow enough to cut its own value is exactly the control
+     * MIRROR is about, so its panel opens with what the box currently holds.
+     * Written per page, that promise held only until somebody used the box:
+     * the markup is built once and the value changes afterwards. It is not a
+     * Console problem either — every page with a picker in a tight row has it.
+     *
+     * So a wrapper opts in by carrying its axis, and everything the rebuild
+     * needs is already in the markup:
+     *
+     *   data-axis-name="permissions"   what the panel calls this axis
+     *   data-axis-std="…"              the standing explanation, written once
+     *   <option data-why="…">          the chosen row's own line
+     *
+     * The two marks are not decoration: `:` is a choice somebody made, `→` is
+     * what the engine resolves to when nothing is named. An empty value is the
+     * second case, which is the only place the arrow appears.
+     */
+    function syncAxis(sel) {
+        if (!sel || typeof sel.closest !== 'function') { return; }
+        const w = sel.closest('.af-tipw');
+        const name = w && w.getAttribute ? w.getAttribute('data-axis-name') : null;
+        // No axis on the wrapper means this box never opted in — a page is free
+        // to wrap a select in a panel that says something else entirely.
+        if (!name) { return; }
+        const std = String(w.getAttribute('data-axis-std') || '').trim();
+        const opt = sel.options ? sel.options[sel.selectedIndex] : null;
+        const label = opt ? String(opt.text || '').trim() : '';
+        const why = opt && opt.getAttribute ? String(opt.getAttribute('data-why') || '').trim() : '';
+        set(w, name + (label ? (String(sel.value || '') !== '' ? ': ' : ' → ') + label : ''),
+            lines(why && why !== std ? [why, GAP, std] : [std]));
+    }
+
+    if (doc && typeof doc.addEventListener === 'function') {
+        // Delegated and bound once, in the capture phase: these pages rebuild a
+        // whole row from `innerHTML`, so a listener per box would have to be
+        // rebound on every repaint and the next box somebody adds would be the
+        // one that was forgotten. Capture also means the panel is already right
+        // if the page's own handler repaints on the same event.
+        doc.addEventListener('change', function (e) {
+            const t = e && e.target;
+            if (t && t.tagName === 'SELECT') { syncAxis(t); }
+        }, true);
+    }
+
     window.AFTip = {
-        wrap: wrap, cell: cell, label: label, lines: lines, sizeNote: sizeNote, esc: esc, GAP: GAP
+        wrap: wrap, cell: cell, label: label, lines: lines, sizeNote: sizeNote,
+        esc: esc, set: set, syncAxis: syncAxis, GAP: GAP
     };
 })();

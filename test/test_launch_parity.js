@@ -595,14 +595,13 @@ const launchTs = read('src', 'core', 'launch.ts');
     // be two controls for one subject. `modelsFor` still answers for a RUNNING
     // card, whose route was settled when it started. The guarantee below is
     // unchanged — whatever list is drawn, it is wrapped in `withCurrent`.
-    // ‼️ B-03.21 — `opts` became `axisBox` for these two (the box carries its
-    // own axis now and opens a panel instead of a native title), and `axisBox`
-    // builds its options with `axisOpts`. The guarantee is untouched and is
-    // what is read here: whatever list is drawn, it is wrapped in `withCurrent`.
+    // ‼️ B-03.21 (round 2) — `opts` became `axisBox`, which takes its list by
+    // name. The guarantee is untouched and is what is read here: whatever list
+    // is drawn, it is wrapped in `withCurrent`.
     ok('the select carries the current value even when the catalog does not',
         /function withCurrent\(list, current\) \{/.test(consoleJs)
-        && /axisBox\('model', 'c-model', withCurrent\(composerModels\(engineNow\(\)\), st\.model\), st\.model,/.test(consoleJs)
-        && /axisBox\('effort', 'c-effort', withCurrent\(effortsForModel\(engineNow\(\), st\.model\), st\.effort\), st\.effort,/.test(consoleJs));
+        && /axis: 'Model', id: 'c-model', cur: st\.model,\s*\n\s*list: withCurrent\(composerModels\(engineNow\(\)\), st\.model\),/.test(consoleJs)
+        && /axis: 'Effort', id: 'c-effort', cur: st\.effort,\s*\n\s*list: withCurrent\(effortsForModel\(engineNow\(\), st\.model\), st\.effort\),/.test(consoleJs));
     // ‼️ AN ENGINE CHANGE IS STILL A RESET, AND THAT IS WHAT THIS FUNCTION IS
     // FOR. The claim used to be that the keep was per-engine "by construction",
     // and it was not: `applyComposerSeed` handed it values it had itself just

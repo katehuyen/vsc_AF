@@ -228,8 +228,20 @@ export function resolveDefault(
     };
 }
 
-/** The short form for a `<option>` label: `Default (sonnet)` rather than the
- *  bare word that started all this. */
+/**
+ * The short form for an `<option>` label — and the ONE place it is formed, so
+ * the word on the page and the word a test asserts cannot part company.
+ *
+ * ‼️ THE EXPLANATION IS NOT IN THE LABEL. It used to read
+ * `Default (the CLI decides)`, which put a sentence inside a ~100px box whose
+ * job is to hold a VALUE; the sentence belongs in the hover, where `note`
+ * already carries it in full and names the engine besides. What is left is the
+ * word and, when there is one, the value the row really resolves to.
+ *
+ * ‼️ AND IT IS PASSED THE ZERO RESOLUTION, never the box's own. "Default" means
+ * "clear my choice", so the value beside it is what would apply AFTER the
+ * clearing — see `resolvedZero` in panels/settingsPanel.ts.
+ */
 export function defaultLabel(r: Resolution): string {
-    return r.value ? `Default → ${r.value}` : 'Default (the CLI decides)';
+    return r.value ? `Default → ${r.value}` : 'Default';
 }

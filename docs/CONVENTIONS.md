@@ -41,7 +41,7 @@ fits in a clause and so the user never has to ask for them again.
 | **AFTip** | *the panel* | Our own scrollable hover panel (`media/afTip.js`). Anything that is TEXT, or could grow into text, is an AFTip — never a native `title`. "Put an AFTip on it." |
 | **DENSITY** | *maximum information, minimum space, minimum clicks* | A fact the reader can see must not cost them a click. Ask of every element: "can they have this on hover?" The sessions table is the worked example. |
 | **SHORTHAND** | *short on the surface, whole in the panel* | In a narrow place — a badge, a cell, a chip — write the shortest unambiguous form and let the AFTip carry the meaning, opening with the long form as its first line. `R3` on the row, `Round 3 — …` in the panel. Never an abbreviation the reader has to learn. |
-| **MIRROR** | *a control says what is IN it before it says what it is for* | A `<select>` narrow enough to cut its own text puts its CURRENT value on the first line of its tooltip, then a blank line, then the standard description. Reading a box must never cost a click that could change it. |
+| **MIRROR** | *a control says what is IN it before it says what it is for* | A `<select>` narrow enough to cut its own text puts its CURRENT value on the first line of its tooltip, then a blank line, then the standard description. Reading a box must never cost a click that could change it — **and the panel follows the box**, or it is a mirror of a value that has been replaced. |
 | **ONE SUBJECT** | *one fact, one panel* | An object carrying several hovers gives each one its own subject; no fact appears in two of them. A run's identity belongs to its title cell, the ceiling holding it to its status cell. |
 
 They are not five separate ideas: **DENSITY** is the principle, **AFTip** is the
@@ -125,6 +125,37 @@ rule read as applied and every panel ran its value straight into its paragraph.
 a page writes one. `test/test_aftip_gap.js` holds both halves apart and refuses
 a bare `''` written on its own line anywhere in `media/` — it is either a gap
 (use the marker) or an argument (put it on its neighbour's line).
+
+**‼️ A PICKER NAMES ITS AXIS IN THE LIST, NOT IN FRONT OF ITS VALUE (B-03.21).**
+A row of pickers has to answer "which box is this?", and there are three ways to
+do it. Two of them are the same mistake: a `<label>` beside the box and the axis
+written into every option both pay for the answer **out of the value's width**,
+and on a ~100px box that means the part which never changes is the part that
+survives the clipping — measured, the Console's row drew `model → Defa`,
+`effort → Def`, `perm → De`, and `xhigh` stopped showing even its first letter.
+
+The third costs nothing: **an `<optgroup label="…">` heading**. The browser
+draws it at the top of the OPEN list and refuses to let anybody select it, so
+the axis is named exactly where somebody is choosing — once — and the collapsed
+box is left entirely to the value. While the list is shut, the axis is answered
+by the hover, which is MIRROR's job anyway.
+
+So a picker in a tight row is built like this, and every picker on the same row
+is built the same way — a row that answers one question three ways is three
+unfinished designs:
+
+- the wrapper carries `data-axis-name` (what the PANEL calls the axis, spelled
+  out where there is room: `Perm` in the list, `Permissions` in the panel) and
+  `data-axis-std` (the standing explanation, written once);
+- each `<option>` carries `data-why`, its own line;
+- `AFTip.syncAxis` rebuilds the panel on `change` — bound once, by the
+  component, so no page has to remember to call it;
+- `:` is a choice somebody made, `→` is what the engine resolves to when
+  nothing is named here. Two facts, two marks.
+
+`test/test_console_axis_labels.js` measures the shape on the laid-out page and
+`test/test_axis_mirror.js` drives the component itself: change the box, the
+panel's heading has to change with it.
 
 **‼️ The one place a `title` is not a compromise: an `<option>` (U-128, U-130).**
 A `<select>` cuts its own text and the popup it opens is drawn by the operating

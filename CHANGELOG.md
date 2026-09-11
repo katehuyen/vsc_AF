@@ -2,6 +2,144 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.456.0 - the axis was eating the value, the mirror was showing yesterday, and "Default" was naming what you already had (audit B-03.21 round 2 · S-57) (2026-09-11)
+
+Round 1 of this item asked "which of these boxes is which?" and answered it out
+of the value's own width. Round 2 is the user's answer, and it costs the value
+nothing.
+
+- **A ~100px picker with its axis written in front of its value shows the half
+  that never changes.** Measured on `dist/render/console.s9.png`: the row that
+  starts a session drew `model → Defa`, `effort → Def`, `perm → De`, and
+  `xhigh` no longer showed even its first letter - which it had before the
+  repair. A `<label>` beside the box is the same theft of width by another
+  route, which is why round 1 refused it and why this does too.
+  The third way costs nothing: an **`<optgroup>` heading**. The browser draws
+  it at the top of the OPEN list and refuses to let anybody select it, so the
+  axis is named exactly where somebody is choosing - once - and the collapsed
+  box is left entirely to the value.
+
+- **‼️ AND THE HOVER WAS A MIRROR OF A VALUE THAT HAD BEEN REPLACED.** MIRROR
+  asks a narrow control to put its CURRENT value on the first line of its
+  panel, and every panel in the product is written into the markup once, when
+  the page draws itself. So the rule held exactly until somebody used the
+  control: the box read `xhigh` and the panel under it still said
+  `Effort → Default`. That is worse than no panel - a reader who has learned
+  to trust the hover is being told the wrong thing with confidence. The live
+  half is in the COMPONENT (`AFTip.syncAxis`), bound once, rebuilding from
+  data the markup already carries (`data-axis-name` · `data-axis-std` ·
+  `data-why` per option) - so it is right on the same event, with no round
+  trip, and no page has to remember to call it.
+
+- **‼️ AND ONE ROW WAS ANSWERING ONE QUESTION THREE WAYS.** Four boxes had an
+  AFTip panel, five had a native `title`, and three of those had a `<span>`
+  label beside them - on the same row, at the same height. Every box on both
+  control rows is one shape now: no label, an optgroup heading, and a panel
+  that says the axis, its value, the chosen row's own line and then the
+  standing sentence once. The two `fixed` chips beside them were the last
+  native tooltips on the row and went the same way. The standing sentences
+  were cut back to that one scale while they were being moved: an account
+  paragraph that re-explained a row the list already explains, and a route tip
+  joined into one wall by ` · `, are four facts on four lines now.
+
+- **The promise about the next turn moved from the label to the box.** With no
+  label left to carry it, a pending account swap is an arrow beside the box and
+  the value itself in warning yellow - still readable across the row without
+  hovering, which is the whole of X-213's claim.
+
+- Also: the console's clipped-value count fell from **49 boxes to 16**
+  (audit B-04.6's console half), and the sixteen are 4-20px short rather than
+  values destroyed. Three ceilings were raised into slack that was already
+  there (`c-agent`, `c-account`, `c-account-live`).
+
+New gate `test/test_axis_mirror.js` drives the component itself: change the box,
+the heading has to change with it, the separator has to change with it
+(`:` is a choice, `→` is what the engine resolves to), and a nested panel must
+not be mistaken for the box's own. `test/test_console_axis_labels.js` was
+rewritten to the shape it now measures - no box may spend its own width saying
+what it is, none may wear a label, all of them must be axis boxes, and every
+option must carry the line the panel will need. Both were mutation-checked.
+
+Nine test assertions pinned the old shape (the option prefix, `.rtlbl`,
+`.permlbl pend`, the native titles, the width rules on the selects). Reversed,
+not deleted - the claims are unchanged, only the shape they are read in. One
+`console.log` debug line left behind in `test_console_page.js` was removed.
+
+### …and the same repair on Farm Settings, plus the chain the boxes describe
+
+The console half above was round 2 of the axis item. The Farm Settings page was
+still on round 1, so one question was answered two ways in one product — and
+underneath it the per-agent defaults those boxes write turned out not to reach
+the sessions the Console starts.
+
+- **`model: sonnet` / `effort: high` in front of every option, gone.** The same
+  `<optgroup>` heading the Console moved to, for the same measured reason: the
+  prefix is the part that never changes, so it is the part that survives the
+  clipping. The gate that used to REQUIRE the prefix now measures the two facts
+  separately — every chip box carries an optgroup whose label is its axis, and
+  no option repeats the axis in its own text.
+
+- **‼️ AND THE `Default` ROW WAS NAMING THE VALUE YOU ALREADY HAD.** It read
+  `Default → sonnet` on an agent whose model IS `sonnet` — the name of the one
+  thing you cannot get by picking that row, because picking it clears the
+  agent's own answer and falls through to the fleet. The resolution behind it
+  walked every layer including the box's own. `resolvedZero` is the same
+  resolver with this agent's layers left out, and the row now reads
+  `Default → haiku`: what would really apply after the clearing. The sentence
+  that used to sit inside the label — `(the CLI decides)` — is in the hover,
+  where the rest of that explanation already was.
+
+- **‼️ AND THE PER-AGENT DEFAULT NEVER REACHED A SESSION STARTED FROM THE
+  CONSOLE.** Farm Settings draws a model box and an effort box on every agent
+  chip and writes `agentFarm.agentEngineDefaults`. Every launch door resolves
+  through that layer — the ▶ on an agent row, `sessions.start` on the bridge, a
+  terminal start — except one: the Console composer read `launchDefaults()` and
+  nothing else, so an empty box jumped straight over the per-agent answer to the
+  fleet-wide one. An agent set to `xhigh` in Settings started at the fleet's
+  effort and nothing said so: a control that stores what it is told and changes
+  nothing, which is the exact shape this store was created to end. The order is
+  now the box → this agent on this engine → the fleet, in the composer and in
+  both of the panel's other start paths, through the SAME function the other
+  doors call rather than a second reader. New gate
+  `test/test_console_agent_default.js` measures the value that reaches
+  `host.start`, not the source of the panel.
+
+- **The `show` picker gives ground when the composer row is crowded.** It
+  reserves the widest text it can ever print — right, so the row does not rock
+  as the choice changes — and was therefore the widest control on a nine-box
+  `nowrap` strip and the only one that could not help. Measured at 1030px it
+  held 142px while the boxes that hold a VALUE were squeezed to single digits.
+  Unchanged where there is room; down to half, never below, where there is not.
+  The floor is computed from `--afms-w`, the width the component itself
+  reserved, rather than a number typed into the page that would go stale.
+
+- **‼️ S-57 — THE STRIP AFTER A RESTART SAID `$20.94 · 1step` AND NOTHING
+  ELSE.** No duration, no tokens, no round trips, no model or effort. The
+  information was not lost and not hidden: **it was never collected, because the
+  turn was never opened.** Three functions open a turn and all three are the
+  WINDOW speaking; a revived conversation has a fourth case none of them cover —
+  the CLI answers on its own, because it was given the prompt before this window
+  existed. That branch set `status` to `working` and nothing else, so the turn
+  ran with no clock, no token baseline, no round-trip counter and no
+  model/effort pair, and the `result` line closed it with `undefined` for every
+  one of them. Reproduced through the reducer alone, on the exact shape
+  reported, then repaired: a turn nobody in this window started is opened where
+  it is first seen — before the line's own blocks are read, so the call that
+  started the turn is charged to it.
+
+- Also: `test/lib_afms_dom.js` insisted a picker's tag ENDED at
+  `data-afms-wrap`, so the day the component gained a second attribute eleven
+  page tests stopped finding any picker at all. One parser breaking, reported as
+  eleven pages breaking.
+
+`test/fixtures/engines.js` now DERIVES its resolutions from `resolveDefault`
+instead of stating them by hand — the same rule B-05.6 applied to the
+Superpowers and Sentry scenes. Typed out, they had already drifted into a
+contradiction no string test could see: one agent claimed `launchDefaults` gave
+it `haiku`, and the same agent on another engine claimed nothing was set
+fleet-wide at all. One `launchDefaults` cannot be both, so the photograph was
+showing a state the product cannot produce.
+
 ## 3.455.0 - the search grammar under "Mute the farm", and a bridge that said "answering" while it refused (audit B-05) (2026-09-10)
 
 The Farm Settings surface was opened for the audit ledger: seven fixtures,
