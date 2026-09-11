@@ -106,6 +106,45 @@ export function storedDefault(
 }
 
 /**
+ * ‼️ WHAT A LAUNCH BOX OPENS ON — this agent's own answer for this engine, as a
+ * VALUE rather than as a sentence.
+ *
+ * `resolveDefault` below answers the Farm Settings page's question ("what
+ * applies here, and who decided it") and carries the prose to say so. A launch
+ * door asks the same question and needs only the value, one layer at a time —
+ * the fleet-wide `launchDefaults` is deliberately NOT in it, because that is the
+ * layer underneath and every door already applies it (`withDefaults`).
+ *
+ * ‼️ AND CLAUDE'S OWN FILE IS IN IT, which is the whole of this function.
+ * `withAgentEngineDefaults` returns an empty model on Claude on purpose: its CLI
+ * reads `<agent>/.claude/settings.local.json` itself, so passing the same value
+ * again at SPAWN would be a second source of truth (X-145). But a BOX is not a
+ * spawn. An agent the user had set to `opus` in Farm Settings opened every
+ * composer, every launcher and every readout reading `Default` — the one word
+ * that is false about it, while the effort beside it read `xhigh` because the
+ * effort has no file to hide in. One question was being answered two ways in
+ * one row.
+ */
+export function agentSeedDefault(
+    engine: EngineId,
+    layers: {
+        /** what `<agent>/.claude/settings.local.json` says (Claude only) */
+        agentFile?: string;
+        /** `agentFarm.agentEngineDefaults` for this agent+engine */
+        farm?: AgentEngineDefault;
+    }
+): { model: string; effort: string } {
+    const own = layers.farm ?? {};
+    const file = (layers.agentFile ?? '').trim();
+    return {
+        // The same order `resolveDefault` states: the file is Claude's alone,
+        // and reading it for another engine is the U-29 bug itself.
+        model: (engine === 'claude' ? file : '') || (own.model ?? '').trim(),
+        effort: (own.effort ?? '').trim()
+    };
+}
+
+/**
  * X-101 — the ROUTE one agent runs one engine on, read out of the same store.
  *
  * ‼️ SEPARATE FROM `storedDefault` DELIBERATELY. That one answers "what do I put

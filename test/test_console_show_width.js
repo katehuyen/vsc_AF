@@ -92,6 +92,31 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         ok(`‼️ …and never below half of what it reserved (${tight}px vs ${Math.round(wide / 2)}px)`,
             tight >= Math.floor(wide / 2));
     }
+
+    /**
+     * ‼️ AND WITH NOBODY'S HAND ON IT, IT IS SHUT — MEASURED, because this is
+     * precisely the claim no string test can make.
+     *
+     * The repair above put `display:flex` on `.crow .afms > *` so the hover
+     * wrapper would be the flex child. The picker's own MENU is one of those
+     * children, and `display` on a class selector outranks the browser's
+     * `[hidden] { display: none }` — so every one of these menus stood
+     * permanently open above the composer, laid out as a ROW (flex with no
+     * direction), which is why all a reader saw was the tools line and a
+     * horizontal scrollbar. The markup was right the whole time: `hidden` was
+     * on the element. Only the laid-out DOM could say it was being ignored.
+     */
+    const shut = "(function(){var ms=[].slice.call(document.querySelectorAll('[data-afms-menu]'));"
+        + "return ms.filter(function(m){return m.hasAttribute('hidden');})"
+        + ".map(function(m){var r=m.getBoundingClientRect();"
+        + "return {d:getComputedStyle(m).display,h:Math.round(r.height)};});})()";
+    let menus = [];
+    try { const r = node([path.join('test', 'measure_page.js'), 'console', shut]);
+        menus = JSON.parse(r.slice(r.indexOf('['))); } catch { menus = []; }
+    ok(`the page draws filter menus at all (${menus.length} shut)`, menus.length > 0);
+    ok('‼️ a menu nobody pressed takes NO space and is not drawn'
+        + ` (${JSON.stringify([...new Set(menus.map(m => m.d))])})`,
+        menus.length > 0 && menus.every(m => m.d === 'none' && m.h === 0));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

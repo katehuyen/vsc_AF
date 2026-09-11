@@ -14,7 +14,22 @@
  */
 const dash = require('./dashboard.js');
 
-const NOW = Date.parse('2026-08-12T14:35:00Z');
+/**
+ * ‼️ THIS PAGE'S SUBJECT IS "THE LAST N DAYS", SO ITS CLOCK CANNOT BE FROZEN.
+ *
+ * It was pinned to a date, and the page computes its 7 / 30 / 90 / 365 ranges
+ * from the REAL clock — so the fixture aged out of its own picture. Measured
+ * exactly thirty days after that date: the 7d and 30d cards both drew ZERO next
+ * to a card saying 61 all-time, which is the very form the spans were added to
+ * stop the screenshot documenting, and `test_agent_range.js` went red for the
+ * calendar rather than for the code.
+ *
+ * A frozen clock is right for a fixture whose subject is a fixed moment (a
+ * refresh time, a due date). Where the subject is a WINDOW ending now, `now` is
+ * the only anchor that stays true — which is what `console`, `dashboard`,
+ * `missions`, `tasks`, `timeline` and `turns` all already do.
+ */
+const NOW = Date.now();
 const DAY = 86400000;
 
 // The same scope sentence `claudeOnlyScopeNote` builds, verbatim — the page is

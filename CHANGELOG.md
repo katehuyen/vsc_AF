@@ -2,6 +2,88 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.457.0 - every box on the Console was describing a session that was not running (S-58 · the launch layer that never reached a control) (2026-09-11)
+
+One complaint, five defects, all of the same family: **a control that draws a
+value it did not resolve.** The user set `developer` to `opus` at `xhigh` for
+Claude in Farm Settings, opened a session, and read `Model: Default` beside
+`Effort: xhigh` - two answers to one question, one row apart, both of them from
+the same row of the same settings page.
+
+- **THE AGENT'S OWN SETTING WAS A LAYER THAT NEVER REACHED A BOX.** The order
+  is written in `core/launch.ts` and every door resolves it AT THE SPAWN: this
+  launch -> what the agent last ran as -> what the agent is SET to for this
+  engine -> the fleet. The third layer existed only at the spawn. Every door
+  seeded its boxes from the memory and fell straight through to the fleet, so a
+  model or an effort chosen in Farm Settings was applied to the session and
+  invisible in the control that offers to change it. It is a LAYER inside
+  `seedLastLaunch` now, so all ten doors inherit it by calling the function they
+  already call, and it is resolved per FIELD - a memory holding an effort and no
+  model must not silence the layer holding the model, which is exactly the shape
+  that produced the report.
+  Two readers, deliberately: the SPAWN's still returns an empty model on Claude
+  (its CLI reads the agent's own `settings.local.json`, so a flag would be a
+  second source of truth), and the BOX's folds that file back in - because
+  `Default` is the one word that is false about an agent set to `opus`.
+
+- **‼️ AND A `<select>` DRAWS AN UNKNOWN VALUE AS ITS FIRST OPTION, WHICH ON
+  EVERY LAUNCH BOX IS `Default`.** The bridge reported `model: claude-opus-5`
+  for the running session while the box beside it read `Default`: the Claude
+  catalogue publishes four aliases and the CLI reports the resolved id, so the
+  value matched no row and the browser fell back to the first. Not a missing
+  value - a value silently redrawn as its own opposite, on the one control whose
+  whole job is to say what the conversation is running on. The composer has had
+  the rule since S-34 (`withCurrent`); the running row never called it.
+  The permission box is the same defect with a reason in front of it: a live
+  session's list drops `bypassPermissions` because you may not raise a running
+  conversation into it - true about CHOOSING, and it was deciding what the box
+  could SAY, so a session really running on bypass drew `default`.
+
+- **‼️ AND THE ROW WAS NEVER DRAWN AGAIN ANYWAY.** The shell key was
+  `selected | ended | pinned | account`, and those three boxes are markup: a
+  `<select>` only moves when the markup does. A card is selected the instant its
+  process starts, before the CLI has resolved anything, so the model it was
+  built with was the model it showed for the rest of the session. Widening the
+  option list could not have helped on its own.
+
+- **‼️ AND ELEVEN FILTER MENUS STOOD PERMANENTLY OPEN OVER THE COMPOSER.**
+  `hidden` is an attribute the browser enforces from its own stylesheet, which
+  any class selector outranks - so `.crow .afms > *`, written so the hover
+  wrapper would be the flex child, un-hid the picker's own menu. Laid out as a
+  ROW, because flex with no direction is a row, which is why all that showed was
+  the tools line and a horizontal scrollbar over the message box. The component
+  shuts itself now rather than asking nine pages to remember, and the page rule
+  names the trigger instead of every child.
+
+- **S-58 - THE CARD'S ✕ WAS OUTSIDE THE CARD, AND ITS WRAPPER COST EVERY CARD A
+  ROW.** `cardTip` wraps the button in an AFTip span and `cls` lands on THAT
+  span; the positioning was left on the button. Measured: `right:4px` against a
+  0px-wide wrapper put the ✕ at x=29 where the card starts at x=36 - seven
+  pixels outside its own left edge, behind the border, unreachable however long
+  you hovered. And the wrapper, still an in-flow `inline-block`, contributed a
+  line box: every session card carried an empty row above its own name
+  (identity row at 25px, now 8px, which is the card's own padding).
+
+Every one of these had correct markup and passed every string test in the
+suite. Four of the five are geometry or computed style, so the guards are
+measurements on the laid-out DOM (`test_console_identity_width.js`,
+`test_console_show_width.js`), and the fifth is a payload
+(`test_console_agent_default.js` section 5 - sections 1 to 4 measure the spawn
+and were green the entire time the box was wrong). The borrowed-back permission
+row had none and now does, mutation-proved: with `withCurrentFrom` taken out,
+the guard names it.
+
+**And two guards went red on this work with no defect behind either** - both the
+same shape, a test that pins the LINE it is about instead of the CLAIM it is
+making. `test_console.js` held the entire shell-key expression as a literal, so
+the shape that finally redraws the running row read as a broken pin; it names
+the key line and asks for the pin now, which is what it was ever about.
+`test_shot_height.js` TYPED the Console fixture's scene count, so adding two
+scenes failed an assertion about CROPPING; it counts the fixture. And while that
+file was open: its probe reused whatever `dist/render/` already held - measuring
+the past and reporting it as the present, in the one file whose whole subject is
+that failure in the shooting tool. It renders every time now.
+
 ## 3.456.0 - the axis was eating the value, the mirror was showing yesterday, and "Default" was naming what you already had (audit B-03.21 round 2 · S-57) (2026-09-11)
 
 Round 1 of this item asked "which of these boxes is which?" and answered it out

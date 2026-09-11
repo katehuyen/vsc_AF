@@ -416,7 +416,34 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('the extension reads the record through one function',
         /const lastLaunchOf = \(agentId: string\): LastLaunch \| undefined => lastLaunch\(\)\[agentId\];/.test(extTs));
     ok('…and layers it through one more',
-        /const seedLastLaunch = \(agentId: string, o: LaunchOptions = \{\}\): LaunchOptions =>\s*\n\s*withLastLaunch\(o, lastLaunchOf\(agentId\)\);/.test(extTs));
+        /const seedLastLaunch = \(agentId: string, o: LaunchOptions = \{\}\): LaunchOptions => \{\s*\n\s*const seeded = withLastLaunch\(o, lastLaunchOf\(agentId\)\);/.test(extTs));
+    /**
+     * ‼️ AND THE LAYER UNDER THE MEMORY IS IN THE SAME FUNCTION, WHICH IS THE
+     * ONLY WAY IT REACHES EVERY DOOR.
+     *
+     * The documented order has always been "what this launch states → what this
+     * agent was last started with → the agent's engine defaults → the fleet's
+     * launchDefaults", and the third layer existed only at SPAWN: every door
+     * seeded from the memory and fell straight through to the fleet, so a model
+     * or an effort set for that agent in Farm Settings was applied to the
+     * session and invisible in the box that offers to change it. Measured on
+     * `developer`: `Model: Default` beside `Effort: xhigh` for an agent whose
+     * Claude model is `opus` and whose effort is `xhigh` — set in the same row
+     * of the same page, one of them shown and the other not.
+     *
+     * Three facts, because each is a way the repair can be undone: the memory
+     * goes on FIRST, the agent's own answer fills what it left empty, and the
+     * fleet is NOT applied here (`withDefaults` is the layer below and applying
+     * it twice would make "Default" unreachable).
+     */
+    ok('…and under the memory, what the agent is SET to',
+        /const own = agentSeedFor\(agent\.dir, engine\);/.test(extTs)
+        && /model: \(seeded\.model \?\? ''\)\.trim\(\) \|\| own\.model,\s*\n\s*effort: \(seeded\.effort \?\? ''\)\.trim\(\) \|\| own\.effort/.test(extTs));
+    ok('…read for the engine this seed is FOR, never for whichever one is fleet-wide',
+        /const engine = \(\(seeded\.engine \?\? launchDefaults\(\)\.engine \?\? ''\) \|\| 'claude'\) as EngineId;/.test(extTs));
+    ok('…and Claude\'s own settings file is in that layer, which is the whole of it',
+        /export function agentSeedDefault\(/.test(read('src', 'core', 'agentDefaults.ts'))
+        && /agentFile: engine === 'claude' \? agentClaudeModel\(dir\) : '',/.test(extTs));
     ok('…and writes it through exactly one recorder',
         (extTs.match(/context\.globalState\.update\(LAST_LAUNCH_KEY/g) || []).length === 1);
     ok('…whose shape is decided in core, not at the call site',
@@ -478,7 +505,24 @@ const launchTs = read('src', 'core', 'launch.ts');
         /const remembered = c\.deps\.lastLaunch\(opts\.agentId\);/.test(panelTs)
         && /\(opts\.engine \?\? remembered\?\.engine \?\? d\.engine \?\? ''\)/.test(panelTs));
     ok('…and a caller that handed over its own setup still wins',
-        /if \(!opts\.launch && last\) \{/.test(panelTs));
+        /if \(!opts\.launch && \(last \|\| own\.model \|\| own\.effort\)\) \{/.test(panelTs));
+    /**
+     * ‼️ …AND THE RECORD IS NOT THE ONLY LAYER THIS DOOR HAS.
+     *
+     * It seeded from the record alone, so an agent that had never been started —
+     * or one whose row is silent on a field — jumped straight over what the user
+     * had set for it in Farm Settings and landed on the fleet. The order is the
+     * one every door resolves at spawn, and it is resolved per FIELD: a record
+     * holding an effort and no model must not silence the layer that holds the
+     * model. Resolved host-side because only the host can read Claude's file,
+     * and because `applyComposerSeed` takes the handed-over setup whole (K-34).
+     */
+    ok('…and under the record, what Farm Settings says this agent runs that engine as',
+        /const own = agentDir\s*\n?\s*\? c\.deps\.agentSeedDefaults\?\.\(agentDir, c\.composerEngine\)/.test(panelTs)
+        && /model: pick\(last\?\.model, own\.model, d\.model\),\s*\n\s*effort: pick\(last\?\.effort, own\.effort, d\.effort\),/.test(panelTs));
+    ok('…through a reader that is the BOX\'s, not the command line\'s',
+        /agentSeedDefaults\?\(dir: string, engine: string\): \{ model: string; effort: string \};/.test(panelTs)
+        && /agentSeedDefaults: \(dir: string, engine: string\) =>\s*\n\s*agentSeedFor\(dir, engine as EngineId\),/.test(extTs));
     ok('‼️ and Send is a launch, so it is remembered like one',
         /this\.deps\.rememberLaunch\(agent\.id, started, 'console'\);/.test(panelTs));
     // ‼️ THE BOXES ARE NOT RE-LAYERED AT SEND. They were SEEDED from the record
@@ -584,8 +628,12 @@ const launchTs = read('src', 'core', 'launch.ts');
     // ‼️ S-49 — the agent picker reconciles nothing, because it writes nothing.
     // The ENGINE switch still does, and it is the one that has to: a model
     // belongs to one engine, so moving between them is the case this exists for.
+    // ‼️ …and the pair it keeps is the RESOLVED one: the record's row for that
+    // engine, else what Farm Settings says the agent runs that engine as. Both
+    // are per-ENGINE facts, so both are keepable; the fleet default names no
+    // engine and is left for `narrow` to judge, which is why it is not in here.
     ok('…and so is the engine switch\'s own record',
-        /reconcileComposer\(next, false,\s*\n\s*mem \? \{ model: st\.model, effort: st\.effort \} : null\)/.test(consoleJs));
+        /reconcileComposer\(next, false,\s*\n\s*\(st\.model \|\| st\.effort\) \? \{ model: st\.model, effort: st\.effort \} : null\)/.test(consoleJs));
     // ‼️ AND THE BOX HAS TO DRAW WHAT SURVIVED, or the select shows its first
     // row while the state says something else — a control that lies.
     // ‼️ X-105 — THE COMPOSER'S MODEL LIST IS `composerModels`, NOT `modelsFor`,
@@ -619,11 +667,29 @@ const launchTs = read('src', 'core', 'launch.ts');
      * with the other two, because it was the one carrying a value across.
      */
     ok('changing the engine recalls THAT engine\'s row',
-        /const mem = memoryOn\(rec, next\);\s*\n\s*st\.model = \(mem && mem\.model\) \|\| '';\s*\n\s*st\.effort = \(mem && mem\.effort\) \|\| '';\s*\n\s*st\.permissionMode = \(mem && mem\.permissionMode\) \|\| '';/.test(consoleJs));
+        /const mem = memoryOn\(row\.lastLaunch, next\);\s*\n\s*const own = \(row\.engineDefaults \|\| \{\}\)\[next\] \|\| \{\};\s*\n\s*st\.model = \(mem && mem\.model\) \|\| own\.model \|\| '';\s*\n\s*st\.effort = \(mem && mem\.effort\) \|\| own\.effort \|\| '';\s*\n\s*st\.permissionMode = \(mem && mem\.permissionMode\) \|\| '';/.test(consoleJs));
+    /**
+     * ‼️ …AND UNDER THAT ROW, WHAT THE AGENT IS SET TO ON THE ENGINE IT MOVED TO.
+     *
+     * "An engine with no row ends up empty" is true of the MEMORY and was wrong
+     * about the box: the agent still has whatever Farm Settings says it runs
+     * that engine as. Switch an agent set to `opus` on Claude away and back and
+     * the model box came up `Default` — the composer's own seeding defect, one
+     * control later. The layer rides on the agent ROW for the same reason the
+     * memory does: the picker changes the agent without the host hearing.
+     */
+    ok('…and the Settings layer rides on the same row the memory does',
+        /engineDefaults: this\.deps\.agentSeedDefaults/
+            .test(read('src', 'panels', 'consolePanel.ts')));
     ok('…through the page\'s mirror of the core rule, not a second guess',
         /function memoryOn\(last, engineId\) \{[\s\S]{0,400}last\.byEngine\[eng\][\s\S]{0,300}was === eng\) \{ return last; \}\s*\n\s*return null;/.test(consoleJs));
+    // ‼️ …AND AN ENGINE WITH NEITHER STILL ENDS UP EMPTY, which is what silence
+    // means. The `keep` is now asked of the RESOLVED pair rather than of the
+    // record, because a Farm Settings answer for that engine is as much a
+    // per-engine fact as a remembered one — while the fleet default, which names
+    // no engine, is deliberately not in it and is left for `narrow` to judge.
     ok('…and an engine with no row still ends up empty, which is what silence means',
-        /reconcileComposer\(next, false,\s*\n\s*mem \? \{ model: st\.model, effort: st\.effort \} : null\);/.test(consoleJs));
+        /reconcileComposer\(next, false,\s*\n\s*\(st\.model \|\| st\.effort\) \? \{ model: st\.model, effort: st\.effort \} : null\);/.test(consoleJs));
 }
 
 /* ---------- the setup line: what is about to start, on the row that starts it */

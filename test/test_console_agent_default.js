@@ -119,6 +119,15 @@ const deps = {
         model: (AGENT_ROW[dir] || {}).model || '',
         effort: (AGENT_ROW[dir] || {}).effort || ''
     }),
+    // ‼️ …AND THE SAME LAYER ASKED FOR THE BOX RATHER THAN FOR THE COMMAND LINE.
+    // In the extension this is `agentSeedFor`, which differs from the one above
+    // by folding Claude's own settings file back into the model. Here the two
+    // answer alike, because what section 5 measures is whether the door READS
+    // this layer at all — before the repair it read only the memory.
+    agentSeedDefaults: (dir, _engine) => ({
+        model: (AGENT_ROW[dir] || {}).model || '',
+        effort: (AGENT_ROW[dir] || {}).effort || ''
+    }),
     lastLaunch: () => undefined,
     rememberLaunch: () => { },
     liveOwners: () => [],
@@ -209,6 +218,83 @@ await send({
 ok('a host that answers nothing leaves the fleet default in place'
     + ' (got ' + JSON.stringify(started[0] && [started[0].model, started[0].effort]) + ')',
     !!started[0] && started[0].model === 'sonnet' && started[0].effort === 'low');
+
+// ------------------------------------------------- 5. and the BOX opens on it
+//
+// ‼️ THE HALF OF THIS ITEM THAT WAS SHIPPED WITHOUT BEING LOOKED AT.
+//
+// Sections 1–4 measure what reaches `host.start`, and they were green while the
+// user was looking at a composer that said something else. Farm Settings sets
+// this agent's model AND its effort; the composer opened reading `Default` for
+// the model and the chosen value for the effort — one question answered two ways
+// in one row, because the effort happened to be in the memory as well and the
+// model was not. The value was right and unsayable, which is the same defect as
+// a control with no referent.
+//
+// So this reads the payload the panel PUSHES: `composerLaunch` is the setup the
+// door resolved, and `applyComposerSeed` in media/console.js puts it in the
+// boxes. Nothing is started here — that is the point.
+// ‼️ READ OFF THE PAGE THE DOOR ACTUALLY WROTE. The first payload does not
+// arrive by `postMessage` — `mount()` puts it in the shell as `window.__DATA__`
+// and a push before that is refused (S-50), which is precisely the moment a
+// door-opened composer is drawn in. A measurement taken off `posted` would read
+// an empty list and call a working repair broken.
+const seedOf = (p) => {
+    const m = /window\.__DATA__ = ([\s\S]*?); window\.__AFUI__/.exec(p.webview.html || '');
+    if (!m) { return undefined; }
+    return JSON.parse(m[1].replace(/\\u003c/g, '<').replace(/\\u003e/g, '>')
+        .replace(/\\u0026/g, '&')).composerLaunch;
+};
+{
+    panels[panels.length - 1].onDispose();
+    ConsolePanel.show(deps, { agentId: 'a-dev', pinAgent: true });
+    await new Promise(r => setImmediate(r));
+    const seed = seedOf(panels[panels.length - 1]);
+    ok('the door hands the composer a setup at all (got ' + JSON.stringify(seed) + ')', !!seed);
+    ok('‼️ THE MODEL BOX OPENS ON WHAT FARM SETTINGS SAYS, NOT ON "Default"'
+        + ' (got ' + (seed && seed.model) + ')', !!seed && seed.model === 'gpt-5.6-terra');
+    ok('…and the effort box on the same row of the same page'
+        + ' (got ' + (seed && seed.effort) + ')', !!seed && seed.effort === 'xhigh');
+    ok('…and the permission mode, which no per-agent layer answers, on the fleet\'s'
+        + ' (got ' + (seed && seed.permissionMode) + ')',
+        !!seed && seed.permissionMode === 'default');
+}
+
+// ‼️ …AND THE MEMORY IS STILL THE LAYER ABOVE IT (S-34). The repair inserts a
+// layer; it must not overtake the one it was inserted under, or an agent you
+// last ran on `gpt-5.6-luna` comes back on its standing setting instead.
+{
+    panels[panels.length - 1].onDispose();
+    ConsolePanel.show({
+        ...deps,
+        lastLaunch: () => ({
+            engine: 'codex', surface: 'console',
+            byEngine: { codex: { model: 'gpt-5.6-luna', effort: '', permissionMode: 'plan' } }
+        })
+    }, { agentId: 'a-dev', pinAgent: true });
+    await new Promise(r => setImmediate(r));
+    const seed = seedOf(panels[panels.length - 1]);
+    ok('what the agent LAST RAN AS still beats what it is set to'
+        + ' (got ' + (seed && seed.model) + ')', !!seed && seed.model === 'gpt-5.6-luna');
+    // ‼️ PER FIELD, NEVER PER RECORD. The record above states a model and is
+    // SILENT on the effort; a resolution that took the record whole would have
+    // opened the effort box empty and jumped the layer under it — which is
+    // exactly the shape the memory had on the machine this was measured on.
+    ok('…while a field the record is silent on still falls to the agent\'s own'
+        + ' (got ' + (seed && seed.effort) + ')', !!seed && seed.effort === 'xhigh');
+}
+
+// ‼️ AND AN AGENT WITH NOTHING ANYWHERE STILL OPENS ON THE FLEET. The layer is
+// inserted, not substituted — the same claim section 3 makes about the spawn.
+{
+    panels[panels.length - 1].onDispose();
+    ConsolePanel.show(deps, { agentId: 'a-bas', pinAgent: true });
+    await new Promise(r => setImmediate(r));
+    const seed = seedOf(panels[panels.length - 1]);
+    ok('an agent with no row anywhere opens on the fleet defaults'
+        + ' (got ' + JSON.stringify(seed) + ')',
+        !seed || (seed.model === 'sonnet' && seed.effort === 'low'));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

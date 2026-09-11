@@ -88,7 +88,7 @@ import { buildFarmStatus } from './core/farmstatus';
 import { PlanUsageService, refreshMs } from './core/planusage';
 import { EngineUsage, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
 import {
-    AgentEngineDefaults, resolveDefault, storedDefault, storedRoute, withAgentDefault
+    AgentEngineDefaults, agentSeedDefault, resolveDefault, storedDefault, storedRoute, withAgentDefault
 } from './core/agentDefaults';
 import {
     CC_CATALOG, coerceClaudeValue, patchClaudeSettings, readPath, validateRawClaudeSettings
@@ -20106,6 +20106,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const agentEngineSeed = (agent: AgentInfo, engine: EngineId): LaunchOptions =>
         withDefaults(withAgentEngineDefaults(agent, { engine }), launchDefaults());
 
+    /**
+     * ‼️ THE SAME ANSWER, FOR A BOX RATHER THAN FOR A COMMAND LINE.
+     *
+     * `withAgentEngineDefaults` above is the SPAWN's reader and leaves Claude's
+     * model empty on purpose (X-145 — its CLI reads the agent's own settings
+     * file, so a flag would be a second source of truth). That is right at a
+     * spawn and false on a control: the user sets an agent to `opus` in Farm
+     * Settings and every box that offers to change it opens reading `Default`,
+     * while the effort beside it reads what they chose, because the effort has
+     * no file to hide in. `agentSeedDefault` is the rule; this is the disk.
+     *
+     * ‼️ AND IT IS HELD FOR A FEW SECONDS, because the Console asks it per agent
+     * per engine on every repaint — several times a second while a turn streams
+     * — and Claude's layer is two `readFileSync` calls. Long enough that a
+     * streaming turn does not walk the fleet's folders a hundred times, short
+     * enough that a value just typed on the Settings page is in the box before
+     * the reader has finished moving the mouse. Same trade as `engineList`.
+     */
+    const seedCache = new Map<string, { at: number; v: { model: string; effort: string } }>();
+    const SEED_TTL_MS = 3000;
+    const agentSeedFor = (dir: string, engine: EngineId): { model: string; effort: string } => {
+        const key = engine + '|' + dir;
+        const now = Date.now();
+        const hit = seedCache.get(key);
+        if (hit && now - hit.at < SEED_TTL_MS) { return hit.v; }
+        const v = agentSeedDefault(engine, {
+            agentFile: engine === 'claude' ? agentClaudeModel(dir) : '',
+            farm: storedDefault(cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {}, dir, engine)
+        });
+        seedCache.set(key, { at: now, v });
+        return v;
+    };
+
     /** Build + launch one claude session. Defaults fill whatever the caller
      *  left open; an invalid value is reported here rather than in a terminal
      *  the user then has to read. Returns the command line that ran. */
@@ -20567,9 +20600,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /**
      * ‼️ S-34 — THE ONE SEEDING CALL EVERY HUMAN DOOR MAKES. What the door was
      * told stays on top; the memory fills in only what nobody stated.
+     *
+     * ‼️ …AND UNDER THE MEMORY, WHAT THE AGENT IS *SET* TO.
+     *
+     * The documented order has always been "what this launch states → what this
+     * agent was last started with → the agent's engine defaults → the fleet's
+     * launchDefaults", and the third layer was the one nothing here applied:
+     * every door seeded from the memory and then fell straight through to the
+     * fleet, so a per-agent model or effort chosen in Farm Settings was applied
+     * at the SPAWN and never visible in the box that offers to change it. That
+     * is the same defect as a control with no referent — the value was right
+     * and unsayable.
      */
-    const seedLastLaunch = (agentId: string, o: LaunchOptions = {}): LaunchOptions =>
-        withLastLaunch(o, lastLaunchOf(agentId));
+    const seedLastLaunch = (agentId: string, o: LaunchOptions = {}): LaunchOptions => {
+        const seeded = withLastLaunch(o, lastLaunchOf(agentId));
+        const agent = agents.find(a => a.id === agentId);
+        if (!agent) { return seeded; }
+        // The engine this seed is FOR — what the caller said, else what the
+        // memory just supplied, else the fleet's, else claude (X-18). A default
+        // read for the wrong engine is the U-29 bug restated.
+        const engine = ((seeded.engine ?? launchDefaults().engine ?? '') || 'claude') as EngineId;
+        const own = agentSeedFor(agent.dir, engine);
+        return {
+            ...seeded,
+            model: (seeded.model ?? '').trim() || own.model,
+            effort: (seeded.effort ?? '').trim() || own.effort
+        };
+    };
 
     /**
      * ‼️ X-262 — WHAT A PAGE BUTTON WOULD ACTUALLY START AS, said BEFORE the click.
@@ -23201,6 +23258,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 { dir } as AgentInfo, { engine: engine as EngineId });
             return { model: o.model ?? '', effort: o.effort ?? '' };
         },
+        /**
+         * ‼️ …AND THE SAME LAYER READ FOR A BOX RATHER THAN FOR A FLAG. The one
+         * above leaves Claude's model empty on purpose (X-145); this one folds
+         * the agent's own settings file back in, because a composer that opens
+         * on `Model: Default` for an agent the user set to `opus` is a control
+         * describing a launch that will not happen.
+         */
+        agentSeedDefaults: (dir: string, engine: string) =>
+            agentSeedFor(dir, engine as EngineId),
         // ‼️ S-34 — the per-agent record, read and written through the SAME two
         // functions every other door uses. The panel gets no copy of its own:
         // a second store would be a second answer to "what did this agent last

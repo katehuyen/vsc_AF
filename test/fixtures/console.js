@@ -212,13 +212,26 @@ const data = () => ({
             lastLaunch: {
                 engine: 'claude', model: 'opus', effort: 'high',
                 permissionMode: 'plan', superpowers: true, surface: 'console'
+            },
+            // ‼️ …AND THE LAYER UNDER THAT MEMORY: what Farm Settings says this
+            // agent runs each engine as. The engine switch reads it when the
+            // record has no row for the engine moved to — empty is the right
+            // answer for a MEMORY and the wrong one for the box, because the
+            // agent still has a standing setting there. Codex is deliberately
+            // an engine this record says nothing about.
+            engineDefaults: {
+                claude: { model: 'opus', effort: 'xhigh' },
+                codex: { model: 'gpt-5.6-sol', effort: 'xhigh' }
             }
         },
         {
             id: 'a-mgr', name: 'manager', dir: 'D:\\zone\\agent\\ajanlar\\manager', superpowers: false,
             // …and one that has never been started, which falls through to the
             // fleet defaults. `null` is a different answer from an empty record.
-            lastLaunch: null
+            lastLaunch: null,
+            // …and nothing set for it anywhere either, which is what keeps the
+            // fleet default the ordinary answer.
+            engineDefaults: {}
         }
     ],
     // The flat pair is the pre-engine FALLBACK, so it stays Claude's own.
@@ -818,6 +831,81 @@ module.exports = {
             label: 'Console — one question AND a show filter: the note and the card in one frame (U-133)',
             data: askingOneData(),
             state: { afConsole: { kindsBy: { cs2: ['user', 'ask'] } } }
+        },
+        /**
+         * ‼️ A RUNNING SESSION ON A MODEL THE CATALOGUE DOES NOT PUBLISH.
+         *
+         * The one state the running row drew as its own opposite. Claude's
+         * catalogue publishes four ALIASES (`haiku` `sonnet` `opus` `fable`) and
+         * the CLI reports back the RESOLVED id (`claude-opus-5`), so the box
+         * matched no `<option>` and the `<select>` fell to its first row — which
+         * reads `Default`. Measured on the user's own session: the bridge said
+         * `model: claude-opus-5` and the box beside it said `Default`.
+         *
+         * The scene is the reading, so the model on the card is deliberately an
+         * id the `engineModels.claude` list above does NOT contain. Nothing else
+         * about the card matters here; what has to be looked at is one box.
+         */
+        {
+            id: 'console-resolved-model',
+            label: 'Console — the running row names the model the CLI reported, not "Default"',
+            data: Object.assign(data(), {
+                selected: 'cs1',
+                sessions: [session({
+                    id: 'cs1', status: 'working', turns: 3,
+                    engine: 'claude', engineLabel: 'Claude Code',
+                    // ‼️ NOT an alias — this is what the CLI reports and what the
+                    // host stores, and the catalogue has never published it.
+                    model: 'claude-opus-5', effort: 'xhigh',
+                    turnModel: 'claude-opus-5', turnEffort: 'xhigh',
+                    permissionMode: 'bypassPermissions',
+                    turnStartedAt: NOW - 41000, turnTokens: 38210, turnApiCalls: 5,
+                    tokens: 612000, wTokens: 540000, contextTokens: 136102,
+                    account: 'aicozums', accountLabel: 'aicozums',
+                    messages: msgs()
+                })]
+            })
+        },
+        /**
+         * ‼️ THE OPEN STATE OF THE `show` PICKER IS NOT A SCENE — IT IS `--menu`.
+         *
+         * The page shim does not wire `AFFilter.multi` (its stub menus have no
+         * `querySelectorAll`), so an `act` that presses the button changes
+         * nothing and a scene labelled "open" would photograph a shut one — the
+         * exact failure `docs/CONVENTIONS.md` names. The renderer has the flag
+         * for it and it is the only honest route:
+         *
+         *   node test/render_page.js console --menu c-kinds
+         *   node test/shoot_page.js console --scene 1
+         *
+         * Worth looking at after any change to `.crow .afms`: the menu must come
+         * down as a COLUMN of tickable kinds under its tools line. It stood
+         * permanently open, laid out as a ROW, because `.crow .afms > *` set
+         * `display:flex` on it and a class selector outranks the browser's own
+         * `[hidden] { display:none }`.
+         */
+        /**
+         * ‼️ AN ENGINE SWITCHED TO, WITH NOTHING REMEMBERED AND SOMETHING SET.
+         *
+         * `a-dev`'s record names Claude; Codex has no row in it. That used to
+         * empty both boxes — right about the MEMORY and wrong about the box,
+         * because Farm Settings says this agent runs Codex on `gpt-5.6-sol` at
+         * `xhigh`. The scene presses the engine picker, which is the only way
+         * the state exists: a fixture that merely declared the values would
+         * photograph the page rather than the rule.
+         */
+        {
+            id: 'console-engine-switch-default',
+            label: 'Console — switching engine falls to what Farm Settings says, not to "Default"',
+            data: Object.assign(composerData(), { engine: 'claude', presetAgent: 'a-dev' }),
+            state: { afConsole: { agentId: 'a-dev' } },
+            // ‼️ THE VALUE TRAVELS ON `target`, not beside it. The handler reads
+            // `e.target.value`, and an `extra` of `{ value }` lands on the EVENT
+            // — so the first version of this scene fired a change that carried
+            // the box's old value and photographed the page it started on.
+            act: r => {
+                r.query('#c-engine').forEach(b => b.fire('change', { target: { value: 'codex' } }));
+            }
         }
     ]
 };

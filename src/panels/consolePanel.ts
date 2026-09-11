@@ -201,6 +201,24 @@ export interface ConsoleDeps {
      */
     agentEngineDefaults?(dir: string, engine: string): { model?: string; effort?: string };
     /**
+     * ‼️ THE SAME LAYER, ASKED FOR A BOX INSTEAD OF FOR A COMMAND LINE — and the
+     * difference is one field wide.
+     *
+     * `agentEngineDefaults` above is the SPAWN's reader, and it returns an empty
+     * model on Claude deliberately: that engine's CLI reads the agent's own
+     * `.claude/settings.local.json`, so passing the same value again as a flag
+     * would be a second source of truth (X-145). Correct for a spawn, and a lie
+     * on a control — an agent the user had set to `opus` in Farm Settings opened
+     * the composer with `Model: Default` beside an effort box reading the `xhigh`
+     * they had chosen in the same row of the same page, because the effort has
+     * no settings file to hide in.
+     *
+     * So the box is seeded from THIS one, which folds Claude's file back in, and
+     * the spawn still resolves through the one above. Two questions, two
+     * readers, neither answering the other's.
+     */
+    agentSeedDefaults?(dir: string, engine: string): { model: string; effort: string };
+    /**
      * ‼️ X-105 — WHICH ROUTE A CARD IS ON, DESCRIBED BY THE ENGINE'S OWN
      * ADAPTER.
      *
@@ -671,12 +689,41 @@ export class ConsolePanel {
                 c.pinnedAgent = opts.pinAgent ? opts.agentId : undefined;
                 // A caller that handed over a setup of its own is answered by
                 // the block below; this is the door that handed over nothing.
-                if (!opts.launch && last) {
+                /**
+                 * ‼️ …AND THE MEMORY IS NOT THE ONLY LAYER THIS DOOR HAS.
+                 *
+                 * It used to seed ONLY from the record, so an agent that had
+                 * never been started — or one whose record is silent on a field —
+                 * fell straight through to the fleet defaults and jumped over the
+                 * answer the user had typed into Farm Settings for that agent on
+                 * that engine. Measured on `developer`: the record held
+                 * `effort: xhigh` for Claude and no model, so the composer opened
+                 * `Effort: xhigh` (right, by luck) beside `Model: Default` on an
+                 * agent whose Claude model is set to `opus` — one question
+                 * answered two ways in one row.
+                 *
+                 * The order is the one every other door resolves at spawn, per
+                 * FIELD rather than per record: the memory → this agent's own
+                 * setting for this engine → the fleet. Resolved HERE rather than
+                 * in the page because only the host can read the third layer's
+                 * Claude settings file, and because `applyComposerSeed` treats
+                 * the handed-over setup as all-or-nothing (K-34) — a half-filled
+                 * record would otherwise silence the fleet layer entirely.
+                 */
+                const agentDir = c.deps.getAgents().find(a => a.id === opts.agentId)?.dir ?? '';
+                const own = agentDir
+                    ? c.deps.agentSeedDefaults?.(agentDir, c.composerEngine) ?? { model: '', effort: '' }
+                    : { model: '', effort: '' };
+                if (!opts.launch && (last || own.model || own.effort)) {
+                    const pick = (...v: (string | undefined)[]) =>
+                        v.map(x => (x ?? '').trim()).find(x => x) ?? '';
                     c.composerLaunch = {
-                        model: last.model, effort: last.effort,
-                        permissionMode: last.permissionMode, engine: c.composerEngine
+                        model: pick(last?.model, own.model, d.model),
+                        effort: pick(last?.effort, own.effort, d.effort),
+                        permissionMode: pick(last?.permissionMode, d.permissionMode),
+                        engine: c.composerEngine
                     };
-                    c.composerSuperpowers = last.superpowers;
+                    c.composerSuperpowers = last?.superpowers;
                 }
             }
             // ‼️ K-34 — the setup lands on the composer, and the seed is bumped
@@ -1030,7 +1077,29 @@ export class ConsolePanel {
                 // have to follow the agent that is showing. `null` is "never
                 // started", which falls through to the fleet defaults — a
                 // different answer from a record that says nothing.
-                lastLaunch: this.deps.lastLaunch(a.id) ?? null
+                lastLaunch: this.deps.lastLaunch(a.id) ?? null,
+                /**
+                 * ‼️ …AND THE LAYER UNDER THAT MEMORY, ON THE SAME ROW AND FOR
+                 * THE SAME REASON.
+                 *
+                 * Changing the engine box re-seeds model and effort from the
+                 * record's row for the new engine — and when that engine has no
+                 * row, it used to empty them. Empty is the right answer for a
+                 * MEMORY and the wrong one for the box: the agent still has
+                 * whatever Farm Settings says it runs that engine as, and
+                 * jumping over it is the same defect as the composer opening on
+                 * `Model: Default` for an agent set to `opus`.
+                 *
+                 * One row per engine, resolved host-side because Claude's layer
+                 * is a file on disk. `{}` for an agent with nothing set anywhere,
+                 * which leaves the fleet default to answer exactly as before.
+                 */
+                engineDefaults: this.deps.agentSeedDefaults
+                    ? Object.fromEntries(this.engineList()
+                        .map(e => [e.id, this.deps.agentSeedDefaults!(a.dir, e.id)])
+                        .filter(([, v]) => (v as { model: string; effort: string }).model
+                            || (v as { model: string; effort: string }).effort))
+                    : {}
             })),
             // The flat pair stays as the FALLBACK every surface had before
             // engines existed; `engineModels` below is what a picker actually

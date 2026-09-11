@@ -1191,6 +1191,98 @@ read the same thing* — "these four words are present" would go green on a row
 where every box said only `axis`) and the chip half of
 `test/test_settings_control_width.js`.
 
+### ‼️ …AND A BOX THAT OPENS ON "Default" FOR A VALUE THE USER SET IS THE SAME BUG
+
+A launch box is a **mirror of what will happen**, so every layer that decides
+what will happen has to reach it. The order is written in `core/launch.ts` and
+is the same at every door:
+
+```
+what this launch states  →  what this agent was LAST STARTED with
+                         →  what this agent is SET to for this engine
+                         →  the fleet's agentFarm.launchDefaults
+```
+
+The third layer existed only at the **spawn**. Every door seeded from the
+memory and fell straight through to the fleet, so a model or an effort chosen
+for that agent in Farm Settings was applied to the session and **invisible in
+the box that offers to change it**. Measured on `developer`: the composer opened
+`Model: Default` beside `Effort: xhigh`, both set in the same row of the same
+page — the effort showed only because it happened to be in the memory too.
+
+Two functions, deliberately, because they answer two questions:
+
+- `withAgentEngineDefaults` (extension.ts) is the **spawn's** reader and returns
+  an **empty model on Claude** on purpose: its CLI reads the agent's own
+  `.claude/settings.local.json`, so a flag would be a second source of truth
+  (X-145).
+- `agentSeedDefault` (`core/agentDefaults.ts`) is the **box's**, and folds that
+  file back in — because `Default` is the one word that is false about an agent
+  the user set to `opus`.
+
+It is applied as a LAYER inside `seedLastLaunch`, so a door inherits it by
+calling the one function every door already calls. Per **field**, never per
+record: a memory holding an effort and no model must not silence the layer that
+holds the model. Gates: `test/test_launch_parity.js`,
+`test/test_console_agent_default.js` (sections 1–4 measure the spawn, section 5
+measures the BOX — and 1–4 were green the whole time the box was wrong).
+
+---
+
+## A `<select>` renders an unknown value as its FIRST option
+
+Not as blank, and **not** as nothing — as whatever row happens to be first,
+which on every launch box is `Default`. So a control that READS a value the
+catalogue does not publish silently redraws it as its own opposite.
+
+Measured on a live session: the bridge reported `model: claude-opus-5` while the
+box beside it read `Default`, because the Claude catalogue publishes four
+aliases (`haiku` `sonnet` `opus` `fable`) and the CLI reports the resolved id.
+The markup was correct, every string test passed, and the reader was told the
+session was on the default.
+
+- **A catalogue lists what an engine is OFFERING, never everything it can be
+  running.** Any box drawing a value that came back from a process wraps its
+  list in `AFLaunch.withCurrent` — the rule already used by the composer (S-34).
+- **Where the narrower list is a RULE about what you may pick**, borrow the row
+  back from the wider one (`withCurrentFrom` in `media/console.js`): a running
+  session's permission list drops `bypassPermissions` because you may not raise
+  a live conversation into it, and that rule about *choosing* was deciding what
+  the box could *say*.
+- **And the shell key has to carry it.** Those boxes are markup; a `<select>`
+  only moves when the markup does. The Console's key was
+  `selected | ended | pinned | account`, so the model a card was built with was
+  the model it showed for the whole session — the card is selected the instant
+  the process starts, before the CLI has resolved anything. `liveBrainShape`.
+
+Gates: `test/test_console_page.js` (the running row follows the CLI, same
+session) and `test/test_console_axis_labels.js`.
+
+---
+
+## `[hidden]` loses to any class rule — a component shuts ITSELF
+
+`hidden` is an attribute the browser enforces with `[hidden] { display: none }`
+from its own stylesheet, which **any** class selector outranks. So a page's
+layout rule can un-hide a component's menu without anybody writing a line about
+menus.
+
+Measured: `.crow .afms > *` on the Console — written so the AFTip wrapper would
+be the flex child — caught the picker's own menu, and eleven of them stood
+permanently open above the composer, laid out as a **row** (flex with no
+direction), so all a reader saw was the tools line and a horizontal scrollbar.
+Nobody had pressed anything.
+
+- A component that can be re-shown by a stylesheet it does not control is not a
+  component: `media/common.css` carries `.afms .afms-menu[hidden]
+  { display: none }`, specific enough to win wherever it is loaded.
+- A page rule that means "the trigger" **names the trigger**, never `> *`.
+- And an element that relies on an unstated `display` states it, because an
+  unstated one holds only until somebody states another.
+
+Gate: `test/test_console_show_width.js` — measured on the laid-out DOM, since
+the markup is right in both worlds.
+
 ---
 
 ## Origin (🧑 / 🤖)

@@ -1300,9 +1300,60 @@ const html = allHtml;
     // ‼️ …and a box whose list this build has nothing for names NOTHING rather
     // than printing an empty line above the explanation: the heading's second
     // half is a value, and a blank one would read as a value that is blank.
-    ok('a box with no list to name from opens on the explanation, not on a gap',
-        panelOf('c-effort-live').head === 'Effort'
+    /**
+     * ‼️ A RUNNING BOX NAMES WHAT THE SESSION IS ON, EVEN WHEN ITS OWN LIST
+     * DOES NOT CARRY THAT VALUE.
+     *
+     * This used to expect the bare word `Effort` here, and the session under it
+     * was running at `high` the whole time: the engine's published effort list
+     * did not carry the value, so the `<select>` matched no option, fell to its
+     * first row and the panel had nothing to name. The assertion was reading the
+     * defect and calling it the rule. The catalogue lists what an engine is
+     * OFFERING, never everything it can be running — which is exactly what
+     * `withCurrent` already says for the composer (S-34).
+     */
+    ok('a running box names what the session is ON, list or no list'
+        + ' (got ' + JSON.stringify(panelOf('c-effort-live').head) + ')',
+        panelOf('c-effort-live').head === 'Effort: high'
         && /^How hard it thinks/.test(panelOf('c-effort-live').body));
+    // ‼️ …AND AN EMPTY VALUE STILL NAMES NOTHING, which is the claim that stood
+    // here and is worth keeping: the heading's second half is a VALUE, and a
+    // blank one reads as a value that is blank. Measured where the value really
+    // is empty rather than where it was merely being dropped.
+    {
+        push(data(CONVO.slice(), { status: 'idle', effort: '', model: '' }));
+        // ‼️ OFF THE PANEL THE PAGE JUST DREW, not off `allHtml()`. That one
+        // adds every registered element's last markup to the app's, so a second
+        // `c-effort-live` from an earlier push is in it — and the regex takes
+        // the first match, which is the page BEFORE this one.
+        const m = /id="c-effort-live"[\s\S]*?<span class="af-tiph">([^<]*)<\/span>/
+            .exec(app()._html);
+        ok('…while a box with nothing set opens on the explanation, not on a gap'
+            + ' (got ' + JSON.stringify(m && m[1]) + ')', !!m && m[1] === 'Effort');
+
+        /**
+         * ‼️ AND THE ROW IS DRAWN AGAIN WHEN THE CLI SAYS WHAT IT RESOLVED TO.
+         *
+         * The other half of the same defect, and the half that made it last a
+         * whole session. The shell key was `selected | ended | pinned | account`,
+         * so a live session's model, effort and permission could change and
+         * nothing redrew — and those three boxes ARE markup. A card is selected
+         * the instant its process starts, when the CLI has said nothing yet; the
+         * resolved id arrives with the first turn, in a payload that changed no
+         * key, and the box went on reading what it was built with for the rest
+         * of the conversation. Widening the option list could not have helped:
+         * the list was never rebuilt.
+         *
+         * Measured on the SAME session id, which is the whole point — a
+         * different id would have rebuilt the shell for the old reason.
+         */
+        push(data(CONVO.slice(), { status: 'working', effort: 'xhigh', model: 'claude-opus-5' }));
+        const after = /id="c-model-live"[\s\S]*?<span class="af-tiph">([^<]*)<\/span>/
+            .exec(app()._html);
+        ok('‼️ the running row follows the model the CLI reported, same session'
+            + ' (got ' + JSON.stringify(after && after[1]) + ')',
+            !!after && after[1] === 'Model: claude-opus-5');
+    }
 
     // ---------- U-59: the THIRD shape, which agreed with neither sentence ----
     //

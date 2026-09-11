@@ -107,6 +107,43 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         + (cards && cards.cut.length ? ' — ' + cards.cut.join(' · ') : '')
         + (cards ? ` (${cards.rows} rows)` : ''),
         cards && cards.cut.length === 0);
+
+    /**
+     * ‼️ S-58 — AND THE CARD'S ✕ IS IN THE CARD, IN ITS CORNER, COSTING NO ROW.
+     *
+     * `cardTip` wraps the button in an AFTip `<span class="af-tipw">`, and
+     * `media/console.js:1270` says out loud that `cls` lands on the WRAPPER, so
+     * every sizing rule has to move out to it. It did not: `position:absolute;
+     * right:4px` stayed on the trigger, and the wrapper is `position:relative`
+     * and 0px wide — so `right:4px` was measured against nothing and put the ✕
+     * 7px OUTSIDE the card's left edge, behind the border, where no amount of
+     * hovering could find it. And the wrapper, still in the flow as an
+     * `inline-block`, contributed a line box: every card carried an empty row
+     * above its own name.
+     *
+     * Both halves are geometry, both had perfectly correct markup, and no string
+     * test could have failed on either. Two facts, because the two repairs are
+     * independent — taking the positioning off the button without giving it to
+     * the wrapper would fix the corner by dropping the button into the flow.
+     */
+    const CROSS = "(()=>{const out=[];document.querySelectorAll('.srow').forEach(row=>{"
+        + "const w=row.querySelector('.srowxw'),b=row.querySelector('.srowx'),h=row.querySelector('.h');"
+        + "if(!w||!b||!h)return;const rb=b.getBoundingClientRect(),rr=row.getBoundingClientRect(),"
+        + "rh=h.getBoundingClientRect();out.push({pos:getComputedStyle(w).position,"
+        + "inside:rb.left>=rr.left&&rb.right<=rr.right+1,"
+        + "gap:Math.round(rr.right-rb.right),headTop:Math.round(rh.top-rr.top)});});return out;})()";
+    let x;
+    try { x = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', CROSS])); } catch { x = null; }
+    ok('there are cards with an End & remove button to measure', x && x.length > 3);
+    ok('‼️ THE ✕ IS INSIDE ITS CARD, AT THE RIGHT EDGE'
+        + (x ? ' (' + JSON.stringify(x[0]) + ')' : ''),
+        x && x.length > 0 && x.every(r => r.inside && r.gap >= 0 && r.gap <= 12));
+    // ‼️ …AND IT COSTS THE CARD NO ROW. The identity line starts at the card's
+    // own padding (7px + 1px border); anything more is the wrapper's line box
+    // back in the flow, which is the empty row the user saw on every card.
+    ok('‼️ …AND THE NAME IS STILL THE FIRST THING IN THE CARD'
+        + (x ? ' (headTop ' + [...new Set(x.map(r => r.headTop))].join('/') + ')' : ''),
+        x && x.length > 0 && x.every(r => r.pos === 'absolute' && r.headTop <= 10));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

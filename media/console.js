@@ -295,7 +295,19 @@
            aiming badly. It sits opposite the phase dot, in the corner the
            badges leave alone, and it is kept out of the flow (absolute)
            so no name loses a character to it. */
-        .srowx { position:absolute; right:4px; top:3px; z-index:2;
+        /* ‼️ S-58 — THE CORNER BELONGS TO THE WRAPPER, NOT TO THE BUTTON.
+           cardTip puts an AFTip span.af-tipw around this button and the cls
+           lands on THAT span, which media/common.css draws inline-block and
+           position:relative. So two things went wrong at once and both are the
+           same mistake: the positioning was left on the trigger, so right:4px
+           was measured against a 0px-wide wrapper and threw the cross 7px
+           OUTSIDE the card left edge (measured: button x=29, card x=36), where
+           it was invisible however long you hovered; and the wrapper itself
+           stayed in the flow, so its line box pushed the identity row 25px down
+           and every card grew an empty line above its name.
+           Same shape as .cdotw one corner away, and for the same reason. */
+        .af-tipw.srowxw { position:absolute; right:4px; top:3px; line-height:0; z-index:2; }
+        .srowx { z-index:2;
             background:none; border:none; padding:0 3px; line-height:1;
             font-size:11px; cursor:pointer; opacity:0; transition:opacity .12s;
             color:var(--vscode-descriptionForeground,#888); }
@@ -562,7 +574,13 @@
            common.css plus the hover carry the rest. With room to spare it is
            unchanged: flex-grow is 0, so it never takes more than it reserved. */
         .crow .afms { display:flex; flex:0 1 auto; min-width:calc(var(--afms-w, 24ch) / 2); }
-        .crow .afms > * { display:flex; min-width:0; max-width:100%; }
+        /* ‼️ THE TRIGGER, NOT EVERYTHING INSIDE THE PICKER. This said \`> *\`, and
+           the picker's own MENU is one of those children: \`display:flex\` on a
+           class selector outranks the browser's \`[hidden] { display:none }\`, so
+           every one of these menus stood permanently open over the composer —
+           laid out as a row, because flex with no direction is a row, which is
+           why all that showed was the tools line and a scrollbar. */
+        .crow .afms > .tip-free, .crow .afms > .afms-btn { display:flex; min-width:0; max-width:100%; }
         .crow .afms-btn { max-width:100%; min-width:0; box-sizing:border-box; }
         .msg { margin:8px 10px; display:flex; gap:9px; align-items:flex-start; }
         .msg .who { flex:none; width:56px; font-size:10px; opacity:.65; padding-top:3px; text-transform:uppercase; }
@@ -3437,6 +3455,31 @@
         return '|' + (s.accountAxis ? 'a' : '-') + (s.accountRows || []).length
             + ':' + (s.account || '') + '>' + (s.accountNext || '');
     }
+    /**
+     * ‼️ WHAT THE RUNNING ROW IS SET TO IS PART OF THE SHELL'S SHAPE.
+     *
+     * The key was `selected | ended | pinned | account`, so a live session's
+     * model, effort and permission mode could change and nothing redrew: those
+     * three boxes are markup, built once when the card was selected, and
+     * `<select>` values only move when the markup does.
+     *
+     * That is the real reason a running Claude card read `Model: Default` all
+     * session. The card is selected the instant the process starts, when the CLI
+     * has not yet said what it resolved to; `claude-opus-5` arrives with the
+     * first turn and lands in a payload that changes no key. Widening the option
+     * list was half the repair — the other half is that the row has to be drawn
+     * again when the answer arrives.
+     *
+     * The engine is in it too: it decides whether the effort box exists at all.
+     * Only what a session ACTUALLY runs as is here — a value the user has picked
+     * but the CLI has not confirmed is not in `s`, so this cannot fight a hand
+     * that is still on the box.
+     */
+    function liveBrainShape(s) {
+        if (!s) { return ''; }
+        return '|' + (s.engine || '') + ':' + (s.model || '')
+            + '/' + (s.effort || '') + '/' + (s.permissionMode || '');
+    }
     /** ‼️ X-211 — the machine's own sign-in, stated. The value is the sentinel
      *  the host and the core share; drawing '' here is what let the browser
      *  select the first account while the session opened as somebody else.
@@ -3548,6 +3591,25 @@
      *  in `media/afLaunch.js`, where the rule lives. */
     function withCurrent(list, current) {
         return window.AFLaunch.withCurrent(list, current);
+    }
+    /**
+     * ‼️ …AND WHERE A NARROWER LIST IS A RULE ABOUT WHAT YOU MAY PICK, THE ROW
+     * IT DROPPED IS BORROWED BACK FROM THE WIDER ONE.
+     *
+     * A running session's permission list is deliberately shorter than the
+     * composer's: you may not raise a live conversation INTO bypass. True about
+     * choosing, and it left the box unable to say what the session is on — a
+     * conversation actually running on `bypassPermissions` drew `Default`, which
+     * on the permission axis is not merely thin, it is the wrong answer in the
+     * safe direction. `withCurrent` alone would put the id back as a bare
+     * string; this puts back the ROW, with the ⚠ and the sentence the wider list
+     * already writes for it.
+     */
+    function withCurrentFrom(list, current, wider) {
+        const v = String(current || '');
+        if (!v || (list || []).some(x => x && x.id === v)) { return list || []; }
+        const row = (wider || []).find(x => x && x.id === v);
+        return row ? (list || []).concat([row]) : withCurrent(list, v);
     }
     /**
      * Keep all three launch boxes inside the vocabulary of the engine/model
@@ -4035,7 +4097,10 @@
         const effortBox = (engineId, model, cur, id, tip) => {
             if (!drawsEffort(engineId)) { return ''; }
             return axisBox({
-                axis: 'Effort', id: id, list: effortsForModel(engineId, model), cur: cur, standard: tip
+                // ‼️ WHATEVER IT IS ACTUALLY RUNNING ON IS ON THE LIST — see the
+                // model box below for the whole of why.
+                axis: 'Effort', id: id, list: withCurrent(effortsForModel(engineId, model), cur),
+                cur: cur, standard: tip
             });
         };
         const controls = s
@@ -4047,15 +4112,45 @@
                     + 'one dimension on this row that cannot change.'
                 ]), 'fixw')}
                 ${engineBadge(s)}${routeBadge(s)}${engineHintHtml(s.engine)}
-                ${axisBox({
-                    axis: 'Model', id: 'c-model-live', list: modelsFor(s.engine), cur: s.model,
+                ${/**
+                    * ‼️ A RUNNING SESSION'S MODEL IS A READING, AND A READING IS
+                    * NEVER "Default".
+                    *
+                    * This box drew the raw catalogue, so a model the catalogue
+                    * does not publish matched no `<option>` and the `<select>`
+                    * fell back to its FIRST one — which is `Default`. Measured
+                    * on this very session: the bridge reported
+                    * `model: claude-opus-5` while the box beside it read
+                    * `Default`, because the Claude catalogue publishes the four
+                    * aliases (`haiku` `sonnet` `opus` `fable`) and never the
+                    * resolved id the CLI reports back. Not a missing value and
+                    * not a hidden one — a value silently redrawn as its own
+                    * opposite, on the one control whose entire job is to say
+                    * what this conversation is running on.
+                    *
+                    * `withCurrent` is the rule that already answers this for the
+                    * composer (S-34): a value a real launch on this engine used
+                    * is by definition runnable on it, so it joins the list as
+                    * itself rather than being dropped. The composer called it and
+                    * the running row did not — one question, two answers, one
+                    * row apart.
+                    */''}${axisBox({
+                    axis: 'Model', id: 'c-model-live',
+                    list: withCurrent(modelsFor(s.engine), s.model), cur: s.model,
                     standard: window.AFTip.lines([modelTip, modelNote(s.engine)])
                 })}
                 ${effortBox(s.engine, s.model, s.effort, 'c-effort-live', effortTip)}
                 ${liveAccountBoxHtml(s)}
                 ${axisBox({
                     axis: 'Perm', name: 'Permissions', id: 'c-perm',
-                    list: live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions,
+                    // ‼️ …AND WHAT IT IS RUNNING ON IS ALWAYS ON IT. The live
+                    // list drops `bypassPermissions` because you may not raise a
+                    // running conversation into it — a rule about CHOOSING that
+                    // was silently deciding what the box could SAY, so a session
+                    // really running on bypass drew `Default`. See withCurrentFrom.
+                    list: withCurrentFrom(
+                        live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions,
+                        s.permissionMode, DATA.permissions),
                     cur: s.permissionMode, standard: permTip
                 })}
                 ${window.AFFilter.multi({
@@ -4403,13 +4498,31 @@
              * A engine with no row of its own still ends up empty, and empty is
              * what leaves that engine's own settings file in charge.
              */
-            const rec = ((DATA.agents || []).find(x => x.id === (st.agentId || '')) || {}).lastLaunch;
-            const mem = memoryOn(rec, next);
-            st.model = (mem && mem.model) || '';
-            st.effort = (mem && mem.effort) || '';
+            /**
+             * ‼️ …AND UNDER THE MEMORY, WHAT THE AGENT IS *SET* TO ON THAT
+             * ENGINE.
+             *
+             * "An engine with no row of its own ends up empty" was true of the
+             * MEMORY and wrong about the box: the agent still has whatever Farm
+             * Settings says it runs that engine as, and the record's silence was
+             * jumping straight over it. Switch an agent set to `opus` on Claude
+             * over to Codex and back and the model box came up `Default` — the
+             * same defect the composer's own seeding had, one control later.
+             *
+             * `engineDefaults` is that layer, resolved host-side per engine
+             * (Claude's half of it is a file on disk). It is a per-ENGINE fact
+             * like the memory, so it is trusted the same way — passed as `keep`
+             * — while the fleet default is deliberately NOT, because it names no
+             * engine and `narrow` is what decides whether this one can run it.
+             */
+            const row = (DATA.agents || []).find(x => x.id === (st.agentId || '')) || {};
+            const mem = memoryOn(row.lastLaunch, next);
+            const own = (row.engineDefaults || {})[next] || {};
+            st.model = (mem && mem.model) || own.model || '';
+            st.effort = (mem && mem.effort) || own.effort || '';
             st.permissionMode = (mem && mem.permissionMode) || '';
             reconcileComposer(next, false,
-                mem ? { model: st.model, effort: st.effort } : null);
+                (st.model || st.effort) ? { model: st.model, effort: st.effort } : null);
             save();
             vscode.postMessage({ type: 'setEngine', id: next });
             /**
@@ -4958,7 +5071,7 @@
             engine: engineNow(), model: st.model,
             providerId: routePick().providerId, tier: routePick().tier
         }) + '|' + routeShape() + '|' + accountShape();
-        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}${liveAccountShape(s)}`;
+        const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}${liveAccountShape(s)}${liveBrainShape(s)}`;
         if (shellKey !== key) {
             // ‼️ M-33 — ONLY A REBUILD NOBODY ASKED FOR WAITS.
             //

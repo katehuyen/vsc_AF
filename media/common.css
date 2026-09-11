@@ -185,8 +185,22 @@ mark {
     font-size: 12px; padding: 3px 9px; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; text-align: left;
 }
+/* ‼️ SHUT MEANS SHUT, WHATEVER THE PAGE'S OWN LAYOUT RULES SAY.
+   `hidden` is an ATTRIBUTE, and the browser enforces it with `[hidden]
+   { display: none }` from its own stylesheet — which any class selector
+   outranks. So `.crow .afms > * { display: flex }`, written on the Console to
+   make the hover wrapper a flex child, silently un-hid every one of these menus:
+   eleven panels stood permanently open over the composer, laid out as a ROW
+   because that is what `flex` means without a direction, so all a reader saw was
+   the tools line and a horizontal scrollbar. Nobody had pressed anything.
+   The component closes ITSELF here rather than asking nine pages to remember —
+   the same reason `.afms-item[hidden]` below exists one level down. */
+.afms .afms-menu[hidden] { display: none; }
 .afms-menu {
     position: absolute; left: 0; top: calc(100% + 4px); z-index: 60;
+    /* …and OPEN it is a BLOCK, said out loud. It was relying on nobody ever
+       stating a display for it, which held until somebody did. */
+    display: block;
     /* .right = the picker sits at the right edge of a header bar, so the menu
        has to grow inwards or it would run off the panel */
     min-width: 180px; max-width: 320px; max-height: 280px; overflow: auto;

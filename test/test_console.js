@@ -822,8 +822,18 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         && /const id = DATA\.pinnedAgent \|\| ''/.test(js));
     ok('…and the pin is never a trap — it can be handed back',
         /id="c-unpin"/.test(js) && /type: 'unpinAgent'/.test(js));
+    // ‼️ THE CLAIM IS THE PIN, NOT THE WHOLE KEY. Pinning the entire expression
+    // here made every later shape a red: the key gains one whenever something
+    // new on the card can change its markup (`liveBrainShape` was the last, and
+    // it is the reason a running card read `Model: Default` all session). So the
+    // line is named and the two parts this claim is about are read off it.
     ok('…and it rebuilds the shell, because it decides which markup is drawn',
-        /\$\{DATA\.pinnedAgent \|\| ''\}\$\{composerShape\}\$\{liveAccountShape\(s\)\}`;/.test(js));
+        (() => {
+            const i = js.indexOf('const key = `${DATA.selected');
+            if (i < 0) { return false; }
+            const key = js.slice(i, js.indexOf('\n', i));
+            return /\$\{DATA\.pinnedAgent \|\| ''\}/.test(key) && /\$\{composerShape\}/.test(key);
+        })());
     // ‼️ X-213 — AND A LIVE CARD HAS A SHAPE OF ITS OWN NOW. `composerShape`
     // enters the key only when there is no session, which was right while
     // nothing on a live strip could change shape. The account box can: its
@@ -1638,8 +1648,18 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /const live = !s \|\| s\.steerable !== false;/.test(js)
         && /There is no running process to ask\./.test(js));
     ok('…and the permission list is the START vocabulary there, not the live one',
-        /list: live \? \(DATA\.livePermissions \|\| DATA\.permissions\) : DATA\.permissions/.test(js)
+        /live \? \(DATA\.livePermissions \|\| DATA\.permissions\) : DATA\.permissions/.test(js)
         && /cur: s\.permissionMode, standard: permTip/.test(js));
+    // ‼️ …AND THE NARROWER LIST DECIDES WHAT YOU MAY PICK, NEVER WHAT THE BOX
+    // MAY SAY. The live list drops `bypassPermissions` because a running
+    // conversation may not be raised into it — a rule about choosing that was
+    // silently answering a different question, so a session really running on
+    // bypass drew `Default`: on this axis the wrong answer in the safe
+    // direction. The row is borrowed back from the composer's own list, with
+    // the ⚠ and the sentence it already carries.
+    ok('‼️ …but a mode the live list dropped is still borrowed back to be SAID',
+        /list: withCurrentFrom\(\s*live \? \(DATA\.livePermissions/.test(js)
+        && /const row = \(wider \|\| \[\]\)\.find\(x => x && x\.id === v\);/.test(js));
 
     // X-19 — the money half.
     ok('‼️ a plan-billed session shows TOKENS where the dollars would be',

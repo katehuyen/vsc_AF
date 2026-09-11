@@ -53,11 +53,14 @@ if (!bin) {
 
 /** The height the tool would shoot at, plus what the page says about itself. */
 function measure(fixture, scene) {
+    // ‼️ ALWAYS RENDERED, NEVER REUSED. `dist/render/` is whatever the last
+    // person left there — a page from before today's change, or from a fixture
+    // that has since grown two scenes. Measuring that is measuring the past
+    // while reporting it as the present, which is the one failure this file
+    // exists to catch in the SHOOTING tool.
     const src = path.join(RENDER, `${fixture}.html`);
-    if (!fs.existsSync(src)) {
-        execFileSync(process.execPath, [path.join(__dirname, 'render_page.js'), fixture],
-            { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
-    }
+    execFileSync(process.execPath, [path.join(__dirname, 'render_page.js'), fixture],
+        { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
     const tmp = path.join(RENDER, `.height-${fixture}-${scene}.html`);
     fs.writeFileSync(tmp, shoot.instrument(fs.readFileSync(src, 'utf8'), scene), 'utf8');
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'af-height-'));
@@ -94,7 +97,15 @@ const WINDOW = shoot.FALLBACK_HEIGHT;
     if (r) {
         ok(`‼️ ONE SHORT SCENE IS ITS OWN HEIGHT, NOT THE WINDOW'S (${r.h}px, window ${WINDOW})`,
             r.h > 200 && r.h < 1200);
-        ok('…and the scene count is the PAGE\'s, not the crop\'s (17)', r.scenes.length === 17);
+        // ‼️ THE NUMBER IS READ OFF THE FIXTURE, NEVER TYPED HERE. Typed, it
+        // made every scene somebody ADDS a red in a test about cropping — and a
+        // red that says nothing about its own subject is how a suite teaches
+        // people to skim it. The claim is unchanged: shooting one scene still
+        // reports the whole page, and the whole page is however many scenes the
+        // fixture declares.
+        const SCENES = require('./fixtures/console.js').variants().length;
+        ok(`…and the scene count is the PAGE's, not the crop's (${SCENES})`,
+            r.scenes.length === SCENES);
     }
 }
 
@@ -115,7 +126,7 @@ const WINDOW = shoot.FALLBACK_HEIGHT;
     const r = measure('console', 0);
     ok('the Console montage answers the measuring pass', !!r && r.h > 0);
     if (r) {
-        ok(`‼️ THE WHOLE MONTAGE IS STILL WHOLE (${r.h}px, 17 scenes)`, r.h > 8000);
+        ok(`‼️ THE WHOLE MONTAGE IS STILL WHOLE (${r.h}px, ${r.scenes.length} scenes)`, r.h > 8000);
     }
 }
 
