@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.460.0 - the agent name was painted over its own engine badge, and the measurement that cleared it had asked the wrappers (2026-09-11)
+
+- **THE FACTS ON THE COMPOSER ROW NOW KEEP THEIR SIZE AND THEIR PLACE; THE
+  BOXES ARE WHAT GIVES WAY.** The user reported it live, mid-session: narrow the
+  Console panel and the agent name under the conversation box climbs on top of
+  the engine badge beside it. 3.459.0 had shortened the model value for exactly
+  this row and declared it clean at 640px - the defect was never the value. The
+  identity chip was `flex:0 1 auto`, so its WRAPPER shrank while the text inside
+  it, which nothing clipped, stayed 48px wide and spilled straight over its
+  neighbour. Measured on the live row of the `console` fixture before the
+  repair: at **900px** the name ran **10px** over the Codex badge, at 760px
+  **23px**, at 640px **35px** - 900px being an ordinary panel, not a corner.
+  The chips that state a FACT (the agent the session opened in, the engine, the
+  route) no longer shrink at all, and the name clips with an ellipsis at 190px
+  instead of shoving Send. After: zero overlap at 1030 / 900 / 760 / 640px.
+- **AND THE REASON IT PASSED FOR A DAY: THE EARLIER SWEEP MEASURED THE WRAPPERS.**
+  Every control on that row is an AFTip wrapper, and those report a width of
+  zero - ask them and the row answers "clean" at every width. The new guard in
+  `test/test_console_identity_width.js` measures the painted LEAVES, pair by
+  pair, at four widths, and names the pixels it finds. Mutation: the two rules
+  removed, it fails with the three figures above.
+
 ## 3.459.0 - the running row said `claude-opus-5` beside a badge that already said Claude (2026-09-11)
 
 - **THE LIVE MODEL BOX SHOWS THE ALIAS, NOT THE ID THE CLI REPORTED.** 3.457.0

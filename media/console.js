@@ -895,9 +895,24 @@
         .crow .axisw:has(#c-model-live) { flex:1 1 112px; max-width:112px; }
         .crow .axisw:has(#c-effort-live) { flex:1 1 82px; max-width:82px; }
         .crow .axisw:has(#c-account-live) { flex:2 1 132px; max-width:132px; }
-        /* the two chips on the row that are FACTS rather than choices, wrapped
-           in the same hover panel as everything beside them */
-        .crow .fixw { min-width:0; flex:0 1 auto; display:flex; align-items:center; }
+        /* ‼️ THE FACTS ON THE ROW DO NOT GIVE WAY — THE BOXES DO.
+           The chips here are FACTS rather than choices (the agent this session
+           opened in, the engine badge, the route beside it): they cannot be
+           changed from this row, so shrinking them buys the reader nothing and
+           costs them the label that says WHOSE conversation this is. They were
+           shrinkable, and the text inside them is not clipped, so a narrowed
+           panel painted one straight over the next. Measured on the live row of
+           the console fixture BEFORE this rule: at 900px the name "developer"
+           [309-357] ran 10px OVER the Codex badge [347-384], at 760px 23px, at
+           640px 35px — and 900px is an ordinary panel, not a corner case.
+           No-shrink is the rule; the cap and the ellipsis are for a name long
+           enough to push Send, which then clips instead of shoving. The cap is
+           on the INNER span, never on the wrapper: the wrapper is the AFTip
+           panel's parent and clipping it would clip the panel. */
+        .crow .fixw { min-width:0; flex:none; display:flex; align-items:center; }
+        .crow .fixw .fixed { max-width:190px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .crow > .af-tipw:not(.axisw) { flex:none; }
         /* ‼️ THE RIGHT-HAND GROUP IS FIXED. Whatever else gives way, these keep
            their size and their place: a button that moves is a button you have
            to look for. */

@@ -144,6 +144,68 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     ok('‼️ …AND THE NAME IS STILL THE FIRST THING IN THE CARD'
         + (x ? ' (headTop ' + [...new Set(x.map(r => r.headTop))].join('/') + ')' : ''),
         x && x.length > 0 && x.every(r => r.pos === 'absolute' && r.headTop <= 10));
+
+    /**
+     * ‼️ …AND ON THE COMPOSER ROW, NOTHING IS PAINTED OVER ITS NEIGHBOUR.
+     *
+     * Reported live by the user, with a session running: as the panel narrows,
+     * the agent name and the engine badge under the conversation box climb on
+     * top of each other. The name's wrapper was shrinkable and the text inside
+     * it is not clipped, so the row did not get narrower — it got stacked.
+     * Measured on the live row of this fixture before the repair:
+     *
+     *   900px   "developer" [309-357] over the Codex badge [347-384]   10px
+     *   760px   ... 23px        640px   ... 35px
+     *
+     * 900px is an ordinary panel, not a corner case. The rule held here is the
+     * one the user stated: the FACTS on the row (the agent it opened in, the
+     * engine it runs on) keep their size and their place, and what gives way is
+     * the boxes beside them. Every string is present and every markup test
+     * passes while this happens — only a layout measurement can hold it.
+     *
+     * The row is narrowed by its HOST, because what the reader drags is the
+     * panel; the widths are the ones the defect was measured at.
+     */
+    const OVER = "(function(){var rows=[].slice.call(document.querySelectorAll('.crow'))"
+        + ".filter(function(r){return r.querySelector('.fixw');});"
+        + "if(!rows.length){return 'no live row on the page';}"
+        + "var row=rows[0],host=row.parentElement,out=[];"
+        + "[1030,900,760,640].forEach(function(w){host.style.width=w+'px';row.getBoundingClientRect();"
+        + "var leaves=[].slice.call(row.querySelectorAll('*')).filter(function(e){"
+        + "if(e.closest('.af-tip')){return false;}"
+        + "var r=e.getBoundingClientRect();if(r.width<=0||r.height<=0){return false;}"
+        + "var c=e.tagName==='SELECT'||e.tagName==='BUTTON'||e.tagName==='INPUT';"
+        + "if(!c&&(e.children.length||!(e.textContent||'').trim())){return false;}return true;})"
+        + ".map(function(e){var r=e.getBoundingClientRect();"
+        + "return {who:e.tagName.toLowerCase()+(e.id?('#'+e.id):('.'+String(e.className||'').split(' ')[0])),"
+        + "x1:Math.round(r.left),x2:Math.round(r.right),y:Math.round(r.top),"
+        + "txt:(e.textContent||'').trim().slice(0,16)};});"
+        + "var hits=[];for(var i=0;i<leaves.length;i++){for(var j=i+1;j<leaves.length;j++){"
+        + "var a=leaves[i],b=leaves[j];if(Math.abs(a.y-b.y)>14){continue;}"
+        + "var ov=Math.min(a.x2,b.x2)-Math.max(a.x1,b.x1);"
+        + "if(ov>1){hits.push(w+'px: '+a.who+' \"'+a.txt+'\" over '+b.who+' \"'+b.txt+'\" by '+ov+'px');}}}"
+        + "out.push({at:w,hits:hits});});host.style.width='';return out;})()";
+    let over;
+    try { over = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', OVER])); }
+    catch { over = null; }
+    ok('the live composer row was found and laid out at four widths',
+        Array.isArray(over) && over.length === 4);
+    const stacked = (over || []).filter(r => r.hits.length);
+    ok('‼️ NOTHING ON THE COMPOSER ROW IS PAINTED OVER ITS NEIGHBOUR'
+        + (stacked.length ? '\n      ' + stacked.map(r => r.hits.join('\n      ')).join('\n      ') : ''),
+        Array.isArray(over) && stacked.length === 0);
+    // …and the reason it does not: the identity is the one thing on the row
+    // that cannot be chosen, so it is the one thing that does not shrink.
+    const FIXED = "(function(){var f=document.querySelector('.crow .fixw');"
+        + "if(!f){return 'no identity chip on the row';}var cs=getComputedStyle(f);"
+        + "var t=f.querySelector('.fixed');var ts=t?getComputedStyle(t):null;"
+        + "return {shrink:cs.flexShrink,clip:ts?ts.textOverflow:'',cap:ts?ts.maxWidth:''};})()";
+    let fx;
+    try { fx = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', FIXED])); }
+    catch { fx = null; }
+    ok('‼️ THE IDENTITY CHIP DOES NOT SHRINK, AND CLIPS RATHER THAN SPILLS'
+        + (fx ? ' (' + JSON.stringify(fx) + ')' : ''),
+        fx && fx.shrink === '0' && fx.clip === 'ellipsis' && /px$/.test(fx.cap || ''));
 }
 
 console.log(`${pass} passed, ${fail} failed`);
