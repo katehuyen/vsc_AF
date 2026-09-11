@@ -761,6 +761,32 @@ it, because a fact in two places is two facts that can disagree.
 A switch stays right where members really do toggle independently. Both shapes
 existing is the reason they must not look alike.
 
+### On a control row the FACTS do not shrink — the boxes do
+
+The user's own words, the day they reported it: *"they stay fixed, what has to
+squeeze, what has to get smaller, is the boxes."* Two kinds of thing sit on a
+control row and they behave differently when it narrows:
+
+- a **FACT** is what cannot be changed from that row — the agent a session
+  opened in, the engine badge, the route beside it. It is the row's identity;
+  shrinking it buys the reader nothing and costs them the label that says whose
+  conversation this is. `flex:none`, always.
+- a **CHOICE** is a box. Boxes are what give ground, and the spacer (`.grow`)
+  gives its slack up first, because a gap holds no information.
+
+A fact still needs a floor for the absurd case: the ellipsis goes on the **inner
+span**, never on the wrapper — the wrapper is the AFTip panel's parent, and
+clipping it clips the panel.
+
+‼️ **AND THE MEASUREMENT THAT CLEARS THIS ROW MUST ASK THE LEAVES.** Every
+control here is an AFTip wrapper and a wrapper reports a width of **zero**: ask
+those and the row answers "clean" at every width, which is exactly how this
+defect passed a measurement, shipped, and was reported live by the user a day
+later. Measure the painted leaves, pair by pair, at several widths — a name
+whose box shrank while its text did not is drawn straight over its neighbour
+(measured: 10px over the badge at 900px, 23px at 760px, 35px at 640px).
+Guard: `test/test_console_identity_width.js`.
+
 ### A multi-pick dropdown has TWO gestures
 
 `AFFilter.multi` (`media/afFilters.js`), and both are free on every picker in
