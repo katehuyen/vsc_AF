@@ -109,6 +109,27 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         alerts.some(b => /Studio take/.test(b.t))
         && alerts.some(b => /Microsoft \w+ - English/.test(b.t)));
 
+    // ‼️ audit B-07.2 — THE SAME SWEEP OVER THE TASKS SURFACE, where it found
+    // FIFTEEN boxes narrower than the text in them. Every one was an
+    // explanation someone had written into the option LABEL beside the value:
+    // `headless — runs and exits` in 127px (nine times), the route's
+    // `— none: nothing injected, nothing cleared —` in 124px, the account's
+    // `— the standing choice, else the main sign-in —` in 124px, and the tier's
+    // `opus — kimi-k2-thinking` in 124px. `C.option` already puts the detail on
+    // the option's own title (U-130), so each of those sentences was written
+    // twice and the copy that could not fit was the one on the screen.
+    // This page is the biggest form in the product — 162 boxes in one render —
+    // so it is swept rather than trusted.
+    const tasks = measure('tasks');
+    ok(`the tasks surface answered with controls to measure (${tasks.length})`,
+        tasks.length > 100);
+    report('tasks', tasks);
+    // …and the values that make this page worth sweeping are still on it: a
+    // route with a tier, and a step billed to a named sign-in.
+    ok('the tasks fixture still carries a tier row and a named account',
+        tasks.some(b => /^opus$|^sonnet$|^haiku$/.test(String(b.t).trim()))
+        && tasks.some(b => /@/.test(b.t)));
+
     // ‼️ audit B-05 — …AND A BOX WITH NOTHING IN IT AT ALL, which is the same
     // defect at width zero. `agentFarm.wikiEngine` names `''` in its own enum
     // and defaults to it, so the schema-driven picker drew an option whose text
@@ -118,7 +139,7 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         + "var b=s.getBoundingClientRect();if(b.width<=0||b.height<=0){return;}"
         + "for(var i=0;i<s.options.length;i++){if(String(s.options[i].text).trim()===''){"
         + "o.push((s.id||String(s.className))+'['+i+']');}}});return Array.from(new Set(o));})()";
-    for (const fixture of ['engines', 'alertsettings', 'wikisettings']) {
+    for (const fixture of ['engines', 'alertsettings', 'wikisettings', 'tasks']) {
         node([path.join('test', 'render_page.js'), fixture]);
         let blanks = [];
         try {

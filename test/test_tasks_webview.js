@@ -1321,8 +1321,14 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
      * doors into one field, disagreeing about what the field can hold.
      */
     ok('the account picker is on the form', /id="nt-account"/.test(html()));
+    // ‼️ audit B-07.2 — THE CLAIM IS THE SAME, THE PLACE IT IS KEPT IS NOT.
+    // The empty row must still say what leaving it empty means; it says it in
+    // the option's own title now, and the LABEL is the bare value, because a
+    // 124px box drew `— the standing choic` and the sentence was already on
+    // the hover twice over. Pinning the old wording here would pin the defect.
     ok('…and the empty row says what leaving it empty MEANS',
-        html().includes('the standing choice, else the main sign-in'));
+        html().includes('— standing choice —')
+        && /failing that the main sign-in/.test(html()));
     ok('…and the captured sign-ins are on it, the standing one marked',
         html().includes('work@studio') && html().includes('personal@gmail'));
     ok('‼️ X-223 — the machine\'s own sign-in is a row, not an absence',
@@ -1623,8 +1629,11 @@ ok('the plan tab does NOT inherit the run tab filters', !html().includes('status
      */
     ok('‼️ X-224 — an agent step asks whose sign-in pays for it',
         /id="nt-st-saccount"/.test(html()));
+    // ‼️ audit B-07.2 — same claim, same move: the meaning is on the option's
+    // title and the label is the value. See the task form's row above.
     ok('…and the empty row says what leaving it empty MEANS',
-        html().includes('the standing choice, else the main sign-in'));
+        html().includes('— standing choice —')
+        && /failing that the main sign-in/.test(html()));
     ok('…with the machine\'s own sign-in among the answers, as on the task form',
         /value="@machine"/.test(html()) && html().includes('Machine Global'));
     // …and the answer given here has to survive all the way to the saved chain,

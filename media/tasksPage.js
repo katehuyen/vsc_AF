@@ -1836,7 +1836,26 @@
         const routeForm = ntRoutes(engine);
         if (!routeForm) { return ''; }
         const noun = String(routeForm.noun || 'Route');
-        const opts = [C.option('', '— none: nothing injected, nothing cleared —', {
+        /**
+         * ‼️ audit B-07.2 — AN OPTION LABEL ON THIS PAGE IS THE VALUE, NOT THE
+         * VALUE PLUS ITS EXPLANATION.
+         *
+         * Measured on the `tasks` fixture: fifteen visible boxes held text
+         * wider than themselves, and in every one of them the half that was cut
+         * was the explanation someone had written INTO the label — the route's
+         * "nothing injected, nothing cleared" in a 124px box, the account's
+         * "else the main sign-in" in 124px, the mode's "runs and exits" in
+         * 127px, nine times over. The explanation was never missing: `C.option`
+         * already puts `label` + blank line + `detail` on the option's own
+         * native title (U-130), so the sentence was written twice and the copy
+         * that could not fit was the one on the screen.
+         *
+         * The rule the Console reached in B-03.21 and Settings in B-04.8, now
+         * here: the label is the bare value, the axis is the `<span>` beside
+         * the box, and the meaning lives in the hover. A box narrowed to four
+         * characters then shows four characters of the thing being looked for.
+         */
+        const opts = [C.option('', '— none —', {
             selected: !providerId,
             detail: 'The run takes whichever ' + noun.toLowerCase() + ' the agent happens to be set to when it fires — and nobody is watching when it does.'
         })]
@@ -1853,10 +1872,18 @@
         const tiers = (routeForm.providers.find(p => p.id === providerId) || {}).tiers || [];
         if (!tiers.length) { return row; }
         const topts = [C.option('', '— the route\'s own choice —', { selected: !tier, detail: 'No tier named, so the route serves whatever it serves by default.' })]
+            // ‼️ audit B-07.2 — the tier was the same defect with a worse
+            // ending: the model this name is served by rode in the LABEL
+            // (`opus — kimi-k2-thinking`, 143px in a 124px box, so the box read
+            // `opus — kimi-k2-thin`) while the hover carried only the standing
+            // sentence. The served model is the one fact this box exists to
+            // establish, so it moves to the front of the hover, where nothing
+            // clips it, and the label is the tier's own name.
             .concat(tiers.map(t =>
-                C.option(t.id, t.label + (t.detail ? ' — ' + t.detail : ''), {
+                C.option(t.id, t.label, {
                     selected: t.id === tier,
-                    detail: 'A tier is not a model: this name is served by a different model on every route, which is why it is asked here and not in the model box.'
+                    detail: (t.detail ? 'Served by: ' + t.detail + '\n\n' : '')
+                        + 'A tier is not a model: this name is served by a different model on every route, which is why it is asked here and not in the model box.'
                 })))
             .join('');
         return row + `<label class="ntf" title="Which model this route serves for that name. A tier is not a model: &quot;opus&quot; is one model on one route and another on the next, which is why it is asked here and not in the model box."><span>Tier</span>
@@ -2144,7 +2171,7 @@
     function stepAccountRow(s) {
         const rows = ntAccounts(s.sengine);
         if (!rows.length) { return ''; }
-        const opts = [C.option('', '— the standing choice, else the main sign-in —', {
+        const opts = [C.option('', '— standing choice —', {
             selected: !s.saccount,
             detail: 'The ACTIVE account of this engine answers when the step fires — the one the Engines page points at — and failing that the main sign-in, which is what every chain built before this took.'
         }),
@@ -2262,8 +2289,8 @@
                     <select id="nt-st-agent">${agentOpts}</select></label>` : ''}
                 ${s.stype === 'agent' ? `<label class="ntf" title="Headless is the mode a chain normally runs in: the output is archived and handed to the next step."><span>Mode</span>
                     <select id="nt-st-smode">
-                        ${C.option('headless', 'headless — runs and exits', { selected: s.smode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never — and the step can be retried automatically.' })}
-                        ${C.option('interactive', 'interactive — opens a session', { selected: s.smode === 'interactive', detail: 'Opens a terminal with you in front of it. Closing that window is how you end it, so "it failed" is not a fact anything can read from it.' })}
+                        ${C.option('headless', 'headless', { selected: s.smode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never — and the step can be retried automatically.' })}
+                        ${C.option('interactive', 'interactive', { selected: s.smode === 'interactive', detail: 'Opens a terminal with you in front of it. Closing that window is how you end it, so "it failed" is not a fact anything can read from it.' })}
                     </select></label>` : ''}
                 ${s.stype === 'agent' ? stepLaunchRows(s) : ''}
             </div>
@@ -2618,7 +2645,7 @@
         const accountRow = (() => {
             const rows = ntAccounts(c.engine);
             if (!rows.length) { return ''; }
-            const opts = [C.option('', '— the standing choice, else the main sign-in —', {
+            const opts = [C.option('', '— standing choice —', {
                 selected: !c.account,
                 detail: 'The ACTIVE account of this engine answers when the run fires — the one the Engines page points at — and failing that the main sign-in, which is what every run written before this took.'
             }),
@@ -2736,8 +2763,8 @@
                     <select id="nt-agent">${agentOpts}</select></label>` : ''}
                 ${wantsRun ? `<label class="ntf" title="Headless is claude -p: it runs the prompt, writes its output to an archived file and exits — the mode an unattended run is normally in. Interactive opens a real session in a terminal with the prompt already sent."><span>Mode</span>
                     <select id="nt-mode">
-                        ${C.option('headless', 'headless — runs and exits', { selected: c.mode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never. Continuing a conversation and automatic retry both need this.' })}
-                        ${C.option('interactive', 'interactive — opens a session', { selected: c.mode === 'interactive', detail: 'Opens a terminal with you in front of it. Closing that window is how you end it, so retry and resume are switched off for it.' })}
+                        ${C.option('headless', 'headless', { selected: c.mode === 'headless', detail: 'Nobody is in it to answer a prompt, so permissions are spent up front or never. Continuing a conversation and automatic retry both need this.' })}
+                        ${C.option('interactive', 'interactive', { selected: c.mode === 'interactive', detail: 'Opens a terminal with you in front of it. Closing that window is how you end it, so retry and resume are switched off for it.' })}
                     </select></label>` : ''}
                 ${/**
                     * ‼️ M-26 — AND, FOR AN INTERACTIVE RUN, THE TWO THINGS THAT

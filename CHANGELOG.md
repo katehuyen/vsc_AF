@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.461.0 - fifteen boxes on the Tasks page were narrower than the words in them, and every one of those words was written twice (audit B-07) (2026-09-11)
+
+- **AN OPTION LABEL IS THE VALUE, NOT THE VALUE PLUS ITS EXPLANATION.** The
+  select sweep, run over the Tasks surface for the first time, found 15 visible
+  boxes holding text wider than themselves - and in every one the half that was
+  cut was an explanation somebody had written into the LABEL: `headless - runs
+  and exits` at 149px in a 127px box (nine of them), the route's `- none:
+  nothing injected, nothing cleared -` at 259px in 124px, the account's `- the
+  standing choice, else the main sign-in -` at 271px in 124px, the tier's `opus
+  - kimi-k2-thinking` at 143px in 124px. The explanation was never missing:
+  `C.option` already puts label + detail on the option's own native title
+  (U-130), so each sentence was written twice and the copy that could not fit
+  was the one on the screen. Labels are now the bare value - `headless`,
+  `- none -`, `- standing choice -`, `opus` - and the sweep answers **0 cut**.
+  The tier was the same defect with a worse ending: the model that name is
+  served by rode in the label while the hover carried only the standing
+  sentence, so it now opens the hover as `Served by: kimi-k2-thinking`.
+- **THE SAVED-PROMPTS FOOTER PUT ITS LONGEST FACT FIRST AND LET THE ELLIPSIS EAT
+  THE ONE THAT MATTERED.** 775px of text in a 678px line, and what the clip took
+  was "clicking one PASTES it into the box - nothing is sent", because the whole
+  vault path sat in front of it. Clipping a path is the worst of both worlds
+  anyway - it keeps the drive and loses the file NAME. The line carries the name
+  now, the title carries the whole path, and nothing is cut.
+- **AND THE SWEEP IS NOW A GATE ON THIS SURFACE.** `test_settings_control_width`
+  measures the Tasks page too - 162 boxes in one render, the biggest form in the
+  product. Mutation: one label put back, and it fails naming the box and the
+  pixels. Two assertions in `test_tasks_webview` that pinned the old WORDING
+  rather than the claim were rewritten to hold the claim.
+
 ## 3.460.0 - the agent name was painted over its own engine badge, and the measurement that cleared it had asked the wrappers (2026-09-11)
 
 - **THE FACTS ON THE COMPOSER ROW NOW KEEP THEIR SIZE AND THEIR PLACE; THE

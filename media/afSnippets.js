@@ -184,8 +184,19 @@
                     <button class="secondary" id="af-snip-x" title="Close (Esc)">✕</button>
                 </div>
                 <div class="af-sniplist">${bodyHtml()}</div>
-                <div class="af-snipfoot">${state.file
-        ? `${esc(state.file)} · ${all.length} prompt${all.length === 1 ? '' : 's'}${state.source === 'built-in' ? ' · built-in path' : ''}`
+                ${/**
+                    * ‼️ audit B-07.3 — THE LINE PUT ITS LONGEST FACT FIRST AND
+                    * LET THE ELLIPSIS EAT THE ONE A FIRST-TIME READER NEEDS.
+                    * Measured on the `tasks` fixture: 775px of text in a 678px
+                    * box, and what the clip took was "clicking one PASTES it
+                    * into the box — nothing is sent", because the whole vault
+                    * path was in front of it. Clipping a path is the worst of
+                    * both worlds anyway — it keeps the drive and loses the file
+                    * NAME, which is the half that identifies it. So the line
+                    * carries the name (SHORTHAND) and the title carries the
+                    * whole path (MIRROR: the value first, then the rest).
+                    */''}<div class="af-snipfoot"${state.file ? ` title="${esc(state.file)}"` : ''}>${state.file
+        ? `${esc(String(state.file).split(/[\\/]/).pop())} · ${all.length} prompt${all.length === 1 ? '' : 's'}${state.source === 'built-in' ? ' · built-in path' : ''}`
         : 'Farm Settings → Saved prompts'} · clicking one PASTES it into the box — nothing is sent</div>
             </div>
         </div>`;
