@@ -221,6 +221,29 @@
     }
 
     /**
+     * ‼️ THE ID AN ENGINE REPORTS BACK IS NOT THE ALIAS IT WAS ASKED FOR.
+     * Claude's catalogue publishes `opus` · `sonnet` · `haiku`; its CLI answers
+     * with what it resolved - `claude-opus-5`, `claude-opus-5-20260514`. Handed
+     * to `withCurrent` that report becomes a stranger row, and the box reads
+     * `claude-opus-5` beside an engine badge that already says Claude: the
+     * engine written twice, in the narrowest place on the row, when the one
+     * word the reader wanted was `opus`.
+     *
+     * So the value a box SHOWS for a report is the one catalogue id that is a
+     * whole segment of it - and only then. Inert where it does not apply: an id
+     * the catalogue lists is returned as it is, and a segment claimed by several
+     * rows answers the raw id rather than a guess. The value SENT is untouched -
+     * this decides which row is selected, not what a pick means.
+     */
+    function aliasIn(list, current) {
+        const v = txt(current);
+        if (!v || has(list, v)) { return v; }
+        const parts = v.split(/[-/]/);
+        const hit = (list || []).filter(function (m) { return m && !!m.id && parts.indexOf(m.id) >= 0; });
+        return hit.length === 1 ? hit[0].id : v;
+    }
+
+    /**
      * What a picker for one dimension may show, with whatever is set already on
      * it. `model` and `effort` are the two the launch boxes ask for; anything
      * else answers `[]` rather than guessing, so a new dimension is a visible
@@ -244,6 +267,7 @@
         narrowModel: narrowModel,
         narrowEffort: narrowEffort,
         withCurrent: withCurrent,
+        aliasIn: aliasIn,
         vocabularyFor: vocabularyFor
     };
 });

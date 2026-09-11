@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.459.0 - the running row said `claude-opus-5` beside a badge that already said Claude (2026-09-11)
+
+- **THE LIVE MODEL BOX SHOWS THE ALIAS, NOT THE ID THE CLI REPORTED.** 3.457.0
+  taught the running row to name its model instead of `Default` - and named it
+  `claude-opus-5`, the resolved id, inside the narrowest control on the row,
+  next to an engine badge that already says Claude. The engine written twice,
+  and worse: a long option is a min-content floor a `<select>` will not shrink
+  under, so on a narrow panel the row stopped giving ground and the agent name
+  and its badge were drawn over each other. The user saw both in one look.
+  One shared rule now (`AFLaunch.aliasIn`, loaded by page and host alike): the
+  value a box SHOWS for a report is the one catalogue id that is a whole
+  segment of it - `claude-opus-5` → `opus`, `claude-haiku-4-5-20251001` →
+  `haiku` - and the raw id only when the catalogue has no such row or several.
+  The value SENT is untouched. Measured after: `opus` in the box, and the row
+  narrowed to 640px with zero overlaps and zero spill.
+
 ## 3.458.0 - two engine names cut on the plan card with a thousand pixels to spare (audit B-06) (2026-09-11)
 
 - **THE PLAN-USAGE STRIP READ `Antigra…` / `OpenCo…` WITH 1,028px OF PAGE

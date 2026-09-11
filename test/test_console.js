@@ -1657,6 +1657,24 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // bypass drew `Default`: on this axis the wrong answer in the safe
     // direction. The row is borrowed back from the composer's own list, with
     // the ⚠ and the sentence it already carries.
+    // ‼️ AND THE MODEL BOX SAYS `opus`, NOT `claude-opus-5`. The CLI reports the
+    // id it resolved; the catalogue publishes the alias; handing the report to
+    // `withCurrent` drew the engine's name inside the box, beside a badge that
+    // already says Claude, on the narrowest control of the row — and a long
+    // option is a min-content floor the row could no longer shrink under, which
+    // is how the agent name and its badge came to overlap. The user saw both.
+    ok('‼️ the live model box selects the catalogue ALIAS of what the CLI reported',
+        /const shownModel = s \? window\.AFLaunch\.aliasIn\(modelsFor\(s\.engine\), s\.model\) : '';/.test(js)
+        && /list: withCurrent\(modelsFor\(s\.engine\), shownModel\), cur: shownModel,/.test(js)
+        && (() => {
+            const L = require('../media/afLaunch.js');
+            const rows = [{ id: '' }, { id: 'sonnet' }, { id: 'opus' }, { id: 'haiku' }];
+            return L.aliasIn(rows, 'claude-opus-5') === 'opus'
+                && L.aliasIn(rows, 'claude-haiku-4-5-20251001') === 'haiku'
+                && L.aliasIn(rows, 'sonnet') === 'sonnet'
+                && L.aliasIn(rows, 'gpt-5.6-terra') === 'gpt-5.6-terra'
+                && L.aliasIn([{ id: 'a/opus' }, { id: 'b/opus' }], 'x-opus-1') === 'x-opus-1';
+        })());
     ok('‼️ …but a mode the live list dropped is still borrowed back to be SAID',
         /list: withCurrentFrom\(\s*live \? \(DATA\.livePermissions/.test(js)
         && /const row = \(wider \|\| \[\]\)\.find\(x => x && x\.id === v\);/.test(js));

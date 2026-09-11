@@ -3971,6 +3971,7 @@
         // an engine that cannot do it would be the panel lying about the one
         // thing the reader is deciding.
         const live = !s || s.steerable !== false;
+        const shownModel = s ? window.AFLaunch.aliasIn(modelsFor(s.engine), s.model) : '';
         // ‼️ U-59 — AND THE THIRD SHAPE ANSWERS DIFFERENTLY AGAIN, SO IT IS
         // ASKED SEPARATELY. `steerable` answers ONE question — can this be
         // changed while a turn is RUNNING — and a shared-ACP engine says no to
@@ -4136,10 +4137,14 @@
                     * row apart.
                     */''}${axisBox({
                     axis: 'Model', id: 'c-model-live',
-                    list: withCurrent(modelsFor(s.engine), s.model), cur: s.model,
+                    // ‼️ THE BOX SHOWS THE ALIAS THE CATALOGUE PUBLISHES, NOT
+                    // THE ID THE CLI REPORTED. `claude-opus-5` beside a Claude
+                    // badge is the engine written twice in the narrowest place
+                    // on the row; the word is `opus`. Rule: AFLaunch.aliasIn.
+                    list: withCurrent(modelsFor(s.engine), shownModel), cur: shownModel,
                     standard: window.AFTip.lines([modelTip, modelNote(s.engine)])
                 })}
-                ${effortBox(s.engine, s.model, s.effort, 'c-effort-live', effortTip)}
+                ${effortBox(s.engine, shownModel, s.effort, 'c-effort-live', effortTip)}
                 ${liveAccountBoxHtml(s)}
                 ${axisBox({
                     axis: 'Perm', name: 'Permissions', id: 'c-perm',
