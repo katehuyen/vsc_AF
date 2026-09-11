@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.458.0 - two engine names cut on the plan card with a thousand pixels to spare (audit B-06) (2026-09-11)
+
+- **THE PLAN-USAGE STRIP READ `Antigra…` / `OpenCo…` WITH 1,028px OF PAGE
+  UNUSED TO ITS RIGHT.** Measured: Antigravity needed 60px and had 59, OpenCode
+  the same. The handles were `flex:1 1 0` - a basis of ZERO, so five of them
+  split the card into five equal fifths whatever their names measured. Same
+  family as the model id drawn in a box narrower than itself (audit B-04.4) and
+  the voice pickers (B-05.5): a control narrower than its value, with room
+  beside it. The basis is the name now: each handle starts at its own width and the
+  SPARE is what they share equally, so an ellipsis appears only when the sum of
+  the names really exceeds the card - the one case U-40's one-row rule was
+  written for - and never before. Measured both ways on the laid-out DOM: at
+  the card's own width no handle is cut and every strip is still one row; on a
+  card forced to 200px the strip is STILL one row, nothing spills past its edge,
+  and the names give ground proportionally (the longer name keeps more).
+  `test/test_planusage_tabs_width.js` holds both, mutation-proved - put the
+  zero back and it names the six cut handles with their pixels.
+
+- The Dashboard surface is closed in the audit ledger: two fixtures, all six
+  scenes photographed at their own size and looked at, two of them in the light
+  theme too. One trap for whoever measures next, recorded there: a mutation run
+  re-renders `dist/render/` with the MUTANT stylesheet, and `shoot_page.js`
+  photographs whatever render is on disk - restore the source AND render again
+  before you look, or the picture you approve is of the defect.
+
 ## 3.457.0 - every box on the Console was describing a session that was not running (S-58 · the launch layer that never reached a control) (2026-09-11)
 
 One complaint, five defects, all of the same family: **a control that draws a

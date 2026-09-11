@@ -277,12 +277,22 @@
            to wrap, so the fourth engine dropped to a line of its own the
            moment a handle carried anything besides a name — one tab above, one
            below, which reads as a layout fault rather than as a strip that ran
-           out of room. Handles are now names only, they share the width
-           equally, and a name too long for its share ellipsises instead of
-           pushing its neighbours off the line. The engine's own colour comes
-           from the shared palette (--af-engc, AFEngine.cls). */
+           out of room. Handles are now names only, and a strip genuinely out
+           of room ellipsises a name instead of pushing its neighbours off the
+           line. The engine's own colour comes from the shared palette
+           (--af-engc, AFEngine.cls).
+
+           ‼️ B-06.2 — AND A NAME IS NEVER CUT WHILE THE STRIP HAS ROOM. The
+           basis was 0, so five handles split the card into five EQUAL fifths
+           whatever their names measured: Antigravity needed 60px and got 59,
+           OpenCode the same, both drawn as "Antigra…" / "OpenCo…" with the
+           strip 50px short of full and 1,028px of page unused to the right.
+           The basis is the name now: each handle starts at its own width and
+           the SPARE is what they share equally, so an ellipsis appears only
+           when the sum of the names really exceeds the card - the case U-40
+           was written for - and never before. */
         .pu-tabs { display:flex; gap:4px; margin:8px 0 2px; flex-wrap:nowrap; }
-        .pu-tab { flex:1 1 0; min-width:0; font-size:10px; padding:2px 6px; cursor:pointer;
+        .pu-tab { flex:1 1 auto; min-width:0; font-size:10px; padding:2px 6px; cursor:pointer;
             background:transparent; color:var(--vscode-foreground); opacity:.65;
             border:1px solid transparent; border-bottom:2px solid var(--vscode-widget-border,#4444);
             border-radius:4px 4px 0 0; text-align:center;

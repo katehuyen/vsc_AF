@@ -561,6 +561,14 @@ node test/shoot_page.js  track --light                 → BOTH take --light
   the rich scene is the one somebody already built to demo the feature.
 - **Check the light theme too** (`--light`). `color-mix` over a dark fallback
   and `color:#fff` on a chip are the two that fail there and only there.
+- **‼️ Render again before you shoot — `shoot_page.js` photographs whatever
+  render is on disk.** A mutation run (a guard's own test calls `render_page`)
+  leaves `dist/render/<fixture>.html` drawn with the MUTANT stylesheet; restore
+  the source and the render stays. Measured (B-06.2): the repair was in the
+  file, the measurement said 0 cut, and the first picture still read
+  `Antigra…` — a photograph of the defect, one command away from being filed as
+  proof of its repair. `render_page` (both themes) is the first half of every
+  look, not a step you did earlier.
 - **‼️ What only exists after a press has to be photographable, or it ships
   blind.** A hover panel, a filter menu and a row editor are each a closed
   button in a picture taken of the page as it loads. Three ways in, in order of
