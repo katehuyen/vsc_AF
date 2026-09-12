@@ -386,6 +386,32 @@ gaps found by a hand scan, and a hand scan rots the day it finishes.
   either a command drawn again or a relay to the page's own handler), and
   `test_ctxmenu_reach.js` is what proves those relays land.
 
+### An account slot's contents are the SHAPE of its adapter, too (X-284)
+
+The same rule, one level down. What a captured account must carry to count as
+COMPLETE is not a list anybody writes: `core/slotCompleteness` derives it from
+the engine adapter's own fields — every `ownFiles` entry an `own:` clause
+(identity, the account's, never repaired in place), every `carryFiles` entry a
+`carry:` clause and every `requiredEnv` var an `env:` clause (reproduced by
+X-269), every `sharedPaths` entry a `link:` clause (a junction to the pool,
+X-271), plus `hooks`. `CONTENT_KEYS` / `META_KEYS` classify every field of
+`EngineAuthAdapter`, and `test_slot_completeness.js` reads the interface out
+of the source: a new field in neither list fails the build. So the eleventh
+thing an isolated session turns out to need (plugins, skills, folder trusts,
+MCP grants — X-273, X-274) is added by giving the adapter a field and this
+module a deriver, and every gate, the `accounts.complete` op, the card badge
+and the Doctor line see it at once.
+
+- **"Complete" means "carries the LEAST possible"** (X-270). A clause's repair
+  never copies something new into a slot: it links, or it re-renders from the
+  fleet's source. The acceptance test of the contract is to delete a slot folder
+  and capture the account again and lose the user nothing.
+- **A repair is the gate's own primitive, never a second implementation.**
+  `completeSlot` calls `reproduceSlotSettings`, the injected
+  `repairSharedLinks`, `syncHooksToAccounts` — the code the gates run — so
+  the contract cannot disagree with the gates about what "fixed" means.
+- **A question before a tool.** `accounts.complete` defaults to `dryRun:true`.
+
 ---
 
 ## A shape assertion is measured as a SHAPE, never as a character budget
