@@ -162,7 +162,13 @@ try {
             alwaysThinkingEnabled: true, spinnerTipsEnabled: false
         };
         fs.writeFileSync(userSettingsPath(live), JSON.stringify(MINE, null, 2), 'utf8');
-        installHooksInto(userSettingsPath(live), 8377);
+        // ‼️ AND THE USER'S OWN FILE CARRIES A STALE PORT. This is the X-265
+        // state: hooks that are PRESENT and out of date, which every surface reads
+        // as "installed" while the events go nowhere. Reproduction renders the slot
+        // file out of this one, so the stale line travels with it and ONLY the hooks
+        // clause can put it right — which is what makes the assertion below a
+        // measurement of that clause rather than of the copy beneath it.
+        installHooksInto(userSettingsPath(live), 8300);
         // ‼️ AND A SESSION: the record of work, which outlives every account.
         const poolFile = path.join(live, 'projects', 'D--proj', 'sess.jsonl');
         fs.mkdirSync(path.dirname(poolFile), { recursive: true });
