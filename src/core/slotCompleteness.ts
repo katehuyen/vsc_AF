@@ -1,0 +1,247 @@
+import * as path from 'path';
+import { adapterFor, EngineAuthAdapter, liveSource } from './engineAccounts';
+import { hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
+import { reproduceSlotSettings, slotEnvGaps, SlotSettingsFs } from './slotSettings';
+
+/**
+ * ‼️ X-284 — THE BIRTH CONTRACT: what a slot must carry to count as COMPLETE,
+ * defined in ONE place and DERIVED FROM THE ADAPTER'S SHAPE.
+ *
+ * Every fault in the X-270 family was the same fault: something a session needs
+ * was copied into the slot once, at capture, and nothing ever asked again.
+ * Settings (X-265/X-269), hooks, the pool links (X-271) — each got its own
+ * repair, its own gate and its own Doctor line, and the eleventh thing to be
+ * added tomorrow would be forgotten the same way. This module is the one list.
+ *
+ * ‼️ "COMPLETE" MEANS "CARRIES THE LEAST POSSIBLE" (X-270 invariant). A slot is
+ * the IDENTITY and nothing else; everything a session behaves by belongs to the
+ * fleet and is either LINKED into the slot (a junction to the pool) or
+ * REPRODUCED into it before every spawn (a single-use rendering, never a stored
+ * copy). So a clause's repair never copies anything new into a slot: it links,
+ * or it re-renders from the fleet's source. Deleting a slot folder and
+ * capturing the account again must lose the user NOTHING — that is the
+ * acceptance test of this contract, and every clause is written to pass it.
+ *
+ * ‼️ DERIVED, NOT LISTED. `slotClauses` walks the adapter's own fields —
+ * `ownFiles`, `carryFiles`, `requiredEnv`, `sharedPaths` — and the test pins
+ * that every field of `EngineAuthAdapter` is either one of those (and so has a
+ * clause) or is declared META here. A new slot-content field without a clause
+ * fails the build rather than a person's memory (the same rule as `RunDimensions`
+ * in docs/CONVENTIONS.md).
+ */
+
+/** Adapter fields that describe what a slot CONTAINS — each has a clause deriver. */
+export const CONTENT_KEYS = ['ownFiles', 'carryFiles', 'requiredEnv', 'sharedPaths'] as const;
+/** Adapter fields that describe the ENGINE, not the slot's contents — no clause. */
+export const META_KEYS = [
+    'engine', 'support', 'configEnv', 'liveDir', 'liveFiles', 'evidence', 'signIn', 'readIdentity', 'quotaSource'
+] as const;
+
+export type ClauseKind = 'own' | 'carry' | 'env' | 'link' | 'hooks';
+/** X-270 — who the thing belongs to. `account` stays with the slot and dies with it; `fleet` is the user's and never does. */
+export type ClauseOwner = 'account' | 'fleet';
+
+export interface ClauseReading {
+    ok: boolean;
+    /** one line a card or a Doctor row can print */
+    detail: string;
+}
+
+export interface ClauseRow extends ClauseReading {
+    id: string;
+    kind: ClauseKind;
+    owner: ClauseOwner;
+    /** false = this clause cannot be put right in place (identity: sign in again) */
+    repairable: boolean;
+    /** set by completeSlot: whether a repair ran and changed the disk */
+    wrote?: boolean;
+    error?: string;
+}
+
+export interface SlotContext {
+    fs: SlotCompletenessFs;
+    home: string;
+    /** the slot folder */
+    dir: string;
+    slotId: string;
+    engine?: string;
+    adapter?: EngineAuthAdapter;
+    /** the live-events port the hooks must name; omit = hooks clause is not asked */
+    hooksPort?: number;
+    /** X-271 — the pool-link repair lives beside the store; injected so this module stays pure */
+    repairLinks?: (slotId: string, dryRun: boolean) => { linked: string[]; failed: string[] };
+}
+
+export interface SlotCompletenessFs extends SlotSettingsFs {
+    lstatSync: (p: string) => { isSymbolicLink(): boolean; isDirectory(): boolean };
+    realpathSync?: (p: string) => string;
+}
+
+export interface SlotClause {
+    id: string;
+    kind: ClauseKind;
+    owner: ClauseOwner;
+    read: (ctx: SlotContext) => ClauseReading;
+    /** absent = not repairable in place */
+    repair?: (ctx: SlotContext, dryRun: boolean) => { wrote: boolean; error?: string };
+}
+
+const same = (a: string, b: string): boolean => path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+
+/** The contract for one engine, read off its adapter. */
+export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
+    const out: SlotClause[] = [];
+    // own — the identity. Present or the capture failed; never repaired here.
+    for (const name of adapter.ownFiles) {
+        out.push({
+            id: `own:${name}`, kind: 'own', owner: 'account',
+            read: ctx => {
+                const p = path.join(ctx.dir, name);
+                return ctx.fs.existsSync(p)
+                    ? { ok: true, detail: `${name} present` }
+                    : { ok: false, detail: `${name} missing — the identity was never captured; sign in again` };
+            }
+        });
+    }
+    // carry — the user's behaviour file, reproduced from the fleet's source (X-269).
+    for (const name of adapter.carryFiles ?? []) {
+        out.push({
+            id: `carry:${name}`, kind: 'carry', owner: 'fleet',
+            read: ctx => {
+                const p = path.join(ctx.dir, name);
+                const src = path.join(ctx.home, liveSource(adapter.engine, name));
+                if (!ctx.fs.existsSync(p)) {
+                    return ctx.fs.existsSync(src)
+                        ? { ok: false, detail: `${name} missing — the fleet's ${liveSource(adapter.engine, name)} exists and was not reproduced` }
+                        : { ok: true, detail: `${name} absent on both sides — nothing to reproduce` };
+                }
+                return { ok: true, detail: `${name} present` };
+            },
+            repair: (ctx, dryRun) => {
+                const rows = reproduceSlotSettings(ctx.fs, { home: ctx.home, dir: ctx.dir, adapter, dryRun });
+                const row = rows.find(r => r.file === path.join(ctx.dir, name));
+                return { wrote: !!row?.wrote, error: row?.error || undefined };
+            }
+        });
+    }
+    // env — the fleet's guarantee inside that file (X-269).
+    if (adapter.requiredEnv) {
+        const { file, vars } = adapter.requiredEnv;
+        for (const key of Object.keys(vars)) {
+            out.push({
+                id: `env:${key}`, kind: 'env', owner: 'fleet',
+                read: ctx => {
+                    const p = path.join(ctx.dir, file);
+                    const text = ctx.fs.existsSync(p) ? ctx.fs.readFileSync(p, 'utf8') : undefined;
+                    const gaps = slotEnvGaps(text, { [key]: vars[key] });
+                    return gaps.length
+                        ? { ok: false, detail: `${file} does not carry ${key}=${vars[key]}` }
+                        : { ok: true, detail: `${key}=${vars[key]} in ${file}` };
+                },
+                repair: (ctx, dryRun) => {
+                    const rows = reproduceSlotSettings(ctx.fs, { home: ctx.home, dir: ctx.dir, adapter, dryRun });
+                    const row = rows.find(r => r.file === path.join(ctx.dir, file));
+                    return { wrote: !!row?.wrote, error: row?.error || undefined };
+                }
+            });
+        }
+    }
+    // link — the pool, reached through a junction, never a folder of its own (X-271).
+    for (const name of adapter.sharedPaths) {
+        out.push({
+            id: `link:${name}`, kind: 'link', owner: 'fleet',
+            read: ctx => {
+                const to = path.join(ctx.dir, name);
+                const from = path.join(ctx.home, adapter.liveDir, name);
+                let st: { isSymbolicLink(): boolean; isDirectory(): boolean } | undefined;
+                try { st = ctx.fs.lstatSync(to); } catch { st = undefined; }
+                if (!st) { return { ok: false, detail: `${name} missing — no link to the pool` }; }
+                if (!st.isSymbolicLink()) {
+                    return { ok: false, detail: `${name} is a real ${st.isDirectory() ? 'folder' : 'file'} inside the slot — a record living under an account` };
+                }
+                if (ctx.fs.realpathSync) {
+                    try {
+                        const real = ctx.fs.realpathSync(to);
+                        if (!same(real, from)) { return { ok: false, detail: `${name} links to ${real}, not the pool` }; }
+                    } catch { return { ok: false, detail: `${name} link is broken` }; }
+                }
+                return { ok: true, detail: `${name} → pool` };
+            },
+            repair: (ctx, dryRun) => {
+                if (!ctx.repairLinks) { return { wrote: false, error: 'no link repair wired' }; }
+                const r = ctx.repairLinks(ctx.slotId, dryRun);
+                const to = path.join(ctx.dir, name);
+                const failed = r.failed.some(f => same(f, to));
+                return { wrote: r.linked.some(f => same(f, to)), error: failed ? 'link repair failed' : undefined };
+            }
+        });
+    }
+    // hooks — the live wire, asked only when the caller knows the port.
+    if (adapter.carryFiles?.includes('settings.json')) {
+        out.push({
+            id: 'hooks', kind: 'hooks', owner: 'fleet',
+            read: ctx => {
+                if (ctx.hooksPort === undefined) { return { ok: true, detail: 'hooks not asked (no port)' }; }
+                const p = path.join(ctx.dir, 'settings.json');
+                return hooksAreCurrent(p, ctx.hooksPort)
+                    ? { ok: true, detail: `hooks current on :${ctx.hooksPort}` }
+                    : { ok: false, detail: `hooks missing or stale in settings.json (port ${ctx.hooksPort})` };
+            },
+            repair: (ctx, dryRun) => {
+                if (ctx.hooksPort === undefined) { return { wrote: false }; }
+                if (dryRun) { return { wrote: true }; }
+                const userFile = path.join(ctx.home, liveSource(adapter.engine, 'settings.json'));
+                const rows = syncHooksToAccounts(userFile, [path.join(ctx.dir, 'settings.json')], ctx.hooksPort);
+                return { wrote: rows.length > 0 };
+            }
+        });
+    }
+    return out;
+}
+
+export interface SlotCompleteness {
+    slotId: string;
+    engine: string;
+    complete: boolean;
+    /** clause ids that read false */
+    gaps: string[];
+    rows: ClauseRow[];
+}
+
+/** Read-only: is this slot complete, and if not, exactly what is missing. */
+export function slotCompleteness(ctx: SlotContext): SlotCompleteness {
+    const adapter = ctx.adapter ?? adapterFor(ctx.engine);
+    const rows: ClauseRow[] = slotClauses(adapter).map(c => {
+        let r: ClauseReading;
+        try { r = c.read(ctx); } catch (e) { r = { ok: false, detail: String((e as Error)?.message ?? e) }; }
+        return { id: c.id, kind: c.kind, owner: c.owner, repairable: !!c.repair, ...r };
+    });
+    return {
+        slotId: ctx.slotId, engine: adapter.engine,
+        complete: rows.every(r => r.ok), gaps: rows.filter(r => !r.ok).map(r => r.id), rows
+    };
+}
+
+/**
+ * Put every failing, repairable clause right, then read again. Idempotent: a
+ * complete slot costs its reads and writes nothing. `dryRun` reports what would
+ * be written and touches nothing.
+ */
+export function completeSlot(ctx: SlotContext, dryRun = false): SlotCompleteness {
+    const adapter = ctx.adapter ?? adapterFor(ctx.engine);
+    const clauses = slotClauses(adapter);
+    const before = slotCompleteness({ ...ctx, adapter });
+    const wrote = new Map<string, { wrote: boolean; error?: string }>();
+    for (const c of clauses) {
+        const row = before.rows.find(r => r.id === c.id);
+        if (!row || row.ok || !c.repair) { continue; }
+        try { wrote.set(c.id, c.repair(ctx, dryRun)); }
+        catch (e) { wrote.set(c.id, { wrote: false, error: String((e as Error)?.message ?? e) }); }
+    }
+    const after = dryRun ? before : slotCompleteness({ ...ctx, adapter });
+    for (const r of after.rows) {
+        const w = wrote.get(r.id);
+        if (w) { r.wrote = w.wrote; if (w.error) { r.error = w.error; } }
+    }
+    return after;
+}
