@@ -2431,7 +2431,7 @@ const { opencodeStatus, syncToOpencode } =
             completeBlock.includes("op: 'accounts.complete'") && /completeSlots\(/.test(completeBlock));
         ok('…and it is a QUESTION first: dryRun defaults to true',
             /optBool\(args, 'dryRun', true\)/.test(completeBlock));
-        const helper = src.slice(src.indexOf('const completeSlots = '), src.indexOf('// ‼️ X-271 — and it runs at every start'));
+        const helper = src.slice(src.indexOf('const completeSlots = '), src.indexOf('// ‼️ X-284 — THE CONTRACT IS ASKED OF EVERY SLOT'));
         ok('…repairing through the gates\' own primitives, never a second implementation',
             /repairSharedLinks\(dryRun, id\)/.test(helper) && /completeSlot\(ctx, false\)/.test(helper) && /slotCompleteness\(ctx\)/.test(helper));
         ok('…with the live port handed in so the hooks clause is really asked', /hooksPort/.test(helper) && /'livePort'/.test(helper));
@@ -5361,18 +5361,28 @@ const { opencodeStatus, syncToOpencode } =
         // ‼️ THREE MOMENTS, and the middle one is the only PREVENTIVE one: once the
         // engine has been handed an unlinked slot it has already written inside it.
         ok('…and the window never waits on the repair',
-            /setTimeout\(\(\) => \{ try \{ repairSharedLinks\(\);/.test(src));
-        // ‼️ THE ORDER, NOT THE ADJACENCY. Both preventive gates live here and a
-        // proximity match broke the moment the second one was added — which
-        // would have read as "X-271 regressed". What must hold is that every
-        // repair runs BEFORE the engine is handed the directory: once
-        // CLAUDE_CONFIG_DIR points at an unlinked slot the transcript is already
-        // being written inside it, and the system-prompt variable is read when
-        // the process starts, so neither can be fixed afterwards.
-        ok('‼️ X-271: the link is checked BEFORE a launch is handed the slot',
-            /repairSharedLinks\(false, slot\.id\);[\s\S]{0,900}return accountEnv\(slot\);/.test(src));
-        ok('‼️ X-269: …and so is the behaviour file, in that order',
-            /repairSharedLinks\(false, slot\.id\);[\s\S]{0,600}reproduceSlotSettings\(fs, \{[\s\S]{0,200}dir: slot\.dir[\s\S]{0,300}return accountEnv\(slot\);/.test(src));
+            /setTimeout\(\(\) => \{ try \{ completeSlots\(\);/.test(src));
+        // ‼️ X-284 — THE MOMENT, NOT THE LIST. This used to pin two named
+        // repairs in a fixed order at the launch gate, and it had already broken
+        // once on proximity when the second one was added. The list is no longer
+        // the gate's to keep: it is the contract's (`slotClauses`, pinned in
+        // test_slot_completeness.js), and what must hold HERE is only the
+        // moment — every repair runs BEFORE the engine is handed the directory.
+        // Once CLAUDE_CONFIG_DIR points at an incomplete slot the transcript is
+        // already being written inside it and the system-prompt variable has
+        // already been read, so nothing can be put right afterwards.
+        ok('‼️ X-271/X-269/X-284: the whole contract is asked BEFORE a launch is handed the slot',
+            /completeSlots\(false, slot\.id\);[\s\S]{0,400}return accountEnv\(slot\);/.test(src));
+        ok('…and a launch is never failed by it', /completeSlots\(false, slot\.id\); \} catch \{ \/\* never fails a launch/.test(src));
+        // ‼️ AND THE OTHER TWO GATES ASK THE SAME ONE THING, or the eleventh
+        // clause is carried by one door and forgotten by the other two.
+        ok('‼️ X-284: capture asks the contract once the row exists',
+            /await writeAccounts\(addSlot\(list, slot\)\);[\s\S]{0,700}completeSlots\(false, slot\.id\); \} catch \{ \/\* never fails a capture/.test(src));
+        ok('…and the capture executor copies the IDENTITY and stops',
+            !/for \(const l of plan\.links\)/.test(src)
+            && !/reproduceSlotSettings\(fs, \{\r?\n\s+home: os\.homedir\(\), dir: plan\.slot\.dir/.test(src));
+        ok('‼️ X-284: and activation no longer repairs slots beside the contract',
+            !/for \(const slot of storedAccounts\(\)\) \{\r?\n\s+try \{ reproduceSlotSettings/.test(src));
         const afterEnd = cut('const sweptAfterEnd', 'context.subscriptions.push(consoleHost.onChange(id => {\n        // The first change');
         ok('‼️ X-271: and again once a session has ended and let go of its file',
             /s\.status !== 'ended' && s\.status !== 'error'/.test(afterEnd)

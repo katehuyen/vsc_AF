@@ -1351,21 +1351,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
         ].filter(f => hasOurHooks(f) && !hooksAreCurrent(f, livePort));
         for (const f of stale) { installHooksInto(f, livePort); }
-        // ‼️ X-269 — THE CONTRACT FIRST, THE HOOKS AFTER. Reproduction renders
-        // the slot file out of the user's own, so running it before the hook
-        // sweep means the sweep sees today's file and usually has nothing left
-        // to do; the other order would let it write a port into a file that is
-        // about to be re-rendered.
-        for (const slot of storedAccounts()) {
-            try { reproduceSlotSettings(fs, { home: os.homedir(), dir: slot.dir, engine: slot.engine }); }
-            catch { /* a settings repair must never stop the extension loading */ }
-        }
-        const healed = syncHooksToAccounts(
-            userFile, accountSettingsFiles().map(a => a.file), livePort);
-        if (healed.length || stale.length) {
-            console.log(`[agent-farm] X-265: refreshed ${stale.length} stale hook file(s) `
-                + `and carried the live hooks into ${healed.length} account directory(ies) — `
-                + 'a session started on a captured sign-in reads its OWN settings.json');
+        // ‼️ X-284 — AND THE SLOTS ARE NOT REPAIRED HERE ANY MORE. This block
+        // owns the files that are the USER'S OWN — their settings.json and each
+        // agent's settings.local.json — because those are not a slot's contents
+        // and no contract describes them. Everything a SLOT must carry is one
+        // list now (`completeSlots`, X-284) and is asked by the deferred sweep
+        // further down: three repairs called in a fixed order here was exactly
+        // the shape that let the eleventh thing be forgotten.
+        if (stale.length) {
+            console.log(`[agent-farm] X-265: refreshed ${stale.length} stale hook file(s) — `
+                + 'the live wire in the files this machine signs in with');
         }
     } catch { /* a settings repair must never stop the extension loading */ }
 
@@ -17763,19 +17758,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // settings file is a real account with the machine defaults, while
             // a slot that got only a settings file is nobody. Letting these
             // raise `copied` would turn the second case into a silent success.
-            // ‼️ X-269 — AND REPRODUCED RATHER THAN COPIED-IF-ABSENT. The old
-            // line skipped a slot that already had the file, which is how a
-            // re-capture could not repair a stale one, and copied the user's
-            // file verbatim, which is how no slot on this machine ever carried
-            // the fleet's own env contract. Same two files, one writer.
-            reproduceSlotSettings(fs, {
-                home: os.homedir(), dir: plan.slot.dir, engine: plan.slot.engine
-            });
-            for (const l of plan.links) {
-                if (fs.existsSync(l.to)) { continue; }
-                if (!fs.existsSync(l.from)) { continue; }
-                try { fs.symlinkSync(l.from, l.to, 'junction'); } catch { /* see below */ }
-            }
+            // ‼️ X-284 — AND NOTHING ELSE IS WRITTEN HERE. This function copies
+            // the IDENTITY and stops: the behaviour file, the env contract, the
+            // pool links and the hooks are the slot's contract, and the contract
+            // is asked once by `captureAccount` the moment the row exists
+            // (`completeSlots`). Reproducing settings and making junctions here
+            // as well would be a second implementation of both — the fault this
+            // whole family is made of. `plan.links` stays the PLAN's statement
+            // of what the slot will link, which the planner is tested on.
             return '';
         } catch (e) {
             return `Could not write the account directory: ${String((e as Error)?.message ?? e)}`;
@@ -17950,11 +17940,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return dry ? { ...slotCompleteness(ctx), dryRun: true } : { ...completeSlot(ctx, false), dryRun: false };
             });
     };
-    // ‼️ X-271 — and it runs at every start, not only when somebody asks for it.
+    // ‼️ X-284 — THE CONTRACT IS ASKED OF EVERY SLOT AT EVERY START, not only
+    // when somebody presses something. This was the X-271 link sweep and is now
+    // the whole list: the links, the behaviour file, the env contract and the
+    // hooks, in the order the clauses are derived in (carry and env before
+    // hooks, so the hook pass sees today's file — the X-269 order, kept by the
+    // shape rather than by three call sites agreeing).
     // Off the activation path on purpose: it touches the disk, and a window must
-    // never wait on a repair. A failure here costs one unlinked slot, never a
+    // never wait on a repair. A failure here costs one incomplete slot, never a
     // start, and never a session — the index reads the slots either way.
-    setTimeout(() => { try { repairSharedLinks(); } catch { /* never fails a start */ } }, 0);
+    setTimeout(() => { try { completeSlots(); } catch { /* never fails a start */ } }, 0);
     /** One slot as every surface may see it — never a token, ever. */
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
         const id = slotIdentity(slot);
@@ -18062,6 +18057,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // dropped, or the card would go on showing the verdict it had five
         // seconds ago — the very verdict this press exists to change.
         await writeAccounts(addSlot(list, slot));
+        // ‼️ X-284 — THE BIRTH CONTRACT, AT BIRTH. The row exists now, so the
+        // slot can be asked for everything it must carry beyond the identity —
+        // and a RE-capture repairs a slot that had drifted, which the
+        // copy-if-absent line it replaced could never do. It is never allowed
+        // to fail a capture: the credentials are already on disk and a slot
+        // missing a link is repaired by the next sweep.
+        try { completeSlots(false, slot.id); } catch { /* never fails a capture */ }
         if (plan.reseats) { identitySeen.delete(plan.reseats); }
         if (plan.adopts) { identitySeen.delete(plan.adopts); }
         // ‼️ CAPTURING IS NOT CHOOSING, and the default says so. Redirecting the
@@ -18336,24 +18338,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return accountEnvFor(o.engine, MACHINE_ACCOUNT, storedAccounts());
         }
         const slot = launchAccountSlot(o);
-        // ‼️ X-271 — THE LINK IS CHECKED BEFORE THE ENGINE IS HANDED THE SLOT.
-        // This is the only moment that PREVENTS the fault rather than repairing
-        // it: once `CLAUDE_CONFIG_DIR` points at a slot with no junction, the
-        // engine creates a real folder there and writes the first byte of the
-        // transcript inside the account. One slot, a handful of stats — and a
-        // launch is never failed by it, because an unlinked slot still costs
-        // only a sweep while a refused launch costs the user their session.
-        if (slot) { try { repairSharedLinks(false, slot.id); } catch { /* never fails a launch */ } }
-        // ‼️ X-269 — AND THE BEHAVIOUR FILE IS REPRODUCED IN THE SAME BREATH,
-        // for the same reason: the variable that decides which system prompt the
-        // user gets is read when the process STARTS, so this is the last moment
-        // it can be made true for the session about to open. A slot that already
-        // says it is not written to, and a launch is never failed by it.
-        if (slot) {
-            try {
-                reproduceSlotSettings(fs, { home: os.homedir(), dir: slot.dir, engine: slot.engine });
-            } catch { /* never fails a launch */ }
-        }
+        // ‼️ X-271 / X-269 / X-284 — THE WHOLE CONTRACT IS ASKED BEFORE THE
+        // ENGINE IS HANDED THE SLOT. This is the only moment that PREVENTS the
+        // family of faults rather than repairing them: once `CLAUDE_CONFIG_DIR`
+        // points at a slot with no junction the engine creates a real folder
+        // there and writes the first byte of the transcript inside the account,
+        // and the variable that decides which system prompt the user gets is
+        // read when the process STARTS. Neither can be put right afterwards, so
+        // both — and everything added to the contract after them — happen here.
+        // One slot, a handful of stats; and a launch is never failed by it,
+        // because an incomplete slot still costs only a sweep while a refused
+        // launch costs the user their session.
+        if (slot) { try { completeSlots(false, slot.id); } catch { /* never fails a launch */ } }
         return accountEnv(slot);
     };
     /**

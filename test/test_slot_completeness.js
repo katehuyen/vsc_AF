@@ -36,6 +36,18 @@ ok('claude: one clause per requiredEnv var',
     Object.keys(claude.requiredEnv.vars).every(k => ids.includes('env:' + k)));
 ok('claude: one clause per sharedPath', claude.sharedPaths.every(n => ids.includes('link:' + n)));
 ok('claude: the hooks clause rides on settings.json', ids.includes('hooks'));
+// ‼️ X-269 — THE CONTRACT FIRST, THE HOOKS AFTER, kept by the SHAPE. The slot's
+// settings.json is RENDERED out of the user's own, so a hook pass that ran before
+// the render would write a port into a file about to be replaced. That order used
+// to be three call sites agreeing with each other in a comment; it is now the
+// order the clauses are derived in, which is the order completeSlot repairs in.
+ok('‼️ X-269: carry and env are repaired BEFORE hooks, by clause order',
+    ids.indexOf('hooks') === ids.length - 1
+    && ids.indexOf('carry:settings.json') < ids.indexOf('hooks')
+    && ids.findIndex(i => i.startsWith('env:')) < ids.indexOf('hooks'));
+// ‼️ AND THE IDENTITY IS ASKED FIRST, so a slot that is nobody says so before it
+// is told which links it is missing.
+ok('X-270: the identity clauses come first', ids.slice(0, claude.ownFiles.length).every(i => i.startsWith('own:')));
 ok('X-270 — identity clauses belong to the account and are NOT repairable in place',
     clauses.filter(c => c.kind === 'own').every(c => c.owner === 'account' && !c.repair));
 ok('X-270 — everything else belongs to the fleet and IS repairable',
