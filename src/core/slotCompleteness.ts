@@ -159,10 +159,22 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
                 if (!st.isSymbolicLink()) {
                     return { ok: false, detail: `${name} is a real ${st.isDirectory() ? 'folder' : 'file'} inside the slot — a record living under an account` };
                 }
+                // ‼️ BOTH SIDES ARE RESOLVED, OR EVERY HEALTHY SLOT READS AS A GAP.
+                // Measured 2026-09-13 against this machine: `~/.claude` is ITSELF a
+                // junction into the agent repo, so the slot's link resolved to the
+                // D: path while the expected side was still the unresolved C: one and
+                // all twelve link clauses read false on a fleet with nothing wrong
+                // with it. A badge that is permanently wrong is the Principle 1
+                // failure this whole item exists to end, so the comparison asks the
+                // file system for both. The pool may legitimately not exist yet
+                // (a fresh machine), and then the unresolved path is what to compare
+                // against - which is also what the repair refuses to invent.
                 if (ctx.fs.realpathSync) {
                     try {
                         const real = ctx.fs.realpathSync(to);
-                        if (!same(real, from)) { return { ok: false, detail: `${name} links to ${real}, not the pool` }; }
+                        let want = from;
+                        try { want = ctx.fs.realpathSync(from); } catch { /* no pool yet */ }
+                        if (!same(real, want)) { return { ok: false, detail: `${name} links to ${real}, not the pool` }; }
                     } catch { return { ok: false, detail: `${name} link is broken` }; }
                 }
                 return { ok: true, detail: `${name} → pool` };

@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.469.1 - the link clause resolved one side of the comparison and called a healthy fleet broken (X-284) (2026-09-13)
+
+- **Found by running the shipped contract against this machine before loading
+  it.** `~/.claude` is itself a junction into the agent repo, so a slot's
+  `projects` link resolved through TWO hops to a `D:` path while the path it was
+  checked against had been resolved through none. All twelve link clauses read
+  as gaps on a fleet with nothing wrong with it — and a badge that is
+  permanently wrong is the Principle 1 failure the whole item exists to end.
+  Both sides are resolved now; where the pool does not exist yet the unresolved
+  path is what to compare against, which is also what the repair refuses to
+  invent. A link pointing into some other folder is still a gap, with where it
+  goes on it — pinned, so the fix did not buy its green by going blind.
+- The honest reading of this machine: two slots are each missing `todos` and
+  `shell-snapshots`, the other two are complete.
+
 ## 3.469.0 - a slot's contents are one contract, asked at every door instead of remembered at three (X-284) (2026-09-13)
 
 - **Every fault in the X-270 family was the same fault.** Something a session

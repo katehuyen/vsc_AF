@@ -124,6 +124,48 @@ try {
     fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+// ---------- 2b. THE POOL ITSELF IS A LINK, which is this machine ----------
+// ‼️ Measured 2026-09-13: `~/.claude` is a junction into the agent repo, so a
+// slot's `projects` junction resolves to the far side of TWO links while the
+// path it is checked against had been resolved through none. Every link clause
+// on every slot read as a gap on a fleet with nothing wrong with it - a badge
+// that is permanently wrong, which is worse than no badge. Both sides resolve.
+{
+    const tmp3 = fs.mkdtempSync(path.join(os.tmpdir(), 'af-slotlink-'));
+    try {
+        const real = path.join(tmp3, 'elsewhere');
+        const home = path.join(tmp3, 'home');
+        fs.mkdirSync(path.join(real, 'projects'), { recursive: true });
+        fs.mkdirSync(home, { recursive: true });
+        let linkable = true;
+        try { fs.symlinkSync(real, path.join(home, '.claude'), 'junction'); } catch { linkable = false; }
+        if (!linkable) {
+            console.log('  (junction unavailable on this host - the two-hop link case left unmeasured)');
+        } else {
+            const slot = path.join(tmp3, 'slot');
+            fs.mkdirSync(slot, { recursive: true });
+            fs.symlinkSync(path.join(home, '.claude', 'projects'), path.join(slot, 'projects'), 'junction');
+            const rows = sc.slotCompleteness({ fs, home, dir: slot, slotId: 's', engine: 'claude' }).rows;
+            const row = rows.find(r => r.id === 'link:projects');
+            ok('‼️ a slot linked through a pool that is ITSELF a link reads as linked, not as a gap: '
+                + row.detail, row.ok === true);
+            // …and a link pointing somewhere else is still caught, or the fix would
+            // have bought the green by making the clause blind.
+            const away = path.join(tmp3, 'away');
+            fs.mkdirSync(away, { recursive: true });
+            const slot2 = path.join(tmp3, 'slot2');
+            fs.mkdirSync(slot2, { recursive: true });
+            fs.symlinkSync(away, path.join(slot2, 'projects'), 'junction');
+            const r2 = sc.slotCompleteness({ fs, home, dir: slot2, slotId: 's2', engine: 'claude' }).rows
+                .find(r => r.id === 'link:projects');
+            ok('…and a link into some OTHER folder is still a gap, with where it goes on it',
+                r2.ok === false && /links to /.test(r2.detail));
+        }
+    } finally {
+        fs.rmSync(tmp3, { recursive: true, force: true });
+    }
+}
+
 // ---------- 3. THE ACCEPTANCE TEST: wipe the slot folder, capture again, lose NOTHING ----------
 // ‼️ X-270's whole claim, measured in one round trip. A slot is an IDENTITY and
 // nothing else, so deleting its folder may cost the user a sign-in and must never
