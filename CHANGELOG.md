@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.468.0 - the index reconciles with the disk on a clock and on demand, because a Windows watcher drops a burst without a word (X-290, X-289) (2026-09-13)
+
+- **654 transcripts were put back into the pool in one go and the tables saw two
+  of them.** `fs.watch` on Windows hands events out of a fixed kernel buffer; a
+  burst that overflows it is dropped silently, and until now the only rescan was
+  the palette's Refresh — which had no bridge form, because the parity manifest
+  called it "navigation: nothing produced that a read op does not already
+  return". Measured 2026-09-13 restoring the transcripts Claude Code's 30-day
+  prune had taken (X-289): every read op stayed 652 sessions behind the disk
+  until a settings toggle provoked a full scan.
+  - **The listing is the guarantee, the watcher is the accelerator.** `SessionIndex.sweep()`
+    is the cheap half of `scanAll` — the directory walk, no stat, no parse —
+    checked against what the index already knows (admitted, dropped, pending);
+    only a file in none of those is read. It runs every 60 s while watching and
+    costs a few hundred `readdir` entries.
+  - **`sessions.rescan`** — the bridge op: default is that reconcile; `full:true`
+    is the palette's Refresh (re-stat everything, re-parse only what the cache
+    does not hold). Answers `{ mode, picked, claude: { before, after }, ms }` so a
+    caller can see whether anything moved. The manifest now maps `agentfarm.refresh`
+    to it instead of exempting it.
+  - **`tools/restore_pruned_transcripts.js`** — the recovery used today: every file
+    the agent repo's history records as deleted under the pool (or a slot's
+    `projects/`) and missing on disk is written back from `git cat-file`, its mtime
+    set to its last message, idempotent, `--dry` first. 481 transcripts + 173
+    side files, 568 MB, 29–33 days old at deletion on every sample.
+  - **The prune is off.** `cleanupPeriodDays: 36500` in the fleet's one source;
+    X-269 reproduced it into every Claude slot with no hand on any slot file.
+    The user's decision: transcripts are kept locally for good; growth is a
+    problem to design for (see the growth report in the project's `10_Notes`),
+    never one to solve by deletion.
+
 ## 3.467.0 - a slot's settings file is reproduced, not stored, so every session gets the FULL system prompt (X-269) (2026-09-12)
 
 - **The behaviour file inside an account slot was a photograph, and every session

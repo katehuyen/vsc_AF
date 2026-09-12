@@ -2425,6 +2425,15 @@ const { opencodeStatus, syncToOpencode } =
         ok('…the delegation kinds are documented where an agent will read them',
             /delegator\|handler/.test(block) && /subagent lane/.test(block));
 
+        // ---------- X-290: sessions.rescan — the disk outran the watcher ----------
+        const rescanBlock = src.slice(src.indexOf("op: 'sessions.rescan'"), src.indexOf("op: 'sessions.find'"));
+        ok('‼️ X-290 — the bridge can bring the index up to the disk',
+            rescanBlock.includes("op: 'sessions.rescan'") && /index\.sweep\(\)/.test(rescanBlock));
+        ok('…and full:true is the palette\'s own Refresh, not a second implementation',
+            /index\.scanAll\(\)/.test(rescanBlock) && /index\.reassignAgents\(\)/.test(rescanBlock));
+        ok('…answering before/after so a caller can see whether anything moved',
+            /before/.test(rescanBlock) && /after: index\.all\(\)\.length/.test(rescanBlock));
+
         // ---------- X-34: sessions.find — the id you already have ----------
         const findBlock = src.slice(src.indexOf("op: 'sessions.find'"), src.indexOf("op: 'sessions.recent'"));
         ok('‼️ X-34 — the bridge can take an id back to its session',

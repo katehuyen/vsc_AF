@@ -9763,6 +9763,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             /**
+             * ‼️ X-290 — THE TABLES CAN BE BEHIND THE DISK, AND UNTIL NOW NO OP
+             * COULD SAY SO OR MEND IT. The watcher drops a burst (654 restored
+             * transcripts → 2 admitted, measured 2026-09-13); the palette's
+             * Refresh was the only rescan and it had no bridge form — the
+             * parity manifest called it "navigation: nothing produced that a
+             * read op does not already return", which that morning was false
+             * for every read op there is. This is the same core the command
+             * runs. Default is the cheap reconcile (listing vs index, only
+             * unknown files opened); `full:true` re-walks and re-stats
+             * everything, parsing only what the cache does not already hold.
+             */
+            op: 'sessions.rescan',
+            describe: 'Bring the session index up to what is on disk. args: full? (false = reconcile: list every projects dir and read only the transcripts the index has never seen — seconds; true = the palette\'s Refresh: re-stat every file and re-parse what changed — the whole corpus, cached, so usually still seconds). Answers { mode, picked (files newly read, reconcile only), claude: { before, after }, ms }. Call it after anything writes transcripts into the pool from outside a live session — a restore, a sync from another machine, an import — the watcher is not a guarantee on Windows.',
+            handler: async (args) => {
+                const t0 = Date.now();
+                const before = index.all().length;
+                const full = args.full === true;
+                let picked: number | null = null;
+                if (full) {
+                    await index.scanAll();
+                    index.reassignAgents();
+                } else {
+                    picked = await index.sweep();
+                }
+                refreshAll();
+                return { mode: full ? 'full' : 'reconcile', picked, claude: { before, after: index.all().length }, ms: Date.now() - t0 };
+            }
+        },
+        {
+            /**
              * ‼️ X-34 — THE ID IS THE ONE THING A PERSON ALWAYS HAS.
              *
              * Every surface prints eight-character session ids: track chips,

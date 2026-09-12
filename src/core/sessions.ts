@@ -793,6 +793,8 @@ export const SESSION_PARSER_VERSION = 3;
 
 /** How long the walk may run before it lets the host answer something else. */
 const SCAN_BREATH_MS = 12;
+/** X-290 — how often the listing is reconciled against the index while watching. */
+const SWEEP_EVERY_MS = 60_000;
 /** A transcript quiet for this long is history: it will not be fed again. */
 const PARSER_RETAIN_MS = 60 * 60 * 1000;
 /** Resumable states held for live sessions — coldest evicted past this. */
@@ -1269,6 +1271,8 @@ export class SessionIndex implements vscode.Disposable {
     private cliNames = new Map<string, string>();
     private watchers: fs.FSWatcher[] = [];
     private pending = new Map<string, NodeJS.Timeout>();
+    /** X-290 — the reconcile clock; see sweep(). */
+    private sweepTimer: NodeJS.Timeout | undefined;
     /** Resumable parses for sessions still being written — see refreshFile. */
     private parsers = new Map<string, SessionParser>();
     /** Counts scans so a superseded one can stand down — see scanAll. */
@@ -1369,24 +1373,7 @@ export class SessionIndex implements vscode.Disposable {
                 if (ref.name) { missing.push(ref.dir); }
                 continue;
             }
-            const files: { file: string; depth: number }[] = [];
-            const walk = (dir: string, depth: number) => {
-                let entries: fs.Dirent[] = [];
-                try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-                for (const e of entries) {
-                    const p = path.join(dir, e.name);
-                    if (e.isDirectory()) {
-                        if (depth < 3) { walk(p, depth + 1); }
-                    } else if (e.name.endsWith('.jsonl')) {
-                        files.push({ file: p, depth });
-                    }
-                }
-            };
-            let projectDirs: fs.Dirent[] = [];
-            try { projectDirs = fs.readdirSync(projectsDir, { withFileTypes: true }); } catch { /* ignore */ }
-            for (const d of projectDirs) {
-                if (d.isDirectory()) { walk(path.join(projectsDir, d.name), 0); }
-            }
+            const files = this.listTranscripts(projectsDir);
             for (const { file, depth } of files) {
                 let st: fs.Stats;
                 try { st = await fs.promises.stat(file); } catch { continue; }
@@ -1519,6 +1506,57 @@ export class SessionIndex implements vscode.Disposable {
      * active agent. Feeding only the new bytes costs about a millisecond and
      * does not care how long the session has been running.
      */
+    /** Every transcript under one projects dir: <project>/<file> at depth 0,
+     *  <project>/<session>/subagents/<file> deeper. Directory listing only —
+     *  nothing is opened. */
+    private listTranscripts(projectsDir: string): { file: string; depth: number }[] {
+        const files: { file: string; depth: number }[] = [];
+        const walk = (dir: string, depth: number) => {
+            let entries: fs.Dirent[] = [];
+            try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+            for (const e of entries) {
+                const p = path.join(dir, e.name);
+                if (e.isDirectory()) {
+                    if (depth < 3) { walk(p, depth + 1); }
+                } else if (e.name.endsWith('.jsonl')) {
+                    files.push({ file: p, depth });
+                }
+            }
+        };
+        let projectDirs: fs.Dirent[] = [];
+        try { projectDirs = fs.readdirSync(projectsDir, { withFileTypes: true }); } catch { /* ignore */ }
+        for (const d of projectDirs) {
+            if (d.isDirectory()) { walk(path.join(projectsDir, d.name), 0); }
+        }
+        return files;
+    }
+
+    /**
+     * ‼️ X-290 — THE WATCHER IS NOT A GUARANTEE, THE LISTING IS. Windows
+     * fs.watch hands events out of a fixed kernel buffer; a burst that
+     * overflows it is dropped without a word. Measured 2026-09-13: 654
+     * transcripts restored into the pool in one go, the watcher admitted TWO,
+     * and the other 652 stayed invisible to every table and every bridge op
+     * until a full rescan was provoked through a settings toggle. The sweep is
+     * the cheap half of scanAll — the directory listing, no stat, no parse —
+     * against what the index already knows (admitted, dropped, or pending);
+     * only a file in none of those is read. Runs on a clock while watching,
+     * and on demand from sessions.rescan. Returns how many it picked up.
+     */
+    async sweep(): Promise<number> {
+        let found = 0;
+        for (const ref of this.allDirs()) {
+            const projectsDir = path.join(ref.dir, 'projects');
+            if (!fs.existsSync(projectsDir)) { continue; }
+            for (const { file, depth } of this.listTranscripts(projectsDir)) {
+                if (this.sessions.has(file) || this.dropped.has(file) || this.pending.has(file)) { continue; }
+                found++;
+                await this.refreshFile(file, depth, ref.name);
+            }
+        }
+        return found;
+    }
+
     private async refreshFile(file: string, depth: number, machine?: string): Promise<void> {
         let st: fs.Stats;
         try {
@@ -1929,6 +1967,9 @@ export class SessionIndex implements vscode.Disposable {
     watch(): void {
         for (const w of this.watchers) { try { w.close(); } catch { /* already closed */ } }
         this.watchers = [];
+        if (this.sweepTimer) { clearInterval(this.sweepTimer); }
+        this.sweepTimer = setInterval(() => { void this.sweep(); }, SWEEP_EVERY_MS);
+        if (typeof this.sweepTimer.unref === 'function') { this.sweepTimer.unref(); }
         for (const ref of this.allDirs()) {
             const projectsDir = path.join(ref.dir, 'projects');
             if (!fs.existsSync(projectsDir)) { continue; }
@@ -2325,6 +2366,7 @@ export class SessionIndex implements vscode.Disposable {
 
     dispose(): void {
         for (const w of this.watchers) { try { w.close(); } catch { /* already closed */ } }
+        if (this.sweepTimer) { clearInterval(this.sweepTimer); }
         for (const t of this.pending.values()) { clearTimeout(t); }
         this.onDidUpdateEmitter.dispose();
     }

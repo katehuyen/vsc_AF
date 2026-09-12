@@ -4457,10 +4457,9 @@
       "ui": [
         "cmd:agentfarm.refresh"
       ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
-      }
+      "ops": [
+        "sessions.rescan"
+      ]
     },
     {
       "capability": "registerAsset",

@@ -248,6 +248,21 @@ for (const size of [1, 3, 7, 64, 997, 4096, 1 << 20]) {
         console.log('  (junction unavailable on this host — dedupe left unmeasured)');
     }
 
+    // ---------- X-290: the sweep admits what no watcher reported ----------
+    // No watch() is armed here on purpose: the file appears on disk exactly the
+    // way 654 restored transcripts did on 2026-09-13 — with nobody told.
+    const swept = new SessionIndex(
+        dir, () => [], pricing(), () => [], () => true, () => 150000, undefined, () => 'sig-SWEEP');
+    await swept.scanAll();
+    const known = swept.all().length;
+    const arrived = path.join(projects, 'bbbbbbbb-1111-2222-3333-444444444444.jsonl');
+    fs.writeFileSync(arrived, body.replace(/aaaaaaaa/g, 'bbbbbbbb'), 'utf8');
+    ok('X-290: before the sweep the new transcript is not in the index', swept.all().length === known);
+    const picked = await swept.sweep();
+    ok('X-290: the sweep picks up exactly the unknown file', picked === 1 && swept.all().length === known + 1);
+    ok('X-290: a second sweep opens nothing — the index already knows it', (await swept.sweep()) === 0);
+    fs.unlinkSync(arrived);
+
     fs.promises.readFile = origReadFile;
     fs.promises.open = origOpen;
     fs.rmSync(dir, { recursive: true, force: true });
