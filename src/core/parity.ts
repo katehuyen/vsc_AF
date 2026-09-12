@@ -440,7 +440,18 @@ export function proposeNavigation(body: string): Classification | undefined {
 /** Identifiers a file imports from `core/…` — the shared-core vocabulary. */
 export function coreImports(src: string): Set<string> {
     const names = new Set<string>();
-    const re = /import\s*\{([\s\S]*?)\}\s*from\s*'[^']*core\/[^']+'/g;
+    // ‼️ `[^}]` AND NOT `[\s\S]*?` — A LAZY SCAN SWALLOWS THE IMPORTS BETWEEN.
+    // A specifier list cannot contain a brace, so stopping at one is exact. A
+    // lazy scan is not: at `import { A } from 'vscode'` it fails on the first
+    // `}` (wrong `from`), backtracks, and runs on until it reaches a core
+    // import — capturing `A } from 'vscode'; import { B` as one "name", which
+    // matches no identifier and is dropped. B, a real core symbol, silently
+    // leaves the vocabulary. Worse, the damage MOVES: adding one core import
+    // re-pairs every run of imports below it, so an unrelated capability loses
+    // the symbol that proved it shares core with its op and this gate reports
+    // drift that is not there. Measured 2026-09-12 — adding `portableState`
+    // (S-61) failed `settingsPanel.ts#docOpenSet`, which nothing had touched.
+    const re = /import\s*\{([^}]*)\}\s*from\s*'[^']*core\/[^']+'/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src))) {
         for (const raw of m[1].split(',')) {
