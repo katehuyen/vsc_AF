@@ -438,5 +438,76 @@ const sec = () => {
         row.includes('data-acreauth="broken"'));
 }
 
+// ---------- X-284: is this slot whole, and can a hand put it right ----------
+//
+// ‼️ THE COUNT IS NOT THE POINT, THE CLAUSES ARE. A badge saying `3 missing`
+// with nothing behind it has told the reader they have a problem and given them
+// nothing to do about it, which is the dead end this page exists to remove. So
+// what is pinned is: the verdict is ALWAYS drawn where a contract exists (an
+// absent badge is also what an unlooked-at row looks like), the panel names each
+// missing clause with the product's own sentence, and the press is offered only
+// where it would do something.
+{
+    const incomplete = fixture.variants().find(v => v.id === 'enginesincomplete');
+    const ih = runPage('engines.js', incomplete.data).html();
+    const card = (h, id) => ('<div class="accard' + h.split('<div class="accard').slice(1)
+        .find(c => c.indexOf('data-acforget="' + id + '"') >= 0)) || '';
+    const bad = card(ih, 'personal');
+    ok('the incomplete row is findable — this test is worthless if the fixture lost it', bad.length > 0);
+    ok('‼️ X-284: the card says HOW MANY of the slot\'s clauses are absent', bad.includes('>3 missing<'));
+    ok('…and its panel names every one of them, in the product\'s own words',
+        bad.includes('carry:settings.json') && bad.includes('env:CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT')
+        && bad.includes('link:projects')
+        && bad.includes('a record living under an account'));
+    ok('…and the ones that ARE there, so the reader can see what the contract is at all',
+        bad.includes('PRESENT') && bad.includes('link:todos') && bad.includes('hooks current'));
+    ok('…and it states the promise the clauses exist to keep',
+        bad.includes('costs you a sign-in and nothing else'));
+    ok('‼️ …and there is a press that puts it right, wired to the same host function as the op',
+        bad.includes('data-accomplete="personal"') && bad.includes('>Complete<'));
+
+    const whole = card(ih, 'work-1');
+    ok('‼️ X-220: a whole slot says so out loud — silence is what an unlooked-at row looks like',
+        whole.includes('>complete<'));
+    ok('…and offers no press, because a button whose whole effect is to look busy is a lie',
+        !whole.includes('data-accomplete='));
+
+    // ‼️ AN ENGINE WITH A SHORT CONTRACT IS NOT AN ENGINE WITH NONE. Codex carries
+    // two clauses where Claude carries eight, and `complete` on it means those two
+    // — which is why the panel counts them out loud rather than leaving the reader
+    // to assume it was asked the same eight questions (the X-269 `settingsGuarantee`
+    // lesson: an empty gap list is two different answers).
+    const codex = card(ih, 'codex-work');
+    ok('X-284: a short contract still draws a verdict', codex.includes('>complete<'));
+    ok('‼️ …and says how many things it was actually asked about',
+        codex.includes('all 1 things the fleet puts in this slot are here'));
+    ok('…and never claims a clause that engine has never had',
+        !codex.includes('CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT') && !codex.includes('hooks current'));
+
+    // ‼️ ONE SUBJECT — AND A MISSING IDENTITY IS NOT THIS BADGE'S FACT. The
+    // verdict badge on the same row already owns the sign-in and has a panel for
+    // it; a row reading `complete` and `needs signing in` at once would be two
+    // badges answering one question and disagreeing. It is also what keeps the
+    // section's standing guard true — no `.credentials.json` is drawn near an
+    // account, which is a security assertion and not a wording preference.
+    const noId = fixture.data();
+    noId.accounts = noId.accounts.filter(a => a.id === 'work-1').map(a => ({
+        ...a,
+        completeness: {
+            complete: false, gaps: ['own:.claude.json'],
+            rows: a.completeness.rows.map(x => x.id === 'own:.claude.json'
+                ? { ...x, ok: false, detail: '.claude.json missing — the identity was never captured; sign in again' }
+                : x)
+        }
+    }));
+    const idh = runPage('engines.js', noId).html();
+    ok('‼️ ONE SUBJECT: a missing identity does not move this badge — the verdict owns it',
+        idh.includes('>complete<') && !idh.includes('missing<'));
+    ok('‼️ …and offers no [Complete], because nothing can invent a credential',
+        !idh.includes('data-accomplete='));
+    ok('…while the panel says out loud that the sign-in is somebody else\'s subject',
+        idh.includes('that is what the verdict badge on this row says'));
+}
+
 console.log(`test_engines_page_accounts: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

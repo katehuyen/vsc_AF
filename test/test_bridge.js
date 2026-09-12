@@ -2431,7 +2431,9 @@ const { opencodeStatus, syncToOpencode } =
             completeBlock.includes("op: 'accounts.complete'") && /completeSlots\(/.test(completeBlock));
         ok('…and it is a QUESTION first: dryRun defaults to true',
             /optBool\(args, 'dryRun', true\)/.test(completeBlock));
-        const helper = src.slice(src.indexOf('const completeSlots = '), src.indexOf('// ‼️ X-284 — THE CONTRACT IS ASKED OF EVERY SLOT'));
+        const helper = src.slice(src.indexOf('const slotCtx = '), src.indexOf('// ‼️ X-284 — THE CONTRACT IS ASKED OF EVERY SLOT'));
+        ok('‼️ …and the CARD reads the slot through the same context as the repair',
+            /const slotCtx = /.test(src) && /slotCompleteness\(slotCtx\(slot\)\)/.test(src));
         ok('…repairing through the gates\' own primitives, never a second implementation',
             /repairSharedLinks\(dryRun, id\)/.test(helper) && /completeSlot\(ctx, false\)/.test(helper) && /slotCompleteness\(ctx\)/.test(helper));
         ok('…with the live port handed in so the hooks clause is really asked', /hooksPort/.test(helper) && /'livePort'/.test(helper));

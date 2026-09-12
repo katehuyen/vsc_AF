@@ -1831,6 +1831,15 @@
       ]
     },
     {
+      "capability": "enginesPanel.ts#accountComplete",
+      "ui": [
+        "page:enginesPanel.ts#accountComplete"
+      ],
+      "ops": [
+        "accounts.complete"
+      ]
+    },
+    {
       "capability": "enginesPanel.ts#accountForget",
       "ui": [
         "page:enginesPanel.ts#accountForget"

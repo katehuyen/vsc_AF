@@ -17923,20 +17923,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * implementation of any of them. `dry` reads and reports; otherwise every
      * failing, repairable clause is put right and read again.
      */
+    const slotCtx = (slot: EngineAccountSlot) => ({
+        fs, home: os.homedir(), dir: slot.dir, slotId: slot.id, engine: slot.engine,
+        hooksPort: cfg().get<number>('livePort', 8377),
+        repairLinks: (id: string, dryRun: boolean) => {
+            const r = repairSharedLinks(dryRun, id);
+            return { linked: r.linked, failed: r.failed };
+        }
+    });
     const completeSlots = (dry = false, onlySlotId?: string) => {
         const only = (onlySlotId || '').trim();
-        const home = os.homedir();
-        const hooksPort = cfg().get<number>('livePort', 8377);
         return storedAccounts()
             .filter(s => !only || s.id === only)
             .map(slot => {
-                const ctx = {
-                    fs, home, dir: slot.dir, slotId: slot.id, engine: slot.engine, hooksPort,
-                    repairLinks: (id: string, dryRun: boolean) => {
-                        const r = repairSharedLinks(dryRun, id);
-                        return { linked: r.linked, failed: r.failed };
-                    }
-                };
+                const ctx = slotCtx(slot);
                 return dry ? { ...slotCompleteness(ctx), dryRun: true } : { ...completeSlot(ctx, false), dryRun: false };
             });
     };
@@ -18002,6 +18002,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // `full` would be stating a contract that engine has never had —
             // photographed and caught before it shipped.
             settingsGuarantee: !!accountAdapterFor(slot.engine).requiredEnv,
+            // ‼️ X-284 — AND THE WHOLE BIRTH CONTRACT, not only the one clause
+            // above. `settingsGaps` answers "which system prompt would a session
+            // get", which is a question the user asks by name; this answers
+            // "is this slot whole", which is the question the other ten faults
+            // of the X-270 family each needed its own surface for. The clause
+            // list travels with it so the card can say WHAT is missing rather
+            // than how many — a count nobody can act on is a worse silence than
+            // none. Read only: nothing on a render ever writes.
+            completeness: (() => {
+                try {
+                    const c = slotCompleteness(slotCtx(slot));
+                    return {
+                        complete: c.complete, gaps: c.gaps,
+                        rows: c.rows.map(r => ({ id: r.id, ok: r.ok, detail: r.detail, repairable: r.repairable }))
+                    };
+                } catch { return { complete: true, gaps: [], rows: [] }; }
+            })(),
             note: u?.note || ''
         };
     };
@@ -19378,6 +19395,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         repairAccountSettings: (id: string): string[] =>
             repairSlotSettings(false, id).filter(r => r.wrote || r.error)
                 .map(r => r.error ? `${r.id}: ${r.error}` : `${r.id}: ${r.file}`),
+        // X-284 — the card's [Complete] press and `accounts.complete` are the
+        // same function, so the button and the op cannot answer differently.
+        completeAccount: (id: string): string[] => {
+            const r = completeSlots(false, id)[0];
+            if (!r) { return [`No account is stored as "${id}".`]; }
+            return r.rows.filter(x => x.wrote || x.error)
+                .map(x => x.error ? `${x.id}: ${x.error}` : x.id);
+        },
         queueAccountRefresh: (ids: string[], gesture: 'toggle' | 'all'): void =>
             queueAccountRefresh(ids, gesture),
         ownership: () => ownershipTable(),

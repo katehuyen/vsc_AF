@@ -580,6 +580,66 @@
                 + 'the top. It takes effect on the NEXT session started on this account; one that is '
                 + 'already running read its prompt when it started.')
             : '';
+        /**
+         * ‼️ X-284 — AND WHETHER THIS SLOT IS WHOLE AT ALL.
+         *
+         * The badge beside this one answers ONE clause — which system prompt a
+         * session would get — because that is a question the reader asks by
+         * name. The other things a slot must carry (the pool links, the live
+         * hooks) had the same shape of fault and no surface at all: copied in
+         * once at capture and never asked about again. This is that list,
+         * derived from the engine's own adapter, so the clause added tomorrow
+         * draws itself here without anybody remembering to come back for it.
+         *
+         * ‼️ ONE SUBJECT — AND THE IDENTITY IS NOT THIS BADGE'S. `own:` clauses
+         * are the sign-in itself, and the verdict badge on this row already
+         * owns that fact with a panel of its own; drawing it twice would let
+         * one row say `complete` and `needs signing in` in the same breath.
+         * What is left is exactly what the FLEET puts into a slot — which is
+         * also the half a press can put back.
+         *
+         * SHORTHAND: the count is the short form and the panel carries the
+         * clauses by name — a card that says `3 missing` and stops has told the
+         * reader they have a problem and nothing they can do about it.
+         */
+        const con = a.completeness || {};
+        const conRows = (con.rows || []).filter(r => r.id.slice(0, 4) !== 'own:');
+        const conGaps = conRows.filter(r => !r.ok);
+        const conLines = rows => rows.map(r => '\u00b7 ' + esc(r.id) + ' \u2014 ' + esc(r.detail)).join('\n');
+        const contractBadge = !conRows.length ? '' : T.wrap(
+            '<span class="acbad ' + (conGaps.length ? 'warn' : 'ok') + '">'
+            + (conGaps.length ? conGaps.length + ' missing' : 'complete') + '</span>',
+            'birth contract: ' + (conGaps.length
+                ? conGaps.length + ' of ' + conRows.length + ' things the fleet puts in this slot are absent'
+                : 'all ' + conRows.length + ' things the fleet puts in this slot are here'),
+            (conGaps.length ? 'MISSING\n' + conLines(conGaps) + '\n\n' : '')
+            + 'A slot is an IDENTITY and nothing else. Everything a session behaves by belongs to '
+            + 'the fleet and is either LINKED into the slot or reproduced into it before a launch, '
+            + 'so deleting this folder and capturing the account again costs you a sign-in and '
+            + 'nothing else — no setting, no permission, no session record.\n\n'
+            + 'The sign-in itself is not counted here: that is what the verdict badge on this '
+            + 'row says, and it is the one thing no press can put back.\n\n'
+            + 'The list is derived from what this engine\'s adapter says a slot contains rather '
+            + 'than written out by hand, and it is asked at every start, at capture and before '
+            + 'every launch. The system-prompt badge beside this one is one of these clauses, '
+            + 'named on its own because it is the one that changes what the model is told.\n\n'
+            + 'PRESENT\n' + conLines(conRows.filter(r => r.ok)));
+        /**
+         * ‼️ AND THE PRESS IS OFFERED ONLY WHERE IT WOULD DO SOMETHING. An
+         * identity clause cannot be repaired in place — nothing can invent a
+         * credential — so a slot missing only that one gets the sign-in key
+         * beside it and no button whose whole effect would be to look busy.
+         */
+        const fixContract = conGaps.some(r => r.repairable)
+            ? T.wrap('<button class="secondary small" data-accomplete="' + esc(a.id) + '">Complete</button>',
+                'Put back everything this slot is missing',
+                'Runs every repair the contract has, in one press: the behaviour file is reproduced '
+                + 'from the fleet\'s own, the pool links are re-made over whatever is standing in '
+                + 'their place, and the live hooks are brought up to date. It writes only what is '
+                + 'missing, so pressing it on a whole slot costs a handful of reads and changes '
+                + 'nothing.\n\nIt cannot restore an identity: if the sign-in itself is gone, use '
+                + 'the key beside it.')
+            : '';
         const reauth = a.health === 'ready'
             ? ''
             : T.wrap('<button class="secondary small acreauth" data-acreauth="' + esc(a.id) + '">🔑</button>',
@@ -677,8 +737,10 @@
             + T.wrap('<span class="acbad ' + verdict[0] + '">' + esc(verdict[1]) + '</span>',
                 verdict[2], verdict[3])
             + promptBadge
+            + contractBadge
             + '<span class="grow"></span>'
             + fixSettings
+            + fixContract
             + reauth
             + refresh
             + stand
@@ -1239,6 +1301,10 @@
         // comes from is decided in the one place `accounts.repairSettings` calls.
         document.querySelectorAll('[data-acfix]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountFixSettings', id: b.dataset.acfix })));
+        // ‼️ X-284 — the umbrella press. Same host function as the bridge's
+        // `accounts.complete`, so the button and the op can never drift apart.
+        document.querySelectorAll('[data-accomplete]').forEach(b =>
+            b.addEventListener('click', () => post({ type: 'accountComplete', id: b.dataset.accomplete })));
         document.querySelectorAll('[data-acforget]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountForget', id: b.dataset.acforget })));
         document.querySelectorAll('[data-accapture]').forEach(b =>

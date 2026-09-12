@@ -126,6 +126,13 @@ export interface EnginesPanelDeps {
      */
     repairAccountSettings(id: string): string[];
     /**
+     * ‼️ X-284 — THE UMBRELLA OF THE ONE ABOVE. `repairAccountSettings` puts
+     * back one clause because the reader asks for that one by name; this puts
+     * back every repairable clause the contract has, and answers with the ids
+     * it had to write. An empty list means the slot was already whole.
+     */
+    completeAccount(id: string): string[];
+    /**
      * ‼️ X-206 — ASK FOR **THESE** FIGURES, IN A LINE.
      *
      * `readAccounts()` is the beat: one slot per turn, whichever is stalest. A
@@ -370,6 +377,18 @@ export class EnginesPanel {
                 await this.panel.webview.postMessage({
                     type: 'acc-msg',
                     text: wrote.length ? `Reproduced ${wrote.join(' · ')}` : 'Already carried every guarantee.'
+                });
+                this.refresh();
+                break;
+            }
+            case 'accountComplete': {
+                // ‼️ X-284 — like the [fix] press above it cannot refuse: every
+                // clause is either put back or reported by name. Silence would
+                // read as a dead button, and "already whole" is a real answer.
+                const put = this.deps.completeAccount(String(msg.id ?? ''));
+                await this.panel.webview.postMessage({
+                    type: 'acc-msg',
+                    text: put.length ? `Put back ${put.join(' \u00b7 ')}` : 'Already carried every clause.'
                 });
                 this.refresh();
                 break;

@@ -12,6 +12,33 @@ const base = require('./engines.js');
 
 const NOW = Date.parse('2026-08-09T18:40:00Z');
 
+/**
+ * ‼️ X-284 — THE CLAUSE LIST IS ASKED, NOT TYPED. A scene whose contract is
+ * a hand-written array photographs a card the product does not draw the moment
+ * an engine gains a clause — and this list exists precisely because things get
+ * added to it. So the ids and their repairability come from `slotClauses`, the
+ * same function the host reads; only the DETAIL prose is the scene's, because
+ * that sentence is what the panel has to lay out.
+ */
+const { adapterFor } = require('../../out/core/engineAccounts.js');
+const { slotClauses } = require('../../out/core/slotCompleteness.js');
+const detailFor = (c) => {
+    const name = c.id.slice(c.id.indexOf(':') + 1);
+    if (c.kind === 'own' || c.kind === 'carry') { return name + ' present'; }
+    if (c.kind === 'env') { return name + '=0 in settings.json'; }
+    if (c.kind === 'link') { return name + ' \u2192 pool'; }
+    return 'hooks current on :8377';
+};
+/** `gaps` maps a clause id to the sentence the card must draw for it. */
+const contract = (engine, gaps) => {
+    const bad = gaps || {};
+    const rows = slotClauses(adapterFor(engine)).map(c => ({
+        id: c.id, ok: !bad[c.id], repairable: !!c.repair,
+        detail: bad[c.id] || detailFor(c)
+    }));
+    return { complete: rows.every(r => r.ok), gaps: rows.filter(r => !r.ok).map(r => r.id), rows };
+};
+
 const data = () => {
     const engines = base.engines();
     // The panel's own payload adds the verdicts and the clock they are read
@@ -56,6 +83,7 @@ const data = () => {
                 // is being read right now, the next is waiting behind it.
                 fetchedAt: NOW - 40 * 1000, queue: 'reading', queuePlace: 0,
                 settingsGaps: [], settingsGuarantee: true,
+                completeness: contract('claude'),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/work-1'
             },
             {
@@ -68,6 +96,7 @@ const data = () => {
                 capturedAt: NOW - 2 * 3600 * 1000,
                 fetchedAt: NOW - 3 * 3600 * 1000, queue: 'queued', queuePlace: 1,
                 settingsGaps: [], settingsGuarantee: true,
+                completeness: contract('claude'),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
             },
             {
@@ -80,6 +109,7 @@ const data = () => {
                 quotaSource: 'oauth-credentials', capturedAt: NOW - 21 * 24 * 3600 * 1000,
                 fetchedAt: NOW - 26 * 3600 * 1000, queue: 'queued', queuePlace: 2,
                 settingsGaps: [], settingsGuarantee: true,
+                completeness: contract('claude'),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/spare'
             },
             // Captured, and NOT standing — the chip says "main account" here,
@@ -98,6 +128,7 @@ const data = () => {
                 capturedAt: NOW - 3 * 3600 * 1000,
                 fetchedAt: NOW - 26 * 60 * 1000, queue: 'idle', queuePlace: 0,
                 settingsGaps: [], settingsGuarantee: false,
+                completeness: contract('codex'),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-work'
             },
             {
@@ -119,6 +150,7 @@ const data = () => {
                 capturedAt: NOW - 20 * 60 * 1000,
                 fetchedAt: 0, queue: 'idle', queuePlace: 0,
                 settingsGaps: [], settingsGuarantee: false,
+                completeness: contract('codex'),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-spare'
             }
         ],
@@ -285,6 +317,7 @@ const brokenData = () => {
         quotaSource: 'oauth-credentials', capturedAt: NOW - 9 * 24 * 3600 * 1000,
         fetchedAt: 0, queue: 'idle', queuePlace: 0,
         settingsGaps: [], settingsGuarantee: true,
+        completeness: contract('claude'),
         dir: 'C:/Users/mv/AppData/agent-farm/accounts/broken'
     }]);
     return d;
@@ -309,6 +342,38 @@ const promptDriftData = () => {
     return d;
 };
 
+/**
+ * ‼️ X-284 — A SLOT THAT IS NOT WHOLE, and the SMALLEST arity of the page.
+ *
+ * Two scenes, for two different reasons. The incomplete one draws the state the
+ * badge exists for: an identity that is there, a behaviour file that is not, and
+ * a pool link standing as a real folder — three clauses of eight, which is what
+ * makes the count worth reading. The single-account one is the arity rule (a
+ * card row whose controls wrap differently when it is alone was shipped twice
+ * before anybody drew it): one Claude slot, no Codex rows, nothing to compare
+ * against, and the badge still has to sit where it sits.
+ */
+const incompleteData = () => {
+    const d = data();
+    d.accounts = d.accounts.map(a => a.id === 'personal'
+        ? {
+            ...a,
+            settingsGaps: ['CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT'], settingsGuarantee: true,
+            completeness: contract('claude', {
+                'carry:settings.json': 'settings.json missing — the fleet\'s .claude/settings.json exists and was not reproduced',
+                'env:CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT': 'settings.json does not carry CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT=0',
+                'link:projects': 'projects is a real folder inside the slot — a record living under an account'
+            })
+        }
+        : a);
+    return d;
+};
+const oneSlotData = () => {
+    const d = data();
+    d.accounts = d.accounts.filter(a => a.id === 'work-1');
+    return d;
+};
+
 module.exports = {
     script: 'engines.js',
     data,
@@ -316,6 +381,8 @@ module.exports = {
     variants: () => [
         { id: 'enginespanel', label: 'Engines panel', data: data() },
         { id: 'enginesbroken', label: 'Engines panel — all three verdicts', data: brokenData() },
-        { id: 'enginesprompt', label: 'Engines panel — one slot on the simplified prompt', data: promptDriftData() }
+        { id: 'enginesprompt', label: 'Engines panel — one slot on the simplified prompt', data: promptDriftData() },
+        { id: 'enginesincomplete', label: 'Engines panel — a slot missing three clauses of its contract', data: incompleteData() },
+        { id: 'enginesoneslot', label: 'Engines panel — a single captured account', data: oneSlotData() }
     ]
 };
