@@ -5288,6 +5288,26 @@ const { opencodeStatus, syncToOpencode } =
         ok('…and it says out loud that it signs nobody in',
             /signs nobody in/.test(re) && /statusArgs/.test(re));
 
+        // ---------- X-271: the shared links are repairable, and a repair is not a move ----------
+        // The junctions that keep ONE pool of transcripts are made at capture and
+        // never looked at again; a move, a clone or a new machine leaves a real
+        // folder in the slot and the engine writes the transcript inside it. What
+        // is pinned here is the line the repair must not cross: it may CREATE a
+        // missing link, it may never empty a folder that has the user's files in
+        // it, and it may not invent the pool it links to — that last one is also
+        // what keeps a suite (whose config reads the real settings.json) from
+        // pointing the machine's real slots at a temp directory.
+        ok('extension.ts registers accounts.repairLinks', src.includes("op: 'accounts.repairLinks'"));
+        const rl = cut('const repairSharedLinks', '/** One slot as every surface may see it');
+        ok('‼️ X-271: a real folder with files in it is REPORTED, never emptied',
+            /stranded\.push/.test(rl) && !/rmSync/.test(rl) && !/unlinkSync/.test(rl));
+        ok('…and a junction is told apart from a folder rather than guessed at',
+            /isSymbolicLink\(\)/.test(rl));
+        ok('‼️ …and it refuses to create the pool it would link into',
+            /existsSync\(path\.join\(home, a\.liveDir\)\)/.test(rl));
+        ok('…and the window never waits on the repair',
+            /setTimeout\(\(\) => \{ try \{ repairSharedLinks\(\);/.test(src));
+
         const sr = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'selfRestart.ts'), 'utf8');
         const armed = sr.slice(sr.indexOf('export interface ArmedRestart'),
             sr.indexOf('export interface RestartWorld'));

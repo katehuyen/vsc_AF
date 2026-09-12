@@ -208,6 +208,46 @@ for (const size of [1, 3, 7, 64, 997, 4096, 1 << 20]) {
     await repriced.scanAll();
     ok('new prices discard the cache and re-read', reads >= 1);
 
+    // ---------- 4. X-271: a captured account's own transcripts ----------
+    // A slot IS a CLAUDE_CONFIG_DIR, so the session it hosts writes under the
+    // slot. The junction that folds those back into the main pool is made once
+    // at capture and does not survive a move or a fresh clone. Both halves are
+    // measured: the BROKEN link (a real folder of its own) must still be seen —
+    // that is a session no surface could find before — and the INTACT link (the
+    // same folder reached by a second name) must not be counted twice, because
+    // the index is keyed by file path and would otherwise list it twice.
+    const slotBroken = path.join(dir, 'slot-broken');
+    const slotProjects = path.join(slotBroken, 'projects', 'D--demo');
+    fs.mkdirSync(slotProjects, { recursive: true });
+    fs.writeFileSync(path.join(slotProjects, 'bbbbbbbb-1111-2222-3333-444444444444.jsonl'), body, 'utf8');
+
+    const withSlot = new SessionIndex(
+        dir, () => [{ dir: slotBroken }], pricing(), () => [], () => true, () => 150000, undefined, () => 'sig-SLOT');
+    await withSlot.scanAll();
+    ok('X-271: a transcript stranded in an account slot is indexed', withSlot.all().length === 2);
+
+    reads = 0;
+    const plain = new SessionIndex(
+        dir, () => [], pricing(), () => [], () => true, () => 150000, undefined, () => 'sig-SLOT');
+    await plain.scanAll();
+    const baseline = reads;
+
+    const slotLinked = path.join(dir, 'slot-linked');
+    fs.mkdirSync(slotLinked, { recursive: true });
+    let linked = true;
+    try { fs.symlinkSync(path.join(dir, 'projects'), path.join(slotLinked, 'projects'), 'junction'); }
+    catch { linked = false; }
+    if (linked) {
+        reads = 0;
+        const deduped = new SessionIndex(
+            dir, () => [{ dir: slotLinked }], pricing(), () => [], () => true, () => 150000, undefined, () => 'sig-SLOT');
+        await deduped.scanAll();
+        ok('X-271: an intact junction resolves to the main pool and is read once',
+            deduped.all().length === plain.all().length && reads === baseline);
+    } else {
+        console.log('  (junction unavailable on this host — dedupe left unmeasured)');
+    }
+
     fs.promises.readFile = origReadFile;
     fs.promises.open = origOpen;
     fs.rmSync(dir, { recursive: true, force: true });

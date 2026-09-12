@@ -1306,8 +1306,29 @@ export class SessionIndex implements vscode.Disposable {
         return path.join(this.claudeDir, 'projects');
     }
 
+    /**
+     * ‼️ X-271 — DEDUPED BY WHAT THE `projects` FOLDER REALLY IS, not by the
+     * path that names it. A captured account is its own `CLAUDE_CONFIG_DIR`, so
+     * its slot is in this list; when that slot's `projects` junction is intact
+     * it resolves to the very same folder as the main pool, and reading both
+     * would parse every transcript twice under two different machine labels.
+     * When the junction has broken — a move, a fresh clone — the two resolve
+     * apart and both are read, which is the whole point: a session is never
+     * invisible because a link was not there.
+     */
     private allDirs(): ClaudeDirRef[] {
-        return [{ dir: this.claudeDir }, ...this.extraDirs().filter(d => d?.dir)];
+        const out: ClaudeDirRef[] = [];
+        const seen = new Set<string>();
+        for (const ref of [{ dir: this.claudeDir }, ...this.extraDirs().filter(d => d?.dir)]) {
+            let key: string;
+            try { key = fs.realpathSync.native(path.join(ref.dir, 'projects')); }
+            catch { key = path.resolve(ref.dir, 'projects'); }
+            key = key.toLowerCase();
+            if (seen.has(key)) { continue; }
+            seen.add(key);
+            out.push(ref);
+        }
+        return out;
     }
 
     /**

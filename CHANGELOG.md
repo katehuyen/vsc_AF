@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.462.0 - a session started on a captured account could not be seen, because the link that pooled the transcripts had not survived the move (X-271) (2026-09-12)
+
+- **A CAPTURED ACCOUNT IS A `CLAUDE_CONFIG_DIR`, SO THE TRANSCRIPT IS WRITTEN
+  UNDER THE SLOT.** What kept that from mattering was a junction, made once at
+  capture, folding the slot's `projects` into the one pool the index reads. A
+  junction is not something git can carry, and it does not survive a folder move
+  or a new machine either - so on this machine two slots had no `projects` at
+  all and a third had a REAL folder with live sessions inside it. Those sessions
+  were in no table, no cost figure and no watch. The index now reads every
+  captured Claude account's directory directly, deduped by what `projects`
+  really resolves to, so an intact junction is still read exactly once and a
+  broken one costs nothing but a second folder to walk.
+- **AND THE LINKS ARE CHECKED AT EVERY START, not only at capture.** An absent
+  link is remade; an existing junction is left alone; a real folder **with the
+  user's files in it is never touched** and is reported as `stranded` instead,
+  because folding those transcripts back into the pool is a MOVE and a move is
+  not something a window does behind somebody's back. `accounts.repairLinks`
+  asks for the same pass on demand (`dryRun` to only look). The repair refuses
+  to create the pool it would link into - an absent pool means this is not a
+  machine whose links can be repaired.
+
 ## 3.461.0 - fifteen boxes on the Tasks page were narrower than the words in them, and every one of those words was written twice (audit B-07) (2026-09-11)
 
 - **AN OPTION LABEL IS THE VALUE, NOT THE VALUE PLUS ITS EXPLANATION.** The

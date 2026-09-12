@@ -958,9 +958,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const index = new SessionIndex(
         claudeDir(),
         // E1: synced claude dirs from other machines, labeled by machine name.
-        () => cfg().get<{ name?: string; dir?: string }[]>('extraClaudeDirs', [])
-            .filter(d => d && typeof d.dir === 'string' && d.dir.trim())
-            .map(d => ({ name: (d.name ?? '').trim() || 'remote', dir: expandEnvPath((d.dir as string).trim()) })),
+        // ‼️ X-271 — AND EVERY CAPTURED CLAUDE ACCOUNT, because a slot IS a
+        // `CLAUDE_CONFIG_DIR`: a session started on one writes its transcript
+        // under the slot, and the junction that folds those back into the main
+        // pool is made once at capture and does not survive a move or a fresh
+        // clone. Reading the slots directly means a broken link costs a
+        // duplicate parse at worst, never a session that no surface can see.
+        // No machine label: these are this machine. The index dedupes by what
+        // `projects` really resolves to, so an intact junction is read once.
+        () => [
+            ...cfg().get<{ name?: string; dir?: string }[]>('extraClaudeDirs', [])
+                .filter(d => d && typeof d.dir === 'string' && d.dir.trim())
+                .map(d => ({ name: (d.name ?? '').trim() || 'remote', dir: expandEnvPath((d.dir as string).trim()) })),
+            ...storedAccounts()
+                .filter(sl => sl.engine === 'claude' && typeof sl.dir === 'string' && sl.dir.trim())
+                .map(sl => ({ dir: expandEnvPath(sl.dir.trim()) }))
+        ],
         pricing,
         () => agents,
         () => cfg().get<boolean>('includeUnmatchedProjects', false),
@@ -17649,6 +17662,69 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return `Could not write the account directory: ${String((e as Error)?.message ?? e)}`;
         }
     };
+    /**
+     * ‼️ X-271 — THE SHARED LINKS ARE CHECKED EVERY START, because they are made
+     * once at capture and nothing since has looked at them again. A junction
+     * does not survive `_run_folder_move`, a git clone or a new machine: what
+     * arrives on the other side is either nothing or a plain folder, and Claude
+     * Code then writes the transcript INSIDE the slot.
+     *
+     * Three states, and only one of them is repaired without being asked:
+     *   absent → the junction is made, which is the clone / fresh-machine case;
+     *   linked → left alone;
+     *   a REAL folder holding files → NOT TOUCHED, and named in the answer.
+     *     Those are the user's transcripts and folding them back into the pool
+     *     is a MOVE — not something a start-up does behind their back. The index
+     *     reads slot directories directly now, so nothing is invisible while it
+     *     waits; that is precisely what makes leaving it alone safe.
+     */
+    const repairSharedLinks = (dry = false): { linked: string[]; stranded: string[]; failed: string[] } => {
+        const linked: string[] = [];
+        const stranded: string[] = [];
+        const failed: string[] = [];
+        const home = os.homedir();
+        for (const slot of storedAccounts()) {
+            const a = accountAdapterFor(slot.engine);
+            if (!slot.dir || !a.sharedPaths.length || !fs.existsSync(slot.dir)) { continue; }
+            // ‼️ THE POOL MUST ALREADY BE THERE. Creating it would mean deciding
+            // that this home directory is the right one to point every slot at,
+            // and the one caller that gets that wrong is a test: `cfgValueRaw`
+            // falls back to the real `settings.json`, so a suite running with a
+            // redirected HOME would otherwise link the machine's real slots into
+            // a temp folder. An absent pool means this is not a machine whose
+            // links can be repaired, so nothing is touched.
+            if (!fs.existsSync(path.join(home, a.liveDir))) { continue; }
+            for (const name of a.sharedPaths) {
+                const from = path.join(home, a.liveDir, name);
+                const to = path.join(slot.dir, name);
+                let st: fs.Stats | undefined;
+                try { st = fs.lstatSync(to); } catch { st = undefined; }
+                // Node reports a Windows junction as a symbolic link, which is
+                // the only reason this can be told apart from a real folder.
+                if (st?.isSymbolicLink()) { continue; }
+                if (st) {
+                    let entries: string[] = ['?'];
+                    try { entries = fs.readdirSync(to); } catch { /* unreadable counts as occupied */ }
+                    if (!st.isDirectory() || entries.length) { stranded.push(to); continue; }
+                    if (!dry) {
+                        try { fs.rmdirSync(to); } catch { failed.push(to); continue; }
+                    }
+                }
+                if (dry) { linked.push(to); continue; }
+                try {
+                    fs.mkdirSync(from, { recursive: true });
+                    fs.symlinkSync(from, to, 'junction');
+                    linked.push(to);
+                } catch { failed.push(to); }
+            }
+        }
+        return { linked, stranded, failed };
+    };
+    // ‼️ X-271 — and it runs at every start, not only when somebody asks for it.
+    // Off the activation path on purpose: it touches the disk, and a window must
+    // never wait on a repair. A failure here costs one unlinked slot, never a
+    // start, and never a session — the index reads the slots either way.
+    setTimeout(() => { try { repairSharedLinks(); } catch { /* never fails a start */ } }, 0);
     /** One slot as every surface may see it — never a token, ever. */
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
         const id = slotIdentity(slot);
@@ -34272,6 +34348,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         : `The directory is still at ${s.dir} — capture it again to bring it back.`
                 };
             }
+        },
+        {
+            op: 'accounts.repairLinks',
+            describe: '‼️ X-271 — REMAKE THE SHARED DIRECTORY LINKS of every captured account, the '
+                + 'junctions that keep one pool of transcripts, todos and shell snapshots however many '
+                + 'identities the fleet holds. They are made once at capture and survive neither a '
+                + 'folder move nor a git clone nor a new machine; when one is gone the engine opens a '
+                + 'REAL folder inside the slot and writes there instead. This runs at every activation '
+                + 'too — the op is for asking on demand and for reading the answer. An absent link is '
+                + 'made; an existing junction is left alone; a real folder WITH FILES IN IT is never '
+                + 'touched and comes back under `stranded`, because folding those transcripts into the '
+                + 'pool is a move and a move is the user\'s call. Nothing is lost while one waits: the '
+                + 'session index reads slot directories directly. args: dryRun? (default false)',
+            handler: (args) => repairSharedLinks(optBool(args, 'dryRun', false))
         },
         {
             op: 'sentry.templates',
