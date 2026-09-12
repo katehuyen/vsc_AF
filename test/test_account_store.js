@@ -206,6 +206,45 @@ const ready = (email, plan = 'pro') => ({
         !/['`]\s*\+\s*['`]/.test(moved.refusal) && !/\n/.test(moved.refusal));
 }
 
+// ---------- X-282: the uuid is the key, and a forgotten folder is taken back ----------
+//
+// ‼️ MEASURED 2026-09-12: five claude-* folders on this machine, three accounts.
+// `forget` dropped the row and left the folder; the next capture of the same
+// sign-in saw the name taken and minted `-2` — a second folder, a second
+// projects/ tree, and a fleet counting two five-hour windows where there is one.
+{
+    const U = 'dce63e3f-1111-2222-3333-444444444444';
+    const withUuid = (email, uuid) => ({ ...ready(email), accountUuid: uuid });
+    const stored = (o) => ({
+        id: 'claude-murat', engine: 'claude', dir: path.join(ROOT, 'claude-murat'),
+        email: 'murat@example.com', ...o
+    });
+    const cap = (o) => planCapture({
+        engine: 'claude', home: HOME, root: ROOT, identity: withUuid('murat@example.com', U), now: NOW, stored: [], ...o
+    });
+
+    ok('‼️ X-282: a stored row with the same uuid is THIS account, whatever its address says',
+        cap({ stored: [stored({ email: 'old@example.com', accountUuid: U })] }).reseats === 'claude-murat');
+    ok('‼️ …and the same address with a DIFFERENT uuid is another plan, not this row',
+        cap({ stored: [stored({ accountUuid: 'other-uuid' })] }).reseats === undefined);
+    ok('…while a stored row that never recorded a uuid still matches by address',
+        cap({ stored: [stored()] }).reseats === 'claude-murat');
+    ok('the uuid is written on the row it seals', cap({}).slot.accountUuid === U);
+
+    const orphan = { id: 'claude-murat', dir: path.join(ROOT, 'claude-murat'), accountUuid: U, email: 'murat@example.com' };
+    const back = cap({ onDisk: [orphan] });
+    ok('‼️ a folder the list forgot that carries this uuid is TAKEN BACK — same id, same folder, no -2',
+        back.refusal === '' && back.slot.id === 'claude-murat' && back.slot.dir === orphan.dir
+        && back.adopts === 'claude-murat' && back.reseats === undefined);
+    const stranger = cap({ onDisk: [{ ...orphan, accountUuid: 'somebody-else' }] });
+    ok('‼️ …and a forgotten folder carrying ANOTHER uuid is a name the mint must not hand out again',
+        stranger.slot.id === 'claude-murat-2' && stranger.adopts === undefined);
+    ok('…a folder with no readable uuid is nobody\'s: not adopted, not overwritten',
+        cap({ onDisk: [{ id: 'claude-murat', dir: orphan.dir }] }).slot.id === 'claude-murat-2');
+    ok('a stored row wins over a disk twin — the list is not grown for a folder it already has',
+        cap({ stored: [stored({ accountUuid: U })], onDisk: [orphan] }).adopts === undefined);
+}
+
 // ---------- the refusals, which are the point ----------
 {
     const of = (o) => planCapture({

@@ -372,6 +372,12 @@ gaps found by a hand scan, and a hand scan rots the day it finishes.
   if its handler and its op share a real symbol — a core function, a wired
   dependency, a manager method. An op that reimplements what the page does has
   nothing in common with it, and that is the failure this gate exists for.
+  **`--why <capability>`** prints which symbols each side has and which are
+  shared, so a `core-drift` is named instead of hunted. The wire is read with
+  comments blanked (a doc comment once matched `store:` and stapled 38 KB of
+  host onto both sides — green by accident), and a dep value that is a bare
+  host name (`store: docOpenStore`) is read through to its declaration, one
+  hop, because that is where both sides were handed the same object.
 - **`gap` is the honest third answer:** on the UI, not on the bridge, with a
   sentence saying what the missing op would have to do. `gapBudget` is a
   ratchet — lower it when you close one; raising it is a line in a diff with

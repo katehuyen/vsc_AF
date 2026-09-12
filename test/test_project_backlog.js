@@ -261,6 +261,25 @@ const FAMILY = [
         !B.setBacklogFields(FAMILY, { code: 'P-1' }, { parent: 'P-1' }).ok);
 }
 
+// ‼️ X-287 — "DID IT TAKE?" IS READ OFF THE ITEM, NOT OFF THE REQUEST. A set
+// that changed nothing answered ok with a full item, and the caller walked on
+// believing the tags were on the line.
+{
+    const before = B.findBacklogItem(FAMILY, { code: 'P-1' }).item;
+    const tagged = B.setBacklogFields(FAMILY, { code: 'P-1' }, { kinds: ['bug', 'byAI'] });
+    ok('tags written through kinds land on the line', tagged.ok && /#bug #byAI/.test(tagged.item.raw));
+    const changed = B.backlogAxesChanged(before, tagged.item);
+    ok('‼️ the changed axes name exactly what differs', changed.length === 1 && changed[0] === 'kinds');
+    const same = B.setBacklogFields(FAMILY, { code: 'P-1' }, { kinds: ['feat'], priority: before.priority });
+    ok('‼️ …and a set that changes nothing reports NO axis',
+        same.ok && B.backlogAxesChanged(before, same.item).length === 0);
+    const many = B.setBacklogFields(FAMILY, { code: 'P-1' }, { priority: 'high', effort: 'M', text: 'the epic, renamed' });
+    ok('…and several at once are all named, in contract order',
+        B.backlogAxesChanged(before, many.item).join(',') === 'priority,effort,text');
+    ok('the axis list is the contract the bridge quotes',
+        B.BACKLOG_AXES.join(',') === 'priority,effort,kinds,due,plan,parent,blockedBy,text');
+}
+
 // Filing a capture REBUILDS its line, which is the other place a field can
 // silently evaporate — and the one where nobody is looking at it.
 {

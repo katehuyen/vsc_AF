@@ -208,8 +208,9 @@ import {
 } from './core/launchProfiles';
 import {
     allTags, colorOf, isPinned, normalizeColor, normalizeMarks, parseTags, SESSION_COLORS,
-    SessionMarks, setColor, setTags, tagsOf, togglePin
+    SessionMark, SessionMarks, setColor, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
+import { mergeMissing, PortableMap } from './core/portableState';
 import {
     describeKeys, INTERRUPT_KEY, PermissionAnswer, permissionKeys, resolveInterrupt, TermRecord
 } from './core/interrupt';
@@ -224,11 +225,11 @@ import {
 } from './core/engines';
 import {
     AccountFs, AccountIdentity, EngineAccountSlot, ENGINE_AUTH_ADAPTERS,
-    accountEnv, adapterFor as accountAdapterFor, canIsolateAccounts, describeSlotLayout, liveSource,
-    slotQuotaSource
+    accountEnv, adapterFor as accountAdapterFor, canIsolateAccounts, describeSlotLayout, duplicateSlots, liveSource,
+    shortUuid, slotDir as accountSlotDir, slotQuotaSource
 } from './core/engineAccounts';
 import {
-    CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, accountEnvFor, accountLabelOf,
+    CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, OrphanSlot, accountEnvFor, accountLabelOf,
     planReauth,
     accountRefusal, addSlot, findSlot,
     forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel,
@@ -293,9 +294,9 @@ import {
     addPlanItem, checkPlanItem, planSummary, PlanTarget
 } from './core/projectPlan';
 import {
-    addBacklogItem, archiveBacklogDone, BACKLOG_CODE, BACKLOG_EFFORTS, BACKLOG_MOVES,
+    addBacklogItem, archiveBacklogDone, BACKLOG_AXES, BACKLOG_CODE, BACKLOG_EFFORTS, BACKLOG_MOVES,
     BACKLOG_ORIGIN_TAGS, BACKLOG_PRIORITIES,
-    BACKLOG_STATES, BacklogEffort, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
+    BACKLOG_STATES, backlogAxesChanged, BacklogEffort, BacklogFields, BacklogItem, BacklogMoveDir, BacklogPriority, BacklogState,
     BacklogTarget, codeBacklogItem, descendantCodes, dropInQueue, findBacklogItem, gatherFamilies, joinParent,
     moveBacklogState, moveInQueue, nextBacklog, parseBacklog, placeInQueue, queueOrder,
     setBacklogFields, setBacklogHold,
@@ -1043,21 +1044,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     applyQuotaConfig();
 
-    // User-set session names survive restarts via globalState.
+    // ‼️ S-61 — THE USER'S OWN WORDS ABOUT THEIR OWN WORK TRAVEL WITH THE FLEET.
+    // Names and marks used to be written to `globalState`, which is one row in
+    // the editor's machine-local `state.vscdb` — outside the extension folder,
+    // outside the repo, outside the migration. A new machine came up with every
+    // transcript present and every name gone. They now live in plain JSON files
+    // inside `globalStorage`, which is junctioned onto the agent repo and so is
+    // committed, pushed and cloned like everything else.
+    //
+    // The old store is not deleted and not distrusted: it is MERGED IN the first
+    // time the file is found missing, and a key the file already knows always
+    // wins. Once, not at every start — the old row is never written again, so
+    // a second merge could only resurrect a name the user has since removed.
+    // The same merge rule serves a `state.vscdb` carried over from another
+    // machine: recovery is a merge, because the machine you recover onto is
+    // never empty.
     const TITLES_KEY = 'agentfarm.sessionTitles';
-    const sessionTitles = () => context.globalState.get<Record<string, string>>(TITLES_KEY, {});
-    index.setTitleOverrides(sessionTitles());
-
-    // The shelf (pin + tags) lives beside the names, in its own store: a mark
-    // is the user's own annotation, so it survives restarts, re-scans and the
-    // transcript being rewritten under it.
     const MARKS_KEY = 'agentfarm.sessionMarks';
-    const sessionMarks = (): SessionMarks =>
-        normalizeMarks(context.globalState.get<unknown>(MARKS_KEY, {}));
+    const stateDir = context.globalStorageUri.fsPath;
+    const cleanTitles = (raw: unknown): Record<string, string> => {
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries((raw ?? {}) as Record<string, unknown>)) {
+            if (typeof v === 'string' && v.trim()) { out[k] = v; }
+        }
+        return out;
+    };
+    const titleStore = new PortableMap<string>(path.join(stateDir, 'session-titles.json'), fs, cleanTitles);
+    const markStore = new PortableMap<SessionMark>(path.join(stateDir, 'session-marks.json'), fs, normalizeMarks);
+    const adoptLegacyState = (store: PortableMap<unknown>, key: string): void => {
+        if (store.exists()) { return; }
+        const legacy = context.globalState.get<Record<string, unknown>>(key, {});
+        if (!legacy || !Object.keys(legacy).length) { return; }
+        const outcome = mergeMissing(store.read(), legacy);
+        if (outcome.added.length) { store.write(outcome.merged); }
+    };
+    try {
+        adoptLegacyState(titleStore as PortableMap<unknown>, TITLES_KEY);
+        adoptLegacyState(markStore as PortableMap<unknown>, MARKS_KEY);
+    } catch { /* a start never fails on the old store */ }
+    const sessionTitles = (): Record<string, string> => titleStore.read();
+    const sessionMarks = (): SessionMarks => markStore.read();
+    index.setTitleOverrides(sessionTitles());
     // (refreshAll is defined further down, once the trees exist; a mark is only
     // ever saved from a command, long after activation.)
     const saveMarks = async (marks: SessionMarks) => {
-        await context.globalState.update(MARKS_KEY, marks);
+        markStore.write(marks);
         index.setMarks(marks);
         refreshAll();
         // ‼️ The TREES were told and the PAGES were not, so pinning from a
@@ -3963,7 +3994,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const titles = { ...sessionTitles() };
         if (name.trim()) { titles[sessionId] = name.trim(); }
         else { delete titles[sessionId]; }
-        await context.globalState.update(TITLES_KEY, titles);
+        titleStore.write(titles);
         index.setTitleOverrides(titles);
         refreshAll();
         ConsolePanel.refreshIfOpen();
@@ -12410,7 +12441,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.add',
-            describe: 'Put an item in the backlog. Fields (area, kind, priority, effort) should be filled following the legend at the top of the project\'s Backlog.md. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ `parent` says this item is PART OF another one, by its code — a link on THIS line, not a code shape and not an indent, so a `U` child of a `P` epic is ordinary and nothing moves in the file. It is refused if the code is not there. An uncoded capture may carry one too (the link is stored on the child). What it is NOT is ⛔ `blockedBy`: composition, not dependency. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#byAI` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#byREQ` (the user asked for it; you were the typist). Default is `byAI`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kind?/kinds?, priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), parent? (the code this is part of), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
+            describe: 'Put an item in the backlog. Fields (area, kind, priority, effort) should be filled following the legend at the top of the project\'s Backlog.md. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ `parent` says this item is PART OF another one, by its code — a link on THIS line, not a code shape and not an indent, so a `U` child of a `P` epic is ordinary and nothing moves in the file. It is refused if the code is not there. An uncoded capture may carry one too (the link is stored on the child). What it is NOT is ⛔ `blockedBy`: composition, not dependency. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#byAI` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#byREQ` (the user asked for it; you were the typist). Default is `byAI`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kinds?/tags? (array or comma-separated; the origin stamp is added beside them, never instead of them), priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), parent? (the code this is part of), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'), true);
                 const body = argStr(args, 'text').trim();
@@ -12438,7 +12469,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // decoration: a proposal nobody has agreed to must be
                         // tellable from a decision, or the pile stops meaning
                         // anything.
-                        kinds: listArg(args, 'kinds', 'kind')
+                        // ‼️ X-287 — `tags` is what the line shows and what a
+                        // caller reaches for; it was not read, so the caller's
+                        // tags were silently dropped and only the stamp landed.
+                        // Whatever they are called, they ride BESIDE the stamp.
+                        kinds: listArg(args, 'kinds', 'kind', 'tags', 'tag')
                             .concat(BACKLOG_ORIGIN_TAGS[
                                 optStr(args, 'origin') === 'user' ? 'user' : 'agent']),
                         ...(optStr(args, 'due') ? { due: optStr(args, 'due') as string } : {}),
@@ -12559,39 +12594,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.set',
-            describe: 'Change an item\'s axes — priority, effort, kinds, due date, plan link, the item it is PART OF, what it waits on, or its words. Honest about what it does: unlike backlog.check this REBUILDS the line, in a fixed order (`code text #kinds PRIO [fields] ⛔ 🆔 📅`), which is the price of being able to set a priority without hand-writing markdown. It never touches a line it was not asked about and never drops a piece it did not understand — anything unrecognised rides along in the text. Pass `null` for effort/due/plan/parent to clear one; `kinds`/`blockedBy` REPLACE what is there (an empty array clears them). ‼️ `parent` is REFUSED rather than warned about when it names something that is not there, the item itself, or one of its own descendants — a loop in the chain is invisible on the row you are editing and breaks every walk over the tree afterwards. Changing a parent moves NO line and changes NO code. args: project (id or name), code?/line?/item? (which one), priority?, effort?, kinds?, due?, plan?, parent? (a code, or null), blockedBy?, text? (new words)',
+            describe: 'Change an item\'s axes — priority, effort, kinds, due date, plan link, the item it is PART OF, what it waits on, or its words. Honest about what it does: unlike backlog.check this REBUILDS the line, in a fixed order (`code text #kinds PRIO [fields] ⛔ 🆔 📅`), which is the price of being able to set a priority without hand-writing markdown. It never touches a line it was not asked about and never drops a piece it did not understand — anything unrecognised rides along in the text. Pass `null` for effort/due/plan/parent to clear one; `kinds`/`blockedBy` REPLACE what is there (an empty array clears them). ‼️ `parent` is REFUSED rather than warned about when it names something that is not there, the item itself, or one of its own descendants — a loop in the chain is invisible on the row you are editing and breaks every walk over the tree afterwards. Changing a parent moves NO line and changes NO code. ‼️ HONEST ABOUT WHAT TOOK (X-287): the answer carries `asked` (the axes you named) and `updated` (the axes whose value really differs on the re-read line) — an empty `updated` with a note means the item already had those values; a call that names NO axis, or an unknown priority/effort, is refused rather than answered `ok`. args: project (id or name), code?/line?/item? (which one), priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL, or null), kinds?/tags? (array or comma-separated; REPLACES the tags on the line), due?, plan?, parent? (a code, or null), blockedBy?, text? (new words)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
                 const has = (k: string) => Object.prototype.hasOwnProperty.call(args, k);
+                const fields: BacklogFields = {};
+                if (has('priority')) {
+                    const p = optStr(args, 'priority') as BacklogPriority;
+                    need(BACKLOG_PRIORITIES.includes(p), `priority must be one of ${BACKLOG_PRIORITIES.join('|')}`);
+                    fields.priority = p;
+                }
+                if (has('effort')) {
+                    if (args.effort === null) { fields.effort = null; }
+                    else {
+                        const e = optStr(args, 'effort')?.toUpperCase() as BacklogEffort;
+                        need(BACKLOG_EFFORTS.includes(e), `effort must be one of ${BACKLOG_EFFORTS.join('|')}, or null to clear`);
+                        fields.effort = e;
+                    }
+                }
+                if (['kinds', 'kind', 'tags', 'tag'].some(has)) { fields.kinds = listArg(args, 'kinds', 'kind', 'tags', 'tag'); }
+                if (has('due')) { fields.due = args.due === null ? null : optStr(args, 'due') as string; }
+                if (has('plan')) { fields.plan = args.plan === null ? null : optStr(args, 'plan') as string; }
+                // An empty string clears it too: `parent: ""` is what a
+                // picker sends for "none", and refusing it as "not a
+                // code" would make the only way to unset a parent be to
+                // know that null is spelled differently.
+                if (has('parent')) {
+                    fields.parent = (args.parent === null || !optStr(args, 'parent')) ? null : optStr(args, 'parent') as string;
+                }
+                if (has('blockedBy')) { fields.blockedBy = listArg(args, 'blockedBy', 'blocks'); }
+                if (optStr(args, 'text')) { fields.text = optStr(args, 'text') as string; }
+                const asked = Object.keys(fields);
+                need(asked.length > 0, `nothing to set — name at least one of ${BACKLOG_AXES.join(', ')} (tags = kinds)`);
+                let before: BacklogItem | undefined;
                 let after: BacklogItem | undefined;
                 const out = editProjectDoc(folder, file, src => {
-                    const res = setBacklogFields(src, target, {
-                        ...(BACKLOG_PRIORITIES.includes(optStr(args, 'priority') as BacklogPriority)
-                            ? { priority: optStr(args, 'priority') as BacklogPriority } : {}),
-                        ...(has('effort')
-                            ? { effort: (args.effort === null ? null : optStr(args, 'effort')?.toUpperCase() as BacklogEffort) }
-                            : {}),
-                        ...(has('kinds') || has('kind') ? { kinds: listArg(args, 'kinds', 'kind') } : {}),
-                        ...(has('due') ? { due: args.due === null ? null : optStr(args, 'due') as string } : {}),
-                        ...(has('plan') ? { plan: args.plan === null ? null : optStr(args, 'plan') as string } : {}),
-                        // An empty string clears it too: `parent: ""` is what a
-                        // picker sends for "none", and refusing it as "not a
-                        // code" would make the only way to unset a parent be to
-                        // know that null is spelled differently.
-                        ...(has('parent')
-                            ? { parent: (args.parent === null || !optStr(args, 'parent')) ? null : optStr(args, 'parent') as string }
-                            : {}),
-                        ...(has('blockedBy') ? { blockedBy: listArg(args, 'blockedBy', 'blocks') } : {}),
-                        ...(optStr(args, 'text') ? { text: optStr(args, 'text') as string } : {})
-                    });
+                    before = findBacklogItem(src, target).item;
+                    const res = setBacklogFields(src, target, fields);
                     if (res.item) { after = res.item; }
                     return res;
                 });
                 projectDocWritten(project.id);
+                const updated = before && after ? backlogAxesChanged(before, after) : asked;
                 return {
                     project: project.name, file: relDoc(folder, out.file),
-                    item: after ? backlogOut(after) : null
+                    item: after ? backlogOut(after) : null,
+                    asked, updated,
+                    ...(updated.length ? {} : { note: 'nothing changed — the item already had these values' })
                 };
             }
         },
@@ -17794,9 +17844,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
         const id = slotIdentity(slot);
         const u = usage.find(x => x.slotId === slot.id);
+        // ‼️ X-282 — THE UUID AND ITS TWINS ARE ON THE ROW. Two folders carrying
+        // one uuid are one account offered twice; this is the only feedback
+        // that makes that visible, and it is read off the disk, not the list.
+        const uuid = slot.accountUuid || id.accountUuid || '';
+        const twins = duplicateSlots(storedAccounts().map(x => ({
+            id: x.id, engine: x.engine, accountUuid: x.accountUuid || slotIdentity(x).accountUuid
+        }))).get(slot.id) || [];
         return {
             id: slot.id, engine: slot.engine, label: slotLabel(slot), dir: slot.dir,
             email: slot.email || id.email || '', plan: slot.subscriptionType || id.subscriptionType || '',
+            accountUuid: uuid, uuidShort: shortUuid(uuid), duplicateOf: twins,
             capturedAt: slot.capturedAt || 0,
             health: id.health,
             active: active[slot.engine] === slot.id,
@@ -17838,13 +17896,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * Each returns the REFUSAL to show (empty = it went through) beside
      * whatever the caller needs to describe what happened.
      */
+    /**
+     * ‼️ X-282 — EVERY SLOT FOLDER UNDER THE ROOT, whether the list knows it or
+     * not. A forgotten folder that carries the uuid being captured IS this
+     * account and is taken back; one that carries another is a name the mint
+     * must not hand out twice. Only the folders the list has forgotten are
+     * read for identity — the stored ones are already known.
+     */
+    const slotsOnDisk = (engine: string): OrphanSlot[] => {
+        let names: string[] = [];
+        try {
+            names = fs.readdirSync(accountRoot, { withFileTypes: true })
+                .filter(d => d.isDirectory() && d.name.startsWith(`${engine}-`)).map(d => d.name);
+        } catch { return []; }
+        const stored = new Set(storedAccounts().map(x => x.id));
+        return names.map(name => {
+            const dir = accountSlotDir(accountRoot, name);
+            if (stored.has(name)) { return { id: name, dir }; }
+            const who = accountAdapterFor(engine).readIdentity(diskFs, dir);
+            return { id: name, dir, accountUuid: who.accountUuid || undefined, email: who.email || undefined };
+        });
+    };
     const captureAccount = async (engine: string, label: string, activate: boolean):
         Promise<{ refusal: string; plan: CapturePlan; slot?: EngineAccountSlot }> => {
         const eng = (engine || '').trim() || 'claude';
         const list = storedAccounts();
         const plan = planCapture({
             engine: eng, home: os.homedir(), root: accountRoot,
-            identity: liveIdentity(eng), stored: list, label: (label || '').trim()
+            identity: liveIdentity(eng), stored: list, onDisk: slotsOnDisk(eng), label: (label || '').trim()
         });
         if (plan.refusal) { return { refusal: plan.refusal, plan }; }
         const failed = runCapturePlan(plan);
@@ -17857,6 +17936,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // seconds ago — the very verdict this press exists to change.
         await writeAccounts(addSlot(list, slot));
         if (plan.reseats) { identitySeen.delete(plan.reseats); }
+        if (plan.adopts) { identitySeen.delete(plan.adopts); }
         // ‼️ CAPTURING IS NOT CHOOSING, and the default says so. Redirecting the
         // next session as a side effect of writing something down would move
         // where the money comes from without anybody asking for it.
@@ -17928,27 +18008,113 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** Drop an account from the list. The directory is left on disk unless the
      *  caller says otherwise: forgetting is a bookkeeping act, and deleting
      *  somebody's stored sign-in because they tidied a list is not recoverable. */
+    /**
+     * ‼️ X-282 — WHAT STILL POINTS AT THIS ACCOUNT. Named before the act and
+     * returned after it: the sessions are the fleet's and stay, the tasks and
+     * the standing choice are repaired (the choice is cleared in the same act,
+     * a task's account falls back to the machine's sign-in and its row says
+     * so through `statedAccountLabel`). Nothing here is deleted with the slot.
+     */
+    const accountReferences = (slotId: string): string[] => {
+        const out: string[] = [];
+        for (const [eng, v] of Object.entries(activeAccounts())) {
+            if (v === slotId) { out.push(`the standing ${eng} account (cleared)`); }
+        }
+        for (const t of taskManager.tasks) {
+            if (t.account === slotId) { out.push(`task ${t.id} "${t.title}" (${t.status})`); }
+        }
+        for (const c of consoleHost.list()) {
+            if (c.account === slotId) { out.push(`console session ${c.id}`); }
+        }
+        return out;
+    };
+    /** Local deletion is not revocation — the sentence every forget carries. */
+    const FORGET_REVOKE_NOTE = 'Deleting the folder removes the tokens from THIS disk only: the agent '
+        + 'repo tracks .credentials.json and sessions/*.key, so they stay in git history and every clone. '
+        + 'Revoking the sign-in is a separate step at the provider (claude.ai → Settings → Sessions).';
+    /**
+     * ‼️ X-282 — FORGETTING DELETES, AND DELETING IS SAFE BECAUSE IT DRAINS FIRST.
+     *
+     * The folder used to be left behind out of fear: a transcript could still be
+     * living under the slot, so deleting it was a data-loss risk and the row was
+     * dropped instead. That left the orphan whose name the next capture counted
+     * past — the very duplicate this item is about. X-271's invariant lifts the
+     * fear: the slot is emptied into the pool BEFORE the folder goes, and if
+     * anything cannot be moved (a file the engine still holds open) nothing is
+     * forgotten at all — the refusal names what stayed. An account with a
+     * session or a task running as it is refused outright.
+     */
     const forgetAccount = async (id: string, deleteFiles: boolean):
-        Promise<{ refusal: string; slot?: EngineAccountSlot; filesRemoved: boolean }> => {
+        Promise<{ refusal: string; slot?: EngineAccountSlot; filesRemoved: boolean; pooled: string[]; refs: string[]; note: string }> => {
         const clean = (id || '').trim();
         const list = storedAccounts();
         const slot = findSlot(list, clean);
+        const none = { filesRemoved: false, pooled: [] as string[], refs: [] as string[], note: '' };
         if (!slot) {
-            return {
-                refusal: `No account "${clean}" is stored on this machine.`, filesRemoved: false
-            };
+            return { refusal: `No account "${clean}" is stored on this machine.`, ...none };
+        }
+        const refs = accountReferences(clean);
+        let pooled: string[] = [];
+        if (deleteFiles) {
+            if (accountIsBusy(clean)) {
+                return {
+                    refusal: `"${slotLabel(slot)}" is running a session or a task right now — nothing was forgotten. `
+                        + 'Finish or cancel it, then try again.', ...none, refs
+                };
+            }
+            const drain = repairSharedLinks(false, clean);
+            pooled = drain.moved;
+            const left = [...drain.stranded, ...drain.failed];
+            if (left.length) {
+                return {
+                    refusal: `${left.length} record(s) are still inside "${slotLabel(slot)}" and could not be pooled `
+                        + `(${left.slice(0, 3).join(', ')}${left.length > 3 ? ', …' : ''}) — nothing was forgotten, `
+                        + 'because deleting the folder would delete them. Close whatever holds them and try again.',
+                    ...none, refs, pooled
+                };
+            }
         }
         await writeAccounts(forgetSlot(list, clean));
         // ‼️ An account that WAS the standing one stops being it in the same act:
         // a next session pointed at an id that names nothing would silently fall
         // back to whichever identity happens to be signed in.
         await writeActiveAccounts(forgetActive(activeAccounts(), clean));
+        identitySeen.delete(clean);
         let filesRemoved = false;
         if (deleteFiles) {
+            // Measured 2026-09-12: rmSync unlinks the junctions inside the slot
+            // without following them — the pool behind them is untouched.
             try { fs.rmSync(slot.dir, { recursive: true, force: true }); filesRemoved = true; }
             catch { filesRemoved = false; }
         }
-        return { refusal: '', slot, filesRemoved };
+        return { refusal: '', slot, filesRemoved, pooled, refs, note: deleteFiles ? FORGET_REVOKE_NOTE : '' };
+    };
+    /**
+     * ‼️ X-282 — THE PAGE SAYS WHAT WILL GO AND WHAT WILL STAY, THEN ASKS.
+     * The default is the honest one — the folder goes — and "keep the folder"
+     * is the exception offered by name, because a folder left behind is the
+     * orphan the next capture counts past.
+     */
+    const forgetAccountFromPage = async (id: string): Promise<string> => {
+        const clean = (id || '').trim();
+        const slot = findSlot(storedAccounts(), clean);
+        if (!slot) { return `No account "${clean}" is stored on this machine.`; }
+        const drain = repairSharedLinks(true, clean);
+        const refs = accountReferences(clean);
+        const lines = [
+            `Forget ${slotLabel(slot)} (${slot.id})?`,
+            '',
+            `DELETED: the folder ${slot.dir} — its sign-in tokens and settings copy.`,
+            `KEPT: ${drain.moved.length} session record(s) still inside it are moved to the pool first`
+                + (drain.stranded.length ? `; ${drain.stranded.length} cannot be moved yet (in use) and would stop the deletion` : '') + '.',
+            refs.length ? `STILL POINTING HERE: ${refs.join('; ')} — they fall back to the machine\'s sign-in and say so.` : 'Nothing else points at it.',
+            '',
+            FORGET_REVOKE_NOTE
+        ];
+        const pick = await vscode.window.showWarningMessage(lines.join('\n'), { modal: true },
+            'Forget and delete folder', 'Forget, keep folder');
+        if (!pick) { return ''; }
+        return (await forgetAccount(clean, pick === 'Forget and delete folder')).refusal;
     };
     /**
      * ‼️ X-219 — RENEW A SIGN-IN THAT HAS STOPPED REFRESHING, from its own card.
@@ -19017,6 +19183,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const pub = publicAccount(sl, usage, active);
                 return {
                     id: pub.id, engine: pub.engine, label: pub.label, email: pub.email,
+                    uuidShort: pub.uuidShort, duplicateOf: pub.duplicateOf,
                     plan: pub.plan, health: pub.health, active: pub.active,
                     percent: pub.percent, resetsAt: pub.resetsAt,
                     // ‼️ usageState is what keeps -1 from reading as 0%: an account
@@ -19067,8 +19234,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (await captureAccount(engine, label, false)).refusal,
         activateAccount: async (id: string, engine: string): Promise<string> =>
             (await activateAccount(id, engine)).refusal,
-        forgetAccount: async (id: string): Promise<string> =>
-            (await forgetAccount(id, false)).refusal,
+        forgetAccount: (id: string): Promise<string> => forgetAccountFromPage(id),
         reauthAccount: (id: string): Promise<string> => reauthAccount(id),
         queueAccountRefresh: (ids: string[], gesture: 'toggle' | 'all'): void =>
             queueAccountRefresh(ids, gesture),
@@ -34428,21 +34594,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'accounts.forget',
-            describe: 'DROP AN ACCOUNT FROM THE LIST. The directory itself is left on disk by default — '
-                + 'forgetting is a bookkeeping act, and deleting somebody\'s stored sign-in because they '
-                + 'tidied a list is not recoverable. Pass deleteFiles:true to remove the directory too. '
-                + 'An account that was the active one stops being it in the same act, because a next '
-                + 'session pointed at an id that names nothing would silently fall back to whichever '
-                + 'identity happens to be signed in. args: id, deleteFiles? (default false)',
+            describe: 'FORGET AN ACCOUNT — AND DELETE ITS FOLDER, BY DEFAULT (X-282). A folder left behind '
+                + 'is the orphan the next capture counts past (claude-x → claude-x-2: one account, two '
+                + 'folders, two "quotas"). Deleting is safe because the slot is DRAINED first: every session '
+                + 'record still inside it is moved to the one pool (X-271), and if anything cannot be moved '
+                + '(a file the engine holds open) NOTHING is forgotten and the refusal names it. An account '
+                + 'with a session or task running as it is refused outright. The standing choice is cleared '
+                + 'in the same act; tasks pinned to it fall back to the machine\'s sign-in and their rows say '
+                + 'so (`refs` lists them). ‼️ Local deletion is NOT revocation: the tokens stay in the agent '
+                + 'repo\'s git history — revoke at the provider separately (`note` says so). Pass '
+                + 'deleteFiles:false to drop only the row and keep the folder. args: id, deleteFiles? '
+                + '(default true)',
             handler: async (args) => {
                 const done = await forgetAccount(
-                    argStr(args, 'id'), optBool(args, 'deleteFiles', false));
+                    argStr(args, 'id'), optBool(args, 'deleteFiles', true));
                 need(!done.refusal, done.refusal);
                 const s = done.slot as EngineAccountSlot;
                 return {
                     forgotten: s.id, engine: s.engine, dir: s.dir, filesRemoved: done.filesRemoved,
-                    note: done.filesRemoved ? 'The account directory was deleted too.'
-                        : `The directory is still at ${s.dir} — capture it again to bring it back.`
+                    pooled: done.pooled, refs: done.refs,
+                    note: (done.filesRemoved ? 'The account folder was deleted. '
+                        : `The folder is still at ${s.dir} — capture it again to bring it back. `) + done.note
                 };
             }
         },

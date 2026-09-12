@@ -62,6 +62,12 @@ export interface CapturePlan {
      * that reports "captured" either way is describing an act nobody performed.
      */
     reseats?: string;
+    /**
+     * ‼️ X-282 — the id of a folder the list had forgotten that this plan TAKES
+     * BACK, because it carries the very uuid being captured. A new row, an old
+     * folder: the transcripts already in it stay where they are.
+     */
+    adopts?: string;
 }
 
 /** The setting is user-editable, so nothing in it may be assumed. */
@@ -84,6 +90,7 @@ export function normalizeSlots(raw: unknown): EngineAccountSlot[] {
             engine: typeof o.engine === 'string' && o.engine.trim() ? o.engine.trim() : 'claude',
             label: typeof o.label === 'string' ? o.label : undefined,
             email: typeof o.email === 'string' ? o.email : undefined,
+            accountUuid: typeof o.accountUuid === 'string' && o.accountUuid.trim() ? o.accountUuid.trim() : undefined,
             subscriptionType: typeof o.subscriptionType === 'string' ? o.subscriptionType : undefined,
             capturedAt: typeof o.capturedAt === 'number' ? o.capturedAt : undefined
         });
@@ -278,9 +285,24 @@ export interface CaptureArgs {
      * is the very account being captured.
      */
     stored: EngineAccountSlot[];
+    /**
+     * ‼️ X-282 — EVERY SLOT FOLDER ON THE DISK, stored or not, read through the
+     * engine's adapter. A folder the list has forgotten is not free ground: if
+     * it carries the uuid being captured it IS this account and is taken back,
+     * and if it carries another it is a name the mint must not hand out again.
+     */
+    onDisk?: OrphanSlot[];
     /** what the user wants to call it; the address is the fallback */
     label?: string;
     now?: number;
+}
+
+/** A slot folder found under the root — with whatever identity it will give. */
+export interface OrphanSlot {
+    id: string;
+    dir: string;
+    accountUuid?: string;
+    email?: string;
 }
 
 /**
@@ -300,12 +322,24 @@ export interface CaptureArgs {
  * read is NOT a match: it says the engine did not tell us who this is, not that
  * this is somebody new, and guessing there would merge two strangers.
  */
-function storedAs(list: EngineAccountSlot[], engine: string, email: string): EngineAccountSlot | undefined {
-    const want = String(email || '').trim().toLowerCase();
-    if (!want) { return undefined; }
+function storedAs(list: EngineAccountSlot[], engine: string, identity: { email: string; accountUuid?: string }): EngineAccountSlot | undefined {
     const eng = String(engine || '').trim();
+    // ‼️ X-282 — THE UUID DECIDES WHEN BOTH SIDES HAVE ONE. An address can be
+    // unreadable on a slot captured before the uuid was recorded, and the same
+    // person can hold two plans on one address; the provider's own id is the
+    // one key that means "the same account" and nothing else.
+    const uuid = String(identity.accountUuid || '').trim();
+    if (uuid) {
+        const hit = (list || []).find(s => s.engine === eng && String(s.accountUuid || '').trim() === uuid);
+        if (hit) { return hit; }
+    }
+    const want = String(identity.email || '').trim().toLowerCase();
+    if (!want) { return undefined; }
     return (list || []).find(s =>
-        s.engine === eng && String(s.email || '').trim().toLowerCase() === want);
+        s.engine === eng && String(s.email || '').trim().toLowerCase() === want
+        // A stored uuid that DIFFERS is a different plan on the same address —
+        // matching it by email would fold two accounts into one row.
+        && (!uuid || !String(s.accountUuid || '').trim() || String(s.accountUuid || '').trim() === uuid));
 }
 
 export function planCapture(args: CaptureArgs): CapturePlan {
@@ -345,7 +379,7 @@ export function planCapture(args: CaptureArgs): CapturePlan {
      * forbids outright. So that case is refused by name, with the folder in the
      * sentence, and nothing is written.
      */
-    const already = storedAs(args.stored, engine, args.identity.email);
+    const already = storedAs(args.stored, engine, args.identity);
     if (already && already.dir !== slotDir(args.root, already.id)) {
         return empty(`"${slotLabel(already)}" is already stored for this address, but its directory `
             + `is not where this machine keeps accounts — it is ${already.dir}. Re-sealing it would `
@@ -353,11 +387,21 @@ export function planCapture(args: CaptureArgs): CapturePlan {
             + 'the same account offered twice. Nothing was captured: forget that row first if you '
             + 'want it sealed here instead.');
     }
-    const id = already
-        ? already.id
-        : mintSlotId(engine, args.identity.email || String(args.label || ''),
-            (args.stored || []).map(s => s.id));
-    const dir = already ? already.dir : slotDir(args.root, id);
+    // ‼️ X-282 — A FOLDER THE LIST FORGOT IS TAKEN BACK, NOT COUNTED PAST.
+    // `forget` used to drop the row and leave the folder; the next capture of
+    // the same account saw the name taken and minted `-2` — a second folder,
+    // a second projects/ tree, and a fleet that believed it had two quotas.
+    // The uuid says it is the same account, so the same folder is re-sealed.
+    const uuid = String(args.identity.accountUuid || '').trim();
+    const orphan = !already && uuid
+        ? (args.onDisk || []).find(o => String(o.accountUuid || '').trim() === uuid
+            && o.id.startsWith(`${engine}-`) && !(args.stored || []).some(s => s.id === o.id))
+        : undefined;
+    const taken = [...(args.stored || []).map(s => s.id), ...(args.onDisk || []).map(o => o.id)];
+    const id = already ? already.id
+        : orphan ? orphan.id
+            : mintSlotId(engine, args.identity.email || String(args.label || ''), taken);
+    const dir = already ? already.dir : orphan ? orphan.dir : slotDir(args.root, id);
     const copies = a.ownFiles.map(name => ({
         from: path.join(args.home, liveSource(engine, name)),
         to: path.join(dir, name)
@@ -386,10 +430,12 @@ export function planCapture(args: CaptureArgs): CapturePlan {
             // they called it.
             label: (args.label || '').trim() || already?.label || undefined,
             email: args.identity.email || undefined,
+            accountUuid: uuid || already?.accountUuid || undefined,
             subscriptionType: args.identity.subscriptionType || undefined,
             capturedAt: args.now ?? Date.now()
         },
         copies, carries, links, refusal: '',
+        adopts: orphan ? orphan.id : undefined,
         // ‼️ The caller is TOLD which of the two things it is about to do. A page
         // that says "captured" when a row was refreshed is describing an act
         // nobody performed, and the count above the list would not move.
@@ -488,8 +534,17 @@ export function statedAccountLabel(
     const id = String(stated || '').trim();
     if (!id) { return ''; }
     if (id === MACHINE_ACCOUNT) { return MACHINE_GLOBAL; }
-    return slotLabel(findSlot(list, id)) || id;
+    const slot = findSlot(list, id);
+    // ‼️ X-282 — A DEAD ID SAYS SO. A task, a schedule or a session pinned to
+    // an account that has since been forgotten used to show the bare id, which
+    // reads like one more account; blank would read like the machine's own.
+    // It is neither: the run will fall back to whoever is signed in, and the
+    // surface has to say that before somebody presses it.
+    return slot ? slotLabel(slot) : `${MISSING_ACCOUNT_MARK} ${id}`;
 }
+
+/** The mark a surface draws before an account id that names no stored slot. */
+export const MISSING_ACCOUNT_MARK = '⚠ not on this machine:';
 
 /**
  * ‼️ X-260 (2/n) — WHOSE PLAN PAYS FOR A TURN FIRED WHILE VS CODE IS CLOSED.

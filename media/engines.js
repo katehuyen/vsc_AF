@@ -621,6 +621,18 @@
                     'The address the engine itself reports for this sign-in. The id is what a launch names '
                     + 'and what the directory is called: ' + (a.dir || 'under the accounts root') + '.')
                 : '')
+            + (a.uuidShort
+                ? T.wrap('<span class="poid acuuid">' + esc(a.uuidShort) + '</span>', 'account id: ' + esc(a.uuidShort),
+                    'The provider\'s own id for this account, first eight characters. It is the key two '
+                    + 'cards are compared by: the folder name never is (claude-x and claude-x-2 were one '
+                    + 'account on this machine, twice).')
+                : '')
+            + (a.duplicateOf && a.duplicateOf.length
+                ? T.wrap('<span class="acdup">duplicate</span>', 'Same account as ' + esc(a.duplicateOf.join(', ')),
+                    'This folder and ' + esc(a.duplicateOf.join(', ')) + ' carry the same account id: one '
+                    + 'sign-in, two folders, and the fleet counting two quotas where there is one. '
+                    + 'Forget one of them — its session records are moved to the pool first, nothing is lost.')
+                : '')
             + (a.plan ? '<span class="acplan">' + esc(a.plan) + '</span>' : '')
             + T.wrap('<span class="acbad ' + verdict[0] + '">' + esc(verdict[1]) + '</span>',
                 verdict[2], verdict[3])
@@ -629,10 +641,12 @@
             + refresh
             + stand
             + T.wrap('<button class="secondary small" data-acforget="' + esc(a.id) + '">Forget</button>',
-                'Drop it from this list',
-                'Bookkeeping, not a deletion: the directory is left on disk, so capturing it again brings '
-                + 'it back. An account that was standing stops being it in the same act — a next session '
-                + 'pointed at an id that names nothing would silently fall back to whoever is signed in.')
+                'Forget this account — you are shown what goes and what stays, then asked',
+                'The folder goes too, by default: a folder left behind is the orphan the next capture '
+                + 'counts past (claude-x-2). It is safe because the slot is emptied into the session pool '
+                + 'first, and if anything cannot be moved nothing is forgotten. A running session or task '
+                + 'on this account refuses it. "Keep folder" is offered by name in the dialog. Local '
+                + 'deletion is not revocation — the tokens stay in the agent repo\'s git history.')
             + '</div>'
             + window5
             // ‼️ X-220 — THE ENGINE, IN THE PRODUCT'S OWN BADGE. This card wrote
@@ -986,6 +1000,11 @@
                     border-color:transparent; }
                 .acbad.bad { background:var(--vscode-charts-red,#f14c4c); color:#fff;
                     border-color:transparent; }
+                /* X-282 — one account filed twice: its own badge, not a verdict, so the
+                   verdict count stays one per card */
+                .acdup { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
+                    background:var(--vscode-charts-red,#f14c4c); color:#fff; cursor:help; }
+                .acuuid { font-family:var(--vscode-editor-font-family,monospace); }
                 /* X-219 — the one control that answers that badge wears the badge's
                    colour: a dead sign-in and its remedy are one fact, said twice. */
                 .acreauth { border-color:var(--vscode-charts-yellow,#d7ba7d); }

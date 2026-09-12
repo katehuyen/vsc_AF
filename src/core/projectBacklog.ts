@@ -1547,6 +1547,31 @@ export function setBacklogFields(
     return { ok: true, text: nextText, ...(rebuilt ? { item: rebuilt } : {}) };
 }
 
+/** The axes `setBacklogFields` can change, in the order the contract names them. */
+export const BACKLOG_AXES = ['priority', 'effort', 'kinds', 'due', 'plan', 'parent', 'blockedBy', 'text'] as const;
+export type BacklogAxis = typeof BACKLOG_AXES[number];
+
+/**
+ * ‼️ WHICH AXES REALLY CHANGED between two readings of one item (X-287). A
+ * write that changed nothing answered `ok:true` with a full item, and the
+ * caller walked on believing the tags were on the line — a silent failure
+ * dressed as a success. The answer to "did it take?" is read off the item,
+ * not off the request: an axis is reported only when its value differs.
+ */
+export function backlogAxesChanged(before: BacklogItem, after: BacklogItem): BacklogAxis[] {
+    const list = (v: string[]) => v.map(canonKind).join('|');
+    const out: BacklogAxis[] = [];
+    if (before.priority !== after.priority) { out.push('priority'); }
+    if ((before.effort ?? '') !== (after.effort ?? '')) { out.push('effort'); }
+    if (list(before.kinds) !== list(after.kinds)) { out.push('kinds'); }
+    if ((before.due ?? '') !== (after.due ?? '')) { out.push('due'); }
+    if ((before.plan ?? '') !== (after.plan ?? '')) { out.push('plan'); }
+    if ((before.parent ?? '') !== (after.parent ?? '')) { out.push('parent'); }
+    if (before.blockedBy.join('|') !== after.blockedBy.join('|')) { out.push('blockedBy'); }
+    if (before.text.trim() !== after.text.trim()) { out.push('text'); }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // writing — adding
 // ---------------------------------------------------------------------------

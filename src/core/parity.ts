@@ -472,19 +472,76 @@ export function coreImports(src: string): Set<string> {
  */
 export function valueOfKey(src: string, key: string): string[] {
     const out: string[] = [];
+    // ‼️ COMMENTS ARE BLANKED FIRST. `…in its own store: a mark` in a doc
+    // comment matched `store:` and the scan ran on until a bracket balanced —
+    // 38 KB of host code stapled onto every side that used `deps.store`, so
+    // two sides with nothing in common "shared" everything. The gate had been
+    // green by accident; deleting that sentence turned it red on a capability
+    // nobody had touched (measured 2026-09-12).
+    const code = withoutComments(src);
     const re = new RegExp(`(^|[\\s{,])${key}\\s*:`, 'g');
     let m: RegExpExecArray | null;
-    while ((m = re.exec(src))) {
+    while ((m = re.exec(code))) {
         const from = m.index + m[0].length;
         let depth = 0;
-        const end = scanCode(src, from, (_i, ch) => {
+        const end = scanCode(code, from, (_i, ch) => {
             if ('([{'.includes(ch)) { depth++; return false; }
             if (')]}'.includes(ch)) { depth--; return depth < 0; }
             return depth === 0 && ch === ',';
         });
-        out.push(src.slice(from, end < 0 ? Math.min(src.length, from + 600) : end));
+        const value = code.slice(from, end < 0 ? Math.min(code.length, from + 600) : end);
+        out.push(value + hostDeclarationsIn(code, value));
     }
     return out;
+}
+
+/**
+ * Comments blanked in place — every character keeps its offset, so a scan
+ * over the result still indexes the code it pointed at. Only a `//` that owns
+ * its line is blanked: `'https://…'` inside a string must survive.
+ */
+const blankCache = new Map<string, string>();
+export function withoutComments(src: string): string {
+    let b = blankCache.get(src);
+    if (b === undefined) {
+        b = src
+            .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\r\n]/g, ' '))
+            .replace(/(^|\n)([ \t]*)\/\/[^\r\n]*/g, (m, lead, indent) =>
+                lead + indent + ' '.repeat(m.length - lead.length - indent.length));
+        if (blankCache.size > 64) { blankCache.clear(); }
+        blankCache.set(src, b);
+    }
+    return b;
+}
+
+/**
+ * ‼️ A DEP VALUE THAT IS A BARE NAME IS READ THROUGH TO WHAT THE HOST BUILT.
+ * `store: docOpenStore` and `setDocOpen: (p) => docOpenStore.set(p)` share
+ * nothing as text; the host's `const docOpenStore = new DocOpenStore(…)` is
+ * where both were handed the same object, and `convertToQueue:
+ * convertNoticeToQueue` names a function whose BODY is the act. One hop, the
+ * initializer only, capped — enough to see the core class or the store
+ * methods both sides go through, not enough to staple the host onto a side.
+ */
+function hostDeclarationsIn(code: string, value: string): string {
+    let extra = '';
+    const seen = new Set<string>();
+    for (const m of value.matchAll(/\b([A-Za-z_$][\w$]*)\b/g)) {
+        const id = m[1];
+        if (id.length <= 3 || seen.has(id) || NOT_A_CALL.has(id)) { continue; }
+        seen.add(id);
+        const decl = new RegExp(`\\b(?:const|let)\\s+${id}\\s*(?::\\s*[^=;]+)?=(?![=>])`).exec(code);
+        if (!decl) { continue; }
+        const from = decl.index + decl[0].length;
+        let depth = 0;
+        const end = scanCode(code, from, (_i, ch) => {
+            if ('([{'.includes(ch)) { depth++; return false; }
+            if (')]}'.includes(ch)) { depth--; return depth < 0; }
+            return depth === 0 && ch === ';';
+        });
+        extra += '\n' + code.slice(from, Math.min(end < 0 ? code.length : end, from + 2500));
+    }
+    return extra;
 }
 
 /**

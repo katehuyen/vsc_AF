@@ -2,6 +2,88 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.464.0 - nothing of the user's is bound to a machine or a slot any more: session names travel (S-61), a forgotten account leaves no orphan (X-282), a backlog write says what took (X-287) (2026-09-12)
+
+- **AN ACCOUNT FORGOTTEN IS AN ACCOUNT GONE — AND THE SAME SIGN-IN NEVER GETS A
+  `-2` (X-282).** Measured: five `claude-*` folders on this machine, three
+  accounts. "Forget" dropped the row and left the folder out of fear that a
+  transcript might still live in it; the next capture of the same sign-in saw
+  the name taken and minted `claude-x-2` — a second folder, a second
+  `projects/` tree, and a fleet counting two five-hour windows where there was
+  one. Three changes, one invariant:
+  - **The uuid is the key.** `readClaudeIdentity` reads
+    `oauthAccount.accountUuid`; a capture matches a stored row by it first, and
+    the same address with a different uuid is another plan, not this row.
+  - **A forgotten folder is taken back, not counted past.** Capture reads every
+    slot folder under the root, stored or not (`slotsOnDisk`); one carrying
+    the uuid being captured is re-sealed under its own name (`adopts`), one
+    carrying another uuid is a name the mint may not hand out again.
+  - **Forgetting deletes, and deleting is safe because it drains first.** The
+    slot is emptied into the pool (X-271) before the folder goes; if anything
+    cannot be moved, or a session or task is running as that account, NOTHING
+    is forgotten and the refusal names it. Measured: `rmSync` unlinks the
+    junctions inside the slot without following them. The page shows what
+    goes and what stays, then asks — "keep folder" is offered by name.
+  - A card carries the short uuid, and two cards carrying one are each
+    marked **duplicate** — the only feedback that makes the fault visible. An
+    account id that names no stored slot reads `⚠ not on this machine: <id>`
+    wherever a task or session quotes it, instead of looking like one more
+    account. `accounts.forget` answers `pooled` and `refs` and says, every
+    time, that local deletion is not revocation: the tokens stay in the agent
+    repo's git history.
+- **A SESSION'S NAME, PIN, TAGS AND COLOUR NOW TRAVEL WITH THE FLEET (S-61).** They
+  were kept in VS Code's `globalState`, which is a single row inside
+  `%APPDATA%\Code\User\globalStorage\state.vscdb` — not in the extension's own
+  folder, not in the repo, not carried by the migration. A new machine came up
+  with every transcript present and every name gone. They are now plain JSON
+  (`session-titles.json`, `session-marks.json`) inside the extension's
+  `globalStorage`, which is junctioned onto the agent repo and therefore
+  committed, pushed and cloned like every other fact.
+- **It is the same fault as X-271, one layer up.** There the wrong owner was the
+  account slot; here it was the editor's per-machine store. A session record
+  outlives both the account it ran under and the machine it ran on.
+- **‼️ A RECOVERY IS A MERGE, NEVER A COPY.** The old store is not deleted and
+  not distrusted — it is merged in the first time the file is found missing,
+  and an id the file already knows always keeps the value it has. That rule is
+  what makes the same path safe for a `state.vscdb` carried over from another
+  machine: the machine you are recovering onto is never empty (this one already
+  held 95 names and 8 marks), so overwriting would repair one loss by causing
+  another. Once, not at every start: the old row is never written again, so a
+  repeated merge could only resurrect a name the user has since removed.
+- A write goes to a sibling and is renamed over the target, so a crash mid-write
+  leaves the previous file rather than half of the new one; a file that fails
+  to parse reads as empty but is never cached as empty, and the next write
+  keeps it beside the new one as `.corrupt` rather than renaming over it.
+- **`node tools/adopt_state_vscdb.js <state.vscdb>` recovers what a machine left
+  behind.** The extension adopts its own leftover row by itself; what it cannot
+  reach is a `state.vscdb` carried over from another machine and the row
+  written under the old publisher id (`miropharm.agent-farm` — measured: two
+  names live only there). The tool reads both rows of any such file into the
+  fleet's files: a dry run by default, `--apply` adds only what is missing, and
+  an id both sides know with different values is listed side by side and left
+  alone until the user says `--prefer incoming`. Measured on this machine: 95
+  + 2 names and 8 marks, a second run writes nothing.
+- **A backlog write that wrote nothing answered `ok` (X-287).** `backlog.add`
+  and `backlog.set` read tags only under `kinds`; a caller passing `tags` — the
+  word on the line — had them silently dropped, and `set` returned a full item
+  as if it had taken. Both now read `kinds`/`kind`/`tags`/`tag`; `add` puts them
+  BESIDE the `#byAI`/`#byREQ` stamp, never instead of it; and `set` answers
+  with `asked` (the axes named) and `updated` (the axes whose value really
+  differs on the re-read line, `backlogAxesChanged`) — an empty `updated`
+  carries a note, a call naming no axis or an unknown priority/effort is
+  refused rather than answered `ok`.
+- **The parity gate had been green by accident on every capability wired
+  through `deps.store`.** `valueOfKey` matched `…its own store: a mark` inside
+  a doc comment and stapled 38 KB of host code onto both sides, so two sides
+  with nothing in common "shared" everything; deleting that sentence for S-61
+  failed `settingsPanel.ts#docOpenSet`, which nothing had touched. Comments
+  are now blanked before the scan, and a dep value that is a bare host name
+  (`store: docOpenStore`, `convertToQueue: convertNoticeToQueue`) is read
+  through to what the host built — one hop — so the real link (`DocOpenStore`,
+  `titleOf`/`dismiss`/`addSpawnedItem`) is what the gate sees.
+  `node test/test_parity.js --why <capability>` now prints which symbols each
+  side has, so a drift is named instead of hunted.
+
 ## 3.463.0 - a transcript is never left living under an account: the slot is emptied into the pool, before the launch and again after the session (X-271) (2026-09-12)
 
 - **AN ACCOUNT IS A QUOTA, NOT A PLACE TO KEEP ANYTHING.** A sign-in can be

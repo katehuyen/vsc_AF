@@ -114,6 +114,10 @@ async function main() {
             && statedAccountLabel('claude-work', list) === 'work'
             && statedAccountLabel('', list) === ''
             && accountLabelOf(undefined) === MACHINE_GLOBAL);
+        // ‼️ X-282 — a dead id says so: it used to read as one more account.
+        ok('‼️ an id that names no stored slot is marked, not shown as a bare id or a blank',
+            /not on this machine/.test(statedAccountLabel('claude-gone', list))
+            && /claude-gone/.test(statedAccountLabel('claude-gone', list)));
     }
 
     // ---------- the card REMEMBERS what it ran as ----------

@@ -102,6 +102,8 @@ export interface AccountIdentity {
     /** the address, when the engine records one — Codex does not, and that is
      *  not a fault; the label carries the name there */
     email: string;
+    /** the provider's own stable id for the account (Claude: oauthAccount.accountUuid); '' when the engine records none */
+    accountUuid: string;
     subscriptionType: string;
     /** epoch ms; the ACCESS token's expiry — informational, not a verdict */
     expiresAt: number;
@@ -120,6 +122,8 @@ export interface EngineAccountSlot {
     /** the config directory this slot IS */
     dir: string;
     email?: string;
+    /** the key two slots are compared by — a folder name never is (X-282) */
+    accountUuid?: string;
     subscriptionType?: string;
     capturedAt?: number;
 }
@@ -224,7 +228,7 @@ function safe<T>(fn: () => T): T | undefined {
 }
 
 function emptyIdentity(): AccountIdentity {
-    return { email: '', subscriptionType: '', expiresAt: 0, refreshExpiresAt: 0, health: 'needs-signin' };
+    return { email: '', accountUuid: '', subscriptionType: '', expiresAt: 0, refreshExpiresAt: 0, health: 'needs-signin' };
 }
 
 /**
@@ -251,18 +255,24 @@ export function readClaudeIdentity(fsr: AccountFs, dir: string, now = Date.now()
     if (!oauth) { return emptyIdentity(); }
 
     let email = '';
+    let accountUuid = '';
     const rawCfg = safe(() => fsr.read(path.join(dir, '.claude.json')));
     if (rawCfg) {
         try {
-            const cfg = JSON.parse(rawCfg) as { oauthAccount?: { emailAddress?: unknown } };
+            const cfg = JSON.parse(rawCfg) as { oauthAccount?: { emailAddress?: unknown; accountUuid?: unknown } };
             const e = cfg?.oauthAccount?.emailAddress;
             if (typeof e === 'string') { email = e; }
+            // ‼️ X-282 — THE UUID IS THE KEY, THE ADDRESS IS THE LABEL. Two
+            // folders carrying one uuid are one account filed twice, whatever
+            // their names say; measured on this machine, twice.
+            const u = cfg?.oauthAccount?.accountUuid;
+            if (typeof u === 'string') { accountUuid = u.trim(); }
         } catch { /* the identity file is optional; the credentials decide health */ }
     }
 
     const refreshExpiresAt = num(oauth.refreshTokenExpiresAt);
     return {
-        email,
+        email, accountUuid,
         subscriptionType: typeof oauth.subscriptionType === 'string' ? oauth.subscriptionType : '',
         expiresAt: num(oauth.expiresAt),
         refreshExpiresAt,
@@ -295,7 +305,7 @@ export function readCodexIdentity(fsr: AccountFs, dir: string): AccountIdentity 
     const key = typeof auth.OPENAI_API_KEY === 'string' && !!auth.OPENAI_API_KEY;
     if (!signedIn && !key) { return emptyIdentity(); }
     return {
-        email: '',
+        email: '', accountUuid: '',
         subscriptionType: typeof auth.auth_mode === 'string' && auth.auth_mode
             ? auth.auth_mode
             : (key ? 'apikey' : ''),
@@ -320,7 +330,7 @@ export function readGeminiIdentity(fsr: AccountFs, dir: string): AccountIdentity
     }
     const hasRefresh = typeof creds.refresh_token === 'string' && !!creds.refresh_token;
     return {
-        email: '',
+        email: '', accountUuid: '',
         subscriptionType: 'oauth-personal',
         expiresAt: num(creds.expiry_date),
         refreshExpiresAt: 0,
@@ -337,7 +347,7 @@ export function readOpencodeIdentity(fsr: AccountFs, dir: string): AccountIdenti
         const providers = Object.keys(parsed || {});
         if (!providers.length) { return emptyIdentity(); }
         return {
-            email: '', subscriptionType: providers.join(', '),
+            email: '', accountUuid: '', subscriptionType: providers.join(', '),
             expiresAt: 0, refreshExpiresAt: 0, health: 'ready'
         };
     } catch {
@@ -587,6 +597,37 @@ export function mintSlotId(engine: string, email: string, taken: string[]): stri
         const candidate = `${base}-${n}`;
         if (!taken.includes(candidate)) { return candidate; }
     }
+}
+
+/** The first eight characters — enough to tell two accounts apart on a card. */
+export function shortUuid(uuid: string | undefined): string {
+    return String(uuid || '').trim().slice(0, 8);
+}
+
+/**
+ * ‼️ X-282 — WHICH SLOTS ARE ONE ACCOUNT FILED TWICE. Keyed by engine + uuid,
+ * never by folder name: measured on this machine, `claude-aicozums` and
+ * `claude-aicozums-2` carried one uuid, and so did the murvietnam pair — five
+ * slots, three accounts, and every picker offering five "independent" quotas.
+ * A slot whose uuid could not be read is nobody's duplicate: that is "the
+ * engine did not say who this is", not "this is somebody new".
+ */
+export function duplicateSlots(
+    list: ReadonlyArray<{ id: string; engine: string; accountUuid?: string }>
+): Map<string, string[]> {
+    const byKey = new Map<string, string[]>();
+    for (const s of list) {
+        const u = String(s.accountUuid || '').trim();
+        if (!u) { continue; }
+        const key = `${s.engine}\u0001${u}`;
+        byKey.set(key, [...(byKey.get(key) || []), s.id]);
+    }
+    const out = new Map<string, string[]>();
+    for (const ids of byKey.values()) {
+        if (ids.length < 2) { continue; }
+        for (const id of ids) { out.set(id, ids.filter(o => o !== id)); }
+    }
+    return out;
 }
 
 /**

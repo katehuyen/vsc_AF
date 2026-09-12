@@ -341,9 +341,8 @@ export class EnginesPanel {
                 break;
             }
             case 'accountForget':
-                // Bookkeeping only: the directory is left on disk. Deleting
-                // somebody's stored sign-in because they tidied a list is not
-                // recoverable, so the page is not given that switch at all.
+                // X-282 — the host shows what goes and what stays, then asks;
+                // the folder goes by default, after the slot is drained.
                 await this.wroteAccount(await this.deps.forgetAccount(String(msg.id ?? '')));
                 break;
             case 'engineDocs':

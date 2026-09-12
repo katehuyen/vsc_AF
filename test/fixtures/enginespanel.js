@@ -43,6 +43,8 @@ const data = () => {
             {
                 id: 'work-1', engine: 'claude', label: 'work@studio',
                 email: 'work@studio.example', plan: 'max20x', health: 'ready', active: true,
+                // X-282 — the provider's id, short, and who else carries it
+                uuidShort: '40fd76b3', duplicateOf: [],
                 percent: 91, resetsAt: NOW + 37 * 60 * 1000,
                 // ‼️ audit B-04.3 — the window arrives NAMED. The host fills the
                 // silence (`windowNameOf`), so a page never derives it and the
@@ -58,6 +60,7 @@ const data = () => {
             {
                 id: 'personal', engine: 'claude', label: 'personal@gmail',
                 email: 'personal@gmail.com', plan: 'pro', health: 'ready', active: false,
+                uuidShort: 'dce63e3f', duplicateOf: ['spare'],
                 percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000,
                 usageState: 'ok', note: '', window: 'five-hour window',
                 quotaSource: 'oauth-credentials',
@@ -68,6 +71,7 @@ const data = () => {
             {
                 id: 'spare', engine: 'claude', label: 'spare@gmail',
                 email: 'spare@gmail.com', plan: 'pro', health: 'needs-signin', active: false,
+                uuidShort: 'dce63e3f', duplicateOf: ['personal'],
                 percent: -1, resetsAt: 0,
                 usageState: 'no-auth', note: 'The refresh token was rejected.',
                 window: 'five-hour window',

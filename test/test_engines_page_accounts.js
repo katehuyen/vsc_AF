@@ -145,8 +145,26 @@ const sec = () => {
     drop.find(b => b.dataset.acforget === 'spare').click();
     ok('…and dropping asks for exactly that id', JSON.stringify(r.last())
         === JSON.stringify({ type: 'accountForget', id: 'spare' }));
-    ok('‼️ and the page says the directory stays on disk — a list tidy is not a deletion',
-        /still on disk|left on disk|directory is kept|stays on disk/i.test(sec()));
+    // ‼️ X-282 — the contract turned over: a folder left behind IS the orphan
+    // the next capture counts past, so the page says the folder goes, that the
+    // slot is drained first, and that local deletion is not revocation.
+    ok('‼️ and the page says the folder goes, after the slot is emptied into the pool',
+        /folder goes too, by default/i.test(sec()) && /emptied into the session pool first/i.test(sec()));
+    ok('…that a running session or task refuses it, and "keep folder" is offered by name',
+        /running session or task/i.test(sec()) && /Keep folder/.test(sec()));
+    ok('…and that deleting locally is not revoking — the tokens stay in git history',
+        /not revocation/i.test(sec()) && /git history/i.test(sec()));
+}
+
+// ---------- X-282: the uuid is on the card, and twins name each other ----------
+{
+    const h = sec();
+    ok('‼️ X-282: the short account id is drawn on every card that has one',
+        (h.match(/class="poid acuuid"/g) || []).length === 3 && /dce63e3f/.test(h) && /40fd76b3/.test(h));
+    ok('‼️ …and the two cards carrying one id are each marked duplicate — the only feedback that makes it visible',
+        (h.match(/>duplicate</g) || []).length === 2 && /Same account as spare/.test(h) && /Same account as personal/.test(h));
+    ok('…while the card whose id is its own carries no such badge',
+        !/>duplicate</.test(h.slice(h.indexOf('work@studio.example'), h.indexOf('personal@gmail.com'))));
 }
 
 // ---- capturing the sign-in that is on this disk ----------------------------

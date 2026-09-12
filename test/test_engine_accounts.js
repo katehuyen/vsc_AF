@@ -23,7 +23,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const {
     readClaudeIdentity, readCodexIdentity, readGeminiIdentity, accountEnv, slotDir,
     mintSlotId, slotHealth, describeSlotLayout, adapterFor, ENGINE_AUTH_ADAPTERS,
-    accountCapableEngines, captureRefusal, readSlotIdentity, slotQuotaSource
+    accountCapableEngines, captureRefusal, readSlotIdentity, slotQuotaSource, duplicateSlots, shortUuid
 } = require(path.join(__dirname, '..', 'out', 'core', 'engineAccounts.js'));
 // X-219 — a slot's own decisions live with the slots, beside accountRefusal.
 const { planReauth } = require(path.join(__dirname, '..', 'out', 'core', 'accountStore.js'));
@@ -58,6 +58,10 @@ const config = (email) => JSON.stringify({
     ok('the identity is read from the directory, not guessed',
         id.email === 'murat@example.com' && id.subscriptionType === 'pro');
     ok('‼️ …and it is usable, because both tokens are still in date', id.health === 'ready');
+    ok('‼️ X-282: the provider\'s own account id is read too — it is the key two slots are compared by',
+        id.accountUuid === 'u-1');
+    ok('…and an identity with no config file has an empty one, not a missing field',
+        readClaudeIdentity(fsOf({ 'D:/x/.credentials.json': creds({}) }), 'D:/x', NOW).accountUuid === '');
     // ‼️ THE VALUE NEVER LEAVES. Every surface above this asks "is there an
     // identity and whose", never "what is the token" — the same boundary the
     // Secrets vault draws, for the same reason.
@@ -349,6 +353,25 @@ const config = (email) => JSON.stringify({
             .every(a => { const s = a.quotaSource(); return s.kind === 'none' && s.reason.length > 30; }));
     ok('an unknown engine is a reason too, never an exception',
         slotQuotaSource({ engine: 'nope' }).kind === 'none' && slotQuotaSource(undefined).kind === 'none');
+}
+
+// ---------- X-282: which slots are one account filed twice ----------
+{
+    const dup = duplicateSlots([
+        { id: 'claude-a', engine: 'claude', accountUuid: 'U1' },
+        { id: 'claude-a-2', engine: 'claude', accountUuid: 'U1' },
+        { id: 'claude-b', engine: 'claude', accountUuid: 'U2' },
+        { id: 'codex-a', engine: 'codex', accountUuid: 'U1' },
+        { id: 'claude-c', engine: 'claude' },
+        { id: 'claude-d', engine: 'claude', accountUuid: '' }
+    ]);
+    ok('‼️ X-282: two folders carrying one uuid name each other as duplicates',
+        (dup.get('claude-a') || []).join() === 'claude-a-2' && (dup.get('claude-a-2') || []).join() === 'claude-a');
+    ok('…a uuid on its own is nobody\'s duplicate', !dup.has('claude-b'));
+    ok('…the same uuid on another ENGINE is another account', !dup.has('codex-a'));
+    ok('…and a slot whose uuid could not be read is never called a duplicate of anything',
+        !dup.has('claude-c') && !dup.has('claude-d'));
+    ok('the short form is the first eight characters', shortUuid('dce63e3f-1111-2222') === 'dce63e3f' && shortUuid(undefined) === '');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

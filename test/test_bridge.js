@@ -4298,6 +4298,29 @@ const { opencodeStatus, syncToOpencode } =
         ok('…and its contract says which tag is which, and that the default is byAI',
             /#byAI/.test(addBlock) && /#byREQ/.test(addBlock)
             && /origin\? \(agent\|user, default agent\)/.test(addBlock));
+
+        // ---- X-287: the caller's tags are read, and a set says what took ----
+        //
+        // ‼️ `tags` is the word on the line and the word a caller reaches for;
+        // it was not read, so `backlog.add` dropped the caller's tags and kept
+        // only the stamp, and `backlog.set tags=…` answered ok having written
+        // nothing. A silent success is the failure Principle 1 names.
+        ok('‼️ backlog.add reads tags under either name, beside the stamp',
+            /listArg\(args, 'kinds', 'kind', 'tags', 'tag'\)\s*\.concat\(BACKLOG_ORIGIN_TAGS/.test(addBlock)
+            && /kinds\?\/tags\?/.test(addBlock));
+        const bsetAt = src.indexOf("op: 'projects.backlog.set'");
+        const bsetBlock = src.slice(bsetAt, src.indexOf("op: 'projects.backlog.code'", bsetAt));
+        ok('‼️ backlog.set reads tags under either name',
+            /\['kinds', 'kind', 'tags', 'tag'\]\.some\(has\)/.test(bsetBlock));
+        ok('‼️ …answers with the axes asked and the axes that really changed',
+            /backlogAxesChanged\(before, after\)/.test(bsetBlock)
+            && /asked, updated,/.test(bsetBlock) && /asked.*updated/.test(bsetBlock.slice(0, bsetBlock.indexOf('handler:'))));
+        ok('‼️ …refuses a call that names no axis, and an unknown priority or effort',
+            /need\(asked\.length > 0, `nothing to set/.test(bsetBlock)
+            && /need\(BACKLOG_PRIORITIES\.includes\(p\)/.test(bsetBlock)
+            && /need\(BACKLOG_EFFORTS\.includes\(e\)/.test(bsetBlock));
+        ok('…and says so when nothing changed rather than answering a bare ok',
+            /nothing changed — the item already had these values/.test(bsetBlock));
         ok('…and that an item the user typed themselves carries neither',
             /carry neither/.test(addBlock));
 

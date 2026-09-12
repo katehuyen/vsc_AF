@@ -119,14 +119,8 @@ const keyCache = new Map();
  * character keeps its place, so the offsets the scan indexes with still point
  * at the code they pointed at.
  */
-const withoutComments = (src) => src
-    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\r\n]/g, ' '))
-    // Only a comment that OWNS its line: `'https://…'` inside a string must
-    // survive, and a trailing `// note` cannot fake a signature on its own.
-    .replace(/(^|\n)([ \t]*)\/\/[^\r\n]*/g, (m, lead, indent) => lead + indent + ' '.repeat(m.length - lead.length - indent.length));
-
 const methodBodies = (file) => {
-    const src = withoutComments(sourceOf(file));
+    const src = P.withoutComments(sourceOf(file));
     let map = keyCache.get('§m§' + file);
     if (!map) {
         map = new Map();
@@ -326,6 +320,31 @@ const manifest = JSON.parse(read(MANIFEST_FILE));
         half.length === 1 && half[0].hasDescribe && !half[0].hasHandler);
 }
 
+// ‼️ THE WIRE IS READ, NOT GUESSED — AND NOT FROM A COMMENT. `valueOfKey`
+// once matched `…its own store: a mark` in a doc comment and stapled 38 KB of
+// host code onto every side using `deps.store`, so a page and an op with
+// nothing in common "shared" everything; deleting that sentence failed a
+// capability nobody had touched. And a value that is a bare host name is read
+// through to what the host built, one hop: that is where both sides were
+// handed the same object.
+{
+    const host = [
+        "import { DocOpenStore } from './core/docopen';",
+        "// the shelf lives in its own store: a mark is the user's own",
+        "const docOpenStore = new DocOpenStore(path.join(dir, 'x.json'));",
+        "const convert = (a) => { noticesStore.titleOf(a.id); };",
+        "const deps = { store: docOpenStore, setDocOpen: (p) => docOpenStore.set(p), go: convert, onChange: () => 1 };"
+    ].join('\n');
+    const store = P.valueOfKey(host, 'store');
+    ok('‼️ a deps key is never matched inside a comment',
+        store.length === 1 && !store[0].includes('a mark'));
+    ok('‼️ a bare host name in a deps value is read through to its declaration',
+        store[0].includes('new DocOpenStore(') && P.valueOfKey(host, 'go')[0].includes('titleOf'));
+    ok('…and so both sides of a store-backed act carry the core class',
+        P.valueOfKey(host, 'setDocOpen')[0].includes('new DocOpenStore(')
+        && P.depsVocabulary('deps.setDocOpen(x)', host, P.coreImports(host)).has('DocOpenStore'));
+}
+
 ok('the scan found the surface at all — commands, page actions and ops',
     ui.filter(u => u.kind === 'command').length > 150
     && ui.filter(u => u.kind === 'page').length > 300
@@ -349,6 +368,45 @@ ok('the scan found the surface at all — commands, page actions and ops',
 const problems = P.auditParity(manifest, world);
 const byKind = {};
 for (const p of problems) { (byKind[p.kind] = byKind[p.kind] || []).push(p); }
+
+// ---------------------------------------------------------------- --why
+// `node test/test_parity.js --why <capability>` — the gate says "nothing links
+// A to B"; this says which symbols each side has, so the one that went missing
+// is named instead of hunted. Measured need: a drift in an untouched capability
+// took a whole session to localise without it.
+{
+    const at = process.argv.indexOf('--why');
+    const want = at > 0 ? process.argv[at + 1] : '';
+    if (want) {
+        const entry = manifest.entries.find(e => e.capability === want);
+        if (!entry) { console.log(`--why: no capability "${want}" in the manifest`); process.exit(2); }
+        const opDecls = (entry.ops || []).map(n => ops.find(o => o.op === n)).filter(Boolean);
+        for (const id of entry.ui) {
+            const a = ui.find(u => u.id === id);
+            if (!a) { console.log(`  ${id}: NOT FOUND among doors`); continue; }
+            const left = a.wired ?? a.body;
+            console.log(`  door ${id} (${a.file}) body ${a.body.length} wired ${left.length}`);
+            for (const m of new Set([...left.matchAll(/\bdeps\.([A-Za-z_$][\w$]*)/g)].map(x => x[1]))) {
+                console.log(`    deps.${m} -> host value ${(keyCache.get(m) || '').length} chars`);
+            }
+            for (const s of vocabularyOf(a)) {
+                if (s.length <= 3) { continue; }
+                const re = new RegExp(`\\b${s}\\b`);
+                const inL = re.test(left);
+                const inOps = opDecls.filter(o => re.test(o.wired ?? o.body)).map(o => o.op);
+                console.log(`    ${inL && inOps.length ? 'SHARED' : '      '} ${s}  ui:${inL ? 'y' : '-'}  op:${inOps.join(',') || '-'}`);
+            }
+        }
+        for (const o of opDecls) {
+            const right = o.wired ?? o.body;
+            console.log(`  op ${o.op} (${o.file}) body ${o.body.length} wired ${right.length}`);
+            for (const m of new Set([...right.matchAll(/\bdeps\.([A-Za-z_$][\w$]*)/g)].map(x => x[1]))) {
+                console.log(`    deps.${m} -> host value ${(keyCache.get(m) || '').length} chars`);
+            }
+        }
+        process.exit(0);
+    }
+}
 
 for (const kind of Object.keys(P.EXEMPT_KINDS)) {
     // nothing to assert per kind — listed so a reader sees the closed list
