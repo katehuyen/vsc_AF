@@ -165,6 +165,21 @@ export interface EngineAuthAdapter {
      */
     carryFiles?: string[];
     /**
+     * ‼️ X-269 — WHAT THE FLEET GUARANTEES EVERY SESSION ON THIS ENGINE GETS,
+     * whichever sign-in it runs under.
+     *
+     * A `carryFile` travels the USER'S choices; this is the fleet's own, and it
+     * wins where the two disagree. It names its own file rather than leaning on
+     * the order of `carryFiles`, because an engine may keep its behaviour
+     * somewhere else entirely — and an engine with nothing to guarantee simply
+     * leaves it out.
+     *
+     * Applied wherever a slot can lead to a session (`core/slotSettings`), not
+     * at capture: a contract enforced once is a photograph, which is the fault
+     * this field exists to end.
+     */
+    requiredEnv?: { file: string; vars: Record<string, string> };
+    /**
      * …and what must keep pointing at the main directory, because relocating a
      * config directory moves more than the identity.
      */
@@ -384,6 +399,14 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         // copy is put there. Measured on this machine: it was not, and every
         // Claude session started under an account has been invisible since.
         carryFiles: ['settings.json'],
+        // ‼️ X-269 — MEASURED 2026-09-12: not one of the five slots on this
+        // machine carried this key, so every Claude session Agent Farm had ever
+        // started under an account ran on Anthropic's SIMPLIFIED system prompt.
+        // The user's standing decision is the full one. The variable is read
+        // when the process STARTS, so this can only ever fix the next session —
+        // which is exactly why it is applied before the spawn rather than
+        // repaired after somebody notices.
+        requiredEnv: { file: 'settings.json', vars: { CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT: '0' } },
         liveDir: '.claude',
         // ‼️ the identity is at the HOME ROOT, not under .claude — see liveFiles
         liveFiles: { '.claude.json': '.claude.json' },

@@ -211,6 +211,7 @@ import {
     SessionMark, SessionMarks, setColor, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { mergeMissing, PortableMap } from './core/portableState';
+import { reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
 import {
     describeKeys, INTERRUPT_KEY, PermissionAnswer, permissionKeys, resolveInterrupt, TermRecord
 } from './core/interrupt';
@@ -1349,6 +1350,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...agents.map(a => path.join(a.dir, '.claude', 'settings.local.json'))
         ].filter(f => hasOurHooks(f) && !hooksAreCurrent(f, livePort));
         for (const f of stale) { installHooksInto(f, livePort); }
+        // ‼️ X-269 — THE CONTRACT FIRST, THE HOOKS AFTER. Reproduction renders
+        // the slot file out of the user's own, so running it before the hook
+        // sweep means the sweep sees today's file and usually has nothing left
+        // to do; the other order would let it write a port into a file that is
+        // about to be re-rendered.
+        for (const slot of storedAccounts()) {
+            try { reproduceSlotSettings(fs, { home: os.homedir(), dir: slot.dir, engine: slot.engine }); }
+            catch { /* a settings repair must never stop the extension loading */ }
+        }
         const healed = syncHooksToAccounts(
             userFile, accountSettingsFiles().map(a => a.file), livePort);
         if (healed.length || stale.length) {
@@ -17722,11 +17732,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // settings file is a real account with the machine defaults, while
             // a slot that got only a settings file is nobody. Letting these
             // raise `copied` would turn the second case into a silent success.
-            for (const c of plan.carries) {
-                if (!fs.existsSync(c.from)) { continue; }
-                if (fs.existsSync(c.to)) { continue; }
-                try { fs.copyFileSync(c.from, c.to); } catch { /* a settings copy never fails a capture */ }
-            }
+            // ‼️ X-269 — AND REPRODUCED RATHER THAN COPIED-IF-ABSENT. The old
+            // line skipped a slot that already had the file, which is how a
+            // re-capture could not repair a stale one, and copied the user's
+            // file verbatim, which is how no slot on this machine ever carried
+            // the fleet's own env contract. Same two files, one writer.
+            reproduceSlotSettings(fs, {
+                home: os.homedir(), dir: plan.slot.dir, engine: plan.slot.engine
+            });
             for (const l of plan.links) {
                 if (fs.existsSync(l.to)) { continue; }
                 if (!fs.existsSync(l.from)) { continue; }
@@ -17767,6 +17780,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * it is reported, the link is not made this round, and the next start (or
      * `accounts.repairLinks`) picks it up once the session has finished.
      */
+    /**
+     * ‼️ X-269 — THE SAME SHAPE FOR THE BEHAVIOUR FILE, and for the same reason
+     * as the links above: it is reproduced at three moments on its own
+     * (activation · capture · before a launch is handed a slot), so this exists
+     * to be ASKED on demand and to be read — by the Engines card, which must be
+     * able to say `full` or `simple` out loud, and by the bridge.
+     *
+     * `dryRun` answers what WOULD be written and touches nothing.
+     */
+    const repairSlotSettings = (dry = false, onlySlotId?: string) => {
+        const only = (onlySlotId || '').trim();
+        const home = os.homedir();
+        return storedAccounts()
+            .filter(s => !only || s.id === only)
+            .flatMap(slot => reproduceSlotSettings(fs, {
+                home, dir: slot.dir, engine: slot.engine, dryRun: dry
+            }).map(r => ({
+                id: slot.id, engine: slot.engine, file: r.file,
+                gaps: r.gaps, wrote: r.wrote, error: r.error
+            })));
+    };
     const repairSharedLinks = (dry = false, onlySlotId?: string):
         { linked: string[]; moved: string[]; stranded: string[]; failed: string[] } => {
         const linked: string[] = [];
@@ -17905,6 +17939,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             fetchedAt: u?.fetchedAt ?? 0,
             queue: accountQueue.positionOf(refreshQueue, slot.id),
             queuePlace: accountQueue.placeOf(refreshQueue, slot.id),
+            // ‼️ X-269 — WHICH OF THE FLEET'S GUARANTEES THIS SLOT IS NOT
+            // CARRYING, read off its own file rather than assumed from the
+            // contract. Empty is the ordinary answer and draws as `full`; a
+            // name in here is a session that would run on the simplified system
+            // prompt, which is precisely the thing no surface could say for the
+            // months this was broken (Principle 1).
+            settingsGaps: slotSettingsGaps(fs, { dir: slot.dir, engine: slot.engine }),
+            // ‼️ …AND WHETHER THIS ENGINE GUARANTEES ANYTHING AT ALL, because
+            // an empty gap list is TWO different answers. A Codex card drawing
+            // `full` would be stating a contract that engine has never had —
+            // photographed and caught before it shipped.
+            settingsGuarantee: !!accountAdapterFor(slot.engine).requiredEnv,
             note: u?.note || ''
         };
     };
@@ -18242,6 +18288,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // launch is never failed by it, because an unlinked slot still costs
         // only a sweep while a refused launch costs the user their session.
         if (slot) { try { repairSharedLinks(false, slot.id); } catch { /* never fails a launch */ } }
+        // ‼️ X-269 — AND THE BEHAVIOUR FILE IS REPRODUCED IN THE SAME BREATH,
+        // for the same reason: the variable that decides which system prompt the
+        // user gets is read when the process STARTS, so this is the last moment
+        // it can be made true for the session about to open. A slot that already
+        // says it is not written to, and a launch is never failed by it.
+        if (slot) {
+            try {
+                reproduceSlotSettings(fs, { home: os.homedir(), dir: slot.dir, engine: slot.engine });
+            } catch { /* never fails a launch */ }
+        }
         return accountEnv(slot);
     };
     /**
@@ -19224,7 +19280,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // stands in the refresh line. Both are facts about the
                     // number beside them; neither is a fact about the account.
                     fetchedAt: pub.fetchedAt,
-                    queue: pub.queue, queuePlace: pub.queuePlace
+                    queue: pub.queue, queuePlace: pub.queuePlace,
+                    // X-269 — what the fleet guarantees and this slot is not
+                    // carrying. The card says `full` or `simple` out loud,
+                    // because a guarantee nobody can see is not one.
+                    settingsGaps: pub.settingsGaps, settingsGuarantee: pub.settingsGuarantee
                 };
             });
         },
@@ -19261,6 +19321,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             (await activateAccount(id, engine)).refusal,
         forgetAccount: (id: string): Promise<string> => forgetAccountFromPage(id),
         reauthAccount: (id: string): Promise<string> => reauthAccount(id),
+        // X-269 — the card's [fix] press and `accounts.repairSettings` are the
+        // same function; the button answers with what it had to put back.
+        repairAccountSettings: (id: string): string[] =>
+            repairSlotSettings(false, id).filter(r => r.wrote || r.error)
+                .map(r => r.error ? `${r.id}: ${r.error}` : `${r.id}: ${r.file}`),
         queueAccountRefresh: (ids: string[], gesture: 'toggle' | 'all'): void =>
             queueAccountRefresh(ids, gesture),
         ownership: () => ownershipTable(),
@@ -34663,6 +34728,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '/ `stranded` / `failed`; with dryRun nothing is touched and `moved` is what WOULD '
                 + 'move. args: dryRun? (default false)',
             handler: (args) => repairSharedLinks(optBool(args, 'dryRun', false))
+        },
+        {
+            op: 'accounts.repairSettings',
+            describe: '‼️ X-269 — REPRODUCE THE BEHAVIOUR FILE of every captured account (Claude: '
+                + '`settings.json`) out of the fleet\'s own, and report what each slot was missing. '
+                + 'The slot copy is NOT the slot\'s: it used to be taken once at capture and never '
+                + 'looked at again, so a key the user added afterwards reached no slot that already '
+                + 'existed — measured 2026-09-12, not one of five slots carried '
+                + '`CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT=0`, so every session Agent Farm started under '
+                + 'an account had run on the SIMPLIFIED system prompt while the standing decision is '
+                + 'the full one, and no surface said so. It now runs at THREE moments on its own — '
+                + 'every activation, at capture, and before a launch is handed a slot (the one that '
+                + 'PREVENTS the fault, since the variable is read when the process starts and a '
+                + 'running session can never be fixed) — so this op is for asking on demand. The '
+                + 'user\'s file is the BASE (their model, permission mode and live hooks travel with '
+                + 'it) and the fleet\'s contract is the OVERLAY, which wins. Each row answers `gaps` '
+                + '(contract names the slot was not carrying) and `wrote`; with dryRun nothing is '
+                + 'touched and `wrote` is what WOULD be written. args: dryRun? (default false), id? '
+                + '(one slot; omit for all)',
+            handler: (args) => repairSlotSettings(
+                optBool(args, 'dryRun', false), optStr(args, 'id'))
         },
         {
             op: 'sentry.templates',

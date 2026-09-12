@@ -5342,8 +5342,17 @@ const { opencodeStatus, syncToOpencode } =
         // engine has been handed an unlinked slot it has already written inside it.
         ok('…and the window never waits on the repair',
             /setTimeout\(\(\) => \{ try \{ repairSharedLinks\(\);/.test(src));
+        // ‼️ THE ORDER, NOT THE ADJACENCY. Both preventive gates live here and a
+        // proximity match broke the moment the second one was added — which
+        // would have read as "X-271 regressed". What must hold is that every
+        // repair runs BEFORE the engine is handed the directory: once
+        // CLAUDE_CONFIG_DIR points at an unlinked slot the transcript is already
+        // being written inside it, and the system-prompt variable is read when
+        // the process starts, so neither can be fixed afterwards.
         ok('‼️ X-271: the link is checked BEFORE a launch is handed the slot',
-            /repairSharedLinks\(false, slot\.id\);[\s\S]{0,80}return accountEnv\(slot\);/.test(src));
+            /repairSharedLinks\(false, slot\.id\);[\s\S]{0,900}return accountEnv\(slot\);/.test(src));
+        ok('‼️ X-269: …and so is the behaviour file, in that order',
+            /repairSharedLinks\(false, slot\.id\);[\s\S]{0,600}reproduceSlotSettings\(fs, \{[\s\S]{0,200}dir: slot\.dir[\s\S]{0,300}return accountEnv\(slot\);/.test(src));
         const afterEnd = cut('const sweptAfterEnd', 'context.subscriptions.push(consoleHost.onChange(id => {\n        // The first change');
         ok('‼️ X-271: and again once a session has ended and let go of its file',
             /s\.status !== 'ended' && s\.status !== 'error'/.test(afterEnd)

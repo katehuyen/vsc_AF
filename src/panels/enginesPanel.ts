@@ -72,6 +72,20 @@ export interface EnginesPanelDeps {
         fetchedAt: number;
         /** X-206 — 'idle' | 'queued' | 'reading', and the place in the line (0 = not waiting) */
         queue: string; queuePlace: number;
+        /**
+         * X-269 — the fleet guarantees this slot is NOT carrying. Empty is the
+         * ordinary answer; a name in here means a session on this account would
+         * run under different rules from the fleet's, and the card has to be
+         * able to say which.
+         */
+        settingsGaps: string[];
+        /**
+         * X-269 — whether this ENGINE guarantees anything at all. An empty
+         * `settingsGaps` is two different answers — "nothing missing" and
+         * "nothing was ever promised" — and a card that drew the first for the
+         * second would state a contract that engine has never had.
+         */
+        settingsGuarantee: boolean;
     }[];
     /**
      * ‼️ X-172 — WHAT EACH ENGINE CAN DO ABOUT ACCOUNTS AT ALL, and it is the
@@ -103,6 +117,14 @@ export interface EnginesPanelDeps {
      * be abandoned halfway and only the disk knows.
      */
     reauthAccount(id: string): Promise<string>;
+    /**
+     * ‼️ X-269 — PUT THE FLEET'S GUARANTEES BACK into one slot's behaviour file.
+     * Required rather than optional for the same reason as the three above: the
+     * card draws the control whenever `settingsGaps` is not empty, so a missing
+     * dep would be a `[fix]` that looks alive and repairs nothing. Answers with
+     * what it had to write — an empty list means the slot was already right.
+     */
+    repairAccountSettings(id: string): string[];
     /**
      * ‼️ X-206 — ASK FOR **THESE** FIGURES, IN A LINE.
      *
@@ -338,6 +360,18 @@ export class EnginesPanel {
                 const refused = await this.deps.reauthAccount(String(msg.id ?? ''));
                 await this.panel.webview.postMessage({ type: 'acc-msg', text: refused });
                 if (!refused) { this.refresh(); }
+                break;
+            }
+            case 'accountFixSettings': {
+                // X-269 — it cannot refuse: the file is reproduced out of the
+                // fleet's own, so the only thing to report is what it had to
+                // put back. Silence would read as a dead button.
+                const wrote = this.deps.repairAccountSettings(String(msg.id ?? ''));
+                await this.panel.webview.postMessage({
+                    type: 'acc-msg',
+                    text: wrote.length ? `Reproduced ${wrote.join(' · ')}` : 'Already carried every guarantee.'
+                });
+                this.refresh();
                 break;
             }
             case 'accountForget':

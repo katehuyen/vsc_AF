@@ -55,6 +55,7 @@ const data = () => {
                 // X-206 — the figure's own age, and the refresh line: this one
                 // is being read right now, the next is waiting behind it.
                 fetchedAt: NOW - 40 * 1000, queue: 'reading', queuePlace: 0,
+                settingsGaps: [], settingsGuarantee: true,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/work-1'
             },
             {
@@ -66,6 +67,7 @@ const data = () => {
                 quotaSource: 'oauth-credentials',
                 capturedAt: NOW - 2 * 3600 * 1000,
                 fetchedAt: NOW - 3 * 3600 * 1000, queue: 'queued', queuePlace: 1,
+                settingsGaps: [], settingsGuarantee: true,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
             },
             {
@@ -77,6 +79,7 @@ const data = () => {
                 window: 'five-hour window',
                 quotaSource: 'oauth-credentials', capturedAt: NOW - 21 * 24 * 3600 * 1000,
                 fetchedAt: NOW - 26 * 3600 * 1000, queue: 'queued', queuePlace: 2,
+                settingsGaps: [], settingsGuarantee: true,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/spare'
             },
             // Captured, and NOT standing — the chip says "main account" here,
@@ -94,6 +97,7 @@ const data = () => {
                     + 'on its last turn. It costs nothing and asks nothing - but it is as old as that turn.',
                 capturedAt: NOW - 3 * 3600 * 1000,
                 fetchedAt: NOW - 26 * 60 * 1000, queue: 'idle', queuePlace: 0,
+                settingsGaps: [], settingsGuarantee: false,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-work'
             },
             {
@@ -114,6 +118,7 @@ const data = () => {
                     + 'costs no request and no place in any line. It fills in as soon as something looks.',
                 capturedAt: NOW - 20 * 60 * 1000,
                 fetchedAt: 0, queue: 'idle', queuePlace: 0,
+                settingsGaps: [], settingsGuarantee: false,
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-spare'
             }
         ],
@@ -279,8 +284,28 @@ const brokenData = () => {
         window: 'five-hour window',
         quotaSource: 'oauth-credentials', capturedAt: NOW - 9 * 24 * 3600 * 1000,
         fetchedAt: 0, queue: 'idle', queuePlace: 0,
+        settingsGaps: [], settingsGuarantee: true,
         dir: 'C:/Users/mv/AppData/agent-farm/accounts/broken'
     }]);
+    return d;
+};
+
+/**
+ * ‼️ X-269 — THE SLOT THAT WOULD RUN ON THE SIMPLIFIED SYSTEM PROMPT, which is
+ * the state this whole item exists for and the one no surface could draw for
+ * the months it was true of EVERY account on the machine.
+ *
+ * Its own variant for the same reason as the red verdict above: the scene's
+ * badges are pinned on purpose, and the fault is not made visible by spoiling
+ * the picture that proves the ordinary case. Here it is one row of three, which
+ * is what the reader actually gets — a fleet where every card is wrong is the
+ * easy picture to draw and the one that hides how the odd card reads.
+ */
+const promptDriftData = () => {
+    const d = data();
+    d.accounts = d.accounts.map(a => a.id === 'personal'
+        ? { ...a, settingsGaps: ['CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT'], settingsGuarantee: true }
+        : a);
     return d;
 };
 
@@ -290,6 +315,7 @@ module.exports = {
     brokenData,
     variants: () => [
         { id: 'enginespanel', label: 'Engines panel', data: data() },
-        { id: 'enginesbroken', label: 'Engines panel — all three verdicts', data: brokenData() }
+        { id: 'enginesbroken', label: 'Engines panel — all three verdicts', data: brokenData() },
+        { id: 'enginesprompt', label: 'Engines panel — one slot on the simplified prompt', data: promptDriftData() }
     ]
 };

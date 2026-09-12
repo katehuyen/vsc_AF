@@ -223,7 +223,12 @@ const sec = () => {
 // that cannot say whose account it is.
 {
     const h = sec();
-    const badges = (h.match(/class="acbad ([a-z]+)"/g) || []).map(s => s.split(' ')[1].replace(/"/, ''));
+    // ‼️ THE HEALTH VERDICT, NOT EVERY BADGE ON THE ROW. `acbad` is the page's
+    // badge shape and X-269 put a second one beside the verdict (the system
+    // prompt); counting the class alone made this assertion a count of badges
+    // rather than of CARDS, which is the fact it exists to pin.
+    const badges = (h.match(/class="acbad ([a-z]+)">(?:🟢|🟠|🔴)[^<]*/g) || [])
+        .map(s => /class="acbad ([a-z]+)"/.exec(s)[1]);
     ok('‼️ X-220: every card carries its verdict, not only the ones in trouble',
         badges.length === DATA.accounts.length && badges.length === 5);
     ok('…and the ordinary case is drawn QUIETLY, so the ones that need the eye keep their advantage',

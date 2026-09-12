@@ -1822,6 +1822,15 @@
       ]
     },
     {
+      "capability": "enginesPanel.ts#accountFixSettings",
+      "ui": [
+        "page:enginesPanel.ts#accountFixSettings"
+      ],
+      "ops": [
+        "accounts.repairSettings"
+      ]
+    },
+    {
       "capability": "enginesPanel.ts#accountForget",
       "ui": [
         "page:enginesPanel.ts#accountForget"

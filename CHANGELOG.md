@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.467.0 - a slot's settings file is reproduced, not stored, so every session gets the FULL system prompt (X-269) (2026-09-12)
+
+- **The behaviour file inside an account slot was a photograph, and every session
+  Agent Farm ever started under an account paid for it.** Anthropic ships a
+  SIMPLIFIED system prompt unless one `env` key says otherwise, and the standing
+  decision is the full one. `carryFiles: ['settings.json']` copied the user's file
+  into a slot once, at capture, and only when it was absent — so a key added
+  afterwards reached no slot that already existed. Measured 2026-09-12: not one of
+  five `claude-*` slots carried `CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT=0`, the variable
+  is read when the process STARTS so no running session could ever have been
+  repaired, and no surface in the product could say it was happening.
+  - **Reproduced, not merged.** `core/slotSettings` renders the slot file out of the
+    fleet's own source — the user's `settings.json` as the BASE, so their model,
+    permission mode and live hooks travel, with the contract as the OVERLAY, which
+    wins. The slot copy becomes a single-use output: there is nothing left to go
+    stale, and forgetting the account takes no setting with it (X-270).
+  - **Three gates, because a contract enforced once is a photograph:** every
+    activation, at capture, and before a launch is handed a slot — the last is the
+    one that PREVENTS the fault rather than repairing it. Idempotent by comparison,
+    so a slot that already says it costs a read.
+  - **The engine decides what it needs.** The contract lives on the adapter
+    (`requiredEnv`, naming its own file), so nothing writes a Claude-shaped
+    `settings.json` into a Codex slot that has never heard of one.
+  - **And it is visible, or it is not a rule.** The Engines account card carries a
+    `full` / `simple` badge with a `Fix prompt` press beside a slot that drifted —
+    and draws NOTHING for an engine that guarantees nothing, because an empty gap
+    list is two different answers. New op `accounts.repairSettings` (with `dryRun`)
+    is the same function the button calls; `Doctor.ps1` grows a
+    `claude slot prompt` item whose one-click action is `_setup\Repair-SlotSettings.ps1`.
+
 ## 3.466.0 - a recovered session name was kept and not shown: the old machine's 54 names are on the table (S-61) (2026-09-12)
 
 - **A name that arrives from outside is SHOWN, not merely kept.** 3.465.0 stopped

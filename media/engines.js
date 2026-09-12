@@ -540,6 +540,46 @@
          * extension's honest part. It is drawn only where it applies: a ready
          * sign-in has nothing to renew.
          */
+        /**
+         * ‼️ X-269 — WHICH SYSTEM PROMPT A SESSION ON THIS ACCOUNT WOULD GET.
+         *
+         * The fleet's standing decision is the FULL prompt, and the only way to
+         * it is one `env` key in the settings file the engine reads — which for
+         * a captured account is the file inside its own directory. Measured
+         * 2026-09-12: not one slot on this machine carried it, so every session
+         * started under an account had run on the simplified prompt for months
+         * and nothing on any surface could have told anyone. So the card states
+         * it either way: `full` is the quiet ordinary case, `simple` is a fault
+         * with the press that repairs it beside it (Principle 1).
+         */
+        const gaps = (a.settingsGaps || []);
+        // ‼️ AND SILENCE WHERE THERE IS NO PROMISE. An empty gap list is two
+        // answers — nothing missing, and nothing ever promised — so an engine
+        // with no contract draws no badge rather than the word `full`, which
+        // would be this page inventing a guarantee on its behalf.
+        const promptBadge = !a.settingsGuarantee ? '' : T.wrap(
+            '<span class="acbad ' + (gaps.length ? 'warn' : 'ok') + '">'
+            + (gaps.length ? 'simple' : 'full') + '</span>',
+            'system prompt: ' + (gaps.length ? 'SIMPLIFIED' : 'full'),
+            gaps.length
+                ? 'A session started on this account would run on Anthropic\'s SIMPLIFIED system '
+                + 'prompt, because its own settings file is not carrying ' + esc(gaps.join(', ')) + '.\n\n'
+                + 'The variable is read when the process STARTS, so a session already running cannot '
+                + 'be fixed — only the next one. Agent Farm reproduces this file before every launch '
+                + 'it makes, so this state means the file was changed by another hand since; the '
+                + 'button beside it puts the fleet\'s own back.'
+                : 'A session started on this account gets the full system prompt.\n\n'
+                + 'This file is not kept — it is REPRODUCED out of the fleet\'s own settings before '
+                + 'every launch, so your model, permission mode and live hooks travel with it and '
+                + 'nothing here can go stale. Deleting the account takes no setting with it.');
+        const fixSettings = gaps.length
+            ? T.wrap('<button class="secondary small" data-acfix="' + esc(a.id) + '">Fix prompt</button>',
+                'Reproduce this account\'s settings file from the fleet\'s own',
+                'Writes the file the engine reads in this account\'s directory: your main settings as '
+                + 'the base — model, permission mode, live hooks — with the fleet\'s guarantees over '
+                + 'the top. It takes effect on the NEXT session started on this account; one that is '
+                + 'already running read its prompt when it started.')
+            : '';
         const reauth = a.health === 'ready'
             ? ''
             : T.wrap('<button class="secondary small acreauth" data-acreauth="' + esc(a.id) + '">🔑</button>',
@@ -636,7 +676,9 @@
             + (a.plan ? '<span class="acplan">' + esc(a.plan) + '</span>' : '')
             + T.wrap('<span class="acbad ' + verdict[0] + '">' + esc(verdict[1]) + '</span>',
                 verdict[2], verdict[3])
+            + promptBadge
             + '<span class="grow"></span>'
+            + fixSettings
             + reauth
             + refresh
             + stand
@@ -1193,6 +1235,10 @@
         // decided in the one place `accounts.reauth` calls.
         document.querySelectorAll('[data-acreauth]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountReauth', id: b.dataset.acreauth })));
+        // X-269 — the page names a ROW; what the file must carry and where it
+        // comes from is decided in the one place `accounts.repairSettings` calls.
+        document.querySelectorAll('[data-acfix]').forEach(b =>
+            b.addEventListener('click', () => post({ type: 'accountFixSettings', id: b.dataset.acfix })));
         document.querySelectorAll('[data-acforget]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountForget', id: b.dataset.acforget })));
         document.querySelectorAll('[data-accapture]').forEach(b =>
