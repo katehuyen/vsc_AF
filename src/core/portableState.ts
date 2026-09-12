@@ -23,6 +23,7 @@
 
 export interface PortableFs {
     existsSync(p: string): boolean;
+    statSync(p: string): { mtimeMs: number; size: number };
     readFileSync(p: string, enc: 'utf8'): string;
     writeFileSync(p: string, data: string, enc: 'utf8'): void;
     renameSync(from: string, to: string): void;
@@ -31,6 +32,8 @@ export interface PortableFs {
 
 export class PortableMap<T> {
     private cache: Record<string, T> | undefined;
+    /** mtime+size the cache was read at — the file is re-read when they move. */
+    private stamp = '';
     private corrupt = false;
 
     constructor(
@@ -43,9 +46,27 @@ export class PortableMap<T> {
     /** Whether the file is on disk at all — the one-shot adoption keys on this. */
     exists(): boolean { return this.fs.existsSync(this.file); }
 
-    /** What is on the shelf. A file that is missing, empty or corrupt reads as {}. */
+    /** mtime+size of the file now, or '' when it is not there. */
+    private stampNow(): string {
+        try {
+            if (!this.fs.existsSync(this.file)) { return ''; }
+            const st = this.fs.statSync(this.file);
+            return `${st.mtimeMs}:${st.size}`;
+        } catch { return ''; }
+    }
+
+    /**
+     * What is on the shelf. A file that is missing, empty or corrupt reads as {}.
+     *
+     * ‼️ THE CACHE IS CHECKED AGAINST THE FILE, NOT TRUSTED. This file is written
+     * by other hands while the extension runs — `tools/adopt_state_vscdb.js`
+     * adding two names, `git pull` on the other machine bringing ninety — and
+     * a cache that never looked again would write its stale copy over them on
+     * the next rename. One stat per read is the price of never losing a name.
+     */
     read(): Record<string, T> {
-        if (this.cache) { return this.cache; }
+        const now = this.stampNow();
+        if (this.cache && now === this.stamp) { return this.cache; }
         let raw: unknown = {};
         try {
             if (this.fs.existsSync(this.file)) { raw = JSON.parse(this.fs.readFileSync(this.file, 'utf8')); }
@@ -60,6 +81,7 @@ export class PortableMap<T> {
             return {};
         }
         this.cache = this.clean(raw);
+        this.stamp = now;
         this.corrupt = false;
         return this.cache;
     }
@@ -79,10 +101,11 @@ export class PortableMap<T> {
         this.fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8');
         this.fs.renameSync(tmp, this.file);
         this.cache = this.clean(next);
+        this.stamp = this.stampNow();
     }
 
     /** Forget what was read — for a caller that knows the file changed under it. */
-    invalidate(): void { this.cache = undefined; }
+    invalidate(): void { this.cache = undefined; this.stamp = ''; }
 }
 
 /**

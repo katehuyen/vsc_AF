@@ -61,6 +61,27 @@ const file = path.join(dir, 'session-titles.json');
         m2.exists() && !new PortableMap(path.join(dir, 'never.json'), fs).exists());
 }
 
+// ---------- 2b. the cache is checked against the file, never trusted ----------
+// ‼️ Measured 2026-09-12: the extension read 95 names at start, the recovery
+// tool added two from outside, and the next rename would have written the
+// cached 95 back over them. The same happens on the other machine after a
+// git pull. So a read stats the file and re-reads when it moved.
+{
+    const f = path.join(dir, 'shared.json');
+    const m = new PortableMap(f, fs);
+    m.write({ 'sid-a': 'bir' });
+    ok('a read after a write sees what was written', m.read()['sid-a'] === 'bir');
+    // another hand writes the file, with a later mtime
+    const later = new Date(Date.now() + 5000);
+    fs.writeFileSync(f, JSON.stringify({ 'sid-a': 'bir', 'sid-z': 'disaridan' }), 'utf8');
+    fs.utimesSync(f, later, later);
+    ok('‼️ a change made by another hand is seen on the next read', m.read()['sid-z'] === 'disaridan');
+    m.write({ ...m.read(), 'sid-b': 'iki' });
+    const back = JSON.parse(fs.readFileSync(f, 'utf8'));
+    ok('‼️ …and the next write carries it rather than writing the stale copy over it',
+        back['sid-z'] === 'disaridan' && back['sid-b'] === 'iki');
+}
+
 // ---------- 3. the cleaner decides what the file may hold ----------
 {
     const f = path.join(dir, 'cleaned.json');

@@ -2,6 +2,16 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.465.0 - a name added to the file by another hand was one rename away from being lost (S-61) (2026-09-12)
+
+- **The session-name cache is checked against the file, never trusted.** Measured
+  right after 3.464.0 loaded: the extension read 95 names at start,
+  `tools/adopt_state_vscdb.js` added two from outside, and the next rename would
+  have written the cached 95 back over them — the same thing a `git pull` on the
+  other machine would suffer. `PortableMap.read()` now stats the file and
+  re-reads when its mtime or size moved; one stat per read is the price of
+  never losing a name.
+
 ## 3.464.0 - nothing of the user's is bound to a machine or a slot any more: session names travel (S-61), a forgotten account leaves no orphan (X-282), a backlog write says what took (X-287) (2026-09-12)
 
 - **AN ACCOUNT FORGOTTEN IS AN ACCOUNT GONE — AND THE SAME SIGN-IN NEVER GETS A
