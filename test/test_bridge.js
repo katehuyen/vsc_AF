@@ -2425,6 +2425,17 @@ const { opencodeStatus, syncToOpencode } =
         ok('…the delegation kinds are documented where an agent will read them',
             /delegator\|handler/.test(block) && /subagent lane/.test(block));
 
+        // ---------- X-284: accounts.complete — the birth contract on the bridge ----------
+        const completeBlock = src.slice(src.indexOf("op: 'accounts.complete'"), src.indexOf("op: 'sentry.templates'"));
+        ok('‼️ X-284 — the bridge can ask whether an account is complete',
+            completeBlock.includes("op: 'accounts.complete'") && /completeSlots\(/.test(completeBlock));
+        ok('…and it is a QUESTION first: dryRun defaults to true',
+            /optBool\(args, 'dryRun', true\)/.test(completeBlock));
+        const helper = src.slice(src.indexOf('const completeSlots = '), src.indexOf('// ‼️ X-271 — and it runs at every start'));
+        ok('…repairing through the gates\' own primitives, never a second implementation',
+            /repairSharedLinks\(dryRun, id\)/.test(helper) && /completeSlot\(ctx, false\)/.test(helper) && /slotCompleteness\(ctx\)/.test(helper));
+        ok('…with the live port handed in so the hooks clause is really asked', /hooksPort/.test(helper) && /'livePort'/.test(helper));
+
         // ---------- X-290: sessions.rescan — the disk outran the watcher ----------
         const rescanBlock = src.slice(src.indexOf("op: 'sessions.rescan'"), src.indexOf("op: 'sessions.find'"));
         ok('‼️ X-290 — the bridge can bring the index up to the disk',

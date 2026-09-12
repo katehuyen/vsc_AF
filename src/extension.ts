@@ -212,6 +212,7 @@ import {
 } from './core/sessionmarks';
 import { mergeMissing, PortableMap } from './core/portableState';
 import { reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
+import { completeSlot, slotCompleteness } from './core/slotCompleteness';
 import {
     describeKeys, INTERRUPT_KEY, PermissionAnswer, permissionKeys, resolveInterrupt, TermRecord
 } from './core/interrupt';
@@ -17924,6 +17925,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         return { linked, moved, stranded, failed };
     };
+    /**
+     * ‼️ X-284 — THE BIRTH CONTRACT, asked of every slot: one list derived from
+     * the adapter's shape (`core/slotCompleteness`), read and repaired by the
+     * SAME primitives the three gates use — `reproduceSlotSettings` (X-269),
+     * `repairSharedLinks` (X-271), `syncHooksToAccounts` — never a second
+     * implementation of any of them. `dry` reads and reports; otherwise every
+     * failing, repairable clause is put right and read again.
+     */
+    const completeSlots = (dry = false, onlySlotId?: string) => {
+        const only = (onlySlotId || '').trim();
+        const home = os.homedir();
+        const hooksPort = cfg().get<number>('livePort', 8377);
+        return storedAccounts()
+            .filter(s => !only || s.id === only)
+            .map(slot => {
+                const ctx = {
+                    fs, home, dir: slot.dir, slotId: slot.id, engine: slot.engine, hooksPort,
+                    repairLinks: (id: string, dryRun: boolean) => {
+                        const r = repairSharedLinks(dryRun, id);
+                        return { linked: r.linked, failed: r.failed };
+                    }
+                };
+                return dry ? { ...slotCompleteness(ctx), dryRun: true } : { ...completeSlot(ctx, false), dryRun: false };
+            });
+    };
     // ‼️ X-271 — and it runs at every start, not only when somebody asks for it.
     // Off the activation path on purpose: it touches the disk, and a window must
     // never wait on a repair. A failure here costs one unlinked slot, never a
@@ -34779,6 +34805,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '(one slot; omit for all)',
             handler: (args) => repairSlotSettings(
                 optBool(args, 'dryRun', false), optStr(args, 'id'))
+        },
+        {
+            op: 'accounts.complete',
+            describe: '‼️ X-284 — IS THIS ACCOUNT COMPLETE, AND IF NOT, EXACTLY WHAT IS MISSING — the '
+                + 'birth contract, one list for every slot. "Complete" means the slot carries the LEAST '
+                + 'possible (X-270): the identity files are its own (`own:` — present or the capture '
+                + 'failed; sign in again, never repaired here), and everything a session behaves by is '
+                + 'the fleet\'s — reproduced into the slot (`carry:settings.json`, `env:<VAR>`, X-269), '
+                + 'linked into it (`link:projects|todos|shell-snapshots`, X-271) or written by the live '
+                + 'installer (`hooks`). The list is DERIVED from the engine adapter\'s own fields, so an '
+                + 'engine with no such file has no such clause. Each slot answers `complete`, `gaps` '
+                + '(clause ids that read false) and `rows` (id, kind, owner, ok, detail, repairable, '
+                + 'and after a repair `wrote`/`error`). With dryRun (the default here — this op is a '
+                + 'question first) nothing is touched; dryRun:false repairs every failing repairable '
+                + 'clause through the same primitives the gates use and reads again. args: dryRun? '
+                + '(default true), id? (one slot; omit for all)',
+            handler: (args) => completeSlots(optBool(args, 'dryRun', true), optStr(args, 'id'))
         },
         {
             op: 'sentry.templates',
