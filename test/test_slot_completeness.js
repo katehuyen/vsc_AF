@@ -124,5 +124,114 @@ try {
     fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+// ---------- 3. THE ACCEPTANCE TEST: wipe the slot folder, capture again, lose NOTHING ----------
+// ‼️ X-270's whole claim, measured in one round trip. A slot is an IDENTITY and
+// nothing else, so deleting its folder may cost the user a sign-in and must never
+// cost them a setting, a permission or a session. If this fails, a clause is
+// missing from the contract — that is the only thing it can mean.
+//
+// It lives here rather than in test_engine_accounts.js because that file is
+// deliberately disk-free ("everything that touches disk or vscode lives above
+// it"), and this round trip is entirely about what is on the disk.
+{
+    const { planCapture } = require(path.join(ROOT, 'out/core/accountStore.js'));
+    const { liveSource } = require(path.join(ROOT, 'out/core/engineAccounts.js'));
+    const { installHooksInto, hooksAreCurrent, userSettingsPath } = require(path.join(ROOT, 'out/core/hooksInstaller.js'));
+    const tmp2 = fs.mkdtempSync(path.join(os.tmpdir(), 'af-slotacc-'));
+    try {
+        const home = path.join(tmp2, 'home');
+        const live = path.join(home, '.claude');
+        const root = path.join(tmp2, 'accounts');
+        for (const d of claude.sharedPaths) { fs.mkdirSync(path.join(live, d), { recursive: true }); }
+        fs.mkdirSync(root, { recursive: true });
+        // the user's own machine: an identity, and a behaviour file they built by hand
+        // ‼️ WHERE THE ENGINE KEEPS THEM, asked rather than guessed: .claude.json
+        // sits at the HOME root and .credentials.json inside .claude/, and a fixture
+        // that puts both in one place measures nothing.
+        const put = (name, text) => {
+            const f = path.join(home, liveSource('claude', name));
+            fs.mkdirSync(path.dirname(f), { recursive: true });
+            fs.writeFileSync(f, text, 'utf8');
+        };
+        put('.credentials.json', '{"claudeAiOauth":{"accessToken":"t"}}');
+        put('.claude.json', '{"oauthAccount":{"emailAddress":"a@b.c"}}');
+        const MINE = {
+            model: 'opus', cleanupPeriodDays: 36500, includeCoAuthoredBy: false,
+            permissions: { defaultMode: 'bypassPermissions', allow: ['Bash(git status)'], deny: ['Bash(rm -rf /)'] },
+            statusLine: { type: 'command', command: 'mine.sh' }, outputStyle: 'Explanatory',
+            alwaysThinkingEnabled: true, spinnerTipsEnabled: false
+        };
+        fs.writeFileSync(userSettingsPath(live), JSON.stringify(MINE, null, 2), 'utf8');
+        installHooksInto(userSettingsPath(live), 8377);
+        // ‼️ AND A SESSION: the record of work, which outlives every account.
+        const poolFile = path.join(live, 'projects', 'D--proj', 'sess.jsonl');
+        fs.mkdirSync(path.dirname(poolFile), { recursive: true });
+        fs.writeFileSync(poolFile, '{"type":"user"}\n', 'utf8');
+
+        const identity = { health: 'ready', email: 'a@b.c', accountUuid: 'U-ACC', subscriptionType: 'max' };
+        const linkFor = (slotDirPath) => (_slotId, dryRun) => {
+            const linked = [], failed = [];
+            for (const name of claude.sharedPaths) {
+                const to = path.join(slotDirPath, name);
+                if (dryRun) { linked.push(to); continue; }
+                // linked already -> left alone, as the real repair does; only an
+                // absent one is made, and only a real failure is reported.
+                try { if (fs.lstatSync(to).isSymbolicLink()) { continue; } } catch { /* absent */ }
+                try { fs.symlinkSync(path.join(live, name), to, 'junction'); linked.push(to); }
+                catch { failed.push(to); }
+            }
+            return { linked, failed };
+        };
+        // ‼️ THE CAPTURE EXECUTOR, exactly as extension.ts runs it since X-284:
+        // the identity is copied and NOTHING else — the contract does the rest.
+        const capture = (stored) => {
+            const plan = planCapture({ engine: 'claude', home, root, identity, stored, onDisk: [], label: '' });
+            if (plan.refusal) { return { refusal: plan.refusal }; }
+            fs.mkdirSync(plan.slot.dir, { recursive: true });
+            for (const c of plan.copies) { if (fs.existsSync(c.from)) { fs.copyFileSync(c.from, c.to); } }
+            const ctx2 = {
+                fs, home, dir: plan.slot.dir, slotId: plan.slot.id, engine: 'claude',
+                hooksPort: 8377, repairLinks: linkFor(plan.slot.dir)
+            };
+            return { plan, state: sc.completeSlot(ctx2, false) };
+        };
+
+        const first = capture([]);
+        ok('acceptance: the first capture plus the contract makes a complete slot',
+            !first.refusal && first.state.complete === true);
+        const dir = first.plan.slot.dir;
+        const junctions = (() => { try { return fs.lstatSync(path.join(dir, 'projects')).isSymbolicLink(); } catch { return false; } })();
+
+        // ‼️ AND NOW THE FOLDER IS DESTROYED, which is the clone, the format, the
+        // reinstall and the user cleaning up a directory they did not recognise.
+        fs.rmSync(dir, { recursive: true, force: true });
+        ok('‼️ acceptance: wiping the slot does NOT take the session with it — a record never lived under an account',
+            fs.existsSync(poolFile) && fs.readFileSync(poolFile, 'utf8') === '{"type":"user"}\n');
+        ok('…nor the user\'s own behaviour file, which is the fleet\'s and not the slot\'s',
+            JSON.parse(fs.readFileSync(userSettingsPath(live), 'utf8')).permissions.allow[0] === 'Bash(git status)');
+
+        // ‼️ AND THE ROW IS FORGOTTEN TOO — the worst case, not the kind one.
+        const again = capture([]);
+        ok('acceptance: capturing again rebuilds a complete slot', !again.refusal && again.state.complete === true);
+        const back = JSON.parse(fs.readFileSync(path.join(again.plan.slot.dir, 'settings.json'), 'utf8'));
+        const lost = Object.keys(MINE).filter(k => JSON.stringify(back[k]) !== JSON.stringify(MINE[k]));
+        ok('‼️ acceptance: every setting the user had is back, byte for byte: lost ' + lost.join(','), lost.length === 0);
+        ok('…including the permissions, which are the ones that cost them a prompt each',
+            back.permissions.defaultMode === 'bypassPermissions' && back.permissions.deny[0] === 'Bash(rm -rf /)');
+        ok('…and the fleet\'s own env guarantee, which the user\'s file never carried',
+            back.env && back.env.CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT === '0');
+        ok('…and the live wire, so the rebuilt slot is not a session nobody can see',
+            hooksAreCurrent(path.join(again.plan.slot.dir, 'settings.json'), 8377));
+        if (junctions) {
+            ok('‼️ acceptance: and the session is reachable through the rebuilt slot, not merely still in the pool',
+                fs.existsSync(path.join(again.plan.slot.dir, 'projects', 'D--proj', 'sess.jsonl')));
+        } else {
+            console.log('  (junction unavailable on this host — the link half of the round trip left unmeasured)');
+        }
+    } finally {
+        fs.rmSync(tmp2, { recursive: true, force: true });
+    }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
