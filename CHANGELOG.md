@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.469.0 - a slot's contents are one contract, asked at every door instead of remembered at three (X-284) (2026-09-13)
+
+- **Every fault in the X-270 family was the same fault.** Something a session
+  needs was copied into an account slot once, at capture, and nothing ever asked
+  again: the settings file (X-265/X-269), the live hooks, the pool links (X-271).
+  Each got its own repair, its own gate and its own Doctor line - and the
+  eleventh thing added tomorrow would have been forgotten the same way, because
+  three call sites had to agree with each other by comment.
+  - **The list is DERIVED, not written.** `core/slotCompleteness` walks the
+    engine adapter's own fields - `ownFiles`, `carryFiles`, `requiredEnv`,
+    `sharedPaths` - and turns each into a clause that can be read and, where it
+    is the fleet's rather than the account's, repaired. A new slot-content field
+    with no clause fails the build rather than somebody's memory.
+  - **Activation, capture and launch now ask that one list.** The launch gate is
+    the preventive one: once `CLAUDE_CONFIG_DIR` points at an incomplete slot the
+    transcript is already being written inside it and the system-prompt variable
+    has already been read. Capture copies the identity and stops, then asks the
+    contract the moment the row exists - so a RE-capture repairs a slot that had
+    drifted, which the copy-if-absent line it replaced could never do.
+  - **`accounts.complete`** on the bridge (a question first: `dryRun` defaults to
+    true), and a **[Complete]** press on the Engines card wired to the same host
+    function, so the button and the op cannot answer differently.
+- **And the card now says whether a slot is whole.** `complete`, or `n missing`
+  with every absent clause named in its panel in the product's own words - a
+  count nobody can act on is a worse silence than none. The sign-in is not
+  counted there: the verdict badge on the same row already owns it, so no row
+  reads `complete` and `needs signing in` in one breath.
+- **The contract has an exam, and it is the user's own claim.** Wipe a slot
+  folder off the disk, forget its row, capture the account again: every setting
+  and permission comes back byte for byte, the fleet's env guarantee is there
+  although the user's own file never carried it, the live hooks are current, and
+  the transcript written before the wipe is still in the pool and reachable
+  through the rebuilt junction. A slot is an identity and nothing else - now
+  measured rather than asserted.
+- **Doctor gained `engines / claude slot contract`,** which found four missing
+  junctions on this machine the moment it was written. It is offline (no
+  extension host has run at migration time), so it reads file presence only and
+  NAMES `accounts.complete` as the authority rather than keeping a second list.
+
 ## 3.468.0 - the index reconciles with the disk on a clock and on demand, because a Windows watcher drops a burst without a word (X-290, X-289) (2026-09-13)
 
 - **654 transcripts were put back into the pool in one go and the tables saw two
