@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.466.0 - a recovered session name was kept and not shown: the old machine's 54 names are on the table (S-61) (2026-09-12)
+
+- **A name that arrives from outside is SHOWN, not merely kept.** 3.465.0 stopped
+  the file from being written over; what it did not do is tell the running
+  window. Measured with the old machine's `state.vscdb`:
+  `tools/adopt_state_vscdb.js` merged 54 titles and 11 marks (no conflicts) into
+  `session-titles.json` / `session-marks.json`, the files held 151 and 19 — and
+  every session table still drew the derived first-prompt title, because the
+  session index is HANDED the map once at activation and nothing re-hands it.
+  `PortableMap.reloadIfChanged()` answers "did the file move?" with one stat and
+  no parse, and activation now runs a 20-second beat that pushes titles and
+  marks into the index and repaints the trees and open pages only on a real
+  move. So a recovery, or a `git pull` of the agent repo on the other machine,
+  lands on screen without a restart.
+
 ## 3.465.0 - a name added to the file by another hand was one rename away from being lost (S-61) (2026-09-12)
 
 - **The session-name cache is checked against the file, never trusted.** Measured

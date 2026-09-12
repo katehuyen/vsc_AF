@@ -82,6 +82,34 @@ const file = path.join(dir, 'session-titles.json');
         back['sid-z'] === 'disaridan' && back['sid-b'] === 'iki');
 }
 
+// ---------- 2c. a move is ANNOUNCED, so what holds a copy can be told ----------
+// ‼️ Measured 2026-09-12: keeping the file safe was not enough. The session
+// index is HANDED the map at activation, so 54 recovered titles and 11 marks
+// sat correctly on disk and every table still drew the derived title until the
+// window was restarted. A repainting caller polls this; it must answer true
+// exactly once per real move and false while the file sits still.
+{
+    const f = path.join(dir, 'announced.json');
+    const m = new PortableMap(f, fs);
+    ok('an absent file has not moved', m.reloadIfChanged() === false);
+    m.write({ 'sid-a': 'bir' });
+    ok('…and our own write is not reported back to us', m.reloadIfChanged() === false);
+
+    const later = new Date(Date.now() + 5000);
+    fs.writeFileSync(f, JSON.stringify({ 'sid-a': 'bir', 'sid-z': 'disaridan' }), 'utf8');
+    fs.utimesSync(f, later, later);
+    ok('‼️ a write by another hand is announced', m.reloadIfChanged() === true);
+    ok('…with the new value already loaded', m.read()['sid-z'] === 'disaridan');
+    ok('…and announced ONCE, not on every beat', m.reloadIfChanged() === false);
+
+    // a file that cannot be parsed is not a change: there is nothing to show.
+    const later2 = new Date(Date.now() + 9000);
+    fs.writeFileSync(f, '{ this is not json', 'utf8');
+    fs.utimesSync(f, later2, later2);
+    ok('‼️ a corrupt file announces nothing (an empty table is not the truth)',
+        m.reloadIfChanged() === false);
+}
+
 // ---------- 3. the cleaner decides what the file may hold ----------
 {
     const f = path.join(dir, 'cleaned.json');

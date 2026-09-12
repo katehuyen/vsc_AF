@@ -106,6 +106,23 @@ export class PortableMap<T> {
 
     /** Forget what was read — for a caller that knows the file changed under it. */
     invalidate(): void { this.cache = undefined; this.stamp = ''; }
+
+    /**
+     * Re-read if the file moved under us; true when it did.
+     *
+     * ‼️ A NAME THAT ARRIVES FROM OUTSIDE HAS TO BE SHOWN, NOT MERELY KEPT.
+     * `read()` protects the file — a rename can no longer paste a stale copy
+     * over what another hand wrote — but whoever was HANDED the map at startup
+     * still holds that copy. Measured 2026-09-12: the adoption tool added 54
+     * titles and 11 marks and the session tables showed none of them until a
+     * restart. So a caller that repaints keeps asking this, and pushes only on
+     * a real move: one stat, no parse, no repaint while the file sits still.
+     */
+    reloadIfChanged(): boolean {
+        const before = this.stamp;
+        this.read();
+        return this.stamp !== before;
+    }
 }
 
 /**

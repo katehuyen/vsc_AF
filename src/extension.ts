@@ -4002,6 +4002,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return titles[sessionId] ?? '';
     };
 
+    // ‼️ THE FILES ARE THE TRUTH AND OTHER HANDS WRITE THEM (S-61). A name, a
+    // pin or a colour reaches `session-titles.json` / `session-marks.json` from
+    // outside a running window: `tools/adopt_state_vscdb.js` recovering another
+    // machine's store, or a `git pull` of the agent repo the folder is
+    // junctioned onto. The stores re-read on their own, but the INDEX holds the
+    // map it was handed at activation — measured 2026-09-12, an adoption added
+    // 54 titles and 11 marks and every session table still showed the derived
+    // title. So the beat asks the files whether they moved and pushes only then.
+    const syncPortableState = () => {
+        const titlesMoved = titleStore.reloadIfChanged();
+        const marksMoved = markStore.reloadIfChanged();
+        if (!titlesMoved && !marksMoved) { return; }
+        if (titlesMoved) { index.setTitleOverrides(sessionTitles()); }
+        if (marksMoved) { index.setMarks(sessionMarks()); }
+        refreshAll();
+        ConsolePanel.refreshIfOpen();
+        SessionViewerPanel.refreshOpen();
+        DashboardPanel.refreshIfOpen();
+        AgentDetailPanel.refreshIfOpen();
+        PortfolioPanel.refreshIfOpen();
+        TimelinePanel.refreshIfOpen();
+    };
+    const portableStateInterval = setInterval(syncPortableState, 20_000);
+    context.subscriptions.push({ dispose: () => clearInterval(portableStateInterval) });
+
     /**
      * ‼️ The pages follow the index, not the Refresh button.
      *
