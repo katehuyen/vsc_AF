@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.463.0 - a transcript is never left living under an account: the slot is emptied into the pool, before the launch and again after the session (X-271) (2026-09-12)
+
+- **AN ACCOUNT IS A QUOTA, NOT A PLACE TO KEEP ANYTHING.** A sign-in can be
+  closed, replaced or thrown away tomorrow; a transcript is the record of the
+  work and outlives every account it was written under. The previous release
+  found the sessions trapped inside a slot and made them visible; it still left
+  them there, reported as `stranded`, because folding them back was "a move and
+  a move is the user's call". That was the wrong line: leaving a record under a
+  disposable owner is the fault, not a state to be tolerated. A real folder
+  found where a junction belongs is now DRAINED into the one pool and the
+  junction made over the emptied folder.
+- **Nothing is overwritten and nothing is thrown away.** A name already taken in
+  the pool by a file of the same size and mtime is the same transcript — the
+  test the session index itself trusts — and only then is the slot's copy
+  dropped. Any other collision lands under a second name carrying the slot id. A
+  file the engine still holds open cannot be renamed on Windows: it stays, it is
+  named in the answer, and the folder waits one more round.
+- **Three moments, and the middle one is the only preventive one.** The repair
+  runs at every activation (as before); **before a launch is handed a slot**, so
+  the first byte of a new transcript lands in the pool instead of inside the
+  account; and **once more after a session ends**, which is the moment the
+  engine finally lets go of the file it was writing. Start-up alone is too late
+  and pre-launch alone cannot reach a file the running session holds.
+- `accounts.repairLinks` now answers `moved` beside `linked` / `stranded` /
+  `failed`, and with `dryRun` it names what *would* move without touching it.
+
 ## 3.462.0 - a session started on a captured account could not be seen, because the link that pooled the transcripts had not survived the move (X-271) (2026-09-12)
 
 - **A CAPTURED ACCOUNT IS A `CLAUDE_CONFIG_DIR`, SO THE TRANSCRIPT IS WRITTEN

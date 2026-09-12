@@ -5288,25 +5288,45 @@ const { opencodeStatus, syncToOpencode } =
         ok('…and it says out loud that it signs nobody in',
             /signs nobody in/.test(re) && /statusArgs/.test(re));
 
-        // ---------- X-271: the shared links are repairable, and a repair is not a move ----------
+        // ---------- X-271: a slot is an identity, not a place to keep anything ----------
         // The junctions that keep ONE pool of transcripts are made at capture and
         // never looked at again; a move, a clone or a new machine leaves a real
-        // folder in the slot and the engine writes the transcript inside it. What
-        // is pinned here is the line the repair must not cross: it may CREATE a
-        // missing link, it may never empty a folder that has the user's files in
-        // it, and it may not invent the pool it links to — that last one is also
-        // what keeps a suite (whose config reads the real settings.json) from
-        // pointing the machine's real slots at a temp directory.
+        // folder in the slot and the engine writes the transcript inside it. The
+        // invariant pinned here is the user's, and it is stronger than "repair the
+        // link": a session record is NEVER left living under an account, because an
+        // account is a quota that can be closed tomorrow while the transcript is the
+        // record of the work. So a real folder is emptied into the pool rather than
+        // reported and left. What the repair still may not do is invent the pool it
+        // links into — that is also what keeps a suite (whose config reads the real
+        // settings.json) from pointing the machine's real slots at a temp directory.
         ok('extension.ts registers accounts.repairLinks', src.includes("op: 'accounts.repairLinks'"));
         const rl = cut('const repairSharedLinks', '/** One slot as every surface may see it');
-        ok('‼️ X-271: a real folder with files in it is REPORTED, never emptied',
-            /stranded\.push/.test(rl) && !/rmSync/.test(rl) && !/unlinkSync/.test(rl));
+        ok('‼️ X-271: a real folder in the slot is DRAINED into the pool, not left there',
+            /drain\(to, from, slot\.id\)/.test(rl));
+        ok('…and nothing is overwritten: same size and mtime is the same transcript',
+            /mine\.size === theirs\.size && mine\.mtimeMs === theirs\.mtimeMs/.test(rl));
+        ok('…and any other collision lands under a second name carrying the slot id',
+            /\$\{p\.name\}--\$\{slotId\}\$\{p\.ext\}/.test(rl));
+        ok('…and a file the engine still holds open stays put and is reported',
+            /catch \{[\s\S]{0,200}stranded\.push\(f\);[\s\S]{0,80}whole = false;/.test(rl));
+        ok('…and a dry run names what WOULD move without moving it',
+            /if \(dry\) \{ moved\.push\(t\); continue; \}/.test(rl));
         ok('…and a junction is told apart from a folder rather than guessed at',
             /isSymbolicLink\(\)/.test(rl));
         ok('‼️ …and it refuses to create the pool it would link into',
             /existsSync\(path\.join\(home, a\.liveDir\)\)/.test(rl));
+        // ‼️ THREE MOMENTS, and the middle one is the only PREVENTIVE one: once the
+        // engine has been handed an unlinked slot it has already written inside it.
         ok('…and the window never waits on the repair',
             /setTimeout\(\(\) => \{ try \{ repairSharedLinks\(\);/.test(src));
+        ok('‼️ X-271: the link is checked BEFORE a launch is handed the slot',
+            /repairSharedLinks\(false, slot\.id\);[\s\S]{0,80}return accountEnv\(slot\);/.test(src));
+        const afterEnd = cut('const sweptAfterEnd', 'context.subscriptions.push(consoleHost.onChange(id => {\n        // The first change');
+        ok('‼️ X-271: and again once a session has ended and let go of its file',
+            /s\.status !== 'ended' && s\.status !== 'error'/.test(afterEnd)
+            && /repairSharedLinks\(\)/.test(afterEnd));
+        ok('…and that sweep fires once per session, debounced, never on every change',
+            /sweptAfterEnd\.has\(id\)/.test(afterEnd) && /clearTimeout\(sweepTimer\)/.test(afterEnd));
 
         const sr = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'selfRestart.ts'), 'utf8');
         const armed = sr.slice(sr.indexOf('export interface ArmedRestart'),

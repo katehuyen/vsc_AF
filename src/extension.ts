@@ -17669,21 +17669,80 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * arrives on the other side is either nothing or a plain folder, and Claude
      * Code then writes the transcript INSIDE the slot.
      *
-     * Three states, and only one of them is repaired without being asked:
+     * Three states, and every one of them ends as a junction:
      *   absent → the junction is made, which is the clone / fresh-machine case;
      *   linked → left alone;
-     *   a REAL folder holding files → NOT TOUCHED, and named in the answer.
-     *     Those are the user's transcripts and folding them back into the pool
-     *     is a MOVE — not something a start-up does behind their back. The index
-     *     reads slot directories directly now, so nothing is invisible while it
-     *     waits; that is precisely what makes leaving it alone safe.
+     *   a REAL folder → DRAINED into the pool, and the junction made over the
+     *     emptied folder. Anything that could not be moved keeps the folder
+     *     alive for one more round and is named in the answer.
+     *
+     * ‼️ AND THE DRAIN IS NOT OPTIONAL, because an account is not a place to
+     * keep anything. A sign-in is a temporary fact — it can be closed, replaced
+     * or forgotten — while a transcript is the record of work and outlives every
+     * account the work was done under. So a transcript is never left living
+     * under a slot: the slot's folder is emptied into the one pool, and the link
+     * put in its place means the next session writes there directly.
+     *
+     * ‼️ NOTHING IS EVER OVERWRITTEN AND NOTHING IS EVER THROWN AWAY. A name
+     * already taken in the pool by a file of the same size and mtime is the same
+     * transcript — the very test the session index itself trusts to decide a
+     * remembered parse is still good — and only then is the slot's copy dropped.
+     * Any other collision lands under a second name carrying the slot's id. A
+     * file the engine still holds open cannot be renamed on Windows: it stays,
+     * it is reported, the link is not made this round, and the next start (or
+     * `accounts.repairLinks`) picks it up once the session has finished.
      */
-    const repairSharedLinks = (dry = false): { linked: string[]; stranded: string[]; failed: string[] } => {
+    const repairSharedLinks = (dry = false, onlySlotId?: string):
+        { linked: string[]; moved: string[]; stranded: string[]; failed: string[] } => {
         const linked: string[] = [];
+        const moved: string[] = [];
         const stranded: string[] = [];
         const failed: string[] = [];
         const home = os.homedir();
+        /** Empty `src` into `dst`, keeping every byte. True when nothing was left behind. */
+        const drain = (src: string, dst: string, slotId: string): boolean => {
+            let entries: fs.Dirent[] = [];
+            try { entries = fs.readdirSync(src, { withFileTypes: true }); } catch { return false; }
+            let whole = true;
+            for (const e of entries) {
+                const f = path.join(src, e.name);
+                const t = path.join(dst, e.name);
+                try {
+                    if (e.isDirectory()) {
+                        if (!dry) { fs.mkdirSync(t, { recursive: true }); }
+                        if (!drain(f, t, slotId)) { whole = false; continue; }
+                        if (!dry) { fs.rmdirSync(f); }
+                        continue;
+                    }
+                    if (!fs.existsSync(t)) {
+                        if (dry) { moved.push(t); continue; }
+                        fs.mkdirSync(dst, { recursive: true });
+                        fs.renameSync(f, t);
+                        moved.push(t);
+                        continue;
+                    }
+                    const mine = fs.statSync(f);
+                    const theirs = fs.statSync(t);
+                    if (mine.size === theirs.size && mine.mtimeMs === theirs.mtimeMs) {
+                        if (!dry) { fs.rmSync(f); }
+                        continue;
+                    }
+                    const p = path.parse(e.name);
+                    const alt = path.join(dst, `${p.name}--${slotId}${p.ext}`);
+                    if (fs.existsSync(alt)) { stranded.push(f); whole = false; continue; }
+                    if (dry) { moved.push(alt); continue; }
+                    fs.renameSync(f, alt);
+                    moved.push(alt);
+                } catch {
+                    // Almost always the engine still writing this transcript.
+                    stranded.push(f);
+                    whole = false;
+                }
+            }
+            return whole;
+        };
         for (const slot of storedAccounts()) {
+            if (onlySlotId && slot.id !== onlySlotId) { continue; }
             const a = accountAdapterFor(slot.engine);
             if (!slot.dir || !a.sharedPaths.length || !fs.existsSync(slot.dir)) { continue; }
             // ‼️ THE POOL MUST ALREADY BE THERE. Creating it would mean deciding
@@ -17703,12 +17762,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // the only reason this can be told apart from a real folder.
                 if (st?.isSymbolicLink()) { continue; }
                 if (st) {
+                    // A FILE where a link belongs is not ours to interpret.
+                    if (!st.isDirectory()) { stranded.push(to); continue; }
                     let entries: string[] = ['?'];
-                    try { entries = fs.readdirSync(to); } catch { /* unreadable counts as occupied */ }
-                    if (!st.isDirectory() || entries.length) { stranded.push(to); continue; }
-                    if (!dry) {
-                        try { fs.rmdirSync(to); } catch { failed.push(to); continue; }
+                    try { entries = fs.readdirSync(to); } catch { failed.push(to); continue; }
+                    if (entries.length) {
+                        if (!dry) { fs.mkdirSync(from, { recursive: true }); }
+                        // Whatever stayed behind is already named in `stranded`;
+                        // the folder and its link wait for the next round.
+                        if (!drain(to, from, slot.id)) { continue; }
                     }
+                    if (dry) { linked.push(to); continue; }
+                    try { fs.rmdirSync(to); } catch { failed.push(to); continue; }
                 }
                 if (dry) { linked.push(to); continue; }
                 try {
@@ -17718,7 +17783,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 } catch { failed.push(to); }
             }
         }
-        return { linked, stranded, failed };
+        return { linked, moved, stranded, failed };
     };
     // ‼️ X-271 — and it runs at every start, not only when somebody asks for it.
     // Off the activation path on purpose: it touches the disk, and a window must
@@ -17977,7 +18042,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if ((o.account || '').trim() === MACHINE_ACCOUNT) {
             return accountEnvFor(o.engine, MACHINE_ACCOUNT, storedAccounts());
         }
-        return accountEnv(launchAccountSlot(o));
+        const slot = launchAccountSlot(o);
+        // ‼️ X-271 — THE LINK IS CHECKED BEFORE THE ENGINE IS HANDED THE SLOT.
+        // This is the only moment that PREVENTS the fault rather than repairing
+        // it: once `CLAUDE_CONFIG_DIR` points at a slot with no junction, the
+        // engine creates a real folder there and writes the first byte of the
+        // transcript inside the account. One slot, a handful of stats — and a
+        // launch is never failed by it, because an unlinked slot still costs
+        // only a sweep while a refused launch costs the user their session.
+        if (slot) { try { repairSharedLinks(false, slot.id); } catch { /* never fails a launch */ } }
+        return accountEnv(slot);
     };
     /**
      * ‼️ X-260 — AND THE FLEET'S OWN SHORT TURNS GO THROUGH THE SAME DOOR.
@@ -22327,6 +22401,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             seen.status = s.status;
         }
     };
+
+    // ‼️ X-271 — THE THIRD COMPENSATING MOMENT: AN ENDED SESSION LETS GO OF ITS
+    // TRANSCRIPT. A file the engine still holds open cannot be renamed on
+    // Windows, so a slot drained while it was running keeps back exactly the
+    // file that mattered. Start-up is too late (that is the next window) and
+    // pre-launch is too early (this session is the one holding it), so the
+    // sweep is repeated the moment the handle is gone.
+    const sweptAfterEnd = new Set<string>();
+    let sweepTimer: ReturnType<typeof setTimeout> | undefined;
+    context.subscriptions.push(consoleHost.onChange(id => {
+        const s = consoleHost.get(id);
+        if (!s || (s.status !== 'ended' && s.status !== 'error')) { return; }
+        if (sweptAfterEnd.has(id)) { return; }
+        sweptAfterEnd.add(id);
+        // Debounced: sessions ending together are one sweep, and the delay is
+        // the moment the engine needs to actually release the handle.
+        if (sweepTimer) { clearTimeout(sweepTimer); }
+        sweepTimer = setTimeout(() => {
+            sweepTimer = undefined;
+            try { repairSharedLinks(); } catch { /* a sweep never fails anything */ }
+        }, 2000);
+    }));
+    context.subscriptions.push({ dispose: () => { if (sweepTimer) { clearTimeout(sweepTimer); } } });
 
     context.subscriptions.push(consoleHost.onChange(id => {
         // The first change that carries an id is the earliest a hosted session
@@ -34355,12 +34452,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'junctions that keep one pool of transcripts, todos and shell snapshots however many '
                 + 'identities the fleet holds. They are made once at capture and survive neither a '
                 + 'folder move nor a git clone nor a new machine; when one is gone the engine opens a '
-                + 'REAL folder inside the slot and writes there instead. This runs at every activation '
-                + 'too — the op is for asking on demand and for reading the answer. An absent link is '
-                + 'made; an existing junction is left alone; a real folder WITH FILES IN IT is never '
-                + 'touched and comes back under `stranded`, because folding those transcripts into the '
-                + 'pool is a move and a move is the user\'s call. Nothing is lost while one waits: the '
-                + 'session index reads slot directories directly. args: dryRun? (default false)',
+                + 'REAL folder inside the slot and writes there instead. It runs at THREE moments on '
+                + 'its own — every activation, before a launch is handed a slot (the one that PREVENTS '
+                + 'the fault), and once more after a session ends (when the engine finally lets go of '
+                + 'the file it was writing) — so the op is for asking on demand and for reading the '
+                + 'answer. An absent link is made; an existing junction is left alone; a real folder '
+                + 'is DRAINED into the pool and the link made over it, because an account is a quota, '
+                + 'not a place to keep anything, and a transcript outlives every account it was '
+                + 'written under. Nothing is overwritten: a name already taken by a file of the same '
+                + 'size and mtime is the same transcript and only then dropped, any other collision '
+                + 'lands under a second name carrying the slot id, and a file still held open stays '
+                + 'put and comes back under `stranded` for the next round. Answers `linked` / `moved` '
+                + '/ `stranded` / `failed`; with dryRun nothing is touched and `moved` is what WOULD '
+                + 'move. args: dryRun? (default false)',
             handler: (args) => repairSharedLinks(optBool(args, 'dryRun', false))
         },
         {
