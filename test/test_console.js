@@ -1081,6 +1081,83 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /sid => ownerOf\(liveCliSessions\(\), sid\)\?\.pid/.test(ext));
 }
 
+// ---------- ‼️ S-54 — Interrupt withdraws the words already on their way ----------
+//
+// Measured (claude-cli 2.1.269, haiku): a message written into a running turn
+// is QUEUED by the CLI; a plain `interrupt` ends the turn and one second later
+// the CLI opens a NEW turn with that message — the receipt had even said
+// `still_queued: []`. "Stop" looked like it worked and the agent went on. The
+// CLI advertises `interrupt_cancel_queued_v1`: the same request with
+// `cancel_queued: true` withdraws the queue and names it under `cancelled`.
+{
+    resetIds();
+    // the CLI says what it can do on init — only when it says anything
+    const base = fresh();
+    const withCaps = reduce(base, { type: 'system', subtype: 'init', session_id: 's1', capabilities: ['interrupt_receipt_v1', 'interrupt_cancel_queued_v1', 7] });
+    ok('‼️ S-54: init capabilities are read (strings only)',
+        JSON.stringify(withCaps.capabilities) === '["interrupt_receipt_v1","interrupt_cancel_queued_v1"]');
+    const noCaps = reduce({ ...withCaps }, { type: 'system', subtype: 'init', session_id: 's1' });
+    ok('…and an init that says nothing leaves them as they were (not advertised ≠ no)',
+        JSON.stringify(noCaps.capabilities) === '["interrupt_receipt_v1","interrupt_cancel_queued_v1"]');
+
+    // the line down the pipe is stamped so the receipt can name it back
+    const stamped = JSON.parse(userMessageLine('hello', [], 'u-1'));
+    ok('‼️ S-54: a user line carries the uuid it was stamped with', stamped.uuid === 'u-1' && stamped.type === 'user');
+    ok('…and none when not stamped', JSON.parse(userMessageLine('hello')).uuid === undefined);
+
+    // a message said INTO the running turn is remembered by that uuid; a new turn's is not
+    const started = acceptUserText(withCaps, 'do the thing', NOW, false, [], 'u-first').state;
+    ok('a first prompt starts the turn and is not "steered"', started.status === 'working' && started.steered === undefined);
+    const steered = acceptUserText(started, 'also do the other thing', NOW + 1, false, [], 'u-steer').state;
+    ok('‼️ S-54: a message said into the running turn is remembered by uuid',
+        JSON.stringify(steered.steered) === '[{"uuid":"u-steer","text":"also do the other thing"}]');
+    const held = acceptUserText(steered, 'held one', NOW + 2, true, [], 'u-held').state;
+    ok('…a HELD message is not (it never went down the pipe)', held.steered.length === 1 && held.queued.length === 1);
+
+    // the interrupt's receipt: cancelled → the reader is told which words never arrived
+    const asked = { ...steered, pendingInterrupt: { requestId: 'int-1' } };
+    const cancelled = reduceEvent(asked, {
+        type: 'control_response',
+        response: { subtype: 'success', request_id: 'int-1', response: { still_queued: [], cancelled: ['u-steer'] } }
+    }, NOW + 3);
+    const last = cancelled.state.messages[cancelled.state.messages.length - 1];
+    ok('‼️ S-54: a cancelled message is announced on the card, with its words',
+        cancelled.changed && last.role === 'system'
+        && /1 message you said into this turn was withdrawn with it and did NOT reach the model: «also do the other thing»/.test(last.text)
+        && /say it again/.test(last.text));
+    ok('…and the interrupt stops being pending', cancelled.state.pendingInterrupt === undefined);
+
+    // an older CLI (no cancel support): survivors are named honestly, with the warning
+    const survived = reduceEvent(asked, {
+        type: 'control_response',
+        response: { subtype: 'success', request_id: 'int-1', response: { still_queued: ['u-steer'] } }
+    }, NOW + 3);
+    const lastS = survived.state.messages[survived.state.messages.length - 1];
+    ok('‼️ S-54: a message the CLI could not withdraw is announced as the turn that WILL follow',
+        survived.changed && /‼️ 1 message you said into this turn is still queued and WILL start a new turn/.test(lastS.text)
+        && /«also do the other thing»/.test(lastS.text));
+
+    // an empty receipt says nothing — a silent stop is the right stop
+    const quiet = reduceEvent(asked, {
+        type: 'control_response',
+        response: { subtype: 'success', request_id: 'int-1', response: { still_queued: [], cancelled: [] } }
+    }, NOW + 3);
+    ok('an empty receipt adds no line and clears the pending interrupt',
+        quiet.changed === false && quiet.state.pendingInterrupt === undefined
+        && quiet.state.messages.length === asked.messages.length);
+
+    // a receipt for some other request is not ours
+    const other = reduceEvent(asked, {
+        type: 'control_response',
+        response: { subtype: 'success', request_id: 'int-9', response: { cancelled: ['u-steer'] } }
+    }, NOW + 3);
+    ok('a receipt under another id is not mistaken for ours', other.state.pendingInterrupt !== undefined);
+
+    // the turn's end forgets what was said into it
+    const ended = reduce(cancelled.state, { type: 'result', subtype: 'error_during_execution', is_error: true, result: '' });
+    ok('S-54: the result clears steered and pendingInterrupt', ended.steered === undefined && ended.pendingInterrupt === undefined && ended.status === 'idle');
+}
+
 // ---------- ‼️ the model can change mid-conversation ----------
 // A terminal has always been able to: `/model` switches mid-session and the
 // next turn answers with the new one. The panel used to say a running session

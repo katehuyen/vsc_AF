@@ -725,6 +725,32 @@ export interface ConsoleSessionState {
      */
     pendingSettings?: { requestId: string; turnStartedAt?: number };
     /**
+     * ‼️ S-54 — WHAT THE CLI SAYS IT CAN DO, read off `system/init.capabilities`.
+     *
+     * An open set the CLI publishes so a client can feature-detect instead of
+     * version-sniffing (its own words). The one this side uses is
+     * `interrupt_cancel_queued_v1`: an interrupt that may also withdraw the
+     * messages said into the turn. Absent on older CLIs, and absent means
+     * "not advertised", never "no".
+     */
+    capabilities?: string[];
+    /**
+     * ‼️ S-54 — THE MESSAGES SAID INTO THE TURN THAT IS RUNNING, by the uuid
+     * they were stamped with on the way down the pipe.
+     *
+     * Measured (claude-cli 2.1.269): a message written into a running turn is
+     * QUEUED by the CLI and starts a new turn of its own the moment the current
+     * one ends — including when a person ended it with Interrupt. "Stop" then
+     * looked like it had worked for a second and the agent carried on, because
+     * the queued message was the very instruction it carried on with. The
+     * interrupt receipt names what it withdrew by uuid; this is the map back
+     * to the words, so the card can say WHICH message did not reach the model.
+     * Cleared when the turn ends.
+     */
+    steered?: { uuid: string; text: string }[];
+    /** ‼️ S-54 — the interrupt we sent and have not heard back about. */
+    pendingInterrupt?: { requestId: string };
+    /**
      * ‼️ A permission-mode switch we have asked for and not heard back about —
      * and the reason this field had to exist at all.
      *
@@ -893,7 +919,7 @@ export function hostArgs(o: {
  * Path attachments are not a second channel; they become part of the sentence
  * the model reads, in backticks so a path with spaces stays one token to it.
  */
-export function userMessageLine(text: string, attachments: Attachment[] = []): string {
+export function userMessageLine(text: string, attachments: Attachment[] = [], uuid?: string): string {
     const images = attachments.filter(a => a.kind === 'image' && a.data && a.mediaType);
     const paths = attachments.filter(a => a.kind !== 'image');
     const body = paths.length
@@ -906,7 +932,11 @@ export function userMessageLine(text: string, attachments: Attachment[] = []): s
     }));
     // An images-only message is legal; an EMPTY text block is not worth sending.
     if (body) { content.push({ type: 'text', text: body }); }
-    return JSON.stringify({ type: 'user', message: { role: 'user', content } }) + '\n';
+    // ‼️ S-54 — STAMPED, SO THE CLI CAN NAME IT BACK. A top-level `uuid` is the
+    // id the CLI's own receipts speak in (`command_lifecycle`, an interrupt's
+    // `cancelled` list); a message without one is queued and run all the same,
+    // only anonymously — the receipt then cannot say which words were withdrawn.
+    return JSON.stringify({ type: 'user', message: { role: 'user', content }, ...(uuid ? { uuid } : {}) }) + '\n';
 }
 
 /** A control request (interrupt / set_permission_mode). */
@@ -1164,6 +1194,11 @@ export function reduceEvent(
                     // (see turnModel).
                     ...(state.turnStartedAt ? { turnModel: model } : {}),
                     permissionMode: typeof o.permissionMode === 'string' ? o.permissionMode : state.permissionMode,
+                    // S-54 — what this CLI says it can do; only written when it
+                    // said anything, so an older build is "not advertised", not "no"
+                    ...(Array.isArray(o.capabilities)
+                        ? { capabilities: (o.capabilities as unknown[]).filter((c): c is string => typeof c === 'string') }
+                        : {}),
                     // ‼️ K-29 — THE COMMANDS THIS INSTALL ACTUALLY HAS, from the
                     // only source that knows: the process. Measured here, the
                     // list came back with 47 entries mixing the CLI's own with
@@ -1485,6 +1520,9 @@ export function reduceEvent(
                 turnThinking: undefined,
                 turnApiCalls: undefined,
                 turnSteps: undefined,
+                // S-54 — the turn is over, so nothing is "said into it" any more
+                steered: undefined,
+                pendingInterrupt: undefined,
                 // …and it is kept, so the strip above the composer still says
                 // what the turn that just ended cost — and what it thought with,
                 // which a switch made in the meantime must not rewrite
@@ -1600,6 +1638,53 @@ export function reduceEvent(
     if (type === 'control_response') {
         const r = (o.response as Record<string, unknown> | undefined) ?? {};
         const inner = (r.response as Record<string, unknown> | undefined) ?? {};
+        /**
+         * ‼️ S-54 — THE INTERRUPT'S RECEIPT, AND WHAT IT SAYS ABOUT THE WORDS
+         * THAT WERE ON THEIR WAY.
+         *
+         * Measured (claude-cli 2.1.269): `cancelled` names, by uuid, the
+         * messages said into the turn that the interrupt withdrew with it — they
+         * never reached the model. `still_queued` names the ones that survived
+         * and WILL start a new turn the moment this one ends (an older CLI, or
+         * one asked without `cancel_queued`). Either list is the reader's to
+         * know: a withdrawn message has to be said again if it is still meant,
+         * and a surviving one is the exact thing "the agent carried on" with.
+         * An empty receipt says nothing — a silent stop is the right stop.
+         */
+        const pi = state.pendingInterrupt;
+        if (pi && r.request_id === pi.requestId) {
+            const ids = (k: string): string[] => Array.isArray(inner[k])
+                ? (inner[k] as unknown[]).filter((v): v is string => typeof v === 'string') : [];
+            const words = (uuids: string[]): string => uuids
+                .map(u => (state.steered ?? []).find(s => s.uuid === u)?.text)
+                .filter((t): t is string => !!t)
+                .map(t => `«${t.length > 80 ? t.slice(0, 77) + '…' : t}»`)
+                .join(' · ');
+            const cancelled = ids('cancelled');
+            const surviving = ids('still_queued');
+            const lines: string[] = [];
+            if (cancelled.length) {
+                const w = words(cancelled);
+                lines.push(`${cancelled.length} message${cancelled.length === 1 ? '' : 's'} you said into this turn `
+                    + `${cancelled.length === 1 ? 'was' : 'were'} withdrawn with it and did NOT reach the model`
+                    + (w ? `: ${w}` : '') + ' — say it again if you still mean it.');
+            }
+            if (surviving.length) {
+                const w = words(surviving);
+                lines.push(`‼️ ${surviving.length} message${surviving.length === 1 ? '' : 's'} you said into this turn `
+                    + `${surviving.length === 1 ? 'is' : 'are'} still queued and WILL start a new turn as soon as this one ends`
+                    + (w ? `: ${w}` : '') + ' — this CLI cannot withdraw them on interrupt.');
+            }
+            return {
+                state: {
+                    ...state, lastTs: now, pendingInterrupt: undefined,
+                    messages: lines.length
+                        ? [...state.messages, { id: nextId(), ts: now, role: 'system', text: lines.join(' ') }]
+                        : state.messages
+                },
+                changed: lines.length > 0
+            };
+        }
         // A model switch, answered. `success` carries no payload, so the id we
         // sent it under is what says which model this is about.
         const pend = state.pendingModel;
@@ -1911,7 +1996,9 @@ function turnBrain(state: ConsoleSessionState): { turnModel?: string; turnEffort
 }
 
 export function acceptUserText(
-    state: ConsoleSessionState, text: string, now: number, hold = false, attach: AttachmentNote[] = []
+    state: ConsoleSessionState, text: string, now: number, hold = false, attach: AttachmentNote[] = [],
+    /** S-54 — the uuid the host stamps the line with, so the CLI's receipts can name it back */
+    uuid?: string
 ): { state: ConsoleSessionState; send: boolean } {
     const t = text.trim();
     // A message carrying files is a message, even with nothing typed — a
@@ -1929,6 +2016,9 @@ export function acceptUserText(
         return {
             state: {
                 ...state, lastTs: now,
+                // S-54 — remembered by uuid, so an interrupt receipt can say
+                // which of these never reached the model (see `steered`).
+                ...(uuid ? { steered: [...(state.steered ?? []), { uuid, text: t }] } : {}),
                 messages: [...state.messages, {
                     id: nextId(), ts: now, role: 'user', text: t, steer: true,
                     ...(attach.length ? { attach } : {})

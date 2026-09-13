@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.486.0 - stop means stop, including the words already on their way (S-54) (2026-09-14)
+
+- **Interrupt looked like it worked for a second and the agent carried on.**
+  Measured against claude-cli 2.1.269 (haiku, test-driven): a message said into
+  a running turn is QUEUED by the CLI; a plain `interrupt` ends the turn and one
+  second later the CLI opens a NEW turn with the queued message, unprompted —
+  its receipt had even said `still_queued: []`. The model, reading its own
+  context, carries on with exactly what it was doing. The deny text the reader
+  saw ("The user doesn't want to proceed with this tool use…") was never the
+  cause: the turn did end; the queue started the next one.
+- **The CLI advertises the cure on `system/init.capabilities`:**
+  `interrupt_cancel_queued_v1` — the same request with `cancel_queued: true`
+  withdraws every queued message alongside the abort and names them under
+  `cancelled`. `ConsoleHost.interrupt` now sends it when advertised (measured:
+  no new turn in the twelve seconds watched); an older CLI gets the plain
+  request as before.
+- **Every message the host says is stamped with a uuid**, the id the CLI's
+  receipts speak in, and the ones said into the running turn are remembered by
+  it — so the card can say which words were withdrawn: *"1 message you said into
+  this turn was withdrawn with it and did NOT reach the model: «…» — say it
+  again if you still mean it."* A CLI that cannot withdraw them is reported
+  just as plainly: *"still queued and WILL start a new turn"*. An empty receipt
+  says nothing — a silent stop is the right stop.
+
 ## 3.485.0 - a request is claimed before it runs, and a timeout says which of two things happened (X-268) (2026-09-13)
 
 - **The bridge ran requests one behind the other, awaiting each handler.** An op

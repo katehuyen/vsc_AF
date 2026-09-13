@@ -2197,7 +2197,10 @@ export class ConsoleHost {
             // is no `ses_…` to prompt yet, and a message sent into that gap would
             // be accepted and lost.
             || (shared && (busyShared || h.state.status === 'working' || h.state.status === 'starting'));
-        const r = acceptUserText(h.state, text, Date.now(), holdNow, notes);
+        // S-54 — the persistent engine's line is stamped, so the CLI's receipts
+        // (an interrupt's `cancelled` list) can name this message back.
+        const uuid = !perTurn && !shared ? newUuid() : undefined;
+        const r = acceptUserText(h.state, text, Date.now(), holdNow, notes, uuid);
         h.state = r.state;
         // A NEW turn (not a message said into a running one) asks what it is
         // about to run on, and asks it BEFORE the prompt goes down the pipe —
@@ -2213,7 +2216,7 @@ export class ConsoleHost {
             } else if (shared) {
                 this.promptShared(id, enginePromptText(h.engine.id, text.trim(), ready), ready);
             } else {
-                this.write(id, userMessageLine(text.trim(), ready));
+                this.write(id, userMessageLine(text.trim(), ready, uuid));
             }
         }
         this.fire(id);
@@ -2379,7 +2382,30 @@ export class ConsoleHost {
             this.mutate(id, s => ({ ...s, lastTs: Date.now() }));
             return true;
         }
-        return this.write(id, controlLine(`int-${++h.reqSeq}`, 'interrupt'));
+        /**
+         * ‼️ S-54 — STOP MEANS STOP, INCLUDING THE WORDS ALREADY ON THEIR WAY.
+         *
+         * Measured (claude-cli 2.1.269, test-driven with haiku): a message said
+         * into the running turn is QUEUED by the CLI, and a plain `interrupt`
+         * ends the turn and then — one second later, unprompted — the CLI opens
+         * a NEW turn with the queued message, whose receipt had even said
+         * `still_queued: []`. The model, reading its own context, carries on
+         * with exactly what it was doing. That is the "it stopped for a moment
+         * and went on" the user reported.
+         *
+         * The CLI advertises the cure on `system/init.capabilities`:
+         * `interrupt_cancel_queued_v1` — the same request with
+         * `cancel_queued: true` withdraws every queued message alongside the
+         * abort and lists them under `cancelled` (measured: no new turn in the
+         * 12 s watched). Sent only when advertised, which is the contract the
+         * CLI states for its open capability set; an older CLI gets the plain
+         * request and the receipt's `still_queued` is shown to the reader
+         * instead, so a survivor is at least never a surprise.
+         */
+        const rid = `int-${++h.reqSeq}`;
+        const canCancel = (h.state.capabilities ?? []).includes('interrupt_cancel_queued_v1');
+        h.state = { ...h.state, pendingInterrupt: { requestId: rid } };
+        return this.write(id, controlLine(rid, 'interrupt', canCancel ? { cancel_queued: true } : {}));
     }
 
     /**

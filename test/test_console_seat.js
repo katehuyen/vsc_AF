@@ -34,11 +34,15 @@ function fakeChild() {
     };
     child.stdout = pipe();
     child.stderr = pipe();
-    child.stdin = { write: () => true, end: () => { } };
+    // what the host writes down the pipe, kept so a test can read the wire
+    child.written = [];
+    child.stdin = { write: (s) => { child.written.push(String(s)); return true; }, end: () => { } };
     child.pid = 4000 + spawned;
     child.kill = () => { };
+    lastChild = child;
     return child;
 }
+let lastChild = null;
 const realSpawn = cp.spawn;
 cp.spawn = () => fakeChild();
 // killTree shells out; with a fake pid there is nothing to kill and the
@@ -395,7 +399,53 @@ async function x266() {
     }
 }
 
-s29().then(() => x266()).then(() => {
+
+// ‼️ S-54 — Interrupt on the persistent engine withdraws the queued words, when
+// the CLI says it can; and every message the host says is stamped so the
+// receipt can name it. Measured against claude-cli 2.1.269 (haiku): a plain
+// interrupt let a steered message open a NEW turn one second after the stop.
+async function s54() {
+    // the CLI advertised the capability: the interrupt asks for the queue too
+    {
+        const host = new ConsoleHost(() => 'claude');
+        const id = host.start(init({}));
+        const child = lastChild;
+        child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'init', session_id: 'S-54a', capabilities: ['interrupt_receipt_v1', 'interrupt_cancel_queued_v1'] }) + '\n');
+        host.send(id, 'first prompt');
+        const first = JSON.parse(child.written[child.written.length - 1]);
+        ok('‼️ S-54: a message the host says is stamped with a uuid', first.type === 'user' && /^[0-9a-f-]{36}$/.test(first.uuid || ''));
+        host.send(id, 'said into the turn');
+        const steer = JSON.parse(child.written[child.written.length - 1]);
+        ok('…the steered one too, and the state remembers it by that uuid',
+            /^[0-9a-f-]{36}$/.test(steer.uuid || '') && host.get(id).steered.length === 1
+            && host.get(id).steered[0].uuid === steer.uuid && host.get(id).steered[0].text === 'said into the turn');
+        ok('S-54: interrupt is written', host.interrupt(id) === true);
+        const intr = JSON.parse(child.written[child.written.length - 1]);
+        ok('‼️ S-54: with the capability advertised, the interrupt carries cancel_queued:true',
+            intr.type === 'control_request' && intr.request.subtype === 'interrupt' && intr.request.cancel_queued === true);
+        ok('…and the host waits for that receipt under the id it sent',
+            host.get(id).pendingInterrupt && host.get(id).pendingInterrupt.requestId === intr.request_id);
+        // the receipt arrives: the card says which words were withdrawn
+        child.stdout.emit('data', JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: intr.request_id, response: { still_queued: [], cancelled: [steer.uuid] } } }) + '\n');
+        const msgs = host.get(id).messages;
+        ok('‼️ S-54: the card names the withdrawn message',
+            /withdrawn with it and did NOT reach the model: «said into the turn»/.test(msgs[msgs.length - 1].text));
+    }
+    // no capability advertised (an older CLI): the plain request, as before
+    {
+        const host = new ConsoleHost(() => 'claude');
+        const id = host.start(init({}));
+        const child = lastChild;
+        child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'init', session_id: 'S-54b' }) + '\n');
+        host.send(id, 'go');
+        host.interrupt(id);
+        const intr = JSON.parse(child.written[child.written.length - 1]);
+        ok('S-54: without the capability the interrupt is the plain request (an unknown field is not sent blind)',
+            intr.request.subtype === 'interrupt' && !('cancel_queued' in intr.request));
+    }
+}
+
+s29().then(() => x266()).then(() => s54()).then(() => {
     cp.spawn = realSpawn;
     cp.exec = realExec;
     cp.execSync = realExecSync;
