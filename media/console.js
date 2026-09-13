@@ -1553,7 +1553,13 @@
         const kinds = kindsNow();
         if (kinds === null || kinds === undefined) { return list || []; }
         const on = KINDS.filter(k => kinds.indexOf(k.v) >= 0);
-        return (list || []).filter(m => on.some(k => k.is(m)));
+        // ‼️ THE SCROLLBACK BOUNDARY IS STRUCTURE, NOT CONVERSATION. It carries
+        // `more`, and `more` is the ONLY way further back into the transcript.
+        // It is written as a system line, so a filter that puts the system
+        // lines away also puts away the door — and the standing default is
+        // Dialog, which makes that the ordinary case rather than an edge one:
+        // every long session would open with its history unreachable.
+        return (list || []).filter(m => (m && m.more) || on.some(k => k.is(m)));
     }
 
     /**

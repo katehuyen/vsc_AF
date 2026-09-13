@@ -56,6 +56,27 @@ const parse = (text: string | undefined): Record<string, unknown> => {
 };
 
 /**
+ * ‼️ X-279 — IS ANYTHING MERGED INTO THIS CARRIED FILE, or is the fleet's copy
+ * the whole answer?
+ *
+ * Everything below parses JSON: `renderSlotSettings` reads the source, lays the
+ * contract over its `env` block and re-serialises, and `carriedDrift` compares
+ * the two by key. Codex keeps its behaviour in `config.toml`, and that parser
+ * reads TOML as `{}` — so carrying it the rendered way would write an empty
+ * object over the user's model, MCP servers and plugin choices, and then
+ * compare `{}` with `{}` and call the slot current for ever. Two silent
+ * failures from one wrong assumption.
+ *
+ * Derived rather than declared: a file is merged when something actually has a
+ * claim inside it — the fleet's guarantee (`requiredEnv`) or a key-level owner
+ * (`ownership`). With neither, there is nothing to overlay and the fleet's
+ * BYTES are the projection, whatever format they are in.
+ */
+export function carryMerges(a: EngineAuthAdapter, name: string): boolean {
+    return a.requiredEnv?.file === name || !!a.ownership?.[name];
+}
+
+/**
  * The contract names this file does not carry — missing, or holding something
  * else. What the badge, the doctor and the gate all count, so they cannot
  * disagree about whether a slot is right.
@@ -184,7 +205,9 @@ export function reproduceSlotSettings(
             // base: the guarantee is still enforced, and nothing of theirs is
             // thrown away by an absence.
             const base = sourceText === undefined ? before : sourceText;
-            const text = renderSlotSettings(base, vars, heldByOtherClause(a, name, before));
+            const text = carryMerges(a, name)
+                ? renderSlotSettings(base, vars, heldByOtherClause(a, name, before))
+                : base ?? '';
             if (before !== text) {
                 row.wrote = true;
                 if (!opts.dryRun) {

@@ -8,15 +8,15 @@
 //      (activation · capture · before a launch) cost a read;
 //   3. a file changed by another hand is put back — the fault this closes was a
 //      copy taken once at capture and never looked at again;
-//   4. ‼️ an engine with nothing to guarantee gets nothing written, so a Codex
-//      slot never grows a `settings.json` it has never heard of.
+//   4. ‼️ a carried file nothing is merged into is COPIED, not re-serialised —
+//      Codex keeps its behaviour in TOML and this module only speaks JSON.
 const path = require('path');
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const {
-    renderSlotSettings, slotEnvGaps, reproduceSlotSettings, slotSettingsGaps
+    renderSlotSettings, slotEnvGaps, reproduceSlotSettings, slotSettingsGaps, carryMerges
 } = require(path.join(__dirname, '..', 'out', 'core', 'slotSettings.js'));
 const { adapterFor } = require(path.join(__dirname, '..', 'out', 'core', 'engineAccounts.js'));
 
@@ -141,17 +141,47 @@ const slotFile = SLOT + '/settings.json';
     ok('…and a second run with no source writes nothing', again[0].wrote === false);
 }
 
-// ---------- 4. an engine with nothing to guarantee is left alone ----------
+// ---------- 4. a carried file with nothing to merge is COPIED, not rendered ----------
+// ‼️ X-279 — the fault this closes is silent twice over. Codex keeps its
+// behaviour in `config.toml`, and everything in this module parses JSON: the
+// renderer would read TOML as `{}` and write an empty object over the user's
+// model, MCP servers and plugins, and the drift check would then compare `{}`
+// with `{}` and call the slot current for ever.
 {
-    // Codex keeps no behaviour file the fleet reproduces: no carryFiles, no
-    // requiredEnv. A gate that wrote one anyway would put a Claude-shaped file
-    // into a directory that has never heard of it.
-    const fs = fakeFs({});
-    const rows = reproduceSlotSettings(fs, { home: HOME, dir: 'C:/slots/codex-one', engine: 'codex' });
-    ok('nothing is reproduced for an engine that carries nothing', rows.length === 0);
-    ok('…and nothing was written', Object.keys(fs.files).length === 0);
-    ok('…and it reports no gaps rather than a false one',
-        slotSettingsGaps(fs, { dir: 'C:/slots/codex-one', engine: 'codex' }).length === 0);
+    const CODEX = 'C:/slots/codex-one';
+    const toml = 'model = "gpt-5.6-terra"\n\n[mcp_servers.obsidian]\nurl = "http://127.0.0.1:27123/mcp"\n';
+    const hooks = '{\n  "hooks": { "SessionStart": [ { "hooks": [] } ] }\n}\n';
+    const fs = fakeFs({ [HOME + '/.codex/config.toml']: toml, [HOME + '/.codex/hooks.json']: hooks });
+    const rows = reproduceSlotSettings(fs, { home: HOME, dir: CODEX, engine: 'codex' });
+
+    ok('a codex slot is given the engine\'s own behaviour files', rows.length === 2 && rows.every(r => r.wrote));
+    ok('‼️ …and the TOML arrives byte for byte, not parsed and re-serialised',
+        fs.files[norm(CODEX + '/config.toml')] === toml);
+    ok('…so the model survives the trip', /gpt-5\.6-terra/.test(fs.files[norm(CODEX + '/config.toml')]));
+    ok('…and so do the MCP servers', /mcp_servers\.obsidian/.test(fs.files[norm(CODEX + '/config.toml')]));
+    ok('…and the live wire travels too', fs.files[norm(CODEX + '/hooks.json')] === hooks);
+    ok('…a second run writes nothing',
+        reproduceSlotSettings(fs, { home: HOME, dir: CODEX, engine: 'codex' }).every(r => !r.wrote));
+    ok('…and an engine with no guarantee reports no gaps rather than a false one',
+        slotSettingsGaps(fs, { dir: CODEX, engine: 'codex' }).length === 0);
+
+    // …and an absent source still writes nothing, exactly as before: a fleet
+    // with no config.toml has nothing to reproduce and must not invent one.
+    const bare = fakeFs({});
+    const none = reproduceSlotSettings(bare, { home: HOME, dir: CODEX, engine: 'codex' });
+    ok('nothing is written when the fleet has no source to copy',
+        none.every(r => !r.wrote) && Object.keys(bare.files).length === 0);
+}
+
+// ---------- 4b. which files are merged, and which are copied whole ----------
+// Derived from who has a claim inside the file, never from a list of names: an
+// engine that grows an `ownership` entry starts being merged by the shape.
+{
+    ok('claude\'s settings.json is merged — the fleet guarantees a key inside it',
+        carryMerges(adapterFor('claude'), 'settings.json') === true);
+    ok('‼️ codex\'s config.toml is not — nothing has a claim inside it',
+        carryMerges(adapterFor('codex'), 'config.toml') === false);
+    ok('…nor its hooks.json', carryMerges(adapterFor('codex'), 'hooks.json') === false);
 }
 
 // ---------- 5. the contract is the ADAPTER'S, not this module's ----------

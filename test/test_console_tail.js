@@ -161,8 +161,14 @@ const rowTop = (g, mid) => {
 };
 
 // ---------------------------------------------------------------------------
+// ‼️ THIS FILE IS ABOUT THE TAIL, NOT THE FILTER. The panel's standing default
+// shows the dialog only, so a tool row pushed below would never be drawn and
+// every anchor measurement here would be measuring the filter instead. Seeded
+// with every kind on, deliberately: what the filter does is measured in
+// test_console_show.js, and what it must NOT do is measured further down.
+const ALL_KINDS = ['user', 'agent', 'tool', 'result', 'error', 'system', 'ask'];
 const live = { messages: baseMessages() };
-const r = runPage('console.js', shell(live.messages));
+const r = runPage('console.js', shell(live.messages), undefined, { afConsole: { kinds: ALL_KINDS } });
 const g = attachGeometry(r, live);
 
 /** Push a new data snapshot and let the page repaint, as the host does. */
@@ -277,6 +283,13 @@ ok('every row publishes its message id',
     push2();
 
     const html = () => r2.sandbox.document.getElementById('talkinner').innerHTML || '';
+    // ‼️ AND THIS ONE IS LEFT ON THE STANDING DEFAULT (Dialog) ON PURPOSE. The
+    // boundary is written as a system line, so the day the default stopped
+    // showing system lines the door to the older transcript stopped being drawn
+    // — measured, and green in every string test, because no test had ever
+    // opened this card with the filter a reader actually gets.
+    ok('‼️ the way back survives the DEFAULT filter, which hides system lines',
+        r2.query('[data-older]').length === 1);
     ok('‼️ K-23 — the head row offers the way further back', /data-older="1"/.test(html()));
     ok('…and says how many one press brings', /↑ load 200 older/.test(html()));
     ok('…while the boundary marker is flagged as not being conversation',

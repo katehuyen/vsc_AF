@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.477.0 - a Codex account was an identity with nothing behind it (X-279) (2026-09-13)
+
+- **A captured Codex account started its sessions on the engine's defaults — your
+  model, your MCP servers and your plugins reached none of them — and the birth
+  contract called that slot COMPLETE.** Measured on this machine: `codex-murposta`
+  held `auth.json` and one junction, because the adapter declared nothing else for
+  the contract to ask about. Two clauses are not a short contract, they are an
+  empty question, and a gate that cannot fail is the Principle 1 fault this whole
+  family exists to end.
+  - **`config.toml` now travels**, the way `settings.json` does on Claude: the
+    model, the reasoning effort, every MCP server and every enabled plugin.
+  - **So does `hooks.json`**, which is the live wire. Without it a session started
+    under a captured Codex account posted no event and was invisible on the Live
+    Timeline — the X-265 deafness again, on the other engine. **‼️ Carrying it is
+    necessary and not yet sufficient, and nothing here pretends otherwise:** Codex
+    will not run a hook without a persisted trust record, and that record sits in
+    `config.toml` keyed by the hook file's absolute path, so it names the main
+    directory and does not match a slot's own copy. The clause asks whether the
+    file is the fleet's and claims nothing about the wire being live; granting the
+    trust is a security decision and is the user's (X-295).
+  - **`skills` and `plugins` are LINKED, not copied**, on X-273's grounds: what
+    you installed once belongs to the fleet, and a copy would let one account fall
+    behind an install it never heard about.
+- **‼️ And carrying a file is not always rendering it.** Everything in the carry
+  machinery parses JSON; Codex keeps its behaviour in TOML. Rendered the Claude
+  way, `config.toml` would have arrived as `{}` — the whole configuration replaced
+  by an empty object — and the drift check would then have compared `{}` with `{}`
+  and called the slot current for ever: two silent failures from one assumption. A
+  carried file is now copied BYTE FOR BYTE unless something actually has a claim
+  inside it (the fleet's `requiredEnv`, or a key-level `ownership`), derived from
+  the adapter rather than from a list of file names.
+- **Codex isolation is now `measured` rather than `declared`** — and the line that
+  said the CLI was not installed here was simply false. Measured 2026-09-13
+  against codex-cli 0.149.0: pointed at an empty directory, `codex login status`
+  answered "Not logged in" while the main directory was signed in, and wrote only
+  its own scratch helpers there; pointed at the captured slot it answered "Logged
+  in using ChatGPT". A stated reason is a claim about the world, and a wrong one
+  closes the question.
+
+### Fixed
+
+- **The Console's default filter had hidden the way back into a long transcript.**
+  The scrollback boundary — the row carrying `↑ load 200 older` — is written as a
+  system line, so the day the standing filter became Dialog (agent and user) it
+  stopped being drawn and every long session opened with its own history
+  unreachable. It is structure, not conversation, and is now exempt from the
+  filter. No test had caught it because none had ever opened that card with the
+  filter a reader actually gets.
+
 ## 3.476.0 - a permission is an answer, not a setting: the return leg (X-291) (2026-09-13)
 
 - **A tool you approved at a terminal prompt inside an account session was

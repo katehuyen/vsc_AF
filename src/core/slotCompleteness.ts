@@ -3,7 +3,7 @@ import { adapterFor, EngineAuthAdapter, liveSource } from './engineAccounts';
 import { hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
 import { isJsonObject, ownedDrift, ownedTopKeys, parseOwnedFile, projectOwned } from './keyOwnership';
 import {
-    carriedDrift, heldByOtherClause, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, SlotSettingsFs
+    carriedDrift, carryMerges, heldByOtherClause, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, SlotSettingsFs
 } from './slotSettings';
 
 /**
@@ -204,6 +204,18 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
                     return { ok: true, detail: `${name} present — the fleet has no ${rel} to reproduce from` };
                 }
                 const have = ctx.fs.readFileSync(p, 'utf8');
+                // ‼️ X-279 — AND A FILE NOTHING IS MERGED INTO IS COMPARED AS
+                // BYTES. The key-by-key comparison below exists because the
+                // projection is re-serialised and indentation alone would read
+                // as drift; a verbatim carry is not re-serialised, so its own
+                // text is the honest question. Asking the JSON comparison about
+                // `config.toml` reads `{}` on both sides and answers `ok` for
+                // ever — the shape of a clause that cannot fail.
+                if (!carryMerges(adapter, name)) {
+                    return sourceText === have
+                        ? { ok: true, detail: `${name} is the fleet's ${rel}` }
+                        : { ok: false, detail: `${name} is a stale copy of the fleet's ${rel}` };
+                }
                 const want = renderSlotSettings(
                     sourceText === undefined ? have : sourceText, vars, heldByOtherClause(adapter, name, have));
                 const drift = carriedDrift(want, have, otherClauseOwns(name));

@@ -543,14 +543,52 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
     },
     {
         engine: 'codex',
-        support: 'declared',
+        support: 'measured',
         configEnv: 'CODEX_HOME',
         ownFiles: ['auth.json'],
-        sharedPaths: ['sessions'],
+        /**
+         * ‼️ X-279 — THE BEHAVIOUR FILES, AND WHY A CODEX SLOT HAD NEITHER.
+         *
+         * `config.toml` is this engine's `settings.json`: the model, the
+         * reasoning effort, every MCP server and every enabled plugin. A slot
+         * without it starts a session on the engine's defaults — a different
+         * assistant than the one the user configured — and nothing said so.
+         *
+         * `hooks.json` is the live wire. It posts to Agent Farm's own event
+         * port, so a slot without it is the X-265 deafness again on the other
+         * engine: measured 2026-09-13, `codex-murposta` held `auth.json` and
+         * one junction and the contract called it COMPLETE, because the
+         * adapter declared nothing for the contract to ask about.
+         *
+         * ‼️ CARRYING IT IS NECESSARY AND NOT SUFFICIENT, AND THE CLAUSE SAYS
+         * ONLY WHAT IT PROVED. Codex refuses to run a hook without a persisted
+         * trust record, and that record lives in `config.toml` keyed by the
+         * hook file's ABSOLUTE PATH (`[hooks.state.'…\.codex\hooks.json:stop:0:0']`
+         * + `trusted_hash`) — so it names the main directory and never matches
+         * the slot's own copy. `carry:hooks.json` therefore asks whether the
+         * file is the fleet's, and nothing else; Claude's `hooks` clause, which
+         * is the one that claims a LIVE wire, has no Codex counterpart on
+         * purpose. Granting that trust is a security decision and belongs to
+         * the user, not to a gate — X-295.
+         *
+         * ‼️ NEITHER IS JSON-MERGED. Codex keeps no fleet guarantee and no
+         * key-level owner here, so both are carried whole (`carryMerges`) —
+         * which is also the only way a TOML file survives the trip.
+         */
+        carryFiles: ['config.toml', 'hooks.json'],
+        /**
+         * ‼️ `skills` AND `plugins` ARE CONTENT, NOT IDENTITY — X-273 settled
+         * that for Claude on the same day and the argument is the engine's, not
+         * Claude's: what the user installed once belongs to the fleet, so
+         * copying it would fork the library per sign-in and let a slot fall
+         * behind an install it never heard about.
+         */
+        sharedPaths: ['sessions', 'skills', 'plugins'],
         liveDir: '.codex',
-        evidence: 'CODEX_HOME is Codex\'s own documented override for ~/.codex, but it has NOT been run '
-            + 'here — the codex CLI is not installed on this machine, only its auth.json is. Capturing a '
-            + 'second Codex account is allowed and stays marked "declared" until somebody proves it.',
+        evidence: 'Measured on this machine 2026-09-13 against codex-cli 0.149.0 (which IS installed, '
+            + 'contrary to what this line said while it was unproven): pointed at an empty directory, '
+            + '`codex login status` answered "Not logged in" with the main ~/.codex signed in, and wrote '
+            + 'only its own scratch helpers (tmp/arg0) there.',
         // Measured the same day from `codex --help` / `codex login --help`:
         // `codex login`, with `codex login status` to read the result back.
         signIn: () => ({ command: 'codex', args: ['login'], statusArgs: ['login', 'status'] }),

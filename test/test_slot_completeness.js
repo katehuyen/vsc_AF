@@ -58,6 +58,27 @@ for (const a of ENGINE_AUTH_ADAPTERS) {
         a.engine === 'claude' || !cs.some(c => c.id === 'hooks' || c.id.startsWith('env:')));
 }
 
+// ---------- 1b. X-279 — THE CONTRACT ASKS CODEX SOMETHING ----------
+// ‼️ The fault this pins is a gate that cannot fail. Measured 2026-09-13 on the
+// real machine: `codex-murposta` held `auth.json` and one junction, the adapter
+// declared nothing else, and the contract therefore read `complete: true` over a
+// slot whose sessions would start with no model, no MCP servers, no plugins and
+// no live wire. Two clauses are not a contract, they are an empty question.
+{
+    const codex = adapterFor('codex');
+    const cids = sc.slotClauses(codex).map(c => c.id);
+    ok('‼️ X-279: codex is measured, not merely declared', codex.support === 'measured');
+    ok('‼️ X-279: the contract asks about the behaviour file a session actually reads',
+        cids.includes('carry:config.toml'));
+    ok('‼️ X-279: …and about the live wire, so a captured Codex account is not deaf',
+        cids.includes('carry:hooks.json'));
+    ok('X-279: …and the fleet\'s installed content is reached, not copied',
+        cids.includes('link:skills') && cids.includes('link:plugins'));
+    ok('X-279: …and the records still are', cids.includes('link:sessions'));
+    ok('‼️ X-279: so the contract can no longer pass an all-but-empty slot',
+        cids.length >= 6);
+}
+
 // ---------- 2. a fixture slot: gaps read, repairs applied, idempotent ----------
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-slotc-'));
 try {

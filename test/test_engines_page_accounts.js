@@ -29,6 +29,8 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const fixture = require(path.join(__dirname, 'fixtures', 'enginespanel.js'));
+const { adapterFor } = require(path.join(__dirname, '..', 'out', 'core', 'engineAccounts.js'));
+const { slotClauses } = require(path.join(__dirname, '..', 'out', 'core', 'slotCompleteness.js'));
 const DATA = fixture.data();
 const r = runPage('engines.js', DATA);
 const html = () => r.html();
@@ -526,15 +528,18 @@ const sec = () => {
     ok('‼️ …and a slot that has taught the fleet nothing draws no badge at all',
         !/class="acbad ok">↑/.test(card(base, 'spare')));
 
-    // ‼️ AN ENGINE WITH A SHORT CONTRACT IS NOT AN ENGINE WITH NONE. Codex carries
-    // two clauses where Claude carries eight, and `complete` on it means those two
-    // — which is why the panel counts them out loud rather than leaving the reader
-    // to assume it was asked the same eight questions (the X-269 `settingsGuarantee`
-    // lesson: an empty gap list is two different answers).
+    // ‼️ AN ENGINE WITH A SHORTER CONTRACT IS NOT AN ENGINE WITH NONE. `complete`
+    // on Codex means the clauses Codex has, which is why the panel counts them out
+    // loud rather than leaving the reader to assume it was asked Claude's questions
+    // (the X-269 `settingsGuarantee` lesson: an empty gap list is two different
+    // answers). ‼️ The number is ASKED, like the fixture's own rows — X-279 took
+    // codex from one fleet clause to five and a typed number would have made that
+    // a test edit rather than a measurement.
+    const codexFleet = slotClauses(adapterFor('codex')).filter(c => c.kind !== 'own').length;
     const codex = card(ih, 'codex-work');
     ok('X-284: a short contract still draws a verdict', codex.includes('>complete<'));
     ok('‼️ …and says how many things it was actually asked about',
-        codex.includes('all 1 things the fleet puts in this slot are here'));
+        codex.includes('all ' + codexFleet + ' things the fleet puts in this slot are here'));
     ok('…and never claims a clause that engine has never had',
         !codex.includes('CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT') && !codex.includes('hooks current'));
 
