@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.480.0 - the reading you chose is where the Console opens (K-38) (2026-09-13)
+
+- **"Show everything" could never be kept.** The Console's line filter is a
+  multi-select whose `null` means *everything*, and the page rewrote a stored
+  `null` back to Dialog on every load — a migration line that could not tell
+  "nobody has chosen" from "the reader chose everything". So the one reading a
+  person asks for most often was silently taken back, with nothing saying so
+  (Principle 1). A mark on the stored state (`kindsSeeded`) settles the question
+  once, on the load that reads it; from then on `null` is an answer and survives.
+- **And the filter now survives the panel being closed at all.** `show` belongs
+  to the CARD (K-21) and a card's answer lives in the webview's own state, which
+  is emptied when the panel closes or the window reloads — and whose session ids
+  do not survive either, so keying by them could not have helped. The last
+  reading chosen is kept by the host instead (`agentfarm.consolePrefs` in
+  `globalState`, beside `lastLaunch` and the slash catalog, for the same reason:
+  a second reader of that store is a second answer). A page with **no state of
+  its own** — a panel opening cold — starts its cards there; a page that has
+  state keeps its own, so nothing on screen is ever rewritten behind the reader
+  and K-21 is untouched.
+- The picker says so on itself: *the last one you set is where a freshly opened
+  Console starts*.
+
 ## 3.479.0 - a Codex wire is trusted where it lands (X-295) (2026-09-13)
 
 - **Not one Codex event had reached the Live Timeline — from an account or from

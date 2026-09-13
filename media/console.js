@@ -103,6 +103,16 @@
         /** sessionId → that card's own `show`, once it has been set (K-21) */
         kindsBy: {},
         /**
+         * ‼️ K-38 — HAS THE PANEL DEFAULT BEEN SETTLED YET?
+         *
+         * `null` here means two different things — "nobody has chosen" and "the
+         * reader chose everything" — and without a mark for which one it is,
+         * the line below cannot keep the second without also keeping the first.
+         * Set once, on the load that settles it; from then on a stored `null` is
+         * an answer and survives.
+         */
+        kindsSeeded: false,
+        /**
          * How tall the writing box was dragged, in whole pixels.
          *
          * ‼️ K-9 — A NUMBER THE PAGE OWNS, NOT AN INLINE STYLE IT HOPES SURVIVES.
@@ -137,12 +147,31 @@
     // parseInt reads both that and the number, so nothing below has to care.
     st.boxH = parseInt(st.boxH, 10) || 0;
     if (!st.kindsBy || typeof st.kindsBy !== 'object') { st.kindsBy = {}; }
-    if (st.kinds === null || !Array.isArray(st.kinds)) { st.kinds = ['agent', 'user']; }
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         all.afConsole = st;
         vscode.setState(all);
     };
+    // ‼️ K-38 — WHERE A CARD NOBODY HAS FILTERED STARTS.
+    //
+    // A page with no state of its own is a panel opening cold: closed and
+    // reopened, or a reloaded window. It takes the host's memory of the last
+    // `show` the reader chose (absent key = never chosen, so the shipped
+    // default stands). A page that HAS state keeps its own answer, and the
+    // migration below runs on it exactly once — after that a stored `null`
+    // means "everything" and is left alone.
+    if (!saved.afConsole && DATA.prefs
+        && Object.prototype.hasOwnProperty.call(DATA.prefs, 'kinds')) {
+        st.kinds = Array.isArray(DATA.prefs.kinds) ? DATA.prefs.kinds : null;
+        st.kindsSeeded = true;
+    } else if (!st.kindsSeeded) {
+        if (st.kinds === null || !Array.isArray(st.kinds)) { st.kinds = ['agent', 'user']; }
+        st.kindsSeeded = true;
+    }
+    // Settled on THIS load and written straight back: a reader who opens the
+    // panel and touches nothing would otherwise be asked the same question
+    // again next time, and the once-only migration would not be once.
+    save();
 
     // The page is an app, not a document: it fills the window, the conversation
     // is the only thing that scrolls, and the composer stays where you left it.
@@ -4196,7 +4225,8 @@
                         title: 'Just the conversation — you and the agent. Tool calls, results, system lines and questions are hidden.'
                     }],
                     title: 'Which kinds of line the conversation shows. '
-                        + 'This belongs to THIS session card — the next card keeps its own.'
+                        + 'This belongs to THIS session card — the next card keeps its own. '
+                        + 'The last one you set is where a freshly opened Console starts.'
                 })}
                 <span class="grow"></span>
                 <span id="c-live"></span>
@@ -4439,10 +4469,17 @@
             window.AFFilter.wireMulti({
                 id: 'c-kinds',
                 onChange: picked => {
-                    // K-21 — written under the card, never over the default.
-                    if (DATA.selected) { st.kindsBy[DATA.selected] = picked; }
-                    else { st.kinds = picked; }
+                    // K-21 — written under the card, never over the default:
+                    // the picker is only drawn for a selected card, so there is
+                    // always one to write under.
+                    st.kindsBy[DATA.selected] = picked;
                     save();
+                    // ‼️ K-38 — …and the host keeps the LAST one, which is what
+                    // a panel opening cold starts its cards from. Nothing on
+                    // screen changes: this is for the page that does not exist
+                    // yet, because the webview's own state does not survive the
+                    // panel being closed.
+                    vscode.postMessage({ type: 'rememberKinds', kinds: picked });
                     paint();
                     // a filter change is the reader's own move: land at the tail,
                     // and what the filter let through is not "new lines"

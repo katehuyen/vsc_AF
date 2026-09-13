@@ -38,8 +38,10 @@ const session = (id, messages) => ({
     projectId: '', projectName: '', projectIcon: '', messages
 });
 
-const shell = (selected, ids) => ({
+const shell = (selected, ids, prefs) => ({
     generatedAt: NOW, selected, presetAgent: '',
+    // K-38 — the host's memory of the last `show`; absent key = never chosen.
+    prefs: prefs || {},
     sessions: ids.map(id => session(id, messages(id))),
     agents: [{ id: 'a-dev', name: 'developer', dir: 'D:\\ajan' }],
     models: [{ id: '', label: 'Default' }], efforts: [{ id: '', label: 'Default' }],
@@ -112,6 +114,63 @@ ok('…and the card that never left kept its own', (() => {
     go('cs2', ['cs1', 'cs2']);
     return rows().join() === 'cs2-t';
 })());
+
+// ------------------------------------------------------- K-38: opening cold
+// The card's answer lives in the webview's state, and that state does not
+// survive the panel closing or the window reloading — nor do the session ids it
+// is keyed by. So the panel takes the reading the reader last chose from the
+// HOST, on a page that has no state of its own, and never over a card already
+// on screen.
+const posted = (type) => r.posted.filter(m => m && m.type === type);
+ok('‼️ K-38 — moving the picker tells the host what was chosen',
+    posted('rememberKinds').length > 0);
+ok('…carrying the choice itself, "everything" included', (() => {
+    const all = posted('rememberKinds');
+    return all.some(m => m.kinds === null) && all.some(m => Array.isArray(m.kinds));
+})());
+ok('…and the last one is the reading a card was left on', (() => {
+    const all = posted('rememberKinds');
+    return String(all[all.length - 1].kinds) === 'tool';
+})());
+
+/** A panel opening cold: a new page, whatever the host remembers, no state. */
+const cold = (prefs, state) =>
+    runPage('console.js', shell('cs1', ['cs1', 'cs2'], prefs), undefined, state);
+const rowsOf = (p) => {
+    const inner = p.sandbox.document.getElementById('talkinner');
+    return ((inner.innerHTML || '').match(/data-mid="([^"]*)"/g) || []).map(x => x.slice(10, -1));
+};
+
+const c0 = cold();
+ok('a cold panel the host remembers nothing for keeps the shipped default',
+    rowsOf(c0).join() === 'cs1-u,cs1-a' && c0.ms.label('c-kinds') === 'show: 2/7');
+
+const c1 = cold({ kinds: null });
+ok('‼️ K-38 — "everything" survives the panel being closed',
+    rowsOf(c1).join() === 'cs1-u,cs1-t,cs1-r,cs1-a'
+    && c1.ms.label('c-kinds') === 'show: everything');
+
+const c2 = cold({ kinds: ['tool'] });
+ok('…and so does any other reading', rowsOf(c2).join() === 'cs1-t');
+ok('…on every card, because none of them has been filtered yet', (() => {
+    c2.send({ type: 'data', data: shell('cs2', ['cs1', 'cs2'], { kinds: ['tool'] }) });
+    return rowsOf(c2).join() === 'cs2-t';
+})());
+
+// ‼️ The state a page DOES have is its own answer: the seed is for the cold
+// open only, so a panel that remembers its cards is not rewritten behind them.
+const warm = cold({ kinds: ['tool'] },
+    { afConsole: { kinds: null, kindsSeeded: true, kindsBy: {} } });
+ok('‼️ K-38 — a page with its own state is not re-seeded by the host',
+    rowsOf(warm).join() === 'cs1-u,cs1-t,cs1-r,cs1-a');
+
+// An install from before the mark stored `null` meaning "nobody has chosen".
+// It is read that way ONCE, and the page settles the question from then on.
+const legacy = cold(undefined, { afConsole: { kinds: null, kindsBy: {} } });
+ok('‼️ K-38 — the migration runs once, on a record written before the mark',
+    rowsOf(legacy).join() === 'cs1-u,cs1-a');
+ok('…and the page has settled it, so the next load leaves `null` alone',
+    legacy.state().afConsole.kindsSeeded === true);
 
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

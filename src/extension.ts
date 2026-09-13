@@ -14638,6 +14638,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         at: s.lastTs || Date.now()
     });
 
+    /**
+     * ‼️ K-38 — THE READING A PANEL OPENS ON, WHICH THE PANEL CANNOT KEEP.
+     *
+     * `show` belongs to the card (K-21) and the card's answer lives in the
+     * webview's own state — which is emptied the moment the panel is closed or
+     * the window is reloaded, and whose session ids do not survive either. So
+     * the filter a person had chosen came back as the shipped default every
+     * time, with nothing saying it had been dropped.
+     *
+     * Kept here for the reason `lastLaunch` and the slash catalog are: the panel
+     * does not own where its memory lives, and a second reader of `globalState`
+     * is a second answer. `undefined` means nobody has ever chosen; `kinds: null`
+     * is the chosen value "everything", which is why the two cannot be the same
+     * value — conflating them is the whole item.
+     */
+    const CONSOLE_PREFS_KEY = 'agentfarm.consolePrefs';
+    const consolePrefs = (): { kinds?: string[] | null } =>
+        context.globalState.get<{ kinds?: string[] | null }>(CONSOLE_PREFS_KEY, {});
+    const lastKinds = (): { kinds: string[] | null } | undefined => {
+        const p = consolePrefs();
+        if (!Object.prototype.hasOwnProperty.call(p, 'kinds')) { return undefined; }
+        return { kinds: Array.isArray(p.kinds) ? p.kinds.map(String) : null };
+    };
+    const rememberKinds = (kinds: string[] | null): void => {
+        void context.globalState.update(CONSOLE_PREFS_KEY, { ...consolePrefs(), kinds });
+    };
+
     // Toolbox ops (constitution §19.C): the extension inventory, one item in
     // detail, and the live MCP tools/list probe — same code paths as the page.
     registerToolboxOps(bridge, {
@@ -24028,6 +24055,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         recallSlash: (engine: string, agentId?: string) => recallSlash(engine, agentId),
         learnSlash: (engine: string, agentId: string | undefined, r: SlashReport) =>
             learnSlash(engine, agentId, r),
+        // ‼️ K-38 — the same kind of memory again: what the reader last set
+        // `show` to, so a panel opening cold starts there instead of on the
+        // shipped default. Read on the way out, written when the picker moves.
+        lastKinds: () => lastKinds(),
+        rememberKinds: (kinds: string[] | null) => rememberKinds(kinds),
         liveOwners: () => readCliSessions(claudeDir()),
         /**
          * ‼️ X-105 — WHAT A CARD IS ACTUALLY TALKING TO, in the engine's own

@@ -345,6 +345,21 @@ export interface ConsoleDeps {
     recallSlash?(engine: string, agentId?: string): SlashReport | undefined;
     learnSlash?(engine: string, agentId: string | undefined, report: SlashReport): void;
     /**
+     * ‼️ K-38 — WHAT `show` WAS LAST SET TO, for a panel that is opening cold.
+     *
+     * The card's own filter (K-21) lives in the webview's state, and that state
+     * does not survive the panel being closed or the window reloading — nor do
+     * the session ids it is keyed by. So the reading a person chose came back as
+     * the shipped default every time. This is the seed a FRESH page starts its
+     * cards from; it never touches a card that is already on screen.
+     *
+     * `undefined` = never chosen. `{ kinds: null }` = chosen, and the choice was
+     * everything — the distinction the item is about.
+     */
+    lastKinds?(): { kinds: string[] | null } | undefined;
+    /** …and the write-back, made when the picker moves. */
+    rememberKinds?(kinds: string[] | null): void;
+    /**
      * Which sessions a live process already owns (the CLI's own registry).
      *
      * This is what stops the Console from telling a lie: `claude --resume <id>`
@@ -883,11 +898,16 @@ export class ConsolePanel {
         const chipProject = this.selected
             ? (hosted.find(s => s.id === this.selected)?.projectId ?? '')
             : this.composerProject;
+        const kinds = this.deps.lastKinds?.();
         return {
             generatedAt: Date.now(),
             selected: this.selected ?? '',
             presetAgent: preset ?? '',
             composerSeed: this.composerSeed,
+            // ‼️ K-38 — what a page with no state of its own starts from. The
+            // key is ABSENT when nothing was ever chosen, because `null` is
+            // itself a choice here ("everything").
+            prefs: kinds ? { kinds: kinds.kinds } : {},
             // the conversation of the selected session in full; the others as headers
             sessions: hosted.map(s => ({
                 id: s.id, agentId: s.agentId, agentName: s.agentName,
@@ -2011,6 +2031,19 @@ export class ConsolePanel {
                 this.deps.forgetLastWindow(str('sessionId'));
                 this.refresh();
                 break;
+            /**
+             * ‼️ K-38 — the picker moved, so the NEXT cold page knows where.
+             *
+             * No refresh: nothing on screen changes, and a repaint here would
+             * push the host's data back over the card the reader is filtering.
+             * Anything that is not an array of strings is "everything" (null) —
+             * the one other value the filter has.
+             */
+            case 'rememberKinds': {
+                const k = msg.kinds;
+                this.deps.rememberKinds?.(Array.isArray(k) ? k.map(String) : null);
+                break;
+            }
             /**
              * ‼️ K-35 — THE COLOUR IS VALIDATED BY THE STORE, NOT BY THE PAGE.
              *

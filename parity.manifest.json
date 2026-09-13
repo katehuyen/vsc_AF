@@ -1108,6 +1108,16 @@
       }
     },
     {
+      "capability": "consolePanel.ts#rememberKinds",
+      "ui": [
+        "page:consolePanel.ts#rememberKinds"
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
       "capability": "consolePanel.ts#resume",
       "ui": [
         "page:consolePanel.ts#resume"

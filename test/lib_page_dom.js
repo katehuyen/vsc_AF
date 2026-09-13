@@ -410,6 +410,9 @@ function runPage(scriptFile, DATA, extraWindow, initialState) {
          *  any page test rather than only from the two that grew their own. */
         ms,
         last: () => posted[posted.length - 1],
+        /** What the page has written to `vscode.setState` — the other half of
+         *  `initialState`: what a variant hands over, this reads back. */
+        state: () => state,
         /** Fire a host message at the page — including the right-click relay. */
         send: (data) => onMessage.forEach(fn => fn({ data })),
         /** Every row's published identity, decoded out of the markup. */
