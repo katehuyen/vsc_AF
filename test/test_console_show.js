@@ -67,23 +67,23 @@ const rows = () => {
 const note = () => (r.sandbox.document.getElementById('c-hidden').innerHTML || '');
 
 // ---------------------------------------------------------------- the default
-ok('a card nobody has filtered shows everything', rows().join() === 'cs1-u,cs1-t,cs1-r,cs1-a');
-ok('…and the picker says so', r.ms.label('c-kinds') === 'show: everything');
-ok('…with nothing hidden to report', note() === '');
+ok('a card nobody has filtered shows dialog', rows().join() === 'cs1-u,cs1-a');
+ok('…and the picker says so', r.ms.label('c-kinds') === 'show: 2/7');
+ok('…with hidden lines reported', /2 line\(s\) hidden/.test(note()));
 
 // ---------------------------------------------------------------- set one card
-r.ms.preset('c-kinds', 'dialog');
-ok('‼️ K-21 — Dialog filters the card it was pressed on',
-    rows().join() === 'cs1-u,cs1-a');
-ok('…and the card says what it is holding back', /2 line\(s\) hidden/.test(note()));
+r.ms.selectAll('c-kinds');
+ok('‼️ K-21 — Select all filters the card it was pressed on',
+    rows().join() === 'cs1-u,cs1-t,cs1-r,cs1-a');
+ok('…and the card has nothing hidden', note() === '');
 
 // ---------------------------------------------------------------- the next card
 go('cs2');
 ok('‼️ K-21 — the OTHER card is untouched by it',
-    rows().join() === 'cs2-u,cs2-t,cs2-r,cs2-a');
+    rows().join() === 'cs2-u,cs2-a');
 ok('…and its picker describes itself, not the one you came from',
-    r.ms.label('c-kinds') === 'show: everything');
-ok('…and it has nothing hidden', note() === '');
+    r.ms.label('c-kinds') === 'show: 2/7');
+ok('…and it reports hidden lines', /2 line\(s\) hidden/.test(note()));
 
 // A second, different reading on the second card.
 r.ms.clickName('c-kinds', 'tool');
@@ -92,8 +92,8 @@ ok('the second card takes its own filter', rows().join() === 'cs2-t');
 // ---------------------------------------------------------------- and back
 go('cs1');
 ok('‼️ K-21 — coming back finds the card exactly as it was left',
-    rows().join() === 'cs1-u,cs1-a');
-ok('…including its picker', r.ms.label('c-kinds') === 'show: 2/7');
+    rows().join() === 'cs1-u,cs1-t,cs1-r,cs1-a');
+ok('…including its picker', r.ms.label('c-kinds') === 'show: everything');
 
 go('cs2');
 ok('…and so does the other one', rows().join() === 'cs2-t'
@@ -106,8 +106,8 @@ go('cs2', ['cs2']);
 ok('the panel survives a card being removed', rows().join() === 'cs2-t');
 go('cs1', ['cs1', 'cs2']);
 ok('‼️ K-21 — a card that came back is a new card, on the default again',
-    rows().join() === 'cs1-u,cs1-t,cs1-r,cs1-a'
-    && r.ms.label('c-kinds') === 'show: everything');
+    rows().join() === 'cs1-u,cs1-a'
+    && r.ms.label('c-kinds') === 'show: 2/7');
 ok('…and the card that never left kept its own', (() => {
     go('cs2', ['cs1', 'cs2']);
     return rows().join() === 'cs2-t';

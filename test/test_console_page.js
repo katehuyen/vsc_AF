@@ -430,10 +430,10 @@ const html = allHtml;
     const savedKinds = () => (state.afConsole && state.afConsole.kindsBy || {}).cs1;
     talk().scrollTop = talk().scrollHeight;
     push(data(CONVO.slice()));
-    ok('everything is shown by default',
+    ok('dialog is shown by default',
         html().includes('read the report') && html().includes('on it')
-        && html().includes('file body') && html().includes('permission denied'));
-    ok('…and the filter says so', afms.label('c-kinds').indexOf('everything') >= 0);
+        && !html().includes('file body') && !html().includes('permission denied'));
+    ok('…and the filter says so', afms.label('c-kinds').indexOf('2/7') >= 0);
 
     afms.open('c-kinds');
     afms.clear('c-kinds');

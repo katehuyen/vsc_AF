@@ -89,6 +89,7 @@
         attach: [],
         /**
          * Which kinds of line the conversation shows; null = everything.
+         * Default is Dialog (['agent', 'user']).
          *
          * ‼️ K-21 — THIS IS THE STARTING POINT, NOT THE SETTING. What `show` is
          * set to belongs to the CARD, not to the panel: two sessions side by
@@ -98,7 +99,7 @@
          * left on. `kindsBy` is each session's own answer; this is what a
          * session that has never been given one starts from.
          */
-        kinds: null,
+        kinds: ['agent', 'user'],
         /** sessionId → that card's own `show`, once it has been set (K-21) */
         kindsBy: {},
         /**
@@ -136,6 +137,7 @@
     // parseInt reads both that and the number, so nothing below has to care.
     st.boxH = parseInt(st.boxH, 10) || 0;
     if (!st.kindsBy || typeof st.kindsBy !== 'object') { st.kindsBy = {}; }
+    if (st.kinds === null || !Array.isArray(st.kinds)) { st.kinds = ['agent', 'user']; }
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         all.afConsole = st;
