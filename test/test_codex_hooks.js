@@ -175,18 +175,118 @@ const HOOKS_PATH = 'D:\\zone\\agent\\_run_folder_move\\codex\\hooks.json';
         sc.completeSlot({ ...ctx, hooksPort: 9999 }, false);
         ok('…and hooks.json is the user\'s: not rewritten to the live port', fs.readFileSync(path.join(slot, 'hooks.json'), 'utf8') === JSON.stringify(HOOKS, null, 2));
         // the fleet's own directory signed by the same read/repair
-        const fctx = { fs, home, dir: live, realDir: fs.realpathSync.native(live), hooksPort: 8377 };
-        ok('fleet: unsigned before', !codex.liveWire.read(fctx).ok);
-        ok('fleet: repair writes', codex.liveWire.repair(fctx, false).wrote === true);
-        ok('fleet: signed after, under the resolved path', codex.liveWire.read(fctx).ok
+        const dctx = { fs, home, dir: live, realDir: fs.realpathSync.native(live), hooksPort: 8377 };
+        ok('directory: unsigned before', !codex.liveWire.read(dctx).ok);
+        ok('directory: repair writes', codex.liveWire.repair(dctx, false).wrote === true);
+        ok('directory: signed after, under the resolved path', codex.liveWire.read(dctx).ok
             && ch.codexTrustLedger(fs.readFileSync(path.join(live, 'config.toml'), 'utf8')).get(path.join(fs.realpathSync.native(live), 'hooks.json') + ':stop:0:0') === MEASURED.stop);
-        ok('fleet: the model line survived', fs.readFileSync(path.join(live, 'config.toml'), 'utf8').startsWith('[model]\nname = "m"\n'));
-        ok('fleet: repair is idempotent', codex.liveWire.repair(fctx, false).wrote === false);
+        ok('directory: the model line survived', fs.readFileSync(path.join(live, 'config.toml'), 'utf8').startsWith('[model]\nname = "m"\n'));
+        ok('directory: repair is idempotent', codex.liveWire.repair(dctx, false).wrote === false);
         // no hooks.json anywhere: nothing to trust, not a gap
         const bare = path.join(tmp, 'home2');
         fs.mkdirSync(path.join(bare, '.codex'), { recursive: true });
         const bctx = { fs, home: bare, dir: path.join(bare, '.codex'), realDir: path.join(bare, '.codex'), hooksPort: 8377 };
         ok('no hooks.json on either side reads ok and says so', codex.liveWire.read(bctx).ok && /no live wire/.test(codex.liveWire.read(bctx).detail));
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+    }
+}
+
+// ---------- 6. X-298 — the fleet writes the file, not only its trust ----------
+{
+    const CUR = ch.codexHookCommand(8377, true);
+    ok('the Windows spelling names curl.exe and forces the exit code',
+        /^curl\.exe /.test(CUR) && / ; exit 0$/.test(CUR) && CUR.includes(':8377/event?src=agentfarm-live'));
+    ok('the posix spelling is the other one', /^curl /.test(ch.codexHookCommand(8377, false))
+        && ch.codexHookCommand(8377, false).includes('|| cd .'));
+    ok('‼️ X-265: the command the fleet writes carries the two-number timeout, not -m 3',
+        CUR.includes('--connect-timeout 2 -m 15') && !CUR.includes('-m 3 '));
+
+    const fresh = ch.upsertCodexHooks('', CUR);
+    const parsed = JSON.parse(fresh);
+    ok('an empty file becomes every fleet event', ch.CODEX_FLEET_EVENTS.every(e => Array.isArray(parsed.hooks[e])));
+    ok('…and reads back as current', ch.codexHooksCurrent(fresh, CUR));
+    ok('only the two tool events carry a matcher',
+        parsed.hooks.PreToolUse[0].matcher === '*' && parsed.hooks.PostToolUse[0].matcher === '*'
+        && parsed.hooks.Stop[0].matcher === undefined && parsed.hooks.SessionStart[0].matcher === undefined);
+    ok('a different port is not current', !ch.codexHooksCurrent(fresh, ch.codexHookCommand(9000, true)));
+    ok('a file missing one event is not current',
+        !ch.codexHooksCurrent(JSON.stringify({ hooks: Object.fromEntries(
+            Object.entries(parsed.hooks).filter(([k]) => k !== 'Stop')) }), CUR));
+
+    // ‼️ the user's own hooks are never read and never moved
+    const mine = { type: 'command', command: 'echo not-ours' };
+    const withForeign = JSON.stringify({
+        hooks: { Stop: [{ hooks: [mine] }], PreCompact: [{ hooks: [mine] }] }, other: { kept: true }
+    });
+    const merged = JSON.parse(ch.upsertCodexHooks(withForeign, CUR));
+    ok('a foreign group keeps its place at the head of the list',
+        merged.hooks.Stop[0].hooks[0].command === 'echo not-ours' && merged.hooks.Stop.length === 2);
+    ok('…and ours is appended beside it', merged.hooks.Stop[1].hooks[0].command === CUR);
+    ok('a key that is not hooks survives', merged.other.kept === true);
+
+    // the user's hand-written wire is RE-POINTED, never duplicated
+    const handWritten = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: 'command',
+        command: 'curl.exe -s -m 3 -X POST "http://127.0.0.1:8377/event?src=agentfarm-live" -H "h" --data-binary \'@-\' ; exit 0' }] }] } });
+    const repointed = JSON.parse(ch.upsertCodexHooks(handWritten, ch.codexHookCommand(9000, true)));
+    ok('‼️ a stale hook of ours is replaced in place, not doubled', repointed.hooks.Stop.length === 1
+        && repointed.hooks.Stop[0].hooks[0].command === ch.codexHookCommand(9000, true));
+
+    ok('text that will not parse is handed back byte for byte and refused',
+        ch.upsertCodexHooks('{not json', CUR) === '{not json' && !ch.codexHooksReadable('{not json'));
+    ok('an empty file is readable', ch.codexHooksReadable(''));
+}
+
+// ---------- 7. X-298 — the fleet directory writes its own wire ----------
+{
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'af-x298-'));
+    try {
+        const codex = adapterFor('codex');
+        const home = path.join(tmp, 'home');
+        const live = path.join(home, '.codex');
+        fs.mkdirSync(live, { recursive: true });
+        const real = fs.realpathSync.native(live);
+        const ctxAt = (port, fleet) => ({ fs, home, dir: live, realDir: real, hooksPort: port, fleet });
+        const hooksFile = path.join(live, 'hooks.json');
+
+        const f1 = ctxAt(8377, true);
+        const before = codex.liveWire.read(f1);
+        ok('fleet: a directory with no hooks.json is a GAP, not "no wire on this machine"',
+            !before.ok && /has not written Codex a live wire/.test(before.detail));
+        ok('fleet: dry run writes nothing but says it would',
+            codex.liveWire.repair(f1, true).wrote === true && !fs.existsSync(hooksFile));
+        ok('fleet: repair writes the file', codex.liveWire.repair(f1, false).wrote === true && fs.existsSync(hooksFile));
+        ok('fleet: …and the wire it wrote is read back as live', codex.liveWire.read(f1).ok);
+        ok('fleet: every fleet event is trusted under the resolved path', (() => {
+            const ledger = ch.codexTrustLedger(fs.readFileSync(path.join(live, 'config.toml'), 'utf8'));
+            const entries = ch.codexHookEntries(fs.readFileSync(hooksFile, 'utf8'), path.join(real, 'hooks.json'));
+            return entries.length === ch.CODEX_FLEET_EVENTS.length && entries.every(e => ledger.get(e.key) === e.hash);
+        })());
+        ok('fleet: repair is idempotent', codex.liveWire.repair(f1, false).wrote === false);
+
+        // ‼️ the port moving is now repaired, not merely reported
+        const f2 = ctxAt(9000, true);
+        const moved = codex.liveWire.read(f2);
+        ok('‼️ X-298: a moved live port fails the fleet read', !moved.ok && /does not post every fleet event to :9000/.test(moved.detail));
+        ok('…and the repair re-points the file and re-signs it',
+            codex.liveWire.repair(f2, false).wrote === true && codex.liveWire.read(f2).ok);
+        ok('…without leaving a second group behind',
+            JSON.parse(fs.readFileSync(hooksFile, 'utf8')).hooks.Stop.length === 1);
+
+        // a SLOT is never written here — it holds the fleet's bytes by carry
+        const slot = path.join(tmp, 'slot');
+        fs.mkdirSync(slot, { recursive: true });
+        const sctx = { fs, home, dir: slot, realDir: fs.realpathSync.native(slot), hooksPort: 9000 };
+        codex.liveWire.repair(sctx, false);
+        ok('‼️ a slot never grows a hooks.json of its own', !fs.existsSync(path.join(slot, 'hooks.json')));
+
+        // an unreadable file stops the writer rather than clobbering it
+        fs.writeFileSync(hooksFile, '{ broken', 'utf8');
+        const broke = codex.liveWire.read(f2);
+        ok('fleet: a hooks.json that will not parse is named, not overwritten',
+            !broke.ok && /not valid JSON/.test(broke.detail)
+            && codex.liveWire.repair(f2, false).error !== undefined
+            && fs.readFileSync(hooksFile, 'utf8') === '{ broken');
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
     }

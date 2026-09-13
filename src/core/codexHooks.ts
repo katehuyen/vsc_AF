@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { HOOK_MARKER, hookCommand } from './hooksInstaller';
 
 /**
  * ‼️ X-295 — CODEX'S HOOK TRUST, REPRODUCED SO A DIRECTORY AGENT FARM MADE CAN
@@ -46,6 +47,101 @@ export interface CodexHookHandler {
     async?: boolean;
     statusMessage?: string;
     additionalContextLimit?: number;
+}
+
+/**
+ * ‼️ X-298 — THE FLEET WRITES CODEX'S `hooks.json`, the half X-295 left to the
+ * user's own hand.
+ *
+ * X-295 taught this side to SIGN a hook file and read it back; the file itself
+ * stayed whatever somebody typed once. Measured 2026-09-13: it was typed on
+ * 2026-09-06 and still carried `-m 3`, the timeout X-265 retired for cutting
+ * off the only listener worth waiting for — so a machine with no such file has
+ * no Codex wire at all, and `agentFarm.livePort` moving repaired Claude's side
+ * and merely REPORTED Codex's.
+ *
+ * Ours are named the way Claude's are, by the marker in the URL, so a hook the
+ * user wired themselves is never read, never rewritten and never removed.
+ */
+
+/** the events the fleet wires on Codex, in the vocabulary of `CODEX_EVENT_LABELS` */
+export const CODEX_FLEET_EVENTS = [
+    'PreToolUse', 'PostToolUse', 'PreCompact',
+    'SessionStart', 'UserPromptSubmit', 'SubagentStop', 'Stop'
+];
+/** the two that carry a matcher; Codex drops one written anywhere else */
+const MATCHER_EVENTS = new Set(['PreToolUse', 'PostToolUse']);
+
+/**
+ * ‼️ POWERSHELL IS THE SHELL CODEX RUNS THESE IN ON WINDOWS, and the posix
+ * spelling does not merely misbehave there — `||` is a parse error, so the
+ * hook never runs (X-208).
+ */
+export function codexHookCommand(port: number, windows = process.platform === 'win32'): string {
+    return hookCommand(port, windows ? 'powershell' : 'posix');
+}
+
+interface CodexHookGroup { matcher?: string; hooks?: CodexHookHandler[]; [k: string]: unknown }
+
+const isOurGroup = (g: CodexHookGroup): boolean =>
+    (g.hooks ?? []).some(h => typeof h.command === 'string' && h.command.includes(HOOK_MARKER));
+
+/** the parsed `hooks` map, or undefined when the text is not JSON we may touch */
+const hooksMapOf = (text: string): Record<string, CodexHookGroup[]> | undefined => {
+    if (!text.trim()) { return {}; }
+    let root: unknown;
+    try { root = JSON.parse(text); } catch { return undefined; }
+    if (!root || typeof root !== 'object') { return undefined; }
+    const hooks = (root as Record<string, unknown>).hooks;
+    if (hooks === undefined) { return {}; }
+    if (!hooks || typeof hooks !== 'object' || Array.isArray(hooks)) { return undefined; }
+    return hooks as Record<string, CodexHookGroup[]>;
+};
+
+/** true when the text is there and is not something we would refuse to rewrite */
+export function codexHooksReadable(text: string): boolean {
+    return hooksMapOf(text) !== undefined;
+}
+
+/** does this file already wire every fleet event with exactly this command */
+export function codexHooksCurrent(text: string, command: string): boolean {
+    const hooks = hooksMapOf(text);
+    if (!hooks) { return false; }
+    for (const event of CODEX_FLEET_EVENTS) {
+        const list = hooks[event];
+        if (!Array.isArray(list)) { return false; }
+        const ours = list.find(isOurGroup);
+        if (!ours || !(ours.hooks ?? []).some(h => h.command === command)) { return false; }
+    }
+    return true;
+}
+
+/**
+ * The same file with every fleet event posting to `command`. A group of ours is
+ * re-pointed in place, a missing one is appended, and a group that is not ours
+ * is not read — so the user's own hooks keep their order and their bytes.
+ * Text that will not parse is handed back untouched: never clobber.
+ */
+export function upsertCodexHooks(text: string, command: string): string {
+    const hooks = hooksMapOf(text);
+    if (!hooks) { return text; }
+    const root = text.trim() ? JSON.parse(text) as Record<string, unknown> : {};
+    root.hooks = hooks;
+    for (const event of CODEX_FLEET_EVENTS) {
+        const list = Array.isArray(hooks[event]) ? hooks[event] : [];
+        hooks[event] = list;
+        const ours = list.find(isOurGroup);
+        if (ours) {
+            ours.hooks = (ours.hooks ?? []).map(h =>
+                typeof h.command === 'string' && h.command.includes(HOOK_MARKER) ? { ...h, command } : h);
+            if (MATCHER_EVENTS.has(event)) { ours.matcher = ours.matcher ?? '*'; }
+        } else {
+            list.push(MATCHER_EVENTS.has(event)
+                ? { matcher: '*', hooks: [{ type: 'command', command }] }
+                : { hooks: [{ type: 'command', command }] });
+        }
+    }
+    return JSON.stringify(root, null, 2) + '\n';
 }
 
 export interface CodexHookEntry {

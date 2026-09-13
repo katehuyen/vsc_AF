@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.483.0 - the fleet writes Codex's hook file, not only its trust (X-298) (2026-09-13)
+
+- **X-295 taught this side to SIGN a Codex hook file and read it back; the file
+  itself was still whatever somebody typed once.** On this machine that was
+  2026-09-06, and it still carried `-m 3` — the timeout X-265 retired for cutting
+  off the one listener worth waiting for. A machine with no such file had no
+  Codex wire at all, and moving `agentFarm.livePort` repaired Claude's side while
+  merely REPORTING Codex's.
+- **So the fleet's `~/.codex/hooks.json` is now written by the same wire that
+  signs it** — seven events, the current command, at every gate that already
+  completes a slot. A hook is ours by the marker in its URL, exactly as on
+  Claude: a hook the user wired themselves is never read, never re-pointed and
+  never removed, and the first file they wrote is kept beside it as
+  `.agentfarm-bak`.
+- **The file is written in ONE place.** A slot receives it by carry and grows no
+  `hooks.json` of its own, so the carry clause and the hooks clause cannot each
+  undo the other's answer; the fleet's wire is signed before the slots are
+  projected from it, so what a slot copies is already right.
+
 ## 3.482.0 - a declared hook that never arrives is not a wire (X-297) (2026-09-13)
 
 - **3.481.0 believed the hook file, and the Live Timeline lost every Codex

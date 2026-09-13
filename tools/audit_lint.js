@@ -87,14 +87,34 @@ function parse(text) {
 }
 
 // ------------------------------------------------------------------ linting
+/**
+ * Where a cited file really is. The vault files its answers by month once they
+ * are old enough, so a citation written the day it happened names a path the
+ * sweep later moves one folder down — and the note is still the evidence. Only
+ * the miss path looks, and only one level, so a name that is genuinely gone is
+ * still reported.
+ */
+function filedAt(p) {
+    if (fs.existsSync(p)) return p;
+    const dir = path.dirname(p), name = path.basename(p);
+    let kids;
+    try { kids = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
+    for (const k of kids) {
+        if (!k.isDirectory()) continue;
+        const q = path.join(dir, k.name, name);
+        if (fs.existsSync(q)) return q;
+    }
+    return null;
+}
+
 function citationOk(kanit) {
     // `path:line` inside the repo, or an absolute path, must resolve. Anything
     // else (a command, a PNG, a quoted output) is accepted as prose evidence
     // but must not be empty — rule 3 already covers that.
     const m = /^([^\s:][^\s]*?):(\d+)$/.exec(kanit);
     if (!m) return null;
-    const p = path.isAbsolute(m[1]) ? m[1] : path.join(REPO, m[1]);
-    if (!fs.existsSync(p)) return 'kanıt dosyası yok: ' + m[1];
+    const p = filedAt(path.isAbsolute(m[1]) ? m[1] : path.join(REPO, m[1]));
+    if (!p) return 'kanıt dosyası yok: ' + m[1];
     const n = fs.readFileSync(p, 'utf8').split('\n').length;
     if (Number(m[2]) > n) {
         return 'kanıt satırı dosyanın dışında: ' + kanit + ' (dosya ' + n + ' satır)';

@@ -1,5 +1,8 @@
 import * as path from 'path';
-import { codexHookEntries, codexHookPort, codexTrustLedger, codexTrustProjection } from './codexHooks';
+import {
+    codexHookCommand, codexHookEntries, codexHookPort, codexHooksCurrent, codexHooksReadable,
+    codexTrustLedger, codexTrustProjection, upsertCodexHooks
+} from './codexHooks';
 import { ALL_HOOK_EVENTS, hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
 
 /**
@@ -203,6 +206,13 @@ export type CarryProjection = (source: string, have: string | undefined, ctx: Pr
 export interface LiveWireContext extends ProjectionContext {
     /** the live-events port the wire must name */
     hooksPort: number;
+    /**
+     * ‼️ X-298 — is this the FLEET'S own directory (`~/<liveDir>`) rather than a
+     * slot projected from it. The wire file itself is written in one place only:
+     * a slot receives it by carry, so writing it on both sides would leave the
+     * carry clause and the hooks clause each undoing the other's answer.
+     */
+    fleet?: boolean;
 }
 
 export interface LiveWire {
@@ -696,14 +706,31 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         /**
          * The wire in a directory is live when `hooks.json` is there, every
          * command hook in it is trusted under this directory's path in
-         * `config.toml`, and the commands post to the live port. `hooks.json`
-         * itself is the user's and is not rewritten: a wire on the wrong port
-         * is reported, not repaired.
+         * `config.toml`, and the commands post to the live port.
+         *
+         * ‼️ X-298 — IN THE FLEET'S DIRECTORY THE FILE IS ALSO WRITTEN HERE, event
+         * by event and only over hooks carrying our own marker. A slot is not
+         * written: it holds the fleet's bytes by carry, and `signFleetWires` runs
+         * before the slots are projected, so what a slot copies is already right.
          */
         liveWire: {
             fleet: true,
             read: ctx => {
                 const hooksFile = path.join(ctx.dir, 'hooks.json');
+                if (ctx.fleet) {
+                    const have = ctx.fs.existsSync(hooksFile) ? ctx.fs.readFileSync(hooksFile, 'utf8') : '';
+                    if (!codexHooksReadable(have)) {
+                        return { ok: false, detail: 'hooks.json is not valid JSON — fix or remove it first' };
+                    }
+                    if (!codexHooksCurrent(have, codexHookCommand(ctx.hooksPort))) {
+                        return {
+                            ok: false,
+                            detail: have.trim()
+                                ? `hooks.json does not post every fleet event to :${ctx.hooksPort}`
+                                : 'no hooks.json — the fleet has not written Codex a live wire yet'
+                        };
+                    }
+                }
                 if (!ctx.fs.existsSync(hooksFile)) {
                     return ctx.fs.existsSync(path.join(ctx.home, liveSource('codex', 'hooks.json')))
                         ? { ok: false, detail: 'hooks.json missing — no live wire' }
@@ -720,17 +747,37 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
                 const ports = [...new Set(entries.map(e => codexHookPort(e.command)).filter((p): p is number => p !== undefined))];
                 const wrong = ports.filter(p => p !== ctx.hooksPort);
                 if (wrong.length) {
-                    return { ok: false, detail: `${entries.length} hooks trusted but the wire names :${wrong.join(', :')} — the live port is :${ctx.hooksPort} and hooks.json is the user's, not rewritten` };
+                    return { ok: false, detail: `${entries.length} hooks trusted but the wire names :${wrong.join(', :')} — the live port is :${ctx.hooksPort}; this directory carries the fleet's file, and that is where it is repaired` };
                 }
                 return { ok: true, detail: `${entries.length} hooks trusted for this directory, wire on :${ctx.hooksPort}` };
             },
             repair: (ctx, dryRun) => {
                 const cfg = path.join(ctx.dir, 'config.toml');
                 const hooksFile = path.join(ctx.dir, 'hooks.json');
+                let wroteWire = false;
+                if (ctx.fleet) {
+                    const had = ctx.fs.existsSync(hooksFile) ? ctx.fs.readFileSync(hooksFile, 'utf8') : '';
+                    if (!codexHooksReadable(had)) {
+                        return { wrote: false, error: 'hooks.json is not valid JSON — fix or remove it first' };
+                    }
+                    const wire = upsertCodexHooks(had, codexHookCommand(ctx.hooksPort));
+                    if (wire !== had) {
+                        if (!dryRun) {
+                            try {
+                                ctx.fs.mkdirSync(ctx.dir, { recursive: true });
+                                // the file was the user's before it was ours: keep the first one they wrote
+                                const bak = hooksFile + '.agentfarm-bak';
+                                if (had && !ctx.fs.existsSync(bak)) { ctx.fs.writeFileSync(bak, had, 'utf8'); }
+                                ctx.fs.writeFileSync(hooksFile, wire, 'utf8');
+                            } catch (e) { return { wrote: false, error: String((e as Error)?.message ?? e) }; }
+                        }
+                        wroteWire = true;
+                    }
+                }
                 const have = ctx.fs.existsSync(cfg) ? ctx.fs.readFileSync(cfg, 'utf8') : '';
                 const hooks = ctx.fs.existsSync(hooksFile) ? ctx.fs.readFileSync(hooksFile, 'utf8') : undefined;
                 const want = codexTrustProjection(have, have, hooks, path.join(ctx.realDir, 'hooks.json'));
-                if (want === have) { return { wrote: false }; }
+                if (want === have) { return { wrote: wroteWire }; }
                 if (!dryRun) {
                     try {
                         ctx.fs.mkdirSync(ctx.dir, { recursive: true });

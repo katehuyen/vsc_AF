@@ -18034,7 +18034,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const fleetWireCtx = (a: EngineAuthAdapter) => {
         const dir = path.join(os.homedir(), a.liveDir);
-        return { fs, home: os.homedir(), dir, realDir: realDirOf(fs, dir), hooksPort: cfg().get<number>('livePort', 8377) };
+        return {
+            fs, home: os.homedir(), dir, realDir: realDirOf(fs, dir), fleet: true,
+            hooksPort: cfg().get<number>('livePort', 8377)
+        };
     };
     const fleetWireReading = (a: EngineAuthAdapter) =>
         a.liveWire?.fleet && fs.existsSync(path.join(os.homedir(), a.liveDir)) ? a.liveWire.read(fleetWireCtx(a)) : null;
