@@ -221,3 +221,41 @@ export function describeOwner(rec: CliSessionRecord): string {
         : 'a terminal';
     return `${where} — pid ${rec.pid}${rec.status ? `, ${rec.status}` : ''}`;
 }
+
+/**
+ * ‼️ X-266 — THE REGISTRY IS PER CLAUDE HOME, AND A MACHINE HAS SEVERAL.
+ *
+ * `CLAUDE_CONFIG_DIR` moves the whole home, registry included: a session
+ * started on an account slot writes `<slot>/sessions/<pid>.json`, and
+ * `~/.claude/sessions/` stays empty. Measured 2026-09-13 with the twin on
+ * disk: both records sat under the slot, and every reader that asked the
+ * machine's own home answered "nobody owns this" — which is exactly the answer
+ * that lets a second copy be started. So the question is asked of every home
+ * at once. Directories are deduplicated by their resolved path, so a slot that
+ * IS the home (a junction, a repeated setting) is read once.
+ */
+export function readCliSessionsAcross(dirs: (string | undefined | null)[]): CliSessionRecord[] {
+    const seen = new Set<string>();
+    const out: CliSessionRecord[] = [];
+    for (const d of dirs) {
+        if (!d || !d.trim()) { continue; }
+        const key = path.resolve(d.trim()).replace(/[\\/]+$/, '').toLowerCase();
+        if (seen.has(key)) { continue; }
+        seen.add(key);
+        out.push(...readCliSessions(d.trim()));
+    }
+    return out;
+}
+
+/** Session ids that MORE THAN ONE live process claims — the X-266 state itself,
+ *  read straight off the registry rather than off a process list that races it. */
+export function twinsOf(records: CliSessionRecord[]): { sessionId: string; pids: number[] }[] {
+    const by = new Map<string, number[]>();
+    for (const r of records) {
+        const list = by.get(r.sessionId) ?? [];
+        if (!list.includes(r.pid)) { list.push(r.pid); }
+        by.set(r.sessionId, list);
+    }
+    return [...by.entries()].filter(([, pids]) => pids.length > 1)
+        .map(([sessionId, pids]) => ({ sessionId, pids: [...pids].sort((a, b) => a - b) }));
+}

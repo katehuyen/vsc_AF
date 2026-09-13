@@ -201,22 +201,45 @@ const live = (over = {}) => ({
 // and every revived card keeps its "not in the index yet" placeholder for ever.
 // That is the ORIGINAL bug back, with every test in this file still green.
 //
+// ‼️ X-266 MOVED THE WINDOW, NOT THE RULE. The revive now WAITS (a survivor is
+// killed and its registry record watched) — so the invariant is no longer "no
+// await between the scan and the call", it is "no await between READING the
+// index and SUBSCRIBING to it": the waiting is phase one, and phase two runs
+// from its first `index.byId` to `index.onDidUpdate` synchronously. If the scan
+// finishes during phase one, phase two reads a full index and subscribes for
+// nothing; if it finishes after, the subscription is already there. Either way
+// nobody is left holding a placeholder.
+//
 // So the ordering is pinned here, where the reason for it is written down.
 {
     const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     const scanAt = extTs.indexOf('void index.scanAll().then(');
-    const reviveAt = extTs.indexOf('\n    reviveAfterRestart();');
+    const reviveAt = extTs.indexOf('\n    void reviveAfterRestart();');
 
     ok('‼️ both ends of the window are findable — a renamed end must fail here, not go quiet',
         scanAt >= 0 && reviveAt >= 0);
-    ok('‼️ the scan is started BEFORE the revive subscribes to its result',
+    ok('‼️ the scan is started BEFORE the revive is called',
         scanAt < reviveAt);
 
     const between = extTs.slice(scanAt, reviveAt);
     const awaits = between.split(/\r?\n/).filter(l => /^    await\b/.test(l));
-    ok('‼️ …and NOTHING AWAITS in between, or the scan finishes before anyone is listening '
+    ok('‼️ …and NOTHING AWAITS at the top level in between, or the scan finishes before anyone is listening '
         + `and every revived card stays empty (found: ${awaits.length})`,
         awaits.length === 0);
+
+    // ‼️ X-266 — and inside the revive, phase two is synchronous from the first
+    // read of the index to the subscription on it.
+    const bodyAt = extTs.indexOf('const reviveAfterRestart = async (): Promise<void> => {');
+    const body = extTs.slice(bodyAt, reviveAt);
+    const readAt = body.indexOf('index.byId(row.sessionId)');
+    const subAt = body.indexOf('index.onDidUpdate(');
+    ok('‼️ X-266: the index is read, then subscribed to', readAt > 0 && subAt > readAt);
+    const phaseTwoAwaits = body.slice(readAt, subAt).split(/\r?\n/).filter(l => /\bawait\b/.test(l));
+    ok('‼️ X-266: NOTHING AWAITS between reading the index and subscribing to it '
+        + `(found: ${phaseTwoAwaits.length})`, phaseTwoAwaits.length === 0);
+    const lastAwait = body.lastIndexOf('await ');
+    ok('‼️ X-266: every await in the revive comes BEFORE the first read of the index (phase one, then phase two)',
+        lastAwait > 0 && lastAwait < readAt);
 
     ok('…and the revive really is what subscribes — the swap has no other caller',
         /index\.onDidUpdate\(\(\) => \{[\s\S]{0,600}rebuildHistory/.test(extTs));
@@ -261,6 +284,46 @@ const live = (over = {}) => ({
         !/consoleOpen/.test(extTs));
     ok('…and there is still no webview serializer, which is WHY the tab cannot be re-attached; whoever adds one owns that tab and must not open a second',
         !/registerWebviewPanelSerializer/.test(extTs));
+}
+
+// ---------- ‼️ X-266 — the survivor is reclaimed BEFORE the row is started ----------
+//
+// The reload kills the host and not the `claude -p` under it. Starting the same
+// id beside the survivor was measured twice (two agents on one repo; a card
+// frozen in `starting` behind a lock it never got). So the wiring is pinned:
+// every row asks `reclaim` first, a row that cannot be reclaimed is reported
+// with the pid and never started, and every reader of the CLI's registry asks
+// EVERY claude home — the twin sat under an account slot while `~/.claude`
+// answered "nobody".
+{
+    const extTs = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    const at = extTs.indexOf('const reviveAfterRestart = async (): Promise<void> => {');
+    ok('‼️ X-266: reviveAfterRestart is asynchronous — taskkill takes seconds and the record is watched, not assumed', at > 0);
+    const body = extTs.slice(at, extTs.indexOf('void reviveAfterRestart();', at));
+    const reclaimAt = body.indexOf('const held = await consoleHost.reclaim(row.sessionId);');
+    const startAt = body.indexOf('const seatId = consoleHost.start({');
+    ok('‼️ X-266: each row is reclaimed BEFORE it is started', reclaimAt > 0 && startAt > reclaimAt);
+    ok('‼️ X-266: a holder that will not go is reported as lost with its pid, and the row is skipped',
+        /if \(!held\.free\) \{[\s\S]*?lost\.push\(\{[\s\S]*?pid \$\{held\.pid\}[\s\S]*?continue;/.test(body.slice(reclaimAt, startAt)));
+    ok('‼️ X-266: a session open in a PERSON\'S terminal is never reclaimed — refused before the kill, by the registry\'s own entrypoint',
+        body.indexOf("owner.entrypoint !== 'sdk-cli'") > 0 && body.indexOf("owner.entrypoint !== 'sdk-cli'") < reclaimAt
+        && /describeOwner\(owner\)/.test(body.slice(0, reclaimAt)));
+    ok('…and a card whose survivor was ended says so in its first line',
+        /survivor[\s\S]*?was ended/.test(body));
+    ok('‼️ X-266: the stamp is read and cleared before the first await (a second activation finds no plan)',
+        body.indexOf('clearRestartRevive();') < reclaimAt);
+    ok('X-266: the call site does not wait on it — activation is not held for a taskkill',
+        /^\s*void reviveAfterRestart\(\);$/m.test(extTs));
+
+    // every registry reader goes through the one door
+    ok('‼️ X-266: no reader asks a single claude home any more',
+        !/readCliSessions\(claudeDir\(\)\)/.test(extTs) && !/existsSync\(sessionsDir\(claudeDir\(\)\)\)/.test(extTs));
+    ok('…the door lists the home, the window\'s own CLAUDE_CONFIG_DIR and every claude slot',
+        /const cliRegistryDirs = \(\): string\[\] => \{[\s\S]*?claudeDir\(\), process\.env\.CLAUDE_CONFIG_DIR[\s\S]*?s\.engine === 'claude' && s\.dir/.test(extTs));
+    ok('…and the ConsoleHost is handed that door for its owner lookup',
+        /new ConsoleHost\(\s*\(\) => 'claude',\s*sid => ownerOf\(liveCliSessions\(\), sid\)\?\.pid/.test(extTs));
+    ok('‼️ X-266: farm.health reports the twin state off the registry (Principle 1 — a rule that fails silently is not a rule)',
+        /twins: twinsOf\(liveCliSessions\(\)\)/.test(extTs));
 }
 
 console.log(`test_console_revive.js: ${pass} passed, ${fail} failed`);

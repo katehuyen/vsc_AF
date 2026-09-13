@@ -258,7 +258,7 @@ import {
 import { EngineRunner, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
-import { CliSessionRecord, describeOwner, isSpareCliSession, mergeSessionNames, ownerOf, pidAlive, readCliSessions, sessionsDir } from './core/cliSessions';
+import { CliSessionRecord, describeOwner, isSpareCliSession, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable } from './core/processTree';
 import { revealPath } from './core/reveal';
 import {
@@ -763,6 +763,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // travels like every other store: `${globalStorage}\accounts\<slot>` on the
     // way out, and an absolute path recorded on another machine heals on load.
     const storedAccounts = (): EngineAccountSlot[] => normalizeSlots(cfg().get<unknown[]>('accounts', []), portableRoots());
+    /**
+     * ‼️ X-266 — EVERY CLAUDE HOME THIS MACHINE MAY HAVE A LIVE SESSION UNDER.
+     *
+     * The CLI's registry (`sessions/<pid>.json`) lives in whichever home the
+     * process was started with, and `CLAUDE_CONFIG_DIR` moves that home: the
+     * machine's own, the one this window was started under, and every captured
+     * account slot. A reader that asked only `claudeDir()` answered "nobody" for
+     * every slot session — measured with the twin on disk — and "nobody" is the
+     * answer that starts a second copy. So nothing here reads one registry any
+     * more; `liveCliSessions` is the single door.
+     */
+    const cliRegistryDirs = (): string[] => {
+        const dirs: (string | undefined)[] = [claudeDir(), process.env.CLAUDE_CONFIG_DIR];
+        for (const s of storedAccounts()) {
+            if (s.engine === 'claude' && s.dir) { dirs.push(s.dir); }
+        }
+        return dirs.filter((d): d is string => !!d && !!d.trim());
+    };
+    const liveCliSessions = (): CliSessionRecord[] => readCliSessionsAcross(cliRegistryDirs());
+    /** Does this machine's CLI keep a registry at all (any home has one)? */
+    const cliRegistryKnown = (): boolean => cliRegistryDirs().some(d => fs.existsSync(sessionsDir(d)));
     /**
      * ‼️ X-265 — WHERE A CAPTURED ACCOUNT READS ITS SETTINGS, listed once.
      *
@@ -1305,7 +1326,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const spareOf = (sessionId: string): boolean | undefined => {
         const now = Date.now();
         if (!spareSnap || now - spareSnap.at > 750) {
-            spareSnap = { at: now, recs: readCliSessions(claudeDir()) };
+            spareSnap = { at: now, recs: liveCliSessions() };
         }
         const rec = ownerOf(spareSnap.recs, sessionId);
         // No record is NOT a verdict: any other engine's session has none, and
@@ -1475,8 +1496,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             accountFor: sessionAccountOf,
             // A live card may only claim "no process" when the CLI's own
             // registry is there to be read — otherwise silence proves nothing.
-            liveOwners: () => readCliSessions(claudeDir()),
-            ownersKnown: () => fs.existsSync(sessionsDir(claudeDir())),
+            liveOwners: () => liveCliSessions(),
+            ownersKnown: () => cliRegistryKnown(),
             // ‼️ WHICH CARDS CAN ACTUALLY BE ENDED, ON ANY ENGINE (X-35).
             // `liveOwners` reads CLAUDE's session registry, so a conversation
             // hosted in the Console on Codex or Antigravity has no owner and the
@@ -2633,7 +2654,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     const scanCliSessionNames = () => {
         const known = context.globalState.get<Record<string, string>>(NAMES_KEY, {});
-        const merged = mergeSessionNames(known, readCliSessions(claudeDir()), ourLaunchNames());
+        const merged = mergeSessionNames(known, liveCliSessions(), ourLaunchNames());
         if (!merged) { return; }
         void context.globalState.update(NAMES_KEY, merged);
         index.setCliNames(merged);
@@ -3139,7 +3160,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (readElsewhere(sessionId)) {
             return 'another VS Code window has it open in its Console';
         }
-        const owner = ownerOf(readCliSessions(claudeDir()), sessionId);
+        const owner = ownerOf(liveCliSessions(), sessionId);
         if (owner) { return `${describeOwner(owner)} has it open`; }
         // …and our own board: two resumed tasks on one conversation is the same
         // two-authors problem with both authors being us.
@@ -10798,8 +10819,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // first is the exact "unmeasured therefore free" mistake the
                 // cost surfaces spent X-19 removing.
                 const rows = new Map(index.allWithExternal().map(r => [r.sessionId, r]));
-                const owners = readCliSessions(claudeDir());
-                const known = fs.existsSync(sessionsDir(claudeDir()));
+                const owners = liveCliSessions();
+                const known = cliRegistryKnown();
                 return live.sessions().map(s => {
                     const row = rows.get(s.sessionId);
                     const owner = ownerOf(owners, s.sessionId);
@@ -10874,10 +10895,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'Take a session off the Live Timeline WHOLE — its card and its swim-lane row, in every range — without touching the session itself: the way to clear what a claude that died without a SessionEnd hook left behind. It comes back if it reports another event. args: sessionId or sessionIds (array), or gone:true to clear every tracked session whose process the OS no longer knows',
             handler: (args) => {
                 if (args.gone === true) {
-                    if (!fs.existsSync(sessionsDir(claudeDir()))) {
+                    if (!cliRegistryKnown()) {
                         return { cleared: 0, reason: 'the CLI session registry is unreadable — nothing can be proven finished' };
                     }
-                    const owned = new Set(readCliSessions(claudeDir()).map(o => o.sessionId));
+                    const owned = new Set(liveCliSessions().map(o => o.sessionId));
                     const dead = live.sessions().filter(s => !s.source && !owned.has(s.sessionId) &&
                         Date.now() - s.startedAt > 60_000);
                     for (const s of dead) { live.dismiss(s.sessionId, 'cleared (no live process)', true); }
@@ -15865,7 +15886,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'farm.health',
             describe: 'What is actually running: extension version, this activation\'s bootId (a new one '
                 + 'on every extension host start — compare it to prove a restart really happened), uptime, '
-                + 'live console sessions, open terminals, the armed restart if there is one, and the last '
+                + 'live console sessions (‼️ `sessions.twins` — X-266 — any session id the CLI registry shows '
+                + 'under MORE than one live pid, across every claude home; empty is the only healthy answer), '
+                + 'open terminals, the armed restart if there is one, and the last '
                 + 'self-restart this window performed. ‼️ `build` is the reading that matters after an '
                 + 'install: `installed` is the version in the extensions folder, `running` is the one this '
                 + 'host booted with, and `pending:true` means a build is on disk that IS NOT LOADED — a '
@@ -15923,7 +15946,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                      */
                     bootPlanned: !!stamp && stamp.at <= bootAt && bootAt - stamp.at <= 120_000,
                     pid: process.pid,
-                    sessions: { live: live.length, list: live },
+                    sessions: {
+                        live: live.length, list: live,
+                        // ‼️ X-266 — the twin state read off the CLI's own registry,
+                        // across every home: one session id, more than one live pid.
+                        // Empty is the only healthy answer.
+                        twins: twinsOf(liveCliSessions())
+                    },
                     terminals: w.terminals.map(t => t.name),
                     restartArmed: armedRestart,
                     lastRestart: stamp,
@@ -22731,7 +22760,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
     const consoleHost = new ConsoleHost(
         () => 'claude',
-        sid => ownerOf(readCliSessions(claudeDir()), sid)?.pid,
+        sid => ownerOf(liveCliSessions(), sid)?.pid,
         () => activeProjectId() || undefined,
         (projectId, superpowers, resume) =>
             systemPromptFileFor(projectId, 'session', !!superpowers, resume),
@@ -23867,7 +23896,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         attempt(sub);
     };
 
-    const reviveAfterRestart = (): void => {
+    /**
+     * ‼️ X-266 — AND NOBODY ELSE MAY BE HOLDING THE SESSION WHEN IT IS STARTED.
+     *
+     * The reload kills this host and not the `claude -p` under it (Windows does
+     * not end a child with its parent). That survivor keeps the session in the
+     * CLI's registry and keeps WORKING — files, commits, bridge calls — with its
+     * words on a dead pipe. Starting the same id again beside it was measured
+     * twice: as two agents editing one repo (2026-09-09) and as a card frozen in
+     * `starting` for twenty minutes behind a lock it never got (2026-09-13,
+     * cli 2.1.269) — and the process the reader was looking at was never the
+     * one doing the work. So each row is RECLAIMED first (`ConsoleHost.reclaim`:
+     * end the holder, wait for its record to drop), and a row that cannot be
+     * reclaimed is reported as lost with the pid, never started anyway.
+     *
+     * This makes the function asynchronous: `taskkill` takes seconds on this
+     * machine and the record is watched, not assumed. Everything that must not
+     * run twice — reading and clearing the stamp — still happens synchronously
+     * before the first await, so a second activation finds no plan to obey.
+     */
+    const reviveAfterRestart = async (): Promise<void> => {
         const stamp = readRestartStamp();
         const rows = stamp?.revive ?? [];
         const lost = [...(stamp?.skipped ?? [])];
@@ -23885,13 +23933,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const askedForResume = Array.isArray(stamp?.revive);
         if (!rows.length && !lost.length && !askedForResume) { return; }
         clearRestartRevive();
+        /**
+         * ‼️ X-266 — PHASE ONE, THE ONLY PART THAT WAITS. Every row is reclaimed
+         * before ANY row is started, so the waiting is done with before the
+         * index is read. Phase two below is synchronous from its first
+         * `index.byId` to its `index.onDidUpdate`: the scan's one completion
+         * event cannot fall into a gap between "read the index" and "subscribe
+         * to it" — the gap the ordering test in test_console_revive.js pins,
+         * and the one an await inside the start loop would have reopened.
+         */
+        const reclaimed: { row: ReviveRow; pid?: number }[] = [];
+        for (const row of rows) {
+            // ‼️ A PERSON'S TERMINAL IS NEVER THE SURVIVOR. The registry says what
+            // started a process; only a program (`sdk-cli` — a Console card whose
+            // host died, a headless run) is reclaimed. A terminal holding the id
+            // is somebody's live window, and ending it would be the fault in the
+            // other direction.
+            const owner = ownerOf(liveCliSessions(), row.sessionId);
+            if (owner && owner.entrypoint !== 'sdk-cli') {
+                lost.push({
+                    id: row.id, agentName: row.agentName,
+                    reason: `this session is open in ${describeOwner(owner)}, so it was not started `
+                        + 'here as well — close it there and resume it from the sessions list.'
+                });
+                continue;
+            }
+            const held = await consoleHost.reclaim(row.sessionId);
+            if (!held.free) {
+                lost.push({
+                    id: row.id, agentName: row.agentName,
+                    reason: `the process that survived the restart (pid ${held.pid}) is still holding `
+                        + 'this session, so a second copy was NOT started — it would only freeze behind '
+                        + 'the first. End that process (Task Manager) and resume the session from the '
+                        + 'sessions list.'
+                });
+                continue;
+            }
+            reclaimed.push({ row, pid: held.pid });
+        }
         const back: string[] = [];
         /** ‼️ the seats whose scrollback could not be read YET. */
         let pendingHistory: { seatId: string; sessionId: string }[] = [];
         /** ‼️ …and the seats whose TOTALS could not be read yet, for the same
          *  reason and with the same cure — see `ConsoleHost.applyCarried`. */
         let pendingCarried: { seatId: string; sessionId: string }[] = [];
-        for (const row of rows) {
+        for (const { row, pid: survivor } of reclaimed) {
             try {
                 const init = reviveInit(row);
                 const past = index.byId(row.sessionId);
@@ -23905,6 +23991,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             id: 'xr-revived', ts: Date.now(), role: 'system',
                             text: `⚡ Agent Farm restarted on ${extVersion} and took this session up where `
                                 + 'it left off — same conversation, same id.'
+                                + (survivor
+                                    ? ` The process that survived the restart (pid ${survivor}) was ended`
+                                    + ' first, so the process behind this card is the one doing the work.'
+                                    : '')
                                 + (row.midTurn
                                     ? ' It was ANSWERING when the host went down, so that one reply was'
                                     + ' lost on the way — nothing before it is missing, and it is being'
@@ -24004,7 +24094,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ? ` · ${runs.skipped.length} run(s) could not be: ${runs.skipped.map(r => r.title).join(', ')}`
                 : ''));
     };
-    reviveAfterRestart();
+    void reviveAfterRestart();
 
     /**
      * The prompt snippets file, read and parsed — or an honest reason why not.
@@ -24147,7 +24237,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // shipped default. Read on the way out, written when the picker moves.
         lastKinds: () => lastKinds(),
         rememberKinds: (kinds: string[] | null) => rememberKinds(kinds),
-        liveOwners: () => readCliSessions(claudeDir()),
+        liveOwners: () => liveCliSessions(),
         /**
          * ‼️ X-105 — WHAT A CARD IS ACTUALLY TALKING TO, in the engine's own
          * vocabulary. `providerFormFor` is the SAME reader the launcher's route
@@ -24297,7 +24387,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (hostedHere) { return undefined; }
         // …and not a conversation another window is having right now
         if (readElsewhere(sessionId)) { return undefined; }
-        const owner = ownerOf(readCliSessions(claudeDir()), sessionId);
+        const owner = ownerOf(liveCliSessions(), sessionId);
         if (!owner || owner.entrypoint !== 'sdk-cli') { return undefined; }
         return { pid: owner.pid };
     };
@@ -24312,7 +24402,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         killPid(pid);
         for (let i = 0; i < 20; i++) {
             await new Promise(r => setTimeout(r, 200));
-            if (!ownerOf(readCliSessions(claudeDir()), sessionId)) { return true; }
+            if (!ownerOf(liveCliSessions(), sessionId)) { return true; }
         }
         return false;
     };
@@ -29475,7 +29565,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             live.dismiss(sessionId, 'ended from Agent Farm');
             return;
         }
-        const owner = ownerOf(readCliSessions(claudeDir()), sessionId);
+        const owner = ownerOf(liveCliSessions(), sessionId);
         if (!owner) {
             const yes = await vscode.window.showWarningMessage(
                 `No live process owns "${who}" any more — there is nothing left to end. Clear it from the live timeline?`,
@@ -29538,7 +29628,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'Force Kill is for a claude the daemon owns.');
             return;
         }
-        const owner = ownerOf(readCliSessions(claudeDir()), sessionId);
+        const owner = ownerOf(liveCliSessions(), sessionId);
         if (!owner) {
             const yes = await vscode.window.showWarningMessage(
                 `No live process owns "${who}" any more — there is nothing left to kill. Clear it from the live timeline?`,
@@ -29955,7 +30045,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // just spent a release fixing. Wait for it (3s ceiling).
                     let released = false;
                     for (let i = 0; i < 30; i++) {
-                        if (!ownerOf(readCliSessions(claudeDir()), s.sessionId)) { released = true; break; }
+                        if (!ownerOf(liveCliSessions(), s.sessionId)) { released = true; break; }
                         await new Promise(r => setTimeout(r, 100));
                     }
                     /**
@@ -29981,7 +30071,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         return;
                     }
                 }
-                const owner = hosted ? undefined : ownerOf(readCliSessions(claudeDir()), s.sessionId);
+                const owner = hosted ? undefined : ownerOf(liveCliSessions(), s.sessionId);
                 if (owner) {
                     const go = await vscode.window.showWarningMessage(
                         `"${s.title}" is already open in ${describeOwner(owner)}.\n\n` +
@@ -30868,8 +30958,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async (arg?: (SessionRef & { gone?: boolean }) | SessionInfo) => {
                 if ((arg as { gone?: boolean } | undefined)?.gone) {
                     // Sweep: every tracked session the OS no longer runs.
-                    const owned = new Set(readCliSessions(claudeDir()).map(o => o.sessionId));
-                    const registry = fs.existsSync(sessionsDir(claudeDir()));
+                    const owned = new Set(liveCliSessions().map(o => o.sessionId));
+                    const registry = cliRegistryKnown();
                     const dead = registry
                         ? live.sessions().filter(s => !s.source && !owned.has(s.sessionId) &&
                             Date.now() - s.startedAt > 60_000)
@@ -31626,7 +31716,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                 }
                 const owner = engine === 'claude'
-                    ? ownerOf(readCliSessions(claudeDir()), s.sessionId) : undefined;
+                    ? ownerOf(liveCliSessions(), s.sessionId) : undefined;
                 if (owner) {
                     const go = await vscode.window.showWarningMessage(
                         `"${s.title}" is open right now in ${describeOwner(owner)}.\n\n` +

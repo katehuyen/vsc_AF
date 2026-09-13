@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.484.0 - one live process per session id, made true before a resume (X-266) (2026-09-13)
+
+- **A window reload kills the extension host and NOT the `claude -p` under it.**
+  The survivor keeps the session in the CLI's registry and keeps working — files,
+  commits, bridge calls — with its words on a dead pipe. Reviving the same id
+  beside it was measured twice: as two agents editing one repo (2026-09-09), and
+  as a card frozen in `starting` for twenty minutes behind a lock it never got
+  (2026-09-13, claude-cli 2.1.269). Either way the process the reader was
+  looking at was never the one doing the work.
+- **So every revived row is RECLAIMED before it is started** (`ConsoleHost.reclaim`):
+  the holder is ended and its registry record watched until it drops; only then
+  is the id started, and its first line says the survivor was ended. A holder
+  that will not go is reported as lost with its pid and never started beside.
+  The reclaiming is phase one of the revive and the only part that waits; the
+  index is read and subscribed to in one synchronous phase two, so the scan's
+  completion cannot fall into a gap (the ordering test pins this).
+- **‼️ The registry is per claude home, and a machine has several.** A session
+  on an account slot writes `<slot>/sessions/<pid>.json` and `~/.claude/sessions/`
+  stays empty — measured with the twin on disk: every reader that asked the
+  machine's own home answered "nobody owns this", which is the answer that starts
+  a second copy. All sixteen readers now ask every home at once (the machine's,
+  the window's own `CLAUDE_CONFIG_DIR`, every captured Claude slot), so ending a
+  card, switching its account, refusing a held resume and hiding a spare worker
+  all see slot sessions for the first time.
+- **`farm.health` reports `sessions.twins`** — any session id the registry shows
+  under more than one live pid, across every home. Empty is the only healthy
+  answer; a check that reads the process list races the thing it watches.
+
 ## 3.483.0 - the fleet writes Codex's hook file, not only its trust (X-298) (2026-09-13)
 
 - **X-295 taught this side to SIGN a Codex hook file and read it back; the file

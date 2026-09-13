@@ -234,5 +234,55 @@ const { revealActionFor } = (() => {
         new Set(title.map(m => m.group)).size === title.length);
 }
 
+// ---------- ‼️ X-266 — the registry is per claude home, and a machine has several ----------
+{
+    const { readCliSessionsAcross, twinsOf } = require(path.join(__dirname, '..', 'out', 'core', 'cliSessions.js'));
+    const LIVE = process.pid;
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'af-cli-home-'));
+    const slotA = fs.mkdtempSync(path.join(os.tmpdir(), 'af-cli-slotA-'));
+    const slotB = fs.mkdtempSync(path.join(os.tmpdir(), 'af-cli-slotB-'));
+    fs.mkdirSync(sessionsDir(home), { recursive: true });
+    fs.mkdirSync(sessionsDir(slotA), { recursive: true });
+    // slotB has no registry at all
+    // the home holds nothing — measured: ~/.claude/sessions/ is EMPTY while a
+    // slot session runs, so a reader that asks only the home says "nobody"
+    // the slot holds the session TWICE — the twin as it sat on disk 2026-09-13
+    fs.writeFileSync(path.join(sessionsDir(slotA), `${LIVE}.json`), JSON.stringify({
+        pid: LIVE, sessionId: 'f5daa334-3a9c-4207-8c93-753bbf5086a6', entrypoint: 'sdk-cli', kind: 'interactive'
+    }));
+    fs.writeFileSync(path.join(sessionsDir(slotA), `${LIVE}-twin.json`), JSON.stringify({
+        pid: LIVE, sessionId: 'f5daa334-3a9c-4207-8c93-753bbf5086a6', entrypoint: 'sdk-cli', kind: 'interactive'
+    }));
+    // …and a second, unrelated live session
+    fs.writeFileSync(path.join(sessionsDir(slotA), 'other.json'), JSON.stringify({
+        pid: LIVE, sessionId: 'sid-other', entrypoint: 'cli'
+    }));
+
+    ok('‼️ X-266: the home alone sees nobody', readCliSessions(home).length === 0);
+    const all = readCliSessionsAcross([home, slotA, slotB, undefined, '', null]);
+    ok('‼️ X-266: asked across every home, the slot session is found', all.some(r => r.sessionId === 'f5daa334-3a9c-4207-8c93-753bbf5086a6'));
+    ok('…a home with no registry, an undefined and an empty entry are skipped, not errors', all.length === 3);
+    ok('‼️ X-266: a home listed twice is read once (no double records)',
+        readCliSessionsAcross([slotA, slotA, slotA + path.sep, slotA.toUpperCase()]).length === 3);
+    ok('…and ownerOf answers through the same list', ownerOf(all, 'sid-other') !== undefined);
+
+    // twins: same pid twice is ONE process (two files for one pid cannot happen,
+    // but a reader must not invent a twin out of it); two pids is the twin
+    ok('X-266: one pid under one id is not a twin', twinsOf(all).length === 0);
+    const twinned = [
+        { pid: 176768, sessionId: 'f5daa334-3a9c-4207-8c93-753bbf5086a6' },
+        { pid: 175844, sessionId: 'f5daa334-3a9c-4207-8c93-753bbf5086a6' },
+        { pid: 1, sessionId: 'sid-other' }
+    ];
+    const t = twinsOf(twinned);
+    ok('‼️ X-266: two live pids on one session id IS the twin, pids sorted',
+        t.length === 1 && t[0].sessionId === 'f5daa334-3a9c-4207-8c93-753bbf5086a6'
+        && t[0].pids.join(',') === '175844,176768');
+
+    fs.rmSync(home, { recursive: true, force: true });
+    fs.rmSync(slotA, { recursive: true, force: true });
+    fs.rmSync(slotB, { recursive: true, force: true });
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

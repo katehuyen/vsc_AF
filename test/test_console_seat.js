@@ -342,7 +342,60 @@ async function s29() {
         host.send('cs-nobody', 'anything') === undefined);
 }
 
-s29().then(() => {
+
+// ‼️ X-266 — ONE LIVE PROCESS PER SESSION ID, MADE TRUE BEFORE A RESUME.
+//
+// A window reload kills the extension host and not the `claude -p` under it;
+// the survivor keeps the session in the CLI's registry and keeps working on a
+// dead pipe. Reviving that id beside it was measured as two agents on one repo
+// (2026-09-09) and as a card frozen in `starting` for twenty minutes (2026-09-13).
+// `reclaim` ends the holder and WAITS for its record to drop; a holder that will
+// not go is reported, never started beside.
+async function x266() {
+    // (a) nobody holds it: free at once, nothing is killed
+    {
+        const host = new ConsoleHost(() => 'claude', () => undefined);
+        const before = reaps;
+        const r = await host.reclaim('S-266-a');
+        ok('‼️ X-266: an unheld session is free without a kill', r.free === true && r.pid === undefined && reaps === before);
+    }
+    // (b) a survivor holds it: killed once, and the wait ends the moment the record drops
+    {
+        let owner = 4242;
+        const host = new ConsoleHost(() => 'claude', () => owner);
+        const before = reaps;
+        const p = host.reclaim('S-266-b', 10);
+        // the record drops "when taskkill gets to it" — a beat later
+        setTimeout(() => { owner = undefined; }, 250);
+        const r = await p;
+        ok('‼️ X-266: the survivor is killed exactly once and its pid is returned',
+            reaps === before + 1 && r.pid === 4242);
+        ok('…and the id is reported free once the registry lets go', r.free === true);
+    }
+    // (c) the survivor will not go: refused, with the pid, never "free"
+    {
+        const host = new ConsoleHost(() => 'claude', () => 777);
+        const r = await host.reclaim('S-266-c', 2);
+        ok('‼️ X-266: a holder that stays is reported, not started beside', r.free === false && r.pid === 777);
+    }
+    // (d) the holder is one of THIS host's own live seats: left alone, named
+    {
+        const host = new ConsoleHost(() => 'claude', () => 999);
+        const id = host.start(init({ resume: 'S-266-d' }));
+        const before = reaps;
+        const r = await host.reclaim('S-266-d', 2);
+        ok('‼️ X-266: a session one of our own cards holds is not a survivor and is not killed',
+            r.free === false && r.hostedBy === id && reaps === before);
+    }
+    // (e) an empty id has nothing to reclaim
+    {
+        const host = new ConsoleHost(() => 'claude', () => 5);
+        const r = await host.reclaim('');
+        ok('X-266: an empty id is free', r.free === true);
+    }
+}
+
+s29().then(() => x266()).then(() => {
     cp.spawn = realSpawn;
     cp.exec = realExec;
     cp.execSync = realExecSync;

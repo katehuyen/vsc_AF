@@ -2630,6 +2630,44 @@ export class ConsoleHost {
         return false;
     }
 
+    /**
+     * ‼️ X-266 — ONE LIVE PROCESS PER SESSION ID, MADE TRUE BEFORE A RESUME.
+     *
+     * A window reload kills the extension host and NOT the `claude -p` under it:
+     * the child outlives its parent with its stdout on a dead pipe, still
+     * holding the session in the CLI's registry and still doing real work that
+     * reaches nobody. Resuming that id then starts a second copy, and what the
+     * copy does depends on the CLI build — measured 2026-09-09 as two agents
+     * writing one repo, and 2026-09-13 (cli 2.1.269) as a card frozen in
+     * `starting` for twenty minutes behind a lock it never got. Either way the
+     * process the reader is looking at is not the one doing the work.
+     *
+     * So the survivor is ended FIRST and its registry record is watched until
+     * it drops; only then is the id free to start. The wait is bounded and its
+     * failure is returned, never hidden: a caller that cannot reclaim the id
+     * must refuse the resume and say who still holds it, because a copy started
+     * anyway is the fault this exists to remove. A session one of this host's
+     * own seats still holds is not a survivor and is left alone — that is a
+     * different mistake, and killing it would end a card the reader can see.
+     *
+     * `killPid` shells out (`taskkill` takes seconds here), which is why this is
+     * asynchronous and why the tries are generous: the record goes the moment
+     * the process does, and the process goes when `taskkill` gets to it.
+     */
+    async reclaim(sessionId: string, tries = 50): Promise<{ free: boolean; pid?: number; hostedBy?: string }> {
+        if (!sessionId) { return { free: true }; }
+        const pid = this.ownerPid(sessionId);
+        if (!pid) { return { free: true }; }
+        for (const [id, h] of this.sessions) {
+            if (!h.closed && h.state.sessionId === sessionId && h.state.status !== 'ended' && h.state.status !== 'error') {
+                return { free: false, pid, hostedBy: id };
+            }
+        }
+        killPid(pid);
+        const free = await this.awaitRelease(sessionId, tries);
+        return { free, pid };
+    }
+
     setPermissionMode(id: string, mode: string, retryMessage?: string): boolean {
         const h = this.sessions.get(id);
         if (!h) { return false; }

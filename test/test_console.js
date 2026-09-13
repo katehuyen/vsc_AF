@@ -646,7 +646,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
 
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('resuming into a TERMINAL carries the same warning',
-        /ownerOf\(readCliSessions\(claudeDir\(\)\), s\.sessionId\)/.test(ext));
+        /ownerOf\(liveCliSessions\(\), s\.sessionId\)/.test(ext));
     ok('…and lets it happen only as a deliberate choice',
         /Open a second process anyway/.test(ext));
 
@@ -661,7 +661,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /End it in the Console and continue here/.test(ext)
         && /consoleHost\.close\(hosted\.id\)/.test(ext));
     ok('…and does not launch until the process is really gone',
-        /if \(!ownerOf\(readCliSessions\(claudeDir\(\)\), s\.sessionId\)\) \{ released = true; break; \}/.test(ext));
+        /if \(!ownerOf\(liveCliSessions\(\), s\.sessionId\)\) \{ released = true; break; \}/.test(ext));
     // K-33 — and the ceiling on that wait is an ANSWER, not a pause: it used to
     // fall through and launch anyway, which is the second process on one
     // transcript the wait exists to prevent.
@@ -1059,7 +1059,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // Resuming into a process that is still dying would put two of them on one
     // transcript — the very thing the ownership rule exists to prevent.
     ok('ending it waits until the session is really free',
-        /const endLeftover = /.test(ext) && /if \(!ownerOf\(readCliSessions\(claudeDir\(\)\), sessionId\)\) \{ return true; \}/.test(ext));
+        /const endLeftover = /.test(ext) && /if \(!ownerOf\(liveCliSessions\(\), sessionId\)\) \{ return true; \}/.test(ext));
     ok('…and says so plainly when it is not', /still holding that session/.test(panel));
     // The child we hold is the shell wrapper; the CLI's registry names the
     // process the session is actually about.
@@ -1075,8 +1075,10 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
         /private ownerPid:/.test(host)
         && /const reap = \(\): void => \{[\s\S]{0,400}killTree\(child\);/.test(host)
         && /if \(pid && pid !== child\?\.pid\) \{ killPid\(pid\); \}/.test(host));
+    // ‼️ X-266 — and the lookup asks EVERY claude home: the registry moves with
+    // CLAUDE_CONFIG_DIR, so a slot session was invisible to a reader of ~/.claude.
     ok('…and the extension gives it that lookup',
-        /sid => ownerOf\(readCliSessions\(claudeDir\(\)\), sid\)\?\.pid/.test(ext));
+        /sid => ownerOf\(liveCliSessions\(\), sid\)\?\.pid/.test(ext));
 }
 
 // ---------- ‼️ the model can change mid-conversation ----------
