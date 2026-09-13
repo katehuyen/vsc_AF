@@ -1,7 +1,7 @@
 import * as path from 'path';
 import { adapterFor, EngineAuthAdapter, liveSource } from './engineAccounts';
 import { hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
-import { reproduceSlotSettings, slotEnvGaps, SlotSettingsFs } from './slotSettings';
+import { carriedDrift, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, SlotSettingsFs } from './slotSettings';
 
 /**
  * ‼️ X-284 — THE BIRTH CONTRACT: what a slot must carry to count as COMPLETE,
@@ -104,18 +104,40 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
         });
     }
     // carry — the user's behaviour file, reproduced from the fleet's source (X-269).
+    // ‼️ X-272 — the keys a LATER clause owns, so two clauses never claim one
+    // fact and never overwrite each other. Derived from the same condition that
+    // creates the hooks clause below, not from a second list.
+    const laterClauseOwns = (name: string): string[] =>
+        name === 'settings.json' && adapter.carryFiles?.includes('settings.json') ? ['hooks'] : [];
     for (const name of adapter.carryFiles ?? []) {
         out.push({
             id: `carry:${name}`, kind: 'carry', owner: 'fleet',
             read: ctx => {
                 const p = path.join(ctx.dir, name);
-                const src = path.join(ctx.home, liveSource(adapter.engine, name));
+                const rel = liveSource(adapter.engine, name);
+                const src = path.join(ctx.home, rel);
                 if (!ctx.fs.existsSync(p)) {
                     return ctx.fs.existsSync(src)
-                        ? { ok: false, detail: `${name} missing — the fleet's ${liveSource(adapter.engine, name)} exists and was not reproduced` }
+                        ? { ok: false, detail: `${name} missing — the fleet's ${rel} exists and was not reproduced` }
                         : { ok: true, detail: `${name} absent on both sides — nothing to reproduce` };
                 }
-                return { ok: true, detail: `${name} present` };
+                // ‼️ X-272 — AND BEING THERE IS NOT BEING CURRENT. The slot's
+                // copy is a projection of the fleet's file; when the user adds,
+                // changes or deletes a setting afterwards the projection is
+                // stale and the only honest answer is that the slot is not
+                // complete. The comparison is the reproduction's own render, so
+                // there is no second opinion about what the file should say.
+                const vars = adapter.requiredEnv?.file === name ? adapter.requiredEnv.vars : {};
+                const sourceText = ctx.fs.existsSync(src) ? ctx.fs.readFileSync(src, 'utf8') : undefined;
+                if (sourceText === undefined && !Object.keys(vars).length) {
+                    return { ok: true, detail: `${name} present — the fleet has no ${rel} to reproduce from` };
+                }
+                const have = ctx.fs.readFileSync(p, 'utf8');
+                const want = renderSlotSettings(sourceText === undefined ? have : sourceText, vars);
+                const drift = carriedDrift(want, have, laterClauseOwns(name));
+                return drift.length
+                    ? { ok: false, detail: `${name} is a stale copy — ${drift.join(', ')} no longer match the fleet's ${rel}` }
+                    : { ok: true, detail: `${name} matches the fleet's ${rel}` };
             },
             repair: (ctx, dryRun) => {
                 const rows = reproduceSlotSettings(ctx.fs, { home: ctx.home, dir: ctx.dir, adapter, dryRun });

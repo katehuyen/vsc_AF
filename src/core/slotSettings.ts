@@ -91,6 +91,38 @@ export function renderSlotSettings(
 }
 
 /**
+ * ‼️ X-272 — WHICH KEYS OF A CARRIED FILE ARE NO LONGER THE FLEET'S.
+ *
+ * Reproduction has always rendered the fleet's whole file over the slot's, so
+ * the user's permissions, model and effort DO travel — but only when something
+ * asks. Measured 2026-09-13 against the real functions: a key added to the main
+ * `settings.json` after a slot was born never reached it, a changed value stayed
+ * at the old one and a permission the user deleted lived on in the slot for
+ * ever — and the contract read `complete` through all three, because the clause
+ * asked whether the file EXISTED. Existence is not the question; being the
+ * fleet's current projection is.
+ *
+ * Compared by VALUE, not by bytes: the fleet's file is whatever the user's
+ * editor left behind, while the projection is re-serialised, so a text
+ * comparison would call every slot stale over indentation alone and rewrite
+ * three files on every sweep.
+ *
+ * `ignoreKeys` names the top-level keys ANOTHER clause owns. `hooks` is the
+ * standing case: the hooks clause re-points them at the live port AFTER this
+ * one has rendered, so counting them here would have the two clauses overwrite
+ * each other on every pass for ever.
+ */
+export function carriedDrift(
+    wantText: string | undefined, haveText: string | undefined, ignoreKeys: string[] = []
+): string[] {
+    const want = parse(wantText);
+    const have = parse(haveText);
+    const skip = new Set(ignoreKeys);
+    const keys = new Set([...Object.keys(want), ...Object.keys(have)].filter(k => !skip.has(k)));
+    return [...keys].filter(k => JSON.stringify(want[k]) !== JSON.stringify(have[k])).sort();
+}
+
+/**
  * Reproduce ONE slot's behaviour files from the live directory.
  *
  * Idempotent by comparison, not by flag: the rendered text is compared with

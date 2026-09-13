@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.471.0 - a slot that was born complete now has to STAY complete (X-272) (2026-09-13)
+
+- **The birth contract asked whether the file existed. Existence was never
+  the question.** Measured against the real functions: a setting the user
+  added to the main `settings.json` after a slot was born never reached it, a
+  changed value stayed at the old one, and a permission they deleted lived on
+  in the slot for ever - and the contract read `complete` through all three,
+  on every one of its three gates. Reproduction has always rendered the
+  fleet's whole file over the slot's, so the permissions, model and effort
+  the item is named after could always travel; nothing ever told it to run.
+  - The `carry:` clause now asks whether the slot's copy is still the
+    fleet's projection, and names the keys that drifted on the row the
+    Engines card and Doctor already print: `settings.json is a stale copy -
+    model, permissions no longer match the fleet's .claude/settings.json`.
+  - **Compared by value, not by bytes.** The fleet's file is whatever the
+    user's editor left behind while the projection is re-serialised, so a
+    text comparison would have called every healthy slot stale over
+    indentation and rewritten three files on every sweep - the 3.469.1
+    lesson, where a permanently wrong badge was the whole defect. Pinned by a
+    test that changes the indentation and the key order and expects silence.
+  - **And the carry clause does not fight the hooks clause.** Hooks are
+    re-pointed at the live port AFTER the render, so counting them as drift
+    would have the two clauses overwrite each other on every pass for ever.
+    The exclusion is derived from the same condition that creates the hooks
+    clause, and the mutation test shows it is load-bearing: remove it and the
+    X-284 acceptance gate fails too.
+  - Read against this machine before packaging: all four slots complete, no
+    row changed its answer, nothing rewritten.
+
 ## 3.470.0 - the same notice posted twice is answered rather than obeyed (2026-09-13)
 
 - **The user was seeing one question on the board twice, and the transcript

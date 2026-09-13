@@ -124,6 +124,81 @@ try {
     fs.rmSync(tmp, { recursive: true, force: true });
 }
 
+// ---------- 2a-X-272. A SLOT THAT WAS BORN COMPLETE HAS TO STAY COMPLETE ----------
+// ‼️ Measured 2026-09-13 against the real functions: the carry clause asked
+// whether the file EXISTED, so a key the user added to the main settings.json
+// after a slot was born never reached it, a changed value stayed at the old one
+// and a deleted permission lived on in the slot for ever - and the contract
+// read `complete` through all three. Reproduction was always able to fix this;
+// nothing ever told it to run.
+{
+    const { installHooksInto, hooksAreCurrent } = require(path.join(ROOT, 'out/core/hooksInstaller.js'));
+    const tmp272 = fs.mkdtempSync(path.join(os.tmpdir(), 'af-slot272-'));
+    try {
+        const home = path.join(tmp272, 'home');
+        const live = path.join(home, '.claude');
+        fs.mkdirSync(live, { recursive: true });
+        const fleetFile = path.join(live, 'settings.json');
+        const slot = path.join(tmp272, 'accounts', 'claude-alive');
+        fs.mkdirSync(slot, { recursive: true });
+        fs.writeFileSync(path.join(slot, '.credentials.json'), '{}', 'utf8');
+        fs.writeFileSync(path.join(slot, '.claude.json'), '{"oauthAccount":{}}', 'utf8');
+        const slotFile = path.join(slot, 'settings.json');
+        const ctx = { fs, home, dir: slot, slotId: 'claude-alive', engine: 'claude' };
+        const fleet = (o) => fs.writeFileSync(fleetFile, JSON.stringify(o, null, 2), 'utf8');
+        const carry = () => sc.slotCompleteness(ctx).rows.find(r => r.id === 'carry:settings.json');
+        const slotJson = () => JSON.parse(fs.readFileSync(slotFile, 'utf8'));
+
+        fleet({ model: 'opus', permissions: { allow: ['Bash(git:*)'] } });
+        sc.completeSlot(ctx, false);
+        ok('X-272 birth: the slot carries the fleet\'s settings', carry().ok && slotJson().model === 'opus');
+
+        // 1. a key ADDED to the fleet afterwards
+        fleet({ model: 'opus', permissions: { allow: ['Bash(git:*)'] }, theme: 'dark' });
+        ok('‼️ X-272: a setting added after birth is a GAP, named on the row',
+            !carry().ok && /theme/.test(carry().detail));
+        sc.completeSlot(ctx, false);
+        ok('…and the repair carries it into the slot', slotJson().theme === 'dark' && carry().ok);
+
+        // 2. a value CHANGED in the fleet
+        fleet({ model: 'sonnet', permissions: { allow: ['Bash(git:*)'] }, theme: 'dark' });
+        ok('‼️ X-272: a changed value is a GAP', !carry().ok && /model/.test(carry().detail));
+        sc.completeSlot(ctx, false);
+        ok('…and the slot follows the fleet', slotJson().model === 'sonnet');
+
+        // 3. a permission REMOVED from the fleet - the direction a copy can never do
+        fleet({ model: 'sonnet', permissions: { allow: [] }, theme: 'dark' });
+        ok('‼️ X-272: a REMOVED permission is a gap too', !carry().ok && /permissions/.test(carry().detail));
+        sc.completeSlot(ctx, false);
+        ok('…and it is gone from the slot, not merely un-added',
+            slotJson().permissions.allow.length === 0);
+
+        // 4. ‼️ FORMATTING IS NOT DRIFT. The fleet's file is whatever the user's
+        // editor left; the projection is re-serialised. A text comparison would
+        // call every healthy slot stale and rewrite it on every sweep - the 3.469.1
+        // lesson, where a permanently wrong badge was the whole defect.
+        const obj = JSON.parse(fs.readFileSync(fleetFile, 'utf8'));
+        fs.writeFileSync(fleetFile, JSON.stringify({ theme: obj.theme, permissions: obj.permissions, model: obj.model }, null, 4), 'utf8');
+        ok('‼️ X-272: different indentation and key order is NOT drift', carry().ok);
+        ok('…and nothing is rewritten for it', sc.completeSlot(ctx, false).rows.every(r => !r.wrote));
+
+        // 5. ‼️ AND THE CARRY CLAUSE MUST NOT FIGHT THE HOOKS CLAUSE. The hooks
+        // are re-pointed at the live port AFTER the render, so if carry counted
+        // them the two would overwrite each other on every single pass for ever.
+        installHooksInto(fleetFile, 9999);
+        const first = sc.completeSlot({ ...ctx, hooksPort: 8377 }, false);
+        ok('the fleet\'s stale hook port is corrected in the slot',
+            hooksAreCurrent(slotFile, 8377) && first.rows.filter(r => r.kind !== 'link').every(r => r.ok));
+        const second = sc.completeSlot({ ...ctx, hooksPort: 8377 }, false);
+        ok('‼️ X-272: and the next pass writes NOTHING - no churn between the two clauses',
+            second.rows.every(r => !r.wrote) && second.rows.filter(r => r.kind !== 'link').every(r => r.ok));
+        const third = sc.completeSlot({ ...ctx, hooksPort: 8377 }, false);
+        ok('…still nothing on the pass after that', third.rows.every(r => !r.wrote));
+    } finally {
+        fs.rmSync(tmp272, { recursive: true, force: true });
+    }
+}
+
 // ---------- 2b. THE POOL ITSELF IS A LINK, which is this machine ----------
 // ‼️ Measured 2026-09-13: `~/.claude` is a junction into the agent repo, so a
 // slot's `projects` junction resolves to the far side of TWO links while the
