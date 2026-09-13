@@ -1,9 +1,8 @@
 import * as path from 'path';
 import {
     MIN_FETCH_INTERVAL_MS, EDGE_READ_FLOOR_MS,
-    RATE_LIMIT_BACKOFF_START_MS, RATE_LIMIT_BACKOFF_MAX_MS,
-    OauthCredentials, PlanBar, PlanUsageSnapshot, PlanUsageState,
-    buildBars, fetchUsage, readOauthCredentials, usageUserAgent
+    OauthCredentials, PlanBar, PlanUsageSnapshot, PlanUsageState, UsageReply,
+    buildBars, fetchUsage, holdWords, rateLimitHold, readOauthCredentials, usageUserAgent
 } from './planusage';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
 import { MACHINE_ACCOUNT } from './accountStore';
@@ -433,7 +432,7 @@ export interface AccountUsageOptions {
     cliVersion?(): string | undefined;
     /** overridable for tests */
     readCreds?(file: string): OauthCredentials | undefined;
-    fetchImpl?(token: string, userAgent: string): Promise<{ status: number; body: string }>;
+    fetchImpl?(token: string, userAgent: string): Promise<UsageReply>;
     /** X-204 — turn an aged-out access token back into a live one. Overridable for tests. */
     refreshImpl?(credentialsFile: string): Promise<RefreshOutcome>;
     /**
@@ -769,12 +768,14 @@ export class AccountUsageService {
                 // ‼️ X-278 — THIS ACCOUNT BACKS OFF. The accounts hold different
                 // tokens with different allowances, so one being refused says
                 // nothing about the others until the machine says it twice.
+                // ‼️ S-63 — the endpoint's own figure when it gave one; the
+                // curve only when it did not. A hold the endpoint named does
+                // not feed the curve: the next unexplained 429 starts it afresh.
                 const had = this.slotBackoff.get(slot.id);
-                const ms = had && had.ms
-                    ? Math.min(RATE_LIMIT_BACKOFF_MAX_MS, had.ms * 2)
-                    : RATE_LIMIT_BACKOFF_START_MS;
-                this.slotBackoff.set(slot.id, { ms, until: now + ms });
-                const mins = Math.max(1, Math.round(ms / 60_000));
+                const hold = rateLimitHold(res, had?.ms ?? 0);
+                const ms = hold.ms;
+                this.slotBackoff.set(slot.id, { ms: hold.said ? 0 : ms, until: now + ms });
+                const said = hold.said ? `asked for ${holdWords(ms)}` : `did not say how long`;
                 // …and a SECOND account held at the same time is what a limit
                 // about this machine actually looks like. Only then does the
                 // fleet stop, and only for as long as the longest hold.
@@ -784,13 +785,13 @@ export class AccountUsageService {
                     for (const b of this.slotBackoff.values()) { until = Math.max(until, b.until); }
                     this.backoffUntil = until;
                     return put(bad('error',
-                        `The usage endpoint rate limited this account, and ${others === 1 ? 'another is' : others + ' others are'} `
+                        `The usage endpoint rate limited this account (it ${said}), and ${others === 1 ? 'another is' : others + ' others are'} `
                         + `held too — that is a limit on this machine, so every account backs off. `
-                        + `Next automatic read in ${Math.max(1, Math.round((until - now) / 60_000))} min.`,
+                        + `Next automatic read in ${holdWords(until - now)}.`,
                         cred.plan));
                 }
                 return put(bad('error',
-                    `The usage endpoint rate limited THIS account — it backs off for ${mins} min; `
+                    `The usage endpoint rate limited THIS account (it ${said}) — it backs off for ${holdWords(ms)}; `
                     + 'the other accounts keep being read, because their allowance is their own.',
                     cred.plan));
             }

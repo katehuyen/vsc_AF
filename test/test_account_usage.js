@@ -140,6 +140,37 @@ async function main() {
             service.rateLimitedFor('a') === 0);
     }
 
+    // ---------- ‼️ S-63 — a 429 that says how long is believed, per account ----------
+    // The GET used to return {status, body} and nothing else, so every 429 was
+    // answered with the invented curve. The endpoint's Retry-After is the hold
+    // now, for the account that was told it — and it is said on the card.
+    {
+        let aRefusals = 0;
+        const { service, tick } = svc([slot('a'), slot('b')], {
+            reply: (t) => {
+                if (t !== 'tok-a') { return { status: 200, body: payload(5, NOW + 3600_000) }; }
+                // first refusal names a wait; the second does not
+                return ++aRefusals === 1
+                    ? { status: 429, body: '', retryAfterMs: 42_000 }
+                    : { status: 429, body: '' };
+            }
+        });
+        await service.beat();
+        ok('‼️ the account holds for exactly what the endpoint asked, not the curve',
+            service.rateLimitedFor('a') === NOW + 42_000);
+        ok('…and the card says so in the endpoint\'s figure',
+            /asked for 42 s/.test(service.current().find(u => u.slotId === 'a').note || ''));
+        ok('the account it did not say it to is untouched', service.rateLimitedFor('b') === 0);
+        // the beat reads one account per interval, so `a` comes round on the
+        // second beat after its hold; the curve's start is measured from there
+        tick(42_000 + 10_000); await service.beat();
+        tick(10_000); await service.beat();
+        const start = service.rateLimitedFor('a') - RATE_LIMIT_BACKOFF_START_MS;
+        ok('‼️ the hold the endpoint named did not feed the curve: an unexplained 429 after it starts the curve afresh',
+            aRefusals === 2 && start >= NOW + 52_000 && start <= NOW + 62_000
+            && /did not say how long/.test(service.current().find(u => u.slotId === 'a').note || ''));
+    }
+
     // ---------- …and a SECOND account refused while the first is held IS the machine ----------
     {
         const { service, calls, tick } = svc([slot('a'), slot('b'), slot('c')], {

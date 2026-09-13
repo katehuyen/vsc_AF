@@ -268,6 +268,50 @@ const LIVE_PAYLOAD = {
         reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) };
     }
 
+    // ---------- ‼️ S-63 — a 429 that SAYS how long is believed, not out-guessed ----------
+    // The comment above the curve always said "a 429 with no Retry-After"; the
+    // header was simply never read, because the GET returned {status, body} and
+    // nothing else. The endpoint's word is the hold now, within a ceiling.
+    {
+        const NOW = 1_700_000_000_000;
+        ok('delay-seconds is read', PU.retryAfterMs('120', NOW) === 120_000);
+        ok('an HTTP-date is read, relative to now',
+            PU.retryAfterMs(new Date(NOW + 45_000).toUTCString(), NOW) === 45_000);
+        ok('a date already past is a zero wait, never a negative one',
+            PU.retryAfterMs(new Date(NOW - 45_000).toUTCString(), NOW) === 0);
+        ok('the first of a repeated header is the one read', PU.retryAfterMs(['7', '9'], NOW) === 7_000);
+        ok('absent, blank and garbage say nothing',
+            PU.retryAfterMs(undefined, NOW) === undefined && PU.retryAfterMs('  ', NOW) === undefined
+            && PU.retryAfterMs('soon', NOW) === undefined);
+
+        ok('‼️ the endpoint\'s figure IS the hold', PU.rateLimitHold({ retryAfterMs: 42_000 }, 0).ms === 42_000
+            && PU.rateLimitHold({ retryAfterMs: 42_000 }, 0).said === true);
+        ok('…never under a second', PU.rateLimitHold({ retryAfterMs: 1 }, 0).ms === 1000);
+        ok('…and a figure past the ceiling is treated as no figure',
+            PU.rateLimitHold({ retryAfterMs: PU.RETRY_AFTER_MAX_MS + 1 }, 0).said === false);
+        ok('no figure → the curve starts', PU.rateLimitHold({}, 0).ms === PU.RATE_LIMIT_BACKOFF_START_MS);
+        ok('…and doubles from where it was',
+            PU.rateLimitHold({}, PU.RATE_LIMIT_BACKOFF_START_MS).ms === 2 * PU.RATE_LIMIT_BACKOFF_START_MS);
+        ok('a zero or negative figure is no figure', PU.rateLimitHold({ retryAfterMs: 0 }, 0).said === false);
+        ok('the card says seconds under a minute and a half, minutes above',
+            PU.holdWords(42_000) === '42 s' && PU.holdWords(180_000) === '3 min');
+
+        calls = 0; clock += 10_000_000;
+        reply = { status: 429, body: '', retryAfterMs: 42_000 };
+        const s = svc(1_000);
+        const hit = await s.get();
+        ok('‼️ a 429 with Retry-After holds for exactly what it asked',
+            hit.state === 'error' && /asked for 42 s/.test(hit.note)
+            && s.rateLimitedUntil() === clock + 42_000);
+        clock += 42_000 + 1;
+        reply = { status: 429, body: '' };
+        await s.get();
+        ok('‼️ …and it did not feed the curve: the next UNEXPLAINED 429 starts the curve afresh',
+            calls === 2 && s.rateLimitedUntil() === clock + PU.RATE_LIMIT_BACKOFF_START_MS
+            && /without saying how long/.test(s.current().note));
+        reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) };
+    }
+
     // ---------- the turn-boundary edge, which is where the 429s really came from ----------
     // ‼️ THE EDGE USED TO CLAIM THE BUTTON'S PRIVILEGES. It called `get(true)`, so
     // it skipped the TTL *and* the backoff with only the 5-second hard floor

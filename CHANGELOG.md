@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.491.0 - a 429 that says how long is believed, not out-guessed (S-63) (2026-09-14)
+
+- **The usage endpoint's `Retry-After` was never read.** The comment over the
+  backoff curve always said "a 429 with no Retry-After leaves one safe
+  reading" — but the GET returned `{status, body}` and nothing else, so both
+  readers (the dashboard's plan card and the fleet's per-account service)
+  invented the 3 → 15 min curve on every 429: too long (a counter stale for no
+  reason) or too short (one more request spent for nothing).
+- **The endpoint's own figure is the hold now**, delay-seconds or HTTP-date,
+  within a ceiling of an hour (a header that says "a day" is treated as no
+  header). A hold the endpoint named does not feed the curve: the next
+  unexplained 429 starts it afresh. Per account, as X-278 left it — the account
+  that was told the figure holds for it and no other.
+- **The card says which happened**: *"asked for 42 s"* against *"did not say
+  how long — backing off"*.
+- The reply also carries the `anthropic-ratelimit-*` headers verbatim
+  (`limitHeaders`), so whether a 429 is about the token or the machine can be
+  READ off the next one rather than inferred from a second account's refusal.
+
 ## 3.490.0 - a claude running for nobody is seen, and ended only where it is ours (S-59) (2026-09-14)
 
 - **A survivor of a reload showed on no surface at all.** A window reload or a

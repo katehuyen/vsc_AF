@@ -136,6 +136,60 @@ export const EDGE_READ_FLOOR_MS = MIN_ACTIVE_BEAT_MS;
  */
 export const RATE_LIMIT_BACKOFF_START_MS = 3 * 60_000;
 export const RATE_LIMIT_BACKOFF_MAX_MS = 15 * 60_000;
+/**
+ * ‼️ S-63 — AND A 429 WITH A `Retry-After` LEAVES A BETTER ONE: THE ENDPOINT'S
+ * OWN FIGURE. The sentence above was written before the header was ever read —
+ * `fetchUsage` returned `{status, body}` and nothing else, so both readers
+ * invented the curve on every 429, too long (a counter stale for no reason) or
+ * too short (one more request spent for nothing). The header is honoured
+ * within a ceiling: an endpoint that says "an hour" is believed, one that says
+ * "a day" is treated as the curve, because a reading that stays blind for a
+ * day on one header is worse than one wasted request.
+ */
+export const RETRY_AFTER_MAX_MS = 60 * 60_000;
+/** What a 429 reply is allowed to carry beyond its status: the wait the
+ *  endpoint asked for, and the rate-limit headers that say what was limited. */
+export interface UsageReply {
+    status: number;
+    body: string;
+    /** `Retry-After`, parsed — seconds or an HTTP date; absent when not sent or unreadable */
+    retryAfterMs?: number;
+    /** `anthropic-ratelimit-*` and `retry-after`, verbatim, lower-cased keys —
+     *  kept so a limit can be READ (per token or per machine) rather than
+     *  inferred from a second account's refusal (X-278) */
+    limitHeaders?: Record<string, string>;
+}
+/**
+ * `Retry-After` as milliseconds from `now`, or undefined when the header is
+ * absent or says nothing usable. Both forms RFC 9110 allows: delay-seconds and
+ * an HTTP-date (a date in the past is a zero wait, not a negative one).
+ */
+export function retryAfterMs(header: string | string[] | undefined, now = Date.now()): number | undefined {
+    const raw = Array.isArray(header) ? header[0] : header;
+    const v = (raw ?? '').trim();
+    if (!v) { return undefined; }
+    if (/^\d+$/.test(v)) { return Number(v) * 1000; }
+    const at = Date.parse(v);
+    if (!Number.isFinite(at)) { return undefined; }
+    return Math.max(0, at - now);
+}
+/** The hold a 429 imposes: the endpoint's figure when it gave a usable one
+ *  (at least a second, at most RETRY_AFTER_MAX_MS), else the doubling curve. */
+export function rateLimitHold(res: { retryAfterMs?: number }, previousMs: number): { ms: number; said: boolean } {
+    const r = res.retryAfterMs;
+    if (typeof r === 'number' && Number.isFinite(r) && r > 0 && r <= RETRY_AFTER_MAX_MS) {
+        return { ms: Math.max(1000, Math.round(r)), said: true };
+    }
+    return {
+        ms: previousMs ? Math.min(RATE_LIMIT_BACKOFF_MAX_MS, previousMs * 2) : RATE_LIMIT_BACKOFF_START_MS,
+        said: false
+    };
+}
+/** How the card says a hold, in the words that fit its origin. */
+export function holdWords(ms: number): string {
+    if (ms < 90_000) { return `${Math.max(1, Math.round(ms / 1000))} s`; }
+    return `${Math.max(1, Math.round(ms / 60_000))} min`;
+}
 
 export function credentialsPath(home = os.homedir()): string {
     return path.join(home, '.claude', '.credentials.json');
@@ -282,10 +336,12 @@ export function unavailable(state: PlanUsageState, note: string, plan = '', now 
     return { state, bars: [], plan, fetchedAt: now, note };
 }
 
-/** The raw GET. Rejects only on transport failure; HTTP status is returned. */
+/** The raw GET. Rejects only on transport failure; HTTP status is returned,
+ *  and on a 429 the wait the endpoint asked for and the headers that name what
+ *  was limited (S-63). */
 export function fetchUsage(
     token: string, userAgent = usageUserAgent(), timeoutMs = 8000
-): Promise<{ status: number; body: string }> {
+): Promise<UsageReply> {
     return new Promise((resolve, reject) => {
         const req = https.request({
             hostname: USAGE_HOST,
@@ -304,7 +360,19 @@ export function fetchUsage(
             let body = '';
             res.setEncoding('utf8');
             res.on('data', c => { body += c; });
-            res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
+            res.on('end', () => {
+                const out: UsageReply = { status: res.statusCode ?? 0, body };
+                const wait = retryAfterMs(res.headers['retry-after']);
+                if (wait !== undefined) { out.retryAfterMs = wait; }
+                const limits: Record<string, string> = {};
+                for (const [k, v] of Object.entries(res.headers)) {
+                    if (k === 'retry-after' || k.startsWith('anthropic-ratelimit-')) {
+                        limits[k] = Array.isArray(v) ? v.join(', ') : String(v ?? '');
+                    }
+                }
+                if (Object.keys(limits).length) { out.limitHeaders = limits; }
+                resolve(out);
+            });
         });
         req.setTimeout(timeoutMs, () => { req.destroy(new Error('timed out')); });
         req.on('error', reject);
@@ -333,7 +401,7 @@ export interface PlanUsageOptions {
     /** Overridable for tests — the same seam `AccountUsageService` has, so the
      *  two readers of one credentials file can be faked the same way. */
     readCreds?: (file: string) => OauthCredentials | undefined;
-    fetchImpl?: (token: string, userAgent: string) => Promise<{ status: number; body: string }>;
+    fetchImpl?: (token: string, userAgent: string) => Promise<UsageReply>;
     now?: () => number;
 }
 
@@ -465,13 +533,16 @@ export class PlanUsageService {
                     cred.plan, now));
             }
             if (res.status === 429) {
-                this.backoffMs = this.backoffMs
-                    ? Math.min(RATE_LIMIT_BACKOFF_MAX_MS, this.backoffMs * 2)
-                    : RATE_LIMIT_BACKOFF_START_MS;
-                this.backoffUntil = now + this.backoffMs;
-                const mins = Math.max(1, Math.round(this.backoffMs / 60_000));
+                // ‼️ S-63 — the endpoint's own figure when it gave one; the
+                // curve only when it did not. A hold the endpoint named does
+                // not feed the curve: the next unexplained 429 starts it afresh.
+                const hold = rateLimitHold(res, this.backoffMs);
+                this.backoffMs = hold.said ? 0 : hold.ms;
+                this.backoffUntil = now + hold.ms;
                 return (this.snap = unavailable('error',
-                    `The usage endpoint rate limited this request — backing off, next automatic read in ${mins} min. ⟳ asks anyway.`,
+                    hold.said
+                        ? `The usage endpoint rate limited this request and asked for ${holdWords(hold.ms)} — next automatic read then. ⟳ asks anyway.`
+                        : `The usage endpoint rate limited this request without saying how long — backing off, next automatic read in ${holdWords(hold.ms)}. ⟳ asks anyway.`,
                     cred.plan, now));
             }
             if (res.status !== 200) {
