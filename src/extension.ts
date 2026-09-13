@@ -214,6 +214,7 @@ import { mergeMissing, PortableMap } from './core/portableState';
 import { reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
 import { migrationGate } from './core/migrationGate';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
+import { changedSince, fingerprint, watchedFiles } from './core/slotWatch';
 import { housekeepingAt, repairEvents, repairPattern, SlotRepairJournal } from './core/slotRepairs';
 import { Promotion } from './core/keyOwnership';
 import {
@@ -18033,6 +18034,67 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // never wait on a repair. A failure here costs one incomplete slot, never a
     // start, and never a session — the index reads the slots either way.
     setTimeout(() => { try { completeSlots(false, undefined, 'start'); } catch { /* never fails a start */ } }, 0);
+    /**
+     * ‼️ X-294 — AND THE SIXTH GATE, which nobody has to open. The five above
+     * are all somebody's move; a permission granted at a terminal prompt in the
+     * main directory, or a key typed into the file by hand, is nobody's, and
+     * until now it reached no slot until the next move happened. Full reasoning
+     * and the loop rule: `core/slotWatch.ts`.
+     */
+    const slotWatchState = {
+        seen: {} as Record<string, string>,
+        timer: undefined as NodeJS.Timeout | undefined,
+        armed: new Set<string>()
+    };
+    const slotWatchFiles = () => watchedFiles(os.homedir(), storedAccounts().map(s => s.engine), accountAdapterFor);
+    const slotWatchSweep = () => {
+        const files = slotWatchFiles();
+        const { changed, now } = changedSince(fs, files, slotWatchState.seen);
+        // ‼️ QUIET BY COMPARISON. The return leg writes these same files, so
+        // its own write arrives here as an event; the fingerprint already holds
+        // what it wrote and the gate is not called again. A flag or a timer
+        // would have had to guess how long that takes.
+        slotWatchState.seen = now;
+        if (!changed.length) { return; }
+        try { completeSlots(false, undefined, 'watch'); } catch { /* never fails on a file change */ }
+        // …and what the gate itself wrote is accounted for before the next event.
+        slotWatchState.seen = fingerprint(fs, slotWatchFiles());
+    };
+    /**
+     * ‼️ ARMED FROM THE GATE, so the set of directories follows the set of
+     * accounts rather than a photograph taken at start. Capturing the FIRST
+     * account of an engine is what makes its directory worth watching, and a
+     * watcher armed only at activation would not have heard that engine until
+     * the next window. Idempotent by the `armed` set, so every gate may call it.
+     */
+    const armSlotWatch = () => {
+        for (const w of slotWatchFiles()) {
+            const key = w.dir.toLowerCase();
+            if (slotWatchState.armed.has(key)) { continue; }
+            const names = new Set(slotWatchFiles().filter(f => f.dir.toLowerCase() === key).map(f => f.name.toLowerCase()));
+            try {
+                // The directory, not the file: an editor that replaces a file
+                // rather than writing into it takes a file watch down with it.
+                // ‼️ And one of these directories is the HOME directory, whose
+                // other 40-odd children are none of our business — an event
+                // naming one of them is dropped here rather than costing a read.
+                const handle = fs.watch(w.dir, (_ev, name) => {
+                    if (name && !names.has(path.basename(String(name)).toLowerCase())) { return; }
+                    // Debounced — measured on this machine, ONE write produced
+                    // four events, and an engine writes its own file several
+                    // times a second. One sweep answers all of them.
+                    if (slotWatchState.timer) { clearTimeout(slotWatchState.timer); }
+                    slotWatchState.timer = setTimeout(() => { try { slotWatchSweep(); } catch { /* next event */ } }, 700);
+                });
+                slotWatchState.armed.add(key);
+                context.subscriptions.push({ dispose: () => { try { handle.close(); } catch { /* closed */ } } });
+            } catch { /* not watchable right now — the next gate tries again */ }
+        }
+    };
+    setTimeout(() => {
+        try { slotWatchState.seen = fingerprint(fs, slotWatchFiles()); armSlotWatch(); }
+        catch { /* never fails a start */ }
+    }, 0);
     // ‼️ X-276 — AND THE STORE IS BROUGHT TO ITS PORTABLE FORM ONCE. Rows a
     // capture wrote before the tokenizer existed name this machine; writing the
     // list back through `writeAccounts` tokenizes them, and a list already in
@@ -18186,6 +18248,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // to fail a capture: the credentials are already on disk and a slot
         // missing a link is repaired by the next sweep.
         try { completeSlots(false, slot.id, 'capture'); } catch { /* never fails a capture */ }
+        // X-294 — capture is the one event that can add an ENGINE, and an engine
+        // is what decides whether its directory is worth a watch. Idempotent, so
+        // the ordinary case (another account on an engine already watched) does
+        // nothing; the first Codex account is the case this exists for, and
+        // without it that engine went unheard until the next window.
+        try { armSlotWatch(); } catch { /* never fails a capture */ }
         if (plan.reseats) { identitySeen.delete(plan.reseats); }
         if (plan.adopts) { identitySeen.delete(plan.adopts); }
         // ‼️ CAPTURING IS NOT CHOOSING, and the default says so. Redirecting the

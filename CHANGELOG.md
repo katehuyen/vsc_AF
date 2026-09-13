@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.478.0 - the sixth gate: a change nobody made a move for (X-294) (2026-09-13)
+
+- **A permission you granted at a terminal prompt in the main directory, or a key
+  you typed into the settings file by hand, reached no account until something
+  else happened to open a gate.** The account contract runs both ways now (X-291),
+  but only at somebody's move: activation, capture, launch, a press on the card, a
+  bridge call. Nothing was lost — the next gate carried it — but a session started
+  in between ran on the old value, and the sentence for that is "I changed it and
+  it did not work". The engine's own files are now watched, and a change opens the
+  gate by itself.
+  - **Which files is derived, never typed.** The set is exactly what the contract
+    reads from the fleet — every carried behaviour file and every file with
+    key-level ownership — so Codex's `config.toml` and `hooks.json`, which only
+    existed as of the release before this one, are watched without anything here
+    naming them.
+  - **It calls the gate that already exists**, under its own name (`watch`), so a
+    repair that happened because a file changed is told apart from one that
+    happened because you pressed something — `accounts.repairs` says which.
+- **‼️ And the hard part was not the watching, it was not hearing yourself.** The
+  return leg writes these same files: a promotion puts an account's new answer
+  into `~/.claude.json`, which is watched, which would open the gate, which would
+  promote again. Convergence alone would end it — the second pass writes nothing —
+  but a loop that stops only because the work happens to be idempotent is one
+  non-idempotent write away from spinning for ever with nothing to say so. So this
+  is **quiet by comparison, not by flag**, the rule the settings reproduction
+  already lived by: every watched file's content is fingerprinted, an event whose
+  file still says what we last saw never reaches the gate, and the gate
+  re-fingerprints afterwards so whatever IT wrote is already accounted for. A
+  timer would have been worse twice: it assumes a latency the file system does not
+  promise, and it swallows a real edit that lands inside the window.
+- **Measured rather than assumed:** `~/.claude` on this machine is a junction into
+  the agent repo, and a watch that did not report through it would have looked
+  wired and done nothing — it reports (one write, four events). Those four are
+  also why the sweep is debounced.
+
 ## 3.477.0 - a Codex account was an identity with nothing behind it (X-279) (2026-09-13)
 
 - **A captured Codex account started its sessions on the engine's defaults — your
