@@ -392,7 +392,14 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         // Prompt history diverging per account costs nothing. Transcripts
         // diverging costs the panel every session it starts, which is why those
         // are here.
-        sharedPaths: ['projects', 'todos', 'shell-snapshots'],
+        // ‼️ X-273 — AND WHAT THE USER INSTALLED IS THE FLEET'S, NOT AN
+        // ACCOUNT'S. `plugins` and `skills` live under this directory too, so a
+        // session started on a slot could reach neither: measured 2026-09-13,
+        // the fleet holds a plugin marketplace (447 files) and two global
+        // skills, and every isolated session had been running without any of
+        // them. Nothing there is an identity — installing a skill once and
+        // losing it on the next sign-in is the X-270 fault by another name.
+        sharedPaths: ['projects', 'todos', 'shell-snapshots', 'plugins', 'skills'],
         // ‼️ X-265 — the settings file travels with the slot. CLAUDE_CONFIG_DIR
         // moves where `settings.json` is READ FROM, so an isolated session
         // inherits the user's model, permission mode and live hooks only if a

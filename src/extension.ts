@@ -34834,7 +34834,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'possible (X-270): the identity files are its own (`own:` — present or the capture '
                 + 'failed; sign in again, never repaired here), and everything a session behaves by is '
                 + 'the fleet\'s — reproduced into the slot (`carry:settings.json`, `env:<VAR>`, X-269), '
-                + 'linked into it (`link:projects|todos|shell-snapshots`, X-271) or written by the live '
+                + 'linked into it (`link:<folder>` — one per shared folder the engine names, X-271) or written by the live '
                 + 'installer (`hooks`). The list is DERIVED from the engine adapter\'s own fields, so an '
                 + 'engine with no such file has no such clause. Each slot answers `complete`, `gaps` '
                 + '(clause ids that read false) and `rows` (id, kind, owner, ok, detail, repairable, '

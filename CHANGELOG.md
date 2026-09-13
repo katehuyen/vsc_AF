@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.472.0 - what the user installed is the fleet's: plugins and skills reach every account (X-273) (2026-09-13)
+
+- **Every isolated session had been running without the plugins and skills
+  the user installed.** `CLAUDE_CONFIG_DIR` moves the whole directory, and
+  `plugins` and `skills` live in it - so a session on a slot could reach
+  neither. Measured on this machine: the fleet holds a plugin marketplace
+  (447 files) and two global skills, one of which the agent constitution
+  names as a trigger; all three Claude slots had none of it.
+  - Both are `sharedPaths` now, so the contract derives `link:plugins` and
+    `link:skills` clauses by itself and the three gates make the junctions.
+    Nothing there is an identity: installing a skill once and losing it on
+    the next sign-in is the X-270 fault under another name.
+  - The test fixture builds whatever the adapter names instead of a hand
+    written list of three folders, so the next shared folder needs no test
+    edited; and the `accounts.complete` describe stopped enumerating the
+    folders it does not own.
+  - Read against this machine: the new clauses found the real gap on all
+    three Claude slots, which is what the item said would be there.
+- **And a fault found on the way, filed as X-292.** The slot whose engine
+  cleanup ran most recently is, in both measured events, the slot that lost
+  its `todos` and `shell-snapshots` junctions - never `projects`. The
+  contract repairs them at every start, so the recurring cause has been
+  invisible; `cleanupPeriodDays: 36500` does not prevent it.
+
 ## 3.471.0 - a slot that was born complete now has to STAY complete (X-272) (2026-09-13)
 
 - **The birth contract asked whether the file existed. Existence was never

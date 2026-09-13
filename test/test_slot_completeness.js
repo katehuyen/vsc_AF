@@ -66,6 +66,9 @@ try {
     fs.mkdirSync(path.join(live, 'projects'), { recursive: true });
     fs.mkdirSync(path.join(live, 'todos'), { recursive: true });
     fs.mkdirSync(path.join(live, 'shell-snapshots'), { recursive: true });
+    // X-273 - the fixture makes every sharedPath the adapter names, so adding
+    // one to the contract never needs this line edited again.
+    for (const n of claude.sharedPaths) { fs.mkdirSync(path.join(live, n), { recursive: true }); }
     fs.writeFileSync(path.join(live, 'settings.json'), JSON.stringify({ model: 'opus', permissions: { defaultMode: 'bypassPermissions' } }, null, 2), 'utf8');
     const slot = path.join(tmp, 'accounts', 'claude-test');
     fs.mkdirSync(slot, { recursive: true });
@@ -95,6 +98,9 @@ try {
     ok('fresh slot: a real folder in the slot reads as a gap, with the reason on it',
         before.gaps.includes('link:projects') && /real folder/.test(before.rows.find(r => r.id === 'link:projects').detail));
     ok('fresh slot: missing links read as gaps', before.gaps.includes('link:todos') && before.gaps.includes('link:shell-snapshots'));
+    ok('‼️ X-273: the installed plugins and global skills are part of the contract',
+        claude.sharedPaths.includes('plugins') && claude.sharedPaths.includes('skills')
+        && before.gaps.includes('link:plugins') && before.gaps.includes('link:skills'));
     ok('fresh slot is not complete', before.complete === false);
 
     const dry = sc.completeSlot(ctx, true);
