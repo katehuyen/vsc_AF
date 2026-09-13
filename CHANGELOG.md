@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.470.0 - the same notice posted twice is answered rather than obeyed (2026-09-13)
+
+- **The user was seeing one question on the board twice, and the transcript
+  says exactly how.** An agent piped its own `notices.post` answer through
+  `head -8`, could not see the id it had just been handed, and ran the
+  identical command again to read the fields it had cut off - a write op
+  re-run as an inspection. 7.6 seconds apart, byte-identical, both on the
+  board.
+  - `notices.post` now REFUSES an identical agent+title+body+sections within
+    ten minutes: nothing is added, the first notice is handed back
+    (`posted:false`, `duplicateOf`), and the answer says in one line what to
+    do instead. The second leg never runs either, so a re-run can no longer
+    rewrite the report file under a notice the user is already reading.
+    `allowDuplicate:true` is there for saying something twice on purpose.
+  - **And the retraction that was not one.** The agent then "withdrew" the
+    copy with `notices.resolve` and verified on its own pending list, which
+    came back with one - while the user kept seeing two. `resolve` only marks
+    a question handled and removes nothing; it now says so, and `dismiss`
+    (undoable) says out loud that it is the op for taking something off the
+    board, so a catalog search for "retract / remove / delete" finds it.
+  - Pinned by a test that was mutation-checked: removing the guard drops four
+    assertions, including the one that the report file is not rewritten.
+
 ## 3.469.1 - the link clause resolved one side of the comparison and called a healthy fleet broken (X-284) (2026-09-13)
 
 - **Found by running the shipped contract against this machine before loading

@@ -550,6 +550,61 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
             && found.result[0].title === 'slot down');
     }
 
+    // ‼️ The same notice posted twice — measured 2026-09-13. An agent piped its
+    // own post answer through head -8, could not see the id it had been given,
+    // and re-ran the identical command to read the fields; the user got the
+    // same question on the board twice. A write op is not an inspection.
+    {
+        const args = {
+            title: 'aynı mesaj iki kez', level: 3, type: 'question', agent: 'developer',
+            body: 'the body that makes it the same message',
+            sections: [{ title: 'one', body: 'first' }]
+        };
+        const before = store.notices.length;
+        const first = await reg.dispatch('notices.post', args);
+        ok('a first post goes through', first.ok && first.result.posted !== false
+            && store.notices.length === before + 1);
+
+        posted = null;
+        const again = await reg.dispatch('notices.post', args);
+        ok('‼️ the identical post is REFUSED, not obeyed',
+            again.ok && again.result.posted === false && again.result.duplicateOf === first.result.id
+            && store.notices.length === before + 1);
+        ok('…and it hands back the notice the caller could not read',
+            again.result.id === first.result.id && again.result.title === args.title
+            && /never re-run notices\.post/i.test(again.result.note));
+        ok('…and the board is not told anything happened', posted === null);
+
+        // The second leg must not run either: a re-run used to rewrite the
+        // report file under the notice the user is already reading.
+        const rArgs = { title: 'rapor tekrarı', agent: 'developer', body: 'summary', report: 'ORIGINAL' };
+        const r1 = await reg.dispatch('notices.post', rArgs);
+        const r2 = await reg.dispatch('notices.post', { ...rArgs, report: 'OVERWRITTEN' });
+        ok('‼️ a re-run cannot rewrite the report file under it',
+            r2.result.posted === false && fs.readFileSync(r1.result.reportPath, 'utf8') === 'ORIGINAL');
+
+        // It is a guard, not a wall: different words are different news, and a
+        // caller that really means to repeat itself says so.
+        const changedBody = await reg.dispatch('notices.post', { ...args, body: 'different words' });
+        ok('a different body is different news and posts', changedBody.result.posted !== false);
+        const onPurpose = await reg.dispatch('notices.post', { ...args, allowDuplicate: true });
+        ok('…and allowDuplicate:true says it twice on purpose',
+            onPurpose.result.posted !== false && onPurpose.result.id !== first.result.id);
+
+        // ‼️ Resolving a duplicate is what the agent DID, and it is not a
+        // retraction: the user kept seeing two. dismiss is the op.
+        await reg.dispatch('notices.resolve', { id: onPurpose.result.id });
+        ok('‼️ resolve does NOT take it off the board',
+            !!store.notices.find(n => n.id === onPurpose.result.id));
+        await reg.dispatch('notices.dismiss', { id: onPurpose.result.id });
+        ok('…dismiss does', !store.notices.find(n => n.id === onPurpose.result.id));
+        // And the window is a window: an old copy is news again.
+        const aged = store.notices.find(n => n.id === first.result.id);
+        aged.ts -= 11 * 60 * 1000;
+        const later = await reg.dispatch('notices.post', args);
+        ok('the same sentence long afterwards is news again', later.result.posted !== false);
+    }
+
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
     try { fs.rmSync(reportDir, { recursive: true, force: true }); } catch {}
 

@@ -264,6 +264,32 @@ export function makeNotice(input: NoticeInput, now = Date.now()): Notice {
     return n;
 }
 
+/**
+ * How long after a notice was posted an IDENTICAL one is read as the same
+ * message arriving twice rather than as news. Measured 2026-09-13: an agent
+ * piped its own `notices.post` answer through `head -8`, could not see the id
+ * it had just been given, and ran the very same command again to read the
+ * fields — the user got the same question on the board twice, 7.6 seconds
+ * apart. A write op re-run to inspect its own answer is the failure this
+ * closes; ten minutes is far wider than that mistake and far narrower than any
+ * honest repeat of the same sentence, and `allowDuplicate` says it out loud
+ * for the caller that really means it.
+ */
+export const DUPLICATE_WINDOW_MS = 10 * 60_000;
+
+/**
+ * What makes two notices THE SAME MESSAGE: who said it and what it says. Type
+ * and level are deliberately out — a re-post that corrects them is an edit the
+ * caller meant, not the accident above.
+ */
+export function noticeFingerprint(input: Pick<NoticeInput, 'agentName' | 'title' | 'body' | 'sections'>): string {
+    const agent = String(input.agentName ?? '').trim().slice(0, 60) || 'system';
+    const title = String(input.title ?? '').trim().slice(0, TITLE_MAX);
+    const body = (typeof input.body === 'string' ? input.body.trim() : '').slice(0, BODY_MAX);
+    const sections = (coerceSections(input.sections) ?? []).map(s => s.title + ' >> ' + s.body).join(' || ');
+    return [agent, title, body, sections].join(' <|> ');
+}
+
 /** Pinned first, then newest. Client controls further sort. */
 export function sortNotices(list: Notice[]): Notice[] {
     return list.slice().sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || b.ts - a.ts);
@@ -358,6 +384,17 @@ export class NoticesStore {
         this.notices.unshift(n);
         this.save();
         return n;
+    }
+
+    /**
+     * The same message from the same poster, still on the board and still
+     * young — the notice a second identical post would be a copy OF.
+     * Returns undefined when there is none, which is the normal answer.
+     */
+    recentDuplicate(input: Pick<NoticeInput, 'agentName' | 'title' | 'body' | 'sections'>,
+        windowMs = DUPLICATE_WINDOW_MS, now = Date.now()): Notice | undefined {
+        const fp = noticeFingerprint(input);
+        return this.notices.find(n => now - n.ts <= windowMs && noticeFingerprint(n) === fp);
     }
 
     private find(id: string): Notice | undefined { return this.notices.find(x => x.id === id); }
@@ -747,10 +784,37 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
     bridge.register([
         {
             op: 'notices.post',
-            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn. project? (id or name) files the notice under a project so it shows on that project\'s Work tab and timeline — an unknown name is reported back and the notice posts unfiled rather than being guessed at. ‼️ OMIT IT AND AGENT FARM FILLS IT IN: if you are running in a session that belongs to a project, that project is stamped for you and the answer says so (projectFrom). Pass project only to file the notice somewhere ELSE, or project="(none)" to say out loud that it belongs nowhere. account? (X-257 — WHICH SIGN-IN this is about, as DATA rather than a name written into the title. On a farm whose scarce resource IS account quota that is the axis the board was missing: the repeated failures of one slot group, the page narrows to one sign-in, and an agent can ask notices.list whether an account has an open warning BEFORE it sends work there. Stamped, never derived — a notice about no particular account carries none, and that is an answer rather than a gap.)',
+            describe: 'Post ONE notice to the user\'s dashboard board (agent→user; the shared channel — post a single entry per thing you want to tell the user, never one per sub-item). args: title (required, the one-line root), type? (update|report|result|reminder|suggestion|warning|question, default update), level? (1 routine|2 medium|3 important|4 ultra, default 1 — ALWAYS pick honestly, never omit), body? (markdown, shown on expand), sections? ([{title, body}] independently-collapsible sub-items, each a FULL self-contained summary — not a link-only teaser), agent? (poster name), tags? (string[]|csv), dueAt? (ms epoch). SECOND LEG for substantial content (reports/digests/summaries/work outputs — anything the user may want in full): pass report? (the full markdown, written in Turkish with source URLs at the end) — the host saves it to the default report folder as YYYY-MM-DD_<name>.md and links it as a clickable "full report"; reportName? overrides the file name; OR pass reportPath? to link a file you already wrote. Keep body/sections a genuine SUMMARY; put the depth in the report. Use type=question to leave the user an async question (they answer in the UI); check & resolve your answered questions each turn. project? (id or name) files the notice under a project so it shows on that project\'s Work tab and timeline — an unknown name is reported back and the notice posts unfiled rather than being guessed at. ‼️ OMIT IT AND AGENT FARM FILLS IT IN: if you are running in a session that belongs to a project, that project is stamped for you and the answer says so (projectFrom). Pass project only to file the notice somewhere ELSE, or project="(none)" to say out loud that it belongs nowhere. account? (X-257 — WHICH SIGN-IN this is about, as DATA rather than a name written into the title. On a farm whose scarce resource IS account quota that is the axis the board was missing: the repeated failures of one slot group, the page narrows to one sign-in, and an agent can ask notices.list whether an account has an open warning BEFORE it sends work there. Stamped, never derived — a notice about no particular account carries none, and that is an answer rather than a gap.) ‼️ POSTING IS NOT IDEMPOTENT AND IS NOT MEANT TO BE RE-RUN: the same agent+title+body+sections within 10 minutes is REFUSED (`posted:false`, `duplicateOf`) and the first notice is handed back, so never call this a second time to read an answer you truncated away — read the answer of the FIRST call. allowDuplicate? (true to say the same thing twice on purpose).',
             handler: (args) => {
                 const title = argStr(args, 'title');
                 const agentName = optStr(args, 'agent') || undefined;
+                // ‼️ THE SAME MESSAGE TWICE IS A MISTAKE, AND IT IS ANSWERED
+                // RATHER THAN OBEYED. The board is the user's, so a copy of a
+                // notice they are already looking at costs them a read and a
+                // deletion. The first one is handed back by id — the caller
+                // that could not see its own answer gets it here — and the
+                // second leg below never runs, so a re-run cannot rewrite the
+                // report file either.
+                if (args.allowDuplicate !== true) {
+                    const prior = deps.store.recentDuplicate({
+                        agentName, title,
+                        body: optStr(args, 'body') || undefined,
+                        sections: args.sections
+                    });
+                    if (prior) {
+                        return {
+                            posted: false, duplicateOf: prior.id, id: prior.id, ts: prior.ts,
+                            title: prior.title, type: prior.type, level: prior.level,
+                            reportPath: prior.reportPath, projectId: prior.projectId,
+                            note: 'NOT POSTED — you already posted this exact notice '
+                                + Math.round((Date.now() - prior.ts) / 1000) + 's ago and it is still on the board; '
+                                + 'this answer is that notice. Never re-run notices.post to read its answer — '
+                                + 'to change what it says use notices.edit, to take it off the board use '
+                                + 'notices.dismiss, and pass allowDuplicate:true only if you really mean to say it twice.',
+                            unread: deps.store.unread()
+                        };
+                    }
+                }
                 let reportPath = optStr(args, 'reportPath') || undefined;
                 const reportBody = optStr(args, 'report');
                 // ‼️ The second leg NEVER fails quietly. A caller that asked for a
@@ -861,7 +925,7 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
         },
         {
             op: 'notices.resolve',
-            describe: 'Mark a question handled after you (the asking agent) acted on the user\'s answer or decline — drops it from your pending list. args: id',
+            describe: 'Mark a question handled after you (the asking agent) acted on the user\'s answer or decline — drops it from your pending list. args: id. ‼️ IT DOES NOT REMOVE ANYTHING: the notice stays on the user\'s board exactly as it was, so this is never how you retract, withdraw or delete a notice you posted by mistake — that is notices.dismiss (undoable with notices.undo). Measured 2026-09-13: an agent resolved a duplicate, checked its own pending list, saw one, and reported the copy retracted while the user kept seeing two.',
             handler: (args) => {
                 need(deps.store.resolve(argStr(args, 'id')), 'Notice not found — notices.list shows current ids.');
                 changed(); return { ok: true };
@@ -869,7 +933,7 @@ export function registerNoticesOps(bridge: BridgeRegistry, deps: NoticesOpsDeps)
         },
         {
             op: 'notices.dismiss',
-            describe: 'Remove a notice. args: id — OR — clearRead:true (remove read, non-pinned, non-starred, non-open-question notices). ‼️ B-20 — the last removal (this one, a bulk one, or a clearRead) can be taken back with notices.undo.',
+            describe: 'Remove (retract / withdraw / delete) a notice — this is the op for taking something off the user\'s board, including a duplicate or a mistake you just posted. args: id — OR — clearRead:true (remove read, non-pinned, non-starred, non-open-question notices). ‼️ B-20 — the last removal (this one, a bulk one, or a clearRead) can be taken back with notices.undo.',
             handler: (args) => {
                 if (args.clearRead === true) { const removed = deps.store.clearRead(); changed(); return { removed: removed.length, undoable: deps.store.undoable() }; }
                 need(deps.store.dismiss(argStr(args, 'id')), 'Notice not found — notices.list shows current ids.');
