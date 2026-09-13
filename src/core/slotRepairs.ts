@@ -35,7 +35,16 @@ export interface SlotRepairEvent {
     clause: string;
     /** the failing reading, in the words the Engines card and Doctor print */
     was: string;
-    /** whether the repair actually changed the disk */
+    /**
+     * ‼️ WHETHER THE CLAUSE IS RIGHT NOW — read AFTER the pass, not "did this
+     * clause's own repair call write bytes". Measured the first hour this
+     * journal was live: one repair primitive puts back ALL of an engine's
+     * shared paths at once, so `link:todos` wrote both junctions and
+     * `link:shell-snapshots` then found nothing left to do and reported
+     * `false` — a working repair accused of failing, on a slot whose five
+     * links were all on disk. An instrument that cries wolf is worse than no
+     * instrument. `error` is where a repair that really failed says so.
+     */
     fixed: boolean;
     error?: string;
     /**
@@ -79,7 +88,7 @@ export function repairEvents(
         .map(r => {
             const e: SlotRepairEvent = {
                 at: meta.at, slotId: meta.slotId, engine: meta.engine, gate: meta.gate,
-                clause: r.id, was: r.was ?? r.detail, fixed: !!r.wrote
+                clause: r.id, was: r.was ?? r.detail, fixed: r.ok
             };
             if (r.error) { e.error = r.error; }
             if (meta.keptAt !== undefined) { e.keptAt = meta.keptAt; }

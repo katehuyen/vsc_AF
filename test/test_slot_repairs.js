@@ -37,17 +37,30 @@ const { adapterFor, ENGINE_AUTH_ADAPTERS } = require(path.join(ROOT, 'out/core/e
         rows: [
             { id: 'own:.credentials.json', kind: 'own', owner: 'account', ok: true, detail: 'present', repairable: false },
             { id: 'link:todos', kind: 'link', owner: 'fleet', ok: true, repairable: true, detail: 'todos -> pool', wrote: true, was: 'todos missing - no link to the pool' },
+            // the live case: the clause above put this one back too, so this
+            // repair call wrote nothing and the junction is on disk and fine
+            { id: 'link:shell-snapshots', kind: 'link', owner: 'fleet', ok: true, repairable: true, detail: 'shell-snapshots -> pool', wrote: false, was: 'shell-snapshots missing - no link to the pool' },
             { id: 'link:skills', kind: 'link', owner: 'fleet', ok: false, repairable: true, detail: 'skills link is broken', wrote: false, was: 'skills link is broken', error: 'link repair failed' }
         ]
     };
     const ev = sr.repairEvents(after, { slotId: 's1', engine: 'claude', gate: 'start', at: 1000, keptAt: 500 });
-    ok('a clause whose repair never ran is not an event', ev.length === 2 && !ev.some(e => e.clause.startsWith('own:')));
+    ok('a clause whose repair never ran is not an event', ev.length === 3 && !ev.some(e => e.clause.startsWith('own:')));
+    // ‼️ MEASURED THE FIRST HOUR THIS JOURNAL WAS LIVE. One repair primitive
+    // puts back ALL of an engine's shared paths at once, so the FIRST failing
+    // link clause writes every junction and the next one finds nothing left to
+    // do — `wrote: false` on a clause that is on disk and fine. Reporting that
+    // as a failure is an instrument crying wolf, which is worse than none. So
+    // `fixed` is the reading AFTER the pass, not whether this call wrote bytes.
+    const sibling = ev.find(e => e.clause === 'link:shell-snapshots');
+    ok('‼️ X-292 — a clause a SIBLING\'s repair put right is NOT reported as a failure',
+        sibling.fixed === true && !sibling.error);
     // ‼️ THE WHOLE POINT. After the repair the reading says the slot is well;
     // record that sentence and the journal explains nothing.
     ok('‼️ X-292 — the row carries the reading it was repaired FROM, not the one after',
         ev[0].was === 'todos missing - no link to the pool' && ev[0].was !== ev[0].detail);
-    ok('a repair that failed is still an event, and says so',
-        ev[1].fixed === false && ev[1].error === 'link repair failed');
+    const reallyFailed = ev.find(e => e.clause === 'link:skills');
+    ok('…and a repair that really failed is still an event, and says so',
+        reallyFailed.fixed === false && reallyFailed.error === 'link repair failed');
     ok('the gate and the stamp travel on the row', ev[0].gate === 'start' && ev[0].keptAt === 500);
     const none = sr.repairEvents({ complete: true, gaps: [], rows: [{ id: 'link:todos', ok: true, detail: 'ok' }] },
         { slotId: 's1', engine: 'claude', gate: 'start', at: 1 });

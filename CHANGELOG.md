@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.473.1 - the new journal's first finding was its own false alarm (X-292) (2026-09-13)
+
+- **Read against this machine within the hour, and the instrument accused a
+  working repair of failing.** One repair primitive puts back ALL of an
+  engine's shared paths in one call, so the first failing link clause wrote
+  both junctions and `link:shell-snapshots` then found nothing left to do:
+  `fixed: false` on a clause whose junction was on disk and fine, twice, on
+  two slots. A diagnostic that cries wolf is worse than no diagnostic.
+  - `fixed` is now the clause's reading AFTER the pass, not whether that one
+    call wrote bytes. A repair that really failed still reads `false` and
+    still carries its `error`. Pinned by the live case: a row with
+    `wrote: false, ok: true` must not be reported as a failure.
+- **And a fifth event, on a slot that had been checked by hand ten minutes
+  earlier.** `claude-aicozums` was measured whole at 09:52 with a
+  `.last-cleanup` from the previous evening; by 10:02 the stamp had moved and
+  both junctions were gone, and the `launch` gate put them back. Five for
+  five, and `projects` has still never gone.
+
 ## 3.473.0 - a repair is an EVENT, and the thing that keeps breaking it has a name (X-292) (2026-09-13)
 
 - **The contract healed the same two junctions over and over and no surface
