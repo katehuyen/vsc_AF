@@ -1046,8 +1046,10 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // look identical from here — both sdk-cli, both ours, neither hosted here.
     // Offering to end the second would kill a conversation somebody is having,
     // so each window writes down what it is reading, under its own pid.
+    // S-59 — the rule moved into the one reading every door shares (leftoversOf,
+    // core/cliSessions.ts), where test_cli_leftovers.js proves the claim is honoured.
     ok('…and never a session another live window is reading',
-        /const readElsewhere = /.test(ext) && /if \(readElsewhere\(sessionId\)\) \{ return undefined; \}/.test(ext));
+        /const readElsewhere = /.test(ext) && /elsewhere: readElsewhere/.test(ext));
     ok('…a claim that dies with the window that made it',
         /console-hosting\.json/.test(ext) && /if \(k !== me && !pidAlive\(Number\(k\)\)\) \{ delete map\[k\]; \}/.test(ext));
     ok('…and only when a program holds it, never somebody\'s terminal',

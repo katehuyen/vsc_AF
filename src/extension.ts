@@ -258,7 +258,7 @@ import {
 import { EngineRunner, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
-import { CliSessionRecord, describeOwner, isSpareCliSession, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
+import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
 import { ancestorsOf, describeKillTarget, findKillTarget, readProcessTable } from './core/processTree';
 import { revealPath } from './core/reveal';
 import {
@@ -3374,7 +3374,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // before it spawns, with the same sentence every other surface uses.
             engineRefusal: (engine) => engineRefusal(engineMatrix(), engine),
             // ‼️ S-19 — the launch gate for a resumed run; see sessionBusyReason.
-            sessionBusy: (sessionId: string): string | undefined => sessionBusyReason(sessionId),
+            // ‼️ S-59 — a survivor of an earlier window that this farm started
+            // is ended here rather than waited for: it never lets go by itself,
+            // and after a resume-restart the run behind it IS the continuation
+            // of the very conversation it is holding. Asked first, because
+            // sessionBusyReason would report the same pid as a holder to wait on.
+            sessionBusy: (sessionId: string): string | undefined =>
+                reclaimLeftover(sessionId) ?? sessionBusyReason(sessionId),
             /** ‼️ S-19 — the conversation's meter, so a resumed run is charged
              *  the DIFFERENCE and not the history. `byId` is the one resolver
              *  that works on all four engines. */
@@ -10946,7 +10952,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + ' publish what each turn cost and the figure is theirs; '
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
                 + ' report tokens and no dollars — that is the engine, not a missing figure. A zero from an engine that DOES publish (a free model) is a real zero.',
-            handler: (args) => {
+            handler: async (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const d = launchDefaults();
                 const resume = optStr(args, 'resume') || undefined;
@@ -11013,6 +11019,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const accountNo = launchAccountRefusal({ engine, account: wantAccount });
                 need(!accountNo, accountNo);
                 const account = launchAccountFor(engine, wantAccount);
+                /**
+                 * ‼️ S-59 — A HELD ID IS SETTLED BEFORE A PROCESS IS STARTED ON IT.
+                 * This door started `--resume` against whatever held the id and
+                 * left the CLI to sort it out — measured (X-266) as a card frozen
+                 * in `starting` behind a lock it never got. The Console door asks
+                 * a person; a bridge caller is unattended, so a leftover of OURS
+                 * is ended and waited out (the same reclaim the revive uses), and
+                 * any other holder — a terminal, another window, somebody else's
+                 * SDK — is refused by name rather than doubled.
+                 */
+                if (resume && engine === 'claude') {
+                    const left = leftoverOwner(resume);
+                    if (left) {
+                        const got = await consoleHost.reclaim(resume);
+                        need(got.free, `pid ${got.pid ?? left.pid} was left holding ${resume} by an earlier window and did not let go — nothing was started; farm.health sessions.leftovers lists it`);
+                    } else {
+                        const busy = sessionBusyReason(resume);
+                        need(!busy, `${resume} is open elsewhere — ${busy}; a second process on one transcript is refused`);
+                    }
+                }
                 const id = consoleHost.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     engine: engine as EngineId,
@@ -15887,7 +15913,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: 'What is actually running: extension version, this activation\'s bootId (a new one '
                 + 'on every extension host start — compare it to prove a restart really happened), uptime, '
                 + 'live console sessions (‼️ `sessions.twins` — X-266 — any session id the CLI registry shows '
-                + 'under MORE than one live pid, across every claude home; empty is the only healthy answer), '
+                + 'under MORE than one live pid, across every claude home; empty is the only healthy answer. '
+                + '‼️ `sessions.leftovers` — S-59 — program-owned claudes NOBODY IS READING: survivors of a '
+                + 'reload or a crash, still holding their session and still spending, on no card and no '
+                + 'running task; `ours` says what started each one (console | task) and only those are '
+                + 'ended by a resume door — one with no `ours` is somebody else\'s SDK and is only reported. '
+                + 'Empty is the only healthy answer), '
                 + 'open terminals, the armed restart if there is one, and the last '
                 + 'self-restart this window performed. ‼️ `build` is the reading that matters after an '
                 + 'install: `installed` is the version in the extensions folder, `running` is the one this '
@@ -15951,7 +15982,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // ‼️ X-266 — the twin state read off the CLI's own registry,
                         // across every home: one session id, more than one live pid.
                         // Empty is the only healthy answer.
-                        twins: twinsOf(liveCliSessions())
+                        twins: twinsOf(liveCliSessions()),
+                        // ‼️ S-59 — program-owned claudes nobody is reading: the
+                        // survivors a reload or a crash left running for nobody.
+                        // `ours` names what started each one; only those may be
+                        // ended by a door. Empty is the only healthy answer.
+                        leftovers: leftovers()
                     },
                     terminals: w.terminals.map(t => t.name),
                     restartArmed: armedRestart,
@@ -24516,20 +24552,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * `--resume` was measured to pick the same session back up with everything
      * it remembers, so the way out is to end the leftover and resume. That is
      * destructive, so it is never done silently — and it is only ever OFFERED
-     * for a session this extension's own Console started (`consoleIds`), which
-     * this window is not hosting, whose owner is a program rather than
-     * somebody's terminal.
+     * for a session this farm itself started (`ours`: a Console card, or a task
+     * run whose id the board wrote down), which this window is not hosting,
+     * whose owner is a program rather than somebody's terminal.
+     *
+     * ‼️ S-59 — ONE READING FOR EVERY DOOR. `leftovers()` is the whole set
+     * (`leftoversOf`, core/cliSessions.ts), and `farm.health` prints it: a
+     * survivor of a reload used to show on no surface at all, and the only
+     * thing that ever looked for it was a resume that happened to name its id.
+     * `leftoverOwner` is that set asked about one id, so the Console door, the
+     * bridge door and the task gate cannot disagree about who is a leftover.
+     * A headless run's survivor is ours too (`runSessionId` is on the board),
+     * which the old `consoleIds`-only reading could not see — and it is the one
+     * that matters after a resume-restart, because `reviveCutRuns` starts the
+     * continuation into the S-19 gate, which parked it behind that survivor
+     * for ever.
      */
+    const oursOf = (sessionId: string): 'console' | 'task' | undefined => {
+        if (consoleIds.includes(sessionId)) { return 'console'; }
+        const onBoard = (taskManager.tasks as FarmTask[]).some(t =>
+            t.runSessionId === sessionId || t.resumeSessionId === sessionId);
+        return onBoard ? 'task' : undefined;
+    };
+    const leftovers = (): Leftover[] => leftoversOf(liveCliSessions(), {
+        hostedHere: sid => consoleHost.list().some(h => h.sessionId === sid
+            && h.status !== 'ended' && h.status !== 'error'),
+        elsewhere: readElsewhere,
+        ours: oursOf
+    });
     const leftoverOwner = (sessionId: string): { pid: number } | undefined => {
-        if (!sessionId || !consoleIds.includes(sessionId)) { return undefined; }
-        const hostedHere = consoleHost.list().some(h => h.sessionId === sessionId
-            && h.status !== 'ended' && h.status !== 'error');
-        if (hostedHere) { return undefined; }
-        // …and not a conversation another window is having right now
-        if (readElsewhere(sessionId)) { return undefined; }
-        const owner = ownerOf(liveCliSessions(), sessionId);
-        if (!owner || owner.entrypoint !== 'sdk-cli') { return undefined; }
-        return { pid: owner.pid };
+        if (!sessionId) { return undefined; }
+        const l = leftovers().find(x => x.sessionId === sessionId && x.ours);
+        return l ? { pid: l.pid } : undefined;
+    };
+    /**
+     * ‼️ S-59 — THE UNATTENDED DOORS END A LEFTOVER OF OURS INSTEAD OF WAITING
+     * FOR IT. A person at the Console door is asked ("End it and continue
+     * here"); a queued task and a bridge caller have nobody to ask, and a
+     * survivor never lets go by itself — so the S-19 gate parked the run for
+     * ever and `console.start resume=` started a second process behind a lock
+     * it never got (X-266's measurement). The kill is asynchronous (`taskkill`
+     * takes seconds here) and fired once per pid: the gate says so and asks
+     * again on its next beat, by which time the registry has let the id go.
+     */
+    const endingLeftovers = new Set<number>();
+    const reclaimLeftover = (sessionId: string): string | undefined => {
+        const l = leftoverOwner(sessionId);
+        if (!l) { return undefined; }
+        if (!endingLeftovers.has(l.pid)) {
+            endingLeftovers.add(l.pid);
+            void endLeftover(sessionId, l.pid).finally(() => endingLeftovers.delete(l.pid));
+        }
+        return `pid ${l.pid} was left holding it by an earlier window and nobody was reading it — `
+            + 'it is being ended; asked again on the next beat';
     };
 
     /**

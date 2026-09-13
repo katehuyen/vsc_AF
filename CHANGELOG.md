@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.490.0 - a claude running for nobody is seen, and ended only where it is ours (S-59) (2026-09-14)
+
+- **A survivor of a reload showed on no surface at all.** A window reload or a
+  crash kills the extension host and not the `claude -p` under it: the child
+  keeps its session in the CLI's registry, keeps working on a dead pipe, keeps
+  spending — and the new host's seat map is empty, the task board's sweep has
+  already re-queued its run, and the registry was read only when a resume
+  happened to name that one id. X-266 reclaimed the Console survivors of a
+  `resume:true` restart; the headless survivor and every ordinary reload's
+  survivors were left where they were.
+- **`farm.health` → `sessions.leftovers`** is the whole set, read the way every
+  door now reads it (`leftoversOf`): program-owned (`sdk-cli`), not the
+  daemon's spare, not hosted by this window, not read by another. `ours` names
+  what started each one — a Console card, or a task run by the id the board
+  wrote down — and only those may be ended by a door; a program-owned session
+  this farm has no record of is somebody else's SDK and is reported, never
+  touched. Empty is the only healthy answer.
+- **The two unattended doors end a leftover of ours instead of waiting for it.**
+  A person at the Console door is asked ("End it and continue here"); a queued
+  task and a bridge caller have nobody to ask, and a survivor never lets go by
+  itself. The S-19 gate parked a resumed run behind it for ever — which after
+  a `resume:true` restart is the continuation of the very conversation the
+  survivor holds, so the night shift stalled on its own leftover. The gate now
+  ends it (once per pid, asynchronously, said on the row) and asks again on its
+  next beat. `console.start resume=` used to start `--resume` against whatever
+  held the id and leave the CLI to sort it out — measured as a card frozen in
+  `starting` behind a lock it never got; it now reclaims a leftover of ours and
+  waits it out, and refuses any other holder by name rather than doubling it.
+- The Console door's own offer widened by the same reading: a headless run's
+  survivor is ours too, which the old `consoleIds`-only test could not see.
+
 ## 3.489.0 - a card removed while it was live closes its own lane (X-300) (2026-09-14)
 
 - **"End & Remove Session" on a running card left its swim lane open on the

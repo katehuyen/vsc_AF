@@ -2879,7 +2879,8 @@ const { opencodeStatus, syncToOpencode } =
         // while every assertion above it still passes. Two checks below fell off
         // the end when X-105 added the route paragraph — the failure looked like
         // a missing return field and was a short slice.
-        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 13000);
+        // 15000: the S-59 held-id gate sits between the engine refusal and the reply
+        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 15000);
         ok('console.start takes it too, in the same words',
             /project\? \(id or name/.test(consoleStart)
             && /resolveLaunchProject\(args\.project\)/.test(consoleStart));

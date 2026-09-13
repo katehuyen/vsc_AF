@@ -247,6 +247,58 @@ export function readCliSessionsAcross(dirs: (string | undefined | null)[]): CliS
     return out;
 }
 
+/**
+ * ‼️ S-59 — A PROGRAM-OWNED `claude` THAT NOBODY IS READING.
+ *
+ * A window reload or a crash kills the extension host and not the `claude -p`
+ * under it: the child outlives its parent with its stdout on a dead pipe, still
+ * holding its session in the registry, still spending. Until now such a
+ * survivor showed on NO surface — the new host's seat map is empty, the task
+ * board's sweep has already put its run back on the queue, and the registry is
+ * read only when a resume happens to ask about that one id. This is the whole
+ * set, read the same way every door reads it: what the CLI reports as
+ * program-owned (`sdk-cli`), minus the daemon's spares, minus what this window
+ * hosts, minus what another window is reading. What is left is running for
+ * nobody.
+ *
+ * `ours` says whether this farm STARTED it (a Console card or a task run), and
+ * that is the only kind a door may end without asking — a program-owned session
+ * this farm has no record of is somebody else's SDK and is reported, not touched.
+ */
+export interface LeftoverClaims {
+    /** a live seat of THIS window holds that id */
+    hostedHere(sessionId: string): boolean;
+    /** another live window's Console is reading it */
+    elsewhere(sessionId: string): boolean;
+    /** what of this farm's own started it, if anything is on record */
+    ours(sessionId: string): 'console' | 'task' | undefined;
+}
+export interface Leftover {
+    pid: number;
+    sessionId: string;
+    cwd?: string;
+    name?: string;
+    status?: string;
+    startedAt?: number;
+    ours?: 'console' | 'task';
+}
+export function leftoversOf(records: CliSessionRecord[], claims: LeftoverClaims): Leftover[] {
+    const out: Leftover[] = [];
+    for (const r of records) {
+        if (r.entrypoint !== 'sdk-cli' || isSpareCliSession(r)) { continue; }
+        if (claims.hostedHere(r.sessionId) || claims.elsewhere(r.sessionId)) { continue; }
+        const l: Leftover = { pid: r.pid, sessionId: r.sessionId };
+        if (r.cwd) { l.cwd = r.cwd; }
+        if (r.name) { l.name = r.name; }
+        if (r.status) { l.status = r.status; }
+        if (r.startedAt) { l.startedAt = r.startedAt; }
+        const ours = claims.ours(r.sessionId);
+        if (ours) { l.ours = ours; }
+        out.push(l);
+    }
+    return out.sort((a, b) => (a.startedAt ?? 0) - (b.startedAt ?? 0));
+}
+
 /** Session ids that MORE THAN ONE live process claims — the X-266 state itself,
  *  read straight off the registry rather than off a process list that races it. */
 export function twinsOf(records: CliSessionRecord[]): { sessionId: string; pids: number[] }[] {
