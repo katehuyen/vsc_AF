@@ -394,13 +394,28 @@ the engine adapter's own fields — every `ownFiles` entry an `own:` clause
 (identity, the account's, never repaired in place), every `carryFiles` entry a
 `carry:` clause and every `requiredEnv` var an `env:` clause (reproduced by
 X-269), every `sharedPaths` entry a `link:` clause (a junction to the pool,
-X-271), plus `hooks`. `CONTENT_KEYS` / `META_KEYS` classify every field of
-`EngineAuthAdapter`, and `test_slot_completeness.js` reads the interface out
-of the source: a new field in neither list fails the build. So the eleventh
-thing an isolated session turns out to need (plugins, skills, folder trusts,
-MCP grants — X-273, X-274) is added by giving the adapter a field and this
-module a deriver, and every gate, the `accounts.complete` op, the card badge
-and the Doctor line see it at once.
+X-271), every `ownership` entry a `keys:` clause (the fleet's keys INSIDE a
+file the slot holds, X-274), plus `hooks`. `CONTENT_KEYS` / `META_KEYS`
+classify every field of `EngineAuthAdapter`, and `test_slot_completeness.js`
+reads the interface out of the source: a new field in neither list fails the
+build. So the eleventh thing an isolated session turns out to need (plugins,
+skills, folder trusts, MCP grants — X-273, X-274) is added by giving the
+adapter a field and this module a deriver, and every gate, the
+`accounts.complete` op, the card badge and the Doctor line see it at once.
+
+- **The unit of ownership is the KEY, not the file (X-274).** `.claude.json`
+  is the slot's sign-in, the fleet's folder trusts and MCP servers, and a page
+  of telemetry in one file, so neither `own:` (copy once) nor `carry:` (render
+  over) is right for the whole of it. The adapter's `ownership` names each
+  key's policy — `fleet` (projected at every gate, absence included) · `slot`
+  (never touched) · `ignore` (never compared, never written) — one level down
+  too for map-shaped keys (`projects.<path>`), in every entry the fleet has;
+  an entry only the slot has is the slot's. **The default is `ignore` and that
+  is load-bearing:** counting the 21 telemetry fields of a project entry as
+  drift would rewrite every slot on every gate for ever (the 3.469.1 fault).
+  Compared by value (`core/keyOwnership`), and an unreadable slot file is a
+  gap the repair refuses to write into — a projection into `{}` would erase
+  the sign-in.
 
 - **"Complete" means "carries the LEAST possible"** (X-270). A clause's repair
   never copies something new into a slot: it links, or it re-renders from the

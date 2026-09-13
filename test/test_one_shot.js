@@ -47,8 +47,9 @@ const one = require(path.join(__dirname, '..', 'out', 'core', 'oneShot.js'));
     ok('…and an unstated account is passed through as unstated, so the resolver decides',
         seen[0][1] === undefined);
     ok('the layer really reaches the environment', env && env.AF_ACC === 'claude:');
+    const pathKey = Object.keys(process.env).find(k => k.toUpperCase() === 'PATH');
     ok('…on top of the inherited one rather than instead of it',
-        env && env.PATH === process.env.PATH);
+        env && !!pathKey && env[pathKey] === process.env[pathKey]);
     one.oneShotEnv({ engine: 'codex', account: 'work' });
     ok('a stated engine and account reach the seam verbatim',
         seen[1][0] === 'codex' && seen[1][1] === 'work');

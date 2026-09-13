@@ -100,8 +100,11 @@ process.env.ANTHROPIC_BASE_URL = 'https://inherited.example/anthropic';
         !!env && env.ANTHROPIC_AUTH_TOKEN === undefined);
     // An overlay, not a replacement: everything the window carried that the
     // route says nothing about is still there, or the CLI loses PATH.
+    // Windows spells it Path or PATH depending on the shell that started node; a
+    // plain object is case-sensitive where process.env is not, so find the key.
+    const pathKey = Object.keys(process.env).find(k => k.toUpperCase() === 'PATH');
     ok('the rest of the environment is inherited, not thrown away',
-        !!env && env.PATH === process.env.PATH);
+        !!env && !!pathKey && env[pathKey] === process.env[pathKey]);
 }
 
 // ------------------------------------------- 2. a card with NO route at all

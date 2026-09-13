@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { adapterFor, EngineAuthAdapter, liveSource } from './engineAccounts';
 import { hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
+import { isJsonObject, ownedDrift, parseOwnedFile, projectOwned } from './keyOwnership';
 import { carriedDrift, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, SlotSettingsFs } from './slotSettings';
 
 /**
@@ -23,7 +24,7 @@ import { carriedDrift, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, S
  * acceptance test of this contract, and every clause is written to pass it.
  *
  * ‼️ DERIVED, NOT LISTED. `slotClauses` walks the adapter's own fields —
- * `ownFiles`, `carryFiles`, `requiredEnv`, `sharedPaths` — and the test pins
+ * `ownFiles`, `ownership`, `carryFiles`, `requiredEnv`, `sharedPaths` — and the test pins
  * that every field of `EngineAuthAdapter` is either one of those (and so has a
  * clause) or is declared META here. A new slot-content field without a clause
  * fails the build rather than a person's memory (the same rule as `RunDimensions`
@@ -31,7 +32,7 @@ import { carriedDrift, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, S
  */
 
 /** Adapter fields that describe what a slot CONTAINS — each has a clause deriver. */
-export const CONTENT_KEYS = ['ownFiles', 'carryFiles', 'requiredEnv', 'sharedPaths'] as const;
+export const CONTENT_KEYS = ['ownFiles', 'ownership', 'carryFiles', 'requiredEnv', 'sharedPaths'] as const;
 /** Adapter fields that describe the ENGINE, not the slot's contents — no clause. */
 export const META_KEYS = [
     'engine', 'support', 'configEnv', 'liveDir', 'liveFiles', 'evidence', 'signIn', 'readIdentity', 'quotaSource',
@@ -39,7 +40,7 @@ export const META_KEYS = [
     'housekeeping'
 ] as const;
 
-export type ClauseKind = 'own' | 'carry' | 'env' | 'link' | 'hooks';
+export type ClauseKind = 'own' | 'keys' | 'carry' | 'env' | 'link' | 'hooks';
 /** X-270 — who the thing belongs to. `account` stays with the slot and dies with it; `fleet` is the user's and never does. */
 export type ClauseOwner = 'account' | 'fleet';
 
@@ -104,6 +105,47 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
                 return ctx.fs.existsSync(p)
                     ? { ok: true, detail: `${name} present` }
                     : { ok: false, detail: `${name} missing — the identity was never captured; sign in again` };
+            }
+        });
+    }
+    // keys — the fleet's keys INSIDE a file the slot holds (X-274). Asked right
+    // after the identity because the standing case is the identity file itself:
+    // the sign-in is the slot's, the folder trusts and MCP servers are the
+    // fleet's, and the file was copied once at capture and never asked again.
+    for (const [name, own] of Object.entries(adapter.ownership ?? {})) {
+        const rel = liveSource(adapter.engine, name);
+        const readBoth = (ctx: SlotContext) => {
+            const p = path.join(ctx.dir, name);
+            const src = path.join(ctx.home, rel);
+            const slotText = ctx.fs.existsSync(p) ? ctx.fs.readFileSync(p, 'utf8') : undefined;
+            const fleetText = ctx.fs.existsSync(src) ? ctx.fs.readFileSync(src, 'utf8') : undefined;
+            return { p, slotText, fleetText };
+        };
+        out.push({
+            id: `keys:${name}`, kind: 'keys', owner: 'fleet',
+            read: ctx => {
+                const { slotText, fleetText } = readBoth(ctx);
+                if (slotText === undefined) { return { ok: true, detail: `${name} absent — nothing holds the fleet's keys yet` }; }
+                if (fleetText === undefined) { return { ok: true, detail: `${name} present — the fleet has no ${rel} to project from` }; }
+                // ‼️ AN UNREADABLE IDENTITY FILE IS NEVER REPAIRED INTO. Projecting the
+                // fleet's keys into `{}` and writing it back would erase the sign-in.
+                if (!isJsonObject(slotText)) {
+                    return { ok: false, detail: `${name} is not a JSON object — the fleet's keys cannot be projected into it` };
+                }
+                const drift = ownedDrift(own, parseOwnedFile(fleetText), parseOwnedFile(slotText));
+                return drift.length
+                    ? { ok: false, detail: `${name}: ${drift.length} fleet key${drift.length === 1 ? '' : 's'} differ — ${drift.slice(0, 4).join(', ')}${drift.length > 4 ? ', …' : ''}` }
+                    : { ok: true, detail: `${name}: the fleet's keys match ${rel}` };
+            },
+            repair: (ctx, dryRun) => {
+                const { p, slotText, fleetText } = readBoth(ctx);
+                if (slotText === undefined || fleetText === undefined) { return { wrote: false }; }
+                if (!isJsonObject(slotText)) { return { wrote: false, error: `${name} is not a JSON object` }; }
+                const next = projectOwned(own, parseOwnedFile(fleetText), parseOwnedFile(slotText));
+                const text = JSON.stringify(next, null, 2) + '\n';
+                if (text === slotText) { return { wrote: false }; }
+                if (!dryRun) { ctx.fs.writeFileSync(p, text, 'utf8'); }
+                return { wrote: true };
             }
         });
     }

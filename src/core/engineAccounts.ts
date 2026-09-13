@@ -136,6 +136,35 @@ export interface EngineAccountSlot {
  * a branch in a page, and above all not a second `if (engine === 'claude')`
  * somewhere downstream.
  */
+/**
+ * ‼️ X-274 — WHO OWNS A KEY inside a file the slot holds, because a whole file
+ * has no single owner. `ownFiles` and `carryFiles` are file-sized answers; the
+ * identity file `.claude.json` carries the sign-in (the slot's), the folder
+ * trusts and MCP servers the user approved (the fleet's) and 21 telemetry
+ * fields per project entry (nobody's). Measured 2026-09-13: 74 top-level keys,
+ * 29 fields per project entry, every trust key identical across three slots —
+ * and nothing keeping it so; the next folder the user trusts would have reached
+ * no slot.
+ *
+ * `fleet` — the fleet's value is projected at every gate, absence included.
+ * `slot` — the slot's; the fleet never touches it (the identity).
+ * `ignore` — nobody's; never compared, never written. Not decoration: without
+ * it every telemetry field would count as drift and the file would be rewritten
+ * on every gate for ever (the 3.469.1 fault).
+ */
+export type KeyPolicy = 'fleet' | 'slot' | 'ignore';
+export interface KeyOwnership {
+    /** the policy for a key this map does not name */
+    default: KeyPolicy;
+    keys: Record<string, KeyPolicy>;
+    /**
+     * A map-shaped key whose ENTRIES carry keys of their own (`projects.<path>`).
+     * The policy applies one level down, in every entry the fleet has; an entry
+     * only the slot has is the slot's and is left alone.
+     */
+    entries?: Record<string, { default: KeyPolicy; keys: Record<string, KeyPolicy> }>;
+}
+
 export interface EngineAuthAdapter {
     engine: string;
     support: SlotSupport;
@@ -197,6 +226,13 @@ export interface EngineAuthAdapter {
      * turns "it was broken again" into "the engine's housekeeping broke it".
      */
     housekeeping?: string;
+    /**
+     * ‼️ X-274 — key-level ownership inside a file the slot holds, keyed by the
+     * slot-relative file name. The contract derives a `keys:<file>` clause from
+     * every entry: the fleet's keys are compared by value and projected in
+     * place, and nothing else in the file is read or written.
+     */
+    ownership?: Record<string, KeyOwnership>;
     /**
      * Where this engine keeps all of that when NOTHING is relocated, relative
      * to the user's home.
@@ -432,6 +468,30 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         // which is exactly why it is applied before the spawn rather than
         // repaired after somebody notices.
         requiredEnv: { file: 'settings.json', vars: { CLAUDE_CODE_SIMPLE_SYSTEM_PROMPT: '0' } },
+        // ‼️ X-274 — the identity file is three files in one. The sign-in is the
+        // slot's; the MCP servers and, per project entry, the folder trust and
+        // tool approvals the user gave in the main directory are the fleet's and
+        // never reached a slot once it was captured; the rest of a project entry
+        // (`last*`, `exampleFiles`…) is telemetry Claude Code rewrites every
+        // session and no gate may count. A key not named here is ignored — the
+        // eleventh trust key Claude Code adds tomorrow is then a visible gap in
+        // this list, not a silent fork.
+        ownership: {
+            '.claude.json': {
+                default: 'ignore',
+                keys: { oauthAccount: 'slot', userID: 'slot', mcpServers: 'fleet' },
+                entries: {
+                    projects: {
+                        default: 'ignore',
+                        keys: {
+                            allowedTools: 'fleet', hasTrustDialogAccepted: 'fleet', mcpServers: 'fleet',
+                            enabledMcpjsonServers: 'fleet', disabledMcpjsonServers: 'fleet',
+                            mcpContextUris: 'fleet', hasClaudeMdExternalIncludesApproved: 'fleet'
+                        }
+                    }
+                }
+            }
+        },
         liveDir: '.claude',
         // ‼️ the identity is at the HOME ROOT, not under .claude — see liveFiles
         liveFiles: { '.claude.json': '.claude.json' },

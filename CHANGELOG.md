@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.474.0 - a whole file has no single owner: the fleet's keys inside the identity file (X-274) (2026-09-13)
+
+- **The folder trusts and MCP servers the user approves in the main directory
+  never reached a slot once it was captured.** `.claude.json` is an `ownFiles`
+  entry — copied once, never asked again — because it carries the sign-in. It
+  also carries `mcpServers` and, per project entry, `allowedTools`,
+  `hasTrustDialogAccepted` and five more grants, which are the fleet's; and 21
+  telemetry fields per entry, which are nobody's. Measured 2026-09-13: 74
+  top-level keys, 29 fields per entry, every trust key identical across the
+  three slots today — and nothing keeping it so. The next folder trusted would
+  have forked silently.
+  - **The unit is the key, not the file.** The adapter gains `ownership`: per
+    file, a policy per key — `fleet` (projected at every gate, absence
+    included: a revoked trust leaves the slot too) · `slot` (`oauthAccount`,
+    `userID`; never touched) · `ignore` (everything unnamed; never compared,
+    never written). One level down for `projects.<path>`, in every entry the
+    fleet has; a folder only a slot session trusted is the slot's and stays.
+  - **The default is `ignore`, and that is what makes it safe to run at every
+    gate.** Counting telemetry as drift would rewrite every slot file on every
+    gate for ever — the 3.469.1 fault. `core/keyOwnership` compares by value.
+  - The contract derives a `keys:.claude.json` clause from it (`CONTENT_KEYS`
+    now names `ownership`, so the classification test guards it), asked right
+    after the identity and before the behaviour file. It reads the differing
+    keys by name, its repair projects the fleet's keys and nothing else, an
+    unreadable slot file is a gap the repair REFUSES to write into (a
+    projection into `{}` would erase the sign-in), and a slot with no identity
+    file is the `own:` clause's fact, not repeated here. The card, the
+    `accounts.complete` op, the journal and the `↻N` badge see the new clause
+    with no change of their own.
+  - **Pinned, on purpose, as the X-291 hole:** a tool a slot session approves
+    in a folder the fleet knows reads as drift and is removed at the next gate,
+    and the fleet is never told. `merge` and `promote` are X-291's, and the
+    test that changes when they land is named.
+
 ## 3.473.1 - the new journal's first finding was its own false alarm (X-292) (2026-09-13)
 
 - **Read against this machine within the hour, and the instrument accused a
