@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.479.0 - a Codex wire is trusted where it lands (X-295) (2026-09-13)
+
+- **Not one Codex event had reached the Live Timeline — from an account or from
+  the main directory.** Codex runs no hook without a persisted trust record in
+  `config.toml`, keyed by the hook file's path *as Codex resolves it* and holding
+  a hash of the hook's normalized identity. Measured 2026-09-13 with
+  `codex app-server` → `hooks/list`: every one of the seven hooks in
+  `~/.codex/hooks.json` read **untrusted** — the fleet's own records named the
+  `C:\Users\…` path Codex now resolves through the junction to `D:\…`, and held a
+  hash an older Codex had computed. A captured account, holding a verbatim copy of
+  both files since 3.477.0, trusted nothing either: its records named the fleet's
+  file, not its own. Two silent failures, one symptom, no surface saying so.
+- **The trust is now written by the contract, unasked** — the user's decision:
+  the hook file is theirs, carried byte for byte, and a prompt at every account's
+  first run was the thing they refused.
+  - `core/codexHooks.ts` reproduces Codex's own hash (`hook_hash` /
+    `version_for_toml`, rust-v0.149.0): the SHA-256 of the canonical JSON of
+    `{event_name, matcher?, hooks:[{type, command, timeout, async, …}]}`, with the
+    engine's normalizations (default timeout 600, `stop` and `user_prompt_submit`
+    drop their matcher, `session_end` clamps to 1–3 s, the default context limit
+    is dropped, `commandWindows` wins on Windows). The seven values the real
+    machine reported are pinned in `test/test_codex_hooks.js`.
+  - **`config.toml` is projected, not carried verbatim.** A carried file may now
+    declare a projection (`carryProject`): the fleet's bytes, plus every hook of
+    the fleet's `hooks.json` trusted under the account's *resolved* path
+    (`realpathSync.native`, which agrees with Codex on Windows). Nothing is parsed
+    and nothing re-serialised — the user's model, MCP servers and plugins survive
+    byte for byte — and an answer the account gave on its own (a project hook
+    trusted at the TUI) is kept, X-291's rule applied to a trust record.
+  - **The fleet's own `~/.codex` is signed the same way**, before the accounts
+    are projected from it, at every gate — so what an account copies is already
+    true, and a main-directory Codex session is heard too.
+- **The `hooks` clause is the engine's own now.** It was derived from "does this
+  adapter carry `settings.json`" — a Claude file name inside the engine-agnostic
+  layer, the trap the handover named. An adapter declares its `liveWire`
+  (read / repair, and whether the fleet's directory is its to sign); Claude's is
+  the same `hooks` block on the live port it always was, Codex's reads the way
+  `hooks/list` would: *7 hooks trusted for this directory, wire on :8377*, or
+  *3 of 7 hooks untrusted — pre_tool_use, stop, …*, or *trusted but the wire names
+  :8377 — the live port is :9000*. The Engines card, `accounts.list`,
+  `migration.verify` and the repair journal all read it without a line changed;
+  `accounts.list.engines[].wire` carries the fleet's own reading.
+- **What is deliberately not done:** `hooks.json` is the user's file and is not
+  installed or rewritten by Agent Farm — a wire on the wrong port is reported by
+  name, not repaired. Installing it (and keeping its port current) is the open
+  half of X-295 and is stated as such.
+
 ## 3.478.0 - the sixth gate: a change nobody made a move for (X-294) (2026-09-13)
 
 - **A permission you granted at a terminal prompt in the main directory, or a key

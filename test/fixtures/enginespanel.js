@@ -22,19 +22,20 @@ const NOW = Date.parse('2026-08-09T18:40:00Z');
  */
 const { adapterFor } = require('../../out/core/engineAccounts.js');
 const { slotClauses } = require('../../out/core/slotCompleteness.js');
-const detailFor = (c) => {
+const detailFor = (c, engine) => {
     const name = c.id.slice(c.id.indexOf(':') + 1);
     if (c.kind === 'own' || c.kind === 'carry') { return name + ' present'; }
     if (c.kind === 'env') { return name + '=0 in settings.json'; }
     if (c.kind === 'link') { return name + ' \u2192 pool'; }
-    return 'hooks current on :8377';
+    // X-295 \u2014 the wire is read in the engine's own words
+    return engine === 'codex' ? '7 hooks trusted for this directory, wire on :8377' : 'hooks current on :8377';
 };
 /** `gaps` maps a clause id to the sentence the card must draw for it. */
 const contract = (engine, gaps, repairs, promotions) => {
     const bad = gaps || {};
     const rows = slotClauses(adapterFor(engine)).map(c => ({
         id: c.id, ok: !bad[c.id], repairable: !!c.repair,
-        detail: bad[c.id] || detailFor(c)
+        detail: bad[c.id] || detailFor(c, engine)
     }));
     return {
         complete: rows.every(r => r.ok), gaps: rows.filter(r => !r.ok).map(r => r.id), rows,

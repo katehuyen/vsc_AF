@@ -31,6 +31,22 @@ export interface SlotSettingsFs {
     readFileSync(p: string, enc: 'utf8'): string;
     writeFileSync(p: string, data: string, enc: 'utf8'): void;
     mkdirSync(p: string, o: { recursive: boolean }): void;
+    /** X-295 — absent = paths are taken as written; a projection then keys by the unresolved path */
+    realpathSync?: ((p: string) => string) & { native?: (p: string) => string };
+}
+
+/**
+ * ‼️ X-295 — A DIRECTORY AS THE ENGINE WILL NAME IT. Codex keys its hook trust
+ * by the hook file's path with every link resolved (measured: `~/.codex` is a
+ * junction on this machine and the key named the target), and Node's
+ * `realpathSync.native` is the call that agrees with it on Windows — the
+ * JavaScript one keeps the caller's drive-letter case. A directory that is not
+ * there yet is named as written.
+ */
+export function realDirOf(fs: SlotSettingsFs, dir: string): string {
+    const r = fs.realpathSync;
+    if (!r) { return dir; }
+    try { return (r.native ?? r)(dir); } catch { return dir; }
 }
 
 /** What one gate did to one slot — reported, because a silent repair is not one. */
@@ -205,9 +221,12 @@ export function reproduceSlotSettings(
             // base: the guarantee is still enforced, and nothing of theirs is
             // thrown away by an absence.
             const base = sourceText === undefined ? before : sourceText;
+            const project = a.carryProject?.[name];
             const text = carryMerges(a, name)
                 ? renderSlotSettings(base, vars, heldByOtherClause(a, name, before))
-                : base ?? '';
+                : project
+                    ? project(base ?? '', before, { fs, home: opts.home, dir: opts.dir, realDir: realDirOf(fs, opts.dir) })
+                    : base ?? '';
             if (before !== text) {
                 row.wrote = true;
                 if (!opts.dryRun) {

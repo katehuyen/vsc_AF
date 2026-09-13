@@ -395,7 +395,8 @@ the engine adapter's own fields — every `ownFiles` entry an `own:` clause
 `carry:` clause and every `requiredEnv` var an `env:` clause (reproduced by
 X-269), every `sharedPaths` entry a `link:` clause (a junction to the pool,
 X-271), every `ownership` entry a `keys:` clause (the fleet's keys INSIDE a
-file the slot holds, X-274), plus `hooks`. `CONTENT_KEYS` / `META_KEYS`
+file the slot holds, X-274), and the adapter's `liveWire` the `hooks` clause
+(the engine's own wire, X-295). `CONTENT_KEYS` / `META_KEYS`
 classify every field of `EngineAuthAdapter`, and `test_slot_completeness.js`
 reads the interface out of the source: a new field in neither list fails the
 build. So the eleventh thing an isolated session turns out to need (plugins,
@@ -417,13 +418,30 @@ adapter a field and this module a deriver, and every gate, the
   gap the repair refuses to write into — a projection into `{}` would erase
   the sign-in.
 
+- **A carried file the directory must SIGN FOR ITSELF is projected (X-295).**
+  A verbatim carry is compared as bytes (X-279: a TOML file parsed as JSON is
+  `{}` on both sides and a clause that cannot fail). But Codex keys its hook
+  trust in `config.toml` by the hook file's path *as it resolves it*, so the
+  fleet's bytes, copied, trust nothing in the slot. `carryProject[file]` is
+  the honest text: the fleet's bytes with every hook of the fleet's
+  `hooks.json` trusted under the slot's `realpathSync.native` path
+  (`core/codexHooks` reproduces Codex's hash and is pinned to the seven values
+  the real machine reported). Still nothing parsed, nothing re-serialised, and
+  a record the directory added on its own is kept — X-291's rule for an answer.
+- **The wire is the engine's, not a file name's (X-295).** `hooks` used to be
+  derived from "carries `settings.json`" — an engine file name in the
+  engine-agnostic layer, which is how a second engine reads as "no wire" for a
+  release. An adapter declares `liveWire` (read / repair / whether the fleet's
+  own directory is its to sign / which JSON keys it owns inside a carried
+  file); `slotCompleteness` names no engine file, and `test_codex_hooks.js`
+  greps that it does not.
 - **"Complete" means "carries the LEAST possible"** (X-270). A clause's repair
   never copies something new into a slot: it links, or it re-renders from the
   fleet's source. The acceptance test of the contract is to delete a slot folder
   and capture the account again and lose the user nothing.
 - **A repair is the gate's own primitive, never a second implementation.**
   `completeSlot` calls `reproduceSlotSettings`, the injected
-  `repairSharedLinks`, `syncHooksToAccounts` — the code the gates run — so
+  `repairSharedLinks`, the adapter's own `liveWire.repair` — the code the gates run — so
   the contract cannot disagree with the gates about what "fixed" means.
 - **A question before a tool.** `accounts.complete` defaults to `dryRun:true`.
 

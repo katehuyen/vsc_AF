@@ -54,8 +54,12 @@ ok('X-270 — everything else belongs to the fleet and IS repairable',
     clauses.filter(c => c.kind !== 'own').every(c => c.owner === 'fleet' && !!c.repair));
 for (const a of ENGINE_AUTH_ADAPTERS) {
     const cs = sc.slotClauses(a);
-    ok(a.engine + ': no clause carries a Claude-shaped file the engine never heard of',
-        a.engine === 'claude' || !cs.some(c => c.id === 'hooks' || c.id.startsWith('env:')));
+    // X-295 — a `hooks` clause exists exactly when the adapter declares a wire of
+    // its own; an `env:` clause exactly when it declares a guarantee. Neither is
+    // a Claude-shaped file handed to an engine that never heard of it.
+    ok(a.engine + ': hooks and env clauses come from the adapter\'s own shape, never from a Claude file name',
+        cs.some(c => c.id === 'hooks') === !!a.liveWire
+        && cs.some(c => c.id.startsWith('env:')) === !!a.requiredEnv);
 }
 
 // ---------- 1b. X-279 — THE CONTRACT ASKS CODEX SOMETHING ----------

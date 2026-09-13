@@ -1,4 +1,6 @@
 import * as path from 'path';
+import { codexHookEntries, codexHookPort, codexTrustLedger, codexTrustProjection } from './codexHooks';
+import { hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
 
 /**
  * X-168 — MORE THAN ONE ACCOUNT ON ONE MACHINE, WITHOUT A BROWSER.
@@ -178,6 +180,52 @@ export interface KeyOwnership {
     entries?: Record<string, KeyOwnership>;
 }
 
+/** Only what a projection or a wire needs off a disk, so both are testable without one. */
+export interface WireFs {
+    existsSync(p: string): boolean;
+    readFileSync(p: string, enc: 'utf8'): string;
+    writeFileSync(p: string, data: string, enc: 'utf8'): void;
+    mkdirSync(p: string, o: { recursive: boolean }): void;
+}
+
+export interface ProjectionContext {
+    fs: WireFs;
+    home: string;
+    /** the directory being projected into */
+    dir: string;
+    /** …as the ENGINE will name it: symlinks and junctions resolved, drive letter as the OS reports it */
+    realDir: string;
+}
+
+/** the fleet's text → what the directory at `ctx.dir` must hold; `have` is what it holds now */
+export type CarryProjection = (source: string, have: string | undefined, ctx: ProjectionContext) => string;
+
+export interface LiveWireContext extends ProjectionContext {
+    /** the live-events port the wire must name */
+    hooksPort: number;
+}
+
+export interface LiveWire {
+    /** read-only: is the wire in this directory live — present, trusted where the engine demands it, on the live port */
+    read(ctx: LiveWireContext): { ok: boolean; detail: string };
+    /** put it right; `dryRun` touches nothing */
+    repair(ctx: LiveWireContext, dryRun: boolean): { wrote: boolean; error?: string };
+    /**
+     * true = the FLEET'S OWN directory (`~/<liveDir>`) is signed by the same
+     * read/repair, so the projections have something true to copy. Absent =
+     * the fleet's wire is somebody else's job (Claude: the hooks installer).
+     */
+    fleet?: boolean;
+    /**
+     * When the wire lives INSIDE a carried JSON file under top-level keys of
+     * its own, those keys — so the carry clause renders over them and does not
+     * count them (the hooks pass runs after it and re-points them). A wire
+     * that is not JSON-keyed (Codex's trust tables) leaves this unset and is
+     * carried by projection instead.
+     */
+    owns?: { file: string; keys: string[] };
+}
+
 export interface EngineAuthAdapter {
     engine: string;
     support: SlotSupport;
@@ -246,6 +294,26 @@ export interface EngineAuthAdapter {
      * place, and nothing else in the file is read or written.
      */
     ownership?: Record<string, KeyOwnership>;
+    /**
+     * ‼️ X-295 — A CARRIED FILE THE DIRECTORY MUST SIGN FOR ITSELF, keyed by
+     * the slot-relative name. The fleet's bytes are still the base (X-279:
+     * nothing is parsed, nothing re-serialised), and the projection is what
+     * those bytes must become in a directory at another PATH — the standing
+     * case being Codex's `config.toml`, whose hook-trust records are keyed by
+     * the absolute path of the hook file, so the fleet's own records name a
+     * file no slot has. `carry:` compares the slot against the projection and
+     * reproduction writes it; a file not named here is carried verbatim.
+     */
+    carryProject?: Record<string, CarryProjection>;
+    /**
+     * ‼️ X-295 — THE ENGINE'S LIVE WIRE: whether a directory of this shape
+     * will send events to Agent Farm, in the engine's own terms. Claude's is a
+     * `hooks` block in `settings.json` naming the live port; Codex's is a
+     * `hooks.json` beside a `config.toml` that trusts every hook in it. The
+     * contract's `hooks` clause is derived from this — an engine without one
+     * has no such clause, rather than a clause about a file it never heard of.
+     */
+    liveWire?: LiveWire;
     /**
      * Where this engine keeps all of that when NOTHING is relocated, relative
      * to the user's home.
@@ -528,6 +596,24 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
                 }
             }
         },
+        /**
+         * The live wire is the `hooks` block inside the carried `settings.json`,
+         * re-pointed at the live port AFTER the carry has rendered the file
+         * (the X-269 order, kept by clause order). The fleet's own file is the
+         * hooks installer's, not this — hence no `fleet`.
+         */
+        liveWire: {
+            owns: { file: 'settings.json', keys: ['hooks'] },
+            read: ctx => hooksAreCurrent(path.join(ctx.dir, 'settings.json'), ctx.hooksPort)
+                ? { ok: true, detail: `hooks current on :${ctx.hooksPort}` }
+                : { ok: false, detail: `hooks missing or stale in settings.json (port ${ctx.hooksPort})` },
+            repair: (ctx, dryRun) => {
+                if (dryRun) { return { wrote: true }; }
+                const userFile = path.join(ctx.home, liveSource('claude', 'settings.json'));
+                const rows = syncHooksToAccounts(userFile, [path.join(ctx.dir, 'settings.json')], ctx.hooksPort);
+                return { wrote: rows.length > 0 };
+            }
+        },
         liveDir: '.claude',
         // ‼️ the identity is at the HOME ROOT, not under .claude — see liveFiles
         liveFiles: { '.claude.json': '.claude.json' },
@@ -560,22 +646,82 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
          * one junction and the contract called it COMPLETE, because the
          * adapter declared nothing for the contract to ask about.
          *
-         * ‼️ CARRYING IT IS NECESSARY AND NOT SUFFICIENT, AND THE CLAUSE SAYS
-         * ONLY WHAT IT PROVED. Codex refuses to run a hook without a persisted
-         * trust record, and that record lives in `config.toml` keyed by the
-         * hook file's ABSOLUTE PATH (`[hooks.state.'…\.codex\hooks.json:stop:0:0']`
-         * + `trusted_hash`) — so it names the main directory and never matches
-         * the slot's own copy. `carry:hooks.json` therefore asks whether the
-         * file is the fleet's, and nothing else; Claude's `hooks` clause, which
-         * is the one that claims a LIVE wire, has no Codex counterpart on
-         * purpose. Granting that trust is a security decision and belongs to
-         * the user, not to a gate — X-295.
+         * ‼️ X-295 — CARRYING THE WIRE IS NOT ENOUGH; IT MUST BE TRUSTED WHERE
+         * IT LANDS. Codex refuses to run a hook without a persisted trust
+         * record, and that record lives in `config.toml` keyed by the hook
+         * file's path AS CODEX RESOLVES IT (`[hooks.state.'D:\…\hooks.json:stop:0:0']`
+         * + `trusted_hash`). The fleet's records name the fleet's file, so a
+         * verbatim copy trusts nothing in the slot — and, measured 2026-09-13,
+         * the fleet's own records named a path Codex no longer resolved to and
+         * a hash an older Codex had computed: not one Codex event had reached
+         * the timeline from anywhere. So `config.toml` is PROJECTED: the fleet's
+         * bytes, with every hook of the fleet's `hooks.json` trusted under this
+         * directory's own path (`core/codexHooks`), and `hooks` reads the wire
+         * back the way `codex app-server` → `hooks/list` would. Writing that
+         * trust unasked is the user's decision (2026-09-13): the hook file is
+         * theirs, carried byte for byte, and a prompt at every slot's first
+         * run was the thing they refused.
          *
          * ‼️ NEITHER IS JSON-MERGED. Codex keeps no fleet guarantee and no
-         * key-level owner here, so both are carried whole (`carryMerges`) —
-         * which is also the only way a TOML file survives the trip.
+         * key-level owner here, so `hooks.json` is carried whole and
+         * `config.toml` is the fleet's text plus its own trust — which is also
+         * the only way a TOML file survives the trip.
          */
         carryFiles: ['config.toml', 'hooks.json'],
+        carryProject: {
+            'config.toml': (source, have, ctx) => {
+                const src = path.join(ctx.home, liveSource('codex', 'hooks.json'));
+                const hooks = ctx.fs.existsSync(src) ? ctx.fs.readFileSync(src, 'utf8') : undefined;
+                return codexTrustProjection(source, have, hooks, path.join(ctx.realDir, 'hooks.json'));
+            }
+        },
+        /**
+         * The wire in a directory is live when `hooks.json` is there, every
+         * command hook in it is trusted under this directory's path in
+         * `config.toml`, and the commands post to the live port. `hooks.json`
+         * itself is the user's and is not rewritten: a wire on the wrong port
+         * is reported, not repaired.
+         */
+        liveWire: {
+            fleet: true,
+            read: ctx => {
+                const hooksFile = path.join(ctx.dir, 'hooks.json');
+                if (!ctx.fs.existsSync(hooksFile)) {
+                    return ctx.fs.existsSync(path.join(ctx.home, liveSource('codex', 'hooks.json')))
+                        ? { ok: false, detail: 'hooks.json missing — no live wire' }
+                        : { ok: true, detail: 'no hooks.json on either side — Codex has no live wire on this machine' };
+                }
+                const entries = codexHookEntries(ctx.fs.readFileSync(hooksFile, 'utf8'), path.join(ctx.realDir, 'hooks.json'));
+                if (!entries.length) { return { ok: true, detail: 'hooks.json names no command hooks — nothing to trust' }; }
+                const cfg = path.join(ctx.dir, 'config.toml');
+                const ledger = codexTrustLedger(ctx.fs.existsSync(cfg) ? ctx.fs.readFileSync(cfg, 'utf8') : '');
+                const untrusted = entries.filter(e => ledger.get(e.key) !== e.hash);
+                if (untrusted.length) {
+                    return { ok: false, detail: `${untrusted.length} of ${entries.length} hooks untrusted in config.toml — ${untrusted.map(e => e.event).join(', ')}` };
+                }
+                const ports = [...new Set(entries.map(e => codexHookPort(e.command)).filter((p): p is number => p !== undefined))];
+                const wrong = ports.filter(p => p !== ctx.hooksPort);
+                if (wrong.length) {
+                    return { ok: false, detail: `${entries.length} hooks trusted but the wire names :${wrong.join(', :')} — the live port is :${ctx.hooksPort} and hooks.json is the user's, not rewritten` };
+                }
+                return { ok: true, detail: `${entries.length} hooks trusted for this directory, wire on :${ctx.hooksPort}` };
+            },
+            repair: (ctx, dryRun) => {
+                const cfg = path.join(ctx.dir, 'config.toml');
+                const hooksFile = path.join(ctx.dir, 'hooks.json');
+                const have = ctx.fs.existsSync(cfg) ? ctx.fs.readFileSync(cfg, 'utf8') : '';
+                const hooks = ctx.fs.existsSync(hooksFile) ? ctx.fs.readFileSync(hooksFile, 'utf8') : undefined;
+                const want = codexTrustProjection(have, have, hooks, path.join(ctx.realDir, 'hooks.json'));
+                if (want === have) { return { wrote: false }; }
+                if (!dryRun) {
+                    try {
+                        ctx.fs.mkdirSync(ctx.dir, { recursive: true });
+                        ctx.fs.writeFileSync(cfg, want, 'utf8');
+                    } catch (e) { return { wrote: false, error: String((e as Error)?.message ?? e) }; }
+                }
+                return { wrote: true };
+            }
+        },
         /**
          * ‼️ `skills` AND `plugins` ARE CONTENT, NOT IDENTITY — X-273 settled
          * that for Claude on the same day and the argument is the engine's, not

@@ -1,9 +1,9 @@
 import * as path from 'path';
 import { adapterFor, EngineAuthAdapter, liveSource } from './engineAccounts';
-import { hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
 import { isJsonObject, ownedDrift, ownedTopKeys, parseOwnedFile, projectOwned } from './keyOwnership';
 import {
-    carriedDrift, carryMerges, heldByOtherClause, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, SlotSettingsFs
+    carriedDrift, carryMerges, heldByOtherClause, realDirOf, renderSlotSettings, reproduceSlotSettings, slotEnvGaps,
+    SlotSettingsFs
 } from './slotSettings';
 
 /**
@@ -34,7 +34,11 @@ import {
  */
 
 /** Adapter fields that describe what a slot CONTAINS — each has a clause deriver. */
-export const CONTENT_KEYS = ['ownFiles', 'ownership', 'carryFiles', 'requiredEnv', 'sharedPaths'] as const;
+export const CONTENT_KEYS = [
+    'ownFiles', 'ownership', 'carryFiles', 'requiredEnv', 'sharedPaths',
+    // X-295 — `carryProject` shapes the `carry:` clause of the file it names; `liveWire` IS the `hooks` clause.
+    'carryProject', 'liveWire'
+] as const;
 /** Adapter fields that describe the ENGINE, not the slot's contents — no clause. */
 export const META_KEYS = [
     'engine', 'support', 'configEnv', 'liveDir', 'liveFiles', 'evidence', 'signIn', 'readIdentity', 'quotaSource',
@@ -175,7 +179,7 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
     // the slot's, which is why the ignore list below is not the whole story.
     const otherClauseOwns = (name: string): string[] => {
         const out: string[] = [];
-        if (name === 'settings.json' && adapter.carryFiles?.includes('settings.json')) { out.push('hooks'); }
+        if (adapter.liveWire?.owns?.file === name) { out.push(...adapter.liveWire.owns.keys); }
         const own = adapter.ownership?.[name];
         if (own) { out.push(...ownedTopKeys(own)); }
         return out;
@@ -212,8 +216,16 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
                 // `config.toml` reads `{}` on both sides and answers `ok` for
                 // ever — the shape of a clause that cannot fail.
                 if (!carryMerges(adapter, name)) {
+                    // ‼️ X-295 — …UNLESS THE DIRECTORY MUST SIGN IT FOR ITSELF: then
+                    // the projection is the honest text, and "the fleet's bytes" is
+                    // the reading that hid a slot trusting none of its own hooks.
+                    const project = adapter.carryProject?.[name];
+                    const want = project
+                        ? project(sourceText ?? have, have, { fs: ctx.fs, home: ctx.home, dir: ctx.dir, realDir: realDirOf(ctx.fs, ctx.dir) })
+                        : sourceText;
+                    if (want === have) { return { ok: true, detail: `${name} is the fleet's ${rel}${project ? ', signed for this directory' : ''}` }; }
                     return sourceText === have
-                        ? { ok: true, detail: `${name} is the fleet's ${rel}` }
+                        ? { ok: false, detail: `${name} is the fleet's ${rel} but not signed for this directory` }
                         : { ok: false, detail: `${name} is a stale copy of the fleet's ${rel}` };
                 }
                 const want = renderSlotSettings(
@@ -294,24 +306,19 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
             }
         });
     }
-    // hooks — the live wire, asked only when the caller knows the port.
-    if (adapter.carryFiles?.includes('settings.json')) {
+    // hooks — the live wire, in the engine's own terms (X-295), asked only when the caller knows the port.
+    const wire = adapter.liveWire;
+    if (wire) {
+        const wctx = (ctx: SlotContext, port: number) =>
+            ({ fs: ctx.fs, home: ctx.home, dir: ctx.dir, realDir: realDirOf(ctx.fs, ctx.dir), hooksPort: port });
         out.push({
             id: 'hooks', kind: 'hooks', owner: 'fleet',
-            read: ctx => {
-                if (ctx.hooksPort === undefined) { return { ok: true, detail: 'hooks not asked (no port)' }; }
-                const p = path.join(ctx.dir, 'settings.json');
-                return hooksAreCurrent(p, ctx.hooksPort)
-                    ? { ok: true, detail: `hooks current on :${ctx.hooksPort}` }
-                    : { ok: false, detail: `hooks missing or stale in settings.json (port ${ctx.hooksPort})` };
-            },
-            repair: (ctx, dryRun) => {
-                if (ctx.hooksPort === undefined) { return { wrote: false }; }
-                if (dryRun) { return { wrote: true }; }
-                const userFile = path.join(ctx.home, liveSource(adapter.engine, 'settings.json'));
-                const rows = syncHooksToAccounts(userFile, [path.join(ctx.dir, 'settings.json')], ctx.hooksPort);
-                return { wrote: rows.length > 0 };
-            }
+            read: ctx => ctx.hooksPort === undefined
+                ? { ok: true, detail: 'hooks not asked (no port)' }
+                : wire.read(wctx(ctx, ctx.hooksPort)),
+            repair: (ctx, dryRun) => ctx.hooksPort === undefined
+                ? { wrote: false }
+                : wire.repair(wctx(ctx, ctx.hooksPort), dryRun)
         });
     }
     return out;

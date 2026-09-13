@@ -980,7 +980,8 @@
                     { detail: (e.variable || 'no variable') + ' · ' + e.support + '\n\n' + (e.why || '') })).join('')
                 + '</select>', 'Whose sign-in is being sealed',
                 can.map(e => engineLabel(e.engine) + ' — ' + (e.variable || 'no variable') + ' · ' + e.support
-                    + '\n' + e.why).join('\n\n'))
+                    + '\n' + e.why
+                    + (e.wire ? '\nLive wire: ' + (e.wire.ok ? '' : '‼️ ') + e.wire.detail : '')).join('\n\n'))
             + T.wrap('<input id="ac-label" placeholder="what to call it">', 'A name for this account',
                 'Free to change at any time, and free to leave empty — the address the engine reports is '
                 + 'the fallback. It is not the id: the id is minted from the address and cannot change, '

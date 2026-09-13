@@ -211,7 +211,7 @@ import {
     SessionMark, SessionMarks, setColor, setTags, tagsOf, togglePin
 } from './core/sessionmarks';
 import { mergeMissing, PortableMap } from './core/portableState';
-import { reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
+import { realDirOf, reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
 import { migrationGate } from './core/migrationGate';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
 import { changedSince, fingerprint, watchedFiles } from './core/slotWatch';
@@ -233,7 +233,7 @@ import {
     claudeOnlyScopeNote
 } from './core/engines';
 import {
-    AccountFs, AccountIdentity, EngineAccountSlot, ENGINE_AUTH_ADAPTERS,
+    AccountFs, AccountIdentity, EngineAccountSlot, EngineAuthAdapter, ENGINE_AUTH_ADAPTERS,
     accountEnv, adapterFor as accountAdapterFor, canIsolateAccounts, describeSlotLayout, duplicateSlots, liveSource,
     shortUuid, slotDir as accountSlotDir, slotQuotaSource
 } from './core/engineAccounts';
@@ -17997,8 +17997,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         return results;
     };
+    /**
+     * ‼️ X-295 — THE FLEET'S OWN WIRE, read the way a slot's is. Claude's is the
+     * hooks installer's job and says so by leaving `fleet` unset; Codex's is
+     * signed here, because its trust is keyed by the hook file's resolved path
+     * and the fleet's own records were naming a path Codex no longer resolved
+     * to (measured 2026-09-13: every Codex hook untrusted, from the main
+     * directory and every slot alike). Null = the engine has no wire to read.
+     */
+    const fleetWireCtx = (a: EngineAuthAdapter) => {
+        const dir = path.join(os.homedir(), a.liveDir);
+        return { fs, home: os.homedir(), dir, realDir: realDirOf(fs, dir), hooksPort: cfg().get<number>('livePort', 8377) };
+    };
+    const fleetWireReading = (a: EngineAuthAdapter) =>
+        a.liveWire?.fleet && fs.existsSync(path.join(os.homedir(), a.liveDir)) ? a.liveWire.read(fleetWireCtx(a)) : null;
+    const signFleetWires = (gate: string) => {
+        for (const a of ENGINE_AUTH_ADAPTERS) {
+            try {
+                const before = fleetWireReading(a);
+                if (!before || before.ok) { continue; }
+                const r = a.liveWire!.repair(fleetWireCtx(a), false);
+                if (r.wrote) {
+                    console.log(`[agent-farm] X-295: signed the fleet's ${a.engine} wire at ${gate} — was: ${before.detail}`);
+                } else if (r.error) {
+                    console.warn(`[agent-farm] X-295: could not sign the fleet's ${a.engine} wire — ${r.error}`);
+                }
+            } catch { /* the fleet's wire never fails a gate */ }
+        }
+    };
     const completeSlots = (dry = false, onlySlotId?: string, gate = 'ask') => {
         const only = (onlySlotId || '').trim();
+        // ‼️ the fleet's wire is signed BEFORE the slots are projected from it,
+        // so what a slot copies is already true.
+        if (!dry) { signFleetWires(gate); }
         return storedAccounts()
             .filter(s => !only || s.id === only)
             .map(slot => {
@@ -18735,7 +18766,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const accountEngineNotes = () => ENGINE_AUTH_ADAPTERS.map(a => ({
         engine: a.engine, support: a.support, variable: a.configEnv || null,
         canCapture: a.support !== 'unmapped', why: a.evidence,
-        layout: describeSlotLayout(a.engine)
+        layout: describeSlotLayout(a.engine),
+        // X-295 — the fleet's own wire, when this module is the one that signs it
+        wire: fleetWireReading(a)
     }));
     /**
      * S-20 — WHICH MODELS EACH ENGINE OFFERS TODAY, through the same probe.
@@ -34761,7 +34794,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'Also `engines`: what each engine can do about accounts at all and WHY — "measured" '
                 + '(proven on a real machine), "declared" (the vendor documents the variable, unproven '
                 + 'here), "unmapped" (no verified way to keep two identities apart, so capture is '
-                + 'refused). ‼️ NO TOKEN VALUE IS EVER RETURNED and none can be set from here — the same '
+                + 'refused) — and `wire` (X-295): the fleet\'s OWN live wire read the way a slot\'s is '
+                + '({ok, detail}; Codex: every hook in ~/.codex/hooks.json trusted in config.toml under '
+                + 'the resolved path and posting to the live port; null where the wire is another '
+                + 'module\'s, e.g. Claude\'s hooks installer). '
+                + '‼️ NO TOKEN VALUE IS EVER RETURNED and none can be set from here — the same '
                 + 'boundary the secrets vault draws. args: engine? (only that engine\'s accounts)',
             handler: (args) => {
                 const engine = (optStr(args, 'engine') ?? '').trim();
