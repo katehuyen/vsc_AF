@@ -3198,7 +3198,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     let recordTaskLaunch: ((run: {
         agentId: string; engine: string;
-        options: { model?: string; effort?: string; permissionMode?: string };
+        options: LaunchOptions;
         cwd: string; projectId?: string;
         mechanism: 'task' | 'schedule' | 'trigger' | 'workflow' | 'mission';
         mechanismId?: string;
@@ -21112,20 +21112,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * ‼️ X-102 — AND THE RUNNER'S HALF OF IT, filled in here because this is
      * where the store and the resolver both exist (see the dep, far above).
      *
-     * ‼️ NO ROUTE IS PASSED, AND THAT IS THE TRUTH RATHER THAN AN OMISSION: a
-     * stored automation object carries no provider selection yet (X-106), so an
-     * automated run lands on the agent's standing route — and the manifest has
-     * to record the route that will actually serve it, which is exactly what
-     * resolving with nothing chosen returns.
+     * ‼️ X-296 — THE ROUTE IS PASSED, and the comment that used to say it was
+     * not is why this was wrong for six releases. A stored automation DOES carry
+     * a provider selection (`RunDimensions.providerId` / `.tier`) and the spawn
+     * beside this resolves the runtime with `routeOf(task)` — so resolving here
+     * with nothing chosen recorded the agent's STANDING route against a run that
+     * went somewhere else. Absent stays absent: an automation that named no
+     * route still lands on the standing one, which is what the old sentence was
+     * true about and generalised too far.
      *
-     * ‼️ THE DISCIPLINE IS THE AGENT'S OWN. There is no composer to tick a box
-     * in at three in the morning, so the honest answer is the one the agent
-     * would have started with anyway — the same rule the runner already applies
-     * to the prompt it builds.
+     * ‼️ AND THE DISCIPLINE IS THE RUN'S FIRST, THE AGENT'S ONLY AFTER THAT —
+     * the same order `projectContextFile` applies at the spawn, written out
+     * here rather than assumed, because a manifest that reports the default
+     * over an explicit pick is a record of a run that did not happen. A mission
+     * member never gets the agent default (M-30), and `mechanism` is how that
+     * is known this far from the task.
      */
     recordTaskLaunch = (run) => {
         const agent = agents.find(a => a.id === run.agentId);
-        const resolved = agent ? resolveLaunchRoute(agent.id, run.engine) : undefined;
+        const resolved = agent ? resolveLaunchRoute(agent.id, run.engine, {
+            providerId: run.options.providerId, tier: run.options.tier
+        }) : undefined;
         if (!agent || !resolved) { return undefined; }
         return recordLaunch({
             engine: run.engine,
@@ -21138,7 +21145,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...(run.mechanismId ? { mechanismId: run.mechanismId } : {}),
             cwd: run.cwd,
             surface: run.surface,
-            superpowers: superpowersOnFor(agent.name)
+            superpowers: run.options.superpowers
+                ?? (run.mechanism !== 'mission' && superpowersOnFor(agent.name))
         });
     };
 

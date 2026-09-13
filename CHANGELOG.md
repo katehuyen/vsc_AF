@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.492.0 - the record of an automated run is derived from the run (X-296 / X-251) (2026-09-14)
+
+- **A task's launch manifest was assembled by hand from three fields** while
+  the spawn a few lines below it read the whole task. Four dimensions were
+  therefore recorded wrong on every headless, scheduled, triggered, workflow
+  and mission run: the **account**, the **route** (`providerId`/`tier`), the
+  **tier** in the requested half, and the **CLI**.
+- **The account is X-251's own fault, at the one door X-251 never read.**
+  Measured live: a run spending `claude-murvietnam` filed a manifest naming
+  `claude-aicozums` — the engine's *active* sign-in — because the recorder
+  resolved a slot from options that had no `account` in them, while the
+  environment layer beside it took the task's real one. Two readers, two
+  answers, and the manifest is the only witness a transcript cannot replace.
+- **The route was resolved with nothing chosen**, on the strength of a comment
+  saying a stored automation carries no provider selection. It does — the spawn
+  passes `routeOf(task)` to the runtime — so a run served by one endpoint could
+  be recorded against another.
+- **The discipline was read off the agent, not the run**: a job that switched
+  superpowers off, and every mission member (which never gets the default),
+  was recorded as whatever the agent's own setting said.
+- **The list is no longer written by hand anywhere.** `launchDimsOf(task)` is
+  the task's launch dimensions in the shape the record takes them, and the
+  guard is derived rather than declared: the suite reads `LaunchOptions` and
+  `RunDimensions` out of their own sources and fails on a shared dimension that
+  does not travel. The recorder's parameter type carried the same narrowing —
+  three optional fields accept an object with eight — and now takes the shape.
+
 ## 3.491.0 - a 429 that says how long is believed, not out-guessed (S-63) (2026-09-14)
 
 - **The usage endpoint's `Retry-After` was never read.** The comment over the

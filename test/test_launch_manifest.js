@@ -349,12 +349,118 @@ console.log('\n== the store is bounded before the first row is written ==');
         ok('…and the run is recorded on the TASK, which is what the binding is built from',
             /launchId\?: string;/.test(tasks)
             && /\.\.\.\(t\.launchId \? \{ launchId: t\.launchId \} : \{\}\),/.test(ext));
-        ok('‼️ an automated run passes NO route, because a stored automation carries '
-            + 'none yet (X-106) — so the manifest records the standing route that '
-            + 'will really serve it',
-            /const resolved = agent \? resolveLaunchRoute\(agent\.id, run\.engine\) : undefined;/.test(ext));
+        ok('‼️ X-296 — an automated run passes ITS OWN route, because a stored '
+            + 'automation carries one and the spawn beside it resolves with it',
+            /const resolved = agent \? resolveLaunchRoute\(agent\.id, run\.engine, \{\s*\n\s*providerId: run\.options\.providerId, tier: run\.options\.tier\s*\n\s*\}\) : undefined;/.test(ext));
+        ok('‼️ X-296 — …and the discipline recorded is the RUN\'s first, the agent '
+            + 'default only in its absence, and never for a mission member',
+            /superpowers: run\.options\.superpowers\s*\n\s*\?\? \(run\.mechanism !== 'mission' && superpowersOnFor\(agent\.name\)\)/.test(ext));
+        ok('…and the recorder takes the whole option shape, so a new dimension '
+            + 'cannot be narrowed out of the record by its type',
+            /options: LaunchOptions;/.test(ext));
         ok('…and an unfilled hole records nothing rather than throwing at a spawn',
             /recordLaunch: \(run\) => recordTaskLaunch\?\.\(run\),/.test(ext));
+    }
+
+    /* ---------------------------------------------------------------------
+     * ‼️ X-296 — THE RECORD OF A TASK IS DERIVED FROM THE TASK, and this is the
+     * guard that makes that sentence fail rather than rot.
+     *
+     * The call site used to write `{ model, effort, permissionMode }` by hand
+     * while the spawn a few lines below it resolved the runtime from
+     * `routeOf(task)` and the environment from `task.account`. Four dimensions
+     * were therefore recorded wrong, and one of them was measured live: a
+     * headless run under `claude-murvietnam` filed a manifest naming
+     * `claude-aicozums`, the engine's active sign-in — X-251's own fault,
+     * reappearing at the one door X-251 never read.
+     *
+     * So the field list is NOT written here either. It is the intersection of
+     * `LaunchOptions` and `RunDimensions` read out of the two sources: a tenth
+     * shared dimension added to either interface fails this line on the day it
+     * is added, which is the only version of "every dimension travels" that
+     * survives the person who wrote it.
+     * ------------------------------------------------------------------- */
+    {
+        const launchTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'launch.ts'), 'utf8');
+        const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+        /** The fields of one exported interface, read out of its own source —
+         *  the `test_launch_dimensions.js` reader, which finds the end of a
+         *  comment-heavy body at the first `}` sitting in column 0. */
+        const fieldsOf = (src, name) => {
+            const at = src.indexOf(`export interface ${name} {`);
+            const body = at < 0 ? '' : src.slice(at, src.indexOf('\n}', at));
+            const out = [];
+            const re = /^ {4}(\w+)\??:/gm;
+            let m;
+            while ((m = re.exec(body))) { if (!out.includes(m[1])) { out.push(m[1]); } }
+            return out;
+        };
+        // The runner is a core module, so it arrives through the same vscode
+        // stand-in every other suite that loads it uses (test_task_events.js).
+        const Module = require('module');
+        const origLoad = Module._load;
+        Module._load = function (request, parent, isMain) {
+            if (request === 'vscode') {
+                return {
+                    EventEmitter: class { get event() { return () => ({ dispose() { } }); } fire() { } dispose() { } },
+                    Disposable: { from: () => ({ dispose() { } }) },
+                    window: {
+                        showInformationMessage: () => Promise.resolve(undefined),
+                        showWarningMessage: () => Promise.resolve(undefined),
+                        createTerminal: () => ({ show() { }, sendText() { }, dispose() { } }),
+                        onDidCloseTerminal: () => ({ dispose() { } })
+                    }
+                };
+            }
+            return origLoad.call(this, request, parent, isMain);
+        };
+        const T = require(path.join(ROOT, 'out', 'core', 'tasks.js'));
+        Module._load = origLoad;
+
+        const inTasks = fieldsOf(tasksTs, 'RunDimensions');
+        const shared = fieldsOf(launchTs, 'LaunchOptions').filter(f => inTasks.includes(f));
+        ok('the two interfaces really do share dimensions — a reader that found '
+            + 'none would pass every line below it', shared.length >= 9);
+        // A task that states EVERY shared dimension — so a field that fails to
+        // travel shows up as an absence rather than as a coincidence.
+        const full = {
+            id: 't1', agentId: 'dev', agentName: 'developer', prompt: 'p', mode: 'headless',
+            engine: 'codex', model: 'gpt-5', effort: 'high', permissionMode: 'plan',
+            account: 'claude-murvietnam', cli: 'codex', providerId: 'kimi', tier: 'opus',
+            superpowers: false
+        };
+        const got = T.launchDimsOf(full);
+        const missing = shared.filter(f => got[f] === undefined);
+        eq('‼️ every dimension LaunchOptions and RunDimensions share reaches the record',
+            missing, []);
+        eq('…with the values the run was given, not a normalised guess at them', [
+            got.model, got.effort, got.permissionMode, got.account, got.cli,
+            got.providerId, got.tier
+        ], ['gpt-5', 'high', 'plan', 'claude-murvietnam', 'codex', 'kimi', 'opus']);
+        ok('…and the engine as the id the record itself files the run under',
+            got.engine === 'codex');
+        // ‼️ M-30 — `false` is a person answering, and an `if (x)` here would
+        // have dropped it and let the record report the agent's default.
+        ok('‼️ a discipline switched OFF on this job is recorded as off, not as absent',
+            got.superpowers === false);
+
+        const bare = T.launchDimsOf({ id: 't2', agentId: 'dev', agentName: 'developer',
+            prompt: 'p', mode: 'headless' });
+        eq('‼️ …while nothing stated stays absent — a key set to undefined would '
+            + 'erase the engine the record spreads it over',
+            Object.keys(bare).filter(k => bare[k] === undefined), []);
+        ok('…and an unstated discipline is not answered on the run\'s behalf',
+            !('superpowers' in bare));
+        // ‼️ The same rule `runExtras` applies: `opus` is a different model on two
+        // routes, so alone it is a claim nothing can resolve.
+        const tierOnly = T.launchDimsOf({ id: 't3', agentId: 'dev', agentName: 'developer',
+            prompt: 'p', mode: 'headless', tier: 'opus' });
+        ok('‼️ a tier with no route is dropped, exactly as the runner drops it',
+            tierOnly.tier === undefined && tierOnly.providerId === undefined);
+
+        ok('‼️ …and the call site asks for the shape rather than listing it again',
+            /options: launchDimsOf\(task\),/.test(tasksTs)
+            && !/options: \{\s*\n\s*model: task\.model/.test(tasksTs));
     }
 
     // ---- the bridge can read it, which is what makes it evidence ----

@@ -22,7 +22,7 @@ import {
     DEFAULT_MEDIA_PRICING, downloadAsset, estimateMediaCost, extFromUrl, injectMediaFeedback,
     mediaCandidates, MediaMeta, MediaPriceRule, MediaResult, pollFalResult, readMediaMetas, recordSelection
 } from './media';
-import { InteractiveClose, InteractiveTarget, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
+import { InteractiveClose, InteractiveTarget, LaunchOptions, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { chosenPermission, permissionFlags } from './permissionmode';
 import {
@@ -883,6 +883,49 @@ export function runExtras(d: RunDimensions | undefined): Partial<FarmTask> {
     return r;
 }
 
+/**
+ * ‼️ X-296 — A TASK'S LAUNCH DIMENSIONS, IN THE SHAPE A LAUNCH RECORD TAKES
+ * THEM, and the reason this is a function rather than three fields at the call
+ * site.
+ *
+ * The record of a run is assembled from what the run WAS, so a hand-written
+ * list there is a list that quietly stops describing the spawn beside it. It
+ * had already stopped four times: the account (X-251 — measured live, a
+ * headless run recorded under the engine's active sign-in while it spent the
+ * task's), the route (`routeOf(task)` reaches the runtime, so the record could
+ * name a different endpoint from the one that answered), the tier that rides
+ * with it, and the CLI. Every field `LaunchOptions` and `RunDimensions` have in
+ * common belongs here — `test_launch_manifest.js` reads both interfaces and
+ * fails on a tenth that does not.
+ *
+ * Empties are dropped, for the reason the whole family follows: `undefined` is
+ * "not stated" and must not reach a reader as a chosen empty value. It matters
+ * mechanically as well — the launch record spreads these over the engine it was
+ * given, and a present-but-undefined `engine` would erase it.
+ */
+export function launchDimsOf(t: FarmTask): LaunchOptions {
+    const o: LaunchOptions = {};
+    const engine = engineOf(t.engine).id;
+    if (engine) { o.engine = engine; }
+    if (t.model) { o.model = t.model; }
+    if (t.effort) { o.effort = t.effort; }
+    if (t.permissionMode) { o.permissionMode = t.permissionMode; }
+    if (t.account) { o.account = t.account; }
+    if (t.cli) { o.cli = t.cli; }
+    // ‼️ A tier without a route is dropped, the same rule `runExtras` applies:
+    // `opus` is a different model on two routes, and alone it answers nothing.
+    const route = routeOf(t);
+    if (route) {
+        o.providerId = route.providerId;
+        if (route.tier) { o.tier = route.tier; }
+    }
+    // ‼️ M-30 — `false` IS AN ANSWER, so the test is against undefined. Only the
+    // task's own pick travels here; the default that fills its absence is the
+    // spawn's to apply, and the recorder applies the same one.
+    if (t.superpowers !== undefined) { o.superpowers = t.superpowers === true; }
+    return o;
+}
+
 export type ScheduleKind = 'daily' | 'weekly' | 'once';
 
 /** What happens when a scheduled time passes while no VS Code window was open:
@@ -1500,7 +1543,10 @@ export interface TaskManagerOptions {
      */
     recordLaunch?: (run: {
         agentId: string; engine: string;
-        options: { model?: string; effort?: string; permissionMode?: string };
+        // ‼️ X-296 — THE WHOLE SHAPE, because a narrower one here is what let
+        // four dimensions go unrecorded: every field is optional, so the three
+        // named before this type-checked happily against a task that had eight.
+        options: LaunchOptions;
         cwd: string; projectId?: string;
         mechanism: 'task' | 'schedule' | 'trigger' | 'workflow' | 'mission';
         mechanismId?: string;
@@ -3286,10 +3332,7 @@ export class TaskManager implements vscode.Disposable {
             task.launchId = this.opts.recordLaunch?.({
                 agentId: agent.id,
                 engine: engineOf(task.engine).id,
-                options: {
-                    model: task.model, effort: task.effort,
-                    permissionMode: task.permissionMode
-                },
+                options: launchDimsOf(task),
                 // The folder the process is really spawned in — the same rule the
                 // binding follows, and the reason a task in a code repo is not
                 // filed under the agent's own folder.
