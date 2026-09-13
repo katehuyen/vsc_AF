@@ -84,6 +84,12 @@ export const TASK_WAIT_RULES: TaskWaitRule[] = [
     { prefix: 'wait:', kind: 'task-clock', clearedBy: 'clock', op: 'tasks.unpark' },
     { prefix: 'round:binding', kind: 'task-round', clearedBy: 'event' },
     { prefix: 'session:busy:', kind: 'task-session', clearedBy: 'event' },
+    // ‼️ X-296 — THE ONE HOLD NOTHING IN THE FLEET WILL EVER CLEAR BY ITSELF.
+    // A missing sign-in is not contention and not a clock: no run finishing and
+    // no minute passing brings it back, so the reading has to say a PERSON is
+    // the thing being waited for, and name the door — otherwise this parks like
+    // a queue and reads like one.
+    { prefix: 'account:missing:', kind: 'task-account', clearedBy: 'human', op: 'accounts.capture' },
     { prefix: 'concurrency:agent:', kind: 'task-agent', clearedBy: 'event' },
     { prefix: 'concurrency:fleet', kind: 'task-fleet', clearedBy: 'event' }
 ];

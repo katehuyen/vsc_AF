@@ -3354,6 +3354,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // the same reason (see TaskRunnerOpts.accountLayer).
             accountLayer: (engine, account) => launchAccountEnv({ engine, account }),
             /**
+             * ‼️ X-296 / X-260 — AND THE SAME TWO LINES THE SERVICE ASKS, in the
+             * same order, so the answer cannot depend on whether a window is
+             * open. `headlessAccountPlan` resolves first and refuses second, and
+             * the resolution matters: it is what also catches a STANDING choice
+             * left pointing at a slot that is gone — which a settings file
+             * carried over from another machine can do on its own.
+             */
+            accountBlock: (engine, account) =>
+                accountRefusal(launchAccountFor(engine, account), storedAccounts(), engine)
+                || undefined,
+            /**
              * ‼️ X-102 — THE RUNNER STATES THE FACTS; THIS SIDE WRITES THE
              * RECORD. Same doctrine as `engineRuntime` above, and the same
              * reason: the route resolution, the assembly and the bounded store
@@ -18582,6 +18593,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         for (const c of consoleHost.list()) {
             if (c.account === slotId) { out.push(`console session ${c.id}`); }
+        }
+        /**
+         * ‼️ X-296 — AND EVERYTHING THAT WILL SPAWN LATER, which is the half this
+         * list was missing and the half that matters most.
+         *
+         * A task is a run that already exists; a schedule, a trigger, a workflow
+         * step and a template are runs that do not exist yet and will be written
+         * with this sign-in on them for as long as they are stored — every one
+         * of them `extends RunDimensions`, which is where the account lives. The
+         * list existed to answer "what am I about to break", and answering it
+         * with only the runs already on the board was the reassuring half of the
+         * truth: the nightly schedule that names this slot was never mentioned.
+         */
+        for (const s of taskManager.schedules) {
+            if (s.account === slotId) { out.push(`schedule "${s.title}"`); }
+        }
+        for (const tp of taskManager.templates) {
+            if (tp.account === slotId) { out.push(`template "${tp.title}"`); }
+        }
+        for (const w of taskManager.workflows) {
+            for (const st of w.steps) {
+                if (st.account === slotId) { out.push(`workflow "${w.title}" → step "${st.title}"`); }
+            }
+        }
+        for (const tr of taskManager.triggers) {
+            // Only the two actions that START something carry the dimensions; a
+            // trigger that runs a stored workflow points at it by id and the
+            // step above is where its account is.
+            const act = tr.action;
+            if ((act.kind === 'task' || act.kind === 'dispatch') && act.account === slotId) {
+                out.push(`trigger "${tr.title}"`);
+            }
+        }
+        // ‼️ A saved setup is not a run, so it is named LAST and named softly:
+        // X-253 already empties the box and says so when the profile is loaded,
+        // which is why forgetting the slot is not a data loss here. It is still
+        // worth saying — a person deleting a sign-in wants to know which of
+        // their saved setups is about to change under them.
+        for (const p of launchProfiles()) {
+            if (p.account === slotId) { out.push(`launch profile "${p.name}" (the row empties)`); }
         }
         return out;
     };

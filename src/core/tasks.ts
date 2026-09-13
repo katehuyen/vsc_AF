@@ -1444,6 +1444,20 @@ export interface TaskManagerOptions {
      * it the moment the session is released.
      */
     sessionBusy?: (sessionId: string, engine?: string) => string | undefined;
+    /**
+     * ‼️ X-296 / X-260 — WHY THIS RUN MAY NOT SPEND THE SIGN-IN IT NAMES, in the
+     * words `accountStore.accountRefusal` gives, or nothing when it may.
+     *
+     * The service already refuses one (`headlessAccountPlan`): "a name that
+     * resolves to nothing REFUSES the run rather than falling through to the
+     * main sign-in… at 3 a.m. with nobody watching it is worse, not better."
+     * The extension's own runner did fall through — `accountEnv` answers `{}`
+     * for a slot it cannot find, and `{}` is the machine's own sign-in — so the
+     * SAME task ran on the named plan or on whatever was signed in depending on
+     * whether a window happened to be open. This is that decision, asked on the
+     * side that owns the slot list, so the two runners cannot disagree.
+     */
+    accountBlock?: (engine: string, account?: string) => string | undefined;
     /** ‼️ S-19 — what a session has cost and spent so far, for the delta a
      *  resumed run is charged. Undefined = not indexed yet, and the task simply
      *  starts from nothing rather than from a guess. */
@@ -2928,6 +2942,25 @@ export class TaskManager implements vscode.Disposable {
                     reason: `the conversation is open elsewhere — ${held}`
                 };
             }
+        }
+        /**
+         * ‼️ X-296 / X-260 — AND WHOSE PLAN IT WOULD SPEND, checked before a slot
+         * is competed for rather than after one is won.
+         *
+         * A HOLD and not a failure, which the other half of this family cannot
+         * be: the service skips the occurrence because it has no board to say
+         * anything on, while here the row carries the sentence and the run goes
+         * the moment the sign-in is captured again. What neither may do is start
+         * — an account that is not on this machine resolves to no slot, no slot
+         * injects no variable, and no variable is the machine's own sign-in.
+         *
+         * The code names the ACCOUNT rather than the task: several runs waiting
+         * on one missing sign-in are one piece of news, and re-capturing it
+         * releases all of them at once.
+         */
+        const accountNo = this.opts.accountBlock?.(task.engine ?? 'claude', task.account);
+        if (accountNo) {
+            return { code: `account:missing:${(task.account ?? '').trim() || task.engine || 'claude'}`, reason: accountNo };
         }
         const maxGlobal = this.opts.maxConcurrent?.() ?? 2;
         const maxAgent = this.opts.maxConcurrentPerAgent?.() ?? 1;

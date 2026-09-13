@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.493.0 - a sign-in that is not on this machine stops the run instead of quietly changing it (X-296 / X-260) (2026-09-14)
+
+- **The same task spent a different plan depending on whether a window was
+  open.** The headless service already refused a run whose account resolves to
+  nothing — its own words: *"a name that resolves to nothing REFUSES the run
+  rather than falling through to the main sign-in… at 3 a.m. with nobody
+  watching it is worse, not better."* The extension's own runner fell straight
+  through: `accountEnv` answers `{}` for a slot it cannot find, `{}` is no
+  environment variable, and no variable is the machine's own sign-in.
+- **So a schedule naming a forgotten account ran, succeeded, and spent whoever
+  happened to be signed in** — off the rotation, unattributable, and with
+  nothing anywhere saying so. Three ways in: the slot was deleted, the slot
+  belongs to another engine, or the standing choice itself points at a slot
+  that is gone (which a settings file carried from another machine can do on
+  its own).
+- **It is a HOLD here, not a skip**, and that is the only difference allowed
+  between the two runners: the board can carry the sentence and release the
+  work the moment the sign-in is captured again; the night cannot. The hold
+  reads as waiting for a **hand** — the one wait in the table that no run
+  finishing and no minute passing will ever clear — and names the door
+  (`accounts.capture`).
+- **Forgetting a sign-in now names everything that points at it.** The dialog
+  listed the runs already on the board and said nothing about the runs that do
+  not exist yet: schedules, templates, workflow steps, triggers and launch
+  profiles all carry an account, and the nightly schedule saved on the slot
+  being deleted was never mentioned.
+
 ## 3.492.0 - the record of an automated run is derived from the run (X-296 / X-251) (2026-09-14)
 
 - **A task's launch manifest was assembled by hand from three fields** while
