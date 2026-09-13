@@ -30,8 +30,19 @@ import { ensureAccessToken, EXPIRY_SKEW_MS, RefreshOutcome } from './oauthRefres
  * So the budget is held HERE, once, and the slots take turns inside it:
  *
  *   - one shared floor — at most one request per interval, whatever N is;
- *   - one shared backoff — a 429 stops the fleet, not one slot, because the
- *     limit being reported is about this caller;
+ *   - ‼️ X-278 — A BACKOFF PER ACCOUNT, AND A FLEET-WIDE ONE ONLY ONCE THE
+ *     MACHINE HAS SAID SO TWICE. This read "one shared backoff — a 429 stops
+ *     the fleet, because the limit being reported is about this caller", and
+ *     that premise was an ASSUMPTION nobody had measured: the accounts hold
+ *     different tokens with different allowances, so one account exhausting its
+ *     own query limit blinded the counters of two that were fine. Now the slot
+ *     that was refused backs off alone, and the fleet backs off only when a
+ *     SECOND, different slot is refused while the first is still held — which
+ *     is what a limit about the machine looks like. The policy is therefore
+ *     correct under either reading and costs exactly one extra request to find
+ *     out which one is true; and the politeness the old note was protecting
+ *     never lived in the backoff anyway — it lives in the shared floor above,
+ *     which no number of accounts can buy a way past.
  *   - round robin by staleness — the slot whose figures are oldest goes next,
  *     so N slots are each refreshed once every N intervals rather than N times
  *     in one.
@@ -478,7 +489,11 @@ export interface AccountUsageOptions {
 export class AccountUsageService {
     private byId = new Map<string, SlotUsage>();
     private lastFetchAt = 0;
-    private backoffMs = 0;
+    /** ‼️ X-278 — one curve per account, because one token's limit is one
+     *  token's. Keyed by slot id; absent means nothing has been refused. */
+    private slotBackoff = new Map<string, { ms: number; until: number }>();
+    /** …and the fleet-wide hold, engaged only once a second slot is refused
+     *  while a first is still held (see the header). */
     private backoffUntil = 0;
     private inflight: Promise<SlotUsage[]> | undefined;
 
@@ -491,8 +506,26 @@ export class AccountUsageService {
         return this.opts.slots().map(s => this.byId.get(s.id) ?? unreadUsage(s));
     }
 
-    /** When the shared backoff lets the next automatic read through; 0 = none. */
+    /** When the FLEET-WIDE backoff lets the next automatic read through; 0 =
+     *  none. One account being held is not this (X-278) — ask `rateLimitedFor`. */
     rateLimitedUntil(): number { return this.backoffUntil; }
+
+    /** ‼️ X-278 — when THIS account's own backoff lets it be read again; 0 =
+     *  none. The card's figure is stale for a reason a reader can now be told. */
+    rateLimitedFor(slotId: string): number {
+        const b = this.slotBackoff.get(slotId);
+        return b && b.until > this.now() ? b.until : 0;
+    }
+
+    /** How many accounts are being held right now — two is what a limit about
+     *  the MACHINE looks like, and what escalates. */
+    private heldCount(now: number, except = ''): number {
+        let n = 0;
+        for (const [id, b] of this.slotBackoff) {
+            if (id !== except && b.until > now) { n++; }
+        }
+        return n;
+    }
 
     /**
      * Which slot the next request would spend itself on, or undefined when
@@ -550,7 +583,14 @@ export class AccountUsageService {
         // has a figure and needs no request for it (X-215), and letting it take a
         // turn in a round robin that hands out one request per interval would
         // starve the slots that actually need one.
-        const readable = slots.filter(s => adapterFor(s.engine).quotaSource().kind === 'oauth-credentials');
+        const readable = slots.filter(s => adapterFor(s.engine).quotaSource().kind === 'oauth-credentials'
+            // ‼️ X-278 — and not one the endpoint has just refused. Its turn is
+            // SKIPPED rather than spent: leaving it in the round robin would
+            // hand the fleet's one request per interval to the only account
+            // that certainly cannot use it, which is the same blindness the
+            // shared backoff caused, arriving by the other door. A person
+            // asking for a named slot goes through `refreshSlot`, not here.
+            && !(reason !== 'user' && this.rateLimitedFor(s.id)));
         if (!readable.length) { return undefined; }
         const ttl = Math.max(0, this.opts.ttlMs());
         const due = readable.filter(s => {
@@ -726,13 +766,32 @@ export class AccountUsageService {
                 }
             }
             if (res.status === 429) {
-                this.backoffMs = this.backoffMs
-                    ? Math.min(RATE_LIMIT_BACKOFF_MAX_MS, this.backoffMs * 2)
+                // ‼️ X-278 — THIS ACCOUNT BACKS OFF. The accounts hold different
+                // tokens with different allowances, so one being refused says
+                // nothing about the others until the machine says it twice.
+                const had = this.slotBackoff.get(slot.id);
+                const ms = had && had.ms
+                    ? Math.min(RATE_LIMIT_BACKOFF_MAX_MS, had.ms * 2)
                     : RATE_LIMIT_BACKOFF_START_MS;
-                this.backoffUntil = now + this.backoffMs;
-                const mins = Math.max(1, Math.round(this.backoffMs / 60_000));
+                this.slotBackoff.set(slot.id, { ms, until: now + ms });
+                const mins = Math.max(1, Math.round(ms / 60_000));
+                // …and a SECOND account held at the same time is what a limit
+                // about this machine actually looks like. Only then does the
+                // fleet stop, and only for as long as the longest hold.
+                const others = this.heldCount(now, slot.id);
+                if (others > 0) {
+                    let until = now + ms;
+                    for (const b of this.slotBackoff.values()) { until = Math.max(until, b.until); }
+                    this.backoffUntil = until;
+                    return put(bad('error',
+                        `The usage endpoint rate limited this account, and ${others === 1 ? 'another is' : others + ' others are'} `
+                        + `held too — that is a limit on this machine, so every account backs off. `
+                        + `Next automatic read in ${Math.max(1, Math.round((until - now) / 60_000))} min.`,
+                        cred.plan));
+                }
                 return put(bad('error',
-                    `The usage endpoint rate limited this machine — every account backs off, next automatic read in ${mins} min.`,
+                    `The usage endpoint rate limited THIS account — it backs off for ${mins} min; `
+                    + 'the other accounts keep being read, because their allowance is their own.',
                     cred.plan));
             }
             if (res.status !== 200) {
@@ -742,7 +801,11 @@ export class AccountUsageService {
             if (!bars.length) {
                 return put(bad('error', 'The usage endpoint reported no limits for this account.', cred.plan));
             }
-            this.backoffMs = 0;
+            // A read that got through clears this account's hold — and the
+            // fleet's, because a request the endpoint answered is the plainest
+            // possible evidence that this machine is not the thing being
+            // limited (X-278).
+            this.slotBackoff.delete(slot.id);
             this.backoffUntil = 0;
             return put(usageFrom(slot, { state: 'ok', bars, plan: cred.plan, fetchedAt: now }));
         } catch (e) {

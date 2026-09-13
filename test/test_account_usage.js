@@ -3,9 +3,16 @@
 // ‼️ The failure this suite exists to prevent: one PlanUsageService per slot.
 // It looks like the obvious build and it silently multiplies every ceiling in
 // planusage.ts by the number of accounts — the 5-second floor becomes 5 seconds
-// EACH, and a 429 backs off one token while the other two keep knocking. The
-// endpoint does not see three accounts, it sees this machine. Asking how much
-// quota is left would become the thing that burns it.
+// EACH. The endpoint does not see three accounts, it sees this machine. Asking
+// how much quota is left would become the thing that burns it.
+//
+// ‼️ X-278 — AND THE BACKOFF IS THE ONE CEILING THAT IS **NOT** SHARED, which
+// is the opposite of what this file used to pin. The politeness lives in the
+// FLOOR (one request per interval, whatever N is); a 429 is about a token, and
+// holding three accounts because one of them ran out of queries blinded two
+// counters that were fine. So each account backs off alone, and the fleet backs
+// off only once a SECOND account is refused while the first is still held —
+// the shape a limit about the machine really has.
 const path = require('path');
 
 let pass = 0, fail = 0;
@@ -15,6 +22,7 @@ const {
     AccountUsageService, mostRoom, pickAccount, nextResetAt, slotIsUsable, usageFrom,
     unreadUsage, fiveHourBar, FIVE_HOUR
 } = require(path.join(__dirname, '..', 'out', 'core', 'accountUsage.js'));
+const { RATE_LIMIT_BACKOFF_START_MS } = require(path.join(__dirname, '..', 'out', 'core', 'planusage.js'));
 
 const NOW = Date.parse('2026-09-04T12:00:00Z');
 const slot = (id, engine = 'claude') => ({ id, engine, dir: 'D:/slots/' + id });
@@ -101,24 +109,80 @@ async function main() {
             list.map(u => u.slotId).join(',') === 'a,b,c');
     }
 
-    // ---------- a 429 stops the FLEET, because the limit is about this caller ----------
+    // ---------- ‼️ X-278 — a 429 is about a TOKEN, until the machine says it twice ----------
     {
-        const { service, calls, tick } = svc([slot('a'), slot('b')], {
-            reply: (t, n) => (n === 1 ? { status: 429, body: '' } : { status: 200, body: payload(5, NOW + 3600_000) })
+        // Only account `a` is ever refused; `b` and `c` are fine. Before this
+        // item, `a`'s first 429 froze all three counters.
+        const { service, calls, tick } = svc([slot('a'), slot('b'), slot('c')], {
+            reply: (t) => (t === 'tok-a'
+                ? { status: 429, body: '' }
+                : { status: 200, body: payload(5, NOW + 3600_000) })
         });
         await service.beat();
-        ok('a 429 is recorded as a backoff, not swallowed', service.rateLimitedUntil() > NOW);
-        tick(10_000);
+        ok('a 429 is recorded as a backoff, not swallowed', service.rateLimitedFor('a') > NOW);
+        ok('‼️ X-278: …and it is THIS account\'s hold, not the fleet\'s',
+            service.rateLimitedUntil() === 0);
+        ok('…the note says whose allowance ran out, and that the others keep being read',
+            /THIS account/.test(service.current().find(u => u.slotId === 'a').note || ''));
+
+        tick(10_000); await service.beat();
+        tick(10_000); await service.beat();
+        ok('‼️ X-278: the accounts that were never refused keep being read',
+            calls.filter(t => t !== 'tok-a').length === 2);
+        ok('…and the held one is SKIPPED rather than handed the fleet\'s one request',
+            calls.filter(t => t === 'tok-a').length === 1);
+        ok('…so the counters that were fine are not blind',
+            service.current().filter(u => u.state === 'ok').length === 2);
+
+        // Its own turn comes back when its own hold runs out — nobody else's.
+        tick(RATE_LIMIT_BACKOFF_START_MS + 61_000);
+        ok('the held account is due again once its own backoff expires, and not before',
+            service.rateLimitedFor('a') === 0);
+    }
+
+    // ---------- …and a SECOND account refused while the first is held IS the machine ----------
+    {
+        const { service, calls, tick } = svc([slot('a'), slot('b'), slot('c')], {
+            reply: (t) => (t === 'tok-c'
+                ? { status: 200, body: payload(5, NOW + 3600_000) }
+                : { status: 429, body: '' })
+        });
         await service.beat();
-        ok('‼️ the backoff protects EVERY account, not just the one that hit it', calls.length === 1);
-        ok('…and the note says the whole machine is backing off',
-            /every account/i.test(service.current().find(u => u.slotId === 'a').note || ''));
+        ok('the first refusal holds one account only', service.rateLimitedUntil() === 0);
+        tick(10_000); await service.beat();
+        ok('‼️ X-278: a SECOND account refused while the first is held stops the FLEET',
+            service.rateLimitedUntil() > NOW);
+        ok('…and the note says that is what a limit on the machine looks like',
+            /limit on this machine/.test(service.current().find(u => u.slotId === 'b').note || ''));
+
+        const spent = calls.length;
+        tick(10_000); await service.beat();
+        ok('…so the third account, never refused, is not spent on either', calls.length === spent);
+        ok('‼️ …and finding that out cost exactly ONE extra request, not N', spent === 2);
 
         // A person clicking ⟳ has decided to spend one request; the alternative
         // is a control that silently refuses for a quarter of an hour, which is
         // a control that has taught you it does not work.
         await service.refresh();
-        ok('‼️ a PERSON may still ask — and still spends one request, not N', calls.length === 2);
+        ok('‼️ a PERSON may still ask — and still spends one request, not N', calls.length === spent + 1);
+    }
+
+    // ---------- a read that got through is the plainest evidence there is ----------
+    {
+        let refuse = true;
+        const { service, tick } = svc([slot('a'), slot('b')], {
+            reply: () => (refuse ? { status: 429, body: '' } : { status: 200, body: payload(5, NOW + 3600_000) })
+        });
+        await service.beat();
+        tick(10_000); await service.beat();
+        ok('both accounts held and the fleet with them', service.rateLimitedUntil() > NOW);
+        refuse = false;
+        tick(60_000);
+        await service.refresh();
+        ok('‼️ X-278: an answered request clears the fleet hold — the machine plainly is not the limit',
+            service.rateLimitedUntil() === 0);
+        ok('…and the account that was answered is no longer held either',
+            service.current().some(u => u.state === 'ok'));
     }
 
     // ---------- the states a person has to act on ----------

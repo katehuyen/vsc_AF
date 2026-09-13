@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.488.0 - a 429 is about a token, until the machine says it twice (X-278) (2026-09-14)
+
+- **One account running out of queries froze the counters of every other
+  account.** The usage service held ONE backoff for the whole fleet, on the
+  stated ground that "the limit being reported is about this caller" — and that
+  premise was an assumption nobody had measured. The accounts hold different
+  tokens with different allowances, so a 429 for one of them said nothing
+  whatever about the other two, and blinded them for up to three minutes at a
+  time.
+- **Now the refused account backs off alone** — its own curve, 30 s doubling to
+  3 min — and it is SKIPPED in the round robin rather than handed the fleet's
+  one request per interval, which would have been the same blindness arriving
+  by the other door. The accounts that were never refused keep being read.
+- **The fleet backs off only once a SECOND account is refused while the first is
+  still held**, which is the shape a limit about the machine actually has. So
+  the policy is correct under either reading of what a 429 means here, and
+  finding out which one is true costs exactly one extra request rather than N.
+  A request the endpoint answers clears both holds: it is the plainest possible
+  evidence that this machine is not the thing being limited.
+- **And the card says which of the two happened** instead of one sentence for
+  both: *"rate limited THIS account — it backs off for 3 min; the other accounts
+  keep being read, because their allowance is their own"*, or *"…and another is
+  held too — that is a limit on this machine, so every account backs off."*
+- The politeness the old rule was protecting never lived in the backoff: it
+  lives in the shared floor — at most one request per interval, whatever the
+  number of accounts — and that is untouched.
+
 ## 3.487.0 - a sign-in says how long it has left, and why signing in elsewhere missed it (X-275) (2026-09-14)
 
 - **An account's health was a verdict on the present tense and nothing else.** A
