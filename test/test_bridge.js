@@ -2438,6 +2438,27 @@ const { opencodeStatus, syncToOpencode } =
             /repairSharedLinks\(dryRun, id\)/.test(helper) && /completeSlot\(ctx, false\)/.test(helper) && /slotCompleteness\(ctx\)/.test(helper));
         ok('…with the live port handed in so the hooks clause is really asked', /hooksPort/.test(helper) && /'livePort'/.test(helper));
 
+        // ---------- X-292: accounts.repairs — what the contract keeps having to put back ----------
+        const repairsBlock = src.slice(src.indexOf("op: 'accounts.repairs'"), src.indexOf("op: 'sentry.templates'"));
+        ok('‼️ X-292 — the bridge can ask what the contract keeps repairing',
+            repairsBlock.includes("op: 'accounts.repairs'") && /repairJournal\.all\(\)/.test(repairsBlock));
+        ok('…and it answers the DERIVED correlation, not a declared cause',
+            /repairPattern\(all\)/.test(repairsBlock) && /afterHousekeeping/.test(repairsBlock));
+        // ‼️ A journal nobody writes to is a describe. Every gate that repairs
+        // has to record, and the gate has to be NAMED - a row that cannot say
+        // which door ran it cannot show a slot broken between two gates.
+        ok('‼️ X-292 — every gate that runs the contract names itself',
+            /completeSlots\(false, undefined, 'start'\)/.test(src)
+            && /completeSlots\(false, slot\.id, 'capture'\)/.test(src)
+            && /completeSlots\(false, slot\.id, 'launch'\)/.test(src)
+            && /completeSlots\(false, id, 'press'\)/.test(src));
+        ok('…and the repair path records through the one journal',
+            /repairJournal\.record\(repairEvents\(/.test(src));
+        // ‼️ The stamp is evidence about the state BEFORE the repair. Read it
+        // after and it is the repair's own timestamp, proving nothing.
+        ok('‼️ X-292 — the housekeeping stamp is read BEFORE the repair runs',
+            src.indexOf('const keptAt = housekeepingAt(') < src.indexOf('const after = completeSlot(ctx, false);'));
+
         // ---------- X-290: sessions.rescan — the disk outran the watcher ----------
         const rescanBlock = src.slice(src.indexOf("op: 'sessions.rescan'"), src.indexOf("op: 'sessions.find'"));
         ok('‼️ X-290 — the bridge can bring the index up to the disk',
@@ -5363,7 +5384,7 @@ const { opencodeStatus, syncToOpencode } =
         // ‼️ THREE MOMENTS, and the middle one is the only PREVENTIVE one: once the
         // engine has been handed an unlinked slot it has already written inside it.
         ok('…and the window never waits on the repair',
-            /setTimeout\(\(\) => \{ try \{ completeSlots\(\);/.test(src));
+            /setTimeout\(\(\) => \{ try \{ completeSlots\(false, undefined, 'start'\);/.test(src));
         // ‼️ X-284 — THE MOMENT, NOT THE LIST. This used to pin two named
         // repairs in a fixed order at the launch gate, and it had already broken
         // once on proximity when the second one was added. The list is no longer
@@ -5374,12 +5395,12 @@ const { opencodeStatus, syncToOpencode } =
         // already being written inside it and the system-prompt variable has
         // already been read, so nothing can be put right afterwards.
         ok('‼️ X-271/X-269/X-284: the whole contract is asked BEFORE a launch is handed the slot',
-            /completeSlots\(false, slot\.id\);[\s\S]{0,400}return accountEnv\(slot\);/.test(src));
-        ok('…and a launch is never failed by it', /completeSlots\(false, slot\.id\); \} catch \{ \/\* never fails a launch/.test(src));
+            /completeSlots\(false, slot\.id, 'launch'\);[\s\S]{0,400}return accountEnv\(slot\);/.test(src));
+        ok('…and a launch is never failed by it', /completeSlots\(false, slot\.id, 'launch'\); \} catch \{ \/\* never fails a launch/.test(src));
         // ‼️ AND THE OTHER TWO GATES ASK THE SAME ONE THING, or the eleventh
         // clause is carried by one door and forgotten by the other two.
         ok('‼️ X-284: capture asks the contract once the row exists',
-            /await writeAccounts\(addSlot\(list, slot\)\);[\s\S]{0,700}completeSlots\(false, slot\.id\); \} catch \{ \/\* never fails a capture/.test(src));
+            /await writeAccounts\(addSlot\(list, slot\)\);[\s\S]{0,700}completeSlots\(false, slot\.id, 'capture'\); \} catch \{ \/\* never fails a capture/.test(src));
         ok('…and the capture executor copies the IDENTITY and stops',
             !/for \(const l of plan\.links\)/.test(src)
             && !/reproduceSlotSettings\(fs, \{\r?\n\s+home: os\.homedir\(\), dir: plan\.slot\.dir/.test(src));

@@ -213,6 +213,7 @@ import {
 import { mergeMissing, PortableMap } from './core/portableState';
 import { reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
+import { housekeepingAt, repairEvents, repairPattern, SlotRepairJournal } from './core/slotRepairs';
 import {
     describeKeys, INTERRUPT_KEY, PermissionAnswer, permissionKeys, resolveInterrupt, TermRecord
 } from './core/interrupt';
@@ -17931,13 +17932,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             return { linked: r.linked, failed: r.failed };
         }
     });
-    const completeSlots = (dry = false, onlySlotId?: string) => {
+    /**
+     * ‼️ X-292 — WHAT THE CONTRACT HAD TO PUT BACK, kept because it kept having
+     * to. Beside the stores, not inside `accounts.json`: a slot's record is what
+     * it IS, and this is what has happened TO it.
+     */
+    const repairJournal = new SlotRepairJournal(
+        path.join(context.globalStorageUri.fsPath, 'slot-repairs.json'), fs);
+    /**
+     * ‼️ X-292 — `gate` is WHICH DOOR ran the contract, and it is not optional
+     * decoration: the journal's whole value is that a repair at `start` right
+     * after one at `launch` says the slot is being broken between two gates
+     * minutes apart, which no single reading can show.
+     */
+    const completeSlots = (dry = false, onlySlotId?: string, gate = 'ask') => {
         const only = (onlySlotId || '').trim();
         return storedAccounts()
             .filter(s => !only || s.id === only)
             .map(slot => {
                 const ctx = slotCtx(slot);
-                return dry ? { ...slotCompleteness(ctx), dryRun: true } : { ...completeSlot(ctx, false), dryRun: false };
+                if (dry) { return { ...slotCompleteness(ctx), dryRun: true }; }
+                // ‼️ X-292 — the stamp is read BEFORE the repair, because the
+                // repair is what makes the slot look well again.
+                const keptAt = housekeepingAt(fs, slot.dir, accountAdapterFor(slot.engine).housekeeping);
+                const after = completeSlot(ctx, false);
+                try {
+                    repairJournal.record(repairEvents(after, {
+                        slotId: slot.id, engine: slot.engine, gate, at: Date.now(), keptAt
+                    }));
+                } catch { /* a journal never fails a repair */ }
+                return { ...after, dryRun: false };
             });
     };
     // ‼️ X-284 — THE CONTRACT IS ASKED OF EVERY SLOT AT EVERY START, not only
@@ -17949,7 +17973,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Off the activation path on purpose: it touches the disk, and a window must
     // never wait on a repair. A failure here costs one incomplete slot, never a
     // start, and never a session — the index reads the slots either way.
-    setTimeout(() => { try { completeSlots(); } catch { /* never fails a start */ } }, 0);
+    setTimeout(() => { try { completeSlots(false, undefined, 'start'); } catch { /* never fails a start */ } }, 0);
     /** One slot as every surface may see it — never a token, ever. */
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
         const id = slotIdentity(slot);
@@ -18015,9 +18039,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const c = slotCompleteness(slotCtx(slot));
                     return {
                         complete: c.complete, gaps: c.gaps,
-                        rows: c.rows.map(r => ({ id: r.id, ok: r.ok, detail: r.detail, repairable: r.repairable }))
+                        rows: c.rows.map(r => ({ id: r.id, ok: r.ok, detail: r.detail, repairable: r.repairable })),
+                        // ‼️ X-292 — AND WHAT IT TOOK TO BE WHOLE. A slot repaired
+                        // at every gate reads `complete` at every gate, so the
+                        // badge above is true and says nothing: this is the only
+                        // place the card can tell the reader that the same clause
+                        // has been put back four times this week and by what.
+                        repairs: repairPattern(repairJournal.all().filter(e => e.slotId === slot.id))
                     };
-                } catch { return { complete: true, gaps: [], rows: [] }; }
+                } catch { return { complete: true, gaps: [], rows: [], repairs: [] }; }
             })(),
             note: u?.note || ''
         };
@@ -18080,7 +18110,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // copy-if-absent line it replaced could never do. It is never allowed
         // to fail a capture: the credentials are already on disk and a slot
         // missing a link is repaired by the next sweep.
-        try { completeSlots(false, slot.id); } catch { /* never fails a capture */ }
+        try { completeSlots(false, slot.id, 'capture'); } catch { /* never fails a capture */ }
         if (plan.reseats) { identitySeen.delete(plan.reseats); }
         if (plan.adopts) { identitySeen.delete(plan.adopts); }
         // ‼️ CAPTURING IS NOT CHOOSING, and the default says so. Redirecting the
@@ -18366,7 +18396,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // One slot, a handful of stats; and a launch is never failed by it,
         // because an incomplete slot still costs only a sweep while a refused
         // launch costs the user their session.
-        if (slot) { try { completeSlots(false, slot.id); } catch { /* never fails a launch */ } }
+        if (slot) { try { completeSlots(false, slot.id, 'launch'); } catch { /* never fails a launch */ } }
         return accountEnv(slot);
     };
     /**
@@ -19398,7 +19428,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // X-284 — the card's [Complete] press and `accounts.complete` are the
         // same function, so the button and the op cannot answer differently.
         completeAccount: (id: string): string[] => {
-            const r = completeSlots(false, id)[0];
+            const r = completeSlots(false, id, 'press')[0];
             if (!r) { return [`No account is stored as "${id}".`]; }
             return r.rows.filter(x => x.wrote || x.error)
                 .map(x => x.error ? `${x.id}: ${x.error}` : x.id);
@@ -34843,6 +34873,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'clause through the same primitives the gates use and reads again. args: dryRun? '
                 + '(default true), id? (one slot; omit for all)',
             handler: (args) => completeSlots(optBool(args, 'dryRun', true), optStr(args, 'id'))
+        },
+        {
+            op: 'accounts.repairs',
+            describe: '‼️ X-292 — WHAT THE BIRTH CONTRACT KEEPS HAVING TO PUT BACK, and the evidence '
+                + 'for WHY. `accounts.complete` answers how a slot is RIGHT NOW; a slot repaired at '
+                + 'every gate reads `complete` at every gate, which is how an engine quietly removing '
+                + 'the same two junctions twice a day stayed invisible for a week (Principle 1: a '
+                + 'repair that succeeds silently hides what breaks it). Every repair that actually '
+                + 'ran at any of the five gates (`start` · `capture` · `launch` · `press` · `ask`) is '
+                + 'a row here: `clause`, `slotId`, `gate`, `was` (the reading it was repaired FROM — '
+                + 'after the repair every reading says the slot is well), `fixed`, and `keptAt`, the '
+                + 'mtime of the file the ENGINE ITSELF stamps when its own housekeeping runs '
+                + '(`adapter.housekeeping`; Claude: `.last-cleanup`). `pattern` DERIVES the '
+                + 'correlation instead of declaring it: per clause, `count`, the `slots` it happened '
+                + 'on, `compared` (repairs that had a previous one on the same slot to be compared '
+                + 'with — the denominator) and `afterHousekeeping` (how many of those followed a '
+                + 'housekeeping run the slot had not seen at its previous repair). '
+                + '`afterHousekeeping === compared` is the engine doing it, every time, with nothing '
+                + 'hard-coded to say so. args: limit? (default 100, newest first), clause? '
+                + '(e.g. `link:todos`), id? (one slot)',
+            handler: (args) => {
+                const clause = optStr(args, 'clause');
+                const id = optStr(args, 'id');
+                const all = repairJournal.all()
+                    .filter(e => (!clause || e.clause === clause) && (!id || e.slotId === id));
+                const limit = Math.max(1, optNum(args, 'limit', 100));
+                return {
+                    events: all.slice(-limit).reverse(),
+                    pattern: repairPattern(all),
+                    total: all.length,
+                    degraded: repairJournal.degraded
+                };
+            }
         },
         {
             op: 'sentry.templates',

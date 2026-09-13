@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.473.0 - a repair is an EVENT, and the thing that keeps breaking it has a name (X-292) (2026-09-13)
+
+- **The contract healed the same two junctions over and over and no surface
+  ever said so.** All three gates threw the answer away - `try {
+  completeSlots(); } catch {}` - so a slot repaired at every gate read
+  `complete` at every gate. Measured again this morning, 70 minutes after the
+  previous session verified all five links on all three Claude slots:
+  `claude-wmmuratvural` had lost `todos` and `shell-snapshots` again, and its
+  `.last-cleanup` stamp was eight minutes younger than that verification.
+  Four events now, four for four, and `projects` has never once gone.
+  - **And the open question from X-273 is answered: the pool is NOT touched.**
+    The pool's `todos` and `shell-snapshots` still carry the mtime they had
+    before the cleanup ran, which is the signature of an unlink rather than a
+    walk - a recursive remove sees a junction as a link and removes the link.
+    Nothing has been lost; the slot loses the path, the contract puts it back.
+  - `slot-repairs.json` beside the other stores holds what was put back:
+    the clause, the slot, which gate ran (`start` · `capture` · `launch` ·
+    `press` · `ask`), and **the reading it was repaired FROM** - after a
+    repair every reading says the slot is well, which is the exact sentence
+    that hid this.
+  - **The cause is DERIVED, never declared.** The adapter names the file the
+    ENGINE itself stamps when its own housekeeping runs (`housekeeping`;
+    Claude: `.last-cleanup`), the stamp is read BEFORE the repair, and
+    `accounts.repairs` reports per clause how many repeats followed a stamp
+    that had moved - beside the denominator it was counted out of. A declared
+    cause rots the first time the engine changes; a counted one reads zero.
+    Pinned by its counter-case: the same four repairs with a stamp that never
+    moved read `afterHousekeeping: 0`.
+  - **And it is on the card, on the row that says `complete`.** A `↻7` badge
+    appears only once a clause has been put back on that slot more than once -
+    a first repair is a capture or a fresh clone - and its panel names the
+    clauses, how often, when, and how many repeats the engine explains.
+
 ## 3.472.0 - what the user installed is the fleet's: plugins and skills reach every account (X-273) (2026-09-13)
 
 - **Every isolated session had been running without the plugins and skills

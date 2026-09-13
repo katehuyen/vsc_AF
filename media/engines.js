@@ -625,6 +625,40 @@
             + 'named on its own because it is the one that changes what the model is told.\n\n'
             + 'PRESENT\n' + conLines(conRows.filter(r => r.ok)));
         /**
+         * ‼️ X-292 — AND WHAT IT TOOK TO BE WHOLE, because the badge above is
+         * true and tells the reader nothing. A slot repaired at every gate reads
+         * `complete` at every gate: four junctions were re-made twice in one day
+         * and the card said `complete` through all of it, so the only way anybody
+         * learned the engine's own housekeeping was removing them was to go and
+         * look at the disk by hand. A repair that succeeds silently hides what
+         * breaks it (Principle 1), and this badge is where it stops being silent.
+         *
+         * SHORTHAND: the count on the badge, the clauses and the evidence in the
+         * panel. Drawn only once a clause has been put back on this slot MORE
+         * THAN ONCE (`compared > 0`) — a single repair is a migration, a capture
+         * or a fresh clone, and badging that would cry wolf on every new account.
+         */
+        const reps = (con.repairs || []).filter(r => r.compared > 0);
+        const repTotal = reps.reduce((n, r) => n + r.count, 0);
+        const repairBadge = !reps.length ? '' : T.wrap(
+            '<span class="acbad warn">↻' + repTotal + '</span>',
+            'the contract has put something back on this slot ' + repTotal + ' times',
+            reps.map(r => '· ' + esc(r.clause) + ' — ' + r.count + '×, last '
+                + esc(age(r.last, DATA.now))
+                + (r.afterHousekeeping === r.compared
+                    ? ' — every repeat followed this engine’s own housekeeping'
+                    : ' — ' + r.afterHousekeeping + ' of ' + r.compared
+                    + ' repeats followed this engine’s own housekeeping')).join('\n')
+            + '\n\nThe engine prunes its own scratch directories, and on a relocated config '
+            + 'directory those are junctions: a recursive remove sees a junction as a link and '
+            + 'unlinks it instead of walking into it. The pool survives, the slot loses the path, '
+            + 'and the contract puts it back at the next gate — which is why the badge beside this '
+            + 'one has never stopped saying complete.\n\n'
+            + 'The attribution is counted, not assumed: each repeat is compared with the previous '
+            + 'repair on THIS slot, and only a housekeeping stamp that moved in between is '
+            + 'counted. A clause that keeps breaking for some other reason reads zero here.\n\n'
+            + '`accounts.repairs` on the bridge has every row.');
+        /**
          * ‼️ AND THE PRESS IS OFFERED ONLY WHERE IT WOULD DO SOMETHING. An
          * identity clause cannot be repaired in place — nothing can invent a
          * credential — so a slot missing only that one gets the sign-in key
@@ -738,6 +772,7 @@
                 verdict[2], verdict[3])
             + promptBadge
             + contractBadge
+            + repairBadge
             + '<span class="grow"></span>'
             + fixSettings
             + fixContract

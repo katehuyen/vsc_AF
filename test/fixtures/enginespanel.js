@@ -30,13 +30,19 @@ const detailFor = (c) => {
     return 'hooks current on :8377';
 };
 /** `gaps` maps a clause id to the sentence the card must draw for it. */
-const contract = (engine, gaps) => {
+const contract = (engine, gaps, repairs) => {
     const bad = gaps || {};
     const rows = slotClauses(adapterFor(engine)).map(c => ({
         id: c.id, ok: !bad[c.id], repairable: !!c.repair,
         detail: bad[c.id] || detailFor(c)
     }));
-    return { complete: rows.every(r => r.ok), gaps: rows.filter(r => !r.ok).map(r => r.id), rows };
+    return {
+        complete: rows.every(r => r.ok), gaps: rows.filter(r => !r.ok).map(r => r.id), rows,
+        // ‼️ X-292 — the badge's whole point is that it appears on a slot the
+        // row beside it calls COMPLETE, so the default here is an empty history
+        // and the scene that carries one is a slot with nothing else wrong.
+        repairs: repairs || []
+    };
 };
 
 const data = () => {
@@ -96,7 +102,24 @@ const data = () => {
                 capturedAt: NOW - 2 * 3600 * 1000,
                 fetchedAt: NOW - 3 * 3600 * 1000, queue: 'queued', queuePlace: 1,
                 settingsGaps: [], settingsGuarantee: true,
-                completeness: contract('claude'),
+                // ‼️ X-292 — A SLOT THAT IS WHOLE AND KEEPS BEING PUT BACK, which
+                // is the only state the repair badge exists for: `link:todos` is
+                // `ok` on the row above and has been re-made four times, every
+                // repeat behind a housekeeping run of the engine's own. A scene
+                // where the clause were also MISSING would prove nothing — the
+                // contract badge would already be shouting.
+                completeness: contract('claude', undefined, [
+                    {
+                        clause: 'link:todos', count: 4, slots: ['personal'],
+                        first: NOW - 3 * 24 * 3600 * 1000, last: NOW - 40 * 60 * 1000,
+                        compared: 3, afterHousekeeping: 3
+                    },
+                    {
+                        clause: 'link:shell-snapshots', count: 3, slots: ['personal'],
+                        first: NOW - 3 * 24 * 3600 * 1000, last: NOW - 40 * 60 * 1000,
+                        compared: 2, afterHousekeeping: 1
+                    }
+                ]),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
             },
             {

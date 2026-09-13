@@ -472,6 +472,34 @@ const sec = () => {
     ok('…and offers no press, because a button whose whole effect is to look busy is a lie',
         !whole.includes('data-accomplete='));
 
+    // ---------- X-292: …and what it took to be whole ----------
+    //
+    // ‼️ THE BADGE'S SUBJECT IS A SLOT THAT READS `complete`. That is the whole
+    // defect: four junctions were re-made twice in one day and every reading
+    // said the slot was well, so the recurring cause stayed invisible. So the
+    // scene it is pinned on is the healthy card, not the broken one.
+    const base = runPage('engines.js', fixture.data()).html();
+    const healed = card(base, 'personal');
+    ok('‼️ X-292: a slot that keeps being put back says so, on a row that reads complete',
+        healed.includes('>complete<') && /class="acbad warn">↻7</.test(healed));
+    ok('…and the panel names the clauses and how often, not just a number',
+        healed.includes('link:todos') && healed.includes('4×')
+        && healed.includes('link:shell-snapshots') && healed.includes('3×'));
+    // ‼️ AND BOTH ATTRIBUTIONS ARE DRAWN. A panel that only ever says "every
+    // repeat was the engine" is a sentence, not a measurement — the clause whose
+    // repeats do NOT all line up has to read differently on the same card.
+    ok('‼️ …and a clause the engine explains every time reads differently from one it does not',
+        healed.includes('every repeat followed this engine’s own housekeeping')
+        && healed.includes('1 of 2 repeats followed this engine’s own housekeeping'));
+    ok('…and it says why a junction dies rather than leaving the reader to guess',
+        healed.includes('unlinks it instead of walking into it'));
+    ok('…and points at the op that has every row', healed.includes('accounts.repairs'));
+    // ‼️ A BADGE ON EVERY CARD IS A BADGE ON NONE. A slot with no history draws
+    // nothing, and so does one repaired once — a first repair is a capture or a
+    // fresh clone, and badging that would cry wolf on every new account.
+    ok('‼️ …and a slot with no repair history draws no badge at all',
+        !/class="acbad warn">↻/.test(card(base, 'work-1')));
+
     // ‼️ AN ENGINE WITH A SHORT CONTRACT IS NOT AN ENGINE WITH NONE. Codex carries
     // two clauses where Claude carries eight, and `complete` on it means those two
     // — which is why the panel counts them out loud rather than leaving the reader

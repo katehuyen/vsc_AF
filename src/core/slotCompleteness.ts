@@ -34,7 +34,9 @@ import { carriedDrift, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, S
 export const CONTENT_KEYS = ['ownFiles', 'carryFiles', 'requiredEnv', 'sharedPaths'] as const;
 /** Adapter fields that describe the ENGINE, not the slot's contents — no clause. */
 export const META_KEYS = [
-    'engine', 'support', 'configEnv', 'liveDir', 'liveFiles', 'evidence', 'signIn', 'readIdentity', 'quotaSource'
+    'engine', 'support', 'configEnv', 'liveDir', 'liveFiles', 'evidence', 'signIn', 'readIdentity', 'quotaSource',
+    // X-292 — evidence about the engine's own housekeeping, not something a slot carries.
+    'housekeeping'
 ] as const;
 
 export type ClauseKind = 'own' | 'carry' | 'env' | 'link' | 'hooks';
@@ -55,6 +57,8 @@ export interface ClauseRow extends ClauseReading {
     repairable: boolean;
     /** set by completeSlot: whether a repair ran and changed the disk */
     wrote?: boolean;
+    /** X-292 — set by completeSlot when a repair ran: the reading it ran against */
+    was?: string;
     error?: string;
 }
 
@@ -275,7 +279,13 @@ export function completeSlot(ctx: SlotContext, dryRun = false): SlotCompleteness
     const after = dryRun ? before : slotCompleteness({ ...ctx, adapter });
     for (const r of after.rows) {
         const w = wrote.get(r.id);
-        if (w) { r.wrote = w.wrote; if (w.error) { r.error = w.error; } }
+        if (!w) { continue; }
+        r.wrote = w.wrote;
+        // ‼️ X-292 — the row that was repaired carries the reading it was
+        // repaired FROM. After the repair the detail says everything is well,
+        // which is exactly the sentence that hid a recurring fault for a week.
+        r.was = before.rows.find(b => b.id === r.id)?.detail;
+        if (w.error) { r.error = w.error; }
     }
     return after;
 }

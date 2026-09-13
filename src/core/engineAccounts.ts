@@ -185,6 +185,19 @@ export interface EngineAuthAdapter {
      */
     sharedPaths: string[];
     /**
+     * ‼️ X-292 — THE FILE THIS ENGINE STAMPS WHEN ITS OWN HOUSEKEEPING RUNS,
+     * relative to the config directory. It is not part of the contract and
+     * nothing repairs it: it exists so a repair can say WHY it was needed.
+     *
+     * The engine prunes its own scratch directories, and on a relocated config
+     * directory those are junctions. Node's recursive remove sees a junction as
+     * a link and unlinks it rather than walking into it — so the pool survives
+     * and the slot loses the path. The contract then puts it back at the next
+     * gate, silently, for ever. Reading this stamp beside the repair is what
+     * turns "it was broken again" into "the engine's housekeeping broke it".
+     */
+    housekeeping?: string;
+    /**
      * Where this engine keeps all of that when NOTHING is relocated, relative
      * to the user's home.
      */
@@ -400,6 +413,11 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         // them. Nothing there is an identity — installing a skill once and
         // losing it on the next sign-in is the X-270 fault by another name.
         sharedPaths: ['projects', 'todos', 'shell-snapshots', 'plugins', 'skills'],
+        // ‼️ X-292 — measured on this machine, three separate events: the slot
+        // whose `.last-cleanup` is newest is the slot that lost `todos` and
+        // `shell-snapshots`, and never `projects`. The pool was untouched each
+        // time, which is the signature of an unlink rather than a walk.
+        housekeeping: '.last-cleanup',
         // ‼️ X-265 — the settings file travels with the slot. CLAUDE_CONFIG_DIR
         // moves where `settings.json` is READ FROM, so an isolated session
         // inherits the user's model, permission mode and live hooks only if a
