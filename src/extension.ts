@@ -22883,23 +22883,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * Claude's is the hooks installer's, so it stays false and the decision
      * falls back to `hasRealHooks`, exactly as X-265 left it.
      */
-    const wireReading = (engine: string): { wire: Set<string>; wireLive: boolean } => {
+    const wireDeclares = (engine: string): Set<string> => {
         const a = ENGINE_AUTH_ADAPTERS.find(x => x.engine === engine);
         const events = a?.liveWire?.events;
-        if (!a || !events) { return { wire: new Set<string>(), wireLive: false }; }
-        try {
-            return {
-                wire: new Set(events(fleetWireCtx(a))),
-                wireLive: fleetWireReading(a)?.ok === true
-            };
-        } catch { return { wire: new Set<string>(), wireLive: false }; }
+        if (!a || !events) { return new Set<string>(); }
+        try { return new Set(events(fleetWireCtx(a))); } catch { return new Set<string>(); }
+    };
+    /**
+     * ‼️ X-297 — WHICH OF AN ENGINE'S HOOKS HAVE EVER ACTUALLY BEEN HEARD.
+     *
+     * A hook file is a claim. Measured 2026-09-13 on the build that first
+     * shipped the per-event rule: Codex's `hooks.json` declares `Stop`,
+     * `config.toml` trusts it, and two turns in a row produced no `stop` event —
+     * so suppressing the mirror on the file's word took away the only turn-end
+     * that lane had. The wire is proved one event at a time instead, and the
+     * proof is kept: a hook heard in one session is a hook the next session's
+     * FIRST event can already stand aside for, which is what closes the race
+     * where Codex names its thread before its hooks fire.
+     *
+     * Kept where `lastLaunch` and the slash catalog are, for their reason: the
+     * panel does not own it and a second reader is a second answer.
+     */
+    const WIRE_HEARD_KEY = 'agentfarm.wireHeard';
+    const wireHeard = (): Record<string, string[]> =>
+        context.globalState.get<Record<string, string[]>>(WIRE_HEARD_KEY, {});
+    const learnWireHeard = (engine: string, kinds: string[]): string[] => {
+        const all = wireHeard();
+        const have = all[engine] ?? [];
+        const next = kinds.filter(k => !have.includes(k));
+        if (!next.length) { return have; }
+        const grown = [...have, ...next];
+        void context.globalState.update(WIRE_HEARD_KEY, { ...all, [engine]: grown });
+        return grown;
     };
     const liveMirror = new Map<string, {
         status: string; msgs: number; openTool?: string; said?: string; ask?: string;
         /** ‼️ X-297 — what this session's engine reports for itself (wireReading) */
         wire: Set<string>;
-        /** …and whether that wire was already live when the lane opened */
-        wireLive: boolean;
         /** has the lane been opened — asked here rather than inferred from the
          *  counters, which a suppressed SessionStart leaves at zero */
         started?: boolean;
@@ -22924,9 +22944,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // today's clock. A session that is genuinely new holds at most the
                 // prompt that started it, which IS this lane's first event.
                 msgs: s.resumed ? s.messages.length : 0,
-                // Read once: what the wire carries cannot change under a session
-                // that is already running, and this touches the disk.
-                ...wireReading(engine)
+                // Read once: what the wire DECLARES cannot change under a
+                // session already running, and this touches the disk.
+                wire: wireDeclares(engine)
             };
             liveMirror.set(id, seen);
         }
@@ -22945,9 +22965,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * (measured: eight seconds ahead of the hook). A wire read as live when
          * the lane opened counts from the first event.
          */
+        // What this engine's wire has been PROVED to report: heard on this
+        // session or on an earlier one, and never beyond what it declares — a
+        // payload from somewhere else cannot teach the mirror to go quiet.
+        const heard = learnWireHeard(engine, live.realHookKinds(sid).filter(k => seen!.wire.has(k)));
         const emit = (p: Parameters<typeof live.handle>[0]): void => {
-            const speaks = seen!.wireLive || live.hasRealHooks(sid);
-            if (mirrorOwns(p.hook_event_name, seen!.wire, speaks)) { live.handle(p); }
+            if (mirrorOwns(p.hook_event_name, heard)) { live.handle(p); }
         };
         if (!seen.started) {
             seen.started = true;

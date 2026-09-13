@@ -129,24 +129,41 @@ const rig = () => {
 // because no hook carries one. So the question is per EVENT.
 {
     const CLAUDE = ALL_HOOK_EVENTS;
-    ok('‼️ X-297 — an event the wire reports is NOT the mirror\'s, once it speaks',
-        mirrorOwns('SessionStart', CLAUDE, true) === false
-        && mirrorOwns('Stop', CLAUDE, true) === false
-        && mirrorOwns('UserPromptSubmit', CLAUDE, true) === false);
-    ok('…and the same event IS the mirror\'s while the wire is silent — that is '
+    ok('‼️ X-297 — an event the wire has been HEARD to report is not the mirror\'s',
+        mirrorOwns('SessionStart', CLAUDE) === false
+        && mirrorOwns('Stop', CLAUDE) === false
+        && mirrorOwns('UserPromptSubmit', CLAUDE) === false);
+    ok('…and the same event IS the mirror\'s while nothing has been heard — that is '
         + 'the whole reason the mirror exists (X-265)',
-        mirrorOwns('SessionStart', CLAUDE, false) === true
-        && mirrorOwns('Stop', CLAUDE, false) === true);
-    ok('‼️ X-297 — what NO wire carries stays the mirror\'s either way: the agent\'s '
-        + 'own reply (U-78) is the Console\'s knowledge, not a hook\'s',
+        mirrorOwns('SessionStart', []) === true && mirrorOwns('Stop', []) === true);
+    ok('‼️ X-297 — A DECLARED HOOK THAT HAS NEVER ARRIVED IS NOT A WIRE. Measured '
+        + '2026-09-13: Codex declares `Stop`, config.toml trusts it, two turns in a '
+        + 'row produced no `stop` — so the mirror is still the turn-end there',
+        mirrorOwns('Stop', ['SessionStart', 'UserPromptSubmit']) === true
+        && mirrorOwns('SessionStart', ['SessionStart', 'UserPromptSubmit']) === false);
+    ok('‼️ X-297 — what NO wire carries stays the mirror\'s: the agent\'s own reply '
+        + '(U-78) is the Console\'s knowledge, not a hook\'s',
         CLAUDE.indexOf('AssistantMessage') < 0
-        && mirrorOwns('AssistantMessage', CLAUDE, true) === true
-        && mirrorOwns('AssistantMessage', CLAUDE, false) === true);
-    ok('an engine with no wire at all is mirrored in full',
-        mirrorOwns('SessionStart', [], true) === true
-        && mirrorOwns('Stop', [], true) === true);
+        && mirrorOwns('AssistantMessage', CLAUDE) === true);
     ok('a payload with no event name is never suppressed by a list it cannot be on',
-        mirrorOwns(undefined, CLAUDE, true) === true);
+        mirrorOwns(undefined, CLAUDE) === true);
+
+    // …and the monitor is where the hearing is recorded: a mirrored payload
+    // names its engine and teaches nothing; a real hook teaches its own name.
+    const live = rig();
+    live.handle({ session_id: 'H1', cwd: '/x', hook_event_name: 'SessionStart', engine: 'codex' });
+    ok('‼️ a mirrored event teaches the wire nothing — otherwise the mirror would '
+        + 'suppress itself with its own evidence',
+        live.realHookKinds('H1').length === 0);
+    live.handle({ session_id: 'H1', cwd: '/x', hook_event_name: 'SessionStart' });
+    live.handle({ session_id: 'H1', cwd: '/x', hook_event_name: 'UserPromptSubmit', prompt: 'x' });
+    live.handle({ session_id: 'H1', cwd: '/x', hook_event_name: 'UserPromptSubmit', prompt: 'y' });
+    ok('a real hook does, once per NAME however often it fires',
+        live.realHookKinds('H1').join() === 'SessionStart,UserPromptSubmit');
+    ok('…and the turn-end nobody sent is not on the list',
+        mirrorOwns('Stop', live.realHookKinds('H1')) === true);
+    ok('a session nobody has heard of has heard nothing',
+        live.realHookKinds('never-seen').length === 0);
 }
 
 // ---------- …and the list is the WIRE'S own, read where it lives ----------
@@ -180,11 +197,9 @@ const rig = () => {
     const events = codex.liveWire.events(ctxFor(wired));
     ok('Codex\'s wire is READ, because the file is the user\'s and may name any subset',
         events.length === 7 && events.indexOf('UserPromptSubmit') >= 0);
-    ok('‼️ X-297 — and the seven measured on this machine carry NO SessionEnd, which '
-        + 'is why a Codex lane is still ENDED by the mirror',
-        events.indexOf('SessionEnd') < 0
-        && mirrorOwns('SessionEnd', events, true) === true
-        && mirrorOwns('Stop', events, true) === false);
+    ok('‼️ X-297 — and the seven measured on this machine carry NO SessionEnd, so '
+        + 'that one could not be suppressed even if it were heard',
+        events.indexOf('SessionEnd') < 0 && mirrorOwns('SessionEnd', events) === true);
     ok('no hooks.json is no wire — nothing suppressed, everything mirrored',
         codex.liveWire.events(ctxFor({})).length === 0);
     ok('a malformed hooks.json is no wire either, and never throws at a lane',

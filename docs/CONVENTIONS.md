@@ -440,13 +440,17 @@ adapter a field and this module a deriver, and every gate, the
   into the same live lane, and silencing the mirror wholesale the moment a hook
   spoke lost everything no hook carries: the agent's reply (U-78), the question a
   turn is parked on (A-18), and the END of a Codex lane, whose seven hooks include
-  no `SessionEnd`. Suppression is **per event**, against the adapter's own
-  `liveWire.events` — Claude's is the installer's list, Codex's is READ from the
-  user's `hooks.json`, an engine with no wire declares none and is mirrored in
-  full. The rule itself is `mirrorOwns` in `core/live.ts`, so it is a function a
-  test can pin rather than a closure inside `activate()`. And it is read at the
-  lane's FIRST event, not on the first hook: Codex names its thread before its
-  hooks fire, so "has a hook spoken yet" answered eight seconds too late.
+  no `SessionEnd`. Suppression is **per event** — `mirrorOwns` in `core/live.ts`,
+  a function a test can pin rather than a closure inside `activate()`.
+  **‼️ And it suppresses against what has been HEARD, never what a file claims.**
+  Codex declares a `Stop` hook and `config.toml` trusts it; measured on the build
+  that first shipped this rule, two turns in a row produced no `stop` at all, so
+  trusting the declaration removed the only turn-end that lane had. The adapter's
+  `liveWire.events` is the upper bound (Claude's is the installer's list, Codex's
+  is READ from the user's `hooks.json`); what actually arrived is the proof, kept
+  per engine in `globalState` so the NEXT session's first event can already stand
+  aside — which is what closes the race where Codex names its thread eight seconds
+  before its first hook fires.
 - **"Complete" means "carries the LEAST possible"** (X-270). A clause's repair
   never copies something new into a slot: it links, or it re-renders from the
   fleet's source. The acceptance test of the contract is to delete a slot folder

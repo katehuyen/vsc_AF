@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.482.0 - a declared hook that never arrives is not a wire (X-297) (2026-09-13)
+
+- **3.481.0 believed the hook file, and the Live Timeline lost every Codex
+  turn-end.** Verified live on that build: `hooks.json` declares a `Stop` hook,
+  `config.toml` trusts it, `hooks/list` reports it trusted — and two Codex turns
+  in a row produced no `stop` event at all. Suppressing the mirror on that
+  declaration took away the only turn-end those lanes had ever had.
+- **So the mirror now stands aside only for what has actually been HEARD.** Each
+  real hook teaches its own name (`LiveMonitor.realHookKinds`), the proof is kept
+  per engine in `globalState`, and the adapter's `liveWire.events` is only the
+  upper bound — a payload from somewhere else cannot teach the mirror to go
+  quiet. Keeping the proof is also what closes the race the previous build used
+  the wire reading for: Codex names its thread eight seconds before its first
+  hook fires, and a hook heard in an earlier session is one the next session's
+  first event can already stand aside for.
+- Same lesson as X-295, one layer up: **"trusted" is a file's claim, not a
+  measurement.**
+
 ## 3.481.0 - the mirror says only what the engine will not (X-297) (2026-09-13)
 
 - **A Codex Console session was telling the Live Timeline everything twice.**

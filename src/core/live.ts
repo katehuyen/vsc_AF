@@ -79,6 +79,9 @@ export interface LiveSession {
      * the difference between a timeline and an empty page.
      */
     realHook?: boolean;
+    /** ‼️ X-297 — the hook event names really heard for this session, which is
+     *  what the mirror suppresses itself against (see `mirrorOwns`). */
+    realHookKinds?: string[];
 }
 
 export type LiveEventKind =
@@ -295,19 +298,18 @@ export function statedSource(engine: string | undefined): string | undefined {
  * — right about doubling, too wide about everything else. Measured 2026-09-13:
  * a Codex session logged `start` and `prompt` twice; and on the other side, a
  * Claude session whose hooks worked never reported the agent's own reply,
- * because no hook carries one.
+ * because no hook carries one. So the question is per EVENT.
  *
- * So the question is per EVENT, not per session: the wire's list wins for what
- * is on it, and everything else is the mirror's. `speaks` is whether that wire
- * is actually live here — false for an engine whose hooks are dead, which is
- * the case the mirror exists for.
+ * ‼️ AND `reported` IS WHAT HAS BEEN HEARD, NEVER WHAT A FILE CLAIMS. Measured
+ * the same day, on the build that first shipped this: `hooks.json` declares a
+ * `Stop` hook, `config.toml` trusts it, and two Codex turns in a row produced no
+ * `stop` event at all — so suppressing the mirror on the file's word removed the
+ * only turn-end that lane had. A hook is part of the wire once it has actually
+ * arrived; until then the mirror is still the one thing saying anything.
  */
-export function mirrorOwns(
-    event: string | undefined, wire: Iterable<string>, speaks: boolean
-): boolean {
+export function mirrorOwns(event: string | undefined, reported: Iterable<string>): boolean {
     if (!event) { return true; }
-    if (!speaks) { return true; }
-    for (const w of wire) { if (w === event) { return false; } }
+    for (const w of reported) { if (w === event) { return false; } }
     return true;
 }
 
@@ -930,13 +932,29 @@ export class LiveMonitor implements vscode.Disposable {
         return this.sessionsMap.get(sessionId)?.realHook === true;
     }
 
+    /** ‼️ X-297 — …AND WHICH OF THEM HAVE ACTUALLY ARRIVED. The evidence the
+     *  Console mirror suppresses itself against; a declared hook that has never
+     *  been heard is not on this list and is nobody's but the mirror's. */
+    realHookKinds(sessionId: string): string[] {
+        return this.sessionsMap.get(sessionId)?.realHookKinds ?? [];
+    }
+
     handle(payload: HookPayload): void {
         const cfg = this.getConfig();
         const s = this.session(payload);
         // ‼️ X-265 — recorded before anything else is decided: a mirror always
         // names its engine and a real hook never does, so this is the whole
         // test, and it must not be reachable only down some branch.
-        if (!payload.engine) { s.realHook = true; }
+        if (!payload.engine) {
+            s.realHook = true;
+            // ‼️ X-297 — and WHICH hook it was, because a wire is proved one
+            // event at a time (see mirrorOwns).
+            const heard = payload.hook_event_name;
+            if (heard) {
+                if (!s.realHookKinds) { s.realHookKinds = []; }
+                if (!s.realHookKinds.includes(heard)) { s.realHookKinds.push(heard); }
+            }
+        }
         const now = Date.now();
         s.lastEventTs = now;
         s.notifiedStuck = false;
