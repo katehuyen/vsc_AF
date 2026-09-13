@@ -3,6 +3,7 @@ import {
     EngineAccountSlot, AccountIdentity, accountEnv, adapterFor, canIsolateAccounts, captureRefusal,
     liveSource, mintSlotId, slotDir
 } from './engineAccounts';
+import { expandPath, PortableRoot, tokenizePath } from './portablePaths';
 
 /**
  * X-171 — THE SLOTS AS A LIST, AND WHAT CAPTURING ONE ACTUALLY DOES.
@@ -70,8 +71,17 @@ export interface CapturePlan {
     adopts?: string;
 }
 
-/** The setting is user-editable, so nothing in it may be assumed. */
-export function normalizeSlots(raw: unknown): EngineAccountSlot[] {
+/**
+ * The setting is user-editable, so nothing in it may be assumed.
+ *
+ * ‼️ X-276 — `dir` is OPENED through the machine's roots: a stored
+ * `${globalStorage}\accounts\<slot>` becomes this machine's path, and an
+ * absolute path another machine recorded (`c:\Users\<them>\…\globalStorage\…`)
+ * heals onto this machine's storage — `expandPath` re-roots it. Without roots
+ * the string is taken as written, which is what a test that owns no machine
+ * wants.
+ */
+export function normalizeSlots(raw: unknown, roots: PortableRoot[] = []): EngineAccountSlot[] {
     if (!Array.isArray(raw)) { return []; }
     const out: EngineAccountSlot[] = [];
     const seen = new Set<string>();
@@ -79,7 +89,8 @@ export function normalizeSlots(raw: unknown): EngineAccountSlot[] {
         if (!item || typeof item !== 'object') { continue; }
         const o = item as Record<string, unknown>;
         const id = typeof o.id === 'string' ? o.id.trim() : '';
-        const dir = typeof o.dir === 'string' ? o.dir.trim() : '';
+        const stored = typeof o.dir === 'string' ? o.dir.trim() : '';
+        const dir = stored && roots.length ? expandPath(stored, roots) : stored;
         // ‼️ An entry with no id or no directory is not a slot with a gap in it,
         // it is a line somebody half-typed. Carrying it forward would put a row
         // in the picker that starts a session as nobody.
@@ -94,6 +105,38 @@ export function normalizeSlots(raw: unknown): EngineAccountSlot[] {
             subscriptionType: typeof o.subscriptionType === 'string' ? o.subscriptionType : undefined,
             capturedAt: typeof o.capturedAt === 'number' ? o.capturedAt : undefined
         });
+    }
+    return out;
+}
+
+/**
+ * ‼️ X-276 — THE LIST AS IT IS WRITTEN: every `dir` a token, never this
+ * machine's path. `agentFarm.accounts` is the farm's own store (a capture
+ * writes it), so it travels like every other store — `${globalStorage}` on the
+ * way out. A dir under no known root is written as it is; there is nothing to
+ * tokenize it with, and inventing a root would be worse than an honest absolute.
+ */
+export function portableSlots(list: EngineAccountSlot[], roots: PortableRoot[]): EngineAccountSlot[] {
+    return list.map(s => ({ ...s, dir: tokenizePath(s.dir, roots) }));
+}
+
+/**
+ * X-276 — the rows of the RAW setting whose `dir` names this machine rather
+ * than a root: what the acceptance gate reads, and what `portableSlots` mends.
+ * Read off the raw value, not the normalized list — the normalized list has
+ * already been expanded and every row in it looks absolute.
+ */
+export function unportableDirs(raw: unknown, roots: PortableRoot[]): { id: string; dir: string; tokenizable: boolean }[] {
+    if (!Array.isArray(raw)) { return []; }
+    const abs = /^([A-Za-z]:[\\/]|\\\\|\/)/;
+    const out: { id: string; dir: string; tokenizable: boolean }[] = [];
+    for (const item of raw) {
+        if (!item || typeof item !== 'object') { continue; }
+        const o = item as Record<string, unknown>;
+        const id = typeof o.id === 'string' ? o.id.trim() : '';
+        const dir = typeof o.dir === 'string' ? o.dir.trim() : '';
+        if (!id || !dir || !abs.test(dir)) { continue; }
+        out.push({ id, dir, tokenizable: tokenizePath(dir, roots) !== dir });
     }
     return out;
 }

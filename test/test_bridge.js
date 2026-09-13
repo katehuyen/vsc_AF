@@ -2459,6 +2459,25 @@ const { opencodeStatus, syncToOpencode } =
         ok('‼️ X-292 — the housekeeping stamp is read BEFORE the repair runs',
             src.indexOf('const keptAt = housekeepingAt(') < src.indexOf('const after = completeSlot(ctx, false);'));
 
+        // ---------- X-276: accounts.portable — the slot dir is stored as a token ----------
+        const portableBlock = src.slice(src.indexOf("op: 'accounts.portable'"), src.indexOf("op: 'migration.verify'"));
+        ok('‼️ X-276 — the bridge can ask whether the account dirs name a machine, and rewrite them',
+            portableBlock.includes("op: 'accounts.portable'") && /unportableDirs\(/.test(portableBlock) && /writeAccounts\(storedAccounts\(\)\)/.test(portableBlock));
+        ok('…and it is a QUESTION first: dryRun defaults to true', /optBool\(args, 'dryRun', true\)/.test(portableBlock));
+        ok('‼️ X-276 — the store is OPENED through the roots and WRITTEN as tokens, at the one reader and the one writer',
+            /normalizeSlots\(cfg\(\)\.get<unknown\[\]>\('accounts', \[\]\), portableRoots\(\)\)/.test(src)
+            && /cfg\(\)\.update\('accounts', portableSlots\(list, portableRoots\(\)\)/.test(src));
+
+        // ---------- X-283: migration.verify — one pass/fail out of the checks that exist ----------
+        const gateBlock = src.slice(src.indexOf("op: 'migration.verify'"), src.indexOf("op: 'sentry.templates'"));
+        ok('‼️ X-283 — the bridge can ask whether the migration worked',
+            gateBlock.includes("op: 'migration.verify'") && /migrationGate\(\{/.test(gateBlock));
+        ok('…and the gate CALLS the real checks rather than rewriting them: the birth contract, the twins, the tokenizer, the S-61 stores',
+            /completeSlots\(true\)/.test(gateBlock) && /duplicateSlots\(/.test(gateBlock)
+            && /unportableDirs\(/.test(gateBlock) && /mergeMissing\(held, legacy\)/.test(gateBlock));
+        ok('…on the two roots without which nothing else means anything',
+            /name: 'claudeDir', path: claudeDir\(\)/.test(gateBlock) && /name: 'globalStorage', path: context\.globalStorageUri\.fsPath/.test(gateBlock));
+
         // ---------- X-290: sessions.rescan — the disk outran the watcher ----------
         const rescanBlock = src.slice(src.indexOf("op: 'sessions.rescan'"), src.indexOf("op: 'sessions.find'"));
         ok('‼️ X-290 — the bridge can bring the index up to the disk',

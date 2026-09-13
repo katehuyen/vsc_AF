@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.475.0 - one question for a migrated machine: did it work (X-283), and the account dirs travel (X-276) (2026-09-13)
+
+- **Every fault in the X-270 family proposed its own Doctor line, and the
+  result was ten places to look on a new machine and no answer to the one
+  question.** `migration.verify` on the bridge asks it: one pass/fail composed
+  out of the checks the fixes already left in the code — and nothing of its
+  own, because a gate with its own logic forks from the behaviour the moment
+  either changes and then reads green while the system is broken.
+  - Items: `root:claudeDir` / `root:globalStorage` (a real folder on the
+    system drive is data that dies with the next format; the fix names
+    `_setup\Link-Folders.ps1`), `slot:<id>` (the whole birth contract per
+    account — `accounts.complete`, read-only), `twins` (one uuid in two slots,
+    X-282), `portable-dirs` (X-276, below), `state:titles` / `state:marks`
+    (the S-61 adoption: merged, once, never overwritten — legacy rows kept
+    out on purpose are reported as such, not as a fault).
+  - **Every failing item carries what a program can run**, in the shape the
+    `_setup` Doctor already uses (X-209: id · label · op · args · danger):
+    `accounts.complete dryRun=false id=…` for a repairable clause,
+    `accounts.forget` (HIGH) for a twin, `accounts.portable` for a stored
+    absolute path. An identity clause is a `fix` for a person — nothing can
+    sign in for them. A check that throws is a failing item with the error on
+    it; the rest of the gate still runs.
+  - `_REF/machine-setup.md` step 6b names it as the acceptance step once
+    VS Code is up. The cockpit (X-281) can call it through `af.js`.
+- **The account directories were stored as this machine's absolute path
+  (X-276).** `agentFarm.accounts` is the farm's own store that happens to live
+  in `settings.json` — a capture writes it, never the user — so it now travels
+  like every other store: `${globalStorage}\accounts\<slot>` on the way out
+  (`portableSlots`, at the one writer), this machine's path on the way in
+  (`normalizeSlots` through `expandPath`, at the one reader), and an absolute
+  path another machine recorded heals onto this one's storage on load. Rows
+  written before the tokenizer existed are rewritten once, off the activation
+  path; `accounts.portable` reads them (`dryRun` default) and rewrites them.
+  A dir under no known root is written as an honest absolute and the gate
+  names it as the person's job.
+
 ## 3.474.0 - a whole file has no single owner: the fleet's keys inside the identity file (X-274) (2026-09-13)
 
 - **The folder trusts and MCP servers the user approves in the main directory

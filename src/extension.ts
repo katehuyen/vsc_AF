@@ -212,6 +212,7 @@ import {
 } from './core/sessionmarks';
 import { mergeMissing, PortableMap } from './core/portableState';
 import { reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
+import { migrationGate } from './core/migrationGate';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
 import { housekeepingAt, repairEvents, repairPattern, SlotRepairJournal } from './core/slotRepairs';
 import {
@@ -235,8 +236,8 @@ import {
     CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, OrphanSlot, accountEnvFor, accountLabelOf,
     planReauth,
     accountRefusal, addSlot, findSlot,
-    forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, resolveAccount, slotLabel,
-    slotsFor, statedAccountLabel
+    forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, portableSlots, resolveAccount, slotLabel,
+    slotsFor, statedAccountLabel, unportableDirs
 } from './core/accountStore';
 import {
     ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotCredentialsFile, slotIsUsable,
@@ -743,7 +744,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * activate() may call its dependencies before its constructor returns, so a
      * reader handed to one is declared here, not next to its subject matter.
      */
-    const storedAccounts = (): EngineAccountSlot[] => normalizeSlots(cfg().get<unknown[]>('accounts', []));
+    // Machine roots for portable stores — saved paths become ${claudeDir} /
+    // ${globalStorage} / ${home} tokens so the git-synced store files work on
+    // every machine (and legacy absolute paths heal on load).
+    const portableRoots = () => standardRoots({
+        claudeDir: claudeDir(),
+        globalStorage: context.globalStorageUri.fsPath,
+        home: os.homedir()
+    });
+    // ‼️ X-276 — the slot directory is STORED as a token and OPENED as this
+    // machine's path. `agentFarm.accounts` is the farm's own store that happens
+    // to live in settings.json (a capture writes it, never the user), so it
+    // travels like every other store: `${globalStorage}\accounts\<slot>` on the
+    // way out, and an absolute path recorded on another machine heals on load.
+    const storedAccounts = (): EngineAccountSlot[] => normalizeSlots(cfg().get<unknown[]>('accounts', []), portableRoots());
     /**
      * ‼️ X-265 — WHERE A CAPTURED ACCOUNT READS ITS SETTINGS, listed once.
      *
@@ -2643,14 +2657,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let taskRunner = taskLease.tryClaim();
     let followerWarnedAt = 0;
 
-    // Machine roots for portable stores — saved paths become ${claudeDir} /
-    // ${globalStorage} / ${home} tokens so the git-synced store files work on
-    // every machine (and legacy absolute paths heal on load).
-    const portableRoots = () => standardRoots({
-        claudeDir: claudeDir(),
-        globalStorage: context.globalStorageUri.fsPath,
-        home: os.homedir()
-    });
+    // (portableRoots is declared beside storedAccounts — the accounts store is
+    // its earliest reader.)
 
     // Projects — the registry and the session link table (core/projectStore.ts).
     // Everything a human writes about a project lives in the project's own
@@ -17505,7 +17513,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // the settings and nothing else, so their position is a question of when
     // they are first called, not of what they are about.
     const writeAccounts = async (list: EngineAccountSlot[]): Promise<void> => {
-        await cfg().update('accounts', list, vscode.ConfigurationTarget.Global);
+        await cfg().update('accounts', portableSlots(list, portableRoots()), vscode.ConfigurationTarget.Global);
         // ‼️ A CAPTURE OR A FORGET IS EXACTLY THE MOMENT THE SNAPSHOT IS WRONG,
         // and it is the moment the user is looking. See `slotIdentityFresh`.
         identitySeen.clear();
@@ -17974,6 +17982,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // never wait on a repair. A failure here costs one incomplete slot, never a
     // start, and never a session — the index reads the slots either way.
     setTimeout(() => { try { completeSlots(false, undefined, 'start'); } catch { /* never fails a start */ } }, 0);
+    // ‼️ X-276 — AND THE STORE IS BROUGHT TO ITS PORTABLE FORM ONCE. Rows a
+    // capture wrote before the tokenizer existed name this machine; writing the
+    // list back through `writeAccounts` tokenizes them, and a list already in
+    // tokens is left alone (the write is skipped, not repeated). Off the
+    // activation path for the same reason as the contract above.
+    setTimeout(() => {
+        try {
+            if (unportableDirs(cfg().get<unknown[]>('accounts', []), portableRoots()).some(r => r.tokenizable)) {
+                void writeAccounts(storedAccounts());
+            }
+        } catch { /* never fails a start */ }
+    }, 0);
     /** One slot as every surface may see it — never a token, ever. */
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
         const id = slotIdentity(slot);
@@ -34906,6 +34926,62 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     degraded: repairJournal.degraded
                 };
             }
+        },
+        {
+            op: 'accounts.portable',
+            describe: '‼️ X-276 — ARE THE ACCOUNT DIRECTORIES STORED AS TOKENS OR AS THIS MACHINE\'S PATH, '
+                + 'and rewrite them as tokens. `agentFarm.accounts` is the farm\'s own store that happens '
+                + 'to live in settings.json (a capture writes it, never the user), so it travels like '
+                + 'every other store: `${globalStorage}\\accounts\\<slot>` on the way out, expanded to '
+                + 'this machine on the way in — and an absolute path another machine recorded heals on '
+                + 'load either way. Answers `rows` (each stored dir that names a machine, and whether a '
+                + 'token can replace it), `wrote` (whether the setting was rewritten). '
+                + 'args: dryRun? (default true — read only)',
+            handler: async (args) => {
+                const rows = unportableDirs(cfg().get<unknown[]>('accounts', []), portableRoots());
+                const dry = optBool(args, 'dryRun', true);
+                const fixable = rows.filter(r => r.tokenizable);
+                if (!dry && fixable.length) { await writeAccounts(storedAccounts()); }
+                return { rows, wrote: !dry && fixable.length > 0, dryRun: dry };
+            }
+        },
+        {
+            op: 'migration.verify',
+            describe: '‼️ X-283 — DID THE MIGRATION WORK: one pass/fail for the whole machine, composed '
+                + 'out of the checks the X-270 family already left in the code and nothing of its own. '
+                + 'Items: `root:claudeDir` / `root:globalStorage` (the links into the migrated drive — '
+                + 'without them nothing else means anything), `slot:<id>` (the birth contract of every '
+                + 'captured account: settings, the env guarantee, the pool links, plugins, skills, hooks, '
+                + 'the fleet\'s keys inside the identity file — `accounts.complete`), `twins` (one '
+                + 'account uuid in two slots — X-282), `portable-dirs` (account dirs stored as this '
+                + 'machine\'s path — X-276), `state:titles` / `state:marks` (session names and marks '
+                + 'adopted from globalState, merged not overwritten — S-61). Every failing item carries '
+                + '`actions` — bridge ops a program can run to put it right, in the shape the _setup '
+                + 'Doctor uses (X-209: id · label · op · args · danger) — or a `fix` a person does. '
+                + 'Read-only: this op writes nothing; run the action it names. No arguments.',
+            handler: () => migrationGate({
+                roots: [
+                    { name: 'claudeDir', path: claudeDir() },
+                    { name: 'globalStorage', path: context.globalStorageUri.fsPath }
+                ],
+                fs,
+                completeness: () => completeSlots(true).map(c => ({ slotId: c.slotId, engine: c.engine, complete: c.complete, gaps: c.gaps, rows: c.rows })),
+                twins: () => duplicateSlots(storedAccounts().map(x => ({
+                    id: x.id, engine: x.engine, accountUuid: x.accountUuid || slotIdentity(x).accountUuid
+                }))),
+                unportable: () => unportableDirs(cfg().get<unknown[]>('accounts', []), portableRoots()),
+                stores: () => [
+                    { name: 'titles', store: titleStore as PortableMap<unknown>, key: TITLES_KEY },
+                    { name: 'marks', store: markStore as PortableMap<unknown>, key: MARKS_KEY }
+                ].map(({ name, store, key }) => {
+                    const legacy = context.globalState.get<Record<string, unknown>>(key, {}) || {};
+                    const held = store.exists() ? store.read() : {};
+                    return {
+                        name, exists: store.exists(), rows: Object.keys(held).length,
+                        legacyOnly: mergeMissing(held, legacy).added.length
+                    };
+                })
+            })
         },
         {
             op: 'sentry.templates',
