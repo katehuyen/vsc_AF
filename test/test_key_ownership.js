@@ -24,7 +24,14 @@ ok('the MCP servers are the fleet\'s', own.keys.mcpServers === 'fleet');
 ok('a key nobody named is IGNORED, not merged — the 21 telemetry fields per entry must never count', own.default === 'ignore');
 const trust = ['allowedTools', 'hasTrustDialogAccepted', 'mcpServers', 'enabledMcpjsonServers',
     'disabledMcpjsonServers', 'mcpContextUris', 'hasClaudeMdExternalIncludesApproved'];
-ok('every project entry\'s trust keys are the fleet\'s', trust.every(k => own.entries.projects.keys[k] === 'fleet'));
+// ‼️ X-291 — `allowedTools` is the ONE of the seven that is an answer the user gave
+// rather than a setting the fleet decides, so it merges and travels both ways. The
+// other six still belong to the fleet alone.
+ok('every project entry\'s trust key belongs to the fleet, one way or both',
+    trust.every(k => ['fleet', 'merge'].includes(own.entries.projects.keys[k])));
+ok('X-291 — the tool approvals merge; every other trust key is the fleet\'s alone',
+    own.entries.projects.keys.allowedTools === 'merge'
+    && trust.filter(k => k !== 'allowedTools').every(k => own.entries.projects.keys[k] === 'fleet'));
 ok('inside an entry, everything else is ignored too', own.entries.projects.default === 'ignore');
 // measured 2026-09-13: the 29 fields of a real entry — the trust keys, and telemetry
 const realEntryFields = ['allowedTools', 'mcpContextUris', 'mcpServers', 'enabledMcpjsonServers', 'disabledMcpjsonServers',
@@ -33,10 +40,40 @@ const realEntryFields = ['allowedTools', 'mcpContextUris', 'mcpServers', 'enable
     'lastDuration', 'lastLinesAdded', 'lastLinesRemoved', 'lastTotalInputTokens', 'lastTotalOutputTokens',
     'lastTotalCacheCreationInputTokens', 'lastTotalCacheReadInputTokens', 'lastTotalWebSearchRequests', 'lastFpsAverage',
     'lastFpsLow1Pct', 'lastModelUsage', 'lastSessionId', 'lastSessionMetrics', 'lastStartTime'];
-const fleetOwned = realEntryFields.filter(k => (own.entries.projects.keys[k] || own.entries.projects.default) === 'fleet');
+const fleetOwned = realEntryFields.filter(k =>
+    ['fleet', 'merge'].includes(own.entries.projects.keys[k] || own.entries.projects.default));
 ok('of the 29 measured entry fields exactly the 7 trust keys are the fleet\'s: ' + fleetOwned.join(','),
     fleetOwned.length === 7 && trust.every(k => fleetOwned.includes(k)));
 ok('fleetKeyPaths prints what a card can read', ko.fleetKeyPaths(own).includes('mcpServers') && ko.fleetKeyPaths(own).includes('projects[*].hasTrustDialogAccepted'));
+ok('X-291 — mergeKeyPaths names the return leg\'s keys and nothing else',
+    JSON.stringify(ko.mergeKeyPaths(own)) === JSON.stringify(['projects[*].allowedTools']));
+
+// ---------- 1b. X-291 — the behaviour file's permissions, and only those ----------
+const sown = claude.ownership['settings.json'];
+ok('X-291 — the behaviour file has a keys clause of its own', !!sown);
+ok('…that names permissions and nothing else at the top level',
+    sown.default === 'ignore' && !Object.keys(sown.keys).length
+    && JSON.stringify(Object.keys(sown.nested)) === JSON.stringify(['permissions']));
+ok('…where the three permission LISTS merge',
+    ['allow', 'ask', 'deny'].every(k => sown.nested.permissions.keys[k] === 'merge'));
+ok('‼️ …and everything else under permissions stays the FLEET\'S — a slot never changes defaultMode',
+    sown.nested.permissions.default === 'fleet');
+ok('X-291 — ownedTopKeys is what the carry clause must leave alone',
+    JSON.stringify(ko.ownedTopKeys(sown)) === JSON.stringify(['permissions']));
+{
+    // The fleet decides a scalar even where the scope merges lists (the user's rule:
+    // there is no clock on a `defaultMode`, so "last writer wins" cannot be measured).
+    const p = sown.nested.permissions;
+    const f = { allow: ['Bash(git status)'], defaultMode: 'acceptEdits' };
+    const s = { allow: ['Bash(npm test)'], defaultMode: 'bypassPermissions', additionalDirectories: ['D:\\x'] };
+    const out = ko.projectOwned(p, f, s, {});
+    ok('X-291 — two permission lists become their union', JSON.stringify(out.allow) === JSON.stringify(['Bash(git status)', 'Bash(npm test)']));
+    ok('X-291 — the fleet wins the scalar beside it', out.defaultMode === 'acceptEdits');
+    ok('X-291 — and a key the fleet does not have at all is dropped, as `fleet` has always meant', !('additionalDirectories' in out));
+    ok('X-291 — the slot\'s new approval is what promotes', JSON.stringify(ko.promotable(p, f, s, {})) === JSON.stringify([{ path: 'allow', added: ['Bash(npm test)'] }]));
+    ok('X-291 — promotion touches the list and nothing else', JSON.stringify(ko.promoteOwned(p, f, s, {}))
+        === JSON.stringify({ allow: ['Bash(git status)', 'Bash(npm test)'], defaultMode: 'acceptEdits' }));
+}
 
 // ---------- 2. drift and projection, pure ----------
 const P1 = 'D:\\zone\\one', P2 = 'D:\\zone\\two', P3 = 'D:\\zone\\three';
@@ -84,11 +121,18 @@ const slotOf = (f) => JSON.parse(JSON.stringify({
     f.mcpServers.airtable = { command: 'z' };
     f.projects[P2].hasTrustDialogAccepted = false;
     delete f.projects[P1].allowedTools;
-    const d = ko.ownedDrift(own, f, s);
+    // ‼️ X-291 — A DELETED MERGE KEY NEEDS THE BASE TO BE READ AS A DELETION. On a
+    // `fleet` key absence is a decision on its own; on a merge key it is ambiguous —
+    // the fleet may simply never have held a list there — so the base is what says
+    // the two sides once agreed it existed.
+    const base = { projects: { [P1]: { allowedTools: [] } } };
+    const d = ko.ownedDrift(own, f, s, base);
     ok('a changed top-level fleet key is drift', d.includes('mcpServers'));
     ok('a revoked trust is drift', d.includes(`projects[${P2}].hasTrustDialogAccepted`));
     ok('a key the fleet DELETED is drift — absence counts, as carriedDrift treats a deleted setting', d.includes(`projects[${P1}].allowedTools`));
-    const out = ko.projectOwned(own, f, s);
+    ok('‼️ X-291 — …but with NO base the same absence is not a decision and the slot keeps its own',
+        !ko.ownedDrift(own, f, s, {}).includes(`projects[${P1}].allowedTools`));
+    const out = ko.projectOwned(own, f, s, base);
     ok('projection copies the new server, the revocation and the deletion',
         out.mcpServers.airtable.command === 'z' && out.projects[P2].hasTrustDialogAccepted === false && !('allowedTools' in out.projects[P1]));
     ok('projection copies by value, not by reference', (out.mcpServers.airtable.command = 'w', f.mcpServers.airtable.command === 'z'));
@@ -101,17 +145,78 @@ const slotOf = (f) => JSON.parse(JSON.stringify({
     ok('…and projection keeps it', !!ko.projectOwned(own, f, s).projects[P3]);
 }
 {
-    // ‼️ THE X-291 HOLE, PINNED: a slot session approves a tool in a folder the fleet
-    // knows. Under `fleet` the fleet wins at the next gate and the fleet is never
-    // told — there is no return leg yet. When `merge`/`promote` arrive this test
-    // is the one that changes, on purpose.
+    // ‼️ THE X-291 HOLE, CLOSED — this is the test the X-274 note said would change.
+    // A slot session approves a tool in a folder the fleet knows. It is NOT drift
+    // (the slot holds everything the fleet does and one thing more), the projection
+    // KEEPS it, and the return leg carries it to the fleet.
     const f = fleet(), s = slotOf(f);
     s.projects[P1].allowedTools = ['Bash(git push)'];
-    const d = ko.ownedDrift(own, f, s);
-    ok('X-291 — a slot-side approval in a fleet-known folder reads as drift (the fleet wins)', d.length === 1 && d[0] === `projects[${P1}].allowedTools`);
-    const out = ko.projectOwned(own, f, s);
-    ok('X-291 — projection removes the slot-side approval', JSON.stringify(out.projects[P1].allowedTools) === '[]');
-    ok('X-291 — the fleet is not changed by a projection: no return leg', JSON.stringify(f.projects[P1].allowedTools) === '[]');
+    ok('X-291 — a slot-side approval is not a gap in the slot', ko.ownedDrift(own, f, s, {}).length === 0);
+    const out = ko.projectOwned(own, f, s, {});
+    ok('X-291 — projection KEEPS the slot-side approval', JSON.stringify(out.projects[P1].allowedTools) === '["Bash(git push)"]');
+    ok('X-291 — …and the untouched folder beside it is still empty', JSON.stringify(out.projects[P2].allowedTools) === '[]');
+    const p = ko.promotable(own, f, s, {});
+    ok('X-291 — the return leg names exactly what the fleet is about to gain',
+        JSON.stringify(p) === JSON.stringify([{ path: `projects[${P1}].allowedTools`, added: ['Bash(git push)'] }]));
+    const nf = ko.promoteOwned(own, f, s, {});
+    ok('X-291 — the fleet gains it', JSON.stringify(nf.projects[P1].allowedTools) === '["Bash(git push)"]');
+    ok('‼️ X-291 — and the fleet object it was derived from is NOT mutated', JSON.stringify(f.projects[P1].allowedTools) === '[]');
+    ok('X-291 — promotion carries no telemetry and no identity across', nf.projects[P1].lastSessionId === 'fleet-session' && nf.oauthAccount.accountUuid === 'fleet-uuid');
+    ok('‼️ X-291 — both sides converge in ONE gate: the promoted fleet says what the projected slot says',
+        JSON.stringify(nf.projects[P1].allowedTools) === JSON.stringify(out.projects[P1].allowedTools));
+    ok('X-291 — and that agreement is the next base, merge keys only', JSON.stringify(ko.mergeBase(own, nf))
+        === JSON.stringify({ projects: { [P1]: { allowedTools: ['Bash(git push)'] }, [P2]: { allowedTools: [] } } }));
+}
+{
+    // ‼️ X-291 — THE REVOCATION, which a union without a base would silently undo.
+    // The user removes an approval in the MAIN directory. The slot still holds it and
+    // the base says both sides once agreed on it, so it is a revocation and not a new
+    // answer: the slot loses it and nothing is promoted back.
+    const f = fleet(), s = slotOf(f);
+    f.projects[P1].allowedTools = [];
+    s.projects[P1].allowedTools = ['Bash(rm -rf)'];
+    const base = { projects: { [P1]: { allowedTools: ['Bash(rm -rf)'] } } };
+    ok('‼️ X-291 — a revoked permission still in the slot READS as drift', JSON.stringify(ko.ownedDrift(own, f, s, base)) === JSON.stringify([`projects[${P1}].allowedTools`]));
+    ok('‼️ X-291 — …and the projection takes it away', JSON.stringify(ko.projectOwned(own, f, s, base).projects[P1].allowedTools) === '[]');
+    ok('‼️ X-291 — …and the return leg does NOT put it back', ko.promotable(own, f, s, base).length === 0);
+    // The same slot value with NO base is the opposite answer, which is the whole point.
+    ok('X-291 — with no base the very same value is a new approval', ko.promotable(own, f, s, {}).length === 1);
+}
+{
+    // A slot that is missing something the fleet has is still a gap, exactly as before —
+    // merge is a union, not a licence to fall behind.
+    const f = fleet(), s = slotOf(f);
+    f.projects[P1].allowedTools = ['Bash(git status)'];
+    ok('X-291 — a slot missing part of the merge is drift', JSON.stringify(ko.ownedDrift(own, f, s, {})) === JSON.stringify([`projects[${P1}].allowedTools`]));
+    ok('X-291 — and the projection brings it in', JSON.stringify(ko.projectOwned(own, f, s, {}).projects[P1].allowedTools) === '["Bash(git status)"]');
+    ok('X-291 — nothing to promote in that direction', ko.promotable(own, f, s, {}).length === 0);
+}
+{
+    // ‼️ X-291 — A FOLDER ONLY THE SLOT KNOWS IS A FOLDER TRUST THE MAIN DIRECTORY HAS
+    // NEVER GRANTED. Promoting its list would carry `hasTrustDialogAccepted` into the
+    // user's own file off the back of a permission, so it stays where it is. A stated
+    // limit, pinned so it cannot become an accident either way.
+    const f = fleet(), s = slotOf(f);
+    s.projects[P3] = entry({ allowedTools: ['Bash(anything)'] });
+    ok('X-291 — a slot-only folder promotes nothing', ko.promotable(own, f, s, {}).length === 0);
+    ok('X-291 — …and the fleet never hears of the folder', !ko.promoteOwned(own, f, s, {}).projects[P3]);
+    ok('X-291 — …while the slot keeps it', !!ko.projectOwned(own, f, s, {}).projects[P3]);
+}
+{
+    // Idempotence: running the pair twice changes nothing the second time. A gate runs
+    // at every start, capture, launch and press, so anything that is not idempotent
+    // rewrites the user's own `~/.claude.json` for ever (the 3.469.1 fault, in the
+    // other direction).
+    const f = fleet(), s = slotOf(f);
+    s.projects[P1].allowedTools = ['Bash(git push)'];
+    const out1 = ko.projectOwned(own, f, s, {});
+    const nf1 = ko.promoteOwned(own, f, s, {});
+    const b1 = ko.mergeBase(own, nf1);
+    const out2 = ko.projectOwned(own, nf1, out1, b1);
+    const nf2 = ko.promoteOwned(own, nf1, out1, b1);
+    ok('‼️ X-291 — a second gate writes nothing new into the slot', JSON.stringify(out2) === JSON.stringify(out1));
+    ok('‼️ X-291 — …and nothing new into the fleet', JSON.stringify(nf2) === JSON.stringify(nf1));
+    ok('X-291 — …and the base does not move either', JSON.stringify(ko.mergeBase(own, nf2)) === JSON.stringify(b1));
 }
 {
     ok('an unreadable file is not a JSON object', !ko.isJsonObject('') && !ko.isJsonObject('nope') && !ko.isJsonObject('[1]') && ko.isJsonObject('{"a":1}'));

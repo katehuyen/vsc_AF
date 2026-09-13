@@ -500,6 +500,32 @@ const sec = () => {
     ok('‼️ …and a slot with no repair history draws no badge at all',
         !/class="acbad warn">↻/.test(card(base, 'work-1')));
 
+    // ---------- X-291: …and what the slot taught the fleet ----------
+    //
+    // ‼️ THE ONLY LEG THAT RUNS THE OTHER WAY, AND IT WRITES THE USER'S OWN
+    // `~/.claude.json` WITHOUT ASKING — their decision, on the grounds that they
+    // had answered the question once already. Automatic is not silent, so the
+    // card is where it stops being silent (Principle 1). Same subject rule as the
+    // repair badge: a slot that reads `complete`.
+    const taught = card(base, 'work-1');
+    ok('‼️ X-291: the SMALLEST arity — one approval in one folder — draws the badge',
+        taught.includes('>complete<') && /class="acbad ok">↑1</.test(taught));
+    ok('…and the panel names the key path, not just a number',
+        taught.includes('allowedTools') && taught.includes('1 item'));
+    ok('‼️ X-291: a row can carry the repair badge and this one at once',
+        /class="acbad warn">↻7</.test(healed) && /class="acbad ok">↑7</.test(healed));
+    ok('…and the wide arity names every path, including the other file',
+        healed.includes('permissions.allow') && healed.includes('settings.json')
+        && healed.includes('4 items') && healed.includes('2 items'));
+    ok('‼️ …and the panel states the LIMITS rather than leaving them to be discovered',
+        healed.includes('never a permission MODE')
+        && healed.includes('never a folder the main directory has not trusted itself'));
+    ok('…and says a revocation in the main directory wins',
+        healed.includes('REVOKE in the main directory wins'));
+    ok('…and points at the op that has every row', healed.includes('accounts.promotions'));
+    ok('‼️ …and a slot that has taught the fleet nothing draws no badge at all',
+        !/class="acbad ok">↑/.test(card(base, 'spare')));
+
     // ‼️ AN ENGINE WITH A SHORT CONTRACT IS NOT AN ENGINE WITH NONE. Codex carries
     // two clauses where Claude carries eight, and `complete` on it means those two
     // — which is why the panel counts them out loud rather than leaving the reader

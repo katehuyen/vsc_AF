@@ -215,6 +215,10 @@ import { reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
 import { migrationGate } from './core/migrationGate';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
 import { housekeepingAt, repairEvents, repairPattern, SlotRepairJournal } from './core/slotRepairs';
+import { Promotion } from './core/keyOwnership';
+import {
+    KeyBaseStore, PromotionJournal, promoteFromSlot, promotionEvents, promotionPattern
+} from './core/slotPromote';
 import {
     describeKeys, INTERRUPT_KEY, PermissionAnswer, permissionKeys, resolveInterrupt, TermRecord
 } from './core/interrupt';
@@ -17932,9 +17936,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * implementation of any of them. `dry` reads and reports; otherwise every
      * failing, repairable clause is put right and read again.
      */
+    /**
+     * ‼️ X-291 — the merge base, beside the journal and never inside a slot.
+     * Declared before `slotCtx` because the contract reads it: a `merge` key
+     * cannot be compared without the value both sides last agreed on.
+     */
+    const keyBaseStore = new KeyBaseStore(
+        path.join(context.globalStorageUri.fsPath, 'slot-keybase.json'), fs);
     const slotCtx = (slot: EngineAccountSlot) => ({
         fs, home: os.homedir(), dir: slot.dir, slotId: slot.id, engine: slot.engine,
         hooksPort: cfg().get<number>('livePort', 8377),
+        keyBase: (file: string) => keyBaseStore.get(slot.id, file),
         repairLinks: (id: string, dryRun: boolean) => {
             const r = repairSharedLinks(dryRun, id);
             return { linked: r.linked, failed: r.failed };
@@ -17948,18 +17960,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const repairJournal = new SlotRepairJournal(
         path.join(context.globalStorageUri.fsPath, 'slot-repairs.json'), fs);
     /**
+     * ‼️ X-291 — …AND WHAT A SLOT SESSION TAUGHT THE FLEET. The return leg is
+     * automatic by the user's decision, on the grounds that they had already
+     * answered the question once; automatic is not silent, so every promotion is
+     * a row here and a badge on the card (Principle 1).
+     */
+    const promotionJournal = new PromotionJournal(
+        path.join(context.globalStorageUri.fsPath, 'slot-promotions.json'), fs);
+    /**
      * ‼️ X-292 — `gate` is WHICH DOOR ran the contract, and it is not optional
      * decoration: the journal's whole value is that a repair at `start` right
      * after one at `launch` says the slot is being broken between two gates
      * minutes apart, which no single reading can show.
      */
+    /**
+     * ‼️ X-291 — THE RETURN LEG RUNS AFTER THE PROJECTION, NOT BEFORE, and the
+     * order is load-bearing rather than tidy. The projection reads the OLD base
+     * and is the only step that can tell a fleet-side revocation (in the base,
+     * gone from the fleet — dropped) from a slot-side approval (not in the base
+     * — kept). Promote then reads the settled slot and records the value both
+     * sides now agree on as the next base. Promoting first would overwrite that
+     * base and every revocation the user had just made would come straight back.
+     */
+    const promoteSlot = (slot: EngineAccountSlot, gate: string, dry: boolean) => {
+        const results = promoteFromSlot({
+            fs, home: os.homedir(), dir: slot.dir, slotId: slot.id,
+            adapter: accountAdapterFor(slot.engine), base: keyBaseStore
+        }, dry);
+        if (!dry) {
+            try {
+                promotionJournal.record(promotionEvents(results, {
+                    slotId: slot.id, engine: slot.engine, gate, at: Date.now()
+                }));
+            } catch { /* a journal never fails a gate */ }
+        }
+        return results;
+    };
     const completeSlots = (dry = false, onlySlotId?: string, gate = 'ask') => {
         const only = (onlySlotId || '').trim();
         return storedAccounts()
             .filter(s => !only || s.id === only)
             .map(slot => {
                 const ctx = slotCtx(slot);
-                if (dry) { return { ...slotCompleteness(ctx), dryRun: true }; }
+                if (dry) {
+                    return {
+                        ...slotCompleteness(ctx), dryRun: true,
+                        promotions: promoteSlot(slot, gate, true).flatMap(r => r.promotions)
+                    };
+                }
                 // ‼️ X-292 — the stamp is read BEFORE the repair, because the
                 // repair is what makes the slot look well again.
                 const keptAt = housekeepingAt(fs, slot.dir, accountAdapterFor(slot.engine).housekeeping);
@@ -17969,7 +18017,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         slotId: slot.id, engine: slot.engine, gate, at: Date.now(), keptAt
                     }));
                 } catch { /* a journal never fails a repair */ }
-                return { ...after, dryRun: false };
+                let promotions: Promotion[] = [];
+                try { promotions = promoteSlot(slot, gate, false).flatMap(r => r.promotions); }
+                catch { /* the return leg never fails a gate */ }
+                return { ...after, dryRun: false, promotions };
             });
     };
     // ‼️ X-284 — THE CONTRACT IS ASKED OF EVERY SLOT AT EVERY START, not only
@@ -18065,9 +18116,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // badge above is true and says nothing: this is the only
                         // place the card can tell the reader that the same clause
                         // has been put back four times this week and by what.
-                        repairs: repairPattern(repairJournal.all().filter(e => e.slotId === slot.id))
+                        repairs: repairPattern(repairJournal.all().filter(e => e.slotId === slot.id)),
+                        // ‼️ X-291 — AND WHAT THIS SLOT TAUGHT THE FLEET. The
+                        // return leg promotes without asking, by the user's own
+                        // decision; this is where it stops being silent.
+                        promotions: promotionPattern(promotionJournal.all().filter(e => e.slotId === slot.id))
                     };
-                } catch { return { complete: true, gaps: [], rows: [], repairs: [] }; }
+                } catch { return { complete: true, gaps: [], rows: [], repairs: [], promotions: [] }; }
             })(),
             note: u?.note || ''
         };
@@ -18276,6 +18331,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // back to whichever identity happens to be signed in.
         await writeActiveAccounts(forgetActive(activeAccounts(), clean));
         identitySeen.delete(clean);
+        // ‼️ X-291 — and its merge base goes with it. A base kept past the slot
+        // it describes would make the next capture under the same id read every
+        // permission the fleet has as something that slot once agreed to.
+        try { keyBaseStore.forget(clean); } catch { /* a base never fails a forget */ }
         let filesRemoved = false;
         if (deleteFiles) {
             // Measured 2026-09-12: rmSync unlinks the junctions inside the slot
@@ -34890,7 +34949,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '(clause ids that read false) and `rows` (id, kind, owner, ok, detail, repairable, '
                 + 'and after a repair `wrote`/`error`). With dryRun (the default here — this op is a '
                 + 'question first) nothing is touched; dryRun:false repairs every failing repairable '
-                + 'clause through the same primitives the gates use and reads again. args: dryRun? '
+                + 'clause through the same primitives the gates use and reads again. ‼️ X-291 — the '
+                + 'answer also carries `promotions`: what this slot has answered that the fleet does '
+                + 'not hold yet, which a real run carries BACK into the fleet\'s own file '
+                + '(`accounts.promotions` has the journal). args: dryRun? '
                 + '(default true), id? (one slot; omit for all)',
             handler: (args) => completeSlots(optBool(args, 'dryRun', true), optStr(args, 'id'))
         },
@@ -34924,6 +34986,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     pattern: repairPattern(all),
                     total: all.length,
                     degraded: repairJournal.degraded
+                };
+            }
+        },
+        {
+            op: 'accounts.promotions',
+            describe: '‼️ X-291 — WHAT A SLOT SESSION TAUGHT THE FLEET. Every other clause of the birth '
+                + 'contract runs one way, fleet → slot; a PERMISSION is the exception, because an '
+                + 'approval the user typed at a terminal prompt inside a slot session is theirs and not '
+                + 'that account\'s. Under the old `fleet` policy it was deleted at the next gate with '
+                + 'nothing said, so switching account asked the same question again for ever. `merge` '
+                + 'keys (`projects[*].allowedTools` in `.claude.json`, `permissions.allow`/`ask`/`deny` '
+                + 'in `settings.json`) are now a THREE-WAY merge against the base both sides converged '
+                + 'on at the previous gate, and what the slot gained travels back at the next gate '
+                + 'WITHOUT ASKING — the user\'s decision, on the grounds that they had answered once '
+                + 'already. Automatic is not silent: every promotion is a row here and a badge on the '
+                + 'Engines card. A row is `slotId`, `gate`, `file`, `path` and `added` (what the fleet '
+                + 'gained, in the engine\'s own words). `pattern` groups them per key path. LIMITS, '
+                + 'stated rather than discovered: only merge keys promote — never a scalar, never an '
+                + 'MCP server definition, never the sign-in — and only inside entries the fleet already '
+                + 'has, because creating one would carry a FOLDER TRUST into the user\'s own file off '
+                + 'the back of a permission list. A revocation the user makes in the main directory '
+                + 'wins: it is in the base and gone from the fleet, which is how it is told apart from '
+                + 'a slot-side approval. args: limit? (default 100, newest first), id? (one slot)',
+            handler: (args) => {
+                const id = optStr(args, 'id');
+                const all = promotionJournal.all().filter(e => !id || e.slotId === id);
+                const limit = Math.max(1, optNum(args, 'limit', 100));
+                return {
+                    events: all.slice(-limit).reverse(),
+                    pattern: promotionPattern(all),
+                    total: all.length,
+                    degraded: promotionJournal.degraded
                 };
             }
         },

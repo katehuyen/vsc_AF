@@ -1,8 +1,10 @@
 import * as path from 'path';
 import { adapterFor, EngineAuthAdapter, liveSource } from './engineAccounts';
 import { hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
-import { isJsonObject, ownedDrift, parseOwnedFile, projectOwned } from './keyOwnership';
-import { carriedDrift, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, SlotSettingsFs } from './slotSettings';
+import { isJsonObject, ownedDrift, ownedTopKeys, parseOwnedFile, projectOwned } from './keyOwnership';
+import {
+    carriedDrift, heldByOtherClause, renderSlotSettings, reproduceSlotSettings, slotEnvGaps, SlotSettingsFs
+} from './slotSettings';
 
 /**
  * ‼️ X-284 — THE BIRTH CONTRACT: what a slot must carry to count as COMPLETE,
@@ -75,6 +77,13 @@ export interface SlotContext {
     hooksPort?: number;
     /** X-271 — the pool-link repair lives beside the store; injected so this module stays pure */
     repairLinks?: (slotId: string, dryRun: boolean) => { linked: string[]; failed: string[] };
+    /**
+     * ‼️ X-291 — the merge base for one owned file: what the fleet and this slot
+     * converged on at the previous gate. Injected because it lives beside the
+     * store, never inside a slot. Omitted = an empty base, which promotes
+     * everything the slot holds and revokes nothing — see `KeyBaseStore.get`.
+     */
+    keyBase?: (file: string) => Record<string, unknown>;
 }
 
 export interface SlotCompletenessFs extends SlotSettingsFs {
@@ -112,6 +121,10 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
     // after the identity because the standing case is the identity file itself:
     // the sign-in is the slot's, the folder trusts and MCP servers are the
     // fleet's, and the file was copied once at capture and never asked again.
+    // ‼️ X-291 — a `merge` key reads as a gap only when the slot is MISSING part
+    // of the merge. A slot holding MORE than the fleet is not incomplete; it is
+    // the return leg's business (`core/slotPromote`), which runs at the same
+    // gates and writes the fleet's file instead of this one.
     for (const [name, own] of Object.entries(adapter.ownership ?? {})) {
         const rel = liveSource(adapter.engine, name);
         const readBoth = (ctx: SlotContext) => {
@@ -132,7 +145,7 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
                 if (!isJsonObject(slotText)) {
                     return { ok: false, detail: `${name} is not a JSON object — the fleet's keys cannot be projected into it` };
                 }
-                const drift = ownedDrift(own, parseOwnedFile(fleetText), parseOwnedFile(slotText));
+                const drift = ownedDrift(own, parseOwnedFile(fleetText), parseOwnedFile(slotText), ctx.keyBase?.(name) ?? {});
                 return drift.length
                     ? { ok: false, detail: `${name}: ${drift.length} fleet key${drift.length === 1 ? '' : 's'} differ — ${drift.slice(0, 4).join(', ')}${drift.length > 4 ? ', …' : ''}` }
                     : { ok: true, detail: `${name}: the fleet's keys match ${rel}` };
@@ -141,7 +154,7 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
                 const { p, slotText, fleetText } = readBoth(ctx);
                 if (slotText === undefined || fleetText === undefined) { return { wrote: false }; }
                 if (!isJsonObject(slotText)) { return { wrote: false, error: `${name} is not a JSON object` }; }
-                const next = projectOwned(own, parseOwnedFile(fleetText), parseOwnedFile(slotText));
+                const next = projectOwned(own, parseOwnedFile(fleetText), parseOwnedFile(slotText), ctx.keyBase?.(name) ?? {});
                 const text = JSON.stringify(next, null, 2) + '\n';
                 if (text === slotText) { return { wrote: false }; }
                 if (!dryRun) { ctx.fs.writeFileSync(p, text, 'utf8'); }
@@ -150,11 +163,23 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
         });
     }
     // carry — the user's behaviour file, reproduced from the fleet's source (X-269).
-    // ‼️ X-272 — the keys a LATER clause owns, so two clauses never claim one
-    // fact and never overwrite each other. Derived from the same condition that
-    // creates the hooks clause below, not from a second list.
-    const laterClauseOwns = (name: string): string[] =>
-        name === 'settings.json' && adapter.carryFiles?.includes('settings.json') ? ['hooks'] : [];
+    // ‼️ X-272 — the keys ANOTHER clause owns, so two clauses never claim one
+    // fact and never overwrite each other. Derived from the same conditions that
+    // create those clauses, not from a second list.
+    //
+    // Two of them, and they are owned in opposite directions. `hooks` is owned by
+    // a clause that runs AFTER this one and re-points it at the live port, so
+    // carry may render the fleet's over it and simply must not COUNT it. X-291's
+    // `permissions` is owned by the `keys:` clause that runs BEFORE, so carry
+    // must not count it AND must not write over it — `heldByOtherClause` keeps
+    // the slot's, which is why the ignore list below is not the whole story.
+    const otherClauseOwns = (name: string): string[] => {
+        const out: string[] = [];
+        if (name === 'settings.json' && adapter.carryFiles?.includes('settings.json')) { out.push('hooks'); }
+        const own = adapter.ownership?.[name];
+        if (own) { out.push(...ownedTopKeys(own)); }
+        return out;
+    };
     for (const name of adapter.carryFiles ?? []) {
         out.push({
             id: `carry:${name}`, kind: 'carry', owner: 'fleet',
@@ -179,8 +204,9 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
                     return { ok: true, detail: `${name} present — the fleet has no ${rel} to reproduce from` };
                 }
                 const have = ctx.fs.readFileSync(p, 'utf8');
-                const want = renderSlotSettings(sourceText === undefined ? have : sourceText, vars);
-                const drift = carriedDrift(want, have, laterClauseOwns(name));
+                const want = renderSlotSettings(
+                    sourceText === undefined ? have : sourceText, vars, heldByOtherClause(adapter, name, have));
+                const drift = carriedDrift(want, have, otherClauseOwns(name));
                 return drift.length
                     ? { ok: false, detail: `${name} is a stale copy — ${drift.join(', ')} no longer match the fleet's ${rel}` }
                     : { ok: true, detail: `${name} matches the fleet's ${rel}` };

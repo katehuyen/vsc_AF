@@ -2459,6 +2459,27 @@ const { opencodeStatus, syncToOpencode } =
         ok('‼️ X-292 — the housekeeping stamp is read BEFORE the repair runs',
             src.indexOf('const keptAt = housekeepingAt(') < src.indexOf('const after = completeSlot(ctx, false);'));
 
+        // ---------- X-291: accounts.promotions — what the slot taught the fleet ----------
+        const promBlock = src.slice(src.indexOf("op: 'accounts.promotions'"), src.indexOf("op: 'accounts.portable'"));
+        ok('‼️ X-291 — the bridge can ask what a slot session taught the fleet',
+            promBlock.includes("op: 'accounts.promotions'") && /promotionJournal\.all\(\)/.test(promBlock));
+        ok('…and it answers the derived pattern beside the rows', /promotionPattern\(all\)/.test(promBlock));
+        ok('‼️ …and the describe states the LIMITS, because a promotion writes the user\'s own file',
+            promBlock.includes('MCP server definition, never the sign-in')
+            && promBlock.includes('only inside entries the fleet already')
+            && promBlock.includes('A revocation the user makes in the main directory'));
+        // ‼️ THE ORDER IS LOAD-BEARING. The projection reads the OLD base and is
+        // the only step that can tell a fleet-side revocation from a slot-side
+        // approval; promoting first would overwrite that base and every
+        // revocation the user had just made would come straight back.
+        ok('‼️ X-291 — the return leg runs AFTER the projection, in the same gate',
+            src.indexOf('const after = completeSlot(ctx, false);') < src.indexOf('promoteSlot(slot, gate, false)'));
+        ok('…through the one journal, at whichever gate ran', /promotionJournal\.record\(promotionEvents\(/.test(src));
+        ok('‼️ X-291 — and the base never outlives the slot it describes',
+            /keyBaseStore\.forget\(clean\)/.test(src));
+        ok('…and the contract reads that same base, so the two cannot disagree',
+            /keyBase: \(file: string\) => keyBaseStore\.get\(slot\.id, file\)/.test(src));
+
         // ---------- X-276: accounts.portable — the slot dir is stored as a token ----------
         const portableBlock = src.slice(src.indexOf("op: 'accounts.portable'"), src.indexOf("op: 'migration.verify'"));
         ok('‼️ X-276 — the bridge can ask whether the account dirs name a machine, and rewrite them',

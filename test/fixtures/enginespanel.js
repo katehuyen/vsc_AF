@@ -30,7 +30,7 @@ const detailFor = (c) => {
     return 'hooks current on :8377';
 };
 /** `gaps` maps a clause id to the sentence the card must draw for it. */
-const contract = (engine, gaps, repairs) => {
+const contract = (engine, gaps, repairs, promotions) => {
     const bad = gaps || {};
     const rows = slotClauses(adapterFor(engine)).map(c => ({
         id: c.id, ok: !bad[c.id], repairable: !!c.repair,
@@ -41,7 +41,12 @@ const contract = (engine, gaps, repairs) => {
         // ‼️ X-292 — the badge's whole point is that it appears on a slot the
         // row beside it calls COMPLETE, so the default here is an empty history
         // and the scene that carries one is a slot with nothing else wrong.
-        repairs: repairs || []
+        repairs: repairs || [],
+        // ‼️ X-291 — and the same rule for the return leg: the promote badge
+        // belongs on a slot that is COMPLETE, because it says something the
+        // contract badge beside it cannot. Default empty — most rows have never
+        // taught the fleet anything, and that silence is the common layout.
+        promotions: promotions || []
     };
 };
 
@@ -89,7 +94,14 @@ const data = () => {
                 // is being read right now, the next is waiting behind it.
                 fetchedAt: NOW - 40 * 1000, queue: 'reading', queuePlace: 0,
                 settingsGaps: [], settingsGuarantee: true,
-                completeness: contract('claude'),
+                // ‼️ X-291 — THE SMALLEST NON-EMPTY LAYOUT, which is the one the
+                // user really gets: a single approval typed at a terminal prompt
+                // in one folder. A scene with only the many-row case would draw
+                // the one arity whose panel reads well by accident.
+                completeness: contract('claude', undefined, undefined, [{
+                    file: '.claude.json', path: 'projects[D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm].allowedTools',
+                    added: 1, slots: ['work-1'], last: NOW - 12 * 60 * 1000
+                }]),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/work-1'
             },
             {
@@ -118,6 +130,23 @@ const data = () => {
                         clause: 'link:shell-snapshots', count: 3, slots: ['personal'],
                         first: NOW - 3 * 24 * 3600 * 1000, last: NOW - 40 * 60 * 1000,
                         compared: 2, afterHousekeeping: 1
+                    }
+                // ‼️ X-291 — …AND THE ROW THAT CARRIES BOTH BADGES AT ONCE, with
+                // the wide arity: three paths, one of them a long Windows path and
+                // one of them in the OTHER file. This is where the badge row runs
+                // out of width if it is going to, and where the panel has to wrap.
+                ], [
+                    {
+                        file: '.claude.json', path: 'projects[D:\\zone\\know\\note\\obsidian].allowedTools',
+                        added: 4, slots: ['personal'], last: NOW - 90 * 60 * 1000
+                    },
+                    {
+                        file: '.claude.json', path: 'projects[D:\\zone\\dev\\git\\miropharm\\muvu_talkScribe].allowedTools',
+                        added: 2, slots: ['personal'], last: NOW - 3 * 3600 * 1000
+                    },
+                    {
+                        file: 'settings.json', path: 'permissions.allow',
+                        added: 1, slots: ['personal'], last: NOW - 26 * 3600 * 1000
                     }
                 ]),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'

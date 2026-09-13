@@ -1,0 +1,58 @@
+v11.375 - a permission is an answer, not a setting: the return leg (X-291); 3.476.0
+
+X-291 kapandi (3.476.0). Slot oturumunda onaylanan bir arac izni artik bir
+sonraki kapida SILINMIYOR; filoya geri tasiniyor.
+
+KARARLARIN UYGULANDI
+- merge: listeler birlesiyor (filo union slot), skalerde FILO kazaniyor.
+  Birlesen anahtarlar: `.claude.json` icinde `projects[*].allowedTools`,
+  `settings.json` icinde `permissions.allow` / `ask` / `deny`. `deny` ve `ask`
+  senin listende yoktu; ayni istemin cevaplari olduklari icin dahil edildi ve
+  adi hem kodda hem surum notunda acikca konuldu. `permissions` altindaki her
+  sey, basta `defaultMode`, filonun kaliyor; MCP sunucu tanimlari hic terfi
+  etmiyor.
+- promote: kapida (start/launch/press/capture/ask), sormadan, gunluklu.
+  `slot-promotions.json` + kartta `↑N` rozeti (onarim rozeti `↻N` ile yan yana)
+  + koprude `accounts.promotions`. `accounts.complete` artik `promotions` da
+  donduruyor.
+
+TASARIMIN CEKIRDEGI - TABAN
+Tabansiz bir birlesim birlestirme degil, hicbir seyi unutamayan bir birikimdir:
+`filo U slot` tek basina, ana dizinde YENI IPTAL ETTIGIN her izni bir sonraki
+kapida sessizce geri getirirdi - iki taraftan bakildiginda "filo sildi" ile
+"slot ekledi" ayni gorunur. Bu yuzden her merge anahtari bir TABAN tasiyor:
+iki tarafin onceki kapida uzlastigi deger, gunlugun yaninda
+`slot-keybase.json`'da, asla slotun icinde degil (X-270). Tabanda var + filoda
+yok = IPTAL, slottan silinir. Tabanda yok + slotta var = SENIN YENI CEVABIN,
+filoya gider. Iptal kazanir.
+
+Iki ayagin sirasi tasiyici ve olculuyor: once izdusum (eski tabanla - ikisini
+ayirt edebilen tek adim), sonra donus ayagi (yeni tabani yazar). Once terfi
+etseydi taban ezilir ve her iptal geri gelirdi.
+`filo U (slot \ taban)` ile `(filo U slot) \ (taban \ filo)` ayni kume, yani
+tek kapida yakinsiyor ve ikinci kapi hicbir sey yazmiyor - kapi her baslangicta
+kostugu icin bu teste pinlendi.
+
+SINIRLAR (kesfedilerek degil, sOylenerek)
+Filonun zaten sahip olmadigi bir klasorun icine terfi yok: o girdiyi yaratmak,
+bir izin listesinin sirtinda senin kendi dosyana KLASOR GUVENI tasimak olurdu.
+Slot altinda ilk kez acilan bir klasor ana dizinde bir kez daha soruyor.
+
+BUNLAR DA DEGISTI
+- `carry:settings.json` artik `permissions`'i sahiplenmiyor (tek olgu, tek
+  madde) - adaptorun kendi `ownership` alanindan turetiliyor, ikinci bir liste
+  yok.
+- Filonun kendi dosyasi butun halinde yaziliyor (tmp + rename): `~/.claude.json`
+  slot disindaki her Claude sureci tarafindan yeniden yaziliyor, orada yarim bir
+  dosya sana oturumu ve icindeki her klasor guvenini kaybettirirdi.
+- Onarim gunlugu ile terfi gunlugu tek govdeyi paylasiyor (`core/jsonJournal`).
+- Console konusma satiri filtresi Dialog moduna (ajan + kullanici) donuyor.
+
+OLCUM
+349 dosya / 20.988 test yesil. `test_slot_promote.js` yeni: taban deposu, gercek
+dosyalarda donus ayagi, iptal senaryosu, iki kapi ust uste, bozuk filo dosyasinin
+REDDI. `test_key_ownership.js` icindeki X-291 deligi - X-274'un "gelince bu test
+degisecek" dedigi test - kapatildi. Panel fotograflandi: tek izinli kucuk arite
+(`↑1`) ve uc yollu genis arite (`↻7` + `↑7`) ayni satirda.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

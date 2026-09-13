@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { adapterFor, EngineAuthAdapter, liveSource } from './engineAccounts';
+import { ownedTopKeys } from './keyOwnership';
 
 /**
  * Slot behaviour files — reproduced, never stored (X-269).
@@ -78,7 +79,7 @@ export function slotEnvGaps(text: string | undefined, vars: Record<string, strin
  * with the fleet about the system prompt is the fault this exists to end.
  */
 export function renderSlotSettings(
-    sourceText: string | undefined, vars: Record<string, string>
+    sourceText: string | undefined, vars: Record<string, string>, keep: Record<string, unknown> = {}
 ): string {
     const out = parse(sourceText);
     if (Object.keys(vars).length) {
@@ -87,6 +88,13 @@ export function renderSlotSettings(
             ? { ...env as Record<string, unknown> } : {};
         out.env = { ...base, ...vars };
     }
+    // ‼️ X-291 — AND A KEY ANOTHER CLAUSE OWNS IS NOT RENDERED OVER. `keys:` runs
+    // the three-way merge on `permissions` before this clause reaches the file;
+    // rendering the fleet's whole file afterwards would delete the slot-side
+    // approval the merge had just kept, every gate, for ever. Only what the slot
+    // ALREADY holds is kept — a slot with no such key takes the fleet's, which is
+    // how a newly born slot converges in one pass rather than two.
+    for (const [k, v] of Object.entries(keep)) { out[k] = v; }
     return JSON.stringify(out, null, 2) + '\n';
 }
 
@@ -120,6 +128,23 @@ export function carriedDrift(
     const skip = new Set(ignoreKeys);
     const keys = new Set([...Object.keys(want), ...Object.keys(have)].filter(k => !skip.has(k)));
     return [...keys].filter(k => JSON.stringify(want[k]) !== JSON.stringify(have[k])).sort();
+}
+
+/**
+ * ‼️ X-291 — THE KEYS OF A CARRIED FILE THAT BELONG TO THE `keys:` CLAUSE, with
+ * the values the slot holds for them right now. Derived from the adapter's own
+ * `ownership`, so naming a second key there needs no edit here — the two
+ * clauses cannot come to disagree about who owns what.
+ */
+export function heldByOtherClause(
+    a: EngineAuthAdapter, name: string, slotText: string | undefined
+): Record<string, unknown> {
+    const own = a.ownership?.[name];
+    if (!own) { return {}; }
+    const held = parse(slotText);
+    const out: Record<string, unknown> = {};
+    for (const k of ownedTopKeys(own)) { if (k in held) { out[k] = held[k]; } }
+    return out;
 }
 
 /**
@@ -159,7 +184,7 @@ export function reproduceSlotSettings(
             // base: the guarantee is still enforced, and nothing of theirs is
             // thrown away by an absence.
             const base = sourceText === undefined ? before : sourceText;
-            const text = renderSlotSettings(base, vars);
+            const text = renderSlotSettings(base, vars, heldByOtherClause(a, name, before));
             if (before !== text) {
                 row.wrote = true;
                 if (!opts.dryRun) {

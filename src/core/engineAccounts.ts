@@ -151,18 +151,31 @@ export interface EngineAccountSlot {
  * `ignore` — nobody's; never compared, never written. Not decoration: without
  * it every telemetry field would count as drift and the file would be rewritten
  * on every gate for ever (the 3.469.1 fault).
+ * `merge` — X-291: BOTH sides', three-way against the base both converged on at
+ * the previous gate. Two lists become their union, the fleet's answer wins
+ * anything that is not two lists, and what a slot session added travels BACK to
+ * the fleet at the next gate so the next account is not asked again. For a
+ * permission list only: an approval the user gave once is an answer, not a
+ * setting, and `fleet` deleted it at the next gate without telling anyone.
  */
-export type KeyPolicy = 'fleet' | 'slot' | 'ignore';
+export type KeyPolicy = 'fleet' | 'slot' | 'ignore' | 'merge';
 export interface KeyOwnership {
     /** the policy for a key this map does not name */
     default: KeyPolicy;
     keys: Record<string, KeyPolicy>;
     /**
+     * A key whose value is a FIXED object with keys of its own (`permissions`).
+     * Recursive: the sub-scope has its own default, its own keys and its own
+     * nesting, so `permissions.allow` can merge while `permissions.defaultMode`
+     * stays the fleet's without either being named twice.
+     */
+    nested?: Record<string, KeyOwnership>;
+    /**
      * A map-shaped key whose ENTRIES carry keys of their own (`projects.<path>`).
      * The policy applies one level down, in every entry the fleet has; an entry
      * only the slot has is the slot's and is left alone.
      */
-    entries?: Record<string, { default: KeyPolicy; keys: Record<string, KeyPolicy> }>;
+    entries?: Record<string, KeyOwnership>;
 }
 
 export interface EngineAuthAdapter {
@@ -476,6 +489,16 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         // session and no gate may count. A key not named here is ignored — the
         // eleventh trust key Claude Code adds tomorrow is then a visible gap in
         // this list, not a silent fork.
+        // ‼️ X-291 — …AND `allowedTools` IS THE ONE OF THOSE THAT IS AN ANSWER
+        // RATHER THAN A SETTING. Under `fleet` a tool the user approved inside a
+        // slot session was deleted at the next gate and the fleet never heard of
+        // it, so switching account asked the same question again. It merges, and
+        // the gate carries the slot's new answers back. `permissions.allow` /
+        // `ask` / `deny` in `settings.json` are the same kind of list on the same
+        // grounds — `deny` and `ask` were not named by the user and are included
+        // BY NAME here because they are answers to the same prompt; everything
+        // else under `permissions`, `defaultMode` first among them, stays the
+        // fleet's, and MCP server definitions never promote at all.
         ownership: {
             '.claude.json': {
                 default: 'ignore',
@@ -484,11 +507,24 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
                     projects: {
                         default: 'ignore',
                         keys: {
-                            allowedTools: 'fleet', hasTrustDialogAccepted: 'fleet', mcpServers: 'fleet',
+                            allowedTools: 'merge', hasTrustDialogAccepted: 'fleet', mcpServers: 'fleet',
                             enabledMcpjsonServers: 'fleet', disabledMcpjsonServers: 'fleet',
                             mcpContextUris: 'fleet', hasClaudeMdExternalIncludesApproved: 'fleet'
                         }
                     }
+                }
+            },
+            // ‼️ THE BEHAVIOUR FILE IS CARRIED WHOLE (`carryFiles`) EXCEPT FOR
+            // THIS ONE SUB-OBJECT. `carry` renders the fleet's file over the
+            // slot's, which is right for a model or an effort and is exactly
+            // what deletes an approval. Naming `permissions` here makes the
+            // carry clause leave it alone (`otherClauseOwns`) and hands it to
+            // the three-way merge instead — one fact, one clause (ONE SUBJECT).
+            'settings.json': {
+                default: 'ignore',
+                keys: {},
+                nested: {
+                    permissions: { default: 'fleet', keys: { allow: 'merge', ask: 'merge', deny: 'merge' } }
                 }
             }
         },

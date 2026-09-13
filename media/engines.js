@@ -659,6 +659,36 @@
             + 'counted. A clause that keeps breaking for some other reason reads zero here.\n\n'
             + '`accounts.repairs` on the bridge has every row.');
         /**
+         * ‼️ X-291 — AND WHAT THIS SLOT TAUGHT THE FLEET, which is the only leg
+         * of the contract that runs the other way. A permission the user typed
+         * at a terminal prompt inside a slot session is theirs, not that
+         * account's; it is carried back at the next gate WITHOUT ASKING, by
+         * their own decision. Automatic is not silent — an approval quietly
+         * added to the user's own `~/.claude.json` with no surface saying so
+         * would be the Principle 1 failure this whole family exists to end, so
+         * the count is on the row and every path is in the panel.
+         *
+         * SHORTHAND: `↑N` is the short form, the panel opens with the long one.
+         */
+        const proms = con.promotions || [];
+        const promTotal = proms.reduce((n, r) => n + r.added, 0);
+        const promoteBadge = !promTotal ? '' : T.wrap(
+            '<span class="acbad ok">↑' + promTotal + '</span>',
+            'promoted to the fleet: ' + promTotal + ' thing'
+            + (promTotal === 1 ? '' : 's') + ' this slot answered that the fleet now holds too',
+            proms.map(r => '· ' + esc(r.path) + ' — ' + r.added + ' item'
+                + (r.added === 1 ? '' : 's') + ', last ' + esc(age(r.last, DATA.now))
+                + ' (' + esc(r.file) + ')').join('\n')
+            + '\n\nA permission list is an ANSWER the user already gave, not a setting. Every other '
+            + 'clause runs fleet → slot, so an approval typed inside a slot session used to be deleted '
+            + 'at the next gate and the fleet never heard of it — switching account asked the same '
+            + 'question again, for ever.\n\n'
+            + 'Only permission lists travel this way: never a model, never a permission MODE, never an '
+            + 'MCP server definition, and never a folder the main directory has not trusted itself. A '
+            + 'permission you REVOKE in the main directory wins and is removed from the slot — the two '
+            + 'are told apart by the value both sides agreed on at the previous gate, not guessed at.\n\n'
+            + '`accounts.promotions` on the bridge has every row.');
+        /**
          * ‼️ AND THE PRESS IS OFFERED ONLY WHERE IT WOULD DO SOMETHING. An
          * identity clause cannot be repaired in place — nothing can invent a
          * credential — so a slot missing only that one gets the sign-in key
@@ -773,6 +803,7 @@
             + promptBadge
             + contractBadge
             + repairBadge
+            + promoteBadge
             + '<span class="grow"></span>'
             + fixSettings
             + fixContract

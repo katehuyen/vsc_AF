@@ -2,6 +2,64 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.476.0 - a permission is an answer, not a setting: the return leg (X-291) (2026-09-13)
+
+- **A tool you approved at a terminal prompt inside an account session was
+  deleted at the next gate, and the fleet was never told — so switching account
+  asked you the same question again, for ever.** X-274 made the identity file's
+  keys owned key by key, and `allowedTools` came out as the fleet's: right for a
+  folder trust, wrong for an approval, because an approval is an ANSWER YOU
+  ALREADY GAVE and it is yours, not that account's. The policy `merge` says so,
+  and the gate now runs in both directions.
+  - **Which keys.** `projects[*].allowedTools` in `.claude.json`, and
+    `permissions.allow` / `ask` / `deny` in `settings.json`. `deny` and `ask`
+    are named here because they are answers to the same prompt; everything else
+    under `permissions`, `defaultMode` first among them, stays the fleet's.
+  - **Which do NOT.** No scalar, ever — there is no clock on a `model` or a
+    `defaultMode`, so "last writer wins" cannot be measured and an account
+    silently changing a fleet setting is the fault this whole family exists to
+    end. No MCP server definition. And nothing inside a folder the main
+    directory has not trusted itself, because creating that entry would carry a
+    FOLDER TRUST into your own file off the back of a permission list. A folder
+    first opened under an account therefore still asks once in the main
+    directory — a stated limit, pinned by a test, not an oversight.
+- **‼️ And a union without a base is not a merge, it is an accumulator that can
+  never forget.** `fleet ∪ slot` alone would have resurrected every permission
+  you had just revoked in the main directory, silently, at the very next gate:
+  from two sides, the fleet deleting something and an account adding it look
+  identical. So every merge key carries a BASE — the value both sides converged
+  on at the previous gate, kept in `slot-keybase.json` beside the journal and
+  never inside an account (an account carries the least possible, X-270).
+  Present in the base and gone from the fleet is a REVOCATION and leaves the
+  account; absent from the base and present in the account is YOUR NEW ANSWER
+  and goes to the fleet. A revocation wins.
+- **The order of the two legs is load-bearing, and it is measured rather than
+  said.** The projection runs first, against the OLD base — it is the only step
+  that can tell the two apart. The return leg runs after and records what both
+  sides now agree on as the next base. Promoting first would overwrite that base
+  and hand every revocation straight back. `fleet ∪ (slot \ base)` is the same
+  set as `(fleet ∪ slot) \ (base \ fleet)`, so one gate converges and the second
+  one writes nothing — pinned, because a gate runs at every start, capture,
+  launch and press.
+- **It does not ask, and it is not silent.** Promotion at the gate without a
+  prompt is the decision: you had already answered the question once. But it
+  writes your own `~/.claude.json`, so every promotion is a row in
+  `slot-promotions.json`, an `↑N` badge on the account's card beside the `↻N`
+  repair badge, and `accounts.promotions` on the bridge has every row with the
+  key path it came from. `accounts.complete` now answers `promotions` too.
+- `carry:settings.json` no longer claims `permissions` — one fact, one clause.
+  It is derived from the adapter's own `ownership`, so naming a second key there
+  needs no second edit and the two clauses cannot come to disagree about who
+  owns what. The fleet's own file is written whole or not at all (rename over
+  the target): `~/.claude.json` is rewritten by every Claude process you start
+  outside an account, and a torn file there would cost you the sign-in and every
+  folder trust in it.
+- The repair journal and the promotion journal now share one body
+  (`core/jsonJournal`) — the second copy of a load/rotate/write would have
+  guaranteed a third, and that a fix to one never reaches the others.
+- Console: the conversation line filter defaults to Dialog mode (agent and
+  user).
+
 ## 3.475.0 - one question for a migrated machine: did it work (X-283), and the account dirs travel (X-276) (2026-09-13)
 
 - **Every fault in the X-270 family proposed its own Doctor line, and the

@@ -150,9 +150,14 @@ try {
         fs.writeFileSync(path.join(slot, '.credentials.json'), '{}', 'utf8');
         fs.writeFileSync(path.join(slot, '.claude.json'), '{"oauthAccount":{}}', 'utf8');
         const slotFile = path.join(slot, 'settings.json');
-        const ctx = { fs, home, dir: slot, slotId: 'claude-alive', engine: 'claude' };
+        // ‼️ X-291 — the merge base travels in the context, exactly as the gate
+        // injects it from the store beside the journal. `{}` is a machine that has
+        // never run a gate, which is the state every real one starts in.
+        let base = {};
+        const ctx = { fs, home, dir: slot, slotId: 'claude-alive', engine: 'claude', keyBase: () => base };
         const fleet = (o) => fs.writeFileSync(fleetFile, JSON.stringify(o, null, 2), 'utf8');
         const carry = () => sc.slotCompleteness(ctx).rows.find(r => r.id === 'carry:settings.json');
+        const keys = () => sc.slotCompleteness(ctx).rows.find(r => r.id === 'keys:settings.json');
         const slotJson = () => JSON.parse(fs.readFileSync(slotFile, 'utf8'));
 
         fleet({ model: 'opus', permissions: { allow: ['Bash(git:*)'] } });
@@ -172,12 +177,33 @@ try {
         sc.completeSlot(ctx, false);
         ok('…and the slot follows the fleet', slotJson().model === 'sonnet');
 
-        // 3. a permission REMOVED from the fleet - the direction a copy can never do
+        // 3. a permission REMOVED from the fleet - the direction a copy can never do.
+        // ‼️ X-291 MOVED THIS CLAUSE. `permissions` is no longer the carry clause's:
+        // rendering the fleet's file over the slot's is right for a model and is
+        // exactly what deleted an approval a slot session had just been given, so the
+        // sub-object belongs to `keys:settings.json` and its three-way merge. The
+        // removal is still a gap and still leaves the slot — but it is read against
+        // the BASE, because an absence on a merge key is ambiguous on its own.
+        base = { permissions: { allow: ['Bash(git:*)'] } };
         fleet({ model: 'sonnet', permissions: { allow: [] }, theme: 'dark' });
-        ok('‼️ X-272: a REMOVED permission is a gap too', !carry().ok && /permissions/.test(carry().detail));
+        ok('‼️ X-272/X-291: a REMOVED permission is a gap too', !keys().ok && /permissions\.allow/.test(keys().detail));
+        ok('‼️ X-291: …and the carry clause does NOT also claim it — one fact, one clause', carry().ok);
         sc.completeSlot(ctx, false);
         ok('…and it is gone from the slot, not merely un-added',
             slotJson().permissions.allow.length === 0);
+        ok('‼️ X-291: …and the rest of the file the carry clause owns is untouched by it',
+            slotJson().model === 'sonnet' && slotJson().theme === 'dark');
+
+        // 3b. ‼️ X-291 — THE OTHER DIRECTION, which is why the clause moved at all: a
+        // slot session is given an approval the fleet has never held. It is not a gap,
+        // it SURVIVES the gate, and the carry clause no longer renders it away.
+        fs.writeFileSync(slotFile, JSON.stringify(
+            { ...slotJson(), permissions: { allow: ['Bash(npm test)'] } }, null, 2), 'utf8');
+        ok('‼️ X-291: a slot-side approval is not a gap', keys().ok && carry().ok);
+        sc.completeSlot(ctx, false);
+        ok('‼️ X-291: …and it is still there after the gate', slotJson().permissions.allow.includes('Bash(npm test)'));
+        ok('‼️ X-291: …with the fleet\'s own settings still carried', slotJson().model === 'sonnet' && slotJson().theme === 'dark');
+        base = {};
 
         // 4. ‼️ FORMATTING IS NOT DRIFT. The fleet's file is whatever the user's
         // editor left; the projection is re-serialised. A text comparison would
