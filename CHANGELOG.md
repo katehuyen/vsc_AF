@@ -2,6 +2,25 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.494.0 - the project's start buttons say which sign-in they would spend, in a panel that can hold it (X-296 / X-262) (2026-09-14)
+
+- **X-262 was done on one of its two surfaces.** Agent Detail put the inherited
+  setup — engine · model · effort · permission mode, the sign-in, and its live
+  window figure — into an AFTip. The Projects page built the same four
+  paragraphs and put them in a native `title`, which truncates, cannot scroll
+  and cannot be entered with the pointer. The figure at the end of the sign-in
+  line is the one part of that setup that goes stale on its own, and it is
+  exactly the part a cut-off tooltip drops.
+- Both start controls on the Work tab now carry it in the panel. The rule is by
+  SHAPE, not by length: anything that is text is an AFTip.
+- **The test never asked which surface** — every assertion was about the text,
+  and the text was right on both pages. It asks now.
+- Honest limit: this was not photographed. The Projects page is the one large
+  surface with no render fixture, so `render_page` cannot be pointed at it —
+  opened as its own item. The wrapper was checked against the layout instead
+  (`.pj-worktop` has no direct-child rule, and the click handler selects the
+  button itself rather than a parent).
+
 ## 3.493.0 - a sign-in that is not on this machine stops the run instead of quietly changing it (X-296 / X-260) (2026-09-14)
 
 - **The same task spent a different plan depending on whether a window was

@@ -951,6 +951,21 @@
      * The account carries its live figure through the shared component (X-263)
      * because it is the one inherited dimension that goes stale on its own.
      */
+    /**
+     * ‼️ X-296 — AND IT IS AN AFTip, WHICH IS HALF OF WHAT X-262 ASKED FOR.
+     *
+     * The Agent Detail side got one (`AFHeader.menu` wraps every entry); this
+     * side put the same four-paragraph text into a native `title`, which is the
+     * one surface it may not be on: it truncates, it cannot scroll, the pointer
+     * cannot travel into it, and the figure at the end of the sign-in line —
+     * the only part that goes stale — is the part a truncated tooltip drops.
+     * The rule is by SHAPE, not by length: anything that is text is an AFTip.
+     */
+    function startTipHead(p) {
+        const n = p && p.nextLaunch;
+        if (!n) { return 'Start here · the agent is chosen when you press'; }
+        return 'Start here · runs as ' + n.agent;
+    }
     function startTip(p, what) {
         const n = p && p.nextLaunch;
         if (!n) {
@@ -977,8 +992,16 @@
     function workStartHtml(p) {
         const isActive = DATA.activeId === p.id;
         return `<div class="pj-worktop">
-            <button data-work="session-console" title="${C.esc(startTip(p, "Open the Console composer on this project. It becomes the window's active project first — that is what puts the project's brief into the agent's system prompt at spawn."))}">▶ Start a session here</button>
-            <button class="secondary" data-work="session-terminal" title="${C.esc(startTip(p, 'Same, in a terminal instead of the hosted Console.'))}">⌨ …in a terminal</button>
+            ${window.AFTip.wrap(
+        '<button data-work="session-console">▶ Start a session here</button>',
+        startTipHead(p),
+        startTip(p, "Open the Console composer on this project. It becomes the window's active project first — that is what puts the project's brief into the agent's system prompt at spawn."),
+        '', 'data-aftip-open="1000"')}
+            ${window.AFTip.wrap(
+        '<button class="secondary" data-work="session-terminal">⌨ …in a terminal</button>',
+        startTipHead(p),
+        startTip(p, 'Same, in a terminal instead of the hosted Console.'),
+        '', 'data-aftip-open="1000"')}
             <button class="secondary" data-work="task" title="Open the New-task form with this project already filled in">⚙ New task</button>
             <button class="secondary" data-work="schedule" title="A schedule that states this project — its runs are filed here, and it appears under &quot;Fires by itself&quot;">⏰ New schedule</button>
             <button class="secondary" data-work="trigger" title="A trigger that states this project — same rule as a schedule">⚡ New trigger</button>

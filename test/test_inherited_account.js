@@ -88,6 +88,30 @@ const A = require(path.join(ROOT, 'media', 'afAccount.js'));
     ok('‼️ the project page states the setup too', /nextLaunch/.test(js));
     ok('‼️ …and says the agent is chosen ON THE CLICK when the project names no single one',
         /chosen when you press|asked when you press|picks the agent/i.test(js));
+    /**
+     * ‼️ X-296 — AND ON THE SURFACE THE ITEM IS NAMED AFTER, which is the half
+     * that shipped wrong because nothing here asked.
+     *
+     * Every assertion above is about the TEXT, and the text was right on both
+     * pages. The Agent Detail side put it in an AFTip (`AFHeader.menu` wraps
+     * every entry it draws); this side put four paragraphs into a native
+     * `title`, which truncates, cannot scroll, and cannot be entered with the
+     * pointer — so the figure at the end of the sign-in line, the one part of
+     * the setup that goes stale, is the part the reader never got to see.
+     */
+    ok('‼️ X-296 — the start controls carry it in an AFTip, not a native title',
+        /AFTip\.wrap\(\s*\n?\s*'<button data-work="session-console">/.test(js)
+        && /AFTip\.wrap\(\s*\n?\s*'<button class="secondary" data-work="session-terminal">/.test(js));
+    ok('…and no `title=` attribute is fed from the readout any more — the rule is '
+        + 'by SHAPE: anything that is text belongs in the panel',
+        !/title="\$\{C\.esc\(startTip\(/.test(js));
+    // The wrapper becomes the flex child of `.pj-worktop`, so the trigger keeps
+    // its own markup and the panel is what is added — a button rewritten into
+    // the wrapper would lose the `data-work` the click handler selects on.
+    ok('…and the button itself is untouched, because the click handler selects it '
+        + 'directly rather than through a parent',
+        /querySelectorAll\('\[data-work\]'\)/.test(js));
+
     const ts = read('src/panels/projectsPanel.ts') + read('src/extension.ts');
     ok('‼️ the host only sends a readout when exactly ONE agent is named',
         /named\.length === 1/.test(ts));
