@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.481.0 - the mirror says only what the engine will not (X-297) (2026-09-13)
+
+- **A Codex Console session was telling the Live Timeline everything twice.**
+  Measured 2026-09-13 in `live-events.jsonl`: session `01a09aa0…` logged `start`
+  at 11:56:28 and again at 11:56:36, `prompt` at 11:56:30 and again at 11:56:36 —
+  once from the Console mirror, once from the hook wire that started working in
+  3.479.0. Every turn on the Codex strip was marked twice and the version counts
+  were inflated.
+- **X-265's stand-down was right about doubling and too wide about everything
+  else.** It silenced the WHOLE mirror the moment one real hook arrived. But the
+  reply the agent gave (U-78), the question a turn is parked on (A-18) and the
+  END of a Codex lane come from the Console and from nowhere else — Codex's seven
+  hooks are `PreToolUse`, `PostToolUse`, `PreCompact`, `SessionStart`,
+  `UserPromptSubmit`, `SubagentStop`, `Stop`, with **no `SessionEnd` among them**,
+  so a lane silenced wholesale would never have closed. Measured on the other
+  side too: of 111 lanes in the last ten days, 68 hook-fed ones carried no `say`
+  at all — the agent's own words had not reached the timeline of a Claude Console
+  session since X-265.
+- **Suppression is per EVENT now, against the wire's own list.** An adapter
+  declares `liveWire.events`: Claude's is the hooks installer's list (one place,
+  not two), Codex's is READ from `hooks.json` because that file is the user's and
+  may name any subset, and an engine with no wire declares none and is mirrored
+  in full as before. The rule is `mirrorOwns` in `core/live.ts` — a function a
+  test pins, not a closure inside `activate()`.
+- **And it is read when the lane OPENS, not on the first hook.** "Has a hook
+  spoken for this id yet" answered eight seconds too late for Codex, which names
+  its thread before its hooks fire; the fleet's own wire reading (X-295) answers
+  before the first event.
+- **A lane also opens where the conversation already is.** A resume — including
+  the revive after a window reload — arrives with its whole transcript in the
+  card, and replaying those turns would stamp an old conversation onto the live
+  timeline at today's clock.
+- The agent's replies are back on hosted lanes, on every engine. User's decision,
+  2026-09-13.
+
 ## 3.480.0 - the reading you chose is where the Console opens (K-38) (2026-09-13)
 
 - **"Show everything" could never be kept.** The Console's line filter is a

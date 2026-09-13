@@ -35,8 +35,11 @@ Module._load = function (request) {
     return origLoad.apply(this, arguments);
 };
 
-const { LiveMonitor, statedSource } = require(path.resolve(__dirname, '../out/core/live.js'));
-const { hookCommand, HOOK_MARKER } = require(path.resolve(__dirname, '../out/core/hooksInstaller.js'));
+const { LiveMonitor, statedSource, mirrorOwns } = require(path.resolve(__dirname, '../out/core/live.js'));
+const {
+    hookCommand, HOOK_MARKER, ALL_HOOK_EVENTS
+} = require(path.resolve(__dirname, '../out/core/hooksInstaller.js'));
+const { ENGINE_AUTH_ADAPTERS } = require(path.resolve(__dirname, '../out/core/engineAccounts.js'));
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -115,6 +118,77 @@ const rig = () => {
         hookCommand(8377, 'posix').includes('|| cd .')
         && hookCommand(8377, 'powershell').includes('curl.exe')
         && hookCommand(8377, 'powershell').includes('; exit 0'));
+}
+
+// ---------- X-297: the mirror says only what the wire will not ----------
+//
+// Standing the whole mirror down was right about doubling and wrong about
+// everything the wire does not carry: measured 2026-09-13, one Codex session
+// logged `start` and `prompt` twice (mirror 11:56:28/30, hook 11:56:36), while
+// on the other side the agent's own reply reached no lane whose hooks worked,
+// because no hook carries one. So the question is per EVENT.
+{
+    const CLAUDE = ALL_HOOK_EVENTS;
+    ok('‼️ X-297 — an event the wire reports is NOT the mirror\'s, once it speaks',
+        mirrorOwns('SessionStart', CLAUDE, true) === false
+        && mirrorOwns('Stop', CLAUDE, true) === false
+        && mirrorOwns('UserPromptSubmit', CLAUDE, true) === false);
+    ok('…and the same event IS the mirror\'s while the wire is silent — that is '
+        + 'the whole reason the mirror exists (X-265)',
+        mirrorOwns('SessionStart', CLAUDE, false) === true
+        && mirrorOwns('Stop', CLAUDE, false) === true);
+    ok('‼️ X-297 — what NO wire carries stays the mirror\'s either way: the agent\'s '
+        + 'own reply (U-78) is the Console\'s knowledge, not a hook\'s',
+        CLAUDE.indexOf('AssistantMessage') < 0
+        && mirrorOwns('AssistantMessage', CLAUDE, true) === true
+        && mirrorOwns('AssistantMessage', CLAUDE, false) === true);
+    ok('an engine with no wire at all is mirrored in full',
+        mirrorOwns('SessionStart', [], true) === true
+        && mirrorOwns('Stop', [], true) === true);
+    ok('a payload with no event name is never suppressed by a list it cannot be on',
+        mirrorOwns(undefined, CLAUDE, true) === true);
+}
+
+// ---------- …and the list is the WIRE'S own, read where it lives ----------
+{
+    const adapter = (e) => ENGINE_AUTH_ADAPTERS.find(a => a.engine === e);
+    const ctxFor = (files) => ({
+        fs: {
+            existsSync: (p) => Object.prototype.hasOwnProperty.call(files, p),
+            readFileSync: (p) => files[p],
+            writeFileSync: () => { },
+            mkdirSync: () => { }
+        },
+        home: '/home', dir: '/home/.codex', realDir: '/home/.codex', hooksPort: 8377
+    });
+    const claude = adapter('claude');
+    ok('Claude\'s wire is the installer\'s own list — declared in one place, not two',
+        !!claude.liveWire.events
+        && claude.liveWire.events(ctxFor({})).join() === ALL_HOOK_EVENTS.join());
+
+    const codex = adapter('codex');
+    // Keyed the way the adapter will ask for it — `path.join` on this platform.
+    const HOOKS = path.join('/home/.codex', 'hooks.json');
+    const wired = {
+        [HOOKS]: JSON.stringify({
+            hooks: {
+                PreToolUse: [], PostToolUse: [], PreCompact: [], SessionStart: [],
+                UserPromptSubmit: [], SubagentStop: [], Stop: []
+            }
+        })
+    };
+    const events = codex.liveWire.events(ctxFor(wired));
+    ok('Codex\'s wire is READ, because the file is the user\'s and may name any subset',
+        events.length === 7 && events.indexOf('UserPromptSubmit') >= 0);
+    ok('‼️ X-297 — and the seven measured on this machine carry NO SessionEnd, which '
+        + 'is why a Codex lane is still ENDED by the mirror',
+        events.indexOf('SessionEnd') < 0
+        && mirrorOwns('SessionEnd', events, true) === true
+        && mirrorOwns('Stop', events, true) === false);
+    ok('no hooks.json is no wire — nothing suppressed, everything mirrored',
+        codex.liveWire.events(ctxFor({})).length === 0);
+    ok('a malformed hooks.json is no wire either, and never throws at a lane',
+        codex.liveWire.events(ctxFor({ [HOOKS]: '{ not json' })).length === 0);
 }
 
 Module._load = origLoad;

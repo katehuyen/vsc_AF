@@ -286,6 +286,31 @@ export function statedSource(engine: string | undefined): string | undefined {
     return v && v.toLowerCase() !== 'claude' ? v : undefined;
 }
 
+/**
+ * ‼️ X-297 — IS THIS EVENT THE MIRROR'S TO REPORT?
+ *
+ * Two things describe a hosted conversation: the engine's own hook wire, and
+ * the Console mirroring the card into the same lane for the sessions no wire
+ * speaks for. X-265 silenced the whole mirror the moment one real hook arrived
+ * — right about doubling, too wide about everything else. Measured 2026-09-13:
+ * a Codex session logged `start` and `prompt` twice; and on the other side, a
+ * Claude session whose hooks worked never reported the agent's own reply,
+ * because no hook carries one.
+ *
+ * So the question is per EVENT, not per session: the wire's list wins for what
+ * is on it, and everything else is the mirror's. `speaks` is whether that wire
+ * is actually live here — false for an engine whose hooks are dead, which is
+ * the case the mirror exists for.
+ */
+export function mirrorOwns(
+    event: string | undefined, wire: Iterable<string>, speaks: boolean
+): boolean {
+    if (!event) { return true; }
+    if (!speaks) { return true; }
+    for (const w of wire) { if (w === event) { return false; } }
+    return true;
+}
+
 export function cliSourceOf(sessionId: string): string | undefined {
     return sessionId.startsWith('cli:') ? (sessionId.split(':')[1] || undefined) : undefined;
 }

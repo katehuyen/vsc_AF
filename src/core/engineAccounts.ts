@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { codexHookEntries, codexHookPort, codexTrustLedger, codexTrustProjection } from './codexHooks';
-import { hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
+import { ALL_HOOK_EVENTS, hooksAreCurrent, syncHooksToAccounts } from './hooksInstaller';
 
 /**
  * X-168 — MORE THAN ONE ACCOUNT ON ONE MACHINE, WITHOUT A BROWSER.
@@ -224,6 +224,22 @@ export interface LiveWire {
      * carried by projection instead.
      */
     owns?: { file: string; keys: string[] };
+    /**
+     * ‼️ X-297 — WHICH EVENTS THIS WIRE WILL REPORT BY ITSELF.
+     *
+     * The Console mirrors a hosted conversation into the live lane for sessions
+     * the engine cannot speak for (see `mirrorConsoleToLive`), and the moment a
+     * wire works both of them describe the same turn: measured 2026-09-13, one
+     * Codex session logged `start` and `prompt` twice, eight seconds apart.
+     * The mirror asks this and stays quiet about exactly what the wire already
+     * says — so what no wire carries (the agent's own reply, U-78; a lane that
+     * ends with no `SessionEnd` hook to end it) is still reported, by the one
+     * thing that knows it.
+     *
+     * Read from the wire that is really there rather than declared: Codex's
+     * file is the user's and may name any subset.
+     */
+    events?(ctx: LiveWireContext): string[];
 }
 
 export interface EngineAuthAdapter {
@@ -612,7 +628,9 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
                 const userFile = path.join(ctx.home, liveSource('claude', 'settings.json'));
                 const rows = syncHooksToAccounts(userFile, [path.join(ctx.dir, 'settings.json')], ctx.hooksPort);
                 return { wrote: rows.length > 0 };
-            }
+            },
+            // Installed by us, so the set is the installer's own (X-297).
+            events: () => ALL_HOOK_EVENTS
         },
         liveDir: '.claude',
         // ‼️ the identity is at the HOME ROOT, not under .claude — see liveFiles
@@ -720,6 +738,18 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
                     } catch (e) { return { wrote: false, error: String((e as Error)?.message ?? e) }; }
                 }
                 return { wrote: true };
+            },
+            // The file is the user's, so the set is whatever THEY wired (X-297):
+            // measured on this machine, seven events with no `SessionEnd` among
+            // them — which is why the mirror is still the thing that ends a
+            // Codex lane.
+            events: ctx => {
+                const f = path.join(ctx.dir, 'hooks.json');
+                if (!ctx.fs.existsSync(f)) { return []; }
+                try {
+                    const j = JSON.parse(ctx.fs.readFileSync(f, 'utf8')) as { hooks?: Record<string, unknown> };
+                    return Object.keys(j.hooks ?? {});
+                } catch { return []; }
             }
         },
         /**

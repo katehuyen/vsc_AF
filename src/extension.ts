@@ -82,7 +82,7 @@ import {
     hasOurHooks, hookCommand, hooksAreCurrent, installHooksInto, removeHooksFrom,
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
-import { LiveMonitor, LiveSession } from './core/live';
+import { LiveMonitor, LiveSession, mirrorOwns } from './core/live';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { PlanUsageService, refreshMs } from './core/planusage';
@@ -22872,8 +22872,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *   · **The engine is stated** (`HookPayload.engine`), because a hosted
      *     thread id is minted by the engine and cannot be parsed for one.
      */
-    const liveMirror = new Map<string,
-        { status: string; msgs: number; openTool?: string; said?: string; ask?: string }>();
+    /**
+     * ‼️ X-297 — WHAT THE ENGINE ITSELF WILL REPORT, AND WHETHER IT CAN YET.
+     *
+     * Both answers come from the engine's own adapter (`liveWire`), so a wire
+     * this file has never heard of is handled by being declared: an engine with
+     * no `events` reports nothing for itself and is mirrored in full, which is
+     * what every engine without a hook wire needs. `wireLive` is the FLEET's
+     * reading and only the engines that sign their own directory have one —
+     * Claude's is the hooks installer's, so it stays false and the decision
+     * falls back to `hasRealHooks`, exactly as X-265 left it.
+     */
+    const wireReading = (engine: string): { wire: Set<string>; wireLive: boolean } => {
+        const a = ENGINE_AUTH_ADAPTERS.find(x => x.engine === engine);
+        const events = a?.liveWire?.events;
+        if (!a || !events) { return { wire: new Set<string>(), wireLive: false }; }
+        try {
+            return {
+                wire: new Set(events(fleetWireCtx(a))),
+                wireLive: fleetWireReading(a)?.ok === true
+            };
+        } catch { return { wire: new Set<string>(), wireLive: false }; }
+    };
+    const liveMirror = new Map<string, {
+        status: string; msgs: number; openTool?: string; said?: string; ask?: string;
+        /** ‼️ X-297 — what this session's engine reports for itself (wireReading) */
+        wire: Set<string>;
+        /** …and whether that wire was already live when the lane opened */
+        wireLive: boolean;
+        /** has the lane been opened — asked here rather than inferred from the
+         *  counters, which a suppressed SessionStart leaves at zero */
+        started?: boolean;
+    }>();
     const mirrorConsoleToLive = (id: string): void => {
         const s = consoleHost.get(id);
         if (!s) { return; }
@@ -22881,33 +22911,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Until the engine names the thread there is no id to key a lane on.
         const sid = s.sessionId;
         if (!sid) { return; }
-        // ‼️ X-265 — Claude is mirrored only while its own hooks are silent. One
-        // real hook for this id and the mirror stands down for good: drawing
-        // beside a working hook stream would double every turn.
-        if (engine === 'claude' && live.hasRealHooks(sid)) { return; }
         const base = { session_id: sid, cwd: s.cwd, engine };
         let seen = liveMirror.get(id);
         if (!seen) {
-            seen = { status: '', msgs: 0 };
+            seen = {
+                status: '',
+                // ‼️ A LANE OPENS WHERE THE CONVERSATION ALREADY IS. A resume
+                // arrives with its whole transcript in the card — including the
+                // revive after a window reload, which is a resume — and every
+                // one of those turns happened before this lane existed. Replaying
+                // them would stamp an old conversation onto the live timeline at
+                // today's clock. A session that is genuinely new holds at most the
+                // prompt that started it, which IS this lane's first event.
+                msgs: s.resumed ? s.messages.length : 0,
+                // Read once: what the wire carries cannot change under a session
+                // that is already running, and this touches the disk.
+                ...wireReading(engine)
+            };
             liveMirror.set(id, seen);
-            live.handle({ ...base, hook_event_name: 'SessionStart', source: 'startup' });
+        }
+        /**
+         * ‼️ X-297 — THE MIRROR SAYS ONLY WHAT THE ENGINE WILL NOT.
+         *
+         * X-265 stood the whole mirror down as soon as one real hook spoke,
+         * which was right about doubling and too wide: the reply the agent gave
+         * (U-78) and the question a turn is parked on (A-18) come from the
+         * CONSOLE and from nowhere else, and Codex's wire has no `SessionEnd` in
+         * it at all — so a lane silenced wholesale never closes. Suppression is
+         * per event now, against the wire's own list.
+         *
+         * `hasRealHooks` alone was also too LATE for Codex: it names its thread
+         * before its first hook fires, so the mirror had already spoken twice
+         * (measured: eight seconds ahead of the hook). A wire read as live when
+         * the lane opened counts from the first event.
+         */
+        const emit = (p: Parameters<typeof live.handle>[0]): void => {
+            const speaks = seen!.wireLive || live.hasRealHooks(sid);
+            if (mirrorOwns(p.hook_event_name, seen!.wire, speaks)) { live.handle(p); }
+        };
+        if (!seen.started) {
+            seen.started = true;
+            emit({ ...base, hook_event_name: 'SessionStart', source: 'startup' });
         }
         const closeTool = (): void => {
             if (!seen!.openTool) { return; }
-            live.handle({ ...base, hook_event_name: 'PostToolUse', tool_name: seen!.openTool });
+            emit({ ...base, hook_event_name: 'PostToolUse', tool_name: seen!.openTool });
             seen!.openTool = undefined;
         };
         for (const m of s.messages.slice(seen.msgs)) {
             if (m.role === 'user' && !m.steer) {
                 closeTool();
-                live.handle({ ...base, hook_event_name: 'UserPromptSubmit', prompt: m.text ?? '' });
+                emit({ ...base, hook_event_name: 'UserPromptSubmit', prompt: m.text ?? '' });
             } else if (m.role === 'tool' && m.tool) {
                 // One span per call: the previous one is closed by the arrival of
                 // the next row, which is the only end-of-tool signal a hosted
                 // conversation has. A span left open is closed by Stop / End.
                 closeTool();
                 seen.openTool = m.tool.name;
-                live.handle({
+                emit({
                     ...base, hook_event_name: 'PreToolUse',
                     tool_name: m.tool.name, tool_input: { description: m.tool.detail }
                 });
@@ -22921,7 +22982,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const said = (m.text ?? '').trim();
                 if (said) {
                     seen.said = said;
-                    live.handle({ ...base, hook_event_name: 'AssistantMessage', message: said });
+                    emit({ ...base, hook_event_name: 'AssistantMessage', message: said });
                 }
             } else if (m.role === 'error' || m.isError) {
                 closeTool();
@@ -22944,7 +23005,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (s.pendingAsk) {
                 const what = (s.pendingAsk.detail || s.pendingAsk.displayName
                     || s.pendingAsk.tool || '').trim().slice(0, 160);
-                live.handle({
+                emit({
                     ...base, hook_event_name: 'Notification',
                     message: s.pendingAsk.interactive
                         ? `waiting for your answer${what ? `: ${what}` : ''}`
@@ -22955,7 +23016,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (s.status !== seen.status) {
             if (s.status === 'ended' || s.status === 'error') {
                 closeTool();
-                live.handle({
+                emit({
                     ...base, hook_event_name: 'SessionEnd',
                     reason: s.status === 'error' ? 'the engine reported an error' : 'session closed'
                 });
@@ -22965,7 +23026,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // The turn's closing point says what the turn ANSWERED, not
                 // only how long it took (U-78). Consumed, so the next turn's
                 // end cannot repeat the previous turn's reply.
-                live.handle({ ...base, hook_event_name: 'Stop', message: seen.said });
+                emit({ ...base, hook_event_name: 'Stop', message: seen.said });
                 seen.said = undefined;
             }
             seen.status = s.status;
