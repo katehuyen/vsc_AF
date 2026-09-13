@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.487.0 - a sign-in says how long it has left, and why signing in elsewhere missed it (X-275) (2026-09-14)
+
+- **An account's health was a verdict on the present tense and nothing else.** A
+  slot read `🟢 ready` right up to the hour its refresh token died and
+  `🟠 needs signing in` the hour after, with no warning in between. MEASURED on
+  this machine 2026-09-14: a Claude refresh token is issued for ~30 days — the
+  four credentials on disk had 18.5, 20.5, 21.3 and 27.4 days left — while the
+  access token beside it lasts hours and is renewed over HTTP without anybody
+  noticing. So the only clock that ever needs a person is the slow one, and it
+  was the one nothing read: a month of notice reached nobody.
+- **The card now says it, in the badge rather than a panel** — `🟡 3 days left`,
+  keeping the WORKING colour on purpose, because it does work. Painting it the
+  same amber as an expired sign-in would be two verdicts with one lie in them.
+  The panel names the date it stops refreshing and which of the two clocks that
+  is.
+- **And the half the user actually hit: a slot's sign-in is its OWN credential.**
+  Signing in through the browser or `/login` writes `~/.claude/.credentials.json`
+  and leaves every slot exactly as dead as it was. That is not a fault — it is
+  what keeping accounts apart MEANS — but it was invisible, so a person renewed
+  the machine's sign-in, saw the row unchanged and read the fleet as broken.
+  Where the machine's sign-in is THIS SAME account and this row is not working,
+  the card says so and points at the cure that does reach it: the 🔑 beside it,
+  which opens the flow in this account's own directory.
+- **Copying the live credential across is refused out loud rather than silently
+  not offered.** An OAuth refresh ROTATES the refresh token, so one grant in two
+  directories is two copies invalidating each other: the row would work until
+  the machine's own install refreshed, then die again saying no more than it
+  does now.
+
 ## 3.486.0 - stop means stop, including the words already on their way (S-54) (2026-09-14)
 
 - **Interrupt looked like it worked for a second and the agent carried on.**

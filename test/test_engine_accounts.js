@@ -23,7 +23,8 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const {
     readClaudeIdentity, readCodexIdentity, readGeminiIdentity, accountEnv, slotDir,
     mintSlotId, slotHealth, describeSlotLayout, adapterFor, ENGINE_AUTH_ADAPTERS,
-    accountCapableEngines, captureRefusal, readSlotIdentity, slotQuotaSource, duplicateSlots, shortUuid
+    accountCapableEngines, captureRefusal, readSlotIdentity, slotQuotaSource, duplicateSlots, shortUuid,
+    signinOutlook, SIGNIN_WARN_MS
 } = require(path.join(__dirname, '..', 'out', 'core', 'engineAccounts.js'));
 // X-219 — a slot's own decisions live with the slots, beside accountRefusal.
 const { planReauth } = require(path.join(__dirname, '..', 'out', 'core', 'accountStore.js'));
@@ -372,6 +373,58 @@ const config = (email) => JSON.stringify({
     ok('…and a slot whose uuid could not be read is never called a duplicate of anything',
         !dup.has('claude-c') && !dup.has('claude-d'));
     ok('the short form is the first eight characters', shortUuid('dce63e3f-1111-2222') === 'dce63e3f' && shortUuid(undefined) === '');
+}
+
+// ---------- ‼️ X-275 — the sign-in's remaining life, and why a login elsewhere missed it ----------
+//
+// MEASURED on this machine 2026-09-14: a Claude refresh token is issued for ~30
+// days (four credentials on disk read 18.5 · 20.5 · 21.3 · 27.4 days left) while
+// the access token beside it lasts hours and is renewed over HTTP unattended.
+// So `health` — a verdict on the present tense — said 🟢 ready until the hour
+// the grant died and 🟠 the hour after, and a month of notice reached nobody.
+{
+    const NOW = Date.parse('2026-09-14T00:00:00Z');
+    const D = 86400e3;
+    const id = (o) => ({ email: 'a@x.com', accountUuid: 'u-1', subscriptionType: 'pro', expiresAt: NOW + 3600e3, ...o });
+    const ready = (days) => id({ refreshExpiresAt: NOW + days * D, health: 'ready' });
+
+    ok('a grant with weeks left is ready and says how long',
+        (() => { const o = signinOutlook(ready(20), undefined, NOW);
+            return o.state === 'ready' && o.hoursLeft === 20 * 24; })());
+    ok('‼️ X-275: a grant inside the warning window is EXPIRING — the state `health` could not express',
+        signinOutlook(ready(5), undefined, NOW).state === 'expiring');
+    ok('…and the boundary belongs to the warning, not to silence',
+        signinOutlook(id({ refreshExpiresAt: NOW + SIGNIN_WARN_MS, health: 'ready' }), undefined, NOW).state === 'expiring'
+        && signinOutlook(id({ refreshExpiresAt: NOW + SIGNIN_WARN_MS + 1000, health: 'ready' }), undefined, NOW).state === 'ready');
+    ok('a dead grant stays needs-signin rather than being relabelled as merely expiring',
+        signinOutlook(id({ refreshExpiresAt: NOW - D, health: 'needs-signin' }), undefined, NOW).state === 'needs-signin');
+    ok('an unreadable credential is never given a countdown it cannot have',
+        (() => { const o = signinOutlook(id({ refreshExpiresAt: 0, health: 'unreadable' }), undefined, NOW);
+            return o.state === 'unreadable' && o.hoursLeft === -1; })());
+    // A grant that states no expiry is treated as still good by readClaudeIdentity
+    // ("refusing an account because a field is absent would be inventing a fault
+    // out of silence") — so it must not be warned about either.
+    ok('…and a grant that states no expiry is never warned about',
+        (() => { const o = signinOutlook(id({ refreshExpiresAt: 0, health: 'ready' }), undefined, NOW);
+            return o.state === 'ready' && o.hoursLeft === -1; })());
+
+    // The half the user actually hit: signing in on the machine leaves a slot
+    // exactly as dead as it was, and nothing anywhere said so.
+    const dead = id({ refreshExpiresAt: NOW - D, health: 'needs-signin' });
+    const liveSame = id({ refreshExpiresAt: NOW + 25 * D, health: 'ready' });
+    const liveOther = id({ accountUuid: 'u-2', refreshExpiresAt: NOW + 25 * D, health: 'ready' });
+    ok('‼️ X-275: the machine\'s own sign-in being THIS account is on the row, so the card can explain the confusion',
+        signinOutlook(dead, liveSame, NOW).liveIsSame === true);
+    ok('…a different account on the machine is not that fact',
+        signinOutlook(dead, liveOther, NOW).liveIsSame === false);
+    ok('…and an engine that records no uuid matches NOBODY rather than everybody (X-282)',
+        signinOutlook(id({ accountUuid: '', health: 'needs-signin' }), id({ accountUuid: '', health: 'ready' }), NOW)
+            .liveIsSame === false);
+    ok('…the machine sign-in\'s own health travels with it, so "same account" never implies "a working one"',
+        signinOutlook(dead, id({ health: 'needs-signin' }), NOW).liveHealth === 'needs-signin'
+        && signinOutlook(dead, undefined, NOW).liveHealth === 'unreadable');
+    ok('…and being signed in elsewhere never softens this row\'s own verdict',
+        signinOutlook(dead, liveSame, NOW).state === 'needs-signin');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

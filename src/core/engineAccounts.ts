@@ -1073,3 +1073,73 @@ export function slotQuotaSource(slot: { engine?: string } | undefined): QuotaSou
 export function slotHealth(id: AccountIdentity): SlotHealth {
     return id.health;
 }
+
+/**
+ * ‼️ X-275 — HOW LONG THIS SIGN-IN HAS LEFT, AND WHY SIGNING IN ELSEWHERE DID
+ * NOT HELP IT.
+ *
+ * `health` is a verdict on the present tense and says nothing until the moment
+ * it is already too late: a slot reads `ready` right up to the hour its refresh
+ * token dies and `needs-signin` the hour after, with no warning in between.
+ * MEASURED on this machine 2026-09-14: a Claude refresh token is issued for
+ * ~30 days (the four credentials on disk had 18.5 · 20.5 · 21.3 · 27.4 days
+ * left), while the access token beside it lasts hours and is renewed over HTTP
+ * without anyone noticing. So the only clock that ever needs a person is the
+ * slow one, and it is the one nothing was reading.
+ *
+ * ‼️ AND THE SECOND HALF IS THE ONE THE USER ACTUALLY ASKED: a slot's sign-in
+ * is its OWN credential, not a view of the machine's. Signing in through the
+ * browser or `/login` writes `~/.claude/.credentials.json` and leaves every
+ * slot exactly as dead as it was. That is not a fault to repair — it is what
+ * isolation MEANS — but it is invisible, so a person renews the machine's
+ * sign-in, sees the slot unchanged, and concludes the fleet is broken.
+ * `liveIsSame` is what lets a surface say it out loud.
+ *
+ * ‼️ AND IT IS NOT AN OFFER TO COPY THE LIVE CREDENTIAL OVER. An OAuth refresh
+ * ROTATES the refresh token, so one grant in two directories is two copies
+ * racing to invalidate each other — the slot would work until the machine's
+ * own install refreshed, then die again with no new information. The cure
+ * stays what X-219 built: renew THIS slot, in its own directory.
+ */
+export type SigninState = 'ready' | 'expiring' | 'needs-signin' | 'unreadable';
+
+export interface SigninOutlook {
+    state: SigninState;
+    /** epoch ms the refresh token dies; 0 when the grant states no expiry */
+    refreshExpiresAt: number;
+    /** whole hours left on it; -1 when the grant states no expiry */
+    hoursLeft: number;
+    /** the engine's sign-in on this machine is THIS SAME account */
+    liveIsSame: boolean;
+    /** and what that machine-wide sign-in's own health is */
+    liveHealth: SlotHealth;
+}
+
+/** A quarter of the ~30 days a grant is issued for — long enough to act on. */
+export const SIGNIN_WARN_MS = 7 * 24 * 3600e3;
+
+export function signinOutlook(
+    id: AccountIdentity,
+    live?: AccountIdentity,
+    now = Date.now(),
+    warnMs = SIGNIN_WARN_MS
+): SigninOutlook {
+    const at = num(id.refreshExpiresAt);
+    const left = at ? at - now : 0;
+    const state: SigninState = id.health === 'unreadable' ? 'unreadable'
+        : id.health === 'needs-signin' ? 'needs-signin'
+            : at && left <= warnMs ? 'expiring'
+                : 'ready';
+    // Two accounts are the same account when the provider says so; a folder
+    // name never is (X-282), and an address can be missing on engines that
+    // record none, so an empty uuid matches nothing rather than everything.
+    const uuid = (id.accountUuid || '').trim();
+    const liveUuid = (live && live.accountUuid || '').trim();
+    return {
+        state,
+        refreshExpiresAt: at,
+        hoursLeft: at ? Math.floor(left / 3600e3) : -1,
+        liveIsSame: !!uuid && uuid === liveUuid,
+        liveHealth: live ? live.health : 'unreadable'
+    };
+}

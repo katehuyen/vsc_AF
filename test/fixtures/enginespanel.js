@@ -90,6 +90,13 @@ const data = () => {
                 // five surfaces that each derived it their own way cannot drift.
                 usageState: 'ok', note: '', window: 'five-hour window',
                 quotaSource: 'oauth-credentials',
+                // ‼️ X-275 — the grant's own clock. The ORDINARY value here, so
+                // the everyday picture stays the everyday picture: weeks left,
+                // nothing said. The warning has its own scene below.
+                signin: {
+                    state: 'ready', refreshExpiresAt: NOW + 23 * 24 * 3600 * 1000,
+                    hoursLeft: 23 * 24, liveIsSame: false, liveHealth: 'ready'
+                },
                 capturedAt: NOW - 6 * 24 * 3600 * 1000,
                 // X-206 — the figure's own age, and the refresh line: this one
                 // is being read right now, the next is waiting behind it.
@@ -112,6 +119,10 @@ const data = () => {
                 percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000,
                 usageState: 'ok', note: '', window: 'five-hour window',
                 quotaSource: 'oauth-credentials',
+                signin: {
+                    state: 'ready', refreshExpiresAt: NOW + 18 * 24 * 3600 * 1000,
+                    hoursLeft: 18 * 24, liveIsSame: false, liveHealth: 'ready'
+                },
                 capturedAt: NOW - 2 * 3600 * 1000,
                 fetchedAt: NOW - 3 * 3600 * 1000, queue: 'queued', queuePlace: 1,
                 settingsGaps: [], settingsGuarantee: true,
@@ -427,6 +438,44 @@ const oneSlotData = () => {
     return d;
 };
 
+/**
+ * ‼️ X-275 — THE TWO STATES `health` COULD NOT EXPRESS, drawn beside a row that
+ * is simply fine so the difference is the picture rather than the caption.
+ *
+ * One slot is still working and stops in three days — the 🟡 badge keeps the
+ * OK colour on purpose (it does work), and the days are what makes it not the
+ * same fact as the amber one. The other is dead while the machine's own sign-in
+ * is THIS SAME account: the exact state the user hit, where signing in again
+ * changed nothing visible and the row gave no reason. Both carry the panel that
+ * says why, and only these two do — a scene where every card warned would hide
+ * how the odd card reads.
+ */
+const signinData = () => {
+    const d = data();
+    d.accounts = d.accounts.map(a => {
+        if (a.id === 'personal') {
+            return {
+                ...a, health: 'ready',
+                signin: {
+                    state: 'expiring', refreshExpiresAt: NOW + 3 * 24 * 3600 * 1000,
+                    hoursLeft: 72, liveIsSame: true, liveHealth: 'ready'
+                }
+            };
+        }
+        if (a.id === 'spare') {
+            return {
+                ...a, health: 'needs-signin', percent: -1, usageState: 'no-auth',
+                signin: {
+                    state: 'needs-signin', refreshExpiresAt: NOW - 2 * 24 * 3600 * 1000,
+                    hoursLeft: -48, liveIsSame: true, liveHealth: 'ready'
+                }
+            };
+        }
+        return a;
+    });
+    return d;
+};
+
 module.exports = {
     script: 'engines.js',
     data,
@@ -436,6 +485,7 @@ module.exports = {
         { id: 'enginesbroken', label: 'Engines panel — all three verdicts', data: brokenData() },
         { id: 'enginesprompt', label: 'Engines panel — one slot on the simplified prompt', data: promptDriftData() },
         { id: 'enginesincomplete', label: 'Engines panel — a slot missing three clauses of its contract', data: incompleteData() },
-        { id: 'enginesoneslot', label: 'Engines panel — a single captured account', data: oneSlotData() }
+        { id: 'enginesoneslot', label: 'Engines panel — a single captured account', data: oneSlotData() },
+        { id: 'enginessignin', label: 'Engines panel — a sign-in running out, and one dead while the machine is signed in as it', data: signinData() }
     ]
 };

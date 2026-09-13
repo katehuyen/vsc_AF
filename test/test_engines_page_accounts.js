@@ -568,5 +568,53 @@ const sec = () => {
         idh.includes('that is what the verdict badge on this row says'));
 }
 
+// ---------- ‼️ X-275 — the two states the verdict could not express ----------
+//
+// `health` is the present tense, so a row read 🟢 ready until the hour its
+// grant died. And nothing said that signing in on this machine does not reach
+// a slot — the thing the user actually hit. Both are drawn, so both are pinned
+// here rather than only in a photograph.
+{
+    const sd = fixture.variants().find(v => v.id === 'enginessignin');
+    ok('the fixture carries a scene for the sign-in states at all', !!sd);
+    const sh = runPage('engines.js', sd.data).html();
+
+    ok('‼️ X-275: a grant with days left says so on the badge, where it is read without hovering',
+        sh.includes('3 days left'));
+    ok('…and it keeps the WORKING colour, because it does work — an expiring sign-in drawn '
+        + 'in the same amber as a dead one would be two verdicts with one lie in them',
+        /acbad ok">🟡 3 days left/.test(sh));
+    ok('…while the dead row keeps its own amber and is not relabelled a countdown',
+        sh.includes('needs signing in') && !/acbad ok">🟡 -/.test(sh));
+    ok('…the panel names the date the grant stops refreshing, not only the span',
+        sh.includes('The credential refreshes today and will not after'));
+    ok('…and says WHICH of the two clocks this is, since the other one renews itself hourly',
+        sh.includes('the REFRESH token\'s own expiry'));
+
+    ok('‼️ X-275: the row explains why signing in on this machine changed nothing here',
+        sh.includes('THIS SAME account — and it does not reach this row'));
+    ok('…and points at the cure that actually works, in this account\'s own directory',
+        sh.includes('Renew it HERE'));
+    ok('…and says out loud why copying the machine\'s credential over is NOT offered',
+        sh.includes('a refresh ROTATES the'));
+
+    // ‼️ The panel tells the reader to press the 🔑 — so it has to BE there.
+    // It was not: `reauth` was hidden on any row whose health read `ready`, and
+    // an expiring row's health is still `ready` by design.
+    ok('‼️ X-275: the row the panel tells to renew actually carries the 🔑 to renew with',
+        (sd.data.accounts.filter(a => (a.signin || {}).state === 'expiring')
+            .every(a => sh.includes('data-acreauth="' + a.id + '"'))));
+    ok('…and it says why pressing it early costs nothing',
+        sh.includes('nothing is interrupted'));
+
+    // The note is the reader's live confusion or it is noise: a row that works,
+    // or one whose machine sign-in is a different account, must not carry it.
+    const quiet = runPage('engines.js', fixture.data()).html();
+    ok('…and a fleet where every sign-in is fine says none of it',
+        !quiet.includes('does not reach this row') && !quiet.includes('days left'));
+    ok('…nor offers a key to renew a sign-in that has weeks left',
+        !quiet.includes('data-acreauth="personal"'));
+}
+
 console.log(`test_engines_page_accounts: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

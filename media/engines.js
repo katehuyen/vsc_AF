@@ -704,11 +704,22 @@
                 + 'nothing.\n\nIt cannot restore an identity: if the sign-in itself is gone, use '
                 + 'the key beside it.')
             : '';
-        const reauth = a.health === 'ready'
+        // ‼️ X-275 — AND A SIGN-IN WITH DAYS LEFT GETS THE KEY TOO. `health` is
+        // still `ready` there on purpose (it works), but that is exactly the
+        // week in which renewing costs nobody anything — and the panel beside
+        // the badge tells the reader to press this, so hiding it until the
+        // grant was already dead would have been the card pointing at a button
+        // that is not there.
+        const expiringSoon = (a.signin || {}).state === 'expiring';
+        const reauth = a.health === 'ready' && !expiringSoon
             ? ''
             : T.wrap('<button class="secondary small acreauth" data-acreauth="' + esc(a.id) + '">🔑</button>',
-                'Sign in again as ' + (a.label || a.id),
-                'Opens a terminal whose environment points the engine at this account\'s own directory, '
+                expiringSoon ? 'Renew this sign-in before it runs out' : 'Sign in again as ' + (a.label || a.id),
+                (expiringSoon
+                    ? 'This one still works, so nothing is broken and nothing is interrupted — which is the '
+                    + 'whole reason to do it now rather than on the day a session opens as nobody.\n\n'
+                    : '')
+                + 'Opens a terminal whose environment points the engine at this account\'s own directory, '
                 + 'and runs the engine\'s own sign-in command there. Nothing is copied over the sign-in '
                 + 'you are using and no other row moves — the browser flow writes the new credential '
                 + 'straight into this one.\n\n'
@@ -753,7 +764,57 @@
                 + 'this one cannot tell you even that. Signing in again writes the file afresh, '
                 + 'which is what the 🔑 beside this does.']
         };
-        const verdict = VERDICTS[a.health] || VERDICTS['unreadable'];
+        /**
+         * ‼️ X-275 — A SIGN-IN THAT STILL WORKS AND WILL NOT FOR LONG IS ITS
+         * OWN VERDICT, and the two facts the card could not state.
+         *
+         * `health` is the present tense and nothing else, so this row read
+         * 🟢 ready right up to the hour its grant died and 🟠 the hour after,
+         * with no warning in between. MEASURED 2026-09-14: a Claude refresh
+         * token is issued for ~30 days, so there is a month of notice nobody
+         * was being given.
+         *
+         * It keeps the `ok` colour DELIBERATELY — it does work right now, and
+         * painting it the same amber as an expired one would be exactly the
+         * identical-verdicts fault the note above this list was written about.
+         * The days are the difference, and they are in the badge rather than
+         * the panel because that is the only part a reader sees without
+         * hovering.
+         */
+        const spanOf = (h) => h >= 48 ? Math.round(h / 24) + ' days'
+            : h >= 2 ? h + ' hours' : 'under an hour';
+        const dayOf = (ms) => ms
+            ? new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+            : 'an unstated date';
+        const sg = a.signin || {};
+        /**
+         * ‼️ AND THE HALF THE USER ACTUALLY HIT: renewing the sign-in on this
+         * machine does not reach a slot, because a slot's credential is its
+         * own. That is what keeping accounts apart MEANS — but it was invisible,
+         * so a person signed in, saw the row unchanged, and read it as broken.
+         * Said only where it is the reader's live confusion: this same account,
+         * this row not working.
+         */
+        const liveNote = sg.liveIsSame && (sg.state === 'needs-signin' || sg.state === 'expiring')
+            ? '\n\n‼️ The sign-in on this machine is THIS SAME account — and it does not reach this row. '
+            + 'A slot carries its own credential: signing in through the browser or /login writes the '
+            + 'machine\'s copy and leaves this one exactly as it was. Renew it HERE, with the 🔑 beside '
+            + 'this, which opens the flow pointed at this account\'s own directory.\n\n'
+            + 'Copying the machine\'s credential across is not offered on purpose: a refresh ROTATES the '
+            + 'token, so one grant in two directories is two copies invalidating each other — this row '
+            + 'would work until the machine\'s own install refreshed, then die again saying no more than '
+            + 'it does now.'
+            : '';
+        const base = VERDICTS[a.health] || VERDICTS['unreadable'];
+        const verdict = sg.state === 'expiring' && sg.hoursLeft >= 0
+            ? ['ok', '🟡 ' + spanOf(sg.hoursLeft) + ' left', 'This sign-in works, and stops in ' + spanOf(sg.hoursLeft),
+                'The credential refreshes today and will not after ' + dayOf(sg.refreshExpiresAt) + ': that is the '
+                + 'REFRESH token\'s own expiry, the one clock here that needs a person. The access token beside it '
+                + 'lasts hours and is renewed over HTTP without anybody noticing, which is why an unattended slot '
+                + 'runs for weeks and then stops all at once.\n\nRenew it before then with the 🔑 beside this and '
+                + 'nothing is ever interrupted; leave it and the first thing that notices will be a session opening '
+                + 'as nobody.' + liveNote]
+            : [base[0], base[1], base[2], base[3] + liveNote];
         const onDisk = a.quotaSource === 'session-tail';
         const refresh = a.quotaSource === 'none'
             ? ''

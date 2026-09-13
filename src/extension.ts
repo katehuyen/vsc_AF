@@ -235,7 +235,7 @@ import {
 import {
     AccountFs, AccountIdentity, EngineAccountSlot, EngineAuthAdapter, ENGINE_AUTH_ADAPTERS,
     accountEnv, adapterFor as accountAdapterFor, canIsolateAccounts, describeSlotLayout, duplicateSlots, liveSource,
-    shortUuid, slotDir as accountSlotDir, slotQuotaSource
+    shortUuid, signinOutlook, slotDir as accountSlotDir, slotQuotaSource
 } from './core/engineAccounts';
 import {
     CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, OrphanSlot, accountEnvFor, accountLabelOf,
@@ -17662,7 +17662,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await cfg().update('accounts', portableSlots(list, portableRoots()), vscode.ConfigurationTarget.Global);
         // ‼️ A CAPTURE OR A FORGET IS EXACTLY THE MOMENT THE SNAPSHOT IS WRONG,
         // and it is the moment the user is looking. See `slotIdentityFresh`.
+        // The machine's own sign-in goes with it (X-275): a capture is what
+        // somebody does straight after signing in, so that reading is as fresh
+        // as the slot's.
         identitySeen.clear();
+        liveSeen.clear();
     };
     const writeActiveAccounts = async (map: Record<string, string>): Promise<void> => {
         await cfg().update('activeAccounts', map, vscode.ConfigurationTarget.Global);
@@ -17713,6 +17717,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (had && now - had.at < IDENTITY_TTL_MS) { return had.id; }
         const id = slotIdentity(slot);
         identitySeen.set(slot.id, { at: now, id });
+        return id;
+    };
+    /**
+     * ‼️ X-275 — AND THE SAME HOLD FOR THE MACHINE'S OWN SIGN-IN. Every card
+     * asks whether it is this account; reading it per row would load
+     * `~/.claude.json` once per slot on a surface that repaints under the hand,
+     * which is the exact cost `slotIdentityFresh` above exists to avoid.
+     */
+    const liveSeen = new Map<string, { at: number; id: AccountIdentity }>();
+    const liveIdentityFresh = (engine: string): AccountIdentity => {
+        const now = Date.now();
+        const had = liveSeen.get(engine);
+        if (had && now - had.at < IDENTITY_TTL_MS) { return had.id; }
+        const id = liveIdentity(engine);
+        liveSeen.set(engine, { at: now, id });
         return id;
     };
     /**
@@ -18299,6 +18318,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             accountUuid: uuid, uuidShort: shortUuid(uuid), duplicateOf: twins,
             capturedAt: slot.capturedAt || 0,
             health: id.health,
+            // ‼️ X-275 — HOW LONG THIS SIGN-IN HAS LEFT, and whether the
+            // machine's own sign-in is this same account. `health` answers only
+            // the present tense, so a slot read `ready` until the hour its
+            // refresh token died; and nothing anywhere said that renewing the
+            // machine's sign-in does not reach a slot, which is the thing the
+            // user actually hit. Neither is a new action — both are facts the
+            // card could not state (Principle 1).
+            signin: signinOutlook(id, liveIdentityFresh(slot.engine)),
             active: active[slot.engine] === slot.id,
             percent: u?.percent ?? -1,
             resetsAt: u?.resetsAt ?? 0,
