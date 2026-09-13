@@ -23067,10 +23067,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         /** has the lane been opened — asked here rather than inferred from the
          *  counters, which a suppressed SessionStart leaves at zero */
         started?: boolean;
+        /** ‼️ X-300 — what every payload of this lane is stamped with, kept
+         *  HERE so the lane can be closed after the seat it mirrored is gone */
+        base: { session_id: string; cwd?: string; engine: string };
     }>();
     const mirrorConsoleToLive = (id: string): void => {
         const s = consoleHost.get(id);
-        if (!s) { return; }
+        if (!s) {
+            /**
+             * ‼️ X-300 — A CARD REMOVED WHILE IT WAS LIVE IS AN END, AND THE
+             * LANE HAS TO SAY SO ITSELF. `forget` on a running session closes
+             * it SILENTLY and fires once with the seat already gone (S-29: one
+             * gesture, one repaint), so the status pass below — the one that
+             * would have said SessionEnd — never ran, and the lane stayed open
+             * on the Live Timeline for ever (measured 2026-09-13 on a Codex
+             * lane, whose wire has no SessionEnd of its own to fall back on).
+             */
+            const gone = liveMirror.get(id);
+            if (!gone) { return; }
+            liveMirror.delete(id);
+            const heard = learnWireHeard(gone.base.engine,
+                live.realHookKinds(gone.base.session_id).filter(k => gone.wire.has(k)));
+            const say = (p: Parameters<typeof live.handle>[0]): void => {
+                if (mirrorOwns(p.hook_event_name, heard)) { live.handle(p); }
+            };
+            if (gone.openTool) { say({ ...gone.base, hook_event_name: 'PostToolUse', tool_name: gone.openTool }); }
+            say({ ...gone.base, hook_event_name: 'SessionEnd', reason: 'session closed' });
+            return;
+        }
         const engine = (s.engine ?? '').trim().toLowerCase() || 'claude';
         // Until the engine names the thread there is no id to key a lane on.
         const sid = s.sessionId;
@@ -23080,6 +23104,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!seen) {
             seen = {
                 status: '',
+                base,
                 // ‼️ A LANE OPENS WHERE THE CONVERSATION ALREADY IS. A resume
                 // arrives with its whole transcript in the card — including the
                 // revive after a window reload, which is a resume — and every
@@ -23210,7 +23235,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let sweepTimer: ReturnType<typeof setTimeout> | undefined;
     context.subscriptions.push(consoleHost.onChange(id => {
         const s = consoleHost.get(id);
-        if (!s || (s.status !== 'ended' && s.status !== 'error')) { return; }
+        // A seat that is GONE has ended too: a live card removed from the list
+        // is closed silently and fires once with no state left to read (X-300),
+        // and the handle it held is released all the same.
+        if (s && s.status !== 'ended' && s.status !== 'error') { return; }
         if (sweptAfterEnd.has(id)) { return; }
         sweptAfterEnd.add(id);
         // Debounced: sessions ending together are one sweep, and the delay is

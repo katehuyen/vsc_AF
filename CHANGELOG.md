@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.489.0 - a card removed while it was live closes its own lane (X-300) (2026-09-14)
+
+- **"End & Remove Session" on a running card left its swim lane open on the
+  Live Timeline for ever.** The Console mirror says `SessionEnd` when the seat's
+  status turns `ended` — but removing a LIVE card closes it silently and fires
+  once with the seat already gone (S-29: one gesture, one repaint), so the pass
+  that would have said it never ran. Measured 2026-09-13 on a Codex lane, the
+  engine whose hook file declares no `SessionEnd` of its own, so the mirror was
+  the only thing that could ever have closed it. `console.close forget=true`
+  takes the same path.
+- **The lane now remembers enough to close itself** — the session id, cwd and
+  engine every payload was stamped with — and when the seat it mirrored is
+  gone it closes any open tool span and says `SessionEnd` from that memory,
+  still yielding to a wire that reports the end itself (X-297). A seat that
+  never opened a lane closes nothing: no invented end.
+- The after-end transcript sweep (X-271) sat behind the same early return and
+  treats a vanished seat as ended too.
+- Closing without `forget` was never affected: the ordinary close fires with
+  the seat still there, and the status pass says the end as before.
+
 ## 3.488.0 - a 429 is about a token, until the machine says it twice (X-278) (2026-09-14)
 
 - **One account running out of queries froze the counters of every other
