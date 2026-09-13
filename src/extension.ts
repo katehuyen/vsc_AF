@@ -16076,10 +16076,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const bridgeDir = path.join(context.globalStorageUri.fsPath, 'bridge');
     try { stageBridgeCli(context.extensionPath, context.globalStorageUri.fsPath, extVersion); } catch { /* best effort */ }
-    let bridgeBusy = false;
-    const processBridge = async (): Promise<void> => {
-        if (!taskRunner || bridgeBusy) { return; }
-        bridgeBusy = true;
+    /**
+     * ‼️ X-268 — A REQUEST IS CLAIMED BEFORE IT IS RUN, AND NOTHING WAITS BEHIND
+     * ANOTHER REQUEST'S HANDLER.
+     *
+     * This used to be one serial pass: read a request, `await` its handler,
+     * write the answer, unlink the request, next. Three faults followed from
+     * that shape and were all measured on 2026-09-09. An op that asks a person
+     * (`sessions.end` opens a confirmation dialog — by design) held EVERY
+     * request behind it until the dialog was answered, so unrelated ops from
+     * other agents died at the client's 20 s. The client then said "timed out —
+     * ensure the extension is active", while the runner still had the file in
+     * its listing and ran it AFTER the caller had been told it failed — which is
+     * how one `projects.log` reached the worklog under a "failure", and how one
+     * `console.start` became two conversations once the caller repeated it.
+     *
+     * So now: the scan is synchronous and never awaits. Each request is READ,
+     * then TAKEN OFF THE DISK, then given a `.pending.json` marker (op, when,
+     * which boot), and only then dispatched — without waiting for it. The
+     * marker is what lets the client tell "taken and still running" from
+     * "nobody is listening" (`af.js` reads it at its timeout). The claim is
+     * what makes a request run AT MOST ONCE: a second scan, a second window on
+     * the same storage, or the same file dropped again all find it gone — and
+     * a request whose id this host has already answered is answered again from
+     * memory rather than run again. A marker left by a PREVIOUS boot is a
+     * request the host died under: it is closed on activation with an answer
+     * that says so, never re-run, because a mutation it may have completed
+     * cannot be un-done by running it twice.
+     *
+     * (X-230's boot-loop reasoning is unchanged by this: a handler that restarts
+     * the host still fires the command on a timer after it has returned, and the
+     * cooldown stamp still refuses a second restart — the claim only means the
+     * request is not ALSO on disk for the next activation to obey.)
+     */
+    const bridgeInFlight = new Set<string>();
+    const bridgeAnswered = new Map<string, BridgeOutcome>();
+    const BRIDGE_ANSWERED_KEEP = 200;
+    const bridgePendingFile = (id: string): string => path.join(bridgeDir, `${id}.pending.json`);
+    const rememberBridgeAnswer = (id: string, outcome: BridgeOutcome): void => {
+        bridgeAnswered.set(id, outcome);
+        while (bridgeAnswered.size > BRIDGE_ANSWERED_KEEP) {
+            const oldest = bridgeAnswered.keys().next().value;
+            if (oldest === undefined) { break; }
+            bridgeAnswered.delete(oldest);
+        }
+    };
+    const closeStalePendingRequests = (): void => {
+        let names: string[] = [];
+        try { names = fs.readdirSync(bridgeDir); } catch { return; }
+        for (const name of names) {
+            if (!name.endsWith('.pending.json')) { continue; }
+            const id = name.slice(0, -'.pending.json'.length);
+            if (bridgeInFlight.has(id)) { continue; }
+            const file = path.join(bridgeDir, name);
+            let mark: { op?: string; takenAt?: number; bootId?: string } = {};
+            try { mark = JSON.parse(fs.readFileSync(file, 'utf8')) as typeof mark; } catch { /* unreadable — still stale */ }
+            if (mark.bootId === bootId) { continue; }
+            const outcome: BridgeOutcome = {
+                ok: false,
+                error: `The extension host restarted while "${mark.op ?? '?'}" was running`
+                    + (mark.takenAt ? ` (taken ${new Date(mark.takenAt).toISOString()})` : '')
+                    + '. Whether it completed before the restart is not known — check its effect '
+                    + 'before repeating a mutating op.'
+            };
+            try { fs.writeFileSync(path.join(bridgeDir, `${id}.response.json`), JSON.stringify(outcome, null, 2), 'utf8'); } catch { /* best effort */ }
+            try { fs.unlinkSync(file); } catch { /* gone */ }
+        }
+    };
+    const processBridge = (): void => {
+        if (!taskRunner) { return; }
         try {
             fs.mkdirSync(bridgeDir, { recursive: true });
             for (const name of fs.readdirSync(bridgeDir)) {
@@ -16092,29 +16157,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     continue;
                 }
                 if (!name.endsWith('.request.json')) { continue; }
+                const id = name.slice(0, -'.request.json'.length);
+                if (bridgeInFlight.has(id)) { continue; }
                 const reqFile = path.join(bridgeDir, name);
-                const resFile = path.join(bridgeDir, name.replace(/\.request\.json$/, '.response.json'));
-                let outcome: BridgeOutcome;
-                let opName = '?';
-                try {
-                    const parsed = parseBridgeRequest(fs.readFileSync(reqFile, 'utf8'));
-                    if ('error' in parsed) {
-                        outcome = { ok: false, error: parsed.error };
-                    } else {
-                        opName = parsed.op;
-                        outcome = await bridge.dispatch(parsed.op, parsed.args);
-                    }
-                } catch (e) {
-                    outcome = { ok: false, error: String((e as Error).message).slice(0, 300) };
+                const resFile = path.join(bridgeDir, `${id}.response.json`);
+                const answer = (outcome: BridgeOutcome): void => {
+                    try { fs.writeFileSync(resFile, JSON.stringify(outcome, null, 2), 'utf8'); } catch { /* best-effort */ }
+                };
+                // The same request id, answered before: the answer, not a second run.
+                const known = bridgeAnswered.get(id);
+                if (known) {
+                    answer(known);
+                    try { fs.unlinkSync(reqFile); } catch { /* gone */ }
+                    continue;
                 }
-                try { fs.writeFileSync(resFile, JSON.stringify(outcome, null, 2), 'utf8'); } catch { /* best-effort */ }
-                try { fs.unlinkSync(reqFile); } catch { /* re-processed next pass; dispatch is idempotent-ish, accept */ }
-                void vscode.window.showInformationMessage(
-                    `Agent Farm bridge: ${opName} — ${outcome.ok ? 'ok' : 'error: ' + outcome.error}`);
+                let raw: string;
+                try { raw = fs.readFileSync(reqFile, 'utf8'); } catch { continue; }
+                // ‼️ THE CLAIM. Off the disk before anything runs: a scan that cannot
+                // take the file (another window took it first, or the writer still
+                // holds it) leaves it for the pass that can.
+                try { fs.unlinkSync(reqFile); } catch { continue; }
+                bridgeInFlight.add(id);
+                const parsed = parseBridgeRequest(raw);
+                const opName = 'error' in parsed ? '?' : parsed.op;
+                try {
+                    fs.writeFileSync(bridgePendingFile(id),
+                        JSON.stringify({ op: opName, takenAt: Date.now(), bootId, pid: process.pid }), 'utf8');
+                } catch { /* the marker is a courtesy to the client, never a precondition */ }
+                const finish = (outcome: BridgeOutcome): void => {
+                    rememberBridgeAnswer(id, outcome);
+                    answer(outcome);
+                    try { fs.unlinkSync(bridgePendingFile(id)); } catch { /* gone */ }
+                    bridgeInFlight.delete(id);
+                    void vscode.window.showInformationMessage(
+                        `Agent Farm bridge: ${opName} — ${outcome.ok ? 'ok' : 'error: ' + outcome.error}`);
+                };
+                if ('error' in parsed) { finish({ ok: false, error: parsed.error }); continue; }
+                bridge.dispatch(parsed.op, parsed.args).then(finish, e => {
+                    finish({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) });
+                });
             }
         } catch { /* dir unavailable — try next pass */ }
-        bridgeBusy = false;
     };
+    closeStalePendingRequests();
     try {
         fs.mkdirSync(bridgeDir, { recursive: true });
         const bridgeWatcher = fs.watch(bridgeDir, () => {

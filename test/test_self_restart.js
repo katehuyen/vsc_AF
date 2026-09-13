@@ -4,15 +4,15 @@
 // Two facts this file exists to keep true, both measured rather than assumed:
 //
 // 1. ‼️ THE BRIDGE WRITES ITS RESPONSE *AFTER* THE HANDLER RETURNS
-//    (`extension.ts` → `processBridge`: dispatch, THEN write `.response.json`,
-//    THEN unlink `.request.json`). A handler that restarts the extension host
-//    inside itself therefore dies with the request file still on disk — and the
-//    next activation picks that same request up and restarts again. So the plan
-//    never says "restart now, synchronously": it always carries a delay the
-//    caller can read, and a cooldown stamp survives the death so a request that
-//    somehow outlives one restart is REFUSED rather than obeyed a second time.
-//    The cooldown is unconditional; `force` does not open it, because `force` is
-//    about live sessions and the loop is about the bridge.
+//    (`extension.ts` → `processBridge`: claim the request off the disk, dispatch,
+//    THEN write `.response.json` — X-268). A handler that restarts the extension
+//    host inside itself therefore dies before its answer is written, and its
+//    caller is told nothing. So the plan never says "restart now, synchronously":
+//    it always carries a delay the caller can read, and a cooldown stamp survives
+//    the death so a request that somehow outlives one restart is REFUSED rather
+//    than obeyed a second time. The cooldown is unconditional; `force` does not
+//    open it, because `force` is about live sessions and the loop is about the
+//    bridge.
 //
 // 2. ‼️ A CONSOLE SESSION LIVES IN THE EXTENSION HOST'S MEMORY (`ConsoleHost`'s
 //    map, `cp.spawn` children with piped stdio, not detached). Restarting the

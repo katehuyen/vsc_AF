@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.485.0 - a request is claimed before it runs, and a timeout says which of two things happened (X-268) (2026-09-13)
+
+- **The bridge ran requests one behind the other, awaiting each handler.** An op
+  that asks a person — `sessions.end` opens a confirmation dialog, by design —
+  therefore held EVERY request behind it until the dialog was answered, and
+  unrelated ops from other agents died at the client's 20 s. Measured 2026-09-09.
+- **And the client called that a failure of the extension** ("timed out — ensure
+  VS Code and Agent Farm are active") while the runner still had the file in its
+  listing and ran it AFTER the caller had been told so: one `projects.log`
+  reached the worklog under a "failure", and one `console.start` became two
+  conversations once the caller repeated it.
+- **Now the scan never waits.** Each request is read, TAKEN OFF THE DISK, given
+  a `.pending.json` marker (op, when, which boot) and dispatched without being
+  awaited — so a dialog holds nobody but its own caller, and a request runs at
+  most once: a second scan, a second window on the same storage, or the same
+  file dropped again all find it gone, and an id this host already answered is
+  answered from memory rather than run again.
+- **`af.js` reads the marker at its timeout and says the truth** — `detail.state`
+  is `running` (the extension took the op and is still on it; NOT a failure, do
+  not repeat a mutating op, the answer lands in `detail.response`, kept 24h) or
+  `unclaimed` (nobody is listening; the request was withdrawn, nothing ran).
+- **A marker left by a previous boot** is a request the host died under: it is
+  closed on activation with an answer that says so, never re-run — a mutation
+  it may have completed cannot be undone by running it twice.
+
 ## 3.484.0 - one live process per session id, made true before a resume (X-266) (2026-09-13)
 
 - **A window reload kills the extension host and NOT the `claude -p` under it.**

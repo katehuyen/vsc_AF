@@ -5248,6 +5248,77 @@ const { opencodeStatus, syncToOpencode } =
 
         clearInterval(workerInterval);
 
+        // ---------- ‼️ X-268 — a timeout says WHICH of two things happened ----------
+        //
+        // Measured 2026-09-09: an op waiting on a confirmation dialog held the
+        // whole serial queue; the client gave up at 20 s with "ensure the
+        // extension is active" while the runner still ran the op afterwards —
+        // one `projects.log` reached the worklog under a "failure", one
+        // `console.start` became two conversations once the caller repeated it.
+        {
+            // (1) nobody listening: withdrawn, nothing ran, and it says so
+            const t0 = Date.now();
+            const none = await executeBridgeRequest('test.greet', { name: 'x' }, bridgeDir, 120);
+            ok('‼️ X-268: an unclaimed timeout names the cause and says nothing ran',
+                none.ok === false && /not picked up/.test(none.error) && /nothing ran/i.test(none.error)
+                && none.detail && none.detail.state === 'unclaimed');
+            ok('…and the request is withdrawn from the disk',
+                !fs.readdirSync(bridgeDir).some(f => f.endsWith('.request.json')));
+            ok('…within the timeout given', Date.now() - t0 < 2000);
+        }
+        {
+            // (2) taken and still running: the runner claimed it and left its marker
+            let pendingSeen = '';
+            const claimer = setInterval(() => {
+                for (const f of fs.readdirSync(bridgeDir)) {
+                    if (!f.endsWith('.request.json')) { continue; }
+                    const id = f.slice(0, -'.request.json'.length);
+                    const parsed = parseBridgeRequest(fs.readFileSync(path.join(bridgeDir, f), 'utf8'));
+                    fs.unlinkSync(path.join(bridgeDir, f));
+                    pendingSeen = path.join(bridgeDir, `${id}.pending.json`);
+                    fs.writeFileSync(pendingSeen, JSON.stringify({ op: parsed.op, takenAt: 1789000000000, bootId: 'b1' }), 'utf8');
+                    // …and never answers: a dialog nobody has clicked yet
+                }
+            }, 15);
+            const taken = await executeBridgeRequest('sessions.end', { id: 'cs1' }, bridgeDir, 200);
+            clearInterval(claimer);
+            ok('‼️ X-268: a taken timeout is NOT reported as a failure of the extension',
+                taken.ok === false && /took "sessions\.end"/.test(taken.error)
+                && /NOT a failure/.test(taken.error) && !/Ensure VS Code/.test(taken.error));
+            ok('‼️ …it tells the caller not to repeat a mutating op, and where the answer will land',
+                /Do NOT repeat/.test(taken.error) && taken.detail && taken.detail.state === 'running'
+                && typeof taken.detail.response === 'string' && taken.detail.response.endsWith('.response.json'));
+            ok('…it carries when the runner took it', taken.detail.takenAt === 1789000000000
+                && /2026-09-/.test(taken.error));
+            ok('…and the runner\'s marker is left alone — it is the runner\'s to remove when it finishes',
+                pendingSeen && fs.existsSync(pendingSeen));
+            try { fs.unlinkSync(pendingSeen); } catch { /* ignore */ }
+        }
+        // (3) the runner in extension.ts: claim first, never wait, remember answers
+        {
+            const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+            const at = ext.indexOf('const processBridge = (): void => {');
+            ok('‼️ X-268: the bridge scan is synchronous — nothing behind a handler waits for it', at > 0);
+            const body = ext.slice(at, ext.indexOf('closeStalePendingRequests();', at));
+            ok('…and it really contains no await', !/\bawait\b/.test(body));
+            const claimAt = body.indexOf('try { fs.unlinkSync(reqFile); } catch { continue; }');
+            const markAt = body.indexOf('bridgePendingFile(id)');
+            const dispatchAt = body.indexOf('bridge.dispatch(parsed.op, parsed.args)');
+            ok('‼️ X-268: the request is taken off the disk BEFORE it is dispatched (at most once)',
+                claimAt > 0 && dispatchAt > claimAt);
+            ok('‼️ …and the pending marker is written between the claim and the dispatch',
+                markAt > claimAt && markAt < dispatchAt);
+            ok('…a request in flight is skipped by the next scan', /if \(bridgeInFlight\.has\(id\)\) \{ continue; \}/.test(body));
+            ok('…a request id already answered is answered from memory, never run again',
+                /const known = bridgeAnswered\.get\(id\);[\s\S]{0,200}answer\(known\)/.test(body));
+            ok('…the dispatch is not awaited', /bridge\.dispatch\(parsed\.op, parsed\.args\)\.then\(finish/.test(body));
+            ok('…the marker is removed when the answer is written', /answer\(outcome\);\s*try \{ fs\.unlinkSync\(bridgePendingFile\(id\)\); \}/.test(body));
+            ok('‼️ X-268: a marker from a previous boot is CLOSED with an honest answer on activation, never re-run',
+                /const closeStalePendingRequests = \(\): void => \{[\s\S]*?mark\.bootId === bootId[\s\S]*?restarted while/.test(ext)
+                && /\n    closeStalePendingRequests\(\);/.test(ext));
+            ok('…and the serial busy flag is gone', !/bridgeBusy/.test(ext));
+        }
+
         // Cleanup tmpStorage
         try { fs.rmSync(tmpStorage, { recursive: true, force: true }); } catch { /* ignore */ }
     }

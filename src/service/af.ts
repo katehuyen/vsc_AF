@@ -240,7 +240,12 @@ Arguments:
                         or - for stdin. Use @file.json for nested or long payloads.
 
 Options:
-  -t, --timeout <ms>    Timeout in milliseconds (default: 20000)
+  -t, --timeout <ms>    How long to wait for the answer (default: 20000). A timeout
+                        says one of two things and the reply's detail.state names
+                        it: "running" — the extension TOOK the op and is still on
+                        it (likely a confirmation dialog); it is not a failure, do
+                        not repeat it, its answer lands in detail.response.
+                        "unclaimed" — nobody is listening; nothing ran.
   -b, --bridge-dir <p>  Custom bridge directory path
   -r, --raw             Output compact raw JSON instead of pretty-printed JSON
   -o, --out <file>      Write the response to <file> as UTF-8 (no BOM) and print a
@@ -292,10 +297,23 @@ export async function executeBridgeRequest(
     const reqId = `af_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
     const reqFile = path.join(bridgeDir, `${reqId}.request.json`);
     const resFile = path.join(bridgeDir, `${reqId}.response.json`);
+    /**
+     * ‼️ X-268 — the runner's marker that it TOOK this request and is still on
+     * it. A timeout with the marker present is not a failure and must not be
+     * reported as one: the op is running (very possibly waiting on a person —
+     * a confirmation dialog), it WILL still complete, and repeating a mutating
+     * op on the strength of "timed out" is exactly how one request became two
+     * conversations. A timeout with no marker means nobody picked it up.
+     */
+    const pendingFile = path.join(bridgeDir, `${reqId}.pending.json`);
 
     const cleanup = () => {
         try { if (fs.existsSync(reqFile)) { fs.unlinkSync(reqFile); } } catch { /* ignore */ }
         try { if (fs.existsSync(resFile)) { fs.unlinkSync(resFile); } } catch { /* ignore */ }
+    };
+    const takenMark = (): { op?: string; takenAt?: number } | undefined => {
+        try { return JSON.parse(fs.readFileSync(pendingFile, 'utf8')) as { op?: string; takenAt?: number }; }
+        catch { return undefined; }
     };
 
     // Write request file
@@ -324,10 +342,30 @@ export async function executeBridgeRequest(
 
             if (Date.now() - start > timeoutMs) {
                 clearInterval(interval);
+                const taken = takenMark();
+                if (taken) {
+                    // Nothing is withdrawn: the request is already off the disk and
+                    // running, and its answer will land in `resFile` when it is done.
+                    resolve({
+                        ok: false,
+                        error: `Agent Farm took "${taken.op ?? op}"`
+                            + (taken.takenAt ? ` at ${new Date(taken.takenAt).toISOString()}` : '')
+                            + ` and is still working on it after ${timeoutMs}ms. This is NOT a failure and the `
+                            + 'op will still complete — it is most likely waiting on a person (a confirmation '
+                            + 'dialog in VS Code) or on a long operation. Do NOT repeat a mutating op. Read the '
+                            + `answer from ${resFile} when it appears (it is kept for 24h), or call again with a `
+                            + 'longer --timeout.',
+                        detail: { state: 'running', op: taken.op ?? op, takenAt: taken.takenAt ?? null, response: resFile, pending: pendingFile }
+                    });
+                    return;
+                }
                 cleanup();
                 resolve({
                     ok: false,
-                    error: `Bridge request timed out after ${timeoutMs}ms. Ensure VS Code and Agent Farm extension are active.`
+                    error: `Bridge request was not picked up within ${timeoutMs}ms — no Agent Farm extension is `
+                        + 'listening on this bridge (VS Code closed, the extension not active, or the wrong '
+                        + '--bridge-dir). The request was withdrawn; nothing ran.',
+                    detail: { state: 'unclaimed', op, bridgeDir }
                 });
             }
         }, 50);
