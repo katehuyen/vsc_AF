@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.508.0 - On a narrow panel the composer's WORDS go short, and every box stays a box (U-136) (2026-09-14)
+
+- **‼️ THE BOXES WERE NOT THE PROBLEM — THE RIGHT-HAND GROUP WAS.** Measured on
+  the console fixture at a 900px panel (row 530px): the four live pickers
+  (model · effort · account · permission) were laid out at **ZERO pixels** each,
+  and the row *still* ran **73px past the panel**, which put Send outside it.
+  So crushing the boxes bought nothing: it destroyed the controls and did not
+  stop the overflow. The width was going to `#c-live`, which is `flex:none` and
+  took **309px of 530** on its own — `3 held` + `drop all` + `Send after turn` +
+  `⎋ Interrupt +2`.
+- **The words give way, not the controls.** Each label in that group is now a
+  long form and a short one (`Send after turn` → `⏭`, `drop all` → `⨯`,
+  `⎋ Interrupt +2` → `⎋ +2`, `3 held` → `3⏸`), and the stylesheet picks between
+  them with a **container query on `.composer`** — so a wide window with a
+  narrow composer is still narrow. The long form is the first line of the
+  button's own title, which is the SHORTHAND rule this repo already runs on.
+  Two thresholds, because a held message adds two controls: 780px with them,
+  680px without.
+- **And a floor under every picker.** `.crow .axisw` keeps `min-width:28px` —
+  the width of a closed select's arrow. The reader may lose the *value* at a
+  narrow width, never the *box*: it still opens, and its AFTip reads it out.
+  Nothing is dropped from the row at any width.
+- **Below a 520px composer the row wraps** instead of overflowing: at that width
+  the fixed load alone (agent + engine + show + the right-hand group + Send,
+  none of which shrink) is 382px against a 288px row, so no box is small enough
+  to make it fit. The wrap is fenced *inside* the container query on purpose —
+  turned on for every width it pushed 21 of 46 rows onto a second line at
+  1200px, because a wrapped flex item does not shrink to avoid its own wrap.
+- **The gaps go before any box does**, at 3px under 780px: eleven children are
+  ten gaps, and a gap holds no information.
+- **Measured after, at every width** (console fixture, all 46 rows, 560→1400px):
+  overflow **0 everywhere**, no box below its floor, nothing dropped, and
+  1200/1400px byte-for-byte the row it already was — long labels, one line.
+  Guarded by three new gates in `test_console_identity_width.js` that read the
+  laid-out DOM: no picker crushed, nothing past the panel with Send inside it,
+  and the long/short swap actually happening.
+- **The overlap gate was wrong about its own subject.** It compared a `<button>`
+  with the `<span>` *inside* it and called the containment a 40-80px collision.
+  A control that carries its own wording always encloses what it draws, so the
+  scan now skips pairs where one contains the other.
+
 ## 3.507.0 - The campaign that reopened the same nothing four times now stops (X-307) (2026-09-14)
 
 - **‼️ A ROUND THAT ANSWERS AND LEAVES NOTHING IS NOW A BARREN ROUND.**

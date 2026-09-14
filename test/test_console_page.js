@@ -3103,8 +3103,12 @@ const html = allHtml;
         /af-tiph">Running in the background — Start the dev server on port 5173</.test(strip())
         && /hands its result to the model — in this turn if it is still running, otherwise as a NEW turn/.test(strip()));
     ok('‼️ S-62: the Interrupt button counts what else it will end',
-        /id="c-int"[^>]*title="Stop the running turn AND the 2 background commands it left running/.test(html())
+        /id="c-int"[^>]*title="Interrupt \+2&#10;Stop the running turn AND the 2 background commands it left running/.test(html())
         && />⎋ Interrupt \+2</.test(html()));
+    // U-136 — and the count survives the narrow form: the row can take the
+    // WORD away, never the figure that says how much else is about to stop.
+    ok('‼️ U-136: the short form of Interrupt still carries the +2',
+        /<span class="abbr">⎋ \+2<\/span>/.test(html()));
     // the ✕ is wired ONCE by delegation (the strip repaints on a timer)
     posted.length = 0;
     const click = els['c-working'].listeners.click;
@@ -3133,7 +3137,7 @@ const html = allHtml;
     push(data(CONVO.slice(), { status: 'working', turnStartedAt: 1, backgroundTasks: [] }));
     ok('S-62: with nothing in the background there is no chip and the button is the plain one',
         !/class="wbg"/.test(strip()) && />⎋ Interrupt</.test(html())
-        && /id="c-int"[^>]*title="Stop the running turn — the session/.test(html()));
+        && /id="c-int"[^>]*title="Interrupt&#10;Stop the running turn — the session/.test(html()));
     // …and a task with no lastTurn at all (a revived card) still gets a strip
     push(data(CONVO.slice(), { status: 'idle', lastTurn: null, backgroundTasks: tasks.slice(0, 1) }));
     ok('S-62: a card with no last turn and a task running still draws the strip',

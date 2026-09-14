@@ -910,7 +910,7 @@
            thing the reader is looking for. The spacer gives up its slack first:
            a gap holds no information. (No backticks in this block: the whole
            stylesheet is a template literal, and one would end it.) */
-        .crow .axisw { min-width:0; flex:0 1 auto; display:flex; align-items:center; gap:3px; }
+        .crow .axisw { min-width:28px; flex:0 1 auto; display:flex; align-items:center; gap:3px; }
         /* U-135 — THE SELECT SHARES THE BOX WHEN SOMETHING STANDS BESIDE IT.
            The 100% is a share of the WRAPPER, and it was a demand rather than a
            ceiling: a mark drawn in front of the value (the pending-swap arrow
@@ -977,6 +977,51 @@
            to look for. */
         .crow #c-live, .crow #c-send, .crow button { flex:none; }
         .crow #c-live { display:inline-flex; align-items:center; gap:6px; }
+        /* ‼️ U-136 — A BOX STAYS A BOX, AND THE BUTTONS PAY FOR IT.
+           The right-hand group above never shrinks, and at 900px it alone took
+           309 of the row's 530px (3 held + drop all + Send after turn +
+           Interrupt) - so the four boxes on the left were squeezed to ZERO and
+           the row STILL ran 73px past the panel. Cutting a box does not help:
+           there is no width to give. What gives is the WORDS on the buttons:
+           in a narrow composer each falls to its shortest unambiguous form
+           (SHORTHAND) and the long form is the first line of its title. The
+           .axisw floor is the width of a closed select's arrow: the reader may
+           lose the value, never the box - it opens, and its AFTip reads it.
+           Two thresholds, read off the composer's own width (a container
+           query, so a wide panel with a narrow composer is still narrow):
+           with held messages the long labels need 715px of row, without them
+           597px (615px with a +N on Interrupt); each threshold sits ~65px
+           above its need so the boxes keep ~44px each while the words are
+           still long. Measured on the console fixture, all 46 rows, 640 to
+           1400px, before and after: see test_console_page. */
+        .composer { container-type:inline-size; }
+        #c-live .abbr { display:none; }
+        @container (max-width:780px) {
+            #c-live:has(.qbadge) .lbl { display:none; }
+            #c-live:has(.qbadge) .abbr { display:inline; }
+            /* the gaps go before any box does: eleven children are ten gaps,
+               and a gap holds no information. 30px at this width, which is
+               what an ordinary 900px panel was still over by after the words
+               had already gone short. */
+            .crow { gap:3px; }
+        }
+        @container (max-width:680px) {
+            #c-live .lbl { display:none; }
+            #c-live .abbr { display:inline; }
+        }
+        /* ‼️ U-136 — AND WHEN THE SHORT WORDS ARE NOT ENOUGH, THE ROW SPLITS.
+           Below this the fixed load alone (agent + engine + show + the right
+           group + Send, none of which shrink) is wider than the row, so there
+           is no box small enough to make it fit: at a 288px composer that load
+           is 382px. Wrapping is the only way left that drops nothing — and it
+           is fenced INSIDE the container query on purpose. Turned on for every
+           width it sends a 1200px row onto two lines (measured: 21 of 46 rows
+           grew 29px), because a wrapped flex item does not shrink to avoid the
+           wrap and these bases are 112-146px. */
+        @container (max-width:520px) {
+            .crow { flex-wrap:wrap; }
+            .crow .grow { flex-basis:100%; height:0; }
+        }
         /* HELD back on purpose: not said yet, and still yours to change
            (see queueHtml) */
         .qwait:empty { display:none; }
@@ -2850,11 +2895,16 @@
         // it quietly — widening the queue is the next step, not this one.
         const hasFiles = (st.attach || []).length > 0;
         const holdOff = empty || hasFiles;
-        const hold = `<button class="secondary" id="c-hold"${holdOff ? ' disabled' : ''} title="${hasFiles
+        // U-136 — SHORTHAND: every label here is two spans, the long form and
+        // the short one, and the stylesheet picks by the width of the composer
+        // (see .composer container rules). The long form stays the first line
+        // of the title, so a reader of the short form is one hover from it.
+        const lb = (long, short) => `<span class="lbl">${long}</span><span class="abbr">${short}</span>`;
+        const hold = `<button class="secondary" id="c-hold"${holdOff ? ' disabled' : ''} title="Send after turn&#10;${hasFiles
             ? 'A message with attached files cannot be parked — send it now, or remove the files first.'
             : empty
                 ? 'Nothing to send yet — type the message first. Send after turn parks it above the box, still editable, and hands it over once this turn ends completely.'
-                : 'Park it instead of sending it into this turn: it waits above the box — editable — and goes once the turn ends'}&#10;${SNIP_HINT}">Send after turn</button>`;
+                : 'Park it instead of sending it into this turn: it waits above the box — editable — and goes once the turn ends'}&#10;${SNIP_HINT}">${lb('Send after turn', '⏭')}</button>`;
         // S-62 — the button says what else it ends. A Stop that left processes
         // running behind it is the fault this exists for, so the count is on
         // the button, not in a panel.
@@ -2862,9 +2912,10 @@
         const intTip = bg
             ? `Stop the running turn AND the ${bg} background command${bg === 1 ? '' : 's'} it left running — the session and its context stay. Esc in the message box does the same.`
             : 'Stop the running turn — the session and its context stay. Esc in the message box does the same.';
-        return `${q ? `<span class="qbadge" title="Waiting to be sent — they go once this turn ends">${q} held</span> <button class="secondary" id="c-clearq">drop all</button>` : ''}
+        const more = bg ? ` +${bg}` : '';
+        return `${q ? `<span class="qbadge" title="${q} held — waiting to be sent; they go once this turn ends">${lb(`${q} held`, `${q}⏸`)}</span> <button class="secondary" id="c-clearq" title="Drop all ${q} held — nothing is sent">${lb('drop all', '⨯')}</button>` : ''}
             ${s.status === 'working' ? hold : ''}
-            ${s.status === 'working' ? `<button class="secondary" id="c-int" title="${C.esc(intTip)}">⎋ Interrupt${bg ? ` +${bg}` : ''}</button>` : ''}`;
+            ${s.status === 'working' ? `<button class="secondary" id="c-int" title="Interrupt${more}&#10;${C.esc(intTip)}">${lb(`⎋ Interrupt${more}`, `⎋${more}`)}</button>` : ''}`;
     }
 
     /**

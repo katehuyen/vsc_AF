@@ -171,16 +171,20 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         + "if(!rows.length){return 'no live row on the page';}"
         + "var row=rows[0],host=row.parentElement,out=[];"
         + "[1030,900,760,640].forEach(function(w){host.style.width=w+'px';row.getBoundingClientRect();"
-        + "var leaves=[].slice.call(row.querySelectorAll('*')).filter(function(e){"
+        + "var els=[].slice.call(row.querySelectorAll('*')).filter(function(e){"
         + "if(e.closest('.af-tip')){return false;}"
         + "var r=e.getBoundingClientRect();if(r.width<=0||r.height<=0){return false;}"
         + "var c=e.tagName==='SELECT'||e.tagName==='BUTTON'||e.tagName==='INPUT';"
-        + "if(!c&&(e.children.length||!(e.textContent||'').trim())){return false;}return true;})"
-        + ".map(function(e){var r=e.getBoundingClientRect();"
+        + "if(!c&&(e.children.length||!(e.textContent||'').trim())){return false;}return true;});"
+        + "var leaves=els.map(function(e){var r=e.getBoundingClientRect();"
         + "return {who:e.tagName.toLowerCase()+(e.id?('#'+e.id):('.'+String(e.className||'').split(' ')[0])),"
         + "x1:Math.round(r.left),x2:Math.round(r.right),y:Math.round(r.top),"
         + "txt:(e.textContent||'').trim().slice(0,16)};});"
         + "var hits=[];for(var i=0;i<leaves.length;i++){for(var j=i+1;j<leaves.length;j++){"
+        // a button and the label INSIDE it are not neighbours: a control that
+        // carries its own long/short wording (U-136) always encloses the span
+        // it is drawing, and every such pair read as a 40-80px collision.
+        + "if(els[i].contains(els[j])||els[j].contains(els[i])){continue;}"
         + "var a=leaves[i],b=leaves[j];if(Math.abs(a.y-b.y)>14){continue;}"
         + "var ov=Math.min(a.x2,b.x2)-Math.max(a.x1,b.x1);"
         + "if(ov>1){hits.push(w+'px: '+a.who+' \"'+a.txt+'\" over '+b.who+' \"'+b.txt+'\" by '+ov+'px');}}}"
@@ -194,6 +198,56 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     ok('‼️ NOTHING ON THE COMPOSER ROW IS PAINTED OVER ITS NEIGHBOUR'
         + (stacked.length ? '\n      ' + stacked.map(r => r.hits.join('\n      ')).join('\n      ') : ''),
         Array.isArray(over) && stacked.length === 0);
+
+    // ‼️ U-136 — AND NO BOX IS CRUSHED TO NOTHING, AND NOTHING RUNS OFF THE END.
+    // The two failures are one measurement apart and were shipped together: at
+    // a 900px panel the four live pickers were laid out at ZERO pixels AND the
+    // row still ran 73px past the panel, which put Send outside it. The fix is
+    // that the right-hand group's WORDS go short (SHORTHAND) instead of the
+    // boxes going away, so this reads both numbers at once: a floor under every
+    // picker, and no overflow at any width. The host here IS the .composer, so
+    // the container queries answer these widths directly.
+    const FIT = "(function(){var rows=[].slice.call(document.querySelectorAll('.crow'))"
+        + ".filter(function(r){return r.querySelector('.fixw');});"
+        + "if(!rows.length){return 'no live row on the page';}"
+        + "var row=rows[0],host=row.parentElement,out=[];"
+        + "[1030,900,760,640].forEach(function(w){host.style.width=w+'px';row.getBoundingClientRect();"
+        + "var ax=[].slice.call(row.querySelectorAll('.axisw')).map(function(a){"
+        + "return Math.round(a.getBoundingClientRect().width);});"
+        + "var send=row.querySelector('#c-send'),rr=row.getBoundingClientRect();"
+        + "out.push({at:w,over:Math.max(0,row.scrollWidth-row.clientWidth),"
+        + "boxes:ax.length,minBox:ax.length?Math.min.apply(null,ax):-1,"
+        + "sendIn:send?(Math.round(send.getBoundingClientRect().right)<=Math.round(rr.right)+1):null});});"
+        + "host.style.width='';return out;})()";
+    let fit;
+    try { fit = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', FIT])); }
+    catch { fit = null; }
+    const shown = (fit || []).map(r => r.at + 'px over' + r.over + ' minBox' + r.minBox
+        + ' boxes' + r.boxes + (r.sendIn ? '' : ' SEND-OUTSIDE')).join(' · ');
+    ok('the composer row was laid out at four widths for the fit gate', Array.isArray(fit) && fit.length === 4);
+    ok('‼️ U-136: NO PICKER IS CRUSHED TO NOTHING — every box keeps at least its arrow (' + shown + ')',
+        Array.isArray(fit) && fit.every(r => r.boxes > 0 && r.minBox >= 20));
+    ok('‼️ U-136: THE ROW NEVER RUNS PAST THE PANEL, SO SEND STAYS INSIDE IT (' + shown + ')',
+        Array.isArray(fit) && fit.every(r => r.over === 0 && r.sendIn !== false));
+    // …and the words are what gave way: the long labels are drawn wide and gone
+    // narrow, which is the whole mechanism the two gates above depend on.
+    const WORDS = "(function(){var row=[].slice.call(document.querySelectorAll('.crow'))"
+        + ".filter(function(r){return r.querySelector('#c-live .lbl');})[0];"
+        + "if(!row){return 'no live group on the page';}var host=row.parentElement,out={};"
+        + "[1030,640].forEach(function(w){host.style.width=w+'px';row.getBoundingClientRect();"
+        + "out[w]={long:[].slice.call(row.querySelectorAll('#c-live .lbl')).filter(function(e){"
+        + "return getComputedStyle(e).display!=='none';}).length,"
+        + "short:[].slice.call(row.querySelectorAll('#c-live .abbr')).filter(function(e){"
+        + "return getComputedStyle(e).display!=='none';}).length};});"
+        + "host.style.width='';return out;})()";
+    let words;
+    try { words = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', WORDS])); }
+    catch { words = null; }
+    ok('‼️ U-136: THE WORDS GO SHORT, NOT THE BOXES — long form wide, short form narrow ('
+        + JSON.stringify(words) + ')',
+        !!words && words['1030'] && words['640']
+        && words['1030'].long > 0 && words['1030'].short === 0
+        && words['640'].short > 0 && words['640'].long === 0);
     // …and the reason it does not: the identity is the one thing on the row
     // that cannot be chosen, so it is the one thing that does not shrink.
     const FIXED = "(function(){var f=document.querySelector('.crow .fixw');"
