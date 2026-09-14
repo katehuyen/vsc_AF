@@ -1,4 +1,5 @@
 import { SessionDiagnosis } from './sessionDiagnosis';
+import { isLimitFailure } from './retry';
 import type { PolicyVerdict } from './sentryPolicy';
 import type { ModelAssist } from './sentryPrompt';
 
@@ -425,7 +426,14 @@ export function leaderAllowed(
  * is how a failure streak never trips.
  */
 export function recordLeaderTurn(
-    state: LeaderBudgetState | undefined, assist: ModelAssist, today: string, keep = LEADER_LOG_KEEP
+    state: LeaderBudgetState | undefined, assist: ModelAssist, today: string, keep = LEADER_LOG_KEEP,
+    /**
+     * ‼️ X-302 — a turn the ACCOUNT walled is not a broken setup: the money it
+     * spent is counted (it was spent), the turn is logged (it happened), and the
+     * streak is left alone — three walls in a night must not drop a campaign to
+     * mechanical when the very next account may have room.
+     */
+    walled = false
 ): LeaderBudgetState {
     const fresh = !state || state.day !== today;
     const log = [...(state?.log ?? []), assist];
@@ -435,7 +443,7 @@ export function recordLeaderTurn(
         turns: (fresh ? 0 : num(state?.turns)) + 1,
         // ‼️ The streak crosses midnight. A broken setup is broken tomorrow too;
         // only the MONEY is a daily thing.
-        failStreak: assist?.ok ? 0 : num(state?.failStreak) + 1,
+        failStreak: assist?.ok ? 0 : walled ? num(state?.failStreak) : num(state?.failStreak) + 1,
         ...(fresh ? {} : (state?.announced ? { announced: true } : {})),
         log: log.slice(Math.max(0, log.length - Math.max(1, keep)))
     };
@@ -457,8 +465,19 @@ export type LeaderRunner = (o: {
 }) => Promise<{ text: string; costUsd?: number; error?: string }>;
 
 export interface LeaderOutcome {
-    /** 'leader' = its words open the next round · 'mechanical' = the template does */
-    path: 'leader' | 'mechanical';
+    /**
+     * 'leader' = its words open the next round · 'mechanical' = the template does
+     * · 'held' = NO round opens: the turn is waited for and run again from the
+     * start once a pool account has room (X-302).
+     */
+    path: 'leader' | 'mechanical' | 'held';
+    /**
+     * ‼️ X-302 — WHICH SLOT WALLED THE TURN. Set on `path:'held'` when the turn
+     * was started and the engine answered with a usage limit mid-turn: that
+     * turn is NOT leadership — nothing it wrote is used — and the slot is to be
+     * treated as walled whatever its cached figure says.
+     */
+    walled?: { slotId: string; text: string };
     decision?: LeaderDecision;
     assist?: ModelAssist;
     /** one sentence for the round's row and for Notices */
@@ -532,6 +551,30 @@ export async function runLeaderTurn(
         model, account, ms: Math.max(0, o.now() - t0), costUsd, at: o.now(), ok: okTurn,
         ...(note ? { note } : {})
     });
+
+    /**
+     * ‼️ X-302 — THE TRAP: A TURN THAT STARTED WITH ROOM AND HIT THE WALL
+     * MID-WAY IS NOT LEADERSHIP. An account at 95% opens the turn and the
+     * engine answers "you've hit your limit" a few thousand tokens in. Before
+     * this that was one more failed turn on the mechanical path — the round
+     * opened on a template, the streak grew, and the campaign carried on as if
+     * the leader had been consulted. The user's rule: a leader turn counts only
+     * when it runs to the end and hands over its answer; otherwise the slot is
+     * walled and the turn is run AGAIN, from the start, on a clean account —
+     * which is the caller's move (`path:'held'` + `walled`), because the pool
+     * is the caller's. Judged on the engine's own words (`isLimitFailure`), the
+     * same reader the task board retries on.
+     */
+    if (isLimitFailure(`${text}\n${error}`)) {
+        const a = assist(false, `walled mid-turn on ${account || 'the main sign-in'}`);
+        return {
+            path: 'held', assist: a, announce: false,
+            walled: { slotId: account, text: (text || error).trim().slice(0, 300) },
+            why: `the leader turn hit ${account || 'the main sign-in'}'s usage limit before it `
+                + 'finished — nothing it wrote counts; it runs again from the start on an account with room',
+            budget: recordLeaderTurn(budget, a, o.today, LEADER_LOG_KEEP, true)
+        };
+    }
 
     if (error) {
         const a = assist(false, error);

@@ -102,6 +102,24 @@ export interface SentryRecord extends SentryCampaign {
     lastFacts?: PolicyFacts;
     /** the leash on the leader, where this campaign overrides the settings */
     leaderCaps?: Partial<LeaderCaps>;
+    /**
+     * ‼️ X-302 — A LEADER TURN THAT IS WAITING FOR THE POOL. The round that
+     * woke the leader is remembered by its task id so that, when the pool has
+     * room again, the tick re-measures THAT round and runs the leader turn from
+     * the start — instead of waking with no finished task, judging nothing, and
+     * opening the round on a template the leader never saw. Cleared the moment
+     * a leader turn completes (either way) or the campaign is stopped.
+     */
+    leaderHold?: {
+        taskId: string;
+        since: number;
+        /** the slot being waited for ('' = none measured) and when it resets */
+        slotId: string;
+        resetsAt: number;
+        why: string;
+        /** slots that walled a turn mid-way this round — not picked again before their reset */
+        walled?: string[];
+    };
     /** why it stopped, when it was not simply switched off */
     stoppedWhy?: string;
     /**
@@ -429,6 +447,8 @@ export function stopSentry(rec: SentryRecord, now: number): SentryRecord {
     rec.stoppedAt = now;
     delete rec.wakeAt;
     delete rec.pausedAt;
+    // X-302 — a stopped campaign is not waiting for anything.
+    delete rec.leaderHold;
     return rec;
 }
 

@@ -66,7 +66,7 @@ export interface RoundWhyInput {
      */
     verdict?: PolicyVerdict;
     /** absent = no leader turn was taken at all */
-    leader?: { path: 'mechanical' | 'leader'; assist?: ModelAssist; why: string; announce: boolean };
+    leader?: { path: 'mechanical' | 'leader' | 'held'; assist?: ModelAssist; why: string; announce: boolean };
     /** the words the round was actually opened on */
     prompt: string;
     outcome?: string;
@@ -80,7 +80,8 @@ export interface RoundWhyInput {
 export function roundWhy(i: RoundWhyInput): RoundWhy {
     const first = String(i.prompt ?? '').split('\n').map(s => s.trim()).find(s => s.length) ?? '';
     return {
-        path: i.leader ? i.leader.path : 'mechanical',
+        // X-302 — a HELD leader opens no round; one that reaches here was opened by the template.
+        path: i.leader && i.leader.path !== 'held' ? i.leader.path : 'mechanical',
         fired: i.verdict?.fired ?? [],
         problems: i.verdict?.problems ?? [],
         ...(i.outcome ? { outcome: i.outcome } : {}),

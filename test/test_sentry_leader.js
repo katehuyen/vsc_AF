@@ -365,6 +365,47 @@ const clock = { today: TODAY, now: () => NOW };
             run.calls[0].model === DEFAULT_LEADER_CAPS.model);
     }
 
+    // ================================================== X-302 — THE TRAP ====
+    // An account at 95% opens the turn and the engine answers with its limit
+    // sentence a few thousand tokens in. That turn is NOT leadership.
+    {
+        const wall = { text: "You've hit your session limit · resets 3pm", costUsd: 0.004, error: 'the engine reported an error (error_during_execution)' };
+        const run = runner(wall);
+        const r = await runLeaderTurn(BRIEF, { ...CAPS, account: 'claude-b' }, run, clock);
+        ok('‼️ A TURN THE ACCOUNT WALLED MID-WAY IS HELD, NOT MECHANICAL — nothing it wrote opens a round',
+            r.path === 'held' && !r.decision);
+        ok('...and it names the slot that walled it, so the caller can ask the pool WITHOUT it',
+            r.walled && r.walled.slotId === 'claude-b' && /limit/i.test(r.walled.text));
+        ok('...the money it spent is counted — it was spent',
+            Math.abs(r.budget.spentUsd - 0.004) < 1e-9 && r.budget.turns === 1);
+        ok('...but the streak is left alone: a wall is not a broken setup',
+            (r.budget.failStreak || 0) === 0 && r.assist.ok === false && r.assist.account === 'claude-b');
+        ok('...and the sentence says it runs AGAIN from the start', /again|from the start/i.test(r.why));
+    }
+    {
+        // The wall may arrive as prose on stdout with no envelope error at all.
+        const run = runner({ text: "Claude AI usage limit reached|1789000000", costUsd: 0 });
+        const r = await runLeaderTurn(BRIEF, { ...CAPS, account: 'claude-c' }, run, clock);
+        ok('a bare limit sentence with no error flag is still a wall', r.path === 'held' && r.walled.slotId === 'claude-c');
+    }
+    {
+        // Three walls in a night must not drop the campaign to mechanical.
+        const run = runner({ text: "You've hit your session limit", costUsd: 0.001, error: 'x' });
+        let budget;
+        for (let i = 0; i < 3; i++) {
+            const r = await runLeaderTurn({ ...BRIEF, ...(budget ? { budget } : {}) }, { ...CAPS, account: 'claude-b' }, run, clock);
+            budget = r.budget;
+        }
+        ok('three walls leave the leader ALLOWED — the very next account may have room',
+            leaderAllowed(budget, CAPS, TODAY).allowed && (budget.failStreak || 0) === 0 && budget.turns === 3);
+    }
+    {
+        // An ordinary failure is still an ordinary failure.
+        const run = runner({ text: '', error: 'timed out' });
+        const r = await runLeaderTurn(BRIEF, { ...CAPS, account: 'claude-b' }, run, clock);
+        ok('a timeout is not a wall', r.path === 'mechanical' && !r.walled && r.budget.failStreak === 1);
+    }
+
     console.log(`test_sentry_leader: ${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

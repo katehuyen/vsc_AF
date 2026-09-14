@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.499.0 - the leader turn spends the pool or waits for it, and a half turn is never leadership (X-302) (2026-09-14)
+
+- **The sentry's leader turn never leaves the pool.** When every account the
+  campaign was given is at or past its ceiling, the turn used to resolve to
+  `''` — and on the spawn seam `''` means no variable, and no variable means
+  the machine's own sign-in: the exact plan the pool was drawn to protect.
+  `leaderAccountFor` (the same `campaignPick` the round makes) now answers
+  either an account or a HOLD, and a hold is what it says: the campaign
+  sleeps to the earliest five-hour reset INSIDE the pool and runs the leader
+  turn there. A named leader account with no room is waited for the same way,
+  never swapped.
+- **A held turn is taken up again, not forgotten.** The poll that fires after
+  the sleep carries no finished task, and a tick with none judges nothing and
+  opens the round on a template the leader never saw. The round that woke the
+  leader is remembered on the record (`leaderHold`) and re-measured from its
+  own transcript when the pool has room; until then no round opens at all.
+- **‼️ The trap: an account at 95% opens the turn and hits its limit a few
+  thousand tokens in.** That was one more failed turn on the mechanical path —
+  the round opened on a template, the streak grew, and the night went on as if
+  the leader had been consulted. Judged now on the engine's own limit sentence
+  (`isLimitFailure`, the reader the task board already retries on): the turn is
+  `held`, nothing it wrote counts, the slot's figure is re-read (the cached
+  percentage is the one that lied) and the pool is asked once more WITHOUT it —
+  room elsewhere is a clean turn now, none is the hold above. The money is
+  counted (it was spent); the streak is not (a wall is not a broken setup).
+- A stopped campaign drops its hold. Everything above is pure and measured in
+  `test_sentry_run` and `test_sentry_leader`; the runtime seam is `sentryTick`.
+
 ## 3.498.0 - the terminal's command history is the fleet's, not the account's (X-277) (2026-09-14)
 
 - **Not one Claude slot on this machine had a `history.jsonl` at all.** Every

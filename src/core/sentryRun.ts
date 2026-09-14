@@ -1,5 +1,5 @@
 import { AutomationState, gateBlock } from './automation';
-import { nextResetAt, pickAccount, SlotUsage } from './accountUsage';
+import { nextResetAt, pickAccount, slotIsUsable, SlotUsage } from './accountUsage';
 import { RETRY_DEFAULT_SAFETY_MIN } from './retry';
 
 /**
@@ -129,6 +129,88 @@ export function campaignPick(
         ...(c.rotation ? { rotation: c.rotation } : {}),
         ...(c.engine ? { engine: c.engine } : {})
     });
+}
+
+/**
+ * ‼️ X-302 — WHERE A LEADER TURN IS HELD instead of run: the pool has no room
+ * (or the account the campaign named for it has none), so the turn waits for
+ * `resetsAt` — the earliest five-hour reset inside the pool — and runs there.
+ * `resetsAt` is 0 when nobody measured a reset to wait for.
+ */
+export interface LeaderHold {
+    /** the slot being waited for; '' when no reset is measured */
+    slotId: string;
+    resetsAt: number;
+    why: string;
+}
+
+/**
+ * ‼️ X-302 — THE ACCOUNT A LEADER TURN SPENDS, OR THE REASON IT MAY NOT RUN YET.
+ *
+ * The user's rule, in full: when every account of the sentry's pool is walled,
+ * the leader turn NEVER falls to the sign-in outside the pool — it waits for the
+ * pool account whose five-hour window resets first, and runs on that one the
+ * moment it opens. Before this the runner got `''` for "the pool gave nothing",
+ * and `''` on the spawn seam means no variable, and no variable means the
+ * machine's main sign-in: the exact plan the pool was drawn to protect.
+ *
+ * Three answers, in order:
+ *   · the campaign NAMED a leader account — it is used while it has room, and
+ *     waited for (its own reset) when it has none; never swapped for another;
+ *   · no pool is captured at all (`usage` empty) — `''`, the main sign-in, which
+ *     is what the ROUND does too (`planSentry` → `main-account`): there is no
+ *     pool to stay inside of;
+ *   · the pool decides — `campaignPick`, the same call the round makes; nothing
+ *     picked is a hold on `nextResetAt`, never a fall-through.
+ *
+ * `except` names slots that must not be picked this time — a slot that WALLED
+ * mid-turn a moment ago, whose cached figure still says it has room. Pure:
+ * no disk, no clock of its own.
+ */
+export function leaderAccountFor(
+    c: { rotation?: string; engine?: string },
+    caps: { account: string },
+    usage: SlotUsage[], ceiling: number, now: number, except: string[] = []
+): { account: string } | { hold: LeaderHold } {
+    const named = String(caps.account ?? '').trim();
+    if (named) {
+        const u = usage.find(x => x.slotId === named);
+        // A named account the pool does not measure is the caller's own choice,
+        // exactly as before — the spawn seam refuses it by name if it is gone.
+        if (!u || (slotIsUsable(u, ceiling) && !except.includes(named))) { return { account: named }; }
+        const resetsAt = u.state === 'ok' && u.resetsAt > now ? u.resetsAt : 0;
+        return {
+            hold: {
+                slotId: named, resetsAt,
+                why: `the leader account ${named} is at ${u.percent}% of its five-hour window — `
+                    + (resetsAt
+                        ? `the leader turn waits for it to reset at ${new Date(resetsAt).toLocaleTimeString()} `
+                            + 'rather than spending another account'
+                        : 'and no reset is measured for it, so the leader turn cannot be scheduled')
+            }
+        };
+    }
+    if (!usage.length) { return { account: '' }; }
+    const pool = except.length ? usage.filter(u => !except.includes(u.slotId)) : usage;
+    const pick = pool.length ? campaignPick(c, pool, ceiling) : undefined;
+    if (pick) { return { account: pick.slotId }; }
+    // ‼️ THE WALL IS THE POOL'S, NOT THE MACHINE'S. Everything in the pool is
+    // at or past the ceiling: wait for the first one back, spend nothing.
+    const walled = usage.map(u => except.includes(u.slotId) ? { ...u, percent: Math.max(u.percent, ceiling) } : u);
+    const resetsAt = nextResetAt(walled, ceiling, now);
+    const first = resetsAt ? walled.find(u => u.state === 'ok' && u.resetsAt === resetsAt) : undefined;
+    return {
+        hold: {
+            slotId: first?.slotId ?? '', resetsAt,
+            why: `every account in the pool is at or above ${ceiling}% of its five-hour window — `
+                + (resetsAt
+                    ? `the leader turn waits for ${first?.slotId ?? 'the first one back'} to reset at `
+                        + `${new Date(resetsAt).toLocaleTimeString()} and runs there; it never spends a `
+                        + 'sign-in outside the pool'
+                    : 'and none has a measured reset to wait for — they need signing in again; the '
+                        + 'leader turn never spends a sign-in outside the pool')
+        }
+    };
 }
 
 /** The one decision the campaign makes, over and over. */

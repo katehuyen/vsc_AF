@@ -253,5 +253,60 @@ const plan = (over) => planSentry(Object.assign({
         allWalled.wakeAt === soon);
 }
 
+// ---- X-302 — the leader turn spends the pool, or waits for it -------------
+// The user's rule: when every pool account is walled, the leader turn NEVER
+// falls to the sign-in outside the pool. It waits for the pool account whose
+// window resets first and runs there. '' from this seam means "the machine's
+// sign-in", which is exactly the plan the pool exists to protect.
+{
+    const { leaderAccountFor } = require(path.join(OUT, 'sentryRun.js'));
+    const C = SENTRY_DEFAULT_CEILING;
+    const room = [slot('a', { percent: 40 }), slot('b', { percent: 70 })];
+    const r1 = leaderAccountFor({}, { account: '' }, room, C, NOW);
+    ok('with room in the pool the leader runs on the pool\'s own pick',
+        'account' in r1 && r1.account === 'a');
+
+    const walled = [
+        slot('a', { percent: 100, resetsAt: NOW + 50 * MIN }),
+        slot('b', { percent: 97, resetsAt: NOW + 20 * MIN })
+    ];
+    const r2 = leaderAccountFor({}, { account: '' }, walled, C, NOW);
+    ok('‼️ EVERY ACCOUNT WALLED IS A HOLD, NEVER \'\' — the leader does not spend a sign-in outside the pool',
+        'hold' in r2);
+    ok('...and it waits for the account whose window resets FIRST',
+        'hold' in r2 && r2.hold.slotId === 'b' && r2.hold.resetsAt === NOW + 20 * MIN);
+    ok('...and the sentence says so, for the record and the card',
+        'hold' in r2 && /never spends a sign-in outside the pool/.test(r2.hold.why));
+
+    const r3 = leaderAccountFor({}, { account: '' }, [slot('a', { percent: 100, resetsAt: 0 })], C, NOW);
+    ok('no measured reset is a hold with resetsAt 0, not a fall-through',
+        'hold' in r3 && r3.hold.resetsAt === 0 && r3.hold.slotId === '');
+
+    // A slot that WALLED a turn mid-way a moment ago is not asked again before
+    // its reset, whatever its cached figure says.
+    const r4 = leaderAccountFor({}, { account: '' }, room, C, NOW, ['a']);
+    ok('a slot that just walled the turn is passed over for the next one with room',
+        'account' in r4 && r4.account === 'b');
+    const r5 = leaderAccountFor({}, { account: '' }, [slot('a', { percent: 40, resetsAt: NOW + 30 * MIN })], C, NOW, ['a']);
+    ok('...and a pool of one walled slot is a HOLD on that slot\'s own reset, not the machine\'s sign-in',
+        'hold' in r5 && r5.hold.slotId === 'a' && r5.hold.resetsAt === NOW + 30 * MIN);
+
+    // No pool captured at all: the round runs on the main sign-in (planSentry's
+    // `main-account`), so the leader does too — there is no pool to stay inside.
+    const r6 = leaderAccountFor({}, { account: '' }, [], C, NOW);
+    ok('no captured pool at all is the one honest \'\' — the same answer the round gives',
+        'account' in r6 && r6.account === '');
+
+    // A NAMED leader account is used while it has room and waited for when not.
+    const r7 = leaderAccountFor({}, { account: 'b' }, room, C, NOW);
+    ok('a named leader account is honoured', 'account' in r7 && r7.account === 'b');
+    const r8 = leaderAccountFor({}, { account: 'b' }, walled, C, NOW);
+    ok('...and a named account with no room is WAITED FOR, never swapped for another',
+        'hold' in r8 && r8.hold.slotId === 'b' && r8.hold.resetsAt === NOW + 20 * MIN);
+    const r9 = leaderAccountFor({ engine: 'claude' }, { account: '' }, walled, C, NOW);
+    ok('the campaign\'s shape (engine, rotation) travels into the same pick the round makes',
+        'hold' in r9);
+}
+
 console.log(`test_sentry_run: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -149,7 +149,7 @@ import {
     presetConditions as sentryPresetConditions
 } from './core/sentryPolicy';
 import { roundWhy, whyShorthand } from './core/sentryWhy';
-import { SENTRY_DEFAULT_CEILING, campaignPick } from './core/sentryRun';
+import { SENTRY_DEFAULT_CEILING, leaderAccountFor } from './core/sentryRun';
 import { measureSession } from './core/sentryMeasure';
 import { QualityStore, sampleQuality } from './core/quality';
 import {
@@ -27267,7 +27267,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * asked and would quietly spend an account outside its own pool.
              *
              * Empty therefore means "nobody named one HERE", and the caller
-             * resolves it against the campaign's pool (`campaignPick`).
+             * resolves it against the campaign's pool (`leaderAccountFor`, X-302:
+             * a pool with no room HOLDS the turn — it never falls outside the pool).
              */
             account: String(rec.leaderCaps?.account ?? '').trim()
         };
@@ -27283,6 +27284,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!rec || rec.status === 'stopped') { return; }
 
         // ---- where the work comes from ------------------------------------
+        /**
+         * ‼️ X-302 — A HELD LEADER TURN IS TAKEN UP AGAIN, NOT FORGOTTEN. The
+         * poll that fires after the sleep carries no finished task, and a tick
+         * with none judges nothing and opens the round on a template — so the
+         * round that woke the leader is remembered on the record and re-measured
+         * here, from its own transcript, exactly as it was the first time. A
+         * task that has since left the board ends the hold rather than the tick.
+         */
+        if (!finishedTask && rec.leaderHold) {
+            const held = taskManager.tasks.find(t => t.id === rec.leaderHold?.taskId);
+            if (held) { finishedTask = held; }
+            else { delete rec.leaderHold; }
+        }
         let doc: { project: Project; folder: string; text: string };
         try {
             const d = backlogDoc(rec.project);
@@ -27496,7 +27510,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // diff` on every repo of every routine round is a cost the
                 // mechanical preset was promised it would not pay.
                 const diffStat = verdict.verdict === 'leader' ? diffStatOf(doc.project.repos ?? []) : '';
-                leader = await runLeaderTurn({
+                const brief = {
                     diagnosis, verdict,
                     ...(next ? { next } : {}),
                     ...(search?.hit ? { handover: { path: search.hit.path ?? search.hit.file, head: headOf(search.hit.path) } } : {}),
@@ -27520,38 +27534,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         } : {};
                     })(),
                     ...(rec.leader ? { budget: rec.leader } : {})
-                }, (() => {
-                    /**
-                     * ‼️ X-249 — AN UNNAMED LEADER ACCOUNT IS THE POOL'S OWN ANSWER,
-                     * not the machine's sign-in.
-                     *
-                     * The leader is the turn that decides what the next round says and
-                     * where it runs, so charging it to the account that round would
-                     * open on keeps the burn INSIDE the pool the user allowed — where
-                     * `pickAccount` can see it, where the ceiling applies, and where
-                     * the reader looking at the account cards can find it. Before
-                     * this it went to whatever `~/.claude` held, which no surface in
-                     * the farm was even watching.
-                     *
-                     * `campaignPick` is not a second decision: it is the same call
-                     * `planSentry` makes, in the one place that turns a campaign into
-                     * that function's options.
-                     */
-                    const caps = leaderCapsFor(rec);
-                    if (caps.account) { return caps; }
-                    const ceiling = typeof rec.ceiling === 'number' ? rec.ceiling : SENTRY_DEFAULT_CEILING;
-                    return {
-                        ...caps,
-                        account: campaignPick(
-                            {
-                                ...(rec.rotation ? { rotation: String(rec.rotation) } : {}),
-                                ...(rec.engine ? { engine: String(rec.engine) } : {})
-                            }, usage, ceiling)?.slotId ?? ''
-                    };
-                })(), sentryLeaderRunner((doc.project.repos ?? [])[0] || os.homedir()),
-                { today: resolvePathVars('${today}').value, now: () => Date.now() });
-                rec.leader = leader.budget;
-                if (verdict.problems.length) {
+                };
+                /**
+                 * ‼️ X-302 — THE LEADER TURN SPENDS THE POOL, OR WAITS FOR IT.
+                 *
+                 * The account is resolved by `leaderAccountFor` — the same
+                 * `campaignPick` the round makes, in the one place that turns a
+                 * campaign into that call's options — and when the pool has no
+                 * room the turn is HELD on the record (`rec.leaderHold`): the
+                 * tick sleeps to the earliest reset inside the pool and takes this
+                 * same round up again there. It never falls to the sign-in outside
+                 * the pool, which is what `?? ''` on this seam used to do.
+                 *
+                 * ‼️ AND A TURN THE ACCOUNT WALLED MID-WAY IS RUN AGAIN FROM THE
+                 * START. `runLeaderTurn` answers `held` + `walled` on the engine's
+                 * own limit sentence; that slot's figure is re-read (its cached
+                 * percentage is the one that lied) and the pool is asked once more
+                 * WITHOUT it. Room elsewhere means a clean turn now; none means the
+                 * hold above. One retry per tick: a second wall is a pool that is
+                 * spent, not a loop.
+                 */
+                const runner = sentryLeaderRunner((doc.project.repos ?? [])[0] || os.homedir());
+                const clock = { today: resolvePathVars('${today}').value, now: () => Date.now() };
+                const caps = leaderCapsFor(rec);
+                const ceiling = typeof rec.ceiling === 'number' ? rec.ceiling : SENTRY_DEFAULT_CEILING;
+                const shape = {
+                    ...(rec.rotation ? { rotation: String(rec.rotation) } : {}),
+                    ...(rec.engine ? { engine: String(rec.engine) } : {})
+                };
+                const walledNow: string[] = [...(rec.leaderHold?.walled ?? [])];
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    const seat = leaderAccountFor(shape, caps, usage, ceiling, Date.now(), walledNow);
+                    if ('hold' in seat) {
+                        rec.leaderHold = {
+                            taskId: finishedTask.id, since: rec.leaderHold?.since ?? Date.now(),
+                            slotId: seat.hold.slotId, resetsAt: seat.hold.resetsAt, why: seat.hold.why,
+                            ...(walledNow.length ? { walled: walledNow } : {})
+                        };
+                        leader = { path: 'held', why: seat.hold.why, budget: rec.leader ?? {}, announce: false };
+                        break;
+                    }
+                    leader = await runLeaderTurn(
+                        { ...brief, ...(rec.leader ? { budget: rec.leader } : {}) },
+                        { ...caps, account: seat.account }, runner, clock);
+                    rec.leader = leader.budget;
+                    if (leader.path !== 'held') { delete rec.leaderHold; break; }
+                    if (leader.walled?.slotId) {
+                        walledNow.push(leader.walled.slotId);
+                        // The figure that let it start is the one to distrust.
+                        void accountUsage.refreshSlot(leader.walled.slotId).catch(() => { /* the next beat reads it */ });
+                    }
+                }
+                if (leader && verdict.problems.length) {
                     // A condition nobody can evaluate is not a condition that did
                     // not fire — X-190's law, carried to where a person reads it.
                     leader = { ...leader, why: `${leader.why} · ${verdict.problems.join(' · ')}` };
@@ -27578,6 +27612,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
 
         const step = sentryStep({
+        /**
+         * ‼️ X-302 — A HELD LEADER OPENS NO ROUND. The round the leader was woken
+         * for stays unopened until the leader has really been consulted: the
+         * campaign sleeps to the earliest reset inside its pool (plus the same
+         * safety buffer a walled round waits), and the tick that fires then
+         * finds `rec.leaderHold` and re-runs this round's leader turn from the
+         * start. Without a measured reset it blocks by name — the accounts
+         * need signing in again — and never once opens on a template the
+         * leader did not write, nor on a sign-in the pool does not own.
+         */
+        if (leader?.path === 'held' && rec.leaderHold) {
+            const buffer = typeof rec.safetyBufferMin === 'number' ? rec.safetyBufferMin : RETRY_DEFAULT_SAFETY_MIN;
+            const resetsAt = Number(rec.leaderHold.resetsAt) || 0;
+            taskManager.applySentry({
+                plan: resetsAt > 0
+                    ? { action: 'sleep', rule: 'leader-waits-for-pool', wakeAt: resetsAt + buffer * 60 * 1000, why: leader.why }
+                    : { action: 'blocked', rule: 'leader-no-usable-account', why: leader.why }
+            });
+            return;
+        }
             campaign: rec,
             ...(leader?.assist ? { assist: leader.assist } : {}),
             ...(leader?.decision ? {
