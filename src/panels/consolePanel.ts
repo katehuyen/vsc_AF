@@ -1040,6 +1040,10 @@ export class ConsolePanel {
                 // …and once it is over, the same strip keeps saying what it cost
                 // until your next prompt starts a new turn (see lastTurn)
                 lastTurn: s.lastTurn ?? null,
+                // S-62 — what the CLI is still running behind the turn, its own
+                // list as it came; the strip draws one chip per task and the
+                // Interrupt button says it will end them with the turn.
+                backgroundTasks: s.backgroundTasks ?? [],
                 pendingPermission: s.pendingPermission ?? null,
                 // the question the turn is parked on — the card and the composer
                 // both need it, and it outranks everything else on the page
@@ -2202,6 +2206,12 @@ export class ConsolePanel {
             case 'interrupt':
                 host.interrupt(str('id'));
                 break;
+            case 'stopTask': {
+                // S-62 — one background command, by the CLI's own task id
+                const r = host.stopTask(str('id'), str('taskId'));
+                if (!r.ok) { void vscode.window.showWarningMessage(`Agent Farm: ${r.note}`); }
+                break;
+            }
             case 'setModel': {
                 // mid-session model switch — the CLI's own `/model`
                 const sid = str('id');

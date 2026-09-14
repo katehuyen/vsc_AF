@@ -1160,6 +1160,75 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('S-54: the result clears steered and pendingInterrupt', ended.steered === undefined && ended.pendingInterrupt === undefined && ended.status === 'idle');
 }
 
+// ---------- ‼️ S-62 — the commands the turn left running behind it ----------
+//
+// Measured (claude-cli 2.1.269, tools/probe_background.js): a Bash call with
+// run_in_background returns at once; the CLI announces the process on
+// `system/background_tasks_changed` (its whole live list) + `task_started`;
+// the turn ends while it runs; when it finishes, `task_notification` arrives
+// and — with nobody typing — the CLI opens a NEW turn to hand the model the
+// result. Stop had ended the turn and not the process. A task stopped through
+// `stop_task` notifies as `stopped`, which opens no turn.
+{
+    resetIds();
+    const working = acceptUserText(fresh(), 'go', NOW).state;
+    const listed = reduceEvent(working, {
+        type: 'system', subtype: 'background_tasks_changed',
+        tasks: [{ task_id: 'b1', task_type: 'local_bash', description: 'dev server' }, { task_id: 'b2', task_type: 'local_bash', description: 'watch' }, { nope: 1 }]
+    }, NOW + 10);
+    ok('‼️ S-62: background_tasks_changed is the list, replaced whole — a malformed entry is dropped',
+        listed.changed === true && listed.state.backgroundTasks.length === 2
+        && listed.state.backgroundTasks[0].id === 'b1' && listed.state.backgroundTasks[0].kind === 'local_bash'
+        && listed.state.backgroundTasks[0].description === 'dev server' && listed.state.backgroundTasks[0].startedAt === NOW + 10);
+    ok('S-62: not an array — nothing happens',
+        reduceEvent(listed.state, { type: 'system', subtype: 'background_tasks_changed', tasks: 'x' }, NOW).changed === false);
+    const again = reduceEvent(listed.state, {
+        type: 'system', subtype: 'background_tasks_changed',
+        tasks: [{ task_id: 'b1', task_type: 'local_bash', description: 'dev server' }, { task_id: 'b2', task_type: 'local_bash', description: 'watch' }]
+    }, NOW + 500);
+    ok('S-62: the same list again is not a change', again.changed === false);
+    const named = reduceEvent(listed.state, { type: 'system', subtype: 'task_started', task_id: 'b1', tool_use_id: 'toolu_1', is_backgrounded: true, task_type: 'local_bash', description: 'dev server' }, NOW + 20);
+    ok('S-62: task_started names the tool call on a task already listed — and keeps when it was first seen',
+        named.changed === true && named.state.backgroundTasks[0].toolUseId === 'toolu_1' && named.state.backgroundTasks[0].startedAt === NOW + 10
+        && named.state.backgroundTasks.length === 2);
+    ok('S-62: a foreground task_started is not a background task',
+        reduceEvent(named.state, { type: 'system', subtype: 'task_started', task_id: 'f1', is_backgrounded: false, description: 'x' }, NOW).changed === false);
+    // the turn ends; the processes do not
+    const idle = reduce(named.state, { type: 'result', subtype: 'success', is_error: false, result: 'started', total_cost_usd: 0.001 });
+    ok('‼️ S-62: the list OUTLIVES the turn — that is when the reader needs it',
+        idle.status === 'idle' && idle.backgroundTasks.length === 2);
+    // one finishes on its own after the turn: the CLI's own list first, then the notification
+    const shrunk = reduce(idle, { type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'b2', task_type: 'local_bash', description: 'watch' }] });
+    const done = reduceEvent(shrunk, { type: 'system', subtype: 'task_notification', task_id: 'b1', status: 'completed', summary: 'Background command "dev server" completed (exit code 0)' }, NOW + 9000);
+    const doneRow = done.state.messages[done.state.messages.length - 1];
+    ok('‼️ S-62: a task that finished after the turn is a system row that says a NEW turn is coming',
+        done.changed === true && doneRow.role === 'system'
+        && doneRow.text === 'Background command "dev server" completed (exit code 0) — the CLI opens a new turn to hand its result to the model'
+        && done.state.backgroundTasks.length === 1 && done.state.backgroundTasks[0].id === 'b2');
+    // …while a turn runs, the same notification is folded into it
+    const midTurn = reduceEvent(named.state, { type: 'system', subtype: 'task_notification', task_id: 'b2', status: 'failed', summary: 'Background command "watch" failed with exit code 1' }, NOW);
+    ok('S-62: during a turn the row says the result goes into THIS turn',
+        /failed with exit code 1 — its result goes to the model in this turn$/.test(midTurn.state.messages[midTurn.state.messages.length - 1].text));
+    // a summary that is only the description (measured on a stop) is worded by us
+    const stopped = reduceEvent(shrunk, { type: 'system', subtype: 'task_notification', task_id: 'b2', status: 'stopped', summary: 'watch' }, NOW);
+    ok('S-62: a stopped task is one quiet row and leaves the list empty',
+        stopped.state.messages[stopped.state.messages.length - 1].text === 'background command stopped: watch'
+        && stopped.state.backgroundTasks === undefined);
+    // the stop_task receipts
+    const asked = { ...shrunk, pendingStops: [{ requestId: 'stop-1', taskId: 'b2' }, { requestId: 'stop-2', taskId: 'zz' }] };
+    const fine = reduceEvent(asked, { type: 'control_response', response: { subtype: 'success', request_id: 'stop-1', response: {} } }, NOW);
+    ok('S-62: a successful stop is silent and forgotten',
+        fine.changed === false && fine.state.pendingStops.length === 1 && fine.state.messages.length === asked.messages.length);
+    const refused = reduceEvent(fine.state, { type: 'control_response', response: { subtype: 'error', request_id: 'stop-2', error: 'No task found with ID: zz' } }, NOW);
+    const refRow = refused.state.messages[refused.state.messages.length - 1];
+    ok('‼️ S-62: a refused stop is an error row with the CLI\'s reason, and no pending stop is left',
+        refused.changed === true && refRow.role === 'error'
+        && refRow.text === 'background command is still running — the CLI refused to stop it: No task found with ID: zz'
+        && refused.state.pendingStops === undefined);
+    ok('S-62: a receipt under another id is not a stop receipt',
+        reduceEvent(asked, { type: 'control_response', response: { subtype: 'success', request_id: 'other', response: {} } }, NOW).state.pendingStops.length === 2);
+}
+
 // ---------- ‼️ the model can change mid-conversation ----------
 // A terminal has always been able to: `/model` switches mid-session and the
 // next turn answers with the new one. The panel used to say a running session
@@ -1515,7 +1584,20 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     }
     ok('the host outlives the panel, and dies with the window',
         /consoleHost\.dispose\(\)/.test(ext));
+    // ‼️ S-62 — the per-task stop is on the bridge, calls the host's own method,
+    // and the list it picks from travels on console.sessions; the panel hands
+    // the same list to the page (hand-listed projection — this is the wire the
+    // X-255/X-258 fields fell off, so it is pinned by name).
+    const stopOp = ext.slice(ext.indexOf("op: 'console.stopTask'"), ext.indexOf("op: 'console.stopTask'") + 1400);
+    ok('‼️ S-62: console.stopTask is on the bridge and calls consoleHost.stopTask',
+        /consoleHost\.stopTask\(id, taskId\)/.test(stopOp) && /args: id, taskId/.test(stopOp));
+    ok('S-62: console.sessions carries backgroundTasks',
+        /backgroundTasks: s\.backgroundTasks \?\? \[\]/.test(ext.slice(ext.indexOf("op: 'console.sessions'"), ext.indexOf("op: 'console.interrupt'"))));
+    ok('S-62: console.interrupt reports which background commands the stop reached',
+        /backgroundStopped: \(row\?\.backgroundTasks \?\? \[\]\)/.test(ext.slice(ext.indexOf("op: 'console.interrupt'"), ext.indexOf("op: 'console.stopTask'"))));
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    ok('‼️ S-62: the panel hands backgroundTasks to the page and answers its stopTask',
+        /backgroundTasks: s\.backgroundTasks \?\? \[\]/.test(panel) && /case 'stopTask':[\s\S]{0,200}host\.stopTask\(str\('id'\), str\('taskId'\)\)/.test(panel));
     ok('the panel does not kill sessions when its tab closes',
         /deliberately OUTLIVE the panel/.test(panel));
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');

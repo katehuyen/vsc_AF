@@ -935,6 +935,67 @@ module.exports = {
             act: r => {
                 r.query('#c-engine').forEach(b => b.fire('change', { target: { value: 'codex' } }));
             }
+        },
+        /**
+         * ‼️ S-62 — THE COMMANDS STILL RUNNING BEHIND THE TURN. Measured: a Bash
+         * call backgrounded with run_in_background survives Stop, and when it
+         * finishes the CLI opens a new turn by itself. The strip has to say it
+         * while the turn runs (with the Interrupt button counting what else it
+         * will end) AND after the turn is over — which is the arity the reader
+         * actually meets, and the one with no Interrupt button to press, so
+         * the ✕ on the chip is the only way out. Three scenes because a count,
+         * a wrap and a missing button are three layouts.
+         */
+        {
+            id: 'console-background-two',
+            label: 'Console — a running turn with TWO commands in the background; Interrupt says +2',
+            data: backgroundData('working', 2)
+        },
+        {
+            id: 'console-background-after',
+            label: 'Console — the turn is over, ONE command is still running behind it; no Interrupt, only the ✕',
+            data: backgroundData('idle', 1)
+        },
+        {
+            id: 'console-background-none',
+            // The same Claude card running with nothing behind the turn: no chip
+            // may be drawn and the button is the plain one — the absence is the
+            // proof, photographed under the same eye as the two above.
+            label: 'Console — nothing in the background: no chip, the plain Interrupt',
+            data: backgroundData('working', 0)
         }
     ]
 };
+
+/**
+ * S-62 — the Claude card selected, working or just finished, with N commands
+ * the CLI reports as running behind the turn (its own `background_tasks_changed`
+ * shape, as the panel forwards it).
+ */
+function backgroundData(status, count) {
+    const d = data();
+    const tasks = [
+        { id: 'b5gi6nosu', kind: 'local_bash', description: 'Start the dev server on port 5173', startedAt: NOW - 42000, toolUseId: 'toolu_01Shhitd9M7rmjxEvQkfuKmg' },
+        { id: 'b82kuyjhy', kind: 'local_bash', description: 'node -e "setTimeout(function(){console.log(77)},8000)"', startedAt: NOW - 6000, toolUseId: 'toolu_01YWxxCcCdEpV9i2jPzoVP6Z' }
+    ].slice(0, count);
+    d.selected = 'cs1';
+    d.sessions = d.sessions.map(s => (s.id !== 'cs1' ? s : Object.assign({}, s, status === 'working'
+        ? {
+            status: 'working', lastTurn: null, turnStartedAt: NOW - 51000,
+            turnTokens: 9100, turnWTokens: 9100, turnApiCalls: 2, turnSteps: 4, turnThinking: 1,
+            turnCost: 0.02, turnModel: 'claude-opus-5-20260514', turnEffort: 'high',
+            backgroundTasks: tasks,
+            messages: msgs().concat([{
+                id: 'm-bg', ts: NOW - 42000, role: 'tool', kind: 'local',
+                tool: { name: 'Bash', detail: 'npm run dev' }
+            }])
+        }
+        : {
+            status: 'idle',
+            backgroundTasks: tasks,
+            messages: msgs().concat([{
+                id: 'm-bg-done', ts: NOW - 3000, role: 'error', text: 'turn interrupted'
+            }])
+        })));
+    return d;
+}

@@ -493,6 +493,15 @@
            a measurement but the REASON for one, so it is the one part allowed a
            little weight — it is what the numbers next to it are explained by */
         .working .wbrain { color:var(--vscode-foreground); opacity:.9; }
+        /* S-62: one chip per process still running behind the turn, and the
+           stop beside it. The chip is a pressable AFTip trigger (opens slower,
+           yields to the hand); the button is the only control on the strip,
+           so it is drawn as a glyph and not as a box. */
+        .working .af-tipw.wbgw { display:inline; }
+        .working .wbg { color:var(--vscode-foreground); cursor:default; }
+        .working .wbgx { background:none; border:0; padding:0 2px; margin-left:2px; cursor:pointer;
+            color:var(--vscode-descriptionForeground); font-size:11px; line-height:1; vertical-align:baseline; }
+        .working .wbgx:hover { color:var(--vscode-errorForeground,#f48771); }
         /* ---- the resume section: a header row, a miniature filter, the rows --
            Everything here is sized for a 250px column: 10px type, one-line
            controls, and every box allowed to shrink (min-width:0) so nothing
@@ -2669,9 +2678,51 @@
         return `<div class="wrow">${head}</div>${m ? `<div class="wmeta">${m}</div>` : ''}`;
     }
 
+    /**
+     * ‼️ S-62 — WHAT IS STILL RUNNING BEHIND THE TURN, one chip per process.
+     *
+     * The list is the CLI's own (`background_tasks_changed`, see
+     * consoleproto.ts), and it is drawn on the strip whether or not a turn is
+     * running — the turn that ended is exactly when a reader needs to know a
+     * command is still out there, because when it finishes the CLI opens a
+     * new turn on its own to hand the result to the model. That sentence is
+     * the panel's; the chip is the SHORTHAND (the description cut to fit, the
+     * long form first in the panel). The ✕ is the per-task stop the CLI's
+     * `stop_task` exists for, and the one way to end a process after the turn
+     * is over, when there is no Interrupt button to press.
+     */
+    function bgHtml(s) {
+        const tasks = (s && s.backgroundTasks) || [];
+        if (!tasks.length) { return ''; }
+        const running = !!(s && s.status === 'working');
+        return tasks.map(t => {
+            const desc = String(t.description || t.id || '');
+            const short = desc.length > 28 ? desc.slice(0, 26) + '…' : desc;
+            const since = t.startedAt ? C.fmtDur(Math.max(0, Date.now() - t.startedAt)) : '';
+            const trig = `<span class="wbg" data-aftipact="1">⏳ ${C.esc(short)}</span>`
+                + `<button class="wbgx" data-bgstop="${C.esc(t.id)}" title="Stop this background command — the turn, if one runs, goes on">✕</button>`;
+            return ' · ' + window.AFTip.wrap(trig, `Running in the background — ${desc}`, window.AFTip.lines([
+                `Running for: ${since || 'just started'}`,
+                `Kind: ${t.kind || 'command'}`,
+                `Task id: ${t.id}`,
+                window.AFTip.GAP,
+                running
+                    ? 'The turn does not wait for it. When it finishes, the CLI hands its result to the model — in this turn if it is still running, otherwise as a NEW turn of its own.'
+                    : 'The turn is over but this is not. When it finishes, the CLI opens a NEW turn on its own to hand the result to the model, which then carries on with what it was doing.',
+                window.AFTip.GAP,
+                running
+                    ? '⎋ Interrupt stops it together with the turn. The ✕ beside the chip stops this one alone.'
+                    : 'The ✕ beside the chip stops it. Nothing else on this page can — there is no turn to interrupt.'
+            ]), 'wbgw');
+        }).join('');
+    }
+
     function lastTurnHtml(s) {
         const t = s && s.lastTurn;
-        if (!t) { return ''; }
+        const bg = bgHtml(s);
+        if (!t) {
+            return bg ? stripHtml(`<span class="dspin">⏳</span> <b>in the background</b>`, bg) : '';
+        }
         const glyph = DONE_GLYPH[t.outcome] || '✓';
         const word = t.outcome === 'interrupted' ? 'last turn interrupted'
             : t.outcome === 'failed' ? 'last turn failed' : 'last turn';
@@ -2680,7 +2731,7 @@
             : '';
         return stripHtml(
             `<span class="dspin">${glyph}</span> <b>${word}</b>`,
-            `${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, t.steps, t.thinking)}${turnBrainHtml(t.model, t.effort, false)} · your turn now`);
+            `${t.ms ? C.fmtDur(t.ms) : ''}${money}${stepsHtml(t.apiCalls, t.steps, t.thinking)}${turnBrainHtml(t.model, t.effort, false)} · your turn now${bg}`);
     }
 
     function workingHtml(s) {
@@ -2729,7 +2780,7 @@
         // nothing else on screen was saying: WHAT this turn is thinking with.
         return stripHtml(
             `<span class="spin">${glyph}</span> ${doingChip}<b>${C.esc(doing)}</b>`,
-            `${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, s.turnSteps, s.turnThinking)}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}`);
+            `${C.fmtDur(ran)}${cost}${stepsHtml(s.turnApiCalls, s.turnSteps, s.turnThinking)}${q ? ` · ${q} held` : ''}${turnBrainHtml(s.turnModel, s.turnEffort, true)}${bgHtml(s)}`);
     }
 
     /** The glyph has to turn on its own — a data push only arrives when the CLI
@@ -2804,9 +2855,16 @@
             : empty
                 ? 'Nothing to send yet — type the message first. Send after turn parks it above the box, still editable, and hands it over once this turn ends completely.'
                 : 'Park it instead of sending it into this turn: it waits above the box — editable — and goes once the turn ends'}&#10;${SNIP_HINT}">Send after turn</button>`;
+        // S-62 — the button says what else it ends. A Stop that left processes
+        // running behind it is the fault this exists for, so the count is on
+        // the button, not in a panel.
+        const bg = (s.backgroundTasks || []).length;
+        const intTip = bg
+            ? `Stop the running turn AND the ${bg} background command${bg === 1 ? '' : 's'} it left running — the session and its context stay. Esc in the message box does the same.`
+            : 'Stop the running turn — the session and its context stay. Esc in the message box does the same.';
         return `${q ? `<span class="qbadge" title="Waiting to be sent — they go once this turn ends">${q} held</span> <button class="secondary" id="c-clearq">drop all</button>` : ''}
             ${s.status === 'working' ? hold : ''}
-            ${s.status === 'working' ? '<button class="secondary" id="c-int" title="Stop the running turn — the session and its context stay. Esc in the message box does the same.">⎋ Interrupt</button>' : ''}`;
+            ${s.status === 'working' ? `<button class="secondary" id="c-int" title="${C.esc(intTip)}">⎋ Interrupt${bg ? ` +${bg}` : ''}</button>` : ''}`;
     }
 
     /**
@@ -4368,6 +4426,18 @@
         // key and never be filled (see paint's talkKey).
         for (const k of Object.keys(written)) { delete written[k]; }
         lastTalkKey = '';
+
+        // S-62 — the strip is repainted by a timer (paintWorking), so its ✕
+        // buttons are wired once, here, by delegation rather than per paint.
+        const strip = document.getElementById('c-working');
+        if (strip) {
+            strip.addEventListener('click', ev => {
+                const b = ev.target && typeof ev.target.closest === 'function' ? ev.target.closest('[data-bgstop]') : null;
+                if (!b) { return; }
+                ev.preventDefault();
+                vscode.postMessage({ type: 'stopTask', id: DATA.selected, taskId: b.getAttribute('data-bgstop') || '' });
+            });
+        }
 
         const text = document.getElementById('c-text');
         if (text) {

@@ -1261,6 +1261,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#stopTask",
+      "ui": [
+        "page:consolePanel.ts#stopTask"
+      ],
+      "ops": [
+        "console.stopTask"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#unpinAgent",
       "ui": [
         "page:consolePanel.ts#unpinAgent"

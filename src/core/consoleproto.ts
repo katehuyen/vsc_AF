@@ -351,6 +351,20 @@ export function contextPercent(c: ContextSample | undefined): number | undefined
     return Math.round((c.tokens / c.window) * 100);
 }
 
+/** One process the CLI runs behind the turn (see ConsoleSessionState.backgroundTasks). */
+export interface BackgroundTask {
+    /** the CLI's own task id — what `stop_task` takes */
+    id: string;
+    /** `local_bash` for a backgrounded Bash call; the CLI's word, shown as it came */
+    kind: string;
+    /** the tool call's description, or the command itself when it gave none */
+    description: string;
+    /** when this host first saw it */
+    startedAt: number;
+    /** the tool_use block that started it, once `task_started` names it */
+    toolUseId?: string;
+}
+
 export interface ConsoleSessionState {
     /** Agent Farm's own id for the hosted process */
     id: string;
@@ -750,6 +764,29 @@ export interface ConsoleSessionState {
     steered?: { uuid: string; text: string }[];
     /** ‼️ S-54 — the interrupt we sent and have not heard back about. */
     pendingInterrupt?: { requestId: string };
+    /**
+     * ‼️ S-62 — THE COMMANDS THIS SESSION IS STILL RUNNING BEHIND THE TURN.
+     *
+     * Measured (claude-cli 2.1.269, tools/probe_background.js): a Bash call
+     * with `run_in_background:true` returns at once, the CLI announces the
+     * process on `system/background_tasks_changed` (its whole live list) and
+     * `system/task_started`, and the turn ends while it runs. When it finishes
+     * the CLI writes `system/task_notification` and — with nobody typing —
+     * opens a NEW turn to hand the result to the model, which then carries on
+     * with what it was doing. Stop had ended the turn and not the process, so
+     * the user's "I stopped it and it went on" was true 7 s later.
+     *
+     * This is the CLI's list, replaced whole on every `background_tasks_changed`
+     * — never derived by counting tool calls, which would have to guess which
+     * of them the CLI backgrounded. It outlives the turn on purpose: that is
+     * exactly when the reader needs to know a process is still out there. The
+     * host's `interrupt` reads it and asks the CLI to `stop_task` each one
+     * before it aborts the turn; a task stopped that way sends its
+     * notification as `stopped`, which measured opens no turn.
+     */
+    backgroundTasks?: BackgroundTask[];
+    /** ‼️ S-62 — the `stop_task` requests we sent and have not heard back about. */
+    pendingStops?: { requestId: string; taskId: string }[];
     /**
      * ‼️ A permission-mode switch we have asked for and not heard back about —
      * and the reason this field had to exist at all.
@@ -1229,6 +1266,91 @@ export function reduceEvent(
                 changed: true
             };
         }
+        /**
+         * ‼️ S-62 — THE CLI'S OWN LIST OF WHAT IT IS RUNNING BEHIND THE TURN,
+         * replaced whole. `tasks` is every live background task at this moment
+         * (measured: `[]` the instant one finishes, before its notification);
+         * an entry we already knew keeps the moment we first saw it.
+         */
+        if (sub === 'background_tasks_changed') {
+            if (!Array.isArray(o.tasks)) { return { state, changed: false }; }
+            const known = new Map((state.backgroundTasks ?? []).map(t => [t.id, t]));
+            const tasks: BackgroundTask[] = [];
+            for (const raw of o.tasks as unknown[]) {
+                const t = raw as Record<string, unknown> | undefined;
+                if (!t || typeof t.task_id !== 'string' || !t.task_id) { continue; }
+                const was = known.get(t.task_id);
+                tasks.push({
+                    id: t.task_id,
+                    kind: typeof t.task_type === 'string' ? t.task_type : (was?.kind ?? ''),
+                    description: typeof t.description === 'string' ? t.description : (was?.description ?? ''),
+                    startedAt: was?.startedAt ?? now,
+                    ...(was?.toolUseId ? { toolUseId: was.toolUseId } : {})
+                });
+            }
+            const same = tasks.length === (state.backgroundTasks ?? []).length
+                && tasks.every((t, i) => t.id === state.backgroundTasks![i].id);
+            if (same) { return { state, changed: false }; }
+            return { state: { ...state, lastTs: now, backgroundTasks: tasks.length ? tasks : undefined }, changed: true };
+        }
+        // …and the tool call each one came from. `background_tasks_changed`
+        // precedes this and already lists it; an order the other way round
+        // (or a CLI that sends only this) still lands the task in the list.
+        if (sub === 'task_started') {
+            if (o.is_backgrounded !== true || typeof o.task_id !== 'string' || !o.task_id) { return { state, changed: false }; }
+            const list = state.backgroundTasks ?? [];
+            const toolUseId = typeof o.tool_use_id === 'string' ? o.tool_use_id : undefined;
+            const at = list.findIndex(t => t.id === o.task_id);
+            if (at >= 0) {
+                if (!toolUseId || list[at].toolUseId === toolUseId) { return { state, changed: false }; }
+                const next = list.slice();
+                next[at] = { ...next[at], toolUseId };
+                return { state: { ...state, backgroundTasks: next }, changed: true };
+            }
+            return {
+                state: {
+                    ...state, lastTs: now,
+                    backgroundTasks: [...list, {
+                        id: o.task_id,
+                        kind: typeof o.task_type === 'string' ? o.task_type : '',
+                        description: typeof o.description === 'string' ? o.description : '',
+                        startedAt: now, ...(toolUseId ? { toolUseId } : {})
+                    }]
+                },
+                changed: true
+            };
+        }
+        /**
+         * ‼️ THE PROCESS IS OVER, AND WHAT THE CLI DOES NEXT DEPENDS ON HOW.
+         * Measured: `completed` (and `failed`) are handed to the model — as a
+         * new turn when none is running, which is the S-62 surprise, and this
+         * row is the only thing on the card that says why that turn opened.
+         * `stopped` (a `stop_task`, ours or the CLI's own on an interrupt it
+         * caught in flight) opens nothing. `summary` is the CLI's own sentence
+         * when it wrote one; on a stop it measured as the bare description.
+         */
+        if (sub === 'task_notification') {
+            const taskId = typeof o.task_id === 'string' ? o.task_id : '';
+            const status = typeof o.status === 'string' ? o.status : '';
+            const was = (state.backgroundTasks ?? []).find(t => t.id === taskId);
+            const rest = (state.backgroundTasks ?? []).filter(t => t.id !== taskId);
+            const summary = typeof o.summary === 'string' ? o.summary.trim() : '';
+            const desc = was?.description || summary;
+            const text = status === 'stopped'
+                ? `background command stopped: ${desc}`
+                : (summary && /\bcommand\b/i.test(summary) ? summary : `background command ${status || 'ended'}: ${desc}`)
+                    + (state.status === 'working'
+                        ? ' — its result goes to the model in this turn'
+                        : ' — the CLI opens a new turn to hand its result to the model');
+            return {
+                state: {
+                    ...state, lastTs: now,
+                    backgroundTasks: rest.length ? rest : undefined,
+                    messages: [...state.messages, { id: nextId(), ts: now, role: 'system', text }]
+                },
+                changed: true
+            };
+        }
         // ‼️ `thinking_tokens` IS NOT CONTEXT, AND WRITING IT INTO THE CTX
         // FIGURE IS WHY THAT FIGURE COLLAPSED MID-TURN. The CLI's own
         // description of the event: "Live thinking-token estimate, digested
@@ -1683,6 +1805,29 @@ export function reduceEvent(
                         : state.messages
                 },
                 changed: lines.length > 0
+            };
+        }
+        // S-62 — a `stop_task`, answered. Success is silent (the task's own
+        // `stopped` notification is the row); a refusal is the one thing the
+        // reader must hear, because the process it names is still running.
+        const stop = (state.pendingStops ?? []).find(p => p.requestId === r.request_id);
+        if (stop) {
+            const left = (state.pendingStops ?? []).filter(p => p !== stop);
+            const failed = r.subtype === 'error';
+            const task = (state.backgroundTasks ?? []).find(t => t.id === stop.taskId);
+            return {
+                state: {
+                    ...state, lastTs: now, pendingStops: left.length ? left : undefined,
+                    messages: failed
+                        ? [...state.messages, {
+                            id: nextId(), ts: now, role: 'error',
+                            text: `background command is still running — the CLI refused to stop it`
+                                + (task?.description ? ` (${task.description})` : '')
+                                + `: ${String(r.error ?? 'no reason given')}`
+                        }]
+                        : state.messages
+                },
+                changed: failed
             };
         }
         // A model switch, answered. `success` carries no payload, so the id we

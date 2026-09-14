@@ -2402,10 +2402,53 @@ export class ConsoleHost {
          * request and the receipt's `still_queued` is shown to the reader
          * instead, so a survivor is at least never a surprise.
          */
+        /**
+         * ‼️ S-62 — STOP MEANS STOP, INCLUDING THE PROCESSES THE TURN LEFT
+         * RUNNING BEHIND IT.
+         *
+         * Measured (claude-cli 2.1.269, tools/probe_background.js): a Bash call
+         * backgrounded with `run_in_background` survives the interrupt, and
+         * when it finishes the CLI opens a new turn on its own to hand the
+         * result to the model — which then carries on with the original work,
+         * 7 s after the user pressed Stop. `cancel_queued` cannot reach it: the
+         * notification does not exist yet when the interrupt is answered.
+         *
+         * The CLI owns those processes and offers `stop_task` for exactly this
+         * (its own schema: a consumer with no per-task stop is meant to have the
+         * interrupt kill them, and this build measured as not doing so for a
+         * backgrounded shell). Asked for each task the CLI last listed, BEFORE
+         * the abort, in the same write sequence: a task stopped this way sends
+         * its notification as `stopped`, which measured opens no turn in either
+         * order — and stopping first means a notification that does land in
+         * the queue is withdrawn by the `cancel_queued` that follows it.
+         */
+        for (const t of h.state.backgroundTasks ?? []) { this.stopTask(id, t.id); }
         const rid = `int-${++h.reqSeq}`;
         const canCancel = (h.state.capabilities ?? []).includes('interrupt_cancel_queued_v1');
         h.state = { ...h.state, pendingInterrupt: { requestId: rid } };
         return this.write(id, controlLine(rid, 'interrupt', canCancel ? { cancel_queued: true } : {}));
+    }
+
+    /**
+     * S-62 — stop ONE background command the CLI is running for this session,
+     * leaving the turn (if one runs) alone. The list it is picked from is the
+     * CLI's own (`backgroundTasks`); a task id the CLI never listed is refused
+     * here rather than sent, so the refusal names the real reason.
+     */
+    stopTask(id: string, taskId: string): { ok: boolean; note: string } {
+        const h = this.sessions.get(id);
+        if (!h) { return { ok: false, note: 'That session is not open here.' }; }
+        if (h.engine.shape !== 'persistent') {
+            return { ok: false, note: `${h.engine.label} runs nothing behind a turn here — there is no background command to stop.` };
+        }
+        const task = (h.state.backgroundTasks ?? []).find(t => t.id === taskId);
+        if (!task) { return { ok: false, note: `No background command "${taskId}" is running on this session.` }; }
+        const rid = `stop-${++h.reqSeq}`;
+        h.state = { ...h.state, pendingStops: [...(h.state.pendingStops ?? []), { requestId: rid, taskId }] };
+        const ok = this.write(id, controlLine(rid, 'stop_task', { task_id: taskId }));
+        return ok
+            ? { ok: true, note: `asked the CLI to stop "${task.description || taskId}"` }
+            : { ok: false, note: 'The session\'s process is not listening — nothing could be sent.' };
     }
 
     /**

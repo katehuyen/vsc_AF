@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.506.0 - Stop reaches the commands the turn left running behind it (S-62) (2026-09-14)
+
+- **‼️ "I STOPPED IT AND IT WENT ON" — THE SECOND WAY, MEASURED AND CLOSED.**
+  S-54 closed the first (a message queued into the turn). This is the other: a
+  Bash call the model backgrounded (`run_in_background`) survives Interrupt,
+  and when it finishes the CLI writes `task_notification` and — with nobody
+  typing — opens a NEW turn on its own to hand the model the result, which
+  then carries on with the original work. Measured with `tools/probe_background.js`
+  against claude-cli 2.1.269: Stop at 11 s, the process finished at 18 s, a
+  new `system/init` and a new turn followed within 100 ms. `cancel_queued`
+  cannot reach it: the notification does not exist yet when the interrupt is
+  answered.
+- **The CLI owns those processes and lists them itself** —
+  `system/background_tasks_changed` is its whole live list, replaced on every
+  change — **and offers `stop_task` for exactly this** (its own schema: a
+  consumer without a per-task stop is meant to have Interrupt kill them, and
+  this build measured as not doing so for a backgrounded shell). Interrupt now
+  asks the CLI to stop EACH listed task before it aborts the turn. A task
+  stopped that way notifies as `stopped`, which measured opens no turn, in
+  either order.
+- **The strip says what is still out there — one chip per process, with a ✕.**
+  `⏳ Start the dev server on po… ✕` while the turn runs (and the button reads
+  `⎋ Interrupt +2`, its tooltip naming what else it ends) AND after the turn
+  is over, beside "your turn now" — which is the arity the reader actually
+  meets and the one with no Interrupt button to press, so the ✕ is the only
+  way to end the process. The panel carries the long form, how long it has run
+  and what the CLI will do when it ends. A task that finishes on its own is a
+  system row saying a new turn is being opened, so the turn that appears has
+  a visible cause; a refused stop is an error row naming the command.
+- **Bridge:** `console.stopTask { id, taskId }`; `console.sessions` rows carry
+  `backgroundTasks`; `console.interrupt` reports `backgroundStopped`.
+- The list is never derived by counting tool calls, and it OUTLIVES the turn on
+  purpose. Reducer, host, page and fixture (three scenes: two running · one
+  after the turn · none) are each pinned.
+
 ## 3.505.0 - Which sign-in ran cheap and which ran expensive, over a month (X-252 b) (2026-09-14)
 
 - **‼️ EVERY HEADER BUTTON ON THE ENGINES PAGE WAS DEAD.** `AFHeader.wire(vscode,

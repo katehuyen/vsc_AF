@@ -3080,5 +3080,65 @@ const html = allHtml;
         !/id="c-account-live"/.test(html()));
 }
 
+// ---------- ‼️ S-62: the commands still running behind the turn ----------
+//
+// Measured: a Bash call backgrounded with run_in_background survives Stop and,
+// when it finishes, the CLI opens a new turn by itself. The strip has to say
+// so — while the turn runs (and Interrupt counts what else it ends) AND after
+// the turn is over, when there is no Interrupt button and the ✕ on the chip is
+// the only way to end the process.
+{
+    const tasks = [
+        { id: 'b1', kind: 'local_bash', description: 'Start the dev server on port 5173', startedAt: 1 },
+        { id: 'b2', kind: 'local_bash', description: 'watch tests', startedAt: 1 }
+    ];
+    const strip = () => els['c-working'] ? els['c-working']._html : '';
+    push(data(CONVO.slice(), { status: 'working', turnStartedAt: 1, backgroundTasks: tasks }));
+    ok('‼️ S-62: a running turn draws one chip per background command, description cut to fit',
+        (strip().match(/class="wbg"/g) || []).length === 2
+        && /⏳ Start the dev server on po…/.test(strip()) && /⏳ watch tests/.test(strip()));
+    ok('…each with its own ✕ carrying the CLI\'s task id',
+        /data-bgstop="b1"/.test(strip()) && /data-bgstop="b2"/.test(strip()));
+    ok('…and the long form first in the panel, with what happens when it ends',
+        /af-tiph">Running in the background — Start the dev server on port 5173</.test(strip())
+        && /hands its result to the model — in this turn if it is still running, otherwise as a NEW turn/.test(strip()));
+    ok('‼️ S-62: the Interrupt button counts what else it will end',
+        /id="c-int"[^>]*title="Stop the running turn AND the 2 background commands it left running/.test(html())
+        && />⎋ Interrupt \+2</.test(html()));
+    // the ✕ is wired ONCE by delegation (the strip repaints on a timer)
+    posted.length = 0;
+    const click = els['c-working'].listeners.click;
+    ok('S-62: the strip has a delegated click', typeof click === 'function');
+    click({ preventDefault() { }, target: { closest: sel => (sel === '[data-bgstop]' ? { getAttribute: () => 'b2' } : null) } });
+    ok('‼️ S-62: pressing the ✕ asks the host to stop THAT task and nothing else',
+        posted.length === 1 && posted[0].type === 'stopTask' && posted[0].taskId === 'b2' && posted[0].id === 'cs1');
+    posted.length = 0;
+    click({ preventDefault() { }, target: { closest: () => null } });
+    ok('…a click elsewhere on the strip posts nothing', posted.length === 0);
+
+    // the turn is over, one is still out there
+    push(data(CONVO.slice(), {
+        status: 'idle', backgroundTasks: tasks.slice(0, 1),
+        lastTurn: { outcome: 'interrupted', ms: 5000, cost: 0.01, tokens: 100, wTokens: 100 }
+    }));
+    ok('‼️ S-62: after the turn the chip is still on the strip, beside "your turn now"',
+        /your turn now · <span class="af-tipw wbgw">/.test(strip()) && /data-bgstop="b1"/.test(strip())
+        && !/data-bgstop="b2"/.test(strip()));
+    ok('…and the panel says the CLI will open a new turn on its own, and that the ✕ is the only way to stop it',
+        /The turn is over but this is not\. When it finishes, the CLI opens a NEW turn on its own/.test(strip())
+        && /Nothing else on this page can — there is no turn to interrupt/.test(strip()));
+    ok('S-62: no Interrupt button after the turn', !/id="c-int"/.test(html()));
+
+    // nothing behind the turn: no chip, the plain button
+    push(data(CONVO.slice(), { status: 'working', turnStartedAt: 1, backgroundTasks: [] }));
+    ok('S-62: with nothing in the background there is no chip and the button is the plain one',
+        !/class="wbg"/.test(strip()) && />⎋ Interrupt</.test(html())
+        && /id="c-int"[^>]*title="Stop the running turn — the session/.test(html()));
+    // …and a task with no lastTurn at all (a revived card) still gets a strip
+    push(data(CONVO.slice(), { status: 'idle', lastTurn: null, backgroundTasks: tasks.slice(0, 1) }));
+    ok('S-62: a card with no last turn and a task running still draws the strip',
+        /<b>in the background<\/b>/.test(strip()) && /data-bgstop="b1"/.test(strip()));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -11286,6 +11286,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // …and, once the ball is back with the user, what the turn
                     // that just ended really cost (the CLI's own figure)
                     lastTurn: s.lastTurn ?? null,
+                    // S-62 — the commands the CLI is still running behind the
+                    // turn (its own list); each `id` is what console.stopTask
+                    // takes. A row with any of these after its turn ended will
+                    // open a new turn on its own when one finishes.
+                    backgroundTasks: s.backgroundTasks ?? [],
                     // ‼️ X-43 — `tokens` ABOVE AND `contextTokens` HERE ARE TWO
                     // DIFFERENT MEASUREMENTS, and this reply used to return the
                     // same figure for both: measured on a real Codex thread,
@@ -11353,8 +11358,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     id, interrupted: true, engine: engineOf(row?.engine).id,
                     how: shape === 'persistent' ? 'interrupted over the control channel — the process stays'
                         : shape === 'sharedAcp' ? 'asked to stop (session/cancel) — the shared process stays and every other card is untouched'
-                            : 'the turn was its process, so the process was ended — the conversation is resumed by id'
+                            : 'the turn was its process, so the process was ended — the conversation is resumed by id',
+                    // S-62 — what else the stop reached: the commands the turn
+                    // had backgrounded, each asked to stop before the abort.
+                    backgroundStopped: (row?.backgroundTasks ?? []).map(t => ({ id: t.id, description: t.description }))
                 };
+            }
+        },
+        {
+            op: 'console.stopTask',
+            describe: 'S-62 — stop ONE command a hosted Claude session is running in the background (a Bash call made with run_in_background), leaving the turn alone. The list to pick from is the CLI\'s own, on the session row as `backgroundTasks` (console.sessions); a task the CLI is not listing is refused by name. A command that finishes on its own makes the CLI open a NEW turn to hand the model its result — which is how a stopped turn "went on"; a command stopped this way sends its notification as `stopped`, which opens no turn (measured, claude-cli 2.1.269). console.interrupt already does this for every listed task before it aborts the turn. args: id, taskId',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const taskId = argStr(args, 'taskId');
+                need(!!taskId, 'taskId is required — read them off console.sessions → backgroundTasks');
+                const r = consoleHost.stopTask(id, taskId);
+                need(r.ok, r.note);
+                ConsolePanel.refreshIfOpen();
+                return { id, taskId, stopping: true, note: r.note };
             }
         },
         {

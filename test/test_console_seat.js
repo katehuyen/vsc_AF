@@ -445,7 +445,77 @@ async function s54() {
     }
 }
 
-s29().then(() => x266()).then(() => s54()).then(() => {
+// ‼️ S-62 — Stop reaches the processes the turn left running behind it.
+// Measured (claude-cli 2.1.269, tools/probe_background.js): a backgrounded
+// Bash call survives the interrupt and, when it finishes, the CLI opens a NEW
+// turn on its own — 7 s after Stop. The CLI lists those tasks itself
+// (`background_tasks_changed`) and offers `stop_task`; the host asks for each
+// one BEFORE the abort, and a task stopped that way measured as opening no turn.
+async function s62() {
+    {
+        const host = new ConsoleHost(() => 'claude');
+        const id = host.start(init({}));
+        const child = lastChild;
+        child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'init', session_id: 'S-62', capabilities: ['interrupt_cancel_queued_v1'] }) + '\n');
+        host.send(id, 'run it in the background');
+        child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'background_tasks_changed', tasks: [
+            { task_id: 'b1', task_type: 'local_bash', description: 'dev server' },
+            { task_id: 'b2', task_type: 'local_bash', description: 'watch tests' }
+        ] }) + '\n');
+        ok('‼️ S-62: the host carries the CLI\'s own list of background tasks',
+            (host.get(id).backgroundTasks || []).map(t => t.id).join(',') === 'b1,b2');
+        const before = child.written.length;
+        ok('S-62: interrupt is written', host.interrupt(id) === true);
+        const lines = child.written.slice(before).map(l => JSON.parse(l));
+        ok('‼️ S-62: Stop asks the CLI to stop EACH background task, BEFORE the abort',
+            lines.length === 3
+            && lines[0].request.subtype === 'stop_task' && lines[0].request.task_id === 'b1'
+            && lines[1].request.subtype === 'stop_task' && lines[1].request.task_id === 'b2'
+            && lines[2].request.subtype === 'interrupt' && lines[2].request.cancel_queued === true);
+        ok('…and waits for each stop receipt under the id it sent',
+            (host.get(id).pendingStops || []).map(p => p.requestId).join(',') === `${lines[0].request_id},${lines[1].request_id}`
+            && host.get(id).pendingInterrupt.requestId === lines[2].request_id);
+        // one refused: the card says the process is still out there
+        child.stdout.emit('data', JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: lines[1].request_id, error: 'stop_task_refused' } }) + '\n');
+        const msgs = host.get(id).messages;
+        ok('‼️ S-62: a refused stop is said on the card, naming the command',
+            msgs[msgs.length - 1].role === 'error' && /still running.*refused.*\(watch tests\).*stop_task_refused/.test(msgs[msgs.length - 1].text));
+        ok('…and only that receipt is forgotten', (host.get(id).pendingStops || []).length === 1);
+        // the other stops: the CLI's list shrinks and the notification is the row
+        child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'background_tasks_changed', tasks: [{ task_id: 'b2', task_type: 'local_bash', description: 'watch tests' }] }) + '\n');
+        child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'task_notification', task_id: 'b1', status: 'stopped', summary: 'dev server' }) + '\n');
+        child.stdout.emit('data', JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: lines[0].request_id, response: {} } }) + '\n');
+        const after = host.get(id);
+        ok('S-62: a stopped task leaves the list and is one quiet row',
+            (after.backgroundTasks || []).map(t => t.id).join(',') === 'b2'
+            && after.messages[after.messages.length - 1].text === 'background command stopped: dev server'
+            && after.pendingStops === undefined);
+    }
+    // one task, by hand, with the turn left alone
+    {
+        const host = new ConsoleHost(() => 'claude');
+        const id = host.start(init({}));
+        const child = lastChild;
+        child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'init', session_id: 'S-62b' }) + '\n');
+        child.stdout.emit('data', JSON.stringify({ type: 'system', subtype: 'task_started', task_id: 'b9', tool_use_id: 'toolu_9', description: 'build', is_backgrounded: true, task_type: 'local_bash' }) + '\n');
+        ok('S-62: task_started alone lands the task, with its tool call',
+            host.get(id).backgroundTasks.length === 1 && host.get(id).backgroundTasks[0].toolUseId === 'toolu_9');
+        const no = host.stopTask(id, 'nope');
+        ok('S-62: a task the CLI never listed is refused by name, not sent',
+            no.ok === false && /"nope"/.test(no.note) && !child.written.some(l => /stop_task/.test(l)));
+        const r = host.stopTask(id, 'b9');
+        const line = JSON.parse(child.written[child.written.length - 1]);
+        ok('‼️ S-62: stopTask writes the CLI\'s own stop_task for that id and nothing else',
+            r.ok === true && line.request.subtype === 'stop_task' && line.request.task_id === 'b9'
+            && !child.written.some(l => /"interrupt"/.test(l)));
+        const codexId = host.start(init({ engine: 'codex', agentId: 'cx' }));
+        const cx = host.stopTask(codexId, 'b9');
+        ok('S-62: a per-turn engine has nothing to stop behind a turn, and says so',
+            cx.ok === false && /Codex runs nothing behind a turn/.test(cx.note));
+    }
+}
+
+s29().then(() => x266()).then(() => s54()).then(() => s62()).then(() => {
     cp.spawn = realSpawn;
     cp.exec = realExec;
     cp.execSync = realExecSync;
