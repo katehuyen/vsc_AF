@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.498.0 - the terminal's command history is the fleet's, not the account's (X-277) (2026-09-14)
+
+- **Not one Claude slot on this machine had a `history.jsonl` at all.** Every
+  isolated REPL session has been typing into a history that dies with the
+  account — the X-270 fault by another name, and the last open child of that
+  family.
+- **A shared FILE is not a shared folder.** The five `sharedPaths` are reached
+  by junctions; a file the engine appends to has to be the same file under two
+  names, or the copies diverge the moment either is written. So `sharedFiles`
+  is its own axis with its own mechanism: a hard link, and sameness answered by
+  inode rather than by resolving a path (a hard link has no target to resolve,
+  and `lstat` reports it as an ordinary file).
+- Measured before it was built: Claude Code opens the file with a locked
+  APPEND, so the inode never changes and the link survives ordinary use; the
+  one path that would replace it is the retention prune, gated behind an
+  enterprise taint that is off here. `linkSync` needs no administrator on NTFS,
+  two links report one inode and a separate file another.
+- **The slot's own typing is never dropped.** A history that exists only in the
+  slot is moved INTO the pool and then linked; where both exist and differ, the
+  pool wins and the slot's copy is set aside as `.slot-copy` rather than
+  deleted.
+- Two refusals, both by name: a slot on a different drive is told that a hard
+  link cannot cross one — never quietly given a copy, which is the answer this
+  family exists to refuse — and a file system that cannot report an inode reads
+  "cannot say" rather than turning every healthy slot into a permanent gap.
+
 ## 3.497.0 - the housekeeping run that breaks a slot is now the one that repairs it (X-301) (2026-09-14)
 
 - **The sixth gate watched the fleet and never the slot.** Everything it heard

@@ -301,6 +301,31 @@ export interface EngineAuthAdapter {
      */
     sharedPaths: string[];
     /**
+     * ‼️ X-277 — THE SHARED FILES, which cannot be junctions and are therefore
+     * their own field rather than a sixth name in the list above.
+     *
+     * `sharedPaths` are folders and a folder is reached by a junction. A FILE
+     * the engine appends to has to be the SAME FILE under two names — a hard
+     * link — or the two copies diverge the moment either is written. Measured
+     * on this machine (Claude Code 2.1.269): `history.jsonl` is opened with a
+     * locked APPEND, so the inode never changes and a hard link survives
+     * ordinary use indefinitely; the one path that would replace the file is
+     * the retention prune, which is gated behind an enterprise taint that is
+     * off here and refuses a non-regular file anyway.
+     *
+     * Measured too: not one Claude slot on this machine has a `history.jsonl`
+     * at all, so every isolated REPL session has been typing into a history
+     * that dies with the account — the X-270 fault by another name.
+     *
+     * ‼️ AND THE ONE THING THIS BUYS THAT A JUNCTION WOULD NOT HAVE: the engine's
+     * write lock is a file beside the NAME (`history.jsonl.lock`), so two REPLs
+     * opened on two hard-linked names do not see each other's lock and fall back
+     * on the append being atomic. Measured as low risk — an append of one short
+     * line under `O_APPEND` — and stated rather than discovered later, because
+     * it is the difference between "shared" and "serialised".
+     */
+    sharedFiles?: string[];
+    /**
      * ‼️ X-292 — THE FILE THIS ENGINE STAMPS WHEN ITS OWN HOUSEKEEPING RUNS,
      * relative to the config directory. It is not part of the contract and
      * nothing repairs it: it exists so a repair can say WHY it was needed.
@@ -556,6 +581,10 @@ export const ENGINE_AUTH_ADAPTERS: EngineAuthAdapter[] = [
         // them. Nothing there is an identity — installing a skill once and
         // losing it on the next sign-in is the X-270 fault by another name.
         sharedPaths: ['projects', 'todos', 'shell-snapshots', 'plugins', 'skills'],
+        // ‼️ X-277 — the terminal's own command history. A folder would be a
+        // junction; this is one file the engine appends to, so it is one file
+        // under two names (see `sharedFiles`).
+        sharedFiles: ['history.jsonl'],
         // ‼️ X-292 — measured on this machine, three separate events: the slot
         // whose `.last-cleanup` is newest is the slot that lost `todos` and
         // `shell-snapshots`, and never `projects`. The pool was untouched each

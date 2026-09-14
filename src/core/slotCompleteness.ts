@@ -36,6 +36,9 @@ import {
 /** Adapter fields that describe what a slot CONTAINS — each has a clause deriver. */
 export const CONTENT_KEYS = [
     'ownFiles', 'ownership', 'carryFiles', 'requiredEnv', 'sharedPaths',
+    // X-277 — a shared FILE is its own clause: one file under two names, not a
+    // junction and not a copy.
+    'sharedFiles',
     // X-295 — `carryProject` shapes the `carry:` clause of the file it names; `liveWire` IS the `hooks` clause.
     'carryProject', 'liveWire'
 ] as const;
@@ -93,6 +96,17 @@ export interface SlotContext {
 export interface SlotCompletenessFs extends SlotSettingsFs {
     lstatSync: (p: string) => { isSymbolicLink(): boolean; isDirectory(): boolean };
     realpathSync?: (p: string) => string;
+    /**
+     * ‼️ X-277 — A SHARED FILE IS A HARD LINK, NOT A JUNCTION, so the clause
+     * needs the two calls a junction never did: `statSync` to ask whether two
+     * names are one file (`ino`, measured on this machine's NTFS: two hard
+     * links report the same value and a separate file a different one), and
+     * `linkSync` to make one. Optional, because a stand-in that does not
+     * implement them should read "cannot tell" rather than throw.
+     */
+    statSync?: (p: string) => { ino: number | bigint; nlink: number; size: number };
+    linkSync?: (from: string, to: string) => void;
+    renameSync?: (from: string, to: string) => void;
 }
 
 export interface SlotClause {
@@ -303,6 +317,97 @@ export function slotClauses(adapter: EngineAuthAdapter): SlotClause[] {
                 const to = path.join(ctx.dir, name);
                 const failed = r.failed.some(f => same(f, to));
                 return { wrote: r.linked.some(f => same(f, to)), error: failed ? 'link repair failed' : undefined };
+            }
+        });
+    }
+    /**
+     * ‼️ X-277 — SHARED FILES: ONE FILE UNDER TWO NAMES, not a copy in each slot.
+     *
+     * A folder is reached by a junction; a file the engine APPENDS to cannot
+     * be, because two copies diverge the moment either is written. So this is a
+     * hard link, and everything below follows from that being a different
+     * mechanism rather than the same one on a smaller object:
+     *
+     *  · sameness is `ino`, not a path comparison — a hard link has no target
+     *    to resolve and `lstat` reports it as an ordinary file, which is
+     *    exactly why the `link:` clause above cannot answer this question;
+     *  · a slot that has its own file is DRAINED into the pool and then linked,
+     *    the same order X-271 uses for a folder — never overwritten, because
+     *    what is in there is the user's own typing;
+     *  · a hard link cannot cross volumes, so a slot on another drive is told
+     *    so BY NAME rather than quietly given a copy. "Copy it into the slot"
+     *    is the answer this family exists to refuse.
+     */
+    for (const name of adapter.sharedFiles ?? []) {
+        const poolOf = (ctx: SlotContext) => path.join(ctx.home, adapter.liveDir, name);
+        const mineOf = (ctx: SlotContext) => path.join(ctx.dir, name);
+        const inoOf = (ctx: SlotContext, p: string): string | undefined => {
+            if (!ctx.fs.statSync) { return undefined; }
+            try { return String(ctx.fs.statSync(p).ino); } catch { return undefined; }
+        };
+        out.push({
+            id: `link:${name}`, kind: 'link', owner: 'fleet',
+            read: ctx => {
+                const pool = poolOf(ctx), mine = mineOf(ctx);
+                const hasPool = ctx.fs.existsSync(pool), hasMine = ctx.fs.existsSync(mine);
+                // ‼️ NOTHING TO SHARE IS NOT A GAP. On a fresh machine neither
+                // side exists, and the engine makes the file the first time
+                // somebody types into it — inventing one here would put an empty
+                // file in front of that and answer a question nobody asked.
+                if (!hasPool && !hasMine) { return { ok: true, detail: `no ${name} on this machine yet` }; }
+                if (!hasMine) { return { ok: false, detail: `${name} missing — the slot has no link to the pool's` }; }
+                if (!hasPool) { return { ok: false, detail: `${name} lives only inside the slot — the pool has none` }; }
+                const a = inoOf(ctx, pool), b = inoOf(ctx, mine);
+                if (a === undefined || b === undefined) {
+                    // ‼️ CANNOT TELL IS NOT WRONG. A file system that does not
+                    // report an inode would make every healthy slot read as a
+                    // gap, which is the permanently-wrong badge this family
+                    // keeps having to undo.
+                    return { ok: true, detail: `${name} present (this file system cannot say whether it is shared)` };
+                }
+                return a === b
+                    ? { ok: true, detail: `${name} → pool (one file, two names)` }
+                    : { ok: false, detail: `${name} is a history of its own inside the slot` };
+            },
+            repair: (ctx, dryRun) => {
+                const pool = poolOf(ctx), mine = mineOf(ctx);
+                const hasPool = ctx.fs.existsSync(pool), hasMine = ctx.fs.existsSync(mine);
+                if (!hasPool && !hasMine) { return { wrote: false }; }
+                if (!ctx.fs.linkSync || !ctx.fs.statSync) {
+                    return { wrote: false, error: 'no hard-link support wired' };
+                }
+                if (hasMine && hasPool && inoOf(ctx, pool) === inoOf(ctx, mine)) { return { wrote: false }; }
+                if (dryRun) { return { wrote: false }; }
+                try {
+                    // The slot's own file goes to the pool FIRST where there is
+                    // nothing there yet — it is the user's typing and this is the
+                    // one moment it could be lost.
+                    if (hasMine && !hasPool) {
+                        if (!ctx.fs.renameSync) { return { wrote: false, error: 'no rename wired to drain the slot' }; }
+                        ctx.fs.renameSync(mine, pool);
+                    } else if (hasMine) {
+                        // Both exist and are different files. The pool is the
+                        // fleet's and stays; the slot's copy is moved aside under
+                        // a name that says what it is, never deleted.
+                        if (!ctx.fs.renameSync) { return { wrote: false, error: 'no rename wired to set the slot copy aside' }; }
+                        ctx.fs.renameSync(mine, `${mine}.slot-copy`);
+                    }
+                    ctx.fs.linkSync(pool, mine);
+                    return { wrote: true };
+                } catch (e) {
+                    const msg = String((e as { code?: string; message?: string })?.code
+                        ?? (e as { message?: string })?.message ?? e);
+                    // ‼️ EXDEV IS THE ONE FAILURE WORTH ITS OWN SENTENCE: a hard
+                    // link cannot cross volumes, and the honest answer is to say
+                    // the slot is on another drive — not to leave a copy behind
+                    // and call the slot complete.
+                    return {
+                        wrote: false,
+                        error: /EXDEV/i.test(msg)
+                            ? `${name} cannot be shared: the slot is on a different drive from the pool, and a hard link cannot cross one`
+                            : msg
+                    };
+                }
             }
         });
     }

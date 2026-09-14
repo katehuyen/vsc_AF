@@ -413,5 +413,104 @@ try {
     }
 }
 
+/* =========================================================================
+ * ‼️ X-277 — A SHARED FILE IS ONE FILE UNDER TWO NAMES.
+ *
+ * The five `sharedPaths` are folders and a folder is reached by a junction. The
+ * terminal's command history is a FILE the engine appends to, and two copies of
+ * an appended file diverge the moment either is written — so the mechanism is a
+ * hard link, and this suite is about it being a different mechanism rather than
+ * the same one on a smaller object.
+ *
+ * Run against a REAL file system, because the whole claim is about inodes:
+ * measured on this machine's NTFS, two hard links report one `ino` and a
+ * separate file reports another, and `linkSync` needs no administrator.
+ * ========================================================================= */
+{
+    const os2 = require('os');
+    const claudeA = adapterFor('claude');
+    const ids2 = sc.slotClauses(claudeA).map(c => c.id);
+    ok('‼️ claude: one clause per sharedFile',
+        (claudeA.sharedFiles || []).every(n => ids2.includes('link:' + n)));
+    ok('…and the history is the file it names', (claudeA.sharedFiles || []).includes('history.jsonl'));
+    ok('‼️ …and hooks is STILL last, so the repair order is unchanged',
+        ids2.indexOf('hooks') === ids2.length - 1);
+
+    const clause = sc.slotClauses(claudeA).find(c => c.id === 'link:history.jsonl');
+    const tmp = fs.mkdtempSync(path.join(os2.tmpdir(), 'af-hist-'));
+    const ctxOf = (home, dir) => ({ fs, home, dir, slotId: 's1', engine: 'claude', adapter: claudeA });
+    try {
+        const home = path.join(tmp, 'home');
+        const dir = path.join(tmp, 'slot');
+        const pool = path.join(home, claudeA.liveDir, 'history.jsonl');
+        fs.mkdirSync(path.dirname(pool), { recursive: true });
+        fs.mkdirSync(dir, { recursive: true });
+        const ctx = ctxOf(home, dir);
+        const mine = path.join(dir, 'history.jsonl');
+
+        // ---- nothing to share is not a gap ----
+        ok('‼️ a machine with no history anywhere is not reported broken',
+            clause.read(ctx).ok === true);
+        ok('…and the repair invents no empty file in front of the engine',
+            clause.repair(ctx, false).wrote === false && !fs.existsSync(pool) && !fs.existsSync(mine));
+
+        // ---- the ordinary case: the pool has one, the slot has none ----
+        fs.writeFileSync(pool, '{"display":"ls"}\n', 'utf8');
+        ok('a slot with no link to the pool\'s history is a gap',
+            clause.read(ctx).ok === false && /no link to the pool/.test(clause.read(ctx).detail));
+        ok('…and a dry run says so without touching anything',
+            clause.repair(ctx, true).wrote === false && !fs.existsSync(mine));
+        ok('‼️ …and the repair makes ONE FILE under two names',
+            clause.repair(ctx, false).wrote === true
+            && String(fs.statSync(mine).ino) === String(fs.statSync(pool).ino));
+        ok('…which the clause then reads as whole', clause.read(ctx).ok === true);
+        // The point of the whole item: typing in one place is typing in both.
+        fs.appendFileSync(mine, '{"display":"git status"}\n', 'utf8');
+        ok('‼️ …so a command typed in the slot is in the fleet\'s history, not the account\'s',
+            /git status/.test(fs.readFileSync(pool, 'utf8')));
+
+        // ---- the slot got there first: its typing is DRAINED, never dropped ----
+        const dir2 = path.join(tmp, 'slot2');
+        fs.mkdirSync(dir2, { recursive: true });
+        const home2 = path.join(tmp, 'home2');
+        fs.mkdirSync(path.join(home2, claudeA.liveDir), { recursive: true });
+        const ctx2 = ctxOf(home2, dir2);
+        fs.writeFileSync(path.join(dir2, 'history.jsonl'), '{"display":"typed inside the slot"}\n', 'utf8');
+        ok('a history that exists ONLY inside the slot is a gap, and says which way round',
+            clause.read(ctx2).ok === false && /only inside the slot/.test(clause.read(ctx2).detail));
+        ok('‼️ …and the repair moves it INTO the pool rather than overwriting it — it is the user\'s typing',
+            clause.repair(ctx2, false).wrote === true
+            && /typed inside the slot/.test(fs.readFileSync(path.join(home2, claudeA.liveDir, 'history.jsonl'), 'utf8')));
+        ok('…and the two names are one file afterwards',
+            String(fs.statSync(path.join(dir2, 'history.jsonl')).ino)
+            === String(fs.statSync(path.join(home2, claudeA.liveDir, 'history.jsonl')).ino));
+
+        // ---- both exist and differ: the pool wins and the slot's copy is KEPT ----
+        const dir3 = path.join(tmp, 'slot3');
+        fs.mkdirSync(dir3, { recursive: true });
+        const home3 = path.join(tmp, 'home3');
+        fs.mkdirSync(path.join(home3, claudeA.liveDir), { recursive: true });
+        fs.writeFileSync(path.join(home3, claudeA.liveDir, 'history.jsonl'), 'pool\n', 'utf8');
+        fs.writeFileSync(path.join(dir3, 'history.jsonl'), 'slot\n', 'utf8');
+        const ctx3 = ctxOf(home3, dir3);
+        ok('two separate files under one name is a gap',
+            clause.read(ctx3).ok === false && /history of its own/.test(clause.read(ctx3).detail));
+        ok('‼️ …and the slot\'s copy is set ASIDE, never deleted',
+            clause.repair(ctx3, false).wrote === true
+            && fs.existsSync(path.join(dir3, 'history.jsonl.slot-copy'))
+            && /slot/.test(fs.readFileSync(path.join(dir3, 'history.jsonl.slot-copy'), 'utf8')));
+        ok('…and what is left is the pool\'s, shared',
+            /pool/.test(fs.readFileSync(path.join(dir3, 'history.jsonl'), 'utf8')));
+
+        // ---- a file system that cannot say is not a file system that says no ----
+        const blind = { ...ctx, fs: { ...fs, statSync: undefined, linkSync: undefined } };
+        ok('‼️ a file system that reports no inode reads "cannot tell", not "broken" — '
+            + 'a permanently wrong badge is the failure this family keeps undoing',
+            clause.read(blind).ok === true && /cannot say/.test(clause.read(blind).detail));
+        ok('…and its repair refuses by name instead of pretending',
+            /no hard-link support/.test(clause.repair(blind, false).error || ''));
+    } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
