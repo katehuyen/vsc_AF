@@ -157,9 +157,27 @@ export interface SessionDiagnosis {
     handover?: HandoverHit;
     /** did any engine say the plan window was spent */
     limit: boolean;
+    /**
+     * ‼️ X-307 — DID THIS SESSION LEAVE ANY TRACE AT ALL?
+     *
+     * `hit-the-wall` says work is outstanding and nothing says where. It does
+     * NOT say whether the session got anywhere, and the sentry needs those
+     * apart: a round that worked for an hour and forgot the note is a normal
+     * round to carry on from, while a round that answered and left nothing
+     * behind will answer identically the next time it is opened — which is the
+     * shape a misconfigured campaign takes, and it bills for every repetition.
+     *
+     * Three measurements, all of them already taken: an item touched, an
+     * uncommitted path, a handover note. `unknown` when any of the three was
+     * not measured — the loop is claimed on evidence or not at all.
+     */
+    left: LeftBehind;
     /** the policy that was applied, echoed so a verdict can be read months later */
     policy: DiagnosisPolicy;
 }
+
+/** What a finished session left behind, as far as it was measured. */
+export type LeftBehind = 'something' | 'nothing' | 'unknown';
 
 /* ============ THE NOTE'S NAME, READ AND WRITTEN IN ONE PLACE ==============
  *
@@ -250,11 +268,19 @@ export function diagnoseSession(
     // having the last word. A caller that ran a search has already looked
     // there, because `fallback` IS that folder.
     let handover: HandoverHit | undefined;
+    // ‼️ X-307 — "no note was found" and "nobody looked" are the same value of
+    // `handover` and must not be the same evidence. The search already answers
+    // exactly this in `measured`; requiring an EMPTY `unknown` instead would
+    // have been too strict against the live record this item was opened on,
+    // where eighteen notes were really read and the residual unknown was a
+    // second, misconfigured source that does not exist on this machine.
+    let handoverMeasured = false;
     const search = facts.handoverSearch;
     if (search) {
         handover = search.hit;
         for (const u of search.unknown) { unknown.push(u); }
         for (const e of search.evidence) { evidence.push(e); }
+        handoverMeasured = !!handover || search.measured;
     } else if (facts.answerFiles === undefined) {
         unknown.push('the answers folder was not listed, so a handover note cannot be ruled out');
     } else {
@@ -266,6 +292,7 @@ export function diagnoseSession(
         evidence.push(handover
             ? `handover note: ${handover.file}`
             : 'no handover note names this session');
+        handoverMeasured = true;
     }
 
     // ---- the repositories --------------------------------------------------
@@ -294,6 +321,16 @@ export function diagnoseSession(
         }
     }
 
+    // ---- did it leave anything behind at all? (X-307) ----------------------
+    const left: LeftBehind =
+        handover || (facts.codes ?? []).length > 0 || repoClean === false ? 'something'
+            : handoverMeasured && facts.codes !== undefined && repoClean !== undefined ? 'nothing'
+                : 'unknown';
+    if (left === 'nothing') {
+        evidence.push('no item touched, nothing uncommitted and no handover note — '
+            + 'this session left no trace anywhere it was looked for');
+    }
+
     // ---- what it managed to do --------------------------------------------
     const did = didWhat(facts.progress);
     if (!did) {
@@ -313,7 +350,7 @@ export function diagnoseSession(
 
     const out = (outcome: SessionOutcome, rule: string, why: string): SessionDiagnosis => ({
         sessionId: facts.sessionId, session: shortSessionId(facts.sessionId),
-        outcome, rule, why, evidence, unknown, handover, limit, policy: p
+        outcome, rule, why, evidence, unknown, handover, limit, left, policy: p
     });
 
     // ---- the ladder --------------------------------------------------------
@@ -337,7 +374,15 @@ export function diagnoseSession(
         return out('nothing-to-continue', 'idle',
             'The session produced no turn and left nothing behind — there is nothing to carry on from.');
     }
-    return out('hit-the-wall', 'wall', limit
-        ? 'The plan window was spent and no handover note was written — what was in flight is not written down anywhere.'
+    // ‼️ X-307 — ONE OUTCOME, TWO WALLS. A spent plan window reopens by itself
+    // and the round that met it was doing fine; a session that ended on its own
+    // with nothing written down did not. The sentry's brake reads the rule, so
+    // the difference has to be on the verdict rather than in the sentence.
+    if (limit) {
+        return out('hit-the-wall', 'wall-limit',
+            'The plan window was spent and no handover note was written — what was in flight is not written down anywhere.');
+    }
+    return out('hit-the-wall', 'wall-unfinished', left === 'nothing'
+        ? 'The session ended on its own and left no trace — no item touched, nothing uncommitted, no note. Opening the same round again would produce the same nothing.'
         : 'The session ended with work outstanding and no handover note — what was in flight is not written down anywhere.');
 }

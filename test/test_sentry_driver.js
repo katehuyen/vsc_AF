@@ -184,6 +184,63 @@ const step = (over) => sentryStep(Object.assign({
         s.diagnosis.outcome === 'nothing-to-continue' && s.failStreak === 1);
 }
 
+// ---- ‼️ X-307 — the round that ANSWERED and still left nothing -------------
+//
+// Measured on a live campaign. The session took a turn — one sentence saying it
+// was not allowed to write outside its cwd — so it is not `nothing-to-continue`
+// and the brake never saw it. The leader rediagnosed the same item and opened
+// the same round, four times, at $0.08 each, and would have run until morning.
+{
+    const noTrace = {
+        status: 'done', code: 'X-176', taskId: 't1',
+        facts: {
+            sessionId: SID, answerFiles: [], repos: [{ path: 'D:/repo', dirty: 0 }],
+            codes: [], output: '', progress: { assistantSteps: 1, toolCalls: 1 }
+        }
+    };
+    const one = step({ finished: noTrace });
+    ok('a round that hit the wall on its own having left no trace counts toward the brake',
+        one.diagnosis.outcome === 'hit-the-wall' && one.diagnosis.left === 'nothing'
+        && one.failStreak === 1);
+
+    const r = rec();
+    let last;
+    for (let n = 1; n <= SENTRY_DEFAULT_FAIL_LIMIT; n++) {
+        last = sentryStep({ campaign: r, usage: [slot('a')], next: NEXT, finished: noTrace, now: NOW });
+        applySentryStep(r, last, last.round ? 't' + n : undefined, NOW);
+    }
+    ok('...and repeating it stops the campaign instead of billing for the loop',
+        last.plan.action === 'stopped' && last.plan.rule === 'fail-streak' && !last.round);
+    ok('...naming the cause the user has to go and fix, not only the count',
+        /permission|working-directory|bypassPermissions/i.test(last.plan.why));
+
+    // ‼️ the two guards that keep this off honest work
+    const walled = step({
+        finished: Object.assign({}, noTrace, {
+            facts: Object.assign({}, noTrace.facts, { output: 'You have hit your session limit. Try again later.' })
+        })
+    });
+    ok('‼️ a spent plan window is not the campaign failing — that wall never counts here',
+        walled.diagnosis.rule === 'wall-limit' && walled.failStreak === 0);
+
+    const worked = step({
+        finished: Object.assign({}, noTrace, {
+            facts: Object.assign({}, noTrace.facts, { repos: [{ path: 'D:/repo', dirty: 6 }] })
+        })
+    });
+    ok('‼️ a round that left work behind is an ordinary unfinished round, not a loop',
+        worked.diagnosis.outcome === 'hit-the-wall' && worked.diagnosis.left === 'something'
+        && worked.failStreak === 0);
+
+    const unread = step({
+        finished: Object.assign({}, noTrace, {
+            facts: Object.assign({}, noTrace.facts, { repos: undefined })
+        })
+    });
+    ok('‼️ and what nobody measured never brakes a campaign',
+        unread.diagnosis.left === 'unknown' && unread.failStreak === 0);
+}
+
 // ---- the campaign's own dimensions travel to the row it creates -------------
 {
     const s = step({

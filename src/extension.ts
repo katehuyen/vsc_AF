@@ -36274,8 +36274,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'rounds run on the main sign-in, because choosing an account would mean assuming an '
                 + 'engine - UNLESS you give a pool, which may cross engines. args: project (id '
                 + 'or name), agent (id or name), prompt (the words the FIRST '
-                + 'round opens on), engine?, model?, permissionMode? (an unattended round that stops '
-                + 'to ask permission never ends), superpowers?, ceiling? (five-hour % at or above '
+                + 'round opens on), engine?, model?, ‼️ permissionMode? (an unattended round that stops '
+                + 'to ask permission never ends — and X-307 measured the quieter half of that: '
+                + '`acceptEdits` approves writes INSIDE the round\'s working folder and nothing '
+                + 'outside it, so a campaign whose target is elsewhere — the usual case, an agent cwd '
+                + 'with the project\'s documents in the vault — produces rounds that END SUCCESSFULLY '
+                + 'having written nothing, are diagnosed as the wall, and are reopened for ever. '
+                + 'Unattended rounds that write outside their own cwd need `bypassPermissions`), '
+                + 'superpowers?, ceiling? (five-hour % at or above '
                 + 'which an account is a wall, default ' + String(SENTRY_DEFAULT_CEILING) + '), '
                 + 'safetyBufferMin? (minutes past a reset before trying again), failLimit? (barren '
                 + 'rounds in a row that stop it; 0 = no brake, default from '
@@ -36445,12 +36451,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'one-letter form: L = a leader chose the words · M = a template did and nothing was '
                 + 'asked · M! = the leader WAS asked and gave nothing usable, the only case that spends '
                 + 'money without buying words. A round opened before this record existed has neither. '
+                + '‼️ X-307 — each round also carries `lastText`: the sentence its session ended on, '
+                + 'collapsed to one line and capped at 200 characters (a leading … means it was cut, '
+                + 'so a SHORT one is really short). This is how a looping campaign is recognised '
+                + 'without opening a single round: N rounds, all done, all on the same code, all '
+                + 'saying the same thing is a setup fault, not progress. '
                 + '‼️ "Is a round running" is DERIVED from the task rows every time '
                 + 'it is asked, never stored - a stored flag is how a campaign comes to believe it is '
                 + 'still running a round that died with the window. args: none',
             handler: () => {
                 const rec = taskManager.sentry;
                 if (!rec) { return { campaign: undefined, running: false }; }
+                /**
+                 * ‼️ X-307 — WHAT EACH ROUND ACTUALLY SAID, in one line.
+                 *
+                 * A campaign in a loop and a campaign working look identical
+                 * here: N rounds, all `done`, all on the same code. The thing
+                 * that gives it away is the sentence the session ended on —
+                 * four rounds reading "a write permission is needed" IS the
+                 * diagnosis, and finding that out cost one `tasks.get` per
+                 * round, which is why the live loop ran four times before
+                 * anybody saw it. The ellipsis says it was cut, so a short
+                 * answer is visibly short: that is the signal.
+                 */
+                const lastTextOf = (t: FarmTask): string | undefined => {
+                    if (!t.outputFile) { return undefined; }
+                    try {
+                        if (fs.statSync(t.outputFile).size > 2_000_000) { return undefined; }
+                        const said = archivedReplyText(fs.readFileSync(t.outputFile, 'utf8'), t.engine)
+                            .replace(/\s+/g, ' ').trim();
+                        if (!said) { return undefined; }
+                        return said.length > 200 ? '…' + said.slice(-200) : said;
+                    } catch { return undefined; }
+                };
                 const limit = typeof rec.failLimit === 'number'
                     ? rec.failLimit
                     : cfg().get<number>('sentryFailureLimit', SENTRY_DEFAULT_FAIL_LIMIT);
@@ -36495,17 +36528,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         : undefined,
                     rounds: taskManager.tasks
                         .filter(t => t.sentryOf === rec.id)
-                        .map(t => ({
-                            id: t.id, title: t.title, status: t.status,
-                            createdAt: t.createdAt, endedAt: t.endedAt,
-                            ...(t.account ? { account: t.account } : {}),
-                            // ‼️ X-195 — and the account of why THIS round got
-                            // the words it did, which the campaign's single
-                            // `lastWhy` cannot give: eight rounds share that
-                            // sentence and seven of them are unexplained by it.
-                            ...(t.sentryWhy
-                                ? { why: t.sentryWhy, whyMark: whyShorthand(t.sentryWhy) } : {})
-                        }))
+                        .map(t => {
+                            const said = lastTextOf(t);
+                            return {
+                                id: t.id, title: t.title, status: t.status,
+                                createdAt: t.createdAt, endedAt: t.endedAt,
+                                ...(t.account ? { account: t.account } : {}),
+                                ...(said ? { lastText: said } : {}),
+                                // ‼️ X-195 — and the account of why THIS round got
+                                // the words it did, which the campaign's single
+                                // `lastWhy` cannot give: eight rounds share that
+                                // sentence and seven of them are unexplained by it.
+                                ...(t.sentryWhy
+                                    ? { why: t.sentryWhy, whyMark: whyShorthand(t.sentryWhy) } : {})
+                            };
+                        })
                 };
             }
         },

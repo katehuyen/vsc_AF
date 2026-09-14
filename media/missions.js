@@ -4266,7 +4266,13 @@
                         'Now: ' + (permName(s, sentryForm.permissionMode) || 'the CLI\'s own default'),
                         window.AFTip.GAP,
                         '‼️ An unattended round that stops to ask has nobody to answer it and never ends, '
-                        + 'so this is the one setting a campaign cannot afford to leave narrow.'
+                        + 'so this is the one setting a campaign cannot afford to leave narrow.',
+                        window.AFTip.GAP,
+                        '‼️ And the quieter half, measured on a live campaign: acceptEdits approves writes '
+                        + 'INSIDE the round\'s working folder and nothing outside it. A campaign whose '
+                        + 'target is elsewhere — an agent folder as cwd, the project\'s documents in the '
+                        + 'vault — opens rounds that end SUCCESSFULLY having written nothing. Rounds that '
+                        + 'write outside their own cwd need bypassPermissions.'
                     ])}
                 ${tipLabel(
                     `<input type="checkbox" id="s-sp"${sentryForm.superpowers ? ' checked' : ''}> Superpowers`,

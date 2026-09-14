@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.507.0 - The campaign that reopened the same nothing four times now stops (X-307) (2026-09-14)
+
+- **‼️ A ROUND THAT ANSWERS AND LEAVES NOTHING IS NOW A BARREN ROUND.**
+  Measured on a live campaign (`sc-mu15qwp8`, four rounds, all on `P-1`,
+  ~$0.08 each): the sessions ran with `acceptEdits` in an agent folder while
+  their target was in the vault, so each one took exactly one turn — a
+  sentence saying a write permission was needed — and ended `done` having
+  written nothing. That is not `nothing-to-continue` (something *was*
+  attempted), so it reached `hit-the-wall`, which the failure brake did not
+  count. The leader diagnosed the same item, reopened the same round, and
+  would have run until morning. `failLimit` was 2 and never fired.
+- **The verdict now carries `left`** (`something` | `nothing` | `unknown`):
+  did the session leave a trace anywhere — an item touched, an uncommitted
+  path, a handover note. All three must have been really measured; an
+  unmeasured fact reads `unknown` and never brakes a campaign, which is the
+  same law the rest of `sessionDiagnosis` already states.
+- **One outcome, two walls.** `hit-the-wall` splits its rule into
+  `wall-limit` (the engine said the plan window was spent — not the
+  campaign's fault, and it reopens by itself) and `wall-unfinished` (the
+  session ended on its own). Only the second can be barren.
+- **`sentry.status` says what each round actually said** — `lastText`, the
+  session's closing sentence on one line, capped at 200 characters with a
+  leading `…` when it was cut, so a short answer reads as short. Four rounds
+  saying the same thing is the whole diagnosis; before this it cost one
+  `tasks.get` per round to find out.
+- **And the trap is named where it is set** — `sentry.start`'s
+  `permissionMode` and the campaign form's Permissions tooltip now say the
+  measured half out loud: `acceptEdits` approves writes inside the round's
+  own working folder and nothing outside it, so an unattended round whose
+  target is elsewhere needs `bypassPermissions`.
+
 ## 3.506.0 - Stop reaches the commands the turn left running behind it (S-62) (2026-09-14)
 
 - **‼️ "I STOPPED IT AND IT WENT ON" — THE SECOND WAY, MEASURED AND CLOSED.**

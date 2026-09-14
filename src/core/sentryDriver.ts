@@ -159,14 +159,28 @@ function failLimitOf(c: SentryRecord): number {
 /**
  * Did this round achieve nothing?
  *
- * Two ways, and counting only the first would miss the loop that actually
+ * Three ways, and counting only the first would miss the loop that actually
  * burns a night: a run the engine reported as SUCCESSFUL which produced no
  * turn and left nothing behind is exactly as barren as one that crashed, and
  * it is the shape a misconfigured agent takes.
+ *
+ * ‼️ X-307 — THE THIRD WAY, MEASURED ON A LIVE CAMPAIGN. A round whose session
+ * DID take a turn — it answered, in one sentence, that it was not allowed to
+ * write — is not `nothing-to-continue`, because something was attempted. It
+ * reached `hit-the-wall` instead, which the brake did not count, so the
+ * campaign rediagnosed the same item and opened the same round again, four
+ * times, at $0.08 each, and would have run until morning.
+ *
+ * So the wall a session walks into ON ITS OWN, having left no trace anywhere
+ * that was looked at, counts. The two guards that keep this off honest work:
+ * `wall-limit` is excluded (a spent plan window is not the campaign's fault
+ * and reopens by itself), and `left` is `nothing` only when all three traces
+ * were really measured — an unmeasured fact reads `unknown` and never brakes.
  */
 function barren(fin: FinishedRound, d: SessionDiagnosis | undefined): boolean {
     if (fin.status === 'cancelled') { return false; }
-    return fin.status === 'failed' || d?.outcome === 'nothing-to-continue';
+    if (fin.status === 'failed' || d?.outcome === 'nothing-to-continue') { return true; }
+    return d?.outcome === 'hit-the-wall' && d.rule === 'wall-unfinished' && d.left === 'nothing';
 }
 
 /**
@@ -250,9 +264,17 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     // ---- the brake, which the quota cannot apply for us --------------------
     const limit = failLimitOf(c);
     if (limit > 0 && streak >= limit && c.status === 'running') {
+        // ‼️ X-307 — a brake that only says "nothing" leaves the user to find
+        // out why by reading four identical transcripts. The no-trace wall has
+        // one overwhelmingly common cause, so it is named here.
+        const trace = diagnosis?.outcome === 'hit-the-wall' && diagnosis.left === 'nothing'
+            ? ' Each session answered and left no trace at all, which is usually a permission or a '
+            + 'working-directory mismatch: an unattended round writing outside its own cwd needs '
+            + 'bypassPermissions, because acceptEdits approves nothing out there.'
+            : '';
         const why = `${streak} round${streak === 1 ? '' : 's'} in a row produced nothing — the campaign `
-            + 'stops rather than opening more empty sessions. Fix what is failing and start it again, '
-            + `or set the failure brake to 0 to switch it off (it is ${limit}).`;
+            + 'stops rather than opening more empty sessions.' + trace + ' Fix what is failing and start it '
+            + `again, or set the failure brake to 0 to switch it off (it is ${limit}).`;
         return { ...base, plan: { action: 'stopped', rule: 'fail-streak', why }, stop: why };
     }
 

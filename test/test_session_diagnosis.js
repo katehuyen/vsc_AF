@@ -86,6 +86,73 @@ const facts = (over) => Object.assign({
         idle.limit === false && !/wall/.test(idle.rule));
 }
 
+// ---- ‼️ X-307 — one outcome, two walls, and what was left behind -----------
+//
+// Measured on a live campaign: a session whose only turn said it was not
+// allowed to write is NOT idle (it took a turn), so it reached the wall — and
+// the sentry's brake did not count the wall, so the same round was opened four
+// times at $0.08 each. The verdict now carries the difference the brake needs.
+{
+    const limitWall = diagnoseSession(facts({ output: 'You have hit your session limit. Try again later.' }));
+    ok('a wall the plan window caused names itself', limitWall.rule === 'wall-limit');
+
+    const own = diagnoseSession(facts());
+    ok('a session that ended on its own walks into the other wall',
+        own.outcome === 'hit-the-wall' && own.rule === 'wall-unfinished');
+    ok('...and having touched an item, it left something behind', own.left === 'something');
+
+    const noTrace = diagnoseSession(facts({
+        codes: [], answerFiles: [], repos: [{ path: 'D:/repo', dirty: 0 }],
+        progress: { assistantSteps: 1, toolCalls: 1 }
+    }));
+    ok('‼️ a session that took a turn and left NO trace is the wall, not idle',
+        noTrace.outcome === 'hit-the-wall' && noTrace.rule === 'wall-unfinished');
+    ok('...and the verdict says so in the field the brake reads', noTrace.left === 'nothing');
+    ok('...and warns in words that opening it again buys the same nothing',
+        /same nothing/i.test(noTrace.why));
+
+    ok('uncommitted work is a trace on its own',
+        diagnoseSession(facts({ codes: [], answerFiles: [], repos: [{ path: 'D:/repo', dirty: 2 }] })).left === 'something');
+    ok('...and so is a note naming the session',
+        diagnoseSession(facts({ codes: [], answerFiles: [NOTE], repos: [{ path: 'D:/repo', dirty: 0 }] })).left === 'something');
+
+    // ‼️ REPLAY OF THE LIVE RECORD X-307 WAS OPENED ON (campaign sc-mu15qwp8,
+    // round R3). The search really read eighteen notes and rejected every one,
+    // and still carried an `unknown`: a SECOND configured source that does not
+    // exist on this machine. Reading "nothing was measured" out of that would
+    // have let the live loop through the brake it was built for, so the flag
+    // that decides is the search's own `measured`, not an empty `unknown`.
+    const live = diagnoseSession({
+        sessionId: 'e849c4e2-8af5-40e2-89c3-54eecd509dc5',
+        handoverSearch: {
+            considered: [], measured: true,
+            unknown: ['the configured handover source could not be read'],
+            evidence: ['no handover note names this session'], why: ''
+        },
+        repos: [{ path: 'D:/zone/agent/ajanlar/basit', dirty: 0 }],
+        codes: [], progress: { assistantSteps: 2, toolCalls: 1 }, output: ''
+    });
+    ok('‼️ the live looping round reads as the wall it walked into on its own',
+        live.outcome === 'hit-the-wall' && live.rule === 'wall-unfinished');
+    ok('‼️ ...and as having left nothing, which is what stops the loop',
+        live.left === 'nothing');
+    ok('...even though one source it was told about could not be read',
+        live.unknown.length > 0);
+    ok('a search that read NO source at all still says nothing about a trace',
+        diagnoseSession(facts({
+            codes: [], answerFiles: undefined, repos: [{ path: 'D:/repo', dirty: 0 }],
+            handoverSearch: { considered: [], measured: false, unknown: ['nothing was listed'], evidence: [], why: '' }
+        })).left === 'unknown');
+
+    // ‼️ the half that keeps the loop claim honest: unmeasured is never "nothing"
+    ok('a repository nobody read cannot be called no-trace',
+        diagnoseSession(facts({ codes: [], answerFiles: [], repos: undefined })).left === 'unknown');
+    ok('...nor an answers folder nobody listed',
+        diagnoseSession(facts({ codes: [], answerFiles: undefined, repos: [{ path: 'D:/repo', dirty: 0 }] })).left === 'unknown');
+    ok('...nor a ledger nobody read',
+        diagnoseSession(facts({ codes: undefined, answerFiles: [], repos: [{ path: 'D:/repo', dirty: 0 }] })).left === 'unknown');
+}
+
 // ---- the ladder is policy, not a rule carved into the code -----------------
 {
     // The user approved these as DEFAULTS, and said out loud they must stay
