@@ -141,5 +141,48 @@ const { adapterFor, ENGINE_AUTH_ADAPTERS } = require(path.join(ROOT, 'out/core/e
     } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 }
 
+/* =========================================================================
+ * ‼️ X-301 — A GATE THAT MAY NOT FAIL ITS CALLER MAY NOT FAIL SILENTLY EITHER.
+ *
+ * Measured 2026-09-14: two slots sat with `link:todos` and
+ * `link:shell-snapshots` missing across a night of launches; the repair
+ * primitive was proved to work when called by hand (`accounts.complete
+ * dryRun:false` restored both and journalled them); and the journal held not
+ * one row to say the launch gate had ever tried. All four gates caught
+ * everything and said nothing, so a swallowed throw and a gate that never ran
+ * looked identical from outside — which is exactly where a person stands when
+ * the invariant is quietly gone.
+ *
+ * Read out of the source, because the gates live inside `activate()` and the
+ * thing being pinned is that NONE of them keeps a bare catch.
+ * ========================================================================= */
+{
+    const fs2 = require('fs');
+    const ext = fs2.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+    ok('‼️ every contract gate goes through the one wrapper',
+        /const runContractGate = \(gate: string, slotId\?: string\): void => \{/.test(ext));
+    for (const [gate, call] of [
+        ['start', /setTimeout\(\(\) => runContractGate\('start'\), 0\);/],
+        ['watch', /runContractGate\('watch'\);/],
+        ['capture', /runContractGate\('capture', slot\.id\);/],
+        ['launch', /if \(slot\) \{ runContractGate\('launch', slot\.id\); \}/]
+    ]) {
+        ok(`…including the ${gate} gate`, call.test(ext));
+    }
+    // ‼️ THE POINT OF THE WRAPPER, not merely that it exists: a bare
+    // `catch { }` around the contract anywhere is the defect coming back.
+    const bare = ext.match(/completeSlots\(false[^)]*\); \} catch \{ \/\*[^*]*\*\/ \}/g) || [];
+    ok('‼️ …and no gate keeps a bare catch around the contract any more',
+        bare.length === 0);
+    ok('‼️ the swallowed throw lands in the instrument that already exists',
+        /repairJournal\.record\(\[\{[\s\S]{0,320}clause: 'contract',/.test(ext));
+    ok('…saying the throw came BEFORE any clause was read, which is a different '
+        + 'fact from a clause whose own repair failed',
+        /was: 'the gate threw before any clause was repaired',/.test(ext)
+        && /fixed: false,/.test(ext));
+    ok('…and the journal is still not allowed to fail the gate it reports on',
+        /catch \{ \/\* a journal never fails a gate either \*\/ \}/.test(ext));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

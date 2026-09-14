@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.496.0 - a gate that may not fail a launch may not fail silently either (X-301) (2026-09-14)
+
+- **Two slots sat with `link:todos` and `link:shell-snapshots` missing across a
+  whole night of launches** — the junctions that keep a slot's records in the
+  shared pool instead of piling up inside the account (X-271). The repair
+  primitive works: called by hand it restored both, wrote them to disk and
+  journalled them. The journal held **not one row** to say the launch gate had
+  ever tried.
+- All four contract gates — `start`, `watch`, `capture`, `launch` — caught
+  everything and said nothing, each with a comment explaining why it must never
+  fail the thing it runs beside. Every one of those comments is right; what
+  none of them may do is leave no trace, because **a swallowed throw and a gate
+  that never ran look identical from outside** — which is exactly where a
+  person stands when the invariant is quietly gone.
+- The promise is kept and the silence is not: the gate still cannot fail its
+  caller, and the reason now lands in the instrument that already exists, as
+  `clause: 'contract'` — a different fact from a clause whose own repair failed.
+- **The engine's own housekeeping is what deletes them, and the product had
+  already proved it without anyone reading the answer.** `accounts.repairs`
+  reports `afterHousekeeping` against `compared`; on this machine it stands at
+  **24 of 24** for those two clauses and **0** for every other clause in the
+  contract. The correlation X-292 built to answer this question has been
+  sitting at "the engine does it, every time" while the fleet re-repaired for
+  ever. Surfacing that reading, and acting on it, is the rest of X-301.
+
 ## 3.495.0 - a session ran for as long as its turns ran, not for as long as it was open (S-53) (2026-09-14)
 
 - **The Duration column is now the turns' own durations added up.** S-52 took

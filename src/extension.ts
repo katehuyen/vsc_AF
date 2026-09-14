@@ -18265,6 +18265,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return { ...after, dryRun: false, promotions };
             });
     };
+    /**
+     * ‼️ X-301 — A GATE THAT MAY NOT FAIL A LAUNCH MAY NOT FAIL SILENTLY EITHER.
+     *
+     * All four gates below caught everything and said nothing, each with a
+     * comment explaining why it must never fail the thing it runs beside — and
+     * every one of those comments is right. What none of them may do is leave
+     * NO trace: measured 2026-09-14, two slots sat with `link:todos` and
+     * `link:shell-snapshots` missing across a whole night of launches, the
+     * repair primitive was proved to work when called by hand, and the journal
+     * held not one row to say the gate had even tried. A swallowed throw and a
+     * gate that never ran are indistinguishable from the outside, which is
+     * exactly the position a person is in when the invariant is quietly gone.
+     *
+     * So the promise is kept and the silence is not: the gate still cannot fail
+     * its caller, and the failure lands in the instrument that already exists.
+     * `clause: 'contract'` says the throw happened BEFORE any clause was read,
+     * which is a different fact from a clause whose own repair failed.
+     *
+     * An empty `slotId` is the fleet-wide pass; it matches no slot's card on
+     * purpose, and is read from the journal itself (`accounts.repairs`).
+     */
+    const runContractGate = (gate: string, slotId?: string): void => {
+        try { completeSlots(false, slotId, gate); }
+        catch (e) {
+            try {
+                const one = (slotId || '').trim();
+                const slot = one ? findSlot(storedAccounts(), one) : undefined;
+                repairJournal.record([{
+                    at: Date.now(), slotId: one, engine: slot?.engine ?? '', gate,
+                    clause: 'contract',
+                    was: 'the gate threw before any clause was repaired',
+                    fixed: false,
+                    error: String((e as { message?: string })?.message ?? e)
+                }]);
+            } catch { /* a journal never fails a gate either */ }
+        }
+    };
     // ‼️ X-284 — THE CONTRACT IS ASKED OF EVERY SLOT AT EVERY START, not only
     // when somebody presses something. This was the X-271 link sweep and is now
     // the whole list: the links, the behaviour file, the env contract and the
@@ -18274,7 +18311,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Off the activation path on purpose: it touches the disk, and a window must
     // never wait on a repair. A failure here costs one incomplete slot, never a
     // start, and never a session — the index reads the slots either way.
-    setTimeout(() => { try { completeSlots(false, undefined, 'start'); } catch { /* never fails a start */ } }, 0);
+    setTimeout(() => runContractGate('start'), 0);
     /**
      * ‼️ X-294 — AND THE SIXTH GATE, which nobody has to open. The five above
      * are all somebody's move; a permission granted at a terminal prompt in the
@@ -18297,7 +18334,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // would have had to guess how long that takes.
         slotWatchState.seen = now;
         if (!changed.length) { return; }
-        try { completeSlots(false, undefined, 'watch'); } catch { /* never fails on a file change */ }
+        runContractGate('watch');
         // …and what the gate itself wrote is accounted for before the next event.
         slotWatchState.seen = fingerprint(fs, slotWatchFiles());
     };
@@ -18496,7 +18533,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // copy-if-absent line it replaced could never do. It is never allowed
         // to fail a capture: the credentials are already on disk and a slot
         // missing a link is repaired by the next sweep.
-        try { completeSlots(false, slot.id, 'capture'); } catch { /* never fails a capture */ }
+        runContractGate('capture', slot.id);
         // X-294 — capture is the one event that can add an ENGINE, and an engine
         // is what decides whether its directory is worth a watch. Idempotent, so
         // the ordinary case (another account on an engine already watched) does
@@ -18832,7 +18869,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // One slot, a handful of stats; and a launch is never failed by it,
         // because an incomplete slot still costs only a sweep while a refused
         // launch costs the user their session.
-        if (slot) { try { completeSlots(false, slot.id, 'launch'); } catch { /* never fails a launch */ } }
+        if (slot) { runContractGate('launch', slot.id); }
         return accountEnv(slot);
     };
     /**

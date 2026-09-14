@@ -2447,11 +2447,19 @@ const { opencodeStatus, syncToOpencode } =
         // ‼️ A journal nobody writes to is a describe. Every gate that repairs
         // has to record, and the gate has to be NAMED - a row that cannot say
         // which door ran it cannot show a slot broken between two gates.
+        // ‼️ X-301 — four of the five now go through `runContractGate`, which
+        // still cannot fail its caller but no longer swallows the reason: a
+        // throw is journalled as `clause: 'contract'`. The NAME is what this
+        // line is about and it travels either way; `press` is a person standing
+        // at the button and reports to them directly.
         ok('‼️ X-292 — every gate that runs the contract names itself',
-            /completeSlots\(false, undefined, 'start'\)/.test(src)
-            && /completeSlots\(false, slot\.id, 'capture'\)/.test(src)
-            && /completeSlots\(false, slot\.id, 'launch'\)/.test(src)
+            /runContractGate\('start'\)/.test(src)
+            && /runContractGate\('capture', slot\.id\)/.test(src)
+            && /runContractGate\('launch', slot\.id\)/.test(src)
             && /completeSlots\(false, id, 'press'\)/.test(src));
+        ok('‼️ X-301 — …and a gate that may not fail its caller may not fail silently',
+            /const runContractGate = \(gate: string, slotId\?: string\): void => \{/.test(src)
+            && /clause: 'contract',/.test(src));
         ok('…and the repair path records through the one journal',
             /repairJournal\.record\(repairEvents\(/.test(src));
         // ‼️ The stamp is evidence about the state BEFORE the repair. Read it
@@ -5496,7 +5504,7 @@ const { opencodeStatus, syncToOpencode } =
         // ‼️ THREE MOMENTS, and the middle one is the only PREVENTIVE one: once the
         // engine has been handed an unlinked slot it has already written inside it.
         ok('…and the window never waits on the repair',
-            /setTimeout\(\(\) => \{ try \{ completeSlots\(false, undefined, 'start'\);/.test(src));
+            /setTimeout\(\(\) => runContractGate\('start'\), 0\);/.test(src));
         // ‼️ X-284 — THE MOMENT, NOT THE LIST. This used to pin two named
         // repairs in a fixed order at the launch gate, and it had already broken
         // once on proximity when the second one was added. The list is no longer
@@ -5507,12 +5515,18 @@ const { opencodeStatus, syncToOpencode } =
         // already being written inside it and the system-prompt variable has
         // already been read, so nothing can be put right afterwards.
         ok('‼️ X-271/X-269/X-284: the whole contract is asked BEFORE a launch is handed the slot',
-            /completeSlots\(false, slot\.id, 'launch'\);[\s\S]{0,400}return accountEnv\(slot\);/.test(src));
-        ok('…and a launch is never failed by it', /completeSlots\(false, slot\.id, 'launch'\); \} catch \{ \/\* never fails a launch/.test(src));
+            /runContractGate\('launch', slot\.id\);[\s\S]{0,400}return accountEnv\(slot\);/.test(src));
+        // ‼️ X-301 — the promise moved INTO the wrapper rather than being
+        // dropped: it still cannot fail a launch, and the reason a pass threw
+        // is now a journal row instead of nothing at all.
+        ok('…and a launch is never failed by it, and no longer fails in silence',
+            /if \(slot\) \{ runContractGate\('launch', slot\.id\); \}/.test(src)
+            && /was: 'the gate threw before any clause was repaired',/.test(src)
+            && /catch \{ \/\* a journal never fails a gate either \*\/ \}/.test(src));
         // ‼️ AND THE OTHER TWO GATES ASK THE SAME ONE THING, or the eleventh
         // clause is carried by one door and forgotten by the other two.
         ok('‼️ X-284: capture asks the contract once the row exists',
-            /await writeAccounts\(addSlot\(list, slot\)\);[\s\S]{0,700}completeSlots\(false, slot\.id, 'capture'\); \} catch \{ \/\* never fails a capture/.test(src));
+            /await writeAccounts\(addSlot\(list, slot\)\);[\s\S]{0,700}runContractGate\('capture', slot\.id\);/.test(src));
         ok('…and the capture executor copies the IDENTITY and stops',
             !/for \(const l of plan\.links\)/.test(src)
             && !/reproduceSlotSettings\(fs, \{\r?\n\s+home: os\.homedir\(\), dir: plan\.slot\.dir/.test(src));

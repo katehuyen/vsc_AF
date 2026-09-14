@@ -112,10 +112,13 @@ const at = (list, rel) => list.find(w => norm(w.file) === norm(HOME + '/' + rel)
 // ---------- 4. the gate name is the one the journal can tell apart ----------
 {
     const src = require('fs').readFileSync(path.join(ROOT, 'src/extension.ts'), 'utf8');
+    // ‼️ X-301 — the gate is now reached through `runContractGate`, which keeps
+    // the "never fails its caller" promise and drops the silence: a throw lands
+    // in the repair journal as `clause: 'contract'` instead of vanishing.
     ok('‼️ the watcher calls the EXISTING gate, not a second code path of its own',
-        /completeSlots\(false, undefined, 'watch'\)/.test(src));
+        /runContractGate\('watch'\)/.test(src));
     ok('…and it re-fingerprints after the gate, which is the loop rule at the call site',
-        /completeSlots\(false, undefined, 'watch'\)[\s\S]{0,400}?slotWatchState\.seen = fingerprint/.test(src));
+        /runContractGate\('watch'\)[\s\S]{0,400}?slotWatchState\.seen = fingerprint/.test(src));
     // ‼️ One of the watched directories is the HOME directory — 42 other children
     // on this machine — so the `name` a watched file carries has to be USED, not
     // merely computed. Without the filter every stray home event would cost a
@@ -123,7 +126,7 @@ const at = (list, rel) => list.find(w => norm(w.file) === norm(HOME + '/' + rel)
     ok('‼️ an event naming a file we do not watch is dropped before it costs a read',
         /if \(name && !names\.has\(/.test(src));
     ok('…and the watch is armed from the gate, so the FIRST account of a new engine is heard at once',
-        /'capture'\);[\s\S]{0,600}?armSlotWatch\(\)/.test(src));
+        /'capture', slot\.id\);[\s\S]{0,600}?armSlotWatch\(\)/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
