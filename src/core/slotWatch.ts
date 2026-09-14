@@ -92,6 +92,51 @@ export function watchedFiles(home: string, engines: string[], adapter = adapterF
     return out;
 }
 
+/**
+ * ‼️ X-301 — AND THE SLOTS' OWN HOUSEKEEPING STAMPS, because the fleet is not
+ * the only thing that changes under a slot.
+ *
+ * `watchedFiles` above watches the FLEET, and everything it hears travels one
+ * way: the user edited `settings.json`, so the slots must follow. That is the
+ * whole of the sixth gate as X-294 built it, and it has nothing to say about
+ * the other direction — a slot that was whole and then BROKE.
+ *
+ * It breaks, measurably and on a schedule. The engine prunes its own scratch
+ * directories, and on a relocated config directory those are junctions: a
+ * recursive remove sees a junction as a link and unlinks it rather than walking
+ * into it. Counted on this machine over 24 comparable repairs, `link:todos` and
+ * `link:shell-snapshots` followed a housekeeping run 24 times out of 24 while
+ * every other clause followed one 0 times.
+ *
+ * So the contract was only ever asked again when somebody opened a door, and
+ * between two doors the slot sat with its records piling up inside the account
+ * instead of in the pool — which is the one thing X-271 exists to prevent.
+ * The stamp is the engine's own announcement that it has just been through the
+ * directory, so watching it makes the event that BREAKS the slot the same event
+ * that repairs it.
+ *
+ * ‼️ NO LOOP: the contract never writes this file — only the engine does — so
+ * a repair triggered here cannot trigger itself. An engine that stamps nothing
+ * contributes no row, exactly as it contributes no `keptAt`.
+ */
+export function watchedStamps(
+    slots: readonly { engine: string; dir: string }[], adapter = adapterFor
+): WatchedFile[] {
+    const out: WatchedFile[] = [];
+    const seen = new Set<string>();
+    for (const slot of slots) {
+        const stamp = String(adapter(slot.engine)?.housekeeping ?? '').trim();
+        const dir = String(slot.dir ?? '').trim();
+        if (!stamp || !dir) { continue; }
+        const file = path.join(dir, stamp);
+        const key = file.toLowerCase();
+        if (seen.has(key)) { continue; }
+        seen.add(key);
+        out.push({ engine: slot.engine, dir: path.dirname(file), name: path.basename(file), file });
+    }
+    return out;
+}
+
 /** Only what this needs off a disk, so the rule is testable without one. */
 export interface WatchFs {
     existsSync(p: string): boolean;

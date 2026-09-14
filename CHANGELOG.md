@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.497.0 - the housekeeping run that breaks a slot is now the one that repairs it (X-301) (2026-09-14)
+
+- **The sixth gate watched the fleet and never the slot.** Everything it heard
+  travelled one way — the user edited `settings.json`, so the slots must follow
+  — and it had nothing to say about a slot that was whole and then broke. Slots
+  break on a schedule: the engine prunes its own scratch directories, and on a
+  relocated config directory those are junctions, so a recursive remove unlinks
+  them instead of walking into them.
+- So the contract was only ever asked again when somebody opened a door, and
+  between two doors a slot sat writing its records **inside the account**
+  instead of into the pool — the one thing the shared links exist to prevent.
+- Each slot's housekeeping stamp is now watched beside the fleet's files. The
+  stamp is the engine announcing it has just been through that directory, so
+  the event that breaks the slot is the event that repairs it. No loop is
+  possible: the contract writes junctions and the files it names, never the
+  engine's own stamp.
+- An engine that stamps nothing contributes no watcher — the same refusal
+  `keptAt` already makes — rather than being given an invented filename that
+  would report "nothing ever changes" for ever.
+- Correction to the previous entry: the `afterHousekeeping` reading was already
+  surfaced — the Engines card draws a `↻N` badge whose panel names the cause and
+  says *"every repeat followed this engine's own housekeeping"*. What was
+  missing was never the telling; it was that nothing acted on it.
+
 ## 3.496.0 - a gate that may not fail a launch may not fail silently either (X-301) (2026-09-14)
 
 - **Two slots sat with `link:todos` and `link:shell-snapshots` missing across a

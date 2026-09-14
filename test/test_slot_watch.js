@@ -14,7 +14,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const ROOT = path.join(__dirname, '..');
-const { watchedFiles, fingerprint, changedSince } = require(path.join(ROOT, 'out/core/slotWatch.js'));
+const { watchedFiles, watchedStamps, fingerprint, changedSince } = require(path.join(ROOT, 'out/core/slotWatch.js'));
 const { adapterFor } = require(path.join(ROOT, 'out/core/engineAccounts.js'));
 
 const HOME = 'C:/Users/x';
@@ -127,6 +127,61 @@ const at = (list, rel) => list.find(w => norm(w.file) === norm(HOME + '/' + rel)
         /if \(name && !names\.has\(/.test(src));
     ok('…and the watch is armed from the gate, so the FIRST account of a new engine is heard at once',
         /'capture', slot\.id\);[\s\S]{0,600}?armSlotWatch\(\)/.test(src));
+}
+
+/* =========================================================================
+ * ‼️ X-301 — THE OTHER DIRECTION: A SLOT THAT WAS WHOLE AND THEN BROKE.
+ *
+ * Everything above watches the FLEET, and everything it hears travels one way —
+ * the user edited a file, so the slots must follow. The sixth gate had nothing
+ * to say about a slot breaking on its own, and slots do break on a schedule:
+ * the engine prunes its own scratch directories, and on a relocated config
+ * directory those are junctions, so a recursive remove unlinks them instead of
+ * walking into them. Counted on this machine over 24 comparable repairs,
+ * `link:todos` and `link:shell-snapshots` followed a housekeeping run 24 times
+ * out of 24 while every other clause followed one 0 times.
+ *
+ * The stamp is the engine SAYING it has just been through the directory, so
+ * watching it makes the event that breaks the slot the event that repairs it.
+ * ========================================================================= */
+{
+    const slots = [
+        { id: 'claude-a', engine: 'claude', dir: 'C:/slots/claude-a' },
+        { id: 'claude-b', engine: 'claude', dir: 'C:/slots/claude-b' }
+    ];
+    const rows = watchedStamps(slots, adapterFor);
+    ok('‼️ every slot whose engine stamps its housekeeping is watched',
+        rows.length === 2 && rows.every(r => r.name === '.last-cleanup'));
+    ok('…each under its OWN directory, because the stamp is per slot and not per engine',
+        rows.map(r => r.dir).join('|') === 'C:/slots/claude-a|C:/slots/claude-b'
+            .split('|').map(p => path.normalize(p)).join('|')
+        || rows.every((r, i) => path.normalize(r.dir) === path.normalize(slots[i].dir)));
+    ok('…and the row carries the whole path the fingerprint reads',
+        rows.every((r, i) => path.normalize(r.file)
+            === path.normalize(path.join(slots[i].dir, '.last-cleanup'))));
+
+    // ‼️ AN ENGINE THAT STAMPS NOTHING CONTRIBUTES NOTHING — the same refusal
+    // `keptAt` makes. Inventing a filename would put a watcher on a path no
+    // engine writes and report "nothing ever changes" for ever.
+    const quiet = watchedStamps([{ id: 'x-1', engine: 'nosuchengine', dir: 'C:/slots/x-1' }],
+        () => ({}));
+    ok('‼️ an engine with no housekeeping stamp is not given an invented one',
+        quiet.length === 0);
+    ok('…and a slot with no directory is skipped rather than watched at the root',
+        watchedStamps([{ id: 'y', engine: 'claude', dir: '' }], adapterFor).length === 0);
+    ok('…and two slots that somehow resolve to one path are watched once',
+        watchedStamps([slots[0], { ...slots[0], id: 'dup' }], adapterFor).length === 1);
+
+    // ---- the two lists reach ONE sweep ----
+    const src = require('fs').readFileSync(path.join(ROOT, 'src/extension.ts'), 'utf8');
+    ok('‼️ the sweep watches the fleet AND the slots, in one list',
+        /const slotWatchFiles = \(\) => \[\s*\n\s*\.\.\.watchedFiles\(os\.homedir\(\)[^\n]*\n\s*\.\.\.watchedStamps\(storedAccounts\(\), accountAdapterFor\)/.test(src));
+    // ‼️ NO LOOP, and it is a fact about the contract rather than a hope: the
+    // repair writes junctions and files the contract names, never the engine's
+    // own stamp. A gate that wrote it would wake itself for ever.
+    ok('‼️ the contract never writes the stamp it now watches — no feedback loop',
+        !/writeFileSync\([^)]*housekeeping/.test(src)
+        && /const keptAt = housekeepingAt\(fs, slot\.dir/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

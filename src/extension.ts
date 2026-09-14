@@ -214,7 +214,7 @@ import { mergeMissing, PortableMap } from './core/portableState';
 import { realDirOf, reproduceSlotSettings, slotSettingsGaps } from './core/slotSettings';
 import { migrationGate } from './core/migrationGate';
 import { completeSlot, slotCompleteness } from './core/slotCompleteness';
-import { changedSince, fingerprint, watchedFiles } from './core/slotWatch';
+import { changedSince, fingerprint, watchedFiles, watchedStamps } from './core/slotWatch';
 import { housekeepingAt, repairEvents, repairPattern, SlotRepairJournal } from './core/slotRepairs';
 import { Promotion } from './core/keyOwnership';
 import {
@@ -18324,7 +18324,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         timer: undefined as NodeJS.Timeout | undefined,
         armed: new Set<string>()
     };
-    const slotWatchFiles = () => watchedFiles(os.homedir(), storedAccounts().map(s => s.engine), accountAdapterFor);
+    /**
+     * ‼️ X-301 — TWO LISTS, ONE SWEEP. The fleet's files are what the slots must
+     * FOLLOW; a slot's housekeeping stamp is the engine announcing it has just
+     * been through that directory, which on this machine is the thing that
+     * unlinks `todos` and `shell-snapshots` 24 times out of 24. Watching both
+     * makes the event that breaks a slot the same event that repairs it,
+     * instead of leaving it broken until somebody happens to open a door.
+     */
+    const slotWatchFiles = () => [
+        ...watchedFiles(os.homedir(), storedAccounts().map(s => s.engine), accountAdapterFor),
+        ...watchedStamps(storedAccounts(), accountAdapterFor)
+    ];
     const slotWatchSweep = () => {
         const files = slotWatchFiles();
         const { changed, now } = changedSince(fs, files, slotWatchState.seen);
