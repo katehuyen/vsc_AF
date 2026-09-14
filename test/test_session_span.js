@@ -107,5 +107,93 @@ const sess = (turns, over) => Object.assign({
         v.activeMs <= v.wallMs && v.awayMs >= 0);
 }
 
+/* =========================================================================
+ * S-53 — AND THE DURATION IS THE TURNS' OWN TIME, ADDED UP.
+ *
+ * The user's correction to the figure above, in their own words: "a session's
+ * duration is not the span from its first turn to its last, it is the sum of
+ * the turns' active durations." `activeMs` is right about ABSENCES and says
+ * nothing about the rest — every gap shorter than the break limit is still
+ * inside it, and on a conversation worked in bursts that is most of the number.
+ *
+ * The three make a ladder, and the ladder is the assertion: busy ≤ active ≤
+ * wall, because a turn's own time is inside the clock and an absence is between
+ * turns.
+ * ========================================================================= */
+{
+    // Forty minutes of wall clock, nineteen of it actually answering.
+    const s = sess([turn(1, T0, 4 * MIN), turn(2, T0 + 10 * MIN, 5 * MIN), turn(3, T0 + 30 * MIN, 10 * MIN)]);
+    const v = sessionSpan(s, 30);
+    ok('‼️ the duration is the turns\' own time, not the span they sit in',
+        v.busyMs === 19 * MIN && v.wallMs === 40 * MIN);
+    ok('…and it is measured, so the row may lead with it', v.busyMeasured === true);
+    ok('‼️ …while the gaps that are too short to be an absence are still not RUN time '
+        + '— which is the whole of what this item moved',
+        v.activeMs === 40 * MIN && v.activeMs - v.busyMs === 21 * MIN);
+    ok('the three are a ladder: busy ≤ active ≤ wall',
+        v.busyMs <= v.activeMs && v.activeMs <= v.wallMs);
+}
+
+/* ---- and the night is still out, on top of the gaps --------------------- */
+{
+    const s = sess([turn(1, T0, 10 * MIN), turn(2, T0 + 20 * HOUR, 30 * MIN)]);
+    const v = sessionSpan(s, 30);
+    ok('‼️ a session resumed the next day ran for the forty minutes it worked',
+        v.busyMs === 40 * MIN);
+    ok('…and the night is named as away rather than folded into the run',
+        v.breaks === 1 && v.awayMs === 20 * HOUR - 10 * MIN);
+}
+
+/* ---- not measured is not zero ------------------------------------------- */
+{
+    // an import: the endpoints are known, the turns carry no duration
+    const bare = { firstTs: T0, lastTs: T0 + 40 * MIN, turns: [turn(1, T0, 0), turn(2, T0 + 20 * MIN, 0)] };
+    const v = sessionSpan(bare, 30);
+    ok('‼️ a transcript whose turns carry no duration falls back rather than reading 0m',
+        v.busyMs === v.activeMs && v.busyMs === 40 * MIN);
+    ok('…and SAYS it was not measured, so a surface can choose not to lead with it',
+        v.busyMeasured === false);
+    const none = sessionSpan({ firstTs: T0, lastTs: T0 + 30 * HOUR, turns: [] }, 30);
+    ok('…same for a session with no turns at all',
+        none.busyMs === none.activeMs && none.busyMeasured === false);
+}
+
+/* ---- the break rule is about ABSENCES and nothing else ------------------ */
+{
+    const s = sess([turn(1, T0, 10 * MIN), turn(2, T0 + 20 * HOUR, 30 * MIN)]);
+    const off = sessionSpan(s, 0);
+    ok('‼️ switching the absence rule off does not also forget the turns — two '
+        + 'unrelated decisions, and tying them would make the figure depend on a '
+        + 'setting that is not about it',
+        off.busyMs === 40 * MIN && off.busyMeasured === true && off.awayMs === 0);
+}
+
+/* ---- and it can never outrun the clock it sits inside ------------------- */
+{
+    // a sidechain writing after the turn was accounted can overrun the stamp
+    const s = { firstTs: T0, lastTs: T0 + 10 * MIN, turns: [turn(1, T0, 99 * HOUR)] };
+    const v = sessionSpan(s, 30);
+    ok('‼️ a "ran for" longer than the wall clock would make the whole ladder untrustworthy',
+        v.busyMs <= v.activeMs && v.busyMs === 10 * MIN);
+}
+
+/* ---- the table reads the ladder, and reads it in ONE place -------------- */
+{
+    const fs = require('fs');
+    const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'sessionsTable.js'), 'utf8');
+    ok('‼️ the page has one reader for "how long it ran", with all three rungs',
+        /const ranOf = r => \(typeof r\.busyMin === 'number' \? r\.busyMin\s*\n\s*: \(typeof r\.activeMin === 'number' \? r\.activeMin : \(r\.durationMin \|\| 0\)\)\);/.test(js));
+    ok('…and nothing on the page reaches past it for the old figure',
+        !/key: r => activeOf\(r\)/.test(js) && !/get: r => activeOf\(r\)/.test(js)
+        && !/\$\{activeOf\(r\) \|\| 0\}m/.test(js));
+    ok('‼️ …and the panel accounts for the difference rather than letting the '
+        + 'figure shrink unexplained',
+        /line\('Between turns', betweenOf\(r\)/.test(js));
+    const dash = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'dashboard.ts'), 'utf8');
+    ok('‼️ the host sends the figure only where it was really measured — an absent '
+        + 'field is what makes the ladder fall back instead of printing a borrowed 0',
+        /\.\.\.\(v\.busyMeasured \? \{ busyMin: Math\.round\(v\.busyMs \/ 60000\) \} : \{\}\)/.test(dash));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

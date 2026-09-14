@@ -13,7 +13,13 @@ const row = (n, extra) => Object.assign({
     agentName: 'developer', cwd: 'D:/zone/agent/ajanlar/developer',
     title: `Oturum ${n} — uzun başlık proje sütununun yanında okunabilmeli`,
     autoTitle: '', ts: NOW - n * 60000, firstTs: NOW - n * 360000,
-    durationMin: 17 + n, turns: 4 + n, toolCalls: 11 + n, errors: 0,
+    // ‼️ S-53 — three duration figures, because the column now shows the third.
+    // `durationMin` is the wall clock, `activeMin` is it less any absence, and
+    // `busyMin` is the turns' own time added up — which on an ordinary session
+    // worked at a keyboard is roughly half the span, the rest being somebody
+    // reading the answer and typing the next thing.
+    durationMin: 17 + n, activeMin: 17 + n, busyMin: 8 + n,
+    turns: 4 + n, toolCalls: 11 + n, errors: 0,
     tokens: 12000 + n * 900, wTokens: 8000 + n * 700, ctx: 64000 + n * 1000,
     cost: 1.2 + n / 10, sidechain: false, origin: 'user', pinned: false,
     tags: [], project: 'PRS.MuratVural_DEV_VSC.AgentFarm — çok uzun proje adı',
@@ -61,7 +67,12 @@ const data = () => ({
             engine: 'codex', models: ['gpt-5.6-sol'],
             title: 'Oturum 5 — transcript tarama sınırının üstünde',
             turns: 0, toolCalls: 0, tokens: 0, wTokens: 0, ctx: 0, cost: 0,
-            files: 0, apiCalls: 0, durationMin: 0,
+            // ‼️ S-53 — and its duration figures are ABSENT rather than zero-ish:
+            // a transcript nobody could read has no turns to add up, and the
+            // host only sends `busyMin` where it was measured. Leaving the base
+            // row's figures on here drew "13m" beside "0 turns", which is the
+            // reading this row exists to prevent.
+            files: 0, apiCalls: 0, durationMin: 0, activeMin: 0, busyMin: undefined,
             usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
             scanLimit: { bytes: 31_457_280, limit: 24 * 1024 * 1024 }
         }),
@@ -75,7 +86,11 @@ const data = () => ({
             engine: '', models: ['claude-opus-5'],
             title: 'Oturum 11 — dün akşam başladı, bu sabah devam etti',
             firstTs: NOW - 26 * 3600000,
-            durationMin: 1550, activeMin: 50, awayMin: 1500, breaks: 2,
+            // ‼️ S-53 — and of the fifty it was here for, thirty-two were the
+            // engine answering. The cell leads with the thirty-two; the ⋯ still
+            // carries the wall clock, and the panel accounts for the eighteen
+            // in between so the figure is not seen to shrink for no reason.
+            durationMin: 1550, activeMin: 50, busyMin: 32, awayMin: 1500, breaks: 2,
             turns: 9, apiCalls: 26, cost: 6.4
         }),
         // ‼️ S-35 — the two robots that used to look identical. Both are

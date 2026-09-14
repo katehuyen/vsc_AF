@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.495.0 - a session ran for as long as its turns ran, not for as long as it was open (S-53) (2026-09-14)
+
+- **The Duration column is now the turns' own durations added up.** S-52 took
+  the absences out of the wall clock and was right about them; everything
+  shorter than the break limit was still inside the figure — somebody reading
+  an answer, somebody typing the next prompt, twenty minutes of neither. On a
+  conversation worked in bursts that was most of the number.
+- **Three rungs, each one a refusal to invent**: the sum where the turns were
+  measured, the wall clock less absences where they were not, and the raw wall
+  clock for an embedding that has never heard of either. A transcript nobody
+  could read (over the scan limit, an import) shows nothing rather than a
+  borrowed figure — the host sends `busyMin` only where it exists.
+- **The panel accounts for the difference** instead of letting the figure
+  shrink unexplained: *ran for* · *between turns — thinking, typing, nothing* ·
+  *away over N breaks* · *wall clock*. Cost per hour, minutes per turn, seconds
+  per API call, the sort and the range filter all move onto the run time, and
+  they move together because the page has one reader for it.
+- Switching the absence rule off (`agentFarm.sessionBreakMin: 0`) no longer
+  also forgets the turns: that setting is a statement about absences, and
+  tying the two would make one figure depend on a decision that is not about it.
+
 ## 3.494.0 - the project's start buttons say which sign-in they would spend, in a panel that can hold it (X-296 / X-262) (2026-09-14)
 
 - **X-262 was done on one of its two surfaces.** Agent Detail put the inherited

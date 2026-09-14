@@ -254,6 +254,11 @@ export function sessionRowPool(
             // for taken out. Equal to the wall clock on a session that was
             // never put down, which is most of them.
             activeMin: Math.round(v.activeMs / 60000),
+            // ‼️ S-53 — and the turns' own time, which is what the row now
+            // leads with. Sent only when it was really measured: an absent
+            // field is what makes the table's ladder fall back to `activeMin`
+            // rather than print a zero it was handed.
+            ...(v.busyMeasured ? { busyMin: Math.round(v.busyMs / 60000) } : {}),
             awayMin: Math.round(v.awayMs / 60000),
             breaks: v.breaks
         };

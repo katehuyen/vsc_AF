@@ -35,8 +35,33 @@
      * been taught the new fields reads exactly as it did before, and no figure
      * is ever invented out of an absent one.
      */
+    /**
+     * ‼️ S-53 — HOW LONG IT RAN IS THE TURNS' OWN TIME, ADDED UP, and the ladder
+     * below is the whole of the correction.
+     *
+     * `activeMin` takes the absences out and is right about them, but every gap
+     * SHORTER than the break limit is still in it — a reader thinking, a prompt
+     * being typed, twenty minutes of neither — and on a conversation worked in
+     * bursts that is most of the figure. `busyMin` is what the engine was
+     * actually answering for.
+     *
+     * Three rungs, each one a refusal to invent: the sum where it was measured,
+     * the wall clock less absences where it was not, and the raw wall clock for
+     * an embedding that has never heard of either. Every reader on this page —
+     * the sort, the range filter, the cost-per-hour, the panels and the cell —
+     * goes through this one function, so the figure cannot mean one thing in
+     * the column and another in the sort.
+     */
+    const ranOf = r => (typeof r.busyMin === 'number' ? r.busyMin
+        : (typeof r.activeMin === 'number' ? r.activeMin : (r.durationMin || 0)));
+    /** Wall clock less absences — the middle rung, kept for the panels that
+     *  show where the difference went. */
     const activeOf = r => (typeof r.activeMin === 'number' ? r.activeMin : (r.durationMin || 0));
     const awayOf = r => (typeof r.awayMin === 'number' ? r.awayMin : 0);
+    /** ‼️ …and the gaps that are NOT absences: someone thinking, someone typing.
+     *  Named on the panel because it is the whole of what S-53 moved, and a
+     *  figure that shrinks with no account of where it went reads as a bug. */
+    const betweenOf = r => Math.max(0, activeOf(r) - ranOf(r));
 
     /**
      * ‼️ U-128/U-130 — EVERY OPTION SAYS WHAT PICKING IT DOES.
@@ -57,9 +82,10 @@
             tip: 'the most text moved first, cache reads included' },
         { id: 'ctx', label: 'Ctx now', key: r => r.ctx || 0,
             tip: 'the fullest window first — which session was closest to its limit when it stopped' },
-        { id: 'duration', label: 'Duration', key: r => activeOf(r),
-            tip: 'the longest RUN first, not the longest span: a session resumed the next day '
-                + 'sorts on the work in it, never on the night in the middle (S-52)' },
+        { id: 'duration', label: 'Duration', key: r => ranOf(r),
+            tip: 'the longest RUN first, not the longest span: the turns\' own time added up, '
+                + 'so a session resumed the next day sorts on the work in it and not on the '
+                + 'night in the middle — nor on the twenty minutes somebody spent typing (S-53)' },
         { id: 'turns', label: 'Turns', key: r => r.turns || 0,
             tip: 'the most prompts first — one turn is one ask and everything done to answer it' }
     ];
@@ -71,7 +97,7 @@
         { id: 'tokens', label: 'Tokens', get: r => r.tokens || 0 },
         { id: 'cost', label: 'Cost $', get: r => r.cost || 0 },
         { id: 'ctx', label: 'Ctx', get: r => r.ctx || 0 },
-        { id: 'duration', label: 'Minutes', get: r => activeOf(r) },
+        { id: 'duration', label: 'Minutes', get: r => ranOf(r) },
         { id: 'turns', label: 'Turns', get: r => r.turns || 0 },
         { id: 'tools', label: 'Tools', get: r => r.toolCalls || 0 },
         { id: 'errors', label: 'Errors', get: r => r.errors || 0 }
@@ -601,7 +627,7 @@
                 tokens: 'Every token the session moved — input, output and cache alike. The ⚖ column beside it is the same session measured against the plan limit.',
                 cost: 'What the session cost in dollars, from the pricing rules. A subscription engine reports no dollar figure and is honestly 0.',
                 ctx: 'How much context was in the window after the last reply — "how full was it when this stopped".',
-                duration: 'Minutes the session actually ran — first message to last, less any stretch between turns long enough to be an absence (agentFarm.sessionBreakMin). A session resumed the next day filters on the work, not on the night in the middle; the wall clock is on the cell hover.',
+                duration: 'Minutes the session actually RAN — the turns\' own durations added up. A gap between turns is not run time, whether it is somebody thinking for a minute or gone for the night (agentFarm.sessionBreakMin names the second kind). A session resumed the next day filters on the work in it; the whole breakdown is on the cell hover.',
                 turns: 'How many prompts a person (or a launcher) sent. A turn is one ask and everything the agent did to answer it.',
                 tools: 'Every tool call the session made across all of its turns.',
                 errors: 'Tool calls that came back as errors.'
@@ -801,8 +827,8 @@
         // ‼️ S-52 — divided by what the session RAN. Against the wall clock, a
         // session picked up again the next morning reported a few cents an
         // hour: that is the night in the denominator, not a cheap session.
-        const perHour = r => (activeOf(r) >= 60
-            ? C.fmtUSD((r.cost || 0) / (activeOf(r) / 60)) : '');
+        const perHour = r => (ranOf(r) >= 60
+            ? C.fmtUSD((r.cost || 0) / (ranOf(r) / 60)) : '');
 
         const TIP = {
             origin: r => [
@@ -848,7 +874,7 @@
             when: r => [
                 line('Last activity', `${stamp(r.ts)} · ${relTime(r.ts)}`),
                 line('Started', stamp(r.firstTs)),
-                line('Ran for', dur(activeOf(r)) + (awayOf(r) ? ` (away ${dur(awayOf(r))})` : '')),
+                line('Ran for', dur(ranOf(r)) + (awayOf(r) ? ` (away ${dur(awayOf(r))})` : '')),
                 line('Turns', r.turns || 0),
                 line('State', r.active ? 'running' : 'idle')
             ],
@@ -857,15 +883,24 @@
             // carve. A session that was never put down says nothing extra —
             // "away 0" on every ordinary row is a line the reader stops seeing.
             duration: r => [
-                line('Ran for', dur(activeOf(r))),
+                line('Ran for', dur(ranOf(r))),
+                // ‼️ S-53 — WHERE THE REST OF THE CLOCK WENT, in the order it
+                // was carved off: the turns' own time, then the gaps that were
+                // somebody thinking, then the ones that were somebody gone.
+                // A figure that got smaller with no account of the difference
+                // reads as a miscount, which is how the wall clock survived on
+                // this row for as long as it did.
+                line('Between turns', betweenOf(r)
+                    ? `${dur(betweenOf(r))} — thinking, typing, nothing` : ''),
                 line('Away', awayOf(r)
                     ? `${dur(awayOf(r))} over ${r.breaks || 1} break${(r.breaks || 1) === 1 ? '' : 's'}` : ''),
-                line('Wall clock', awayOf(r) ? `${dur(r.durationMin)} (first message to last)` : ''),
+                line('Wall clock', awayOf(r) || betweenOf(r)
+                    ? `${dur(r.durationMin)} (first message to last)` : ''),
                 line('Started', stamp(r.firstTs)),
                 line('Ended', stamp(r.ts)),
-                line('Per turn', per(activeOf(r), r.turns, n => `${round1(n)} min`)),
-                line('Per API call', r.apiCalls && activeOf(r)
-                    ? `${round1(activeOf(r) * 60 / r.apiCalls)} s` : ''),
+                line('Per turn', per(ranOf(r), r.turns, n => `${round1(n)} min`)),
+                line('Per API call', r.apiCalls && ranOf(r)
+                    ? `${round1(ranOf(r) * 60 / r.apiCalls)} s` : ''),
                 line('Cost per hour', perHour(r))
             ],
             turns: r => [
@@ -876,7 +911,7 @@
                 line('Cost per turn', per(r.cost, r.turns, n => C.fmtUSD(n))),
                 line('Tools per turn', per(r.toolCalls, r.turns, n => round1(n))),
                 line('Files per turn', per(r.files, r.turns, n => round1(n))),
-                line('Minutes per turn', per(activeOf(r), r.turns, n => round1(n)))
+                line('Minutes per turn', per(ranOf(r), r.turns, n => round1(n)))
             ],
             tools: r => [
                 line('Tool calls', r.toolCalls || 0),
@@ -1080,7 +1115,7 @@
             files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',
             title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests. unread = transcript above the scan limit, its figures were not read">Title</th>',
             when: '<th class="num" title="Time since the session was last active">When</th>',
-            duration: '<th class="num" title="Minutes the session actually ran &#8212; first message to last, less any pause between turns long enough to be an absence. &#8943; marks a session that was put down and picked up again; its wall clock is on the cell.">Duration</th>',
+            duration: '<th class="num" title="Minutes the session actually RAN &#8212; the turns&#8217; own durations added up, not the span they sit in. A gap between turns is not run time, whether it is somebody thinking for a minute or gone for the night. &#8943; marks a session that was put down and picked up again; the whole breakdown is on the cell.">Duration</th>',
             turns: '<th class="num" title="Prompts sent. One turn = one thing asked for; it takes many API calls">Turns</th>',
             tools: '<th class="num" title="Tool calls across the session (Read, Edit, Bash, MCP…)">Tools</th>',
             errors: '<th class="num" title="Tool results that came back as errors">Err</th>',
@@ -1156,7 +1191,7 @@
             // read as a fifty-minute session with nothing to say that it had
             // been slept on. `⋯` rather than a pause glyph — the session is not
             // paused now, it was put down and picked up again.
-            duration: r => `<td class="num" title="${tipOf(TIP.duration(r))}">${activeOf(r) || 0}m`
+            duration: r => `<td class="num" title="${tipOf(TIP.duration(r))}">${ranOf(r) || 0}m`
                 + `${awayOf(r) ? `<span class="wtok">⋯${dur(r.durationMin)}</span>` : ''}</td>`,
             turns: r => `<td class="num" title="${tipOf(TIP.turns(r))}">${r.turns || 0}</td>`,
             tools: r => `<td class="num" title="${tipOf(TIP.tools(r))}">${r.toolCalls || 0}</td>`,
