@@ -109,6 +109,18 @@ export interface EnginesPanelDeps {
          * a different statement from being last.
          */
         line?: { place: number; of: number } | null;
+        /**
+         * X-252 — today's spend on this sign-in, from the launch manifests. The
+         * percentage above says how close the wall is; this says what was spent
+         * getting there. `sessions: 0` means nothing ran on it today (a real
+         * answer); `unpriced` counts runs on an engine that states no price, so
+         * a 0 there is never drawn as a free one; `unsplit` counts runs that
+         * could not be placed in today by day rather than being sliced.
+         */
+        spentToday?: {
+            cost: number; wTokens: number; sessions: number;
+            unpriced: number; unsplit: number;
+        };
     }[];
     /**
      * ‼️ X-172 — WHAT EACH ENGINE CAN DO ABOUT ACCOUNTS AT ALL, and it is the

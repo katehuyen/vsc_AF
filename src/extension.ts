@@ -192,9 +192,10 @@ import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistr
 import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
 import {
-    LaunchManifest, ManifestInput, manifestFor, manifestLeaks, manifestOf, newLaunchId,
-    rememberManifest
+    LaunchManifest, ManifestInput, manifestFor, manifestIndex, manifestLeaks, manifestOf,
+    newLaunchId, rememberManifest
 } from './core/launchManifest';
+import { AccountSpendRow, spendByAccount, todayWindow } from './core/accountSpend';
 import { describeDrift, runDrift, turnRuntimes } from './core/turnRuntime';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
@@ -18432,6 +18433,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         } catch { /* never fails a start */ }
     }, 0);
+    /**
+     * ‼️ X-252 — WHAT EACH SIGN-IN SPENT TODAY, keyed by slot id.
+     *
+     * DENSITY: the whole point of the multi-account arrangement is "which plan
+     * is this burning", and until now the card carried the percentage of a
+     * window without a single figure saying what was spent to get there — the
+     * reader had to leave the page for it, or could not find it at all.
+     *
+     * ‼️ IT IS THE MANIFEST'S ANSWER OR NOTHING (X-251). `spendByAccount` is
+     * handed the same rule `sessionAccountOf` uses; a session this farm did not
+     * start has no manifest and lands in the report's unattributed row rather
+     * than on somebody's card. Guessing the machine's current sign-in onto it
+     * would put another account's dollars on this one.
+     *
+     * Memoised for a beat because `accounts()` runs on every repaint and this
+     * reads every session on the machine. `manifestIndex` is what keeps that
+     * from being a walk of the whole launch record per session.
+     */
+    let spendMemo: { at: number; rows: Map<string, AccountSpendRow> } | undefined;
+    const accountSpendToday = (): Map<string, AccountSpendRow> => {
+        const now = Date.now();
+        if (spendMemo && now - spendMemo.at < 3000) { return spendMemo.rows; }
+        const rows = new Map<string, AccountSpendRow>();
+        try {
+            const at = manifestIndex(launchManifests());
+            const report = spendByAccount(
+                index.allWithExternal(),
+                s => {
+                    const acc = String(at(s as { launchId?: string })?.account ?? '').trim();
+                    return acc ? { id: acc, label: statedAccountLabel(acc, storedAccounts()) || acc } : undefined;
+                },
+                todayWindow(now),
+                // X-19 — an engine that publishes neither price nor tokens has
+                // no dollars to state, and its 0 must not read as a free run.
+                (engine) => engineOf(engine).costSource !== 'none');
+            for (const r of report.rows) { rows.set(r.account, r); }
+        } catch { /* a card without a figure, never a page that fails to draw */ }
+        spendMemo = { at: now, rows };
+        return rows;
+    };
     /** One slot as every surface may see it — never a token, ever. */
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
         const id = slotIdentity(slot);
@@ -18576,6 +18617,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 });
                 const at = order.findIndex(x => x.slotId === slot.id);
                 return at < 0 ? null : { place: at + 1, of: order.length };
+            })(),
+            /**
+             * ‼️ X-252 — WHAT THIS SIGN-IN SPENT TODAY, beside the percentage of
+             * the window it spent it out of. The two are different questions and
+             * the card only ever answered one: 97% says how close the wall is,
+             * and says nothing about whether that was one expensive turn or two
+             * hundred cheap ones.
+             *
+             * `sessions: 0` is a real answer — nothing ran on this sign-in
+             * today — and it is the only reason this is always present. In a
+             * LIST an empty row would be noise; on a card that is drawn for
+             * every account either way, silence would read as a missing figure.
+             */
+            spentToday: (() => {
+                const r = accountSpendToday().get(slot.id);
+                return {
+                    cost: r?.cost ?? 0, wTokens: r?.wTokens ?? 0,
+                    sessions: r?.sessions ?? 0, unpriced: r?.unpriced ?? 0,
+                    unsplit: r?.unsplit ?? 0
+                };
             })(),
             // ‼️ X-284 — AND THE WHOLE BIRTH CONTRACT, not only the one clause
             // above. `settingsGaps` answers "which system prompt would a session
@@ -20007,36 +20068,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * disagree about who is on this machine. It says nothing a token could
          * hide in: `publicAccount` builds its row by naming what is public.
          */
+        /**
+         * ‼️ X-252 — AND IT IS PASSED BY THE SHAPE, NEVER BY A HAND-WRITTEN
+         * FIELD LIST. This mapper used to name each field it forwarded, and the
+         * rule `docs/CONVENTIONS.md` already states about a run's dimensions
+         * applies here for exactly the same reason: the list silently stops at
+         * whatever the last person remembered. Measured 2026-09-14 — FOUR fields
+         * were being built, typed on this panel, drawn by `media/engines.js` and
+         * supplied by the fixture, and none of them reached the live page:
+         * `standingAgents` and `pinnedAgents` (X-255), `onIt` and `line`
+         * (X-258). Both items shipped green because every test and every
+         * photograph reads the fixture, and the fixture is not this wire.
+         *
+         * `publicAccount` is the redacted public builder — it is what the bridge
+         * answers `accounts.list` with, and it names what is public rather than
+         * stripping what is not — so forwarding it whole leaks nothing and
+         * cannot go stale again.
+         */
         accounts: () => {
             const usage = accountUsage.current();
             const active = activeAccounts();
-            return storedAccounts().map(sl => {
-                const pub = publicAccount(sl, usage, active);
-                return {
-                    id: pub.id, engine: pub.engine, label: pub.label, email: pub.email,
-                    uuidShort: pub.uuidShort, duplicateOf: pub.duplicateOf,
-                    plan: pub.plan, health: pub.health, active: pub.active,
-                    percent: pub.percent, resetsAt: pub.resetsAt,
-                    // ‼️ usageState is what keeps -1 from reading as 0%: an account
-                    // nobody has read a figure for and one whose sign-in died draw
-                    // the same empty bar, and one of them is ready to work.
-                    usageState: pub.usageState, note: pub.note,
-                    // X-215 — and WHICH WINDOW that percentage is of, because a
-                    // second engine's figure is not a five-hour one, and where
-                    // it comes from, because the ⟳ button's words depend on it.
-                    window: pub.window, quotaSource: pub.quotaSource,
-                    capturedAt: pub.capturedAt, dir: pub.dir,
-                    // X-206 — when the FIGURE was read, and where this card
-                    // stands in the refresh line. Both are facts about the
-                    // number beside them; neither is a fact about the account.
-                    fetchedAt: pub.fetchedAt,
-                    queue: pub.queue, queuePlace: pub.queuePlace,
-                    // X-269 — what the fleet guarantees and this slot is not
-                    // carrying. The card says `full` or `simple` out loud,
-                    // because a guarantee nobody can see is not one.
-                    settingsGaps: pub.settingsGaps, settingsGuarantee: pub.settingsGuarantee
-                };
-            });
+            return storedAccounts().map(sl => publicAccount(sl, usage, active));
         },
         // What each engine can do about accounts at all — the picker offers only
         // the engines that really can, and the others say why rather than vanishing.
@@ -35590,6 +35642,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'names the agents whose OWN standing sign-in is this slot (they ignore the '
                 + 'machine-wide "use this next"), and `pinnedAgents` counts the agents on this engine '
                 + 'that name one at all. '
+                + '‼️ X-252 — `spentToday` is what this sign-in PAID FOR today, which the percentage '
+                + 'beside it does not answer: {cost, wTokens, sessions, unpriced, unsplit}. Every run '
+                + 'is placed on the account by its own LAUNCH MANIFEST, so a session this farm did not '
+                + 'start is counted nowhere rather than guessed onto whichever sign-in the machine '
+                + 'holds. `sessions: 0` means nothing ran on it today (a real answer). `unpriced` '
+                + 'counts runs whose engine publishes no price, so a `cost` of 0 beside a non-zero '
+                + '`unpriced` is a MISSING figure and not a free day; `unsplit` counts runs that '
+                + 'crossed midnight on an engine writing no per-day figures and are therefore left '
+                + 'out of today rather than sliced by a ratio nobody measured. '
                 + '‼️ NO TOKEN VALUE IS EVER RETURNED and none can be set from here — the same '
                 + 'boundary the secrets vault draws. args: engine? (only that engine\'s accounts)',
             handler: (args) => {

@@ -204,6 +204,29 @@ console.log('\n== the join to the run that was identified ==');
     ok('an empty store answers nothing rather than throwing',
         M.manifestOf([], { launchId: 'lch_aaa' }) === undefined);
 
+    /**
+     * ‼️ X-252 — THE BULK FORM IS THE SAME RULE, AND IT IS PINNED AGAINST THE
+     * SINGLE ONE RATHER THAN AGAINST A LIST OF ITS OWN ANSWERS.
+     *
+     * `manifestIndex` exists because asking `manifestOf` per session is a walk
+     * of the whole historical record per row, and X-252 asks it of every
+     * session on the machine on every repaint. Written as two functions they
+     * can drift — so what is asserted is the IDENTITY of their answers, over
+     * every shape the single one was just proved on plus a duplicated id.
+     */
+    const dup = base({ launchId: 'lch_bbb', cwd: 'D:/later' });
+    const store = [a, b, dup];
+    const at = M.manifestIndex(store);
+    const runs = [
+        { launchId: 'lch_aaa' }, { launchId: 'lch_bbb' }, { launchId: 'lch_zzz' },
+        { launchId: '   ' }, {}, undefined
+    ];
+    ok('‼️ THE BULK LOOKUP AND THE SINGLE ONE ANSWER IDENTICALLY, run for run',
+        runs.every(r => at(r) === M.manifestOf(store, r)));
+    ok('…including a duplicated launchId, where both take the first record',
+        at({ launchId: 'lch_bbb' }).cwd === 'D:/other');
+    ok('…and an empty store', M.manifestIndex([])({ launchId: 'lch_aaa' }) === undefined);
+
     // ‼️ THE REASON THE JOIN IS NOT `taskId`. A task can be retried, and a retry
     // is a NEW spawn with its own route resolution and its own manifest under
     // the same task — keyed off the task, the second run would silently claim

@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.504.0 - A sign-in says what it spent, and the card is really handed what it draws (X-252 a/c/d) (2026-09-14)
+
+- **‼️ FOUR FIELDS OF X-255 AND X-258 WERE NEVER REACHING THE PAGE.** The Engines
+  page's `accounts()` dep forwarded a HAND-WRITTEN LIST of fields, and the list
+  had stopped at X-269 — so `standingAgents` and `pinnedAgents` (X-255) and
+  `onIt` and `line` (X-258) were built by the host, typed on the panel, drawn by
+  `media/engines.js`, supplied by the fixture, and invisible on the real
+  machine. Both items shipped green, were photographed and were closed, because
+  every test and every photograph reads the fixture and **the fixture is not the
+  wire**. Measured against the bridge, which forwards the same row whole and had
+  all four. The dep now hands `publicAccount`'s row over by the SHAPE, and
+  `test_engines_account_wire.js` refuses both halves of the mistake: a field
+  list here, and a field the card is typed for that nothing builds.
+- **A sign-in's card now says what it SPENT today** — `today $4.31 · ⚖ 1.8M ·
+  7 runs` — under the percentage that only ever said how close the wall was.
+  Cost was split by ENGINE and by nothing else; with five sign-ins under one
+  engine, "what did this account cost today, whose window did that burn" had no
+  answer anywhere after the fact, which is the whole economics of running more
+  than one.
+- **‼️ And it refuses three easy answers, each one out loud.** A run is placed on
+  a sign-in by its own LAUNCH MANIFEST, so a session this farm did not start is
+  counted nowhere rather than guessed onto whichever account the machine holds.
+  An engine that publishes no price gets no money figure at all — its 0 is a
+  missing figure, not a free day. A conversation that crossed midnight on an
+  engine writing no per-day totals is left out of today rather than sliced by a
+  ratio nobody measured; each refusal is a COUNT on the card's own panel. And a
+  row whose host sent no figure draws **no line**, exactly as an unread window
+  draws no bar.
+- **A price change now invalidates the figures it invalidates.** The external
+  scan remembered each parse against `size:mtimeMs` — the transcript's own file
+  and nothing else — while every cost and weighted total in that parse comes
+  from the price table and the quota weights. Editing either rebuilt the engine,
+  re-ran the scan, and got the old arithmetic back out of the cache. The key
+  carries the costing revision now, read once per scan. (The Claude index
+  already held this rule; this was the half that did not, and its own signature
+  is deliberately left alone so no store that is already correct is discarded.)
+- **`.acwinw`'s block rule had been dead since X-196** — a bare class loses to
+  `common.css`'s `span.af-tipw`, which nothing noticed while it was alone on its
+  line. The second block landed beside it and the spend figure drew glued to the
+  tail of the reset sentence.
+
 ## 3.503.0 - The account box keeps its own lane while a swap is pending (U-135) (2026-09-14)
 
 - **A promised account swap no longer draws over the control beside it.**

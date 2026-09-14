@@ -481,6 +481,72 @@
                             + 'accounts are read one at a time and never less than five seconds apart.'
                 ]), 'acwinw');
         /**
+         * ‼️ X-252 — AND WHAT WAS SPENT TO GET THERE, under the window it was
+         * spent out of.
+         *
+         * The bar above answers "how close is the wall". It has never answered
+         * "what did this sign-in cost today", and on a machine rotating five of
+         * them that is the question the whole arrangement exists for — 97% says
+         * nothing about whether it was one expensive turn or two hundred cheap
+         * ones. DENSITY: the reader does not leave the page for it.
+         *
+         * ‼️ THREE THINGS THIS LINE REFUSES TO DO, each of which would be the
+         * easy version: it does not print a confident $0.00 for an engine that
+         * states no price (X-19), it does not claim a run this farm did not
+         * start (no manifest, no attribution — X-251), and it does not slice a
+         * conversation that crossed midnight by a ratio nobody measured. Each
+         * refusal is a COUNT on the row's panel rather than a silence.
+         */
+        const N = window.AFCharts;
+        const sp = a.spentToday;
+        const allUnpriced = sp && sp.sessions > 0 && sp.unpriced === sp.sessions;
+        const spendRow = (function () {
+            // ‼️ AN ABSENT FIELD IS NOT A QUIET DAY — the same distinction the
+            // percentage above makes between -1 and 0%. A host that does not
+            // send this (the bridge's row, an older build) has not measured
+            // anything, and drawing "nothing ran here" for it would be this
+            // card stating a fact nobody established. No line at all is the
+            // honest answer, and it is visibly different from a line saying zero.
+            if (!sp) { return ''; }
+            if (!sp.sessions && !sp.unsplit) {
+                return T.wrap('<div class="acspend none">today — nothing ran here</div>',
+                    'Nothing ran on this sign-in today',
+                    'Not the same as a day that cost nothing: no run was attributed to this '
+                    + 'account at all. The figure above is the plan window, which can still be '
+                    + 'part-used by yesterday\'s work.');
+            }
+            var bits = [];
+            if (!allUnpriced) { bits.push(N.fmtUSD(sp.cost)); }
+            if (sp.wTokens > 0) { bits.push('⚖ ' + N.fmtTok(Math.round(sp.wTokens))); }
+            bits.push(sp.sessions + ' run' + (sp.sessions === 1 ? '' : 's'));
+            if (allUnpriced) { bits.push('no price stated'); }
+            return T.wrap('<div class="acspend">today ' + esc(bits.join(' · ')) + '</div>',
+                'Spent today on ' + (a.label || a.id),
+                T.lines([
+                    allUnpriced ? 'cost: not stated by this engine' : 'cost: ' + N.fmtUSD(sp.cost),
+                    'weighted tokens: ' + N.fmtTok(Math.round(sp.wTokens)),
+                    'runs attributed: ' + sp.sessions,
+                    T.GAP,
+                    'Each run is placed on this sign-in by its own launch manifest, which is the '
+                    + 'only record of which account a spawn was sealed on. A session this farm '
+                    + 'did not start carries no manifest and is counted nowhere rather than being '
+                    + 'put on whichever account the machine happens to hold.',
+                    sp.unpriced
+                        ? sp.unpriced + ' of them ran on an engine that publishes no price, so the '
+                        + 'money here is not the whole day — that is a missing figure, not a zero.'
+                        : '',
+                    sp.unsplit
+                        ? sp.unsplit + ' run' + (sp.unsplit === 1 ? '' : 's') + ' crossed midnight on '
+                        + 'an engine that writes no per-day figures, so ' + (sp.unsplit === 1 ? 'it is' : 'they are')
+                        + ' left out of today rather than cut by a ratio nobody measured.'
+                        : '',
+                    T.GAP,
+                    'This is SPEND. The bar above is the PLAN WINDOW. They move together and they '
+                    + 'are not the same measure: a plan can be most of the way gone on work that '
+                    + 'was never billed a dollar.'
+                ]), 'acspendw');
+        })();
+        /**
          * ‼️ X-217 — THE SHAPE OF THE CONTROL STATES THE ARITHMETIC OF THE CHOICE.
          *
          * A switch says "these go on and off independently". These do not: an
@@ -991,6 +1057,7 @@
                 + 'deletion is not revocation — the tokens stay in the agent repo\'s git history.')
             + '</div>'
             + window5
+            + spendRow
             // ‼️ X-220 — THE ENGINE, IN THE PRODUCT'S OWN BADGE. This card wrote
             // the raw id in lowercase grey while the Console, the agent page and
             // the slash picker all drew `AFEngine.badge` for the same fact — one
@@ -1425,11 +1492,26 @@
                 /* X-196 — the window block is the card's own paragraph, so the
                    AFTip wrapper around it has to be one too: an inline wrapper
                    would collapse the block it holds. */
-                .acwinw { display:block; }
+                /* ‼️ THE SELECTOR HAS TO OUT-WEIGH common.css's own
+                   span.af-tipw inline-block rule (0,1,1) — a bare class (0,1,0)
+                   loses to it, so this rule sat here doing nothing from X-196
+                   until X-252 put a second block beside it and the two drew on
+                   ONE line, the spend figure glued to the tail of the reset
+                   sentence. Measured: both wrappers reported inline-block with
+                   this rule in force. (No backticks in this block: the whole
+                   stylesheet is a template literal and one would end it.) */
+                span.acwinw, span.acspendw { display:block; }
                 .acwt { display:flex; justify-content:space-between; align-items:baseline;
                     gap:8px; font-size:12px; }
                 .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
                 .acnone { margin-top:6px; font-size:12px; }
+                /* X-252 — the day's spend, on the card's own ruler under the
+                   window block. A block wrapper for the same reason .acwinw is
+                   one. It is deliberately quieter than the percentage: the bar
+                   is what a rotation is decided on, this is what it cost. */
+                .acspend { margin-top:5px; max-width:420px; font-size:11px; opacity:.85;
+                    font-variant-numeric:tabular-nums; }
+                .acspend.none { opacity:.55; }
                 .acwhy { margin-top:8px; }
                 .poform select { font-size:12px; padding:3px 6px;
                     background:var(--vscode-input-background); color:var(--vscode-input-foreground);

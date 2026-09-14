@@ -137,6 +137,13 @@ const data = () => {
                     file: '.claude.json', path: 'projects[D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm].allowedTools',
                     added: 1, slots: ['work-1'], last: NOW - 12 * 60 * 1000
                 }]),
+                // ‼️ X-252 — A BUSY DAY, fully priced. The arity beside the four
+                // below: nothing at all (personal), absent altogether (spare),
+                // every run unpriced plus one that crossed midnight (codex-work)
+                // and a mixed day (codex-spare). The line's wording differs in
+                // every one of them, and the smallest is the one the user
+                // usually gets.
+                spentToday: { cost: 4.312, wTokens: 1842000, sessions: 7, unpriced: 0, unsplit: 0 },
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/work-1'
             },
             {
@@ -196,6 +203,10 @@ const data = () => {
                         added: 1, slots: ['personal'], last: NOW - 26 * 3600 * 1000
                     }
                 ]),
+                // ‼️ X-252 — THE SMALLEST ARITY, and the one a reader meets most:
+                // nothing ran on this sign-in today. It must not read as a day
+                // that cost nothing, nor as a figure that failed to arrive.
+                spentToday: { cost: 0, wTokens: 0, sessions: 0, unpriced: 0, unsplit: 0 },
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
             },
             {
@@ -209,6 +220,9 @@ const data = () => {
                 fetchedAt: NOW - 26 * 3600 * 1000, queue: 'queued', queuePlace: 2,
                 settingsGaps: [], settingsGuarantee: true,
                 completeness: contract('claude'),
+                // ‼️ X-252 — AND ONE ROW CARRYING NO spentToday AT ALL, on
+                // purpose: the field is optional, so a card that threw or drew
+                // NaN without it would be the defect rather than the fixture.
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/spare'
             },
             // Captured, and NOT standing — the chip says "main account" here,
@@ -228,6 +242,10 @@ const data = () => {
                 fetchedAt: NOW - 26 * 60 * 1000, queue: 'idle', queuePlace: 0,
                 settingsGaps: [], settingsGuarantee: false,
                 completeness: contract('codex'),
+                // ‼️ X-252 — EVERY RUN ON AN ENGINE THAT STATES NO PRICE, plus
+                // one that crossed midnight. Neither may be drawn as a zero: the
+                // row drops the money figure and the panel counts both refusals.
+                spentToday: { cost: 0, wTokens: 52000, sessions: 2, unpriced: 2, unsplit: 1 },
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-work'
             },
             {
@@ -250,6 +268,10 @@ const data = () => {
                 fetchedAt: 0, queue: 'idle', queuePlace: 0,
                 settingsGaps: [], settingsGuarantee: false,
                 completeness: contract('codex'),
+                // ‼️ X-252 — THE MIXED DAY, which is the arity where the money
+                // figure is real AND incomplete: three runs, one of them on an
+                // engine that published no price for it.
+                spentToday: { cost: 0.412, wTokens: 90000, sessions: 3, unpriced: 1, unsplit: 0 },
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-spare'
             }
         ]),

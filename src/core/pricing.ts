@@ -164,6 +164,31 @@ export class PricingEngine {
         return (u.input * r.input + u.output * r.output +
             u.cacheWrite * r.cacheWrite + u.cacheRead * r.cacheRead) / 1_000_000;
     }
+
+    /**
+     * ‼️ X-252 — WHICH RULES THESE FIGURES WERE PRICED WITH, as one short
+     * string, so a cache can tell that they are stale.
+     *
+     * The rates are the OTHER input to every cost in this product, and the only
+     * one nothing was keyed to: a transcript parse is remembered against the
+     * file's own size and mtime, which do not move when the user edits
+     * `agentFarm.pricing`. So the rates changed, the engine was rebuilt, the
+     * scan ran again — and every unchanged file answered out of the cache with
+     * the dollars of the OLD table. Computed once per scan, never per file.
+     */
+    revision(): string {
+        return hashOf(this.versions.map(v => v.from + '~' + JSON.stringify(v.rules)).join('|'));
+    }
+}
+
+/** FNV-1a, 32-bit, as hex — a fingerprint for a cache key, never a checksum. */
+function hashOf(s: string): string {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 0x01000193);
+    }
+    return (h >>> 0).toString(36);
 }
 
 export function emptyUsage(): Usage {
@@ -292,6 +317,39 @@ export function setQuotaConfig(cfg: Partial<QuotaConfig>): void {
 export function quotaConfig(): QuotaConfig {
     return { weights: ACTIVE.weights, mode: ACTIVE.mode };
 }
+
+/**
+ * ‼️ X-252 — AND THE WEIGHTING IS THE SECOND HALF OF THE SAME PROBLEM.
+ *
+ * `wTokens` is what a run cost the PLAN, and it is derived from a table the user
+ * can change (`setQuotaConfig`) exactly as the prices are. A cache keyed only to
+ * the price table would go on serving weighted figures from the old weights, and
+ * the weighted figure is the one the rotation is decided on. One string covers
+ * both because a parse consumed both.
+ */
+/**
+ * ‼️ THE ENGINE IS A SHAPE HERE, NOT THE CLASS — and that is a fact about this
+ * codebase rather than a courtesy. A `PricingEngine` is passed in as
+ * `{ costFor }` by a dozen tests and by more than one tool, so requiring the
+ * method threw inside the scan the moment this was added (measured:
+ * `test_resume_dims.js`, `pricing.revision is not a function`). A stand-in that
+ * cannot state a revision contributes a constant, which is the truth about it:
+ * its arithmetic does not change, so nothing keyed to it needs to.
+ */
+export function costingRevision(pricing: { revision?: () => string }): string {
+    const rates = typeof pricing?.revision === 'function' ? pricing.revision() : 'fixed';
+    return rates + '.' + hashOf(ACTIVE.mode + '~' + JSON.stringify(ACTIVE.weights));
+}
+
+/**
+ * ‼️ ITS COUNTERPART, AND THEY ARE EDITED TOGETHER. The Claude index answers the
+ * same question for its own on-disk store — `SessionIndex`'s `indexSignature`,
+ * built in `extension.ts` out of the parser version and the same three settings.
+ * That one is deliberately NOT rewritten to call this: changing the string it
+ * produces discards a store that is already correct and costs one full re-parse
+ * of every transcript on the machine, for no repair. So: two strings, one rule,
+ * and a new input to the cost of a run belongs in BOTH.
+ */
 
 /** The row a model is weighed by — the fallback is the LAST row rather than a
  *  zero, so a model id nobody has seen yet still costs something. */

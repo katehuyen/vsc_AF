@@ -685,5 +685,40 @@ const sec = () => {
         !quiet.includes('data-acreauth="personal"'));
 }
 
+// ---- X-252: what this sign-in spent today, and the three things it refuses --
+{
+    const s = sec();
+    // The four arities the fixture carries, each with its own sentence. The
+    // fifth row deliberately sends no figure at all and is checked below.
+    ok('a busy day is stated as money, weighted tokens and a run count',
+        s.includes('today $4.31') && s.includes('7 runs'));
+    ok('‼️ AND "NOTHING RAN HERE" IS SAID IN WORDS, not drawn as $0.00',
+        s.includes('today — nothing ran here') && !s.includes('today $0.00'));
+    ok('‼️ AN ENGINE THAT STATES NO PRICE GETS NO MONEY FIGURE AT ALL'
+        + ' — its zero would read as a free day',
+        /today ⚖ 52\.0k · 2 runs · no price stated/.test(s));
+    ok('…and a day that is part priced still shows the money it does know',
+        s.includes('today $0.412'));
+    // ‼️ The one that is not a wording choice: the card may not invent a
+    // measurement. A row whose host sent no figure draws no line, exactly as an
+    // unread window draws no bar.
+    const drawn = (s.match(/class="acspend/g) || []).length;
+    ok('‼️ A ROW WITH NO FIGURE SENT DRAWS NO LINE, rather than claiming a quiet day'
+        + ` (${drawn} of 5 rows)`, drawn === 4);
+
+    // MIRROR — the panel carries what the row cannot, including both refusals.
+    ok('the panel says the figure comes from the run\'s own launch manifest',
+        s.includes('placed on this sign-in by its own launch manifest'));
+    ok('…and that an unattributed run is counted nowhere rather than guessed',
+        s.includes('counted nowhere rather than being'));
+    ok('…and it counts the runs whose engine published no price',
+        s.includes('ran on an engine that publishes no price'));
+    ok('…and the ones left out of today rather than cut by a ratio',
+        s.includes('cut by a ratio nobody measured'));
+    ok('‼️ …AND IT KEEPS SPEND AND THE PLAN WINDOW APART, which is the confusion'
+        + ' a figure under a percentage bar invites',
+        s.includes('This is SPEND') && s.includes('not the same measure'));
+}
+
 console.log(`test_engines_page_accounts: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

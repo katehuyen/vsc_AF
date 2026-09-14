@@ -7,7 +7,9 @@ import {
     ImportMarks, importManifestReader, resolveProvenance
 } from './externalImports';
 import { opencodeExport, opencodeTitle } from './opencodehistory';
-import { PricingEngine, Usage, emptyUsage, totalTokens, weightedTokens } from './pricing';
+import {
+    costingRevision, PricingEngine, Usage, emptyUsage, totalTokens, weightedTokens
+} from './pricing';
 import { conversationTitle, FIRST_PROMPT_MAX, SessionInfo, SessionTurn } from './sessions';
 import { SessionSource } from './sessionSource';
 import { truncate } from './util';
@@ -164,12 +166,26 @@ function unreadInfo(file: string, sessionId: string, source: string, read: ReadO
     return info;
 }
 
+/**
+ * ‼️ X-252 — THE SIGNATURE IS THE FILE **AND** THE RULES IT WAS PRICED WITH.
+ *
+ * `size:mtimeMs` answers "has the transcript changed", which is only half of
+ * "is this parse still true". Every `cost` and every `wTokens` in here is
+ * derived from the price table and the quota weights, both of which the user
+ * edits at will — and neither of which touches a transcript's mtime. Measured:
+ * editing `agentFarm.pricing` rebuilds the engine and re-runs the scan, and
+ * every unchanged file answered straight out of this cache with the dollars of
+ * the table that had just been replaced. `costing()` is read ONCE per scan, not
+ * per file, and a source with nothing to derive (an engine that states its own
+ * price) can pass one that never changes.
+ */
 function scanWithCache(
     id: string,
     roots: () => string[],
     exts: string[],
     parse: (file: string) => SessionInfo | undefined,
-    cacheMs: number
+    cacheMs: number,
+    costing: () => string = () => ''
 ): SessionSource {
     const cache = new FileCache();
     let lastScan = 0;
@@ -183,12 +199,13 @@ function scanWithCache(
             const cutoff = now - SCAN_DAYS * 24 * 3600 * 1000;
             const out: SessionInfo[] = [];
             const seen = new Set<string>();
+            const rules = costing();
             for (const root of roots()) {
                 if (!root) { continue; }
                 for (const file of listFiles(root, exts, cutoff)) {
                     seen.add(file);
                     let sig = '';
-                    try { const st = fs.statSync(file); sig = `${st.size}:${st.mtimeMs}`; } catch { continue; }
+                    try { const st = fs.statSync(file); sig = `${st.size}:${st.mtimeMs}:${rules}`; } catch { continue; }
                     const cached = cache.get(file, sig);
                     if (cached.hit) {
                         if (cached.info) { out.push(cached.info); }
@@ -601,7 +618,8 @@ export function codexSessionsSource(
         },
         ['.jsonl'],
         file => parseCodexFile(file, resolveAgent, pricing, imports),
-        cacheMs
+        cacheMs,
+        () => costingRevision(pricing())
     );
 }
 
@@ -883,7 +901,8 @@ export function geminiSessionsSource(
         () => { const d = geminiTmpDir(); return d ? [d] : []; },
         ['.json', '.jsonl'],
         file => parseGeminiFile(file, agentForHash, pricing),
-        cacheMs
+        cacheMs,
+        () => costingRevision(pricing())
     );
 }
 
@@ -1755,7 +1774,8 @@ export function opencodeSessionsSource(
 ): SessionSource {
     return scanWithCache(
         'opencode', () => { const d = root(); return d ? [d] : []; }, ['.json'],
-        file => parseOpencodeFile(file, resolveAgent, pricing), cacheMs);
+        file => parseOpencodeFile(file, resolveAgent, pricing), cacheMs,
+        () => costingRevision(pricing()));
 }
 
 /** `2026-06-26T21:45:33.9462384+07:00` — more decimals than Date.parse takes,

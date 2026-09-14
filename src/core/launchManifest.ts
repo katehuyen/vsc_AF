@@ -312,6 +312,34 @@ export function manifestOf(
 }
 
 /**
+ * ‼️ THE SAME LOOKUP, PREPARED FOR MANY RUNS AT ONCE (X-252) — and it is one
+ * rule at two arities, not a second implementation beside the first.
+ *
+ * `manifestOf` walks the list, which is right for one run and wrong for every
+ * session on the machine: asking it per session is a scan of the whole
+ * historical record per row, and X-252 asks exactly that question of every
+ * session there is, on every repaint of the Engines page. The resolution rule
+ * is unchanged and stays unchanged BY TEST — `test_launch_manifest.js` pins the
+ * two against each other rather than pinning each one's answers, so a change to
+ * either that the other did not follow fails.
+ */
+export function manifestIndex(
+    manifests: readonly LaunchManifest[]
+): (run: { launchId?: string } | undefined) => LaunchManifest | undefined {
+    const byId = new Map<string, LaunchManifest>();
+    for (const m of manifests || []) {
+        const id = m && str(m.launchId);
+        // First wins, exactly as `find` does — a duplicate launchId is a record
+        // nobody should have written and is not resolved differently here.
+        if (id && !byId.has(id)) { byId.set(id, m); }
+    }
+    return (run) => {
+        const id = str(run?.launchId);
+        return id ? byId.get(id) : undefined;
+    };
+}
+
+/**
  * One line a person can read, for a notice or a row.
  *
  * ‼️ IT NAMES THE ROUTE AND THE REQUEST SEPARATELY, because that is the pair the
