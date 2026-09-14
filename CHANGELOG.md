@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.503.0 - The account box keeps its own lane while a swap is pending (U-135) (2026-09-14)
+
+- **A promised account swap no longer draws over the control beside it.**
+  Picking another sign-in on a live session moves the conversation at the next
+  message, and X-213 puts that promise on the box itself — an arrow in front of
+  the value and the colour that means "not yet". The arrow went INSIDE the sized
+  box while the value went on asking for the whole of it, so the account was
+  pushed out the far side and lay over its neighbour. Measured on scene 11 of
+  the console fixture: box 635..767, value 647..779, the next control starting
+  at 773. Nothing was wrong with the markup, which is why the suite had been
+  green over it since X-213 shipped.
+- **The arrow is paid for by the row, not by the value.** Letting the value
+  shrink for it cured the overlap and caused something worse: 132px draws
+  `personal@gmail · 12%`, 120px draws `personal@gmail · 1`, and that is a
+  different figure rather than a shorter one. The box grows by the width of the
+  mark for as long as the swap is pending, and the spacer — which holds no
+  information — gives up the room.
+- **Held by a measurement, since no string test could ever have seen it.**
+  `test_console_column_ruler.js` now measures every value on the composer row
+  against the box it was given, refuses to pass unless a box carrying a mark was
+  actually on the page, and fails on the old rule naming the overlap in pixels.
+- **And the box's own hover no longer reads as "an account is never
+  remembered anywhere"** (X-255). That sentence was true when nothing was
+  remembered; it now says what is decided in this box is for this session, and
+  points at the standing sign-in an agent carries on its own row in Farm
+  Settings.
+
 ## 3.502.0 - The account card says who is on it and who is next (X-258) (2026-09-14)
 
 - **A card now says who is ON this sign-in right now** (●). In a live rotation

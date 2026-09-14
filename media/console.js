@@ -902,7 +902,17 @@
            a gap holds no information. (No backticks in this block: the whole
            stylesheet is a template literal, and one would end it.) */
         .crow .axisw { min-width:0; flex:0 1 auto; display:flex; align-items:center; gap:3px; }
-        .crow .axisw > select { width:100%; max-width:none; flex:none; }
+        /* U-135 — THE SELECT SHARES THE BOX WHEN SOMETHING STANDS BESIDE IT.
+           The 100% is a share of the WRAPPER, and it was a demand rather than a
+           ceiling: a mark drawn in front of the value (the pending-swap arrow
+           below) still left the select asking for the whole width, so it ran
+           past the wrapper's own max-width and straight over the control on the
+           right. Measured on scene 11 of the console fixture BEFORE this rule:
+           wrapper 635-767, select 647-779, the next box starting at 773 — the
+           value overlapped its neighbour by 6px. Shrink is the whole fix; with
+           nothing beside it there is nothing to shrink for and every other box
+           on the row is unchanged. */
+        .crow .axisw > select { width:100%; max-width:none; flex:0 1 auto; }
         /* the identity end of the row: sized, shrinkable, in that order */
         .crow .axisw:has(#c-agent) { flex:1 1 132px; max-width:132px; }
         .crow .axisw:has(#c-engine) { flex:2 1 118px; max-width:118px; }
@@ -926,6 +936,15 @@
         .crow .axisw:has(#c-model-live) { flex:1 1 112px; max-width:112px; }
         .crow .axisw:has(#c-effort-live) { flex:1 1 82px; max-width:82px; }
         .crow .axisw:has(#c-account-live) { flex:2 1 132px; max-width:132px; }
+        /* U-135 — THE ARROW IS ADDED TO THE BOX, NOT SUBTRACTED FROM THE VALUE.
+           Once the select could shrink, the mark took its 13px (glyph + gap) out
+           of the account's own width, and the one thing in there that must never
+           be half-read is a NUMBER: 132px drew "personal@gmail - 12%" and 120px
+           drew "personal@gmail - 1", which is a different figure, not a shorter
+           one. The account keeps the width it had before the swap was promised
+           and the mark is paid for by the spacer, which holds no information.
+           Only while pending, so the row is unchanged for everybody else. */
+        .crow .axisw.pend:has(#c-account-live) { flex-basis:145px; max-width:145px; }
         /* ‼️ THE FACTS ON THE ROW DO NOT GIVE WAY — THE BOXES DO.
            The chips here are FACTS rather than choices (the agent this session
            opened in, the engine badge, the route beside it): they cannot be
@@ -3996,8 +4015,13 @@
             const tip = window.AFTip.lines([
                 'Which sign-in of this engine pays for the new session.',
                 'A dot marks the standing choice made on the Engines page; the box opens on it. '
-                + 'Changing it here overrules that for THIS session only — an account is a state, '
-                + 'not a preference, so nothing here is remembered.'
+                + 'Changing it here overrules that for THIS session only — what is picked in this '
+                + 'box is a state, not a preference, and is not carried into the next session.',
+                // X-255 gave the agent a standing sign-in of its own, and the
+                // sentence above had been the only one on the subject: read
+                // after it, "not remembered" said no such thing existed.
+                'An agent that should always start on one sign-in is given it on its own row in '
+                + 'Farm Settings, which this box then overrules the same way.'
             ]);
             const shown = withCurrent(rows, cur);
             return axisBox({ axis: 'Account', id: 'c-account', list: shown, cur: cur, standard: tip });

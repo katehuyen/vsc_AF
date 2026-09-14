@@ -48,6 +48,13 @@ const CANDIDATES = [
     const src = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
     ok('…and it is still the composer\'s textarea wrapper it hangs off',
         /<div class="tawrap">[\s\S]{0,400}<div id="c-slashpop">/.test(src));
+    // U-135 — the two halves of the repair, each of which fails differently:
+    // without the first the value draws over its neighbour, without the second
+    // it keeps its lane by cutting a percentage in half.
+    ok('a value on the composer row shares its box with whatever stands beside it',
+        /\.crow \.axisw > select \{[^}]*flex:\s*0 1 auto/.test(src));
+    ok('…and the pending-swap arrow is added to the box, not taken out of the value',
+        /\.crow \.axisw\.pend:has\(#c-account-live\) \{[^}]*flex-basis:\s*\d+px/.test(src));
 }
 
 if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
@@ -105,6 +112,44 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     ok(`‼️ NOTHING IN THE COMPOSER COLUMN IS DRAWN OUTSIDE IT (${counted} rows)`
         + (outside.length ? '\n      ' + outside.slice(0, 8).join('\n      ') : ''),
         outside.length === 0);
+
+    /**
+     * ‼️ U-135 — AND A BOX ON THAT ROW DOES NOT DRAW OVER THE ONE BESIDE IT.
+     *
+     * The ruler above judges the composer's ROWS; this judges the controls
+     * inside one of them, and the defect it was written for was invisible to
+     * both a string test and the rows. `.crow .axisw` is the box that carries
+     * the declared width and the `<select>` inside it asks for 100% of it — so
+     * the moment X-213 drew a mark in FRONT of the value, the select went on
+     * asking for the whole box and the glyph pushed it out the other side.
+     * Measured on scene 11 before the repair: wrapper 635..767, select
+     * 647..779, the next control starting at 773 — the account lay 6px over its
+     * neighbour, in the yellow that means a swap is pending, which is exactly
+     * what the user saw and called a broken box.
+     *
+     * The rule is the containment, not the arrow: any badge, dot or count a
+     * later change puts beside one of these selects is held by the same
+     * measurement. And the pending box is NAMED, because a guard that runs on a
+     * page where no mark is drawn proves nothing at all.
+     */
+    const AXIS = `(()=>{const out=[];let pend=0;`
+        + `document.querySelectorAll('.crow .axisw').forEach(w=>{`
+        + `const s=w.querySelector('select');if(!s)return;`
+        + `const a=s.getBoundingClientRect(),b=w.getBoundingClientRect();`
+        + `if(a.width<=0||b.width<=0)return;`
+        + `if(w.classList.contains('pend'))pend++;`
+        + `const over=Math.round(Math.max(a.right-b.right,b.left-a.left));`
+        + `if(over>0)out.push((s.id||'?')+' over by '+over+'px — box '`
+        + `+Math.round(b.left)+'..'+Math.round(b.right)+', value '`
+        + `+Math.round(a.left)+'..'+Math.round(a.right));});`
+        + `return {pend,out:[...new Set(out)]};})()`;
+    let axis;
+    try { axis = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', AXIS])); } catch { axis = null; }
+    ok('a box with a mark beside its value was on the page to measure',
+        axis && axis.pend > 0);
+    ok('‼️ EVERY VALUE ON THE COMPOSER ROW IS DRAWN INSIDE THE BOX IT WAS GIVEN'
+        + (axis && axis.out.length ? '\n      ' + axis.out.slice(0, 8).join('\n      ') : ''),
+        axis && axis.out.length === 0);
 }
 
 console.log(`${pass} passed, ${fail} failed`);
