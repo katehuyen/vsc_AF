@@ -1728,8 +1728,13 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('the live controls stop promising "applied live" on an engine that has none',
         /const live = !s \|\| s\.steerable !== false;/.test(js)
         && /There is no running process to ask\./.test(js));
+    // ‼️ S-60 — AND THE FALLBACK IS THE ENGINE'S OWN VOCABULARY, not the whole
+    // list. `permissionsFor(engine)` is what drops the modes the engine refuses
+    // by name (Antigravity takes neither `manual` nor `dontAsk`), so a live
+    // strip falling back to `DATA.permissions` would offer a running session two
+    // modes its own CLI rejects.
     ok('…and the permission list is the START vocabulary there, not the live one',
-        /live \? \(DATA\.livePermissions \|\| DATA\.permissions\) : DATA\.permissions/.test(js)
+        /live \? \(DATA\.livePermissions \|\| DATA\.permissions\) : permissionsFor\(s\.engine\)/.test(js)
         && /cur: s\.permissionMode, standard: permTip/.test(js));
     // ‼️ …AND THE NARROWER LIST DECIDES WHAT YOU MAY PICK, NEVER WHAT THE BOX
     // MAY SAY. The live list drops `bypassPermissions` because a running

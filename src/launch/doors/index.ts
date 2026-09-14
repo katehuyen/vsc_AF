@@ -61,12 +61,11 @@ export interface LaunchDoorCtx {
      * `accountStore.resolveAccount` and a door that wrote it out would be the
      * fourteenth copy of it.
      *
-     * It answers `stated ?? the engine's active account ?? nothing`, so a door
-     * with no picker still hands on the account its session will really run
-     * under — which is the whole point of "use this next" being one gesture in
-     * one place (`agentFarm.activeAccounts`) rather than a per-agent memory.
+     * It answers `stated ?? this agent's standing sign-in (X-255) ?? the
+     * engine's active account ?? nothing`, so a door with no picker still hands
+     * on the account its session will really run under.
      */
-    accountFor?: (engine: string | undefined, stated?: string) => string;
+    accountFor?: (engine: string | undefined, stated?: string, agentId?: string) => string;
 }
 
 export interface LaunchDoor {
@@ -164,8 +163,15 @@ export function pick(o: LaunchOptions, keys: readonly string[]): LaunchIntent {
 export function withAccount(ctx: LaunchDoorCtx, o: LaunchIntent): LaunchIntent {
     if (!ctx.accountFor) { return o; }
     const src = o as Record<string, unknown>;
+    // ‼️ X-255 — THE AGENT TRAVELS WITH THE QUESTION. The per-agent standing
+    // sign-in is a rung of the one resolution, so a door that asked without
+    // saying whose session it is would resolve to the machine-wide answer and
+    // then show it — the "surface says one thing, process runs another" defect
+    // this whole folder is named after, arriving through the newest rung.
     const id = ctx.accountFor(
-        (src.engine as string | undefined) ?? ctx.engine, src.account as string | undefined);
+        (src.engine as string | undefined) ?? ctx.engine,
+        src.account as string | undefined,
+        (src.agentId as string | undefined) ?? ctx.agentId);
     return id ? { ...o, account: id } as LaunchIntent : o;
 }
 

@@ -623,11 +623,13 @@ export function resolveDelegateRun(
      * ‼️ X-225 — AND THE SIGN-IN, ON TWO RUNGS RATHER THAN FOUR.
      *
      * A member overrides the mission, and under that there is NOTHING. There is
-     * no per-agent and no fleet rung for an account on purpose: `activeAccounts`
-     * is not a default to fall through to here, it is what the SPAWN resolves
-     * when nothing was stated (`accountStore.resolveAccount`, one place). A
-     * third rung would answer the same question twice and the two answers would
-     * disagree the first time somebody moved the standing choice mid-mission.
+     * no per-agent and no fleet rung for an account HERE on purpose — and X-255,
+     * which gave an agent a standing sign-in of its own, did not change that: the
+     * whole standing order (that record, then `activeAccounts`, then the main
+     * sign-in) is what the SPAWN resolves when nothing was stated
+     * (`accountStore.resolveAccount`, one place). Reading either of them here
+     * would answer the same question twice, and the two answers would disagree
+     * the first time somebody moved a standing choice mid-mission.
      *
      * ‼️ WHICH IS ALSO WHY THE FLOOR IS ABSENCE AND NOT `@machine`. Absent
      * leaves the run exactly as every mission before this ran it; `@machine` is

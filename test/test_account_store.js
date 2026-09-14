@@ -12,7 +12,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     normalizeSlots, normalizeActive, findSlot, slotsFor, addSlot, forgetSlot,
-    forgetActive, resolveAccount, accountRefusal, planCapture, slotLabel
+    forgetActive, resolveAccount, accountResolution, accountRefusal, planCapture, slotLabel
 } = require(path.join(__dirname, '..', 'out', 'core', 'accountStore.js'));
 
 const NOW = Date.parse('2026-09-04T12:00:00Z');
@@ -89,6 +89,57 @@ const ready = (email, plan = 'pro') => ({
     // session started before this item inherited.
     ok('‼️ an engine with no active account resolves to nothing, not to a guess',
         resolveAccount('', 'gemini', active) === '');
+
+    // ---------- X-255 — the agent's own standing sign-in ----------
+    //
+    // ‼️ THE RUNG SITS ABOVE THE MACHINE-WIDE ONE AND THAT IS THE WHOLE ITEM. A
+    // standing choice is set on this machine essentially always, so a per-agent
+    // answer ranked underneath it would be a control that stores what it is told
+    // and changes nothing.
+    ok('‼️ the agent\'s own standing sign-in outranks the machine-wide one',
+        resolveAccount('', 'claude', active, 'claude-mine') === 'claude-mine');
+    ok('…and a launch that names its own still outranks the agent\'s',
+        resolveAccount('claude-z', 'claude', active, 'claude-mine') === 'claude-z');
+    // ‼️ `@machine` IS A STATEMENT OF NOTHING, not an absence of one — it has to
+    // beat the agent's standing account exactly as any other stated answer does,
+    // or "run this one on the machine itself" would be unsayable for a pinned
+    // agent.
+    ok('‼️ …including @machine, which is a stated answer and not an empty one',
+        resolveAccount('@machine', 'claude', active, 'claude-mine') === '');
+    ok('an agent that names nothing still follows the machine',
+        resolveAccount('', 'claude', active, '') === 'claude-a'
+        && resolveAccount('', 'claude', active, '   ') === 'claude-a');
+    // ‼️ THE RECORD IS PER ENGINE. An agent standing on a Claude slot must not
+    // have that answer reach its Codex launches — the U-29 bug, one axis over.
+    ok('‼️ a standing sign-in read for one engine never answers for another',
+        resolveAccount('', 'codex', active, '') === 'codex-b');
+    ok('with nothing anywhere it is still the main sign-in',
+        resolveAccount('', 'gemini', active, '') === '');
+
+    // ---------- …and the layer that answered, which is what a surface prints ----------
+    //
+    // ‼️ A SURFACE THAT CAN ONLY PRINT THE ID CANNOT SAY WHY "use this next" DID
+    // NOT MOVE THIS AGENT, and that sentence is the whole of the trade X-255
+    // makes (Principle 1).
+    const origin = (stated, standing) =>
+        accountResolution(stated, 'claude', active, standing).origin;
+    ok('‼️ the resolution names the layer that answered',
+        origin('claude-z', 'claude-mine') === 'stated'
+        && origin('', 'claude-mine') === 'agent'
+        && origin('', '') === 'machine'
+        && accountResolution('', 'gemini', active, '').origin === 'main');
+    ok('…and @machine is reported as STATED rather than as the empty floor',
+        origin('@machine', 'claude-mine') === 'stated');
+    // The note is what the box and the launcher row print, so it has to name the
+    // account rather than describe the layer in the abstract.
+    {
+        const r = accountResolution('', 'claude', active, 'claude-mine',
+            id => (id === 'claude-mine' ? 'Work' : id));
+        ok('…and the note names the account in the words the reader gave it',
+            r.note.includes('Work') && !r.note.includes('claude-mine'));
+        ok('…and says out loud that the machine-wide choice does not move it',
+            /machine-wide/.test(r.note));
+    }
 
     const list = [{ id: 'claude-a', engine: 'claude', dir: 'C:/s/a' },
         { id: 'codex-b', engine: 'codex', dir: 'C:/s/b' }];

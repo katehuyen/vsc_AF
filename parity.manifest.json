@@ -5309,6 +5309,15 @@
       }
     },
     {
+      "capability": "settingsPanel.ts#agentAccount",
+      "ui": [
+        "page:settingsPanel.ts#agentAccount"
+      ],
+      "ops": [
+        "agents.defaults.set"
+      ]
+    },
+    {
       "capability": "settingsPanel.ts#agentDefaultsEngine",
       "ui": [
         "page:settingsPanel.ts#agentDefaultsEngine"

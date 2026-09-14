@@ -123,9 +123,25 @@ const engines = () => ([
  * measurement of the product rather than of somebody's memory of it.
  */
 const { resolveDefault } = require('../../out/core/agentDefaults.js');
+// ‼️ X-255 — AND THE ACCOUNT BOX IS RESOLVED BY THE PRODUCT'S OWN ORDER TOO.
+// Writing its `note` by hand here would photograph a sentence the host never
+// produces, which is the same trap the comment above is about.
+const { accountResolution } = require('../../out/core/accountStore.js');
 
 /** The fleet-wide answer this scene is set up with (`agentFarm.launchDefaults`). */
 const FLEET = { model: 'haiku', effort: 'low' };
+/**
+ * X-255 — the sign-ins this machine holds, and the MACHINE-WIDE standing choice.
+ * Claude only, on purpose: the box is drawn per engine out of the slots that
+ * engine has, so the scene also photographs the engines that get no box at all.
+ */
+const SLOTS = [
+    { id: 'claude-aicozums', engine: 'claude', label: 'aicozums@gmail.com' },
+    { id: 'claude-murvietnam', engine: 'claude', label: 'Vietnam' },
+    { id: 'claude-wmmuratvural', engine: 'claude', label: 'wm@muratvural.com' }
+];
+const MACHINE_STANDING = { claude: 'claude-aicozums' };
+const SLOT_NAME = id => (SLOTS.find(s => s.id === id) || {}).label || id;
 const ENGINE_LABEL = {
     claude: 'Claude Code', codex: 'Codex', gemini: 'Gemini',
     agy: 'Antigravity', opencode: 'OpenCode'
@@ -154,7 +170,15 @@ const engineRow = (engine, own = {}, agentFile = '') => {
         }),
         resolvedEffortZero: resolveDefault(engine, 'effort', {
             launch: FLEET.effort, engineLabel: label
-        })
+        }),
+        // ‼️ X-255 — the account box: what this agent stands on, what applies if
+        // the box is cleared, and the list it may be pointed at. An engine with
+        // no captured sign-in gets an empty list and therefore NO BOX, which is
+        // the arity the other four engines in this scene photograph.
+        account: own.account || '',
+        resolvedAccount: accountResolution('', engine, MACHINE_STANDING, own.account || '', SLOT_NAME),
+        resolvedAccountZero: accountResolution('', engine, MACHINE_STANDING, '', SLOT_NAME),
+        accounts: SLOTS.filter(s => s.engine === engine).map(s => ({ id: s.id, label: s.label }))
     };
 };
 
@@ -182,7 +206,12 @@ const folders = () => ({
                 // at all. Its model is `provider/model`, the widest label in the
                 // section, drawn on purpose: the long-label case is where a
                 // picker's width fails and no string test would say so.
+                // ‼️ X-255 — this agent STANDS on a sign-in of its own, and the
+                // one beside it does not: the two arities of the account box in
+                // one picture, which is the pair that has to be read together
+                // (its own answer vs. `Default → <the machine's>`).
                 engines: engineRows({
+                    claude: { account: 'claude-murvietnam' },
                     codex: { model: 'gpt-5.6-terra', effort: 'high' },
                     opencode: { model: 'opencode/nemotron-3.5-lightning-free' }
                 }, 'sonnet')

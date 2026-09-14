@@ -1035,9 +1035,19 @@
 
     /** Where THIS engine's answer is kept — the difference the user has to
      *  know, said once above the list rather than in every row's hover. */
+    /**
+     * X-255 -- AND THE LINE NAMES THE MODEL RATHER THAN "these defaults".
+     *
+     * It used to say, of Claude, that what you type below is written to the
+     * agent's own settings file. That was true of one box and is now false of
+     * another: an account is a directory handed to the process at spawn and
+     * Claude Code has no settings key for one, so the sentence above the list has
+     * to say which box it is about or it is a claim the reader can check and find
+     * wrong (the same U-29 failure this strip exists to end).
+     */
     function agentEngineNote(id) {
         return id === 'claude'
-            ? 'written to each agent\u2019s .claude/settings.local.json \u2014 the CLI reads it itself, terminal sessions included'
+            ? 'the MODEL is written to each agent\u2019s .claude/settings.local.json \u2014 the CLI reads it itself, terminal sessions included; the effort and the account are Agent Farm\u2019s and reach only sessions it starts'
             // \u203c\ufe0f U-59 \u2014 no flag is named here any more. It said
             // `--model/--effort` for every non-Claude engine and that was wrong
             // on three of the four (Codex and Gemini take `-m`; OpenCode takes
@@ -1144,6 +1154,47 @@
         </select>`;
     }
 
+    /**
+     * X-255 -- WHICH SIGN-IN THIS AGENT STANDS ON, beside the model and the
+     * effort because it is the same question one axis over: those say what the
+     * session is, this says whose plan pays for it.
+     *
+     * Drawn only where this engine has captured sign-ins at all -- on every
+     * other one the box would be a control with nothing to choose between.
+     *
+     * ONE SUBJECT: this row is the AGENT's answer. The Engines page's standing
+     * chip is the MACHINE's, and the zero row here is what names it, so a reader
+     * who clears this box can see what they are falling back to.
+     */
+    function agentAccountSel(c) {
+        const eng = agentEngine();
+        const per = (c.engines || {})[eng] || {};
+        const list = per.accounts || [];
+        if (!list.length) { return ''; }
+        const cur = per.account || '';
+        const res = per.resolvedAccount || {};
+        const zeroRes = per.resolvedAccountZero || {};
+        const zero = zeroRes.id ? 'Default → ' + (labelOfAccount(list, zeroRes.id) || zeroRes.id) : 'Default';
+        return `<select class="agmodel" data-agaccount="${C.esc(c.dir)}"
+            title="${C.esc('Standing sign-in for this agent on ' + engineLabel(eng) + '. ' + (res.note || ''))}">
+            <optgroup label="account">
+            ${C.option('', zero, {
+                selected: !cur,
+                detail: zeroRes.note || 'This agent names no sign-in of its own.'
+            })}
+            ${list.map(a => C.option(a.id, a.label || a.id, {
+                selected: cur === a.id,
+                detail: cur === a.id ? (res.note || '') : ''
+            })).join('')}
+            </optgroup>
+        </select>`;
+    }
+
+    const labelOfAccount = (list, id) => {
+        const hit = (list || []).find(a => a.id === id);
+        return hit ? (hit.label || hit.id) : '';
+    };
+
     function agentChip(c) {
         if (c.excluded) {
             return `<span class="agchip agexcl" title="${C.esc(c.dir)} — excluded, never treated as an agent">${C.esc(c.name)}
@@ -1153,7 +1204,7 @@
             ? `<a data-openagent="${C.esc(c.agentId)}" title="Open this agent's page">${C.esc(c.name)}</a>`
             : C.esc(c.name);
         return `<span class="agchip" title="${C.esc(c.dir)}">${name}
-            ${agentModelSel(c)}${agentEffortSel(c)}
+            ${agentModelSel(c)}${agentEffortSel(c)}${agentAccountSel(c)}
             <a class="agex" data-exclude="${C.esc(c.dir)}" title="Never treat this folder as an agent (undo any time with Include)">Exclude</a></span>`;
     }
 
@@ -1191,8 +1242,10 @@
             <code>CLAUDE.md</code>, <code>.claude</code> or <code>memory/</code> become agents; a root whose subfolders are agents is a
             <b>nest</b> (its own CLAUDE.md = shared instructions); a root with no agent-like subfolders is one agent itself.
             <b>Exclude</b> keeps a folder out of the farm entirely — it stops being an agent everywhere (views, analytics, session
-            ownership) until you Include it back. Each agent chip carries a <b>model</b> and an <b>effort</b> dropdown — that agent's
-            defaults <i>for the engine selected below</i>; new agents are seeded from <code>agentFarm.newAgentModel</code>.
+            ownership) until you Include it back. Each agent chip carries a <b>model</b>, an <b>effort</b> and — where that engine has
+            captured sign-ins — an <b>account</b> dropdown: that agent's defaults <i>for the engine selected below</i>. The account is
+            the one that outranks the machine-wide standing choice on the Engines page, so an agent set here stops following it;
+            new agents are seeded from <code>agentFarm.newAgentModel</code>.
             <button class="secondary small" id="rootadd" title="Pick a folder to scan for agents">+ Add root…</button></p>
             ${agentEngineTabs()}
             ${dupes ? `<div class="seterr">⚠ The roots list contains the same folder more than once (case/slash spelling differs) — this distorts discovery. <a id="afcleandupes">Clean duplicates</a></div>` : ''}
@@ -3433,6 +3486,10 @@
         document.querySelectorAll('[data-ageffort]').forEach(el =>
             el.addEventListener('change', () => vscode.postMessage({
                 type: 'agentEffort', dir: el.dataset.ageffort, effort: el.value, engine: agentEngine()
+            })));
+        document.querySelectorAll('[data-agaccount]').forEach(el =>
+            el.addEventListener('change', () => vscode.postMessage({
+                type: 'agentAccount', dir: el.dataset.agaccount, account: el.value, engine: agentEngine()
             })));
         // ‼️ The engine strip is a PAGE state, not a per-agent one: it says which
         // engine's defaults the boxes below are editing. Kept on the host so it

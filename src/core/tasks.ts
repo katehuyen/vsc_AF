@@ -1457,7 +1457,7 @@ export interface TaskManagerOptions {
      * whether a window happened to be open. This is that decision, asked on the
      * side that owns the slot list, so the two runners cannot disagree.
      */
-    accountBlock?: (engine: string, account?: string) => string | undefined;
+    accountBlock?: (engine: string, account?: string, agentId?: string) => string | undefined;
     /** ‼️ S-19 — what a session has cost and spent so far, for the delta a
      *  resumed run is charged. Undefined = not indexed yet, and the task simply
      *  starts from nothing rather than from a guess. */
@@ -1538,7 +1538,7 @@ export interface TaskManagerOptions {
      * task ran as before this item.
      */
     accountLayer?: (
-        engine: string, account?: string
+        engine: string, account?: string, agentId?: string
     ) => Record<string, string | null> | undefined;
     /**
      * ‼️ X-102 — WRITE THIS SPAWN'S MANIFEST AND HAND BACK ITS ID.
@@ -2958,7 +2958,7 @@ export class TaskManager implements vscode.Disposable {
          * on one missing sign-in are one piece of news, and re-capturing it
          * releases all of them at once.
          */
-        const accountNo = this.opts.accountBlock?.(task.engine ?? 'claude', task.account);
+        const accountNo = this.opts.accountBlock?.(task.engine ?? 'claude', task.account, task.agentId);
         if (accountNo) {
             return { code: `account:missing:${(task.account ?? '').trim() || task.engine || 'claude'}`, reason: accountNo };
         }
@@ -3499,7 +3499,7 @@ export class TaskManager implements vscode.Disposable {
             // why the account goes through `terminalEnvOverlay` rather than
             // being written onto the map by hand.
             [this.opts.getEnv?.(agent.id),
-                this.opts.accountLayer?.(task.engine ?? 'claude', task.account)],
+                this.opts.accountLayer?.(task.engine ?? 'claude', task.account, agent.id)],
             // ‼️ X-106 — AND THE ROUTE THE TASK ITSELF NAMED. This passed nothing
             // and the agent's standing route answered for every automation; a
             // nightly job pointed at one endpoint by hand ran on whichever one
@@ -3932,7 +3932,7 @@ export class TaskManager implements vscode.Disposable {
             // already is; no second injection path, so the clearing order below
             // stays the one thing that decides what survives.
             [engineEnv, this.opts.getEnv?.(agent.id),
-                this.opts.accountLayer?.(engine.id, task.account)],
+                this.opts.accountLayer?.(engine.id, task.account, agent.id)],
             // ‼️ X-106 — the task's own route, on the headless path too. Both
             // spawn shapes read it from the same helper, because the way this
             // regresses is one of the two being given the route and the other

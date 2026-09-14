@@ -88,7 +88,8 @@ import { buildFarmStatus } from './core/farmstatus';
 import { PlanUsageService, refreshMs } from './core/planusage';
 import { EngineUsage, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
 import {
-    AgentEngineDefaults, agentSeedDefault, resolveDefault, storedDefault, storedRoute, withAgentDefault
+    AgentEngineDefaults, agentKey, agentSeedDefault, resolveDefault, storedAccount, storedDefault,
+    storedRoute, withAgentDefault
 } from './core/agentDefaults';
 import {
     CC_CATALOG, coerceClaudeValue, patchClaudeSettings, readPath, validateRawClaudeSettings
@@ -230,7 +231,7 @@ import {
 } from './core/consoleEngine';
 import {
     readEngines, enginesSummary, engineOptions, engineRefusal, EngineId, EngineStatus, ENGINE_LABELS,
-    claudeOnlyScopeNote
+    ENGINE_IDS, claudeOnlyScopeNote
 } from './core/engines';
 import {
     AccountFs, AccountIdentity, EngineAccountSlot, EngineAuthAdapter, ENGINE_AUTH_ADAPTERS,
@@ -239,7 +240,7 @@ import {
 } from './core/engineAccounts';
 import {
     CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, OrphanSlot, accountEnvFor, accountLabelOf,
-    planReauth,
+    accountResolution, planReauth,
     accountRefusal, addSlot, findSlot,
     forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, portableSlots, resolveAccount, slotLabel,
     slotsFor, statedAccountLabel, unportableDirs
@@ -3352,7 +3353,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             engineRuntime: (agentId, engine, route) => engineRuntimeFor(agentId, engine, route),
             // ‼️ X-169 — and which sign-in it runs as, from the same side and for
             // the same reason (see TaskRunnerOpts.accountLayer).
-            accountLayer: (engine, account) => launchAccountEnv({ engine, account }),
+            accountLayer: (engine, account, agentId) => launchAccountEnv({ engine, account, agentId }),
             /**
              * ‼️ X-296 / X-260 — AND THE SAME TWO LINES THE SERVICE ASKS, in the
              * same order, so the answer cannot depend on whether a window is
@@ -3361,8 +3362,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * left pointing at a slot that is gone — which a settings file
              * carried over from another machine can do on its own.
              */
-            accountBlock: (engine, account) =>
-                accountRefusal(launchAccountFor(engine, account), storedAccounts(), engine)
+            accountBlock: (engine, account, agentId) =>
+                accountRefusal(launchAccountFor(engine, account, agentId), storedAccounts(), engine)
                 || undefined,
             /**
              * ‼️ X-102 — THE RUNNER STATES THE FACTS; THIS SIDE WRITES THE
@@ -4791,7 +4792,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                      * somebody at the window — one order, not two.
                      */
                     accounts: storedAccounts(),
-                    activeAccounts: activeAccounts()
+                    activeAccounts: activeAccounts(),
+                    /**
+                     * ‼️ X-255 — AND THE RUNG ABOVE IT, or the promise holds by
+                     * day and quietly stops holding at night.
+                     *
+                     * "developer always runs on this plan" is resolved in the
+                     * window by `resolveAccount`; the service reaches the same
+                     * answer only if it is handed the same table. ONLY the
+                     * account travels — the rest of `agentEngineDefaults` is
+                     * this side's business, and a route id in a plaintext file
+                     * the service does not use would be a copy kept for nobody.
+                     * Keyed by the agent's normalised DIRECTORY, which is what
+                     * the store itself is keyed by (`agentKey`): two keyings of
+                     * one table is how two sides disagree about one agent.
+                     */
+                    agentAccounts: (() => {
+                        const store = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
+                        const out: Record<string, Record<string, string>> = {};
+                        for (const a of agents) {
+                            const row: Record<string, string> = {};
+                            for (const e of ENGINE_IDS) {
+                                const id = storedAccount(store, a.dir, e);
+                                if (id) { row[e] = id; }
+                            }
+                            if (Object.keys(row).length) { out[agentKey(a.dir)] = row; }
+                        }
+                        return out;
+                    })()
                 }, null, 2), 'utf8');
         } catch { /* best-effort */ }
     };
@@ -4811,6 +4839,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.accounts')
             || e.affectsConfiguration('agentFarm.activeAccounts')
+            // ‼️ X-255 — and the per-agent rung, for the same reason: an account
+            // typed onto an agent's row this afternoon that never reached the
+            // file would leave tonight's run of it on the machine-wide plan,
+            // with the page saying otherwise.
+            || e.affectsConfiguration('agentFarm.agentEngineDefaults')
             || e.affectsConfiguration('agentFarm.taskExtraArgs')) {
             writeServiceConfig();
         }
@@ -10056,7 +10089,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(!engineRefused, engineRefused ?? '');
                 // ‼️ X-169 — and whether the account it names is on this machine.
                 const accountRefused = launchAccountRefusal(
-                    { engine: engineOf(merged.engine).id, account: merged.account });
+                    { engine: engineOf(merged.engine).id, account: merged.account, agentId: agent.id });
                 need(!accountRefused, accountRefused);
                 const surface = optStr(args, 'surface') || 'terminal';
                 need(surface === 'terminal' || surface === 'console',
@@ -10076,7 +10109,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // rather than echoed: a caller that named none still needs
                     // to know which plan it just spent, and '' is the honest
                     // answer for the main account rather than a guess at a name.
-                    account: launchAccountFor(spec.id, merged.account)
+                    account: launchAccountFor(spec.id, merged.account, agent.id)
                 };
                 if (surface === 'console') {
                     startConsoleSession(agent, o, project);
@@ -11027,9 +11060,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * told nothing, and the transcript records neither.
                  */
                 const wantAccount = optStr(args, 'account');
-                const accountNo = launchAccountRefusal({ engine, account: wantAccount });
+                const accountNo = launchAccountRefusal({ engine, account: wantAccount, agentId: agent.id });
                 need(!accountNo, accountNo);
-                const account = launchAccountFor(engine, wantAccount);
+                const account = launchAccountFor(engine, wantAccount, agent.id);
                 /**
                  * ‼️ S-59 — A HELD ID IS SETTLED BEFORE A PROCESS IS STARTED ON IT.
                  * This door started `--resume` against whatever held the id and
@@ -18458,6 +18491,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // `full` would be stating a contract that engine has never had —
             // photographed and caught before it shipped.
             settingsGuarantee: !!accountAdapterFor(slot.engine).requiredEnv,
+            /**
+             * ‼️ X-255 — WHICH AGENTS STAND ON THIS SIGN-IN BY NAME, and the
+             * count of the ones on this engine that stand somewhere of their own.
+             *
+             * ONE SUBJECT: the standing chip beside it is the MACHINE's answer
+             * ("use this next"), this row is the AGENTS'. And it is what keeps
+             * the chip from becoming the silent no-op Principle 1 is about —
+             * a per-agent account outranks the machine-wide one, so a person who
+             * presses ⚡ needs to be able to see, on the same card, who will not
+             * follow it.
+             */
+            standingAgents: agents
+                .filter(a => storedAccount(
+                    cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+                    a.dir, slot.engine as EngineId) === slot.id)
+                .map(a => a.name),
+            pinnedAgents: agents
+                .filter(a => !!storedAccount(
+                    cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+                    a.dir, slot.engine as EngineId))
+                .length,
             // ‼️ X-284 — AND THE WHOLE BIRTH CONTRACT, not only the one clause
             // above. `settingsGaps` answers "which system prompt would a session
             // get", which is a question the user asks by name; this answers
@@ -18826,21 +18880,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return '';
     };
     /**
+     * ‼️ X-255 — THIS AGENT'S OWN STANDING SIGN-IN FOR THIS ENGINE, off the same
+     * per-agent record that already holds its route (`agentEngineDefaults`).
+     *
+     * Read by `storedAccount` and not out of `storedDefault`: an account is an
+     * identity, and the readers of that one want a word for a command line.
+     * Nothing here DECIDES — the order belongs to `accountStore` alone.
+     */
+    const agentStandingAccount = (agentId: string | undefined, engine: string | undefined): string => {
+        const dir = agentId ? agents.find(a => a.id === agentId)?.dir : '';
+        if (!dir) { return ''; }
+        return storedAccount(
+            cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
+            dir, ((engine || '').trim() || 'claude') as EngineId);
+    };
+    /**
      * ‼️ X-169 — WHICH SIGN-IN A LAUNCH RUNS ON, IN ONE FUNCTION, so no surface
-     * invents its own order. What the launch itself states wins; otherwise the
-     * engine's active account — the one thing "use this next" writes; otherwise
-     * nothing at all, which is the main sign-in and today's behaviour to the
-     * character.
+     * invents its own order. What the launch itself states wins; then (X-255)
+     * the agent's own standing sign-in; then the engine's active account — the
+     * one thing "use this next" writes; otherwise nothing at all, which is the
+     * main sign-in and today's behaviour to the character.
      *
      * This is what every launch door is handed as `accountFor`, so the account a
      * door shows and the account the process gets are one resolution rather than
      * two that agree most of the time.
+     *
+     * ‼️ AND THE AGENT IS AN ARGUMENT RATHER THAN A SECOND FUNCTION. A caller
+     * with no agent in hand (a fleet-wide sweep, a bare engine question) passes
+     * none and gets exactly the resolution it got before this item — the
+     * per-agent rung simply is not there for it, which is the honest answer
+     * rather than an invented one.
      */
-    const launchAccountFor = (engine: string | undefined, stated?: string): string =>
-        resolveAccount(stated, engine, activeAccounts());
+    const launchAccountFor = (engine: string | undefined, stated?: string, agentId?: string): string =>
+        resolveAccount(stated, engine, activeAccounts(), agentStandingAccount(agentId, engine));
     /** The slot a launch resolves to, or nothing — which IS the main account. */
-    const launchAccountSlot = (o: { engine?: string; account?: string }): EngineAccountSlot | undefined => {
-        const id = launchAccountFor(o.engine, o.account);
+    const launchAccountSlot = (
+        o: { engine?: string; account?: string; agentId?: string }
+    ): EngineAccountSlot | undefined => {
+        const id = launchAccountFor(o.engine, o.account, o.agentId);
         return id ? findSlot(storedAccounts(), id) : undefined;
     };
     /**
@@ -18855,7 +18932,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * (`accountEnv`), never spelt out here: a door that wrote `CLAUDE_CONFIG_DIR`
      * would be a door that only works on one engine while looking general.
      */
-    const launchAccountEnv = (o: { engine?: string; account?: string }): Record<string, string | null> => {
+    const launchAccountEnv = (
+        o: { engine?: string; account?: string; agentId?: string }
+    ): Record<string, string | null> => {
         /**
          * ‼️ X-211 — THREE ANSWERS, NOT TWO, and the third is why this is no
          * longer one line.
@@ -18985,8 +19064,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * on whichever identity happens to be signed in, which is the exact accident
      * this family exists to end.
      */
-    const launchAccountRefusal = (o: { engine?: string; account?: string }): string =>
-        accountRefusal(o.account, storedAccounts(), o.engine);
+    const launchAccountRefusal = (o: { engine?: string; account?: string; agentId?: string }): string => {
+        const stated = accountRefusal(o.account, storedAccounts(), o.engine);
+        if (stated || (o.account || '').trim()) { return stated; }
+        /**
+         * ‼️ X-255 — AND A STANDING ACCOUNT THAT NAMES NOTHING IS REFUSED THE
+         * SAME WAY. A slot the user forgot is still written on the agent's row,
+         * and falling through it to the main sign-in would start the session on
+         * whoever this machine happens to be logged in as — the one accident
+         * this whole family exists to end, made worse by being SILENT and
+         * PERMANENT: nobody typed it at this launch, so nobody is looking.
+         */
+        const mine = agentStandingAccount(o.agentId, o.engine);
+        const bad = accountRefusal(mine, storedAccounts(), o.engine);
+        return bad ? `${bad} It is this agent's own standing sign-in, so every launch of it is `
+            + 'refused until the box on its row is cleared or pointed at a stored account.' : '';
+    };
     /**
      * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, AS PICKER ROWS. One reader for
      * the launcher, the composer and the bridge, so the words on all three are
@@ -19063,12 +19156,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return out;
     };
     /** What to print beside the launcher's Account row. */
-    const accountRowLabel = (engine: string, stated: string | undefined): string => {
-        const id = launchAccountFor(engine, stated);
-        if (!id) { return 'Main account'; }
-        const slot = findSlot(storedAccounts(), id);
-        if (!slot) { return `${id} (not on this machine)`; }
-        return slotLabel(slot) + (stated?.trim() ? '' : ' (the standing choice)');
+    const accountRowLabel = (engine: string, stated: string | undefined, agentId?: string): string => {
+        const r = accountResolution(stated, engine, activeAccounts(),
+            agentStandingAccount(agentId, engine));
+        if (!r.id) { return 'Main account'; }
+        const slot = findSlot(storedAccounts(), r.id);
+        if (!slot) { return `${r.id} (not on this machine)`; }
+        // ‼️ X-255 — WHICH STANDING CHOICE, not merely that there is one. Two
+        // of them answer this row now, and a reader who cannot tell them apart
+        // cannot tell why the Engines page button did not move this agent.
+        return slotLabel(slot) + (r.origin === 'agent' ? ' (this agent’s standing account)'
+            : r.origin === 'machine' ? ' (the machine’s standing choice)' : '');
     };
     /** What each engine can do about accounts at all, in its own words. */
     const accountEngineNotes = () => ENGINE_AUTH_ADAPTERS.map(a => ({
@@ -21200,7 +21298,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * slot's `projects` folder is a junction onto one shared directory, so
          * the transcript cannot name its own owner.
          */
-        const slot = launchAccountSlot({ engine: input.engine, ...input.options });
+        const slot = launchAccountSlot({
+            engine: input.engine, agentId: input.agentId, ...input.options
+        });
         const m = manifestFor({
             ...input, launchId: newLaunchId(at), at,
             ...(slot?.id ? { account: slot.id } : {})
@@ -21282,7 +21382,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // silently downgraded: an id naming no slot would otherwise start the
         // session on whoever happens to be logged in, which looks identical to
         // it having worked.
-        const accountNo = launchAccountRefusal({ engine: spec.id, account: merged.account });
+        const accountNo = launchAccountRefusal({ engine: spec.id, account: merged.account, agentId: agent.id });
         if (accountNo) {
             void vscode.window.showWarningMessage(`Agent Farm: ${accountNo}`);
             return undefined;
@@ -21364,7 +21464,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // and, failing that, to nothing at all — and nothing at all IS the
             // main sign-in, so a machine that has never captured an account
             // spawns the identical process it always did.
-            launchAccountEnv({ engine: spec.id, account: merged.account }),
+            launchAccountEnv({ engine: spec.id, account: merged.account, agentId: agent.id }),
             // ‼️ X-103 — the route this launch resolved to, not the one the
             // settings file happens to hold. `merged` has already had the
             // agent's record applied under it, so an unset launch still lands on
@@ -21667,7 +21767,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // setting invented here would describe a launch nobody performs.
         const d = launchDefaults();
         const engine = (seed.engine || d.engine || 'claude') as string;
-        const slot = launchAccountSlot({ engine, account: seed.account });
+        const slot = launchAccountSlot({ engine, account: seed.account, agentId });
         const usage = accountUsage.current();
         return {
             engine,
@@ -22298,10 +22398,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  */
                 ...(accountRowsFor(spec.id).length ? [{
                     label: '$(account) Account',
-                    description: accountRowLabel(spec.id, merged.account),
+                    description: accountRowLabel(spec.id, merged.account, agent.id),
                     detail: 'which sign-in of this engine the session runs as — blank is the main '
-                        + 'account. It is not remembered: an account is a state, not a preference, '
-                        + 'and the standing choice lives on the Engines page.',
+                        + 'account. What you pick here is for this launch only and is not '
+                        + 'remembered: an account is a state, not a preference. The standing '
+                        + 'answers are typed elsewhere — this agent’s own on its Settings row, '
+                        + 'the machine-wide one on the Engines page.',
                     act: 'account'
                 } as Row] : []),
                 {
@@ -22952,6 +23054,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             candidates: r.candidates.map(c => ({ dir: c.dir, name: c.name, excluded: c.excluded }))
         })),
         engineIds: () => engineMatrix().map(e => String(e.id)),
+        /**
+         * ‼️ X-255 — THE SIGN-IN LIST AND THE MACHINE-WIDE STANDING CHOICE, from
+         * the side that owns both. The page resolves the agent's row with
+         * `accountStore.accountResolution`, the same order the spawn takes, so a
+         * box that says "this agent stands on X" and the process that runs as X
+         * are one resolution rather than two.
+         */
+        accountChoices: () => ({
+            slots: storedAccounts().map(s => ({
+                id: s.id, engine: s.engine, label: slotLabel(s)
+            })),
+            standing: activeAccounts()
+        }),
         writeAgentDefault: async (dir, engine, patch) => {
             const conf = vscode.workspace.getConfiguration();
             const store = conf.get<AgentEngineDefaults>('agentFarm.agentEngineDefaults', {}) ?? {};
@@ -25152,7 +25267,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // slot; the check is here because the silent alternative — starting on
         // whoever happens to be logged in — is indistinguishable from success.
         const accountNo = launchAccountRefusal(
-            { engine: engineOf(merged.engine).id, account: merged.account });
+            { engine: engineOf(merged.engine).id, account: merged.account, agentId: agent.id });
         if (accountNo) {
             void vscode.window.showWarningMessage(`Agent Farm: ${accountNo}`);
             return;
@@ -25205,8 +25320,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // plan the "use this next" button was last pressed for. Empty is the
             // main sign-in and stays absent, because an empty string on the
             // state would look like an answer somebody gave.
-            ...(launchAccountFor(engineOf(merged.engine).id, merged.account)
-                ? { account: launchAccountFor(engineOf(merged.engine).id, merged.account) } : {}),
+            ...(launchAccountFor(engineOf(merged.engine).id, merged.account, agent.id)
+                ? { account: launchAccountFor(engineOf(merged.engine).id, merged.account, agent.id) } : {}),
             // undefined = inherit the window's active project (ConsoleHost does
             // the read); '' = explicitly none. See launchClaudeTerminal.
             ...(project !== undefined ? { projectId: project } : {}),
@@ -34283,6 +34398,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         QueuePanel.refreshIfOpen(); NoticesPanel.refreshIfOpen();
                         ProjectsPanel.refreshIfOpen();
                     },
+                    // ‼️ X-255 — the sign-in list and the machine-wide standing
+                    // choice, so an agent's row can draw the account it stands
+                    // on and say what clearing the box would fall through to.
+                    accountChoices: () => ({
+                        slots: storedAccounts().map(s => ({
+                            id: s.id, engine: s.engine, label: slotLabel(s)
+                        })),
+                        standing: activeAccounts()
+                    }),
                     // Agent folders section: a fresh scan per render, so badges and
                     // the per-root agent lists always match what discovery would do.
                     agentFolders: () => {
@@ -36526,7 +36650,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '`origin` ("agent-file" = the agent\'s own Claude settings, which apply even to a '
                 + 'terminal session · "farm" = kept by Agent Farm and passed as a flag, so a session '
                 + 'you start yourself will NOT have it · "launch-defaults" = the fleet-wide setting · '
-                + '"cli" = nothing is set anywhere) and a `note` saying so in one line. Read this '
+                + '"cli" = nothing is set anywhere) and a `note` saying so in one line. ‼️ X-255 — '
+                + '`account` comes back beside them with its own vocabulary, because its layers are '
+                + 'not theirs: `id` (the slot that will pay, "" = the identity this machine itself '
+                + 'is signed in as) and `origin` ("agent" = this agent\'s OWN standing sign-in, '
+                + 'which outranks the machine-wide one · "machine" = agentFarm.activeAccounts, the '
+                + 'Engines page\'s "use this next" · "main" = nothing set anywhere). Read this '
                 + 'before assuming a model: an agent tuned for Claude is not tuned for the engine you '
                 + 'are about to start it on. args: agent? (name or id; omitted = every agent), '
                 + 'engine? (' + ENGINE_ENUM_SPACED + ')',
@@ -36555,7 +36684,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                 }),
                                 effort: resolveDefault(e.id, 'effort', {
                                     farm: own.effort, launch: d.effort, engineLabel: e.label
-                                })
+                                }),
+                                /**
+                                 * ‼️ X-255 — AND WHOSE PLAN PAYS. Its `origin`
+                                 * is not the other two's vocabulary because its
+                                 * layers are not theirs: `agent` = this agent's
+                                 * own standing sign-in, `machine` = the Engines
+                                 * page's "use this next", `main` = nothing set
+                                 * anywhere, which is the identity this machine
+                                 * is signed in as. Read it before assuming a
+                                 * launch spends the account you last activated.
+                                 */
+                                account: accountResolution(
+                                    '', e.id, activeAccounts(),
+                                    storedAccount(store, a.dir, e.id),
+                                    id => accountLabelOf(findSlot(storedAccounts(), id)) || id)
                             };
                         })
                 }));

@@ -498,22 +498,59 @@
          * MIRROR: the badge opens with the state it IS in; the chip with what
          * pressing it would do.
          */
+        /**
+         * X-255 -- AND THE CHIP SAYS WHOSE ANSWER IT IS.
+         *
+         * This control is the MACHINE's standing choice. An agent that names a
+         * sign-in of its own outranks it, so on a fleet where some do, a press
+         * here does nothing visible for those agents -- exactly the silent no-op
+         * Principle 1 is about. The sentence is drawn from the real count rather
+         * than written as a caveat, so a machine where nobody has pinned an
+         * agent reads no warning at all.
+         */
+        const pinned = a.pinnedAgents || 0;
+        const notFollowing = pinned
+            ? '\n\nThis is the MACHINE-wide answer, and ' + pinned + ' agent'
+                + (pinned === 1 ? '' : 's') + ' on ' + engineLabel(a.engine)
+                + ' name a sign-in of their own -- theirs outranks this, so pressing it does not '
+                + 'move them. Their box is on the agent’s row in Farm Settings.'
+            : '';
         const stand = a.active
             ? T.wrap('<button class="acsel on" role="radio" aria-checked="true" '
                 + 'data-acmain="' + esc(a.engine) + '">🟢 standing</button>',
-                'Standing — every new ' + engineLabel(a.engine) + ' session opens as ' + (a.label || a.id),
+                'Standing — every new ' + engineLabel(a.engine) + ' session opens as ' + (a.label || a.id)
+                + (pinned ? ', unless the agent names its own' : ''),
                 'Pressing it hands the engine back to the main sign-in — the identity this machine '
                 + 'is logged in as, for which nothing is injected at all. Either way nothing already '
-                + 'running moves: an account is fixed for a session the way a route is.')
+                + 'running moves: an account is fixed for a session the way a route is.' + notFollowing)
             : T.wrap('<button class="acsel" role="radio" aria-checked="false" '
                 + 'data-acuse="' + esc(a.id) + '" data-acengine="' + esc(a.engine) + '">⚡ Use this one</button>',
-                'Make ' + (a.label || a.id) + ' the standing account',
+                'Make ' + (a.label || a.id) + ' the machine’s standing account',
                 'Every new ' + engineLabel(a.engine) + ' session would then open as it. The one standing '
                 + 'now goes off in the same act: one engine, one standing account.\n\n'
                 + 'Nothing already running moves — starting on another account means starting another '
-                + 'session. An account is deliberately not remembered per agent: it is a state (how much '
-                + 'of a plan is left, which changes hourly), not a preference, so this one place holds it '
-                + 'and a launch that names its own account still wins.');
+                + 'session. What this sets is not remembered per SESSION: an account is a state (how '
+                + 'much of a plan is left, which changes hourly), not a preference, so a launch that '
+                + 'names its own account still wins.' + notFollowing);
+        /**
+         * X-255 -- WHO STANDS ON THIS ONE, on the card rather than a page away.
+         *
+         * ONE SUBJECT: the chip above is the machine's answer, this line is the
+         * agents'. DENSITY -- the reader is looking at this card to decide
+         * whether to spend this plan, and "developer always runs here" is the
+         * fact that decides it.
+         */
+        const standingBy = (a.standingAgents || []).length
+            ? T.wrap('<span class="acpin">📌 ' + esc((a.standingAgents || []).join(', ')) + '</span>',
+                'Stands on this account',
+                (a.standingAgents || []).length === 1
+                    ? (a.standingAgents || [])[0] + ' names this sign-in on its own row in Farm '
+                        + 'Settings, so every session of it opens here whatever the machine-wide '
+                        + 'standing choice says. Clear the box on that row to hand it back.'
+                    : 'These agents name this sign-in on their own rows in Farm Settings, so their '
+                        + 'sessions open here whatever the machine-wide standing choice says. Clear '
+                        + 'the box on a row to hand that agent back.')
+            : '';
         /**
          * ‼️ …AND THE BUTTON SAYS WHERE IT IS IN THE LINE. A press that will act
          * in twenty seconds with no sign it was heard is indistinguishable from
@@ -865,6 +902,7 @@
             + contractBadge
             + repairBadge
             + promoteBadge
+            + standingBy
             + '<span class="grow"></span>'
             + fixSettings
             + fixContract
@@ -1225,6 +1263,13 @@
                    one is YOUR MOVE, in the same yellow the held verdict and the
                    keyless route wear; an unreadable one is a FAULT and wears the
                    red every other fault on this page does. */
+                /* X-255 -- who stands on this account. The SAME blue the standing
+                   rule and the standing chip wear, because it is the same fact one
+                   subject over: this card is the sign-in somebody opens on. It is
+                   a label and not a control, so it carries no border and no fill. */
+                .acpin { font-size:10px; white-space:nowrap; cursor:help; max-width:220px;
+                    overflow:hidden; text-overflow:ellipsis;
+                    color:var(--vscode-charts-blue,#3794ff); }
                 .acbad { cursor:help; }
                 .acbad.ok { background:transparent; color:var(--vscode-descriptionForeground,#9d9d9d);
                     border-color:var(--vscode-widget-border,#4446); }

@@ -48,6 +48,50 @@ const CFG = {
         p.env.CLAUDE_CONFIG_DIR === 'D:/slots/gece');
 }
 
+// ---------- X-255 — the agent's own standing sign-in, at night too ----------
+//
+// ‼️ THE RUNG HAS TO EXIST ON BOTH SIDES OR IT EXISTS ON NEITHER. "developer
+// always runs on this plan" is resolved in the window by `resolveAccount`; if
+// the table never reached this file the promise would hold by day and silently
+// stop holding at 3 a.m. — which is where it matters most and where nobody is
+// watching. The extension writes `agentAccounts` beside the slot table for
+// exactly this, keyed by the agent's normalised DIRECTORY.
+{
+    const CFG2 = {
+        ...CFG,
+        agentAccounts: { 'd:/zone/agent/ajanlar/developer': { claude: 'claude-gece' } }
+    };
+    const mine = headlessAccountPlan(
+        { engine: 'claude', agentDir: 'D:\\zone\\agent\\ajanlar\\developer\\' }, CFG2);
+    ok('‼️ X-255 — a pinned agent spends ITS plan at night, not the machine-wide one',
+        mine.account === 'claude-gece' && mine.env.CLAUDE_CONFIG_DIR === 'D:/slots/gece');
+    // The key is normalised on the way in because it comes off a file another
+    // process wrote: backslashes, a trailing slash and a different case are one
+    // agent, and a second keying is how the two sides come to disagree.
+    ok('…and the directory is matched the way the store itself keys it',
+        headlessAccountPlan({ engine: 'claude', agentDir: 'D:/Zone/Agent/Ajanlar/Developer' }, CFG2)
+            .account === 'claude-gece');
+    // ‼️ AN AGENT THAT NAMES NOTHING STILL FOLLOWS THE MACHINE. An absent row
+    // is what lets the standing choice through — the whole reason the writer
+    // clears rather than storing an empty string.
+    ok('an agent with no row of its own still follows the standing choice',
+        headlessAccountPlan({ engine: 'claude', agentDir: 'D:/zone/agent/ajanlar/basit' }, CFG2)
+            .account === 'claude-gunduz');
+    // ‼️ AND THE ITEM'S OWN ANSWER STILL WINS. Somebody typed it onto the
+    // schedule; a standing choice is not an instruction and must not overrule one.
+    ok('‼️ …and a sign-in written on the item still outranks the agent\u2019s',
+        headlessAccountPlan(
+            { engine: 'claude', account: 'claude-gunduz', agentDir: 'D:/zone/agent/ajanlar/developer' },
+            CFG2).account === 'claude-gunduz');
+    // ‼️ A STANDING SIGN-IN THAT NAMES NOTHING REFUSES THE RUN, for the reason
+    // every other unresolvable name does: falling through to the main account is
+    // the silent wrong spend, and here nobody typed the name at this run at all.
+    const dead = headlessAccountPlan({ engine: 'claude', agentDir: 'D:/zone/agent/ajanlar/yazar' },
+        { ...CFG, agentAccounts: { 'd:/zone/agent/ajanlar/yazar': { claude: 'claude-forgotten' } } });
+    ok('‼️ …and a standing sign-in this machine no longer holds skips the run',
+        dead.account === '' && /claude-forgotten/.test(dead.refusal));
+}
+
 // ---------- nobody wrote one ----------
 {
     // ‼️ NOT A NEW POLICY FOR THE NIGHT. This is `resolveAccount`'s own order —
@@ -142,7 +186,17 @@ const CFG = {
         /accounts: storedAccounts\(\),\s*\n\s*activeAccounts: activeAccounts\(\)/.test(ext));
     ok('‼️ …and rewrites it when the sign-ins move, or a slot captured this '
         + 'afternoon would be refused tonight for a reason that stopped being true',
-        /affectsConfiguration\('agentFarm\.accounts'\)[\s\S]{0,240}writeServiceConfig\(\)/.test(ext));
+        /affectsConfiguration\('agentFarm\.accounts'\)[\s\S]{0,700}writeServiceConfig\(\)/.test(ext));
+    // ‼️ X-255 — AND THE PER-AGENT RUNG TRAVELS WITH THEM, or the promise
+    // "developer always runs on this plan" holds by day and silently stops
+    // holding at 3 a.m. Only the ACCOUNT goes: the rest of the defaults store is
+    // the window's business and a copy kept for nobody is a copy that goes stale.
+    ok('‼️ X-255 — the per-agent standing sign-in reaches the service too',
+        /agentAccounts: \(\(\) => \{/.test(ext)
+        && /storedAccount\(store, a\.dir, e\)/.test(ext)
+        && /out\[agentKey\(a\.dir\)\] = row/.test(ext));
+    ok('…and a box typed on an agent\u2019s row rewrites the file the same beat',
+        /affectsConfiguration\('agentFarm\.agentEngineDefaults'\)/.test(ext));
 
     /* ---------------------------------------------------------------------
      * ‼️ X-296 — AND THE OTHER RUNNER ASKS THE SAME THING, which is the half
@@ -164,7 +218,7 @@ const CFG = {
      * ------------------------------------------------------------------- */
     const tasks = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'tasks.ts'), 'utf8');
     ok('‼️ X-296 — the extension\'s runner asks before it spawns, at the last gate',
-        /const accountNo = this\.opts\.accountBlock\?\.\(task\.engine \?\? 'claude', task\.account\);/.test(tasks)
+        /const accountNo = this\.opts\.accountBlock\?\.\(task\.engine \?\? 'claude', task\.account, task\.agentId\);/.test(tasks)
         && /if \(accountNo\) \{/.test(tasks));
     ok('…and it is asked inside `launchBlock`, so the answer is a row the reader '
         + 'can see rather than a spawn that never says anything',
@@ -176,13 +230,13 @@ const CFG = {
         /code: `account:missing:\$\{\(task\.account \?\? ''\)\.trim\(\) \|\| task\.engine \|\| 'claude'\}`/.test(tasks));
     ok('‼️ …and it is wired to the SAME two lines the service runs, resolve then '
         + 'refuse — not a second order that agrees today',
-        /accountBlock: \(engine, account\) =>\s*\n\s*accountRefusal\(launchAccountFor\(engine, account\), storedAccounts\(\), engine\)/.test(ext));
+        /accountBlock: \(engine, account, agentId\) =>\s*\n\s*accountRefusal\(launchAccountFor\(engine, account, agentId\), storedAccounts\(\), engine\)/.test(ext));
     // The resolution has to come FIRST in both, and not only for tidiness: it
     // is what catches a STANDING choice left pointing at a slot that is gone,
     // which a settings file carried over from another machine can do alone.
     ok('…both resolve before they refuse, which is what catches a dead STANDING '
         + 'choice as well as a dead named one',
-        /const id = resolveAccount\(stated, engine, active\);\s*\n\s*const refusal = accountRefusal\(id, list, engine\);/
+        /const id = resolveAccount\(stated, engine, active, mine\);\s*\n\s*const refusal = accountRefusal\(id, list, engine\);/
             .test(fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'accountStore.ts'), 'utf8')));
 
     /* ---------------------------------------------------------------------

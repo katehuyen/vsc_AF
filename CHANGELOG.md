@@ -2,6 +2,59 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.501.0 - An agent can stand on a sign-in of its own (X-255) (2026-09-14)
+
+- **Every agent now has a standing account, per engine, and it outranks the
+  machine-wide one.** "developer always runs on this plan, youtuber on that
+  one" is the first thing a person wants once they hold three sign-ins, and
+  until now it had to be chosen by hand at every launch: the per-agent record
+  held a model, an effort and a route, and the word `account` did not appear in
+  it. The box is on the agent’s row in Farm Settings, beside the model and the
+  effort, and it is drawn only where that engine has captured sign-ins.
+- **The order is written once and lives in one place** (`accountStore.
+  resolveAccount`): what the launch itself names → this agent’s standing
+  sign-in → the machine-wide "use this next" (`agentFarm.activeAccounts`) →
+  nothing at all, which is the main sign-in. The per-agent rung had to sit
+  ABOVE the machine-wide one or it would be a control that stores what it is
+  told and changes nothing: a standing choice is set on this machine
+  essentially always.
+- **Which is why both surfaces now say WHOSE answer they are (ONE SUBJECT).**
+  The Engines page’s ⚡ chip is the MACHINE’s choice and its panel says so,
+  naming how many agents name a sign-in of their own and will not follow it —
+  drawn from the real count, so a machine with nobody pinned reads no warning
+  at all. Each account card names the agents that stand on it (📌), so the
+  reader deciding whether to spend this plan can see who is on it without
+  changing page. Without those two the chip would have become a button that
+  quietly does nothing — the failure Principle 1 exists to prevent.
+- **It is a LAYER, not a per-door feature.** One resolver feeds every launch
+  door (`withAccount` now carries the agent), the terminal and Console spawns,
+  the launch manifest (so "whose plan paid" is recorded correctly), the task
+  runner’s environment and its pre-spawn refusal, and the bridge.
+- **And it holds at 3 a.m. too.** The headless service resolves the same order
+  from a new `agentAccounts` table the extension writes into
+  `service-config.json` beside the slot list, rewritten whenever the box moves.
+  A rung added only in the window would mean the promise held by day and
+  silently stopped holding at night, which is where it matters most and where
+  nobody is watching. Only the account travels; the rest of the defaults store
+  stays on this side.
+- **A standing sign-in this machine no longer holds REFUSES the launch** rather
+  than falling through to whoever is logged in — the same rule a named one has
+  followed since X-169, and it matters more here because nobody typed it at
+  this launch, so nobody is looking. The bridge refuses the WRITE for the same
+  reason: `agents.defaults.set` takes `account` and rejects an id naming no
+  stored slot of that engine, which would otherwise refuse every later launch
+  of that agent from a setting the user cannot see. `agents.defaults` reports
+  the resolution with its own vocabulary (`agent` / `machine` / `main`).
+- Drawn and looked at in both themes on the `engines` and `enginespanel`
+  fixtures, in both arities: the agent that stands on its own sign-in and the
+  one beside it that falls through to `Default → <the machine’s>`.
+- Fixed on the way past: `tools/parity_suggest.js` crashed with an ENOENT
+  stack unless the gate’s output had been redirected into a file called
+  `par.out` — it now runs the gate itself and takes capability names on the
+  command line. And the Console page’s live permission strip had a stale
+  assertion left from 3.500.0 (the suite was red at HEAD); the code was right,
+  the test was pinning the line before it.
+
 ## 3.500.0 - Antigravity is not offered a permission mode it cannot keep (S-60) (2026-09-14)
 
 - **The "ask me" rows are gone from Antigravity's pickers.** The engine has no

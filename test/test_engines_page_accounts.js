@@ -138,6 +138,31 @@ const sec = () => {
     ok('…and the hover names the state first, then the whole consequence',
         /standing .*account|the standing/i.test(h) && /hands the engine back to the main sign-in/.test(h)
         && /goes off in the same act/.test(h));
+
+    // ---- X-255 — the chip is the MACHINE's answer, and it says so ----------
+    //
+    // ‼️ THE FAILURE THIS PINS IS A SILENT ONE. A per-agent standing account
+    // outranks this control, so on a fleet where some agents name their own, a
+    // press here does nothing visible for them — a button that does nothing,
+    // which is exactly what Principle 1 exists to make impossible. The sentence
+    // is drawn from the real count, so a machine with nobody pinned still reads
+    // no warning: the assertion below is that the count in the fixture (2)
+    // reaches the panel.
+    ok('‼️ X-255 — the standing chip says whose answer it is, and who ignores it',
+        /2 agents on Claude Code name a sign-in of their own/.test(h)
+        && /theirs outranks this, so pressing it does not move them/.test(h));
+    ok('…and it names where the other answer is typed, rather than only refusing',
+        /Their box is on the agent.s row in Farm Settings/.test(h));
+    // ‼️ …AND THE CARD SAYS WHO, NOT HOW MANY. A count nobody can act on is a
+    // worse silence than none (DENSITY): the reader is looking at this card to
+    // decide whether to spend this plan, and the names are what decides it.
+    ok('‼️ X-255 — the card names the agents that stand on THIS sign-in',
+        /class="acpin">📌 developer, youtuber</.test(h));
+    // ONE SUBJECT: the machine's standing card wears the chip and NO pin; the
+    // pinned card wears the pin and no chip. Two subjects, never one drawn twice.
+    ok('…and the two subjects never land on one card',
+        (h.match(/class="acpin"/g) || []).length === 1
+        && h.indexOf('class="acpin"') > h.indexOf('class="acsel on"'));
 }
 
 // ---- dropping one ----------------------------------------------------------

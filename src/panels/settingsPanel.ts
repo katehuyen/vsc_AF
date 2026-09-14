@@ -13,8 +13,9 @@ import {
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { EngineId, ENGINE_IDS, EngineStatus } from '../core/engines';
 import {
-    AgentEngineDefaults, resolveDefault, storedDefault, withAgentDefault
+    AgentEngineDefaults, resolveDefault, storedAccount, storedDefault, withAgentDefault
 } from '../core/agentDefaults';
+import { accountResolution } from '../core/accountStore';
 import { EngineModels } from '../core/models';
 import { normPath } from '../core/util';
 import { revealPath } from '../core/reveal';
@@ -88,6 +89,20 @@ export interface FarmSettingsDeps {
      * core/engines.ts for why this is not simply "the API keys".
      */
     engines?(): EngineStatus[];
+    /**
+     * X-255 — THE SIGN-INS THIS MACHINE HOLDS, plus the machine-wide standing
+     * choice, so an agent's row can draw the account it stands on.
+     *
+     * ‼️ THE MACHINE-WIDE MAP TRAVELS WITH THE SLOTS BECAUSE THE BOX'S ZERO ROW
+     * NEEDS IT. "Default" on this box means "clear my choice", and what applies
+     * after the clearing is the Engines page's standing choice — a zero row that
+     * could not name it would be the U-29 mystery again, one axis over.
+     */
+    accountChoices?(): {
+        slots: { id: string; engine: string; label: string }[];
+        /** `agentFarm.activeAccounts` — engine id → slot id. */
+        standing: Record<string, string>;
+    };
     /**
      * Write one of the engine's own commands into a real terminal — the install
      * or the sign-in — WITHOUT running it. One gesture for both, because it is
@@ -375,6 +390,10 @@ export class FarmSettingsPanel {
         const ids: EngineId[] = engines.length
             ? engines.map(e => e.id as EngineId)
             : ENGINE_IDS;
+        const choices = this.deps.accountChoices?.() ?? { slots: [], standing: {} };
+        const slots = choices.slots;
+        const standing = choices.standing;
+        const slotName = (id: string): string => slots.find(s => s.id === id)?.label || id;
         return {
             ...rep,
             reports: rep.reports.map(r => ({
@@ -384,6 +403,7 @@ export class FarmSettingsPanel {
                     for (const id of ids) {
                         const label = engines.find(e => e.id === id)?.label ?? id;
                         const own = storedDefault(store, c.dir, id);
+                        const mine = storedAccount(store, c.dir, id);
                         const agentFile = id === 'claude' ? this.agentFileModel(c.dir) : '';
                         per[id] = {
                             model: id === 'claude' ? (agentFile || own.model || '') : (own.model || ''),
@@ -416,7 +436,26 @@ export class FarmSettingsPanel {
                             }),
                             resolvedEffortZero: resolveDefault(id, 'effort', {
                                 launch: launch.effort, engineLabel: label
-                            })
+                            }),
+                            /**
+                             * ‼️ X-255 — AND WHICH SIGN-IN THIS AGENT STANDS ON.
+                             *
+                             * Resolved by `accountStore.accountResolution` — the
+                             * one order the spawn itself uses — rather than by a
+                             * second rule here, so the sentence this box prints
+                             * and the plan the session really spends cannot part
+                             * company. The zero row leaves this agent's own
+                             * answer out for the same reason the model's does:
+                             * it means "clear my choice", so it has to name what
+                             * would apply AFTER the clearing.
+                             */
+                            account: mine,
+                            resolvedAccount: accountResolution(
+                                '', id, standing, mine, slotName),
+                            resolvedAccountZero: accountResolution(
+                                '', id, standing, '', slotName),
+                            accounts: slots.filter(s => s.engine === id)
+                                .map(s => ({ id: s.id, label: s.label }))
                         };
                     }
                     return { ...c, engines: per };
@@ -435,7 +474,7 @@ export class FarmSettingsPanel {
      * IT starts the session — which is what the box's own hover says.
      */
     private async writeFarmDefault(
-        dir: string, engine: unknown, patch: { model?: string; effort?: string }
+        dir: string, engine: unknown, patch: { model?: string; effort?: string; account?: string }
     ): Promise<void> {
         const id = String(engine ?? '').trim().toLowerCase();
         const ids = (this.deps.engines?.() ?? []).map(e => String(e.id));
@@ -1134,6 +1173,35 @@ export class FarmSettingsPanel {
                     .some(r => r.candidates.some(c => c.dir === dir));
                 if (!dir || !known) { break; }
                 await this.writeFarmDefault(dir, msg.engine, { effort: String(msg.effort ?? '').trim() });
+                this.refresh();
+                break;
+            }
+            /**
+             * ‼️ X-255 — THIS AGENT'S STANDING SIGN-IN, and it goes into Agent
+             * Farm's store on EVERY engine including Claude.
+             *
+             * The model above is Claude's own file's because its CLI reads that
+             * file itself. An account is not that kind of answer: it is a
+             * directory handed to the process in its environment at spawn, and
+             * Claude Code has no settings key for one. Writing it into the
+             * agent's `.claude/settings.local.json` would be inventing a key
+             * nothing reads — the U-29 bug exactly, arriving one axis over.
+             *
+             * ‼️ AND AN ID NOBODY HOLDS IS NOT STORED. A webview that could
+             * write an arbitrary string here would be a webview that can refuse
+             * every future launch of this agent (`launchAccountRefusal`), which
+             * is a worse failure than the box not working.
+             */
+            case 'agentAccount': {
+                const dir = String(msg.dir ?? '');
+                const known = this.deps.agentFolders?.().reports
+                    .some(r => r.candidates.some(c => c.dir === dir));
+                if (!dir || !known) { break; }
+                const engine = String(msg.engine ?? 'claude').trim().toLowerCase();
+                const account = String(msg.account ?? '').trim();
+                const slots = this.deps.accountChoices?.().slots ?? [];
+                if (account && !slots.some(s => s.id === account && s.engine === engine)) { break; }
+                await this.writeFarmDefault(dir, engine, { account });
                 this.refresh();
                 break;
             }

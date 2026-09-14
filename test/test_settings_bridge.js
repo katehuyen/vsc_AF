@@ -92,6 +92,13 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
         agentFolders: () => [{ root: rootA, candidates: [{ dir: agentDir, name: 'yazar', excluded: false }] }],
         engineIds: () => ['claude', 'codex', 'gemini', 'agy'],
         writeAgentDefault: async (dir, engine, patch) => { written.push({ key: 'agentDefault', dir, engine, patch }); },
+        // X-255 — the sign-ins this machine holds, so an account written onto
+        // an agent can be refused rather than stored.
+        accountChoices: () => ({
+            slots: [{ id: 'claude-work', engine: 'claude', label: 'work@studio' },
+                { id: 'codex-work', engine: 'codex', label: 'work@chatgpt' }],
+            standing: { claude: 'claude-work' }
+        }),
         exportPack: (a, file) => { fs.writeFileSync(file, '{}'); packed.push(file); return { warnings: ['memory not included'], files: 4 }; },
         normPath: norm
     });
@@ -269,6 +276,35 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
             !defBadEngine.ok && /claude, codex, gemini, agy/.test(defBadEngine.error));
         const defNothing = await reg.dispatch('agents.defaults.set', { agent: 'yazar', engine: 'claude' });
         ok('…and saying neither model nor effort is refused', !defNothing.ok && /model.*effort/.test(defNothing.error));
+
+        // ---- X-255 — the agent's own standing sign-in ----
+        //
+        // ‼️ AN ID NOBODY HOLDS IS REFUSED, NOT STORED. It would otherwise
+        // refuse every later launch of that agent (`launchAccountRefusal`) from
+        // a setting the user cannot see — a worse failure than the write failing
+        // here with a sentence.
+        const acc = await reg.dispatch('agents.defaults.set',
+            { agent: 'yazar', engine: 'claude', account: 'claude-work' });
+        ok('agents.defaults.set writes the agent\u2019s standing sign-in',
+            acc.ok && acc.result.account === 'claude-work'
+            && written.some(w => w.key === 'agentDefault' && w.patch.account === 'claude-work'));
+        const accGone = await reg.dispatch('agents.defaults.set',
+            { agent: 'yazar', engine: 'claude', account: 'claude-nobody' });
+        ok('‼️ …an account nobody holds is refused rather than stored',
+            !accGone.ok && /No account "claude-nobody" is stored/.test(accGone.error));
+        // ‼️ AN ACCOUNT BELONGS TO ONE ENGINE. Handing a Codex slot to the
+        // Claude row sets a variable Claude does not read: the session starts on
+        // the main sign-in while the row claims otherwise.
+        const accWrong = await reg.dispatch('agents.defaults.set',
+            { agent: 'yazar', engine: 'claude', account: 'codex-work' });
+        ok('‼️ …and a sign-in of another engine is refused by name',
+            !accWrong.ok && /is a codex sign-in and this row is claude/.test(accWrong.error));
+        // An EMPTY account is a real answer: it clears the box and hands the
+        // agent back to the machine-wide standing choice.
+        const accClear = await reg.dispatch('agents.defaults.set',
+            { agent: 'yazar', engine: 'claude', account: '' });
+        ok('…and clearing it is allowed, which is how an agent follows the machine again',
+            accClear.ok && accClear.result.account === '');
 
         const packFile = path.join(root, 'out', 'yazar.agentpack');
         const pack = await reg.dispatch('agents.pack.export', { agent: 'yazar', file: packFile });

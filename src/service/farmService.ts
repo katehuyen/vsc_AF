@@ -43,6 +43,13 @@ interface ServiceConfig {
     accounts?: unknown;
     /** which sign-in each engine is standing on, when an item names none. */
     activeAccounts?: unknown;
+    /**
+     * X-255 - the sign-in each AGENT stands on, per engine, keyed by the agent's
+     * normalised directory. It outranks activeAccounts for that agent, so a
+     * night run of a pinned agent spends the plan its row names rather than
+     * whatever the Engines page was last pressed for.
+     */
+    agentAccounts?: unknown;
 }
 
 /**
@@ -200,7 +207,8 @@ function spawnHeadless(cfgSvc: ServiceConfig, task: StoredTask, agentDir: string
     task.startedAt = Date.now();
     // ‼️ X-260 (2/n) — resolved BEFORE the output file is written, because a
     // refused run must not leave a half-written report claiming it started.
-    const plan = headlessAccountPlan({ engine: task.engine, account: task.account }, cfgSvc);
+    const plan = headlessAccountPlan(
+        { engine: task.engine, account: task.account, agentDir: agentDir }, cfgSvc);
     const header = `# ${task.title}\n\n- Agent: ${task.agentName}\n- Started: ${afFull(Date.now())} (headless service)\n`
         // Said in the report itself: a run nobody watched must be able to answer
         // "whose plan did this spend" months later, and the transcript cannot —
@@ -264,7 +272,8 @@ function launchTask(cfgSvc: ServiceConfig, store: ReturnType<typeof readStore>,
      * where the "while you were away" digest reads, so it is visible in the
      * morning.
      */
-    const plan = headlessAccountPlan({ engine: axes.engine, account: axes.account }, cfgSvc);
+    const plan = headlessAccountPlan(
+        { engine: axes.engine, account: axes.account, agentDir: agent.dir }, cfgSvc);
     if (plan.refusal) {
         logRun({ kind: 'task-skipped', title, reason: plan.refusal });
         log(`skipped "${title}" — ${plan.refusal}`);

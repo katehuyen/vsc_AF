@@ -285,8 +285,12 @@ console.log('\n== the store is bounded before the first row is written ==');
     // reaches the spawn through `recordLaunch`, so resolving the slot here is
     // what makes "whose plan paid" true of all of them; asking ten call sites
     // to remember is the shape this whole family exists to refuse.
+    // ‼️ X-255 — AND THE AGENT IS PART OF THE RESOLUTION, not a later lookup.
+    // The per-agent standing sign-in is a rung of `resolveAccount`, so a record
+    // written without saying whose session it is would name the machine-wide
+    // account for a run that really spent the agent's own.
     ok('‼️ …and whose plan paid is resolved there too, not copied out of the options',
-        /const slot = launchAccountSlot\(\{ engine: input\.engine, \.\.\.input\.options \}\);/.test(ext)
+        /const slot = launchAccountSlot\(\{\s*\n\s*engine: input\.engine, agentId: input\.agentId, \.\.\.input\.options\s*\n\s*\}\);/.test(ext)
         && /\.\.\.\(slot\?\.id \? \{ account: slot\.id \} : \{\}\)/.test(ext));
 
     // ---- the terminal door ----

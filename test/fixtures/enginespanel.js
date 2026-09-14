@@ -102,6 +102,12 @@ const data = () => {
                 // is being read right now, the next is waiting behind it.
                 fetchedAt: NOW - 40 * 1000, queue: 'reading', queuePlace: 0,
                 settingsGaps: [], settingsGuarantee: true,
+                // ‼️ X-255 — THE MACHINE'S STANDING ACCOUNT, AND NOBODY STANDS ON IT.
+                // The pair that has to be read together: this card wears the chip
+                // and no pin, the one below wears a pin and no chip, and both say
+                // two agents name a sign-in of their own — so the ⚡ button's panel
+                // can be checked for the sentence saying it will not move them.
+                standingAgents: [], pinnedAgents: 2,
                 // ‼️ X-291 — THE SMALLEST NON-EMPTY LAYOUT, which is the one the
                 // user really gets: a single approval typed at a terminal prompt
                 // in one folder. A scene with only the many-row case would draw
@@ -126,6 +132,10 @@ const data = () => {
                 capturedAt: NOW - 2 * 3600 * 1000,
                 fetchedAt: NOW - 3 * 3600 * 1000, queue: 'queued', queuePlace: 1,
                 settingsGaps: [], settingsGuarantee: true,
+                // ‼️ X-255 — TWO AGENTS STAND HERE, which is the arity where the
+                // label has to clip; the single-name case reads differently and the
+                // panel's wording differs between them.
+                standingAgents: ['developer', 'youtuber'], pinnedAgents: 2,
                 // ‼️ X-292 — A SLOT THAT IS WHOLE AND KEEPS BEING PUT BACK, which
                 // is the only state the repair badge exists for: `link:todos` is
                 // `ok` on the row above and has been re-made four times, every

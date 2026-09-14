@@ -197,26 +197,111 @@ export function forgetActive(active: Record<string, string>, id: string): Record
  * what the user last pointed at with "use this next" — and otherwise nothing at
  * all, which is the main account and today's behaviour to the character.
  *
- * ‼️ AN ACCOUNT IS DELIBERATELY NOT REMEMBERED PER AGENT, unlike the model or
- * the effort. Those are preferences; an account is a STATE — how much of a plan
- * is left, which changes hourly. Remembering it per agent would pin an agent to
- * an exhausted plan and, worse, would silently outrank the "use this next"
- * gesture on the Engines page: the user would press a button that does nothing
- * visible, which is the failure Principle 1 is about. One place holds it, one
- * gesture moves it, and the runner always names its choice outright.
+ * ‼️ X-255 — AND THE AGENT'S OWN STANDING SIGN-IN SITS BETWEEN THEM, above the
+ * machine-wide one. "developer always runs on this plan, youtuber on that one"
+ * is the first thing a person wants once they hold three sign-ins, and the two
+ * are DIFFERENT SUBJECTS rather than one answered twice: `activeAccounts` is the
+ * machine's "use this next" and answers for every agent that names nothing,
+ * while the per-agent record answers for one. Below the machine-wide choice
+ * there is nothing, which is the main sign-in.
+ *
+ * ‼️ THE ORDER IS NOT A PREFERENCE, IT IS THE ONLY ONE THAT WORKS. A standing
+ * choice is set on this machine essentially always, so a per-agent answer
+ * ranked underneath it would be a control that stores what it is told and
+ * changes nothing — the exact failure Principle 1 is about, arriving from the
+ * other side. What that costs is that "use this next" no longer moves an agent
+ * that has named its own sign-in, so BOTH surfaces say which subject they are:
+ * the Engines chip names itself the machine-wide fallback, and the agent's own
+ * row draws its own answer (ONE SUBJECT).
+ *
+ * An account is still a STATE and not a preference — how much of a plan is left
+ * changes hourly — so nothing here is inherited from what an agent last RAN on
+ * (S-34 does not carry it) and a run that meets a wall is still moved by
+ * `carryOnAccount`. This is a typed standing instruction, not a memory.
  */
+export type AccountOrigin =
+    /** the launch, the door or the caller named it outright */
+    | 'stated'
+    /** X-255 — this agent's own standing sign-in for this engine */
+    | 'agent'
+    /** `agentFarm.activeAccounts` — the machine's "use this next" */
+    | 'machine'
+    /** nothing anywhere: the identity this machine itself is signed in as */
+    | 'main';
+
+export interface AccountResolution {
+    /** the slot that will pay, '' for the machine's own sign-in */
+    id: string;
+    origin: AccountOrigin;
+    /** ONE line for a hover: which sign-in, and who said so */
+    note: string;
+}
+
+/**
+ * The order above, as an answer that says WHICH LAYER GAVE IT. A surface that
+ * can only print the id cannot tell a person why pressing "use this next" did
+ * not move this agent — and that sentence is the whole of the trade X-255 makes.
+ */
+export function accountResolution(
+    stated: string | undefined,
+    engine: string | undefined,
+    active: Record<string, string>,
+    /** X-255 — `agentDefaults.storedAccount` for this agent on this engine. */
+    agentStanding?: string,
+    /** turns a slot id into the label a person recognises; id by default. */
+    labelOf?: (id: string) => string
+): AccountResolution {
+    const name = (id: string): string => (labelOf ? labelOf(id) : id) || id;
+    const own = String(stated || '').trim();
+    const eng = String(engine || 'claude').trim() || 'claude';
+    const mine = String(agentStanding || '').trim();
+    const machine = active[eng] || '';
+    // ‼️ X-211 — the one answer that is a statement OF nothing. It outranks every
+    // standing layer exactly as any other stated account does; what it resolves
+    // to is the absence of a slot, which is the main sign-in.
+    if (own === MACHINE_ACCOUNT) {
+        return {
+            id: '', origin: 'stated',
+            note: 'The identity this machine itself is signed in as — asked for outright, so '
+                + 'nothing is injected and anything this window carries is cleared.'
+        };
+    }
+    if (own) {
+        return {
+            id: own, origin: 'stated',
+            note: `${name(own)} — named by this launch, which outranks every standing choice.`
+        };
+    }
+    if (mine) {
+        return {
+            id: mine, origin: 'agent',
+            note: `${name(mine)} — this agent's own standing sign-in for ${eng}. It outranks the `
+                + 'machine-wide "use this next", so moving that one does not move this agent; '
+                + 'clear the box on the agent\'s row to follow the machine again.'
+        };
+    }
+    if (machine) {
+        return {
+            id: machine, origin: 'machine',
+            note: `${name(machine)} — the machine-wide standing choice for ${eng} `
+                + '("use this next" on the Engines page). This agent names none of its own.'
+        };
+    }
+    return {
+        id: '', origin: 'main',
+        note: 'The identity this machine itself is signed in as — nothing is set for this agent '
+            + `and nothing standing for ${eng}, so nothing is injected.`
+    };
+}
+
+/** The id alone, for the callers that only spawn. One order, one place. */
 export function resolveAccount(
     stated: string | undefined,
     engine: string | undefined,
-    active: Record<string, string>
+    active: Record<string, string>,
+    agentStanding?: string
 ): string {
-    const own = String(stated || '').trim();
-    // ‼️ X-211 — the one answer that is a statement OF nothing. It outranks the
-    // standing account exactly as any other stated account does; what it
-    // resolves to is the absence of a slot, which is the main sign-in.
-    if (own === MACHINE_ACCOUNT) { return ''; }
-    if (own) { return own; }
-    return active[String(engine || 'claude').trim() || 'claude'] || '';
+    return accountResolution(stated, engine, active, agentStanding).id;
 }
 
 /**
@@ -631,18 +716,52 @@ export interface HeadlessAccountPlan {
  * file another process wrote, so it is normalised here rather than trusted.
  */
 export function headlessAccountPlan(
-    want: { engine?: string; account?: string },
-    cfg: { accounts?: unknown; activeAccounts?: unknown }
+    want: { engine?: string; account?: string; agentDir?: string },
+    cfg: { accounts?: unknown; activeAccounts?: unknown; agentAccounts?: unknown }
 ): HeadlessAccountPlan {
     const list = normalizeSlots(cfg.accounts);
     const active = normalizeActive(cfg.activeAccounts);
     const engine = String(want.engine || 'claude').trim() || 'claude';
     const stated = String(want.account || '').trim();
+    /**
+     * ‼️ X-255 — THE AGENT'S OWN STANDING SIGN-IN IS READ HERE TOO, and that is
+     * the whole reason this edit exists rather than only the window's.
+     *
+     * The rule this function is built on is that the service asks the same
+     * lines in the same order as the extension, so the answer cannot depend on
+     * whether a window is open. A rung added to `resolveAccount` and not to the
+     * table this side reads would break exactly that: "developer always runs on
+     * this plan" would hold by day and silently stop holding at 3 a.m., which is
+     * where it matters most and where nobody is watching.
+     */
+    const mine = standingAgentAccount(cfg.agentAccounts, want.agentDir, engine);
     // ‼️ The sentinel is resolved BEFORE the refusal, because `@machine` names
     // no slot on purpose and asking `accountRefusal` about it would be asking
     // whether "nothing" is stored.
-    const id = resolveAccount(stated, engine, active);
+    const id = resolveAccount(stated, engine, active, mine);
     const refusal = accountRefusal(id, list, engine);
     if (refusal) { return { env: {}, account: '', refusal }; }
     return { env: accountEnvFor(engine, stated || id, list), account: id, refusal: '' };
+}
+
+/**
+ * X-255 — one agent's standing sign-in, out of the table the extension writes
+ * into `service-config.json` (`<normalised agent dir>` → engine → slot id).
+ *
+ * ‼️ NORMALISED HERE BECAUSE IT COMES OFF A FILE another process wrote, like
+ * everything else at this seam. The key is the agent's DIRECTORY and not its id:
+ * ids are assigned by a scan and can move, and the directory is what the store
+ * on the other side is keyed by (`agentDefaults.agentKey`) — two keyings of one
+ * table is how the two sides come to disagree about the same agent.
+ */
+export function standingAgentAccount(
+    table: unknown, dir: string | undefined, engine: string
+): string {
+    if (!table || typeof table !== 'object') { return ''; }
+    const key = String(dir ?? '').trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+    if (!key) { return ''; }
+    const row = (table as Record<string, unknown>)[key];
+    if (!row || typeof row !== 'object') { return ''; }
+    const v = (row as Record<string, unknown>)[String(engine || 'claude').trim() || 'claude'];
+    return typeof v === 'string' ? v.trim() : '';
 }

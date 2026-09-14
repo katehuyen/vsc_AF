@@ -91,6 +91,17 @@ export interface SettingsBridgeDeps {
     engineIds(): string[];
     /** per-agent engine defaults store, and the write the page makes */
     writeAgentDefault(dir: string, engine: string, patch: Partial<AgentEngineDefault>): Promise<void>;
+    /**
+     * X-255 — the sign-ins this machine holds, so an account written onto an
+     * agent can be REFUSED rather than stored. A slot id nobody holds would
+     * refuse every later launch of that agent, and an agent whose every launch
+     * is refused by a setting it cannot see is a worse outcome than the write
+     * failing here with a sentence.
+     */
+    accountChoices(): {
+        slots: { id: string; engine: string; label: string }[];
+        standing: Record<string, string>;
+    };
     /** build an agent pack and write it out */
     exportPack(agent: AgentInfo, file: string): { warnings: string[]; files: number };
     normPath(p: string): string;
@@ -513,7 +524,7 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
         },
         {
             op: 'agents.defaults.set',
-            describe: '‼️ WHAT THIS AGENT RUNS ON BY DEFAULT, per engine — the model and the effort a new session or task gets when nobody says otherwise. `agents.defaults` READS the resolution; this is the write it had no counterpart for. The engine must be one this build knows, and at least one of `model` / `effort` must be given. Passing an empty string clears that half back to the fleet default. args: agent (name|id), engine (' + ENGINE_ENUM + '), model?, effort?',
+            describe: '‼️ WHAT THIS AGENT RUNS ON BY DEFAULT, per engine — the model, the effort and (X-255) the SIGN-IN a new session or task gets when nobody says otherwise. `agents.defaults` READS the resolution; this is the write it had no counterpart for. The engine must be one this build knows, and at least one of `model` / `effort` / `account` must be given. Passing an empty string clears that half back to the layer underneath. ‼️ `account` IS NOT LIKE THE OTHER TWO: it is a slot id from accounts.list and it OUTRANKS the machine-wide standing choice (agentFarm.activeAccounts, the Engines page\'s "use this next") for this agent — that is the whole point of it, and it means pressing that button no longer moves this agent until the box is cleared. An id naming no stored slot of that engine is REFUSED rather than stored, because it would otherwise refuse every later launch of the agent from a setting nobody can see. args: agent (name|id), engine (' + ENGINE_ENUM + '), model?, effort?, account?',
             handler: async (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = argStr(args, 'engine').trim().toLowerCase();
@@ -521,10 +532,22 @@ export function registerSettingsOps(bridge: BridgeRegistry, deps: SettingsBridge
                 need(ids.includes(engine), `engine is one of: ${ids.join(', ')} — not "${engine}"`);
                 const hasModel = 'model' in args;
                 const hasEffort = 'effort' in args;
-                need(hasModel || hasEffort, 'Pass a `model`, an `effort`, or both.');
+                const hasAccount = 'account' in args;
+                need(hasModel || hasEffort || hasAccount,
+                    'Pass a `model`, an `effort`, an `account`, or any combination.');
+                const account = String(args.account ?? '').trim();
+                if (hasAccount && account) {
+                    const slots = deps.accountChoices().slots;
+                    const slot = slots.find(s => s.id === account);
+                    need(!!slot, `No account "${account}" is stored on this machine — accounts.list `
+                        + 'names the ones there are, and "" clears the box.');
+                    need(slot!.engine === engine, `"${account}" is a ${slot!.engine} sign-in and this `
+                        + `row is ${engine}'s — an account belongs to one engine.`);
+                }
                 const patch: Partial<AgentEngineDefault> = {
                     ...(hasModel ? { model: String(args.model ?? '').trim() } : {}),
-                    ...(hasEffort ? { effort: String(args.effort ?? '').trim() } : {})
+                    ...(hasEffort ? { effort: String(args.effort ?? '').trim() } : {}),
+                    ...(hasAccount ? { account } : {})
                 };
                 await deps.writeAgentDefault(agent.dir, engine, patch);
                 return {

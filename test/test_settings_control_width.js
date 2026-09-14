@@ -197,7 +197,11 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         const r3 = node([path.join('test', 'measure_page.js'), 'engines', chipExpr]);
         chips = JSON.parse(r3.slice(r3.indexOf('[')));
     } catch { chips = []; }
-    const nameless = chips.filter(b => !/^(model|effort)$/.test(b.axis))
+    // ‼️ X-255 — `account` is the third axis on the chip, and it is named here
+    // rather than left to match anything: the whole point of this gate is that a
+    // box added to the row has to DECLARE which question it answers, so widening
+    // the pattern to "any word" would retire the gate instead of passing it.
+    const nameless = chips.filter(b => !/^(model|effort|account)$/.test(b.axis))
         .map(b => JSON.stringify(b.sel));
     ok(`‼️ EVERY AGENT-CHIP BOX NAMES ITS AXIS, AS ITS LIST'S HEADING (${chips.length} boxes)`
         + (nameless.length ? ' — ' + nameless.slice(0, 4).join(', ') : ''),
@@ -228,6 +232,27 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     ok('‼️ the Default row never names the value the box is already set to'
         + (liars.length ? ' — ' + liars.slice(0, 4).join(', ') : ''),
         chips.length > 0 && liars.length === 0);
+
+    // ---- X-255 — the account box, in both of its arities ------------------
+    //
+    // ‼️ THE PAIR IS THE TEST, NOT EITHER HALF. An agent that names its own
+    // sign-in must draw THAT, and the agent beside it that names none must draw
+    // `Default → <the machine's standing choice>` — those are two different
+    // sentences about two different subjects, and a scene with only one of them
+    // would certify a box that is right by accident (the U-133 failure).
+    const accounts = chips.filter(b => b.axis === 'account');
+    ok(`‼️ X-255 — the account box is drawn only where the engine has sign-ins (${accounts.length})`,
+        accounts.length === 2);
+    ok('‼️ …an agent that stands on its own sign-in draws THAT, not the machine\'s',
+        accounts.some(b => b.sel === 'Vietnam'));
+    ok('‼️ …and one that names none draws what clearing the box falls through to',
+        accounts.some(b => /^Default → aicozums@gmail\.com$/.test(b.sel)));
+    // The zero row of the PINNED box must name the machine's answer rather than
+    // the agent's own — the same rule the model box's zero row follows, on the
+    // axis where getting it wrong hides an account the user is really spending.
+    const pinned = accounts.find(b => b.sel === 'Vietnam');
+    ok('‼️ …and the pinned box\'s Default row names the machine\'s choice, not its own',
+        !!pinned && /^Default → aicozums@gmail\.com$/.test((pinned.opts || [])[0] || ''));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

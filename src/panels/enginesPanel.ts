@@ -86,6 +86,14 @@ export interface EnginesPanelDeps {
          * second would state a contract that engine has never had.
          */
         settingsGuarantee: boolean;
+        /**
+         * X-255 — the agents whose OWN standing sign-in is this slot, by name,
+         * and how many agents on this engine stand on one of their own at all.
+         * A per-agent account outranks the machine-wide standing choice, so the
+         * chip that sets that choice has to be able to say who ignores it.
+         */
+        standingAgents?: string[];
+        pinnedAgents?: number;
     }[];
     /**
      * ‼️ X-172 — WHAT EACH ENGINE CAN DO ABOUT ACCOUNTS AT ALL, and it is the

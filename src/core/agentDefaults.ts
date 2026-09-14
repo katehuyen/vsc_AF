@@ -54,6 +54,22 @@ export interface AgentEngineDefault {
     /** Which tier of that route (`opus`, `sonnet`, …). The route decides what
      *  model each tier means, which is why this is not `model`. */
     tier?: string;
+    /**
+     * X-255 — WHICH SIGN-IN THIS AGENT STANDS ON: the id of a stored account
+     * slot (`agentFarm.accounts`), for this engine.
+     *
+     * ‼️ OF THE SAME CLASS AS `providerId`, NOT OF `model`'s, which is why it is
+     * read by `storedAccount` rather than through `storedDefault`. A model and an
+     * effort are words for a command line; an account is an IDENTITY with a
+     * credential directory behind it, and a single reader handing both back would
+     * carry that identity into every caller that only wanted a model name.
+     *
+     * ‼️ AND AN EMPTY VALUE IS A REAL ANSWER HERE MORE THAN ANYWHERE ELSE:
+     * `withAgentDefault` CLEARS rather than storing `''`, and an absent record is
+     * exactly what makes the machine-wide standing choice apply. Storing an empty
+     * string would pin this agent to "nobody" for ever — see `resolveAccount`.
+     */
+    account?: string;
 }
 
 /**
@@ -61,7 +77,7 @@ export interface AgentEngineDefault {
  * rather than over field names typed into it, which is what stops a field added
  * to the interface above from being silently dropped by the writer.
  */
-export const AGENT_DEFAULT_FIELDS = ['model', 'effort', 'providerId', 'tier'] as const;
+export const AGENT_DEFAULT_FIELDS = ['model', 'effort', 'providerId', 'tier', 'account'] as const;
 
 /** `<normalised agent dir>` → engine id → the choice. */
 export type AgentEngineDefaults = Record<string, Partial<Record<EngineId, AgentEngineDefault>>>;
@@ -160,6 +176,26 @@ export function storedRoute(
 ): { providerId: string; tier: string } {
     const one = store?.[agentKey(dir)]?.[engine];
     return { providerId: (one?.providerId ?? '').trim(), tier: (one?.tier ?? '').trim() };
+}
+
+/**
+ * X-255 — THE SIGN-IN ONE AGENT STANDS ON FOR ONE ENGINE, out of the same store.
+ *
+ * ‼️ ITS OWN READER, FOR `storedRoute`'S REASON AND NOT AS A STYLE. A route and
+ * an account are both identities with a credential behind them; a model and an
+ * effort are flags. Every caller of `storedDefault` wants a word to put on a
+ * command line, and none of them should be handed an account id they did not
+ * ask for and might spread onward.
+ *
+ * ‼️ WHAT IT DOES *NOT* DO IS DECIDE. The order this answer sits in belongs to
+ * `accountStore.resolveAccount` and lives nowhere else; this only says what the
+ * agent has stored. '' means the agent stands on nothing of its own, which is
+ * what lets the machine-wide standing choice through.
+ */
+export function storedAccount(
+    store: AgentEngineDefaults | undefined, dir: string, engine: EngineId
+): string {
+    return (store?.[agentKey(dir)]?.[engine]?.account ?? '').trim();
 }
 
 /**

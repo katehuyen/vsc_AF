@@ -147,5 +147,49 @@ const { agentKey, storedDefault, withAgentDefault, resolveDefault, defaultLabel 
         storedRoute(undefined, 'd:/x', 'claude'), { providerId: '', tier: '' });
 }
 
+// ---------- X-255 — the agent's own standing sign-in ----------
+//
+// ‼️ ITS OWN READER FOR `storedRoute`'S REASON, and the test that matters is the
+// NEGATIVE one: `storedDefault` must not start handing an account back. Every
+// caller of that function wants a word for a command line, and one that received
+// a credential's identity it never asked for is how a route reaches a surface it
+// does not belong on.
+{
+    const { storedAccount, AGENT_DEFAULT_FIELDS } =
+        require(path.join(__dirname, '..', 'out', 'core', 'agentDefaults.js'));
+    const store = {
+        'd:/zone/agent/ajanlar/developer': {
+            claude: { model: '', effort: 'high', account: 'claude-work' },
+            codex: { model: 'gpt-5.6-terra' }
+        }
+    };
+    ok('the sign-in this agent stands on for this engine',
+        storedAccount(store, 'D:\\zone\\agent\\ajanlar\\developer\\', 'claude') === 'claude-work');
+    ok('…and it is per engine, so a claude answer never reaches codex',
+        storedAccount(store, 'd:/zone/agent/ajanlar/developer', 'codex') === '');
+    ok('an agent nobody has pinned answers with nothing, not undefined',
+        storedAccount(store, 'd:/somewhere/else', 'claude') === ''
+        && storedAccount(undefined, 'd:/x', 'claude') === '');
+    ok('‼️ storedDefault still hands back a model and an effort and nothing else',
+        JSON.stringify(storedDefault(store, 'd:/zone/agent/ajanlar/developer', 'claude'))
+            === JSON.stringify({ model: '', effort: 'high' }));
+
+    // ‼️ THE WRITER MERGES OVER THE FIELD LIST, so an account survives a model
+    // being typed beside it — the X-103 defect, which cost a hand-written route
+    // the first time somebody touched the model box.
+    let s2 = withAgentDefault(store, 'd:/zone/agent/ajanlar/developer', 'claude', { model: 'opus' });
+    ok('‼️ writing a model does not delete the account in the same record',
+        storedAccount(s2, 'd:/zone/agent/ajanlar/developer', 'claude') === 'claude-work');
+    ok('…because the field is on the list the writer merges over',
+        AGENT_DEFAULT_FIELDS.includes('account'));
+    // ‼️ AN EMPTY VALUE CLEARS RATHER THAN STORING ''. An absent record is what
+    // makes the machine-wide standing choice apply; a stored empty string would
+    // pin this agent to "nobody" for ever.
+    s2 = withAgentDefault(s2, 'd:/zone/agent/ajanlar/developer', 'claude', { account: '' });
+    ok('‼️ clearing the box removes the answer rather than storing an empty one',
+        storedAccount(s2, 'd:/zone/agent/ajanlar/developer', 'claude') === ''
+        && !('account' in s2['d:/zone/agent/ajanlar/developer'].claude));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
