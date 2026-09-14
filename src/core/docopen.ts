@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { obsidianRegistryPath as registryPathFor } from './vaultDiscovery';
 
 /**
  * Doc-open modes — the shared "open with" capability behind the report/answer
@@ -82,20 +83,17 @@ export function obsidianUri(absPath: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Where Obsidian keeps the list of vaults it knows, per platform. Read-only, and
- * a missing file is not an error — it just means we cannot name a vault and the
- * caller falls back to the plain `obsidian://open?path=`.
+ * Where Obsidian keeps the list of vaults it knows. Read-only, and a missing
+ * file is not an error — it just means we cannot name a vault and the caller
+ * falls back to the plain `obsidian://open?path=`.
+ *
+ * The per-platform spelling lives in `vaultDiscovery` (X-308), which reads the
+ * same file to answer what `${vault}` is: one registry, one path function.
  */
 function obsidianRegistryPath(): string {
-    const home = os.homedir();
-    if (process.platform === 'win32') {
-        const appdata = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
-        return path.join(appdata, 'obsidian', 'obsidian.json');
-    }
-    if (process.platform === 'darwin') {
-        return path.join(home, 'Library', 'Application Support', 'obsidian', 'obsidian.json');
-    }
-    return path.join(home, '.config', 'obsidian', 'obsidian.json');
+    return registryPathFor({
+        platform: process.platform, appData: process.env.APPDATA, home: os.homedir()
+    });
 }
 
 const samePath = (a: string, b: string): boolean =>

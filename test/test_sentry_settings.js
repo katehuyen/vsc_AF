@@ -76,6 +76,30 @@ const byAttr = (p, attr, key) =>
     const none = open(variant('sentrysettings-novault')).html();
     ok('…and on a machine with no vault, ${vault} is the marked one',
         /class="pathvar empty">\$\{vault\}/.test(none));
+
+    // ‼️ X-308 — THE THIRD STATE, WHICH IS THE ONE THAT ACTUALLY SHIPPED.
+    // `vaultDir` was never set on the measured machine, so every path using the
+    // variable was cancelled and NOTHING SAID SO. Now Obsidian's own registry
+    // answers it — and because that answer can change under the user without
+    // anybody editing a setting, the chip and its panel both have to say the
+    // value was derived rather than typed.
+    const der = open(variant('sentrysettings-derived')).html();
+    ok('‼️ X-308: a vault nobody typed is drawn as DERIVED, not as a plain value',
+        /class="pathvar derived">\$\{vault\}/.test(der));
+    ok('‼️ X-308: …and the panel says who answered it and how to pin it',
+        /agentFarm\.vaultDir is not set/.test(der) && /Set the folder yourself to pin it/.test(der));
+    ok('‼️ X-308: …with the VALUE still first, before the explanation (MIRROR)',
+        der.indexOf('D:\\zone\\know\\note\\obsidian')
+        < der.indexOf('agentFarm.vaultDir is not set'));
+
+    // …and the refusal, which is NOT the same as having no Obsidian: two open
+    // vaults is a question, and answering it by guessing would file the work in
+    // the wrong vault without a word.
+    const amb = open(variant('sentrysettings-ambiguous')).html();
+    ok('‼️ X-308: two open vaults leaves ${vault} empty rather than picking one',
+        /class="pathvar empty">\$\{vault\}/.test(amb));
+    ok('‼️ X-308: …and names both, so the reader sees what it would not choose between',
+        /2 vaults open at once/.test(amb) && /cannot be guessed/.test(amb));
 }
 
 // ---------------------------------------------------------------------------

@@ -21,11 +21,19 @@ const VAULT = 'D:\\zone\\know\\note\\obsidian';
 const REPO = 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm';
 const PROJECT = VAULT + '\\00_AGENT_AREA\\10_PROJECTS\\PRS.MuratVural_DEV_VSC.AgentFarm';
 
-const VARS = (vault) => ([
+/**
+ * X-308 — the vault row can come from three different places, and the chip has
+ * to say which. `vaultMeta` is what the host attaches to that ONE row: `source`
+ * plus, whenever it was not the user who answered, the sentence saying so.
+ */
+const VARS = (vault, vaultMeta) => ([
     { name: 'home', describe: 'The signed-in user\'s home folder.', value: 'C:\\Users\\rotam' },
     { name: 'workspace', describe: 'The folder open in this VS Code window.', value: REPO },
     { name: 'repo', describe: 'The repository the campaign works in.', value: REPO },
-    { name: 'vault', describe: 'agentFarm.vaultDir — the Obsidian vault, when there is one.', value: vault },
+    {
+        name: 'vault', describe: 'agentFarm.vaultDir — the Obsidian vault, when there is one.', value: vault,
+        ...(vaultMeta || { source: vault ? 'setting' : 'none' })
+    },
     { name: 'project', describe: 'The campaign\'s project NAME.', value: 'PRS.MuratVural_DEV_VSC.AgentFarm' },
     { name: 'projectFolder', describe: 'That project\'s own folder.', value: vault ? PROJECT : '' },
     { name: 'projectNotes', describe: 'Where that project keeps its notes (10_Notes).', value: vault ? PROJECT + '\\10_Notes' : '' },
@@ -137,13 +145,13 @@ const ITEMS = () => ([
     }
 ]);
 
-const base = (vault) => ({
+const base = (vault, vaultMeta) => ({
     focus: '', profiles: [], prompts: null, docOpen: null, folders: null,
     claude: null, engines: null, engineModels: null, wiki: null, superpowers: null,
     alerts: null, telegram: null,
     modelAliases: ['haiku', 'sonnet', 'opus', 'fable'],
     categories: [{ id: 'sentry', label: 'Sentry — unattended campaigns', items: ITEMS() }],
-    pathVars: VARS(vault),
+    pathVars: VARS(vault, vaultMeta),
     pathPreview: {
         'agentFarm.handoverFolders': preview(FOLDERS, vault),
         'agentFarm.sentryInstructionFiles': preview(POOL, vault),
@@ -165,6 +173,32 @@ const variants = () => ([
         id: 'sentrysettings-novault',
         label: 'Settings ▸ Sentry — ‼️ no vault on this machine: those paths are CANCELLED, and say so',
         data: base('')
+    },
+    {
+        // X-308 — the case that actually shipped: the SETTING is empty and the
+        // paths still resolve, because Obsidian had exactly one vault open. The
+        // chip has to read differently from the one the user typed — the folder
+        // can change under them without anybody editing a setting.
+        id: 'sentrysettings-derived', tip: 'tip-vault',
+        label: 'Settings ▸ Sentry — ‼️ nobody set vaultDir: ${vault} is the vault OBSIDIAN has open (X-308)',
+        data: base(VAULT, {
+            source: 'obsidian',
+            note: 'agentFarm.vaultDir is not set, so ${vault} is the vault Obsidian currently has open ('
+                + VAULT + '). Set the folder yourself to pin it.'
+        })
+    },
+    {
+        // …and the refusal that is NOT the same as having no Obsidian: two open
+        // at once is a question, and guessing it would put the work in the
+        // wrong vault silently.
+        id: 'sentrysettings-ambiguous', tip: 'tip-vault',
+        label: 'Settings ▸ Sentry — ‼️ TWO vaults open at once: ${vault} refuses to guess and says which two',
+        data: base('', {
+            source: 'none',
+            note: 'agentFarm.vaultDir is not set and Obsidian has 2 vaults open at once ('
+                + VAULT + ', D:\\zone\\agent), so ${vault} cannot be guessed — every path using it is '
+                + 'skipped. Set the folder to say which one.'
+        })
     }
 ]);
 

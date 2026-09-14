@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.509.0 - When nobody set a vault folder, Obsidian is asked — and when it cannot answer, it SAYS so (X-308) (2026-09-14)
+
+- **‼️ THE DEFECT WAS THE SILENCE, NOT THE LAW.** `agentFarm.vaultDir` had never
+  been set on the measured machine, so `${vault}` resolved to nothing and X-188's
+  law — an unresolved variable CANCELS the path — skipped every path setting that
+  used it. That is the correct behaviour. What was wrong is that **no surface
+  said a word**: a handover folder, a sentry template pool and an answer folder
+  were all being silently passed over, and the only way to find out was to read
+  the resolver. It was seen live during X-307's evidence round.
+- **Obsidian already knows.** Its own registry (`%APPDATA%/obsidian/obsidian.json`
+  on Windows, the platform equivalents elsewhere) lists every vault with an
+  `open` flag. When the setting is empty and **exactly one** vault is open, that
+  folder now answers `${vault}` — and the value is marked as DERIVED everywhere
+  it is shown, because it can change under the user without anybody editing a
+  setting.
+- **‼️ THE SETTING ALWAYS WINS.** This is a fallback, never an override. A person
+  who typed a folder has answered the question, and an extension that quietly
+  prefers its own guess over their answer is worse than one that never guesses.
+- **‼️ AND IT REFUSES TO GUESS BETWEEN TWO.** More than one vault can be open at
+  once — measured in `docopen.ts`, on this same machine, in the sibling problem
+  of which vault a URI lands in. Two open vaults, or none, or no Obsidian at all
+  are each a **refusal with a sentence**: the variable stays unresolved exactly
+  as before, and the reason names what it could not choose between. A wrong
+  vault would file the work somewhere nobody looks; that is worse than the
+  silence this replaces.
+- **Three surfaces, one fact.** `farm.health` gains a `vault` block (value,
+  `ok`, `source`, `why`, how many vaults are known and how many are open), the
+  Settings page's variable legend draws the vault chip as derived and opens its
+  panel on the value → the reason → the meaning, and `settings.paths` carries
+  the same `source`/`note` because all three read the one shared function.
+- **One registry, one path function.** `docopen.ts` had its own copy of the
+  per-platform `obsidian.json` location; it now calls the new module's, so the
+  two readers of that file cannot drift apart.
+- Guarded by `test_vault_discovery.js` (27 checks) — including **this machine's
+  real registry replayed as a fixture**: four vaults, exactly one open, landing
+  on the vault every agent actually writes to. Two new scenes on the settings
+  fixture draw the derived value and the two-open refusal, both with the panel
+  really open.
+
 ## 3.508.0 - On a narrow panel the composer's WORDS go short, and every box stays a box (U-136) (2026-09-14)
 
 - **‼️ THE BOXES WERE NOT THE PROBLEM — THE RIGHT-HAND GROUP WAS.** Measured on

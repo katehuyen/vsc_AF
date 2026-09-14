@@ -257,6 +257,7 @@ import {
 import {
     PATH_VARS, PathVarContext, PreviewedPath, previewPathList, resolvePathList, resolvePathVars
 } from './core/pathVars';
+import { VaultResolution, obsidianRegistryPath, resolveVault } from './core/vaultDiscovery';
 import {
     DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, HandoverListing, HandoverSource, discoverHandover
 } from './core/handoverDiscovery';
@@ -14833,11 +14834,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * Built fresh every time on purpose: a workspace can be opened, a vault
      * configured, a project switched, all while the extension is running.
      */
+    /**
+     * ‼️ X-308 — AND WHEN NOBODY TYPED `vaultDir`, OBSIDIAN IS ASKED.
+     *
+     * Read fresh rather than cached for the same reason the rest of this is: a
+     * vault can be opened or the setting filled while the extension runs. The
+     * registry is a small JSON file; a machine with no Obsidian answers
+     * `undefined` and the variable stays unresolved, which is X-188's law
+     * unchanged. The SETTING still wins whenever it says anything.
+     */
+    const vaultNow = (): VaultResolution => {
+        let registry: string | undefined;
+        try { registry = fs.readFileSync(obsidianRegistryPath({
+            platform: process.platform, appData: process.env.APPDATA, home: os.homedir()
+        }), 'utf8'); } catch { registry = undefined; }
+        return resolveVault(afConfig().get<string>('vaultDir') ?? '', registry);
+    };
+
     const pathCtx = (extra: PathVarContext = {}): PathVarContext => ({
         home: os.homedir(),
         workspace: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
         repo: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '',
-        vault: (afConfig().get<string>('vaultDir') ?? '').trim(),
+        vault: vaultNow().value,
         ...extra
     });
 
@@ -14852,11 +14870,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * out: "this machine has no such thing" is the case that cancels a path,
      * and hiding it is the silence X-174 exists to refuse.
      */
-    const pathVarValues = (): { name: string; describe: string; value: string }[] => {
+    const pathVarValues = (): { name: string; describe: string; value: string; note?: string; source?: string }[] => {
         const ctx = pathCtx();
+        // X-308 — `vault` is the one variable that can be answered by something
+        // other than the user, so it is the one that has to say who answered it.
+        // Carried on the shared function rather than on either surface: that is
+        // the whole reason this function exists (three readers, one fact).
+        const vault = vaultNow();
         return PATH_VARS.map(v => ({
             name: v.name, describe: v.describe,
-            value: resolvePathVars(`\${${v.name}}`, ctx).value
+            value: resolvePathVars(`\${${v.name}}`, ctx).value,
+            ...(v.name === 'vault' ? { source: vault.source, ...(vault.why ? { note: vault.why } : {}) } : {})
         }));
     };
     const previewPaths = (templates: string[]): PreviewedPath[] =>
@@ -15993,7 +16017,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'install: `installed` is the version in the extensions folder, `running` is the one this '
                 + 'host booted with, and `pending:true` means a build is on disk that IS NOT LOADED — a '
                 + 'host restart will not load it, only a window reload re-scans (farm.restartExtensionHost '
-                + 'plans one for you). args: none',
+                + 'plans one for you). ‼️ `vault` — X-308 — what ${vault} resolves to and WHO answered: '
+                + '`setting` (agentFarm.vaultDir), `obsidian` (nobody set it, so the one vault Obsidian has '
+                + 'open was used), or `none` with a `why` — and `none` means every path setting using the '
+                + 'variable is being skipped, which was previously silent. args: none',
             handler: () => {
                 const w = restartWorld();
                 const live = liveBlockers(w, 'extensionHost');
@@ -16021,6 +16048,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             running: extVersion,
                             pending: !!p,
                             ...(p?.replaced ? { replaced: true } : {})
+                        };
+                    })(),
+                    /**
+                     * ‼️ X-308 — WHERE `${vault}` POINTS, AND WHO SAID SO.
+                     *
+                     * An unset `agentFarm.vaultDir` cancels every path setting
+                     * that uses the variable — correctly (X-188), and until now
+                     * silently: no surface said the folder was never configured,
+                     * so a path simply never ran and nothing reported why. It is
+                     * read here because this is the op an agent calls to find
+                     * out what is actually true about this machine.
+                     */
+                    vault: (() => {
+                        const v = vaultNow();
+                        return {
+                            value: v.value, ok: v.ok, source: v.source,
+                            ...(v.why ? { why: v.why } : {}),
+                            known: v.candidates.length,
+                            open: v.candidates.filter(c => c.open).length
                         };
                     })(),
                     bootId,

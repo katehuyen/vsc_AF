@@ -1679,14 +1679,21 @@
         return `<div class="pathvars">
             <span class="muted small">Every path box below takes these:</span>
             ${vars.map(v => window.AFTip.wrap(
-            `<code class="pathvar${v.value ? '' : ' empty'}">\${${C.esc(v.name)}}</code>`,
+            `<code class="pathvar${v.value ? '' : ' empty'}${v.source === 'obsidian' ? ' derived' : ''}">\${${C.esc(v.name)}}</code>`,
             `\${${v.name}}`,
             window.AFTip.lines([
                 v.value || 'Nothing on this machine — a path using it is SKIPPED rather than pointed somewhere wrong.',
+                // X-308 — and WHO answered it, when it was not the user. A value
+                // nobody typed is not the same fact as one they did, and a name
+                // with nothing behind it now says what would fill it.
+                ...(v.note ? [window.AFTip.GAP, v.note] : []),
                 window.AFTip.GAP,
                 v.describe
             ]),
-            'tip-pathvar')).join('')}
+            // the vault row is nameable on its own (X-308): it is the one
+            // variable something other than the user can answer, so a scene
+            // has to be able to open THIS panel rather than the first chip's.
+            v.name === 'vault' ? 'tip-pathvar tip-vault' : 'tip-pathvar')).join('')}
         </div>`;
     }
 
@@ -2567,6 +2574,11 @@
                 /* A variable with nothing behind it cancels any path that uses
                    it — the one case worth marking, so it is marked. */
                 .pathvar.empty { opacity:.5; border-style:dashed; }
+                /* X-308 — a value nobody typed: it works, but it was DERIVED
+                   (the vault Obsidian has open) and can change under the user,
+                   which the solid chip beside it would not say. */
+                .pathvar.derived { border-style:dotted;
+                    color:var(--vscode-charts-blue,#3794ff); }
                 .setljson { font-size:11px; opacity:.85; }
                 /* U-110 — a pair reads left to right: the name, the arrow that
                    says which way it points, the value, the ✕. The name box is
