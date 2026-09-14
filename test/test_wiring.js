@@ -199,5 +199,44 @@ walk(path.join(ROOT, 'src'));
         /pinProjectContext/.test(args[args.length - 1] || ''));
 }
 
+// ------------- 4. …and the same mistake one slot over, on every page there is
+/**
+ * ‼️ X-252 — AN ARGUMENT IN THE WRONG SLOT IS THE SAME WIRE, LEFT OFF.
+ *
+ * `AFHeader.wire(vscode, hooks)` takes the API first and the hooks second, and
+ * `media/engines.js` handed it ONLY the hooks — so the hooks object sat in the
+ * `vscode` slot and every header button on that page called `postMessage` on
+ * something that has none. Measured on the page harness: all 16 nav buttons
+ * threw `vscode.postMessage is not a function` and posted nothing, and the
+ * header's own ⟳ fell through to the same dead call. Navigating away from the
+ * Engines page was impossible from its own header.
+ *
+ * Nothing could see it. Both arguments are optional to the type checker, the
+ * page renders perfectly, every string test passes, and a photograph shows a
+ * row of buttons that look exactly like buttons. A press that silently does
+ * nothing is indistinguishable from one that is thinking.
+ *
+ * So the call site is read, on EVERY page, and what is judged is the shape of
+ * the first argument: an object literal there is the defect by definition.
+ */
+{
+    const dir = path.join(ROOT, 'media');
+    const bad = [], seen = [];
+    for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js'))) {
+        const src = fs.readFileSync(path.join(dir, f), 'utf8');
+        const re = /AFHeader\.wire\(\s*([^,)]*)/g;
+        let m;
+        while ((m = re.exec(src))) {
+            seen.push(f);
+            const first = m[1].trim();
+            if (!first || first.startsWith('{')) { bad.push(f + ' → wire(' + first.slice(0, 24) + '…)'); }
+        }
+    }
+    ok(`every page's header wiring was read (${seen.length} call sites)`, seen.length > 20);
+    ok('‼️ NO PAGE HANDS AFHeader.wire ITS HOOKS IN THE API\'S SLOT'
+        + (bad.length ? ' — ' + bad.join(', ') : ''),
+        bad.length === 0);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

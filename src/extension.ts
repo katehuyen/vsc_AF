@@ -195,7 +195,9 @@ import {
     LaunchManifest, ManifestInput, manifestFor, manifestIndex, manifestLeaks, manifestOf,
     newLaunchId, rememberManifest
 } from './core/launchManifest';
-import { AccountSpendRow, spendByAccount, todayWindow } from './core/accountSpend';
+import {
+    AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
+} from './core/accountSpend';
 import { describeDrift, runDrift, turnRuntimes } from './core/turnRuntime';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
@@ -18451,28 +18453,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * reads every session on the machine. `manifestIndex` is what keeps that
      * from being a walk of the whole launch record per session.
      */
+    const spendReport = (window: SpendWindow): AccountSpendReport => {
+        const at = manifestIndex(launchManifests());
+        return spendByAccount(
+            index.allWithExternal(),
+            s => {
+                const acc = String(at(s as { launchId?: string })?.account ?? '').trim();
+                return acc ? { id: acc, label: statedAccountLabel(acc, storedAccounts()) || acc } : undefined;
+            },
+            window,
+            // X-19 — an engine that publishes neither price nor tokens has no
+            // dollars to state, and its 0 must not read as a free run.
+            (engine) => engineOf(engine).costSource !== 'none');
+    };
     let spendMemo: { at: number; rows: Map<string, AccountSpendRow> } | undefined;
     const accountSpendToday = (): Map<string, AccountSpendRow> => {
         const now = Date.now();
         if (spendMemo && now - spendMemo.at < 3000) { return spendMemo.rows; }
         const rows = new Map<string, AccountSpendRow>();
         try {
-            const at = manifestIndex(launchManifests());
-            const report = spendByAccount(
-                index.allWithExternal(),
-                s => {
-                    const acc = String(at(s as { launchId?: string })?.account ?? '').trim();
-                    return acc ? { id: acc, label: statedAccountLabel(acc, storedAccounts()) || acc } : undefined;
-                },
-                todayWindow(now),
-                // X-19 — an engine that publishes neither price nor tokens has
-                // no dollars to state, and its 0 must not read as a free run.
-                (engine) => engineOf(engine).costSource !== 'none');
-            for (const r of report.rows) { rows.set(r.account, r); }
+            for (const r of spendReport(todayWindow(now)).rows) { rows.set(r.account, r); }
         } catch { /* a card without a figure, never a page that fails to draw */ }
         spendMemo = { at: now, rows };
         return rows;
     };
+    /** X-252 — the history the Task Analytics page draws. Not memoised: it is
+     *  built when that page is opened or refreshed, not on every repaint. */
+    const accountSpendOver = (days: number): AccountSpendReport =>
+        spendReport(lastDaysWindow(Date.now(), days));
     /** One slot as every surface may see it — never a token, ever. */
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
         const id = slotIdentity(slot);
@@ -34742,7 +34750,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 forecastDays: () => cfg().get<number>('forecastDays', 7),
                 onDidChange: taskManager.onDidChange,
                 lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
-                setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
+                setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); },
+                // X-252 — the history half. The Engines card answers "today" on
+                // a live percentage; "which sign-in runs cheap and which runs
+                // expensive" is a question about a month, and had no home.
+                accountSpend: (days: number) => accountSpendOver(days)
             });
         }),
 

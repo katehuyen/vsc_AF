@@ -520,7 +520,15 @@
             if (sp.wTokens > 0) { bits.push('⚖ ' + N.fmtTok(Math.round(sp.wTokens))); }
             bits.push(sp.sessions + ' run' + (sp.sessions === 1 ? '' : 's'));
             if (allUnpriced) { bits.push('no price stated'); }
-            return T.wrap('<div class="acspend">today ' + esc(bits.join(' · ')) + '</div>',
+            // ‼️ THE WAY IN IS THE FIGURE ITSELF, not a button added beside it.
+            // This card answers TODAY; "which sign-in runs cheap over a month"
+            // is a different question with its own page, and the reader who
+            // wants it is already looking at this line. Nothing is added to the
+            // layout — the existing line becomes the door, and its panel says
+            // so, because a surface that does something without saying it is a
+            // surface nobody presses.
+            return T.wrap('<div class="acspend go" data-afnav="analytics" role="link" tabindex="0">today '
+                + esc(bits.join(' · ')) + '</div>',
                 'Spent today on ' + (a.label || a.id),
                 T.lines([
                     allUnpriced ? 'cost: not stated by this engine' : 'cost: ' + N.fmtUSD(sp.cost),
@@ -543,7 +551,11 @@
                     T.GAP,
                     'This is SPEND. The bar above is the PLAN WINDOW. They move together and they '
                     + 'are not the same measure: a plan can be most of the way gone on work that '
-                    + 'was never billed a dollar.'
+                    + 'was never billed a dollar.',
+                    T.GAP,
+                    'Press this line for the 30-day breakdown across every sign-in, on the '
+                    + 'analytics page — which one runs cheap, which one runs expensive, and what '
+                    + 'a run on each of them usually costs.'
                 ]), 'acspendw');
         })();
         /**
@@ -1512,6 +1524,10 @@
                 .acspend { margin-top:5px; max-width:420px; font-size:11px; opacity:.85;
                     font-variant-numeric:tabular-nums; }
                 .acspend.none { opacity:.55; }
+                /* The door, stated only under the hand: the resting row is the
+                   figure and nothing else, so the card looks exactly as it did. */
+                .acspend.go { cursor:pointer; }
+                .acspend.go:hover { color:var(--vscode-textLink-foreground); }
                 .acwhy { margin-top:8px; }
                 .poform select { font-size:12px; padding:3px 6px;
                     background:var(--vscode-input-background); color:var(--vscode-input-foreground);
@@ -1587,7 +1603,15 @@
     }
 
     function wire() {
-        window.AFHeader.wire({ onRefresh: () => post({ type: 'refresh' }) });
+        // ‼️ `wire(vscode, hooks)` — THE API COMES FIRST. Handing it only the
+        // hooks put the hooks object in the `vscode` slot, so every header
+        // button on this page called `postMessage` on something that has none:
+        // all 16 nav buttons threw and posted nothing, and the header's own ⟳
+        // fell through to the same dead call. Measured on the page harness —
+        // `vscode.postMessage is not a function`, `posted: []`. Nothing was
+        // visibly broken, which is why it lasted: a button that silently does
+        // nothing looks exactly like one that is thinking.
+        window.AFHeader.wire(vscode, { onRefresh: () => post({ type: 'refresh' }) });
         document.querySelectorAll('[data-engtest]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'engineTest', id: b.dataset.engtest })));
         // Install and Sign in are ONE binding: they do one thing — write a line

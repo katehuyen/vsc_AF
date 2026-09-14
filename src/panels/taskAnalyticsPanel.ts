@@ -6,6 +6,7 @@ import { buildForecast, familyDurations } from '../core/forecast';
 import { TaskManager } from '../core/tasks';
 import { buildAgentTaskStats, buildTaskFamilies, taskAlerts, TaskRecord, titleFamily } from '../core/taskstats';
 import { buildTriggerStats, triggerAlerts } from '../core/triggerstats';
+import { AccountSpendReport } from '../core/accountSpend';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -26,9 +27,27 @@ export interface TaskAnalyticsDeps {
     onDidChange: vscode.Event<void>;
     lastExportDir?: () => string | undefined;
     setLastExportDir?: (dir: string) => void;
+    /**
+     * ‼️ X-252 — SPEND, BY THE SIGN-IN THAT PAID FOR IT, over the same window
+     * this page already reads everything else on.
+     *
+     * This is the page the question belongs on: the account cards on the Engines
+     * page answer "today", which is a live figure beside a live percentage, and
+     * "which sign-in runs cheap and which runs expensive" is a HISTORY question
+     * with no home anywhere. It is deliberately its own section rather than a
+     * column on an existing one — every other table here is about TASKS, and a
+     * session's spend is not a task's (ONE SUBJECT).
+     *
+     * Optional because the caller may have no session index to ask (tests, a
+     * one-off tool), and a page that draws no section is better than one that
+     * draws an empty table nobody can explain.
+     */
+    accountSpend?(days: number): AccountSpendReport;
 }
 
 const DAY_MS = 24 * 3600 * 1000;
+/** The window every other figure on this page is already cut to. */
+const SPEND_DAYS = 30;
 
 function median(xs: number[]): number | undefined {
     if (!xs.length) { return undefined; }
@@ -114,7 +133,12 @@ function buildData(deps: TaskAnalyticsDeps): Record<string, unknown> {
             estBusyMs: forecast.estBusyMs,
             upcoming: forecast.upcoming.slice(0, 12)
         },
-        queue: { count: queued.length, etaMs: queueEtaMs, known: queueKnown }
+        queue: { count: queued.length, etaMs: queueEtaMs, known: queueKnown },
+        // X-252 — the same 30 days the rest of this page is cut to, so the two
+        // halves of a heavy month are read against each other rather than
+        // against two different windows.
+        spendDays: SPEND_DAYS,
+        accountSpend: deps.accountSpend?.(SPEND_DAYS)
     };
 }
 

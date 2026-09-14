@@ -645,7 +645,7 @@
         const kpis = `
         <div class="row">
             <div class="card" ${tile('Active now', 'timeline', activeCount + '/' + agents.length + ' agents')}><div class="label">Active now</div><div class="kpi">${activeCount}<span class="muted" style="font-size:13px">/${agents.length} agents</span></div><div class="sub">threshold-based on transcript activity</div></div>
-            <div class="card" ${tile('Cost today', '', C.fmtUSD(todayCost))}><div class="label">Cost today</div><div class="kpi">${C.fmtUSD(todayCost)}</div>
+            <div class="card" ${tile('Cost today', 'analytics', C.fmtUSD(todayCost))}><div class="label">Cost today</div><div class="kpi">${C.fmtUSD(todayCost)}</div>
                 ${DATA.fleetBudget > 0
                     ? `<div class="progress"><div class="${todayCost >= DATA.fleetBudget ? 'hot' : ''}" style="width:${Math.min(100, Math.round(100 * todayCost / DATA.fleetBudget))}%"></div></div><div class="sub">${Math.round(100 * todayCost / DATA.fleetBudget)}% of ${C.fmtUSD(DATA.fleetBudget)} fleet budget</div>`
                     : '<div class="sub">API-equivalent value</div>'}</div>

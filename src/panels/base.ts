@@ -273,7 +273,11 @@ export function handleAfNav(to: unknown): void {
         portfolio: 'agentfarm.openPortfolio',
         console: 'agentfarm.openConsole',
         studio: 'agentfarm.openStudio',
-        gallery: 'agentfarm.openStudio'
+        gallery: 'agentfarm.openStudio',
+        // X-252 — the page was reachable from the Tasks page and from the
+        // palette and from nowhere else, so a figure elsewhere had no way to
+        // point at the breakdown that explains it.
+        analytics: 'agentfarm.openTaskAnalytics'
     };
     const cmd = commands[String(to)];
     if (cmd) { void vscode.commands.executeCommand(cmd); }

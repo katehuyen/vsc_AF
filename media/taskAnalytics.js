@@ -141,6 +141,60 @@
             <td class="num">${f.runs}</td>
             <td class="num">${f.failed ? f.failed + '✗' : '—'}</td></tr>`).join('');
 
+        /**
+         * ‼️ X-252 — WHICH SIGN-IN SPENT WHAT, over the same 30 days.
+         *
+         * The Engines page answers "today", live, beside a percentage. The
+         * question this section exists for is the other one — "which sign-in
+         * runs cheap and which runs expensive" — and it had no home at all,
+         * because cost was split by ENGINE and by nothing else.
+         *
+         * ‼️ THE ENGINE IS A COLUMN, NOT THE AXIS. An account is under one
+         * engine, so replacing the engine split with this one would have thrown
+         * away the coarser answer people already read.
+         */
+        const spend = a.accountSpend;
+        const spendRows = spend
+            ? spend.rows.concat(
+                // The unattributed total is a ROW, not a footnote: it is the
+                // part of the month that belongs to nobody, and a reader adding
+                // the column up has to be able to see why it falls short.
+                spend.unattributed.sessions || spend.unattributed.unsplit
+                    ? [spend.unattributed] : [])
+            : [];
+        const ttSpend = tableTools('spend-table', spendRows, [
+            { key: 'who', label: 'Sign-in', filter: true, get: r => r.label || r.account || 'not attributed' },
+            { key: 'engine', label: 'Engine', filter: true, get: r => (r.engines || []).join(', ') },
+            { key: 'cost', label: 'Cost', num: true, get: r => r.cost || 0 },
+            { key: 'wtok', label: 'Weighted', num: true, get: r => r.wTokens || 0 },
+            { key: 'runs', label: 'Runs', num: true, get: r => r.sessions || 0 },
+            { key: 'each', label: 'Per run', num: true, get: r => (r.sessions ? r.cost / r.sessions : 0) }
+        ], `Spend by sign-in (${a.spendDays || 30}d)`);
+        const spendRowsHtml = ttSpend.rows.map(r => {
+            const none = !r.account;
+            // ‼️ AN ENGINE THAT STATES NO PRICE HAS NO DOLLARS TO SHOW, and its
+            // 0 must not be drawn as a cheap month (X-19). Where EVERY run on
+            // the row is such a run the cell says so instead of a figure.
+            const allUnpriced = r.sessions > 0 && r.unpriced === r.sessions;
+            const notes = [];
+            if (r.unpriced) {
+                notes.push(`<span title="These ran on an engine that publishes no price, so the money column is short by whatever they cost. A missing figure, not a zero.">${r.unpriced} unpriced</span>`);
+            }
+            if (r.unsplit) {
+                notes.push(`<span title="These crossed midnight on an engine that writes no per-day figures, so they are left out of the window rather than sliced by a ratio nobody measured.">${r.unsplit} not placed</span>`);
+            }
+            return `<tr${none ? ' class="muted"' : ''}>
+                <td><b>${C.esc(r.label || r.account || 'not attributed')}</b>${none
+                    ? '<div class="muted small" title="These runs carry no launch manifest, so no sign-in can be named for them without inventing one. Sessions started outside Agent Farm are the ordinary case.">no manifest — this farm did not start them</div>'
+                    : ''}</td>
+                <td>${C.esc((r.engines || []).join(', ')) || '—'}</td>
+                <td class="num">${allUnpriced ? '<span title="This engine states no price.">no price</span>' : C.fmtUSD(r.cost || 0)}</td>
+                <td class="num">${C.fmtTok(Math.round(r.wTokens || 0))}</td>
+                <td class="num">${r.sessions || '—'}</td>
+                <td class="num">${r.sessions && !allUnpriced ? C.fmtUSD(r.cost / r.sessions) : '—'}</td>
+                <td class="muted small">${notes.join(' · ') || ''}</td></tr>`;
+        }).join('');
+
         const ttFore = tableTools('fore-table', a.forecast.upcoming, [
             { key: 'when', label: 'When', num: true, get: u => u.ts || 0 },
             { key: 'title', label: 'Job', get: u => u.title },
@@ -195,6 +249,17 @@
             <div class="tablewrap">${a.families.length
                 ? `<table><tr>${ttFam.th('title', 'Family')}${ttFam.th('source', 'Source')}${ttFam.th('runs', 'Runs', true)}${ttFam.th('failed', 'Failed', true)}</tr>${famRows}</table>`
                 : '<p class="muted">Nothing recurring yet.</p>'}</div>
+            ${spend ? `<h2>Spend by sign-in (${a.spendDays || 30}d)</h2>
+            <p class="muted small">Which plan paid for the month, and what each run on it cost.
+                Every run is placed on a sign-in by its own <b>launch manifest</b> — the record written
+                at the spawn — so a session this farm did not start is never guessed onto whichever
+                account the machine happens to hold; it is counted in the last row instead. The
+                percentage on the Engines page says how close a window is to its wall; this says what
+                was spent getting there, and they are not the same measure.</p>
+            ${spendRowsHtml ? ttSpend.bar : ''}
+            <div class="tablewrap">${spendRowsHtml
+                ? `<table><tr>${ttSpend.th('who', 'Sign-in')}${ttSpend.th('engine', 'Engine')}${ttSpend.th('cost', 'Cost', true)}${ttSpend.th('wtok', 'Weighted', true)}${ttSpend.th('runs', 'Runs', true)}${ttSpend.th('each', 'Per run', true)}<th>Notes</th></tr>${spendRowsHtml}</table>`
+                : '<p class="muted">Nothing has been attributed to a sign-in in this window.</p>'}</div>` : ''}
             <div class="spread"><h2>Forecast — next ${a.forecast.days} days</h2>
                 <span>
                     <button class="secondary" data-go="open-forecast">Open full forecast</button>

@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.505.0 - Which sign-in ran cheap and which ran expensive, over a month (X-252 b) (2026-09-14)
+
+- **‼️ EVERY HEADER BUTTON ON THE ENGINES PAGE WAS DEAD.** `AFHeader.wire(vscode,
+  hooks)` takes the API first; `media/engines.js` handed it only the hooks, so
+  the hooks object sat in the `vscode` slot and all 16 nav buttons called
+  `postMessage` on something that has none — measured on the page harness:
+  `vscode.postMessage is not a function`, `posted: []`. The header's own ⟳ fell
+  through to the same dead call. Nothing could see it: both arguments are
+  optional to the type checker, the page renders perfectly, every string test
+  passes, and a photograph shows a row of buttons that look exactly like
+  buttons. A press that silently does nothing is indistinguishable from one
+  that is thinking. `test_wiring.js` now reads that call site on every page.
+- **Task Analytics gains "Spend by sign-in (30d)"** — which plan paid for the
+  month, what a run on each one usually costs, and the weighted tokens beside
+  the money. ‼️ The ENGINE stays a COLUMN rather than being replaced: an account
+  is under one engine, and dropping the coarser split would have thrown away the
+  answer people already read.
+- **The part of the month that belongs to nobody is a ROW, not a footnote.** A
+  session this farm did not start carries no launch manifest, so no sign-in can
+  be named for it without inventing one — and a reader adding the money column
+  up has to be able to see why it falls short.
+- **The way in is the figure itself.** The Engines card's `today …` line is the
+  door to the breakdown and its panel says so; nothing was added beside it, and
+  the resting card is drawn exactly as it was. The Dashboard's `Cost today`
+  tile, which answered to no page at all, now names the one that explains it.
+- The page had **no fixture** until now, which is how a section could be added
+  to it and never looked at. It has one, with the arities that read differently:
+  a fully priced sign-in, one part-priced, one where every run was on an engine
+  that states no price, nothing attributed at all, and a host that cannot answer
+  (where the section is absent rather than empty).
+
 ## 3.504.0 - A sign-in says what it spent, and the card is really handed what it draws (X-252 a/c/d) (2026-09-14)
 
 - **‼️ FOUR FIELDS OF X-255 AND X-258 WERE NEVER REACHING THE PAGE.** The Engines

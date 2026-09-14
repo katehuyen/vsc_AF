@@ -88,9 +88,17 @@ function draws(when, section) {
     p.send({ type: 'afctx', act: 'tileOpen', ctx: tile });
     ok('"open the page behind this number" navigates there',
         p.last().type === 'afnav' && p.last().to === 'portfolio');
-    const flat = ctxs.find(c => c.webviewSection === 'afStatTile' && c.tileLabel === 'Cost today');
+    // ‼️ The EXAMPLE moved, the rule did not. This was "Cost today" until X-252
+    // gave that tile the page that explains it (the spend-by-sign-in breakdown),
+    // which is the right outcome for the tile and leaves this assertion needing
+    // a tile that genuinely answers to no page. The 5h window is one: it is a
+    // live reading, not a view of anything.
+    const flat = ctxs.find(c => c.webviewSection === 'afStatTile' && c.tileLabel === '5h window');
     ok('‼️ a tile with no page behind it says so, so the item is not drawn',
         !!flat && flat.tileNav === '');
+    const costs = ctxs.find(c => c.webviewSection === 'afStatTile' && c.tileLabel === 'Cost today');
+    ok('…and the day\'s spend now names the page that breaks it down (X-252)',
+        !!costs && costs.tileNav === 'analytics');
 
     const pu = ctxs.find(c => c.webviewSection === 'afPlanUsage');
     ok('the plan-usage card publishes its figures', !!pu && pu.puText.indexOf('Current session: 40%') >= 0);
