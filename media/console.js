@@ -3639,6 +3639,13 @@
     function effortsForModel(engineId, model) {
         return window.AFLaunch.effortsFor(composerCatalog(engineId), model);
     }
+    /** S-60 — the permission rows THIS engine can keep: the host's per-engine
+     *  list where it differs (Antigravity cannot ask, so its "ask me" rows are
+     *  not drawn), the one shared list everywhere else. */
+    function permissionsFor(engineId) {
+        const by = DATA.permissionsByEngine || {};
+        return by[String(engineId || '').toLowerCase()] || DATA.permissions;
+    }
     /** S-34 — a value this agent actually ran on is on the list; the reason is
      *  in `media/afLaunch.js`, where the rule lives. */
     function withCurrent(list, current) {
@@ -4206,7 +4213,7 @@
                     // was silently deciding what the box could SAY, so a session
                     // really running on bypass drew `Default`. See withCurrentFrom.
                     list: withCurrentFrom(
-                        live ? (DATA.livePermissions || DATA.permissions) : DATA.permissions,
+                        live ? (DATA.livePermissions || DATA.permissions) : permissionsFor(s.engine),
                         s.permissionMode, DATA.permissions),
                     cur: s.permissionMode, standard: permTip
                 })}
@@ -4273,7 +4280,9 @@
                     : ''}
                 ${axisBox({
                     axis: 'Perm', name: 'Permissions', id: 'c-perm',
-                    list: DATA.permissions, cur: st.permissionMode, standard: startPermTip
+                    // A remembered mode this engine cannot keep is NOT re-added
+                    // here: before the spawn it is a choice, not a fact.
+                    list: permissionsFor(engineNow()), cur: st.permissionMode, standard: startPermTip
                 })}
                 ${axisBox({
                     axis: 'Project', id: 'c-proj', cur: DATA.activeProjectId || '',

@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.500.0 - Antigravity is not offered a permission mode it cannot keep (S-60) (2026-09-14)
+
+- **The "ask me" rows are gone from Antigravity's pickers.** The engine has no
+  approval protocol — nothing leaves the process asking "may I", so nothing
+  outside it can answer — and a mode whose meaning is "ask me" (`manual`) or
+  "stop rather than ask" (`dontAsk`) was a promise the box made and the engine
+  could not keep (session 5768a908: the model wrote "do you approve?" into its
+  own text and carried on, because that sentence was prose, not a gate). The
+  rows an engine can keep are now ONE rule (`permissionChoicesFor`, off the
+  engine's own `AGY_MODES_REFUSED`): the Console composer, the Tasks form and
+  its schedule steps, the Missions member rows and profile tool, and both
+  launcher QuickPicks draw from it; `validateLaunch` and the bridge's run
+  dimensions refuse the same names at the door with the engine's own sentence —
+  so a schedule written with `agy` + `manual` is refused when it is written,
+  not at 3 a.m. Every other engine keeps the whole list, the same object.
+- **`--sandbox` — the engine's one real restraint — is deliberately NOT wired,
+  and the reason is a measurement, not a preference.** On this machine, agy
+  print mode: without the flag, `echo WROTE > file` finished in 3.9 s with the
+  file on disk; with `--sandbox`, the stream reached `run_command · ACTIVE` and
+  never left it — 60 s and 180 s, no output, no file, and the same for a bare
+  `echo hi`. A run wired to it would sit until `--print-timeout` (two hours)
+  looking like a broken engine. The measurement is on the constant
+  (`AGY_SANDBOX_HANGS_HERE`) and beside the plan row; the decision is back on
+  Notices.
+- Measured in the laid-out DOM (`measure_page`): the Antigravity composer's
+  permission box is `|plan|acceptEdits|bypassPermissions`; every other
+  composer's carries `manual` and `dontAsk`. New scene `console-agy`.
+
 ## 3.499.0 - the leader turn spends the pool or waits for it, and a half turn is never leadership (X-302) (2026-09-14)
 
 - **The sentry's leader turn never leaves the pool.** When every account the

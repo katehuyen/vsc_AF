@@ -9,7 +9,7 @@ import { nextOccurrences } from '../core/forecast';
 import { NeedItem } from '../core/needs';
 import {
     CLOSE_CHOICES, EFFORT_CHOICES, modelChoices, normInteractiveClose, normInteractiveTarget,
-    ONE_EXECUTOR, PERMISSION_CHOICES,
+    ONE_EXECUTOR, PERMISSION_CHOICES, permissionChoicesByEngine,
     TARGET_CHOICES, twoExecutors
 } from '../core/launch';
 import { EngineModels } from '../core/models';
@@ -876,6 +876,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             // ‼️ X-169 — and which sign-in may pay for it (see engineAccounts).
             accounts: deps.engineAccounts?.() ?? null,
             permissions: PERMISSION_CHOICES,
+            // S-60 — the rows an engine can keep, where they differ from the one list.
+            permissionsByEngine: permissionChoicesByEngine(),
             // ‼️ M-26 — the two axes of an INTERACTIVE run, from the same
             // vocabulary module the efforts and the permission modes come from,
             // so the form, the bridge and the session launcher all offer and

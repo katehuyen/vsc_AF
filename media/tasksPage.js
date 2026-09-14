@@ -1795,6 +1795,12 @@
      * never asks in the first place. Three shapes, three outcomes, and the
      * one the reader is choosing is the one printed.
      */
+    /** S-60 — the permission rows THIS engine can keep (the host's per-engine
+     *  list where it differs — Antigravity cannot ask — the one list elsewhere). */
+    function ntPerms(engineId) {
+        const L = DATA.launch || {};
+        return (L.permissionsByEngine || {})[String(engineId || 'claude').toLowerCase()] || L.permissions;
+    }
     function ntPermTip(engineId) {
         const row = ((DATA.launch || {}).engines || []).find(e => e.id === (engineId || 'claude'));
         const shape = (row && row.shape) || 'persistent';
@@ -2221,7 +2227,7 @@
                 'How much reasoning per turn, from the levels the chosen model actually supports. '
                 + 'A chain is where this is worth saying step by step: the link that plans and the '
                 + 'link that files the output are not the same kind of work.')
-            + choiceSel('st-spermissionMode', 'Permissions', (DATA.launch || {}).permissions,
+            + choiceSel('st-spermissionMode', 'Permissions', ntPerms(s.sengine),
                 s.spermissionMode, ntPermTip(s.sengine))
             + ntRouteRows('st-sproviderId', 'st-stier', s.sengine, s.sproviderId, s.stier)
             + stepAccountRow(s);
@@ -2804,7 +2810,7 @@
             + ntModelNote(c.engine) + ' Beats the model-policy rules in Farm Settings.')}
                 ${choiceSel('effort', 'Effort', ntEfforts(c.engine, c.model), c.effort,
                 'How much reasoning per turn — the levels the chosen model actually supports. Mechanical work does not need the expensive end, and a run nobody is watching is exactly where that choice is worth making.')}
-                ${choiceSel('permissionMode', 'Permissions', L.permissions, c.permissionMode,
+                ${choiceSel('permissionMode', 'Permissions', ntPerms(c.engine), c.permissionMode,
                     permTipFor(c.engine))}
                 ${/**
                     * ‼️ A-24 — AND WHAT YOU HEAR WHEN IT IS OVER.

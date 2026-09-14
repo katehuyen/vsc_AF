@@ -99,6 +99,34 @@ const {
         validateLaunch({ model: 'claude-something-6' }).length === 0);
 }
 
+// ---------- S-60: the rows an engine can keep ----------
+// Antigravity has no approval protocol, so "ask me" (manual) and "stop rather
+// than ask" (dontAsk) are promises the box cannot keep there: not drawn, and
+// refused by name at the door — with the engine's own sentence, not a typo's.
+{
+    const { permissionChoicesFor, permissionChoicesByEngine, PERMISSION_CHOICES } =
+        require(path.join(__dirname, '..', 'out', 'core', 'launch.js'));
+    const agy = permissionChoicesFor('agy').map(c => c.id);
+    ok('‼️ Antigravity is not offered manual or dontAsk', !agy.includes('manual') && !agy.includes('dontAsk'));
+    ok('...but keeps the app default, plan, acceptEdits, auto and bypass',
+        ['', 'plan', 'acceptEdits', 'auto', 'bypassPermissions'].every(id => agy.includes(id)));
+    ok('...and its plan row says it steers rather than restrains',
+        /steering|not a restraint/.test(permissionChoicesFor('agy').find(c => c.id === 'plan').detail));
+    ok('every other engine gets the one list, the same object',
+        permissionChoicesFor('claude') === PERMISSION_CHOICES && permissionChoicesFor('codex') === PERMISSION_CHOICES
+        && permissionChoicesFor(undefined) === PERMISSION_CHOICES);
+    ok('the per-engine map names only the engines that differ',
+        Object.keys(permissionChoicesByEngine()).join(',') === 'agy');
+    const r = validateLaunch({ engine: 'agy', permissionMode: 'manual' });
+    ok('‼️ a mode Antigravity cannot keep is REFUSED at the door', r.length === 1 && /cannot be kept on Antigravity/.test(r[0]));
+    ok('...with what to use instead', /plan, acceptEdits, bypassPermissions/.test(r[0]));
+    ok('the same mode on Claude passes — the rule is the engine\'s, not the word\'s',
+        validateLaunch({ engine: 'claude', permissionMode: 'manual' }).length === 0
+        && validateLaunch({ permissionMode: 'dontAsk' }).length === 0);
+    ok('a typo is still a typo, not an engine refusal',
+        /is not one of/.test(validateLaunch({ engine: 'agy', permissionMode: 'yolo' })[0]));
+}
+
 // ---------- M-14: the model charset guard, and the slash it was keeping out ----------
 // It asks whether a value may go on a command line, not whether the model
 // exists — a farm that hardcoded the catalogue would refuse every model

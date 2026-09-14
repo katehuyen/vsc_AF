@@ -1388,6 +1388,24 @@ const html = allHtml;
         ok('‼️ the flag names are the engine\'s own, derived rather than typed',
             /function flagOf\(engineId, field\)/.test(src)
             && !/Model for the new session \(--model\)/.test(src));
+        // ---------- S-60: the rows an engine can keep ----------
+        // Antigravity has no approval protocol; "ask me" rows on it are a box
+        // that lies. The composer asks the host's per-engine list and draws
+        // only those — measured in the laid-out DOM (measure_page: the agy
+        // scene's #c-perm is `|plan|acceptEdits|bypassPermissions`, every other
+        // composer's carries manual and dontAsk).
+        ok('‼️ S-60: the permission rows follow the ENGINE, from the host\'s per-engine list',
+            /function permissionsFor\(engineId\)/.test(src)
+            && /DATA\.permissionsByEngine/.test(src)
+            && /list: permissionsFor\(engineNow\(\)\)/.test(src));
+        ok('…and a live card asks by the session\'s own engine',
+            /permissionsFor\(s\.engine\)/.test(src));
+        const fx = require(require('path').resolve(__dirname, 'fixtures', 'console.js'));
+        const agyScene = fx.variants().find(v => v.id === 'console-agy');
+        ok('…and the fixture draws that scene, with Antigravity chosen and its own rows on the host list',
+            !!agyScene && agyScene.data.engine === 'agy'
+            && Array.isArray(agyScene.data.permissionsByEngine.agy)
+            && !agyScene.data.permissionsByEngine.agy.some(r => r.id === 'manual' || r.id === 'dontAsk'));
     }
 }
 

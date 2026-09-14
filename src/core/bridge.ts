@@ -23,7 +23,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { FINISH_SOUND_SILENT, normalizeFinishSound } from './alertVoices';
-import { ENGINES, engineOf, engineTakesEffort } from './consoleEngine';
+import { EngineId, ENGINES, engineOf, engineTakesEffort } from './consoleEngine';
 import { INTERACTIVE_CLOSES, INTERACTIVE_TARGETS, ONE_EXECUTOR, twoExecutors, validateLaunch } from './launch';
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
 import { normalizeRounds, TaskRound } from './taskRounds';
@@ -371,6 +371,9 @@ export function bridgeRunDimensions(
     // here, it is only asked earlier.
     {
         const bad = validateLaunch({
+            // S-60 — WITH the engine: a mode Antigravity cannot keep is refused
+            // where it is written, by the engine's own sentence.
+            ...(out.engine ? { engine: String(out.engine) as EngineId } : {}),
             effort: out.effort as string | undefined,
             permissionMode: out.permissionMode as string | undefined
         });

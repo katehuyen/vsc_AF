@@ -800,11 +800,14 @@
         // ‼️ The permission vocabulary comes from the host's one list, the same
         // constant the Tasks and Console launchers read — never a copy here.
         const perms = DATA.permissions || [];
-        const permOpts = (sel) => [C.option('', '— engine default —', {
+        // S-60 — and the rows THAT member's engine can keep, where the host says
+        // they differ (Antigravity cannot ask). '' = inherit = the one list.
+        const permsFor = (engine) => (DATA.permissionsByEngine || {})[String(engine || '').toLowerCase()] || perms;
+        const permOpts = (sel, engine) => [C.option('', '— engine default —', {
             selected: !sel,
             detail: 'Nothing is spent up front; the engine\'s own default decides what a headless delegation may do.'
         })]
-            .concat(perms.filter(p => p.id).map(p =>
+            .concat(permsFor(engine).filter(p => p.id).map(p =>
                 C.option(p.id, p.label, { selected: sel === p.id, detail: p.detail || '' })))
             .join('');
         // MIRROR: the control is too narrow to say what it means, so its tooltip
@@ -969,7 +972,7 @@
                         : effortOpts(form.efforts[a.id] || '', eRows)}</select>
                 <select id="pm-${i}" class="mdl${ovr(form.perms[a.id])}" data-perm="${C.esc(a.id)}"
                     title="${C.esc(mirror(pv, 'permissionMode', permTitle(form.perms[a.id] || '')))}"
-                    ${inRow ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '')}</select>
+                    ${inRow ? '' : 'disabled'}>${permOpts(form.perms[a.id] || '', form.engines[a.id] || '')}</select>
                 ${/* ‼️ X-225 — and whose plan pays for it. Drawn only where this
                      machine holds a sign-in for that engine: a box with no
                      referent is what docs/CONVENTIONS.md forbids, and four of
@@ -1202,8 +1205,12 @@
                     profEngine
                         ? 'How hard these members think per turn. An engine with no effort flag offers nothing here.'
                         : profWhy)}
-                ${profDim('permissionMode', 'Permissions', profOpts('permissionMode', DATA.permissions || []),
-                    'What these members may do unattended. A delegation is headless — there is nobody to ask. This one is engine-independent, so it is offered whatever the rows are on.')}
+                ${profDim('permissionMode', 'Permissions',
+                    profOpts('permissionMode', profEngine
+                        ? ((DATA.permissionsByEngine || {})[String(profEngine).toLowerCase()] || DATA.permissions || [])
+                        : (DATA.permissions || [])),
+                    'What these members may do unattended. A delegation is headless — there is nobody to ask. '
+                    + 'The rows follow the engine the profile is setting: Antigravity cannot ask, so its "ask me" rows are not offered there.')}
                 ${profWhy ? `<div class="profnote">⚠ ${C.esc(profWhy)}</div>` : ''}
                 ${profileErr ? `<div class="fperr"><b>Nothing was applied.</b><ul class="fplist">${
                     profileErr.split('\n').map(l => `<li>${C.esc(l)}</li>`).join('')}</ul></div>` : ''}

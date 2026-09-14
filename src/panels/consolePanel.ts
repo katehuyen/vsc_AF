@@ -19,7 +19,7 @@ import { EngineOption, engineRefusal } from '../core/engines';
 import { ProviderForm, ProviderPick, ProviderTransport } from '../core/launchProvider';
 import { EngineModels, narrowLaunch } from '../core/models';
 import {
-    EFFORT_CHOICES, LastLaunch, LaunchOptions, modelChoices, PERMISSION_CHOICES,
+    EFFORT_CHOICES, LastLaunch, LaunchOptions, modelChoices, PERMISSION_CHOICES, permissionChoicesByEngine,
     rememberedOn, RunSurface
 } from '../core/launch';
 import { totalTokens, Usage } from '../core/pricing';
@@ -1189,6 +1189,8 @@ export class ConsolePanel {
             // see PERMISSION_MODES_LIVE. One list served both and offered three
             // rows that could not work.
             permissions: PERMISSION_CHOICES,
+            // S-60 — the rows an engine can keep, where they differ from the one list.
+            permissionsByEngine: permissionChoicesByEngine(),
             livePermissions: PERMISSION_MODES_LIVE,
             grants: PERMISSION_GRANTS,
             // ‼️ THE ENGINE AXIS (X-18). Every row carries whether it can run

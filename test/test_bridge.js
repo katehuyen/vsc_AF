@@ -5035,6 +5035,16 @@ const { opencodeStatus, syncToOpencode } =
             && both.error === ONE_EXECUTOR);
         const onlyEngine = await reg.dispatch('m22.dims', { engine: 'opencode' });
         ok('one executor still passes', onlyEngine.ok && onlyEngine.result.engine === 'opencode');
+        // S-60 — a permission mode the ENGINE cannot keep is refused where it is
+        // written (a schedule, a trigger, a task), with the engine's sentence.
+        const agyAsk = await reg.dispatch('m22.dims', { engine: 'agy', permissionMode: 'manual' });
+        ok('‼️ S-60: `agy` + `manual` is refused at the door — Antigravity cannot ask',
+            !agyAsk.ok && /cannot be kept on Antigravity/.test(agyAsk.error));
+        const agyPlan = await reg.dispatch('m22.dims', { engine: 'agy', permissionMode: 'plan' });
+        ok('…while a mode it can keep passes', agyPlan.ok && agyPlan.result.permissionMode === 'plan');
+        const claudeAsk = await reg.dispatch('m22.dims', { engine: 'claude', permissionMode: 'manual' });
+        ok('…and the same word on Claude passes — the rule is the engine\'s',
+            claudeAsk.ok && claudeAsk.result.permissionMode === 'manual');
         const onlyCli = await reg.dispatch('m22.dims', { cli: 'my-profile' });
         ok('…and so does a profile on its own', onlyCli.ok && onlyCli.result.cli === 'my-profile');
         const withClaude = await reg.dispatch('m22.dims', { engine: 'claude', cli: 'my-profile' });

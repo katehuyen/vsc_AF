@@ -14,6 +14,7 @@
  * own default stays in charge.
  */
 
+import { AGY_MODES_REFUSED, agyModeRefusal } from './agy';
 import { engineFirstPromptFlag, engineOf, EngineId, ENGINES, tuiArgs } from './consoleEngine';
 import { EffectivePermission, permissionFlags } from './permissionmode';
 // ‼️ X-150 — the 16 launch dimensions are DATA (`media/afDimensions.js`), and the
@@ -268,6 +269,46 @@ export const PERMISSION_CHOICES: LaunchChoice[] = [
     { id: 'dontAsk', label: 'dontAsk', detail: 'stops instead of asking when it would need permission' },
     { id: 'bypassPermissions', label: '⚠ bypassPermissions', detail: 'EVERY action auto-approved — no prompts at all' }
 ];
+
+/**
+ * ‼️ S-60 — THE ROWS AN ENGINE CAN KEEP. `PERMISSION_CHOICES` is Claude's
+ * vocabulary, and every picker offered all seven rows on every engine with a
+ * note beside them saying which ones meant something else here. A row whose
+ * meaning is "ask me" on an engine that has no way to ask is not a row with a
+ * caveat, it is a promise the box cannot keep — so it is not drawn, and it is
+ * refused by name at every door (`validateLaunch`, the bridge's run
+ * dimensions). The rule is the engine's own (`core/agy.ts`); this is the one
+ * place that turns it into rows, so the pages and the doors cannot disagree.
+ * An engine with no rule of its own gets the whole list, exactly as before.
+ */
+export function permissionChoicesFor(engine: string | undefined): LaunchChoice[] {
+    if (engineOf(engine).id !== 'agy') { return PERMISSION_CHOICES; }
+    return PERMISSION_CHOICES
+        .filter(c => !(AGY_MODES_REFUSED as readonly string[]).includes(c.id))
+        .map(c => c.id === 'plan'
+            ? { ...c, detail: 'asked to plan (--mode plan) — steering, not a restraint: measured, it still wrote a file' }
+            : c.id === '' ? { ...c, detail: 'no flag — whatever the Antigravity app\'s own tool-permission setting allows' }
+                : c);
+}
+
+/** The refusal for a mode this engine cannot keep, or '' — the door's sentence. */
+export function permissionRefusalFor(engine: string | undefined, mode: string | undefined): string {
+    return engineOf(engine).id === 'agy' ? agyModeRefusal(mode) : '';
+}
+
+/**
+ * The engines whose rows DIFFER from the one list, for a page that draws a
+ * picker beside an engine box: `permissionsByEngine[engine] || permissions`.
+ * Built off `permissionChoicesFor`, so a page and a door read one rule.
+ */
+export function permissionChoicesByEngine(): Record<string, LaunchChoice[]> {
+    const out: Record<string, LaunchChoice[]> = {};
+    for (const id of Object.keys(ENGINES)) {
+        const rows = permissionChoicesFor(id);
+        if (rows !== PERMISSION_CHOICES) { out[id] = rows; }
+    }
+    return out;
+}
 
 /** Model list = the user's own `agentFarm.modelAliases` knowledge base, with
  *  "Default" in front. One list, kept current in one place (Farm Settings),
@@ -872,6 +913,9 @@ export function validateLaunch(o: LaunchOptions): string[] {
     if (o.permissionMode?.trim() && !known(PERMISSION_CHOICES, o.permissionMode.trim())) {
         errors.push(`permission mode "${o.permissionMode.trim()}" is not one of: ` +
             PERMISSION_CHOICES.filter(c => c.id).map(c => c.id).join(', '));
+    } else if (o.permissionMode?.trim() && permissionRefusalFor(o.engine, o.permissionMode.trim())) {
+        // S-60 — a real name the ENGINE cannot keep is refused with the engine's own sentence.
+        errors.push(permissionRefusalFor(o.engine, o.permissionMode.trim()));
     }
     if (o.resume && o.continueLast) {
         errors.push('resume and continue are mutually exclusive');

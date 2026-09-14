@@ -51,6 +51,15 @@ const ENGINES = [
         note: 'One process per turn: a message typed mid-turn is HELD until the turn ends.'
     },
     {
+        // S-60 — the engine that cannot ask: its permission box draws fewer rows.
+        id: 'agy', label: 'Antigravity', ready: true, auth: 'app',
+        shape: 'perTurn', steerable: false, reportsCost: false,
+        modelFlag: '--model', effortFlag: '--effort', takesEffort: true,
+        billing: 'The Antigravity app\'s own sign-in.',
+        next: 'Ready.',
+        note: 'One process per turn. It takes its permissions from the Antigravity app rather than from this box.'
+    },
+    {
         // ‼️ U-59 — THE THIRD SHAPE, IN THE PICTURE. The composer's tooltips
         // branch on it and the effort box disappears for it, and neither of
         // those was visible in any fixture: a page whose only engines are one
@@ -301,8 +310,20 @@ const data = () => ({
     permissions: [
         { id: '', label: 'Default' }, { id: 'plan', label: 'plan' },
         { id: 'acceptEdits', label: 'acceptEdits' },
+        { id: 'manual', label: 'manual', detail: 'asks for every action' },
+        { id: 'dontAsk', label: 'dontAsk', detail: 'stops instead of asking' },
         { id: 'bypassPermissions', label: '⚠ bypassPermissions' }
     ],
+    // S-60 — the rows an engine can keep, where they differ (the host derives
+    // this from the engine's own rule; the fixture states the shape).
+    permissionsByEngine: {
+        agy: [
+            { id: '', label: 'Default', detail: 'no flag — whatever the Antigravity app allows' },
+            { id: 'plan', label: 'plan', detail: 'asked to plan — steering, not a restraint' },
+            { id: 'acceptEdits', label: 'acceptEdits' },
+            { id: 'bypassPermissions', label: '⚠ bypassPermissions' }
+        ]
+    },
     livePermissions: [
         { id: '', label: 'Default' }, { id: 'plan', label: 'plan' },
         { id: 'acceptEdits', label: 'acceptEdits' }
@@ -403,6 +424,9 @@ const rememberedComposerData = () => Object.assign(composerData(), {
  *  only state in which the effort box is absent and the permission tooltip says
  *  the engine can stop and ask. Five boxes become four; that is the picture. */
 const opencodeComposerData = () => Object.assign(composerData(), { engine: 'opencode' });
+/** S-60 — the composer with Antigravity chosen: the permission box draws only
+ *  the rows that engine can keep — no `manual`, no `dontAsk`. */
+const agyComposerData = () => Object.assign(composerData(), { engine: 'agy' });
 
 /**
  * ‼️ X-105 — THE COMPOSER WITH A ROUTE PICKED, which is the only state the two
@@ -738,6 +762,11 @@ module.exports = {
             id: 'console-opencode',
             label: 'Console — OpenCode chosen: no effort box, and permissions it can really ask about',
             data: opencodeComposerData()
+        },
+        {
+            id: 'console-agy',
+            label: 'Console — Antigravity chosen: only the permission rows it can keep (S-60)',
+            data: agyComposerData()
         },
         {
             id: 'console-no-skills',

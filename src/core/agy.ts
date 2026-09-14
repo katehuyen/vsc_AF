@@ -78,6 +78,48 @@ export const AGY_MODE: Record<string, string> = {
     acceptEdits: 'accept-edits'
 };
 
+/**
+ * ‼️ S-60 — THE MODES THIS ENGINE CANNOT KEEP ARE NOT OFFERED FOR IT.
+ *
+ * Antigravity has no approval protocol: nothing leaves the process asking "may
+ * I", so nothing outside it can answer. A mode whose meaning is "ask me"
+ * (`manual`) or "stop rather than ask" (`dontAsk`) is therefore a promise the
+ * box makes and the engine cannot keep — measured in session 5768a908, where
+ * the model wrote "do you approve?" INTO ITS OWN TEXT and carried on, because
+ * that sentence was prose and not a gate. Offering the row was the defect.
+ *
+ * What stays: the app's own setting (`''`, `auto`), `plan` and `acceptEdits`
+ * (the engine's own `--mode` vocabulary — steering, not restraint, see
+ * `agyModeNote`) and `bypassPermissions` (which really works, because lifting
+ * a restraint is the easy direction).
+ */
+export const AGY_MODES_REFUSED = ['manual', 'dontAsk'] as const;
+
+/** Why a refused mode is refused here — one sentence, for the door and the picker. */
+export function agyModeRefusal(mode: string | undefined): string {
+    const key = String(mode ?? '').trim();
+    if (!(AGY_MODES_REFUSED as readonly string[]).includes(key)) { return ''; }
+    return `"${key}" cannot be kept on Antigravity: the engine has no approval protocol, so it can `
+        + 'neither ask nor stop to ask — a mode that promises either is a box that lies. Use plan, '
+        + 'acceptEdits, bypassPermissions, or leave it empty for the Antigravity app\'s own setting.';
+}
+
+/**
+ * ‼️ S-60 — `--sandbox` IS THE ENGINE'S ONE REAL RESTRAINT, AND IT IS NOT SENT.
+ *
+ * MEASURED 2026-09-14 on this machine (agy print mode, gemini-3.8-flash/low):
+ * without the flag, "echo WROTE > file" finished in 3.9 s with SUCCESS and the
+ * file on disk; with `--sandbox` the stream reached
+ * `step_type:"tool" · run_command · ACTIVE` and never left it — 60 s and 180 s
+ * timeouts, no output, no file — and the same for a bare `echo hi`. So on this
+ * machine the sandboxed `run_command` never returns, and a run wired to it
+ * would sit until `--print-timeout` (two hours) looking like a broken engine.
+ * The user chose to wire it (S-60, option c); this measurement is why it is
+ * not, and the question is back on Notices. Keep the constant so the next
+ * reader finds the measurement before the flag.
+ */
+export const AGY_SANDBOX_HANGS_HERE = '--sandbox';
+
 /** The flag form of a permission mode, or nothing when the mode has no
  *  equivalent and the app's own setting is left in charge. */
 export function agyModeArgs(mode: string | undefined): string[] {
@@ -93,11 +135,13 @@ export function agyModeNote(mode: string | undefined): string {
     const governing = ' On this engine the real restraint is the Antigravity app\'s own tool-permission setting, not this box'
         + ' — measured: plan mode still wrote a file when asked to.';
     if (key === 'plan') {
-        return 'Antigravity is asked to plan rather than act.' + governing;
+        return 'Antigravity is asked to plan rather than act.' + governing
+            + ' Its --sandbox flag is the one real restraint and is NOT sent: measured here, a sandboxed command never returns.';
     }
     if (key === 'acceptEdits') {
         return 'Antigravity may edit files without asking.' + governing;
     }
+    if (agyModeRefusal(key)) { return agyModeRefusal(key); }
     if (key === 'bypassPermissions') {
         return 'Every tool permission is auto-approved (--dangerously-skip-permissions). Nothing will stop and ask you.';
     }

@@ -169,7 +169,7 @@ import {
     buildLaunchCommand, describeLaunch, EFFORT_CHOICES, LaunchChoice, LaunchDefaults,
     LastLaunch, launchSummary, launchToRemember, LaunchOptions, LaunchProfile, MODEL_ID_REFUSAL,
     modelChoices,
-    modelIdOk, ONE_EXECUTOR, PERMISSION_CHOICES, RunSurface, SUPERPOWERS_CHOICES,
+    modelIdOk, ONE_EXECUTOR, PERMISSION_CHOICES, permissionChoicesByEngine, permissionChoicesFor, RunSurface, SUPERPOWERS_CHOICES,
     normSuperpowers, superpowersWord, twoExecutors, validateLaunch, withDefaults, withLastLaunch
 } from './core/launch';
 // ‼️ X-151 — THE DOORS. A door answers "what session is about to start"; it does
@@ -16561,6 +16561,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // exist on one surface and not another — and the form can say what
             // each one means instead of asking the user to know.
             permissions: PERMISSION_CHOICES,
+            // S-60 — the rows an engine can keep, where they differ from the one list.
+            permissionsByEngine: permissionChoicesByEngine(),
             // ‼️ M-18 — AND THE EFFORT VOCABULARY, from the same one list. It
             // was the only run dimension a member could not state, so the form
             // let you choose the engine, the permissions and the model for a
@@ -21990,7 +21992,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             if (pick.act === 'perm') {
                 const v = await pickChoice('What may a session from this profile do without asking?',
-                    PERMISSION_CHOICES, draft.permissionMode ?? '', false);
+                    permissionChoicesFor(draft.engine), draft.permissionMode ?? '', false);
                 if (v !== undefined) { draft.permissionMode = v; }
                 continue;
             }
@@ -22578,7 +22580,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
             if (pick.act === 'perm') {
                 const v = await pickChoice('What may this session do without asking?',
-                    PERMISSION_CHOICES, merged.permissionMode ?? '', false);
+                    permissionChoicesFor(o.engine || merged.engine), merged.permissionMode ?? '', false);
                 if (v !== undefined) { o.permissionMode = v; }
                 continue;
             }
@@ -27282,8 +27284,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // running the step anyway means a hold does not throw away the words
         // the round earned. Only `stopped` is not driven at all.
         if (!rec || rec.status === 'stopped') { return; }
-
-        // ---- where the work comes from ------------------------------------
         /**
          * ‼️ X-302 — A HELD LEADER TURN IS TAKEN UP AGAIN, NOT FORGOTTEN. The
          * poll that fires after the sleep carries no finished task, and a tick
@@ -27297,6 +27297,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (held) { finishedTask = held; }
             else { delete rec.leaderHold; }
         }
+
+        // ---- where the work comes from ------------------------------------
         let doc: { project: Project; folder: string; text: string };
         try {
             const d = backlogDoc(rec.project);
@@ -27610,8 +27612,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 tags: ['sentry']
             });
         }
-
-        const step = sentryStep({
         /**
          * ‼️ X-302 — A HELD LEADER OPENS NO ROUND. The round the leader was woken
          * for stays unopened until the leader has really been consulted: the
@@ -27632,6 +27632,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             return;
         }
+
+        const step = sentryStep({
             campaign: rec,
             ...(leader?.assist ? { assist: leader.assist } : {}),
             ...(leader?.decision ? {
