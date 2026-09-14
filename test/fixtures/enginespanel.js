@@ -10,6 +10,23 @@
  */
 const base = require('./engines.js');
 
+/**
+ * ‼️ X-258 — THE ROTATION LINE, ASKED OF THE PRODUCT. `accountOrder` is the
+ * line `pickAccount` takes its answer off, so a scene that wrote `place` by hand
+ * would be photographing a claim the host never makes — and the whole item is
+ * that the page must DRAW the rotation rather than describe it.
+ */
+const { accountOrder, ACCOUNT_WALL_CEILING } = require('../../out/core/accountUsage.js');
+const withLine = list => list.map(a => {
+    const pool = list.filter(x => x.engine === a.engine).map(x => ({
+        slotId: x.id, engine: x.engine, state: x.usageState, percent: x.percent,
+        resetsAt: x.resetsAt, plan: x.plan, fetchedAt: x.fetchedAt
+    }));
+    const order = accountOrder(pool, { ceiling: ACCOUNT_WALL_CEILING, engine: a.engine });
+    const at = order.findIndex(x => x.slotId === a.id);
+    return { ...a, line: at < 0 ? null : { place: at + 1, of: order.length } };
+});
+
 const NOW = Date.parse('2026-08-09T18:40:00Z');
 
 /**
@@ -78,7 +95,7 @@ const data = () => {
          * A fixture with only the happy state photographs the one case the
          * control is not for.
          */
-        accounts: [
+        accounts: withLine([
             {
                 id: 'work-1', engine: 'claude', label: 'work@studio',
                 email: 'work@studio.example', plan: 'max20x', health: 'ready', active: true,
@@ -108,6 +125,10 @@ const data = () => {
                 // two agents name a sign-in of their own — so the ⚡ button's panel
                 // can be checked for the sentence saying it will not move them.
                 standingAgents: [], pinnedAgents: 2,
+                // ‼️ X-258 — A SEAT ON IT. The arity that has to be read beside the
+                // two below: one hosted seat, one card with only processes this window
+                // can SEE, and one with nobody — three different sentences.
+                onIt: { seats: [{ seat: 'cs1', who: 'developer', sessionId: 'a132b63f' }], others: 0 },
                 // ‼️ X-291 — THE SMALLEST NON-EMPTY LAYOUT, which is the one the
                 // user really gets: a single approval typed at a terminal prompt
                 // in one folder. A scene with only the many-row case would draw
@@ -136,6 +157,10 @@ const data = () => {
                 // label has to clip; the single-name case reads differently and the
                 // panel's wording differs between them.
                 standingAgents: ['developer', 'youtuber'], pinnedAgents: 2,
+                // ‼️ X-258 — THE HONEST-LIMIT ARITY: the engine's own registry says
+                // two processes are alive on this sign-in and this window hosts none of
+                // them. The card may say the count and must not invent what they are.
+                onIt: { seats: [], others: 2 },
                 // ‼️ X-292 — A SLOT THAT IS WHOLE AND KEEPS BEING PUT BACK, which
                 // is the only state the repair badge exists for: `link:todos` is
                 // `ok` on the row above and has been re-made four times, every
@@ -227,7 +252,7 @@ const data = () => {
                 completeness: contract('codex'),
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/codex-spare'
             }
-        ],
+        ]),
         /**
          * ‼️ X-172 — WHAT EACH ENGINE CAN DO ABOUT ACCOUNTS AT ALL, and it is
          * the half that decides whether a CAPTURE button is honest. Three of

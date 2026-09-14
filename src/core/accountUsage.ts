@@ -240,12 +240,34 @@ export function slotIsUsable(u: SlotUsage, ceiling = 100): boolean {
  * session ten minutes in.
  */
 export function mostRoom(list: SlotUsage[], ceiling = 100): SlotUsage | undefined {
+    return roomOrder(list, ceiling)[0];
+}
+
+/**
+ * ‼️ X-258 — THE WHOLE LINE, NOT ONLY ITS HEAD, so a page can DRAW the rotation
+ * instead of recomputing it.
+ *
+ * The card has to be able to say who is next, and the only honest way to say it
+ * is to ask the thing that will really decide. So the ordering lives here and
+ * `mostRoom` is now its FIRST ELEMENT rather than a second implementation of
+ * the same rule — the one arrangement in which the sentence on the page and the
+ * account the runner picks cannot come apart.
+ *
+ * The order is the rule `mostRoom` has always followed, written out:
+ *   · an account at or past the ceiling, or otherwise unusable, is not in the
+ *     line at all — it is not "last", it is out, and a card that drew it as
+ *     last would be offering a turn the rotation will never give it;
+ *   · a MEASURED account beats an unmeasured one, always, and the emptiest
+ *     measured one leads. Picking a slot nobody has read over one provably at
+ *     4% is choosing a guess over a fact;
+ *   · among equals the user's own list order stands (the sort is stable), which
+ *     is the same rule the tiers follow.
+ */
+export function roomOrder(list: SlotUsage[], ceiling = 100): SlotUsage[] {
     const usable = list.filter(u => slotIsUsable(u, ceiling));
-    const measured = usable.filter(u => u.state === 'ok' && u.percent >= 0);
-    if (measured.length) {
-        return measured.reduce((best, u) => (u.percent < best.percent ? u : best));
-    }
-    return usable[0];
+    const read = (u: SlotUsage): boolean => u.state === 'ok' && u.percent >= 0;
+    return [...usable.filter(read)].sort((a, b) => a.percent - b.percent)
+        .concat(usable.filter(u => !read(u)));
 }
 
 /** How a campaign walks the accounts the user allowed it (X-207). */
@@ -282,9 +304,27 @@ export interface PickAccountOptions {
  * somebody reordered the list without touching it.
  */
 export function pickAccount(list: SlotUsage[], opts: PickAccountOptions = {}): SlotUsage | undefined {
+    return accountOrder(list, opts)[0];
+}
+
+/**
+ * ‼️ X-258 — THE ROTATION AS A LINE, and `pickAccount` is its head.
+ *
+ * The card asks "who is next" and there must be exactly ONE answer to that in
+ * the product: a second ranking written for the page would separate what the
+ * page says from what the campaign does, which is the defect the item was
+ * opened for. So the strategy is resolved here and the pick is `[0]`.
+ *
+ * Every rule above still holds and is simply expressed over the whole line:
+ * the free pool is one `roomOrder`; tiered is each tier's `roomOrder`, in tier
+ * order, laid end to end — so "who is next" and "who is after that" are true
+ * across a tier boundary too, which is exactly the moment the user cannot
+ * predict for themselves.
+ */
+export function accountOrder(list: SlotUsage[], opts: PickAccountOptions = {}): SlotUsage[] {
     const ceiling = typeof opts.ceiling === 'number' ? opts.ceiling : 100;
     if (String(opts.rotation ?? '').trim().toLowerCase() !== 'tiered') {
-        return mostRoom(list, ceiling);
+        return roomOrder(list, ceiling);
     }
     const engineOf = (u: SlotUsage): string => String(u.engine ?? '').trim().toLowerCase();
     // First-appearance order, with the campaign's own engine promoted — but only
@@ -299,11 +339,9 @@ export function pickAccount(list: SlotUsage[], opts: PickAccountOptions = {}): S
     const order = primary && tiers.includes(primary)
         ? [primary, ...tiers.filter(e => e !== primary)]
         : tiers;
-    for (const e of order) {
-        const pick = mostRoom(list.filter(u => engineOf(u) === e), ceiling);
-        if (pick) { return pick; }
-    }
-    return undefined;
+    const out: SlotUsage[] = [];
+    for (const e of order) { out.push(...roomOrder(list.filter(u => engineOf(u) === e), ceiling)); }
+    return out;
 }
 
 /** ‼️ X-226 — the shortest wait a handover can be worth. It is the floor the

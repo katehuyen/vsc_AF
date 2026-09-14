@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.502.0 - The account card says who is on it and who is next (X-258) (2026-09-14)
+
+- **A card now says who is ON this sign-in right now** (●). In a live rotation
+  cockpit that is the first thing asked of a card and the page could not answer
+  it at all. Two sources, neither guessed at: the Console seats this window
+  hosts (each carrying the account it was resolved to at launch), and the
+  ENGINE’S OWN registry inside that slot’s directory — one file per live
+  process, so a record found there IS signed in as that account. What the
+  registry cannot say is what those processes are, and the card does not
+  pretend: a count with "not hosted here" beside it is the whole claim.
+- **And who is NEXT** (🔁 `next` / `2nd` / …), which is the other half. ‼️ It is
+  DRAWN, never recomputed: `accountOrder` is now the line and `pickAccount` is
+  its HEAD rather than a second implementation beside it — the one arrangement
+  in which the sentence on the page and the account the runner picks cannot
+  come apart. The pool is that engine’s sign-ins at the standing ceiling, which
+  is the rotation a walled run’s handover really takes; claiming a campaign’s
+  order on a page that cannot know which campaign would be the invented answer.
+- **A sign-in at the wall is OUT of the line, not last in it** — it gets no chip
+  at all. Drawing it as last would offer the reader a turn the rotation is never
+  going to give it.
+- **‼️ And the single number on the card no longer belongs to a queue nobody
+  asked about.** The yellow `1`/`2` is a place in the REFRESH READING queue
+  (X-206); on a page that now also draws a rotation, a naked digit is read as
+  whichever order the reader has in mind — it was read that way in the audit
+  that opened this item. The digit now travels with the ⟳ the idle state
+  already wears, so the badge always says which line it is counting, and its
+  panel opens by naming that line and disclaiming the other (SHORTHAND).
+- Photographed on the `enginespanel` fixture in both themes, in every arity that
+  differs: a card with a hosted seat, one with only processes this window can
+  see, one with nobody, the leader, a middle place, an unmeasured account behind
+  every measured one, and one out of the line entirely. The leader’s chip is
+  deliberately NOT filled with colour — the first draft filled it green and it
+  was photographed two centimetres from the green "who is on it" line, one
+  colour carrying a forecast and a live fact at once.
+- `accounts.list` returns `onIt` and `line` with the rest, so an agent reads the
+  same two answers the card draws.
+
 ## 3.501.0 - An agent can stand on a sign-in of its own (X-255) (2026-09-14)
 
 - **Every agent now has a standing account, per engine, and it outranks the

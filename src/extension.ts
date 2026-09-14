@@ -246,7 +246,8 @@ import {
     slotsFor, statedAccountLabel, unportableDirs
 } from './core/accountStore';
 import {
-    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, mostRoom, nextResetAt, slotCredentialsFile, slotIsUsable,
+    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, accountOrder, mostRoom, nextResetAt,
+    slotCredentialsFile, slotIsUsable,
     slotSessionDir, windowNameOf, windowPhraseOf
 } from './core/accountUsage';
  import * as accountQueue from './core/accountQueue';
@@ -18507,11 +18508,75 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
                     a.dir, slot.engine as EngineId) === slot.id)
                 .map(a => a.name),
+            /**
+             * ‼️ X-258 — WHO IS ON THIS SIGN-IN RIGHT NOW. In a live rotation
+             * cockpit this is the first thing asked of a card, and the page
+             * could not answer it.
+             *
+             * ‼️ TWO SOURCES, AND NEITHER IS GUESSED AT. The seats are this
+             * window's own Console rows, which carry the account they were
+             * resolved to (X-169); `others` is the ENGINE'S OWN REGISTRY inside
+             * this slot's directory — `<config-dir>/sessions/<pid>.json`, one
+             * file per live process. The registry is per home, so a process
+             * found there IS signed in as this account: no manifest, no join,
+             * no inference. What it cannot say is what those processes are, and
+             * it does not pretend to — a count with "not hosted here" beside it
+             * is the whole honest claim (a terminal, another window, somebody
+             * else's SDK).
+             */
+            onIt: (() => {
+                const seats = consoleHost.list()
+                    .filter(s => s.status !== 'ended' && (s.account || '') === slot.id)
+                    .map(s => ({ seat: s.id, who: s.agentName, sessionId: s.sessionId || '' }));
+                const held = new Set(seats.map(s => s.sessionId).filter(Boolean));
+                let others = 0;
+                try {
+                    // ‼️ THE SLOT'S CONFIG DIR, not its sessions folder —
+                    // `readCliSessions` appends `sessions` itself, and handing it
+                    // the joined path would read an empty directory for ever and
+                    // report a busy account as idle.
+                    others = readCliSessionsAcross([slot.dir])
+                        .filter(r => !isSpareCliSession(r) && !held.has(r.sessionId)).length;
+                } catch { /* no registry for this engine, or none yet — 0 is honest */ }
+                return { seats, others };
+            })(),
             pinnedAgents: agents
                 .filter(a => !!storedAccount(
                     cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
                     a.dir, slot.engine as EngineId))
                 .length,
+            /**
+             * ‼️ X-258 — WHERE THIS SIGN-IN STANDS IN THE ROTATION, and it is
+             * DRAWN rather than worked out here.
+             *
+             * `accountOrder` is the line `pickAccount` takes its answer off (the
+             * pick IS its head), so the card is reading the authority instead of
+             * describing it. A second ranking written for this page would be the
+             * defect the item was opened for: a page confidently saying who is
+             * next while the rotation goes somewhere else.
+             *
+             * ‼️ THE POOL IS THIS ENGINE'S SIGN-INS, WHICH IS THE ROTATION THAT
+             * REALLY APPLIES HERE. A sentry campaign walks the accounts the user
+             * picked for THAT campaign, and this page belongs to no campaign —
+             * but `carryOnAccount` (the handover a walled run takes, on any
+             * night, with no campaign involved) asks exactly this: one engine,
+             * the standing ceiling. Claiming a campaign's order on a page that
+             * cannot know which campaign would be the invented answer.
+             *
+             * `place` is 1-based; `null` means this sign-in is NOT IN THE LINE —
+             * at or past the ceiling, or otherwise unusable. That is not "last":
+             * the rotation will never reach it, and a card drawing it as last
+             * would offer a turn nobody is going to give it.
+             */
+            line: (() => {
+                const pool = usage.filter(x =>
+                    String(x.engine ?? '').trim().toLowerCase() === slot.engine);
+                const order = accountOrder(pool, {
+                    ceiling: ACCOUNT_WALL_CEILING, engine: slot.engine
+                });
+                const at = order.findIndex(x => x.slotId === slot.id);
+                return at < 0 ? null : { place: at + 1, of: order.length };
+            })(),
             // ‼️ X-284 — AND THE WHOLE BIRTH CONTRACT, not only the one clause
             // above. `settingsGaps` answers "which system prompt would a session
             // get", which is a question the user asks by name; this answers
@@ -35509,6 +35574,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '({ok, detail}; Codex: every hook in ~/.codex/hooks.json trusted in config.toml under '
                 + 'the resolved path and posting to the live port; null where the wire is another '
                 + 'module\'s, e.g. Claude\'s hooks installer). '
+                + '‼️ X-258 — AND THE TWO QUESTIONS A ROTATION IS ACTUALLY READ WITH. `onIt` says who '
+                + 'is on this sign-in RIGHT NOW: `seats` are the Console rows this window hosts (seat '
+                + 'id + agent), and `others` counts live processes the ENGINE\'S OWN registry inside '
+                + 'that slot reports which this window does NOT host — a terminal, another window, '
+                + 'somebody else\'s SDK. That registry proves a process is alive on that sign-in and '
+                + 'says nothing about what it is, so `others` is a count and never a name. `line` says '
+                + 'where the sign-in stands in the rotation ({place, of}; place 1 = the one a handover '
+                + 'would take next). ‼️ `line` is null for a sign-in at or past its ceiling or '
+                + 'otherwise unusable — that is OUT of the line, a different statement from last in '
+                + 'it. It is read off `accountOrder`, whose head IS the `pickAccount` the rotation '
+                + 'really calls, so it can never describe an order the product does not perform; the '
+                + 'pool is that engine\'s sign-ins at the standing ceiling (the rotation a walled '
+                + 'run\'s handover takes), NOT any one campaign\'s own pool. ‼️ X-255 — `standingAgents` '
+                + 'names the agents whose OWN standing sign-in is this slot (they ignore the '
+                + 'machine-wide "use this next"), and `pinnedAgents` counts the agents on this engine '
+                + 'that name one at all. '
                 + '‼️ NO TOKEN VALUE IS EVER RETURNED and none can be set from here — the same '
                 + 'boundary the secrets vault draws. args: engine? (only that engine\'s accounts)',
             handler: (args) => {

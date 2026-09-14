@@ -19,7 +19,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const {
-    AccountUsageService, mostRoom, pickAccount, nextResetAt, slotIsUsable, usageFrom,
+    AccountUsageService, mostRoom, pickAccount, accountOrder, roomOrder, nextResetAt, slotIsUsable, usageFrom,
     unreadUsage, fiveHourBar, FIVE_HOUR
 } = require(path.join(__dirname, '..', 'out', 'core', 'accountUsage.js'));
 const { RATE_LIMIT_BACKOFF_START_MS } = require(path.join(__dirname, '..', 'out', 'core', 'planusage.js'));
@@ -612,6 +612,53 @@ async function main() {
 
         ok('one engine makes tiered a free pool over that engine, not a refusal',
             pickAccount([at('c1', 70), at('c2', 40)], { rotation: 'tiered' }).slotId === 'c2');
+
+        /* ---------- X-258 — the rotation as a LINE, so a card can draw it ----
+         *
+         * ‼️ THE ASSERTION THAT MATTERS IS THE IDENTITY, not the ordering.
+         * The card has to say who is NEXT, and the only honest way is to ask the
+         * thing that will really decide — so `pickAccount` is the HEAD of this
+         * line rather than a second implementation beside it. If those two ever
+         * part company the page starts describing a rotation the campaign does
+         * not perform, which is the whole defect the item was opened for.
+         * ------------------------------------------------------------------ */
+        const ids = l => l.map(u => u.slotId);
+        const head = (l, o) => {
+            const pick = pickAccount(l, o);
+            const line = accountOrder(l, o);
+            return (pick ? pick.slotId : undefined) === (line[0] ? line[0].slotId : undefined);
+        };
+        ok('‼️ X-258 — pickAccount IS the head of the line, under every strategy',
+            head(mixed, { rotation: 'free' }) && head(mixed, {})
+            && head(mixed, { rotation: 'tiered' })
+            && head(walled, { rotation: 'tiered', ceiling: 90 })
+            && head([at('x1', 60, 'codex'), at('c1', 5)], { rotation: 'tiered', engine: 'claude' })
+            && head([], { rotation: 'tiered' }));
+        ok('the free pool\u2019s line is emptiest-first',
+            JSON.stringify(ids(accountOrder(mixed, { rotation: 'free' })))
+                === JSON.stringify(['x1', 'c2', 'x2', 'c1']));
+        // ‼️ AND IT IS TRUE ACROSS A TIER BOUNDARY, which is exactly the moment
+        // the user cannot work out for themselves: the whole primary tier first,
+        // emptiest-first inside it, then the next engine's.
+        ok('‼️ …and tiered lays each tier\u2019s line end to end, primary first',
+            JSON.stringify(ids(accountOrder(mixed, { rotation: 'tiered' })))
+                === JSON.stringify(['c2', 'c1', 'x1', 'x2']));
+        // ‼️ A WALLED ACCOUNT IS OUT OF THE LINE, NOT LAST IN IT. Drawing it as
+        // last would offer the reader a turn the rotation will never give it.
+        ok('‼️ an account at the ceiling is not in the line at all',
+            JSON.stringify(ids(accountOrder(walled, { rotation: 'tiered', ceiling: 90 })))
+                === JSON.stringify(['x2', 'x1']));
+        // A MEASURED account beats an unread one wherever both are usable — the
+        // rule `mostRoom` has always followed, now visible along the whole line.
+        const unread = { slotId: 'u1', engine: 'claude', state: 'ok', percent: -1, resetsAt: 0, plan: 'pro', fetchedAt: 0 };
+        ok('an unread account sits behind every measured one, never in front',
+            JSON.stringify(ids(roomOrder([unread, at('c1', 70), at('c2', 40)])))
+                === JSON.stringify(['c2', 'c1', 'u1']));
+        // …and among equals the user's own list order stands (the sort is stable),
+        // which is the same rule the tiers themselves follow.
+        ok('equal figures keep the order the user listed them in',
+            JSON.stringify(ids(roomOrder([at('c1', 40), at('c2', 40), at('c3', 40)])))
+                === JSON.stringify(['c1', 'c2', 'c3']));
         ok('an empty pool offers nothing under either strategy',
             pickAccount([], { rotation: 'tiered' }) === undefined
             && pickAccount([], { rotation: 'free' }) === undefined);

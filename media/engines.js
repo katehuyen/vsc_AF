@@ -540,6 +540,64 @@
          * whether to spend this plan, and "developer always runs here" is the
          * fact that decides it.
          */
+        /**
+         * X-258 -- WHO IS ON IT NOW, which is the first thing asked of a card in
+         * a live rotation cockpit and was not on the page at all.
+         *
+         * SHORTHAND: the row carries the shortest unambiguous form (the seat id
+         * and the agent), and the panel carries the meaning. The two sources are
+         * kept apart in the wording on purpose -- a seat is something this window
+         * can steer, and "another process" is something it can only SEE.
+         */
+        const onIt = a.onIt || { seats: [], others: 0 };
+        const busyBits = (onIt.seats || []).map(s => s.seat + ' · ' + s.who);
+        if (onIt.others) {
+            busyBits.push(onIt.others + ' other' + (onIt.others === 1 ? '' : 's'));
+        }
+        const busy = busyBits.length
+            ? T.wrap('<span class="acbusy">● ' + esc(busyBits.join(', ')) + '</span>',
+                'On this sign-in right now',
+                ((onIt.seats || []).length
+                    ? 'Console seats this window hosts: '
+                        + (onIt.seats || []).map(s => s.seat + ' (' + s.who + ')').join(', ')
+                        + '. Each one was resolved to this account when it started, and an account is '
+                        + 'fixed for a session the way a route is — nothing moves by pressing anything here.'
+                    : 'No Console seat in this window is on it.')
+                + (onIt.others
+                    ? '\n\n' + onIt.others + ' more live process' + (onIt.others === 1 ? ' is' : 'es are')
+                        + ' signed in as this account and NOT hosted here — read out of the engine’s own '
+                        + 'registry inside this slot’s directory, one file per running process. That is the '
+                        + 'whole honest claim: the registry says a process is alive on this sign-in, not what '
+                        + 'it is. A terminal, another window, or somebody else’s SDK all look the same there.'
+                    : ''))
+            : '';
+        /**
+         * X-258 -- AND WHO IS NEXT. The order is DRAWN, never recomputed: the
+         * host reads `accountOrder`, whose head is the `pickAccount` the rotation
+         * really calls, so this cannot describe a rotation the product does not
+         * perform.
+         *
+         * SHORTHAND + MIRROR: the chip is the short form and its panel opens with
+         * the long one. An account at the ceiling gets NO chip rather than a last
+         * place -- the rotation will never reach it, and drawing it as last would
+         * offer a turn nobody is going to give it.
+         */
+        const ORD = ['', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th'];
+        const ln = a.line;
+        const rota = ln
+            ? T.wrap('<span class="acrota' + (ln.place === 1 ? ' on' : '') + '">\u{1F501} '
+                + esc(ln.place === 1 ? 'next' : (ORD[ln.place] || ln.place + 'th')) + '</span>',
+                ln.place === 1 ? 'Next in the rotation' : (ORD[ln.place] || ln.place + 'th') + ' in the rotation',
+                'Of ' + ln.of + ' ' + engineLabel(a.engine) + ' sign-in' + (ln.of === 1 ? '' : 's')
+                + ' the rotation can still use, this one is '
+                + (ln.place === 1 ? 'the one it would take next' : 'number ' + ln.place) + '.\n\n'
+                + 'This is DRAWN from the rotation itself, not worked out for this page: a measured '
+                + 'account beats an unread one and the emptiest measured one leads, which is the rule '
+                + 'a handover follows when a run meets a wall. A sign-in at or past its ceiling is not '
+                + 'in this line at all — it is out, not last.\n\n'
+                + '‼️ Not the same line as the ⟳ button beside it: that one is the READING queue, '
+                + 'which is only about when a figure gets refreshed.')
+            : '';
         const standingBy = (a.standingAgents || []).length
             ? T.wrap('<span class="acpin">📌 ' + esc((a.standingAgents || []).join(', ')) + '</span>',
                 'Stands on this account',
@@ -855,15 +913,28 @@
         const onDisk = a.quotaSource === 'session-tail';
         const refresh = a.quotaSource === 'none'
             ? ''
+            /**
+             * X-258 -- THE NUMBER ON THIS BUTTON IS NEVER BARE.
+             *
+             * It shows a place in the READING queue (X-206), and this page now
+             * also draws a rotation order. A naked `2` on a page with two
+             * orderings is read as the one the reader is thinking about -- it was
+             * read that way in the audit that opened this item. The glyph the
+             * idle state already uses travels with the digit, so the badge always
+             * says WHICH line it is counting, and the panel's first line names
+             * that line in full (SHORTHAND).
+             */
             : T.wrap('<button class="acref ' + esc(q) + '" data-acrefresh="' + esc(a.id) + '">'
-                + (q === 'reading' ? '◍' : q === 'queued' ? (a.queuePlace || '·') : '⟳') + '</button>',
+                + (q === 'reading' ? '◍' : q === 'queued' ? '⟳' + (a.queuePlace || '·') : '⟳') + '</button>',
                 q === 'reading' ? 'Being read right now'
-                    : q === 'queued' ? 'Waiting — number ' + (a.queuePlace || 1) + ' in the line'
+                    : q === 'queued' ? 'Reading queue — number ' + (a.queuePlace || 1) + ' in line for a refresh'
                         : 'Read this account\'s figure now',
                 q === 'reading'
                     ? 'The request is already in flight, so it cannot be taken back — the figure lands in a moment.'
                     : q === 'queued'
-                        ? 'One account is read every five seconds, in the order they were asked for. Press again '
+                        ? '‼️ This is the queue for REFRESHING THE FIGURE, and nothing to do with whose turn '
+                        + 'it is to run — the 🔁 chip beside it is the rotation.\n\n'
+                        + 'One account is read every five seconds, in the order they were asked for. Press again '
                         + 'to take this one out of the line.'
                         : onDisk
                             ? 'This engine publishes no endpoint and is not silent either: it writes what the '
@@ -902,6 +973,8 @@
             + contractBadge
             + repairBadge
             + promoteBadge
+            + busy
+            + rota
             + standingBy
             + '<span class="grow"></span>'
             + fixSettings
@@ -1270,6 +1343,27 @@
                 .acpin { font-size:10px; white-space:nowrap; cursor:help; max-width:220px;
                     overflow:hidden; text-overflow:ellipsis;
                     color:var(--vscode-charts-blue,#3794ff); }
+                /* X-258 -- who is ON it now. GREEN because it is the one fact on this
+                   card about something ALIVE; the blue beside it is configuration and
+                   the yellow is a warning, so three kinds of statement wear three
+                   colours rather than competing for one. */
+                .acbusy { font-size:10px; white-space:nowrap; cursor:help; max-width:240px;
+                    overflow:hidden; text-overflow:ellipsis;
+                    color:var(--vscode-charts-green,#89d185); }
+                /* X-258 -- where it stands in the ROTATION. A bordered pill, because it
+                   is a position in a line and not a label: the shape is what keeps it
+                   from being read as another status word.
+                   ‼️ AND IT IS DELIBERATELY NOT FILLED WITH A COLOUR. The first draft
+                   filled the leading one green and it was photographed beside the green
+                   "who is on it" line on the same card -- one colour carrying two
+                   unrelated meanings (a forecast and a live fact) two centimetres apart.
+                   The word "next" already says which end of the line this is; emphasis
+                   is all the extra the leader needs, and it costs the palette nothing. */
+                .acrota { font-size:10px; padding:1px 7px; border-radius:9px; white-space:nowrap;
+                    cursor:help; border:1px solid var(--vscode-widget-border,#4446);
+                    color:var(--vscode-descriptionForeground,#9d9d9d); }
+                .acrota.on { color:var(--vscode-foreground,#ccc); font-weight:600;
+                    border-color:var(--vscode-foreground,#ccc); }
                 .acbad { cursor:help; }
                 .acbad.ok { background:transparent; color:var(--vscode-descriptionForeground,#9d9d9d);
                     border-color:var(--vscode-widget-border,#4446); }

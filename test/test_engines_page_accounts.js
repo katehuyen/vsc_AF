@@ -311,12 +311,56 @@ const sec = () => {
     // ‼️ A press that acts in twenty seconds with no sign it was heard is
     // indistinguishable from a button that does nothing.
     ok('‼️ a waiting card shows its PLACE in the line, not a spinner that says "soon"',
-        /class="acref queued"[^>]*data-acrefresh="personal">1</.test(h)
-        && /class="acref queued"[^>]*data-acrefresh="spare">2</.test(h));
+        /class="acref queued"[^>]*data-acrefresh="personal">⟳1</.test(h)
+        && /class="acref queued"[^>]*data-acrefresh="spare">⟳2</.test(h));
+    /* ‼️ X-258 — AND THE DIGIT IS NEVER BARE, which is the defect this half of
+     * the item is about. This page now draws TWO orderings — the reading queue
+     * and the rotation — and a naked `2` is read as whichever one the reader
+     * has in mind; it was read that way in the audit that opened the item. The
+     * glyph the idle state already uses travels with the digit so the badge
+     * always says WHICH line it is counting, and the panel names it in full. */
+    ok('‼️ X-258 — …carrying the glyph that says WHICH line it is counting',
+        !/data-acrefresh="[a-z0-9-]+">\d</.test(h)
+        && /Reading queue — number 1 in line for a refresh/.test(h)
+        && /nothing to do with whose turn it is to run/.test(h));
     ok('…and the one in flight says so, in its own state',
         /class="acref reading"[^>]*data-acrefresh="work-1"/.test(h));
     ok('…while a card nobody asked for offers the plain gesture',
         /class="acref idle"[^>]*data-acrefresh="codex-work">⟳</.test(h));
+
+    /* ==== X-258 — who is ON it now, and who is NEXT =======================
+     *
+     * The two questions a live rotation cockpit is opened with, and the page
+     * could answer neither. Both are DRAWN from somewhere that already knows:
+     * the seats from the Console rows, the count from the engine's own
+     * registry inside the slot, the order from `accountOrder` (whose head IS
+     * the `pickAccount` the rotation calls). Nothing here is recomputed.
+     * ------------------------------------------------------------------- */
+    ok('‼️ X-258 — a card says which seat is on it right now',
+        /class="acbusy">● cs1 · developer</.test(h));
+    // ‼️ AND THE HONEST LIMIT IS DRAWN AS A LIMIT. The registry proves a
+    // process is alive on this sign-in; it does not say what the process is, so
+    // the card says the count and refuses to invent the rest.
+    ok('‼️ …and a process this window does not host is COUNTED, never named',
+        /class="acbusy">● 2 others</.test(h)
+        && /signed in as this account and NOT hosted here/.test(h)
+        && /not what it is/.test(h));
+    ok('…and a card with nobody on it draws no such line at all',
+        (h.match(/class="acbusy"/g) || []).length === 2);
+
+    ok('‼️ X-258 — the rotation is drawn, and the leader says NEXT rather than 1',
+        /class="acrota on">🔁 next</.test(h) && /class="acrota">🔁 2nd</.test(h));
+    ok('…and the panel opens with the long form (SHORTHAND) and names the pool',
+        /Next in the rotation/.test(h)
+        && /Of 2 Claude Code sign-ins the rotation can still use/.test(h));
+    // ‼️ AN ACCOUNT AT THE WALL IS OUT OF THE LINE, NOT LAST IN IT. `spare` is
+    // unusable, so it gets NO chip — drawing it as last would offer the reader a
+    // turn the rotation is never going to give it.
+    ok('‼️ …and an unusable sign-in is out of the line rather than last in it',
+        (h.match(/class="acrota/g) || []).length === 4);
+    // ONE SUBJECT, and it is the sentence that keeps the two orderings apart.
+    ok('…and the rotation panel says it is not the reading queue',
+        /Not the same line as the ⟳ button beside it/.test(h));
     ok('‼️ …and the one being read is told it cannot be taken back',
         /already in flight, so it cannot be taken back/.test(h));
 

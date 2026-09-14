@@ -94,6 +94,21 @@ export interface EnginesPanelDeps {
          */
         standingAgents?: string[];
         pinnedAgents?: number;
+        /**
+         * X-258 — who is on this sign-in RIGHT NOW. `seats` are this window's own
+         * Console rows; `others` counts live processes found in the ENGINE'S OWN
+         * registry inside this slot's directory that this window does not host —
+         * a terminal, another window, somebody else's SDK. The count is all that
+         * can honestly be said about those, and the card says no more.
+         */
+        onIt?: { seats: { seat: string; who: string; sessionId: string }[]; others: number };
+        /**
+         * X-258 — this sign-in's place in the rotation, READ off `accountOrder`
+         * (whose head is `pickAccount`) rather than worked out again. `null` =
+         * not in the line at all: at the ceiling or otherwise unusable, which is
+         * a different statement from being last.
+         */
+        line?: { place: number; of: number } | null;
     }[];
     /**
      * ‼️ X-172 — WHAT EACH ENGINE CAN DO ABOUT ACCOUNTS AT ALL, and it is the
