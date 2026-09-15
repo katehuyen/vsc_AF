@@ -269,7 +269,7 @@ const kinds = t => (t.events || []).map(e => e.kind);
         /const askedForResume = Array\.isArray\(stamp\?\.revive\);/.test(ext)
         && /askedForResume\s*\n?\s*\?\s*taskManager\.reviveCutRuns\(\)/.test(ext));
     ok('…and the intent is written ONLY when the restart said resume',
-        /writeRestartStamp\(kind, resume \? planRevive\(consoleHost\.list\(\)\) : undefined\)/.test(ext));
+        /writeRestartStamp\(kind, resume \? planRevive\(consoleHost\.list\(\)\) : undefined, askedBy\)/.test(ext));
     ok('…and what came back is reported to the reader, not done in silence',
         /headless run\(s\) carried on/.test(ext));
 }

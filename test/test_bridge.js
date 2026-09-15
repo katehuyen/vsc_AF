@@ -5313,6 +5313,93 @@ const { opencodeStatus, syncToOpencode } =
                 pendingSeen && fs.existsSync(pendingSeen));
             try { fs.unlinkSync(pendingSeen); } catch { /* ignore */ }
         }
+        // ---------- ‼️ X-310 — THE REQUEST SAYS WHO WROTE IT ----------
+        //
+        // `farm.restart*` has to tell the turn that ASKED to be restarted from
+        // the turns that merely happen to be running: the first consented to
+        // dying, the others did not, and with no name for the asker the op can
+        // only kill everyone or wait for everyone. Both were shipped and the
+        // first cost a session its work mid file-write (2026-09-15).
+        //
+        // The name is free — every CLI this runs under publishes its session id
+        // to its own children, so a tool call the agent makes inherits it — but
+        // it only exists on the other side if af.js really writes it into the
+        // envelope. A-02.10 is this repo's own lesson about a rule that is green
+        // in the planner and dead in the product, so this is measured by READING
+        // THE FILE af.js WROTE rather than by grepping for the line that writes it.
+        {
+            const envRun = async (env, dir) => {
+                const bridgeDir = path.join(tmpStorage, dir);
+                const keys = ['CLAUDE_CODE_SESSION_ID', 'AGENT_FARM_SESSION'];
+                const was = {};
+                for (const k of keys) {
+                    was[k] = process.env[k];
+                    if (env[k] === undefined) { delete process.env[k]; } else { process.env[k] = env[k]; }
+                }
+                const flight = executeBridgeRequest('farm.health', { a: 1 }, bridgeDir, 500);
+                let sent = null;
+                for (let i = 0; i < 200 && !sent; i++) {
+                    const f = (fs.existsSync(bridgeDir) ? fs.readdirSync(bridgeDir) : [])
+                        .find(n => n.endsWith('.request.json'));
+                    if (f) {
+                        try { sent = JSON.parse(fs.readFileSync(path.join(bridgeDir, f), 'utf8')); }
+                        catch { /* still being written — look again */ }
+                    }
+                    if (!sent) { await new Promise(r => setTimeout(r, 5)); }
+                }
+                await flight;
+                for (const k of keys) {
+                    if (was[k] === undefined) { delete process.env[k]; } else { process.env[k] = was[k]; }
+                }
+                return sent;
+            };
+
+            const claude = await envRun({ CLAUDE_CODE_SESSION_ID: 'sess-from-the-env' }, 'env-claude');
+            ok('‼️ X-310: af.js writes the caller the CLI published into the envelope',
+                !!claude && !!claude.from && claude.from.sessionId === 'sess-from-the-env');
+            ok('… and it rides on the ENVELOPE, never inside the op\'s own args',
+                !!claude && claude.args && claude.args.a === 1 && !('from' in claude.args)
+                && !('sessionId' in claude.args));
+
+            const farmTerm = await envRun({ AGENT_FARM_SESSION: 'sess-from-a-terminal' }, 'env-term');
+            ok('… and the terminals Agent Farm opens itself are named the same way',
+                !!farmTerm && !!farmTerm.from && farmTerm.from.sessionId === 'sess-from-a-terminal');
+
+            const nameless = await envRun({}, 'env-none');
+            ok('‼️ … while a caller whose engine publishes nothing STATES nothing — an unknown '
+                + 'asker must look unknown, not empty-but-present',
+                !!nameless && !('from' in nameless));
+        }
+
+        // ---------- ‼️ X-310 — … AND THE RUNNER READS IT BACK ----------
+        {
+            const round = parseBridgeRequest(JSON.stringify(
+                { op: 'farm.health', args: { a: 1 }, from: { sessionId: ' sess-1 ' } }));
+            ok('‼️ X-310: the envelope\'s caller survives the parse, trimmed',
+                !('error' in round) && round.from && round.from.sessionId === 'sess-1');
+            const bare = parseBridgeRequest(JSON.stringify({ op: 'farm.health', args: {} }));
+            ok('… and a request that names nobody produces no caller at all',
+                !('error' in bare) && !('from' in bare));
+            // ‼️ THE ONE CONFUSION THIS MUST NEVER MAKE. Ops carry a `sessionId`
+            // arg of their own all over this catalogue; it names a session they
+            // are ABOUT, and reading one as the caller would let any request
+            // claim to be any turn.
+            const spoof = parseBridgeRequest(JSON.stringify(
+                { op: 'sessions.open', args: { sessionId: 'somebody-else' } }));
+            ok('‼️ … and an op\'s own sessionId arg is never read as the caller',
+                !('error' in spoof) && !('from' in spoof) && spoof.args.sessionId === 'somebody-else');
+
+            const reg = new BridgeRegistry();
+            let seen = 'not called';
+            reg.register([{ op: 'x.echo', describe: 'test', handler: (_a, f) => { seen = f; return 1; } }]);
+            await reg.dispatch('x.echo', {}, { sessionId: 'sess-9' });
+            ok('‼️ … and dispatch hands it to the handler, or no op could ever use it',
+                !!seen && seen.sessionId === 'sess-9');
+            await reg.dispatch('x.echo', {});
+            ok('… while an internal call — a panel click, a command — hands over nothing',
+                seen === undefined);
+        }
+
         // (3) the runner in extension.ts: claim first, never wait, remember answers
         {
             const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
@@ -5322,7 +5409,7 @@ const { opencodeStatus, syncToOpencode } =
             ok('…and it really contains no await', !/\bawait\b/.test(body));
             const claimAt = body.indexOf('try { fs.unlinkSync(reqFile); } catch { continue; }');
             const markAt = body.indexOf('bridgePendingFile(id)');
-            const dispatchAt = body.indexOf('bridge.dispatch(parsed.op, parsed.args)');
+            const dispatchAt = body.indexOf('bridge.dispatch(parsed.op, parsed.args, parsed.from)');
             ok('‼️ X-268: the request is taken off the disk BEFORE it is dispatched (at most once)',
                 claimAt > 0 && dispatchAt > claimAt);
             ok('‼️ …and the pending marker is written between the claim and the dispatch',
@@ -5330,7 +5417,14 @@ const { opencodeStatus, syncToOpencode } =
             ok('…a request in flight is skipped by the next scan', /if \(bridgeInFlight\.has\(id\)\) \{ continue; \}/.test(body));
             ok('…a request id already answered is answered from memory, never run again',
                 /const known = bridgeAnswered\.get\(id\);[\s\S]{0,200}answer\(known\)/.test(body));
-            ok('…the dispatch is not awaited', /bridge\.dispatch\(parsed\.op, parsed\.args\)\.then\(finish/.test(body));
+            ok('…the dispatch is not awaited',
+                /bridge\.dispatch\(parsed\.op, parsed\.args, parsed\.from\)\.then\(finish/.test(body));
+            // ‼️ X-310 — AND IT CARRIES WHO WROTE THE REQUEST. The restart ops exempt the
+            // asker's own turn from blocking and speak into its seat alone on the other
+            // side; a runner that dropped the envelope's caller would leave them with
+            // nothing to tell one live turn from another, which is the whole defect.
+            ok('‼️ X-310: …and it carries the caller the envelope named',
+                /parsed\.from/.test(body));
             ok('…the marker is removed when the answer is written', /answer\(outcome\);\s*try \{ fs\.unlinkSync\(bridgePendingFile\(id\)\); \}/.test(body));
             ok('‼️ X-268: a marker from a previous boot is CLOSED with an honest answer on activation, never re-run',
                 /const closeStalePendingRequests = \(\): void => \{[\s\S]*?mark\.bootId === bootId[\s\S]*?restarted while/.test(ext)

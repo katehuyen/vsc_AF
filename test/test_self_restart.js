@@ -189,39 +189,91 @@ const working = (id, agentName) => ({ id, agentName, status: 'working' });
         planRestart({ kind: 'extensionHost', force: true }, busy).decision === 'restarting');
 }
 
-// ---------- X-232: a session that will be TAKEN UP AGAIN is not a loss ----------
+// ---------- X-232 + ‼️ X-310: the one turn that AGREED to die is the caller's ----------
+//
+// X-232 exempted every session the engine had named, on the reading that a
+// resume takes it up again so it is not a loss. An idle card is no blocker at
+// all since A-02.4, so that exemption only ever reached sessions IN FLIGHT --
+// and for those the reading is false: the revive marks them `midTurn` precisely
+// because the answer they were writing is gone. Measured 2026-09-15: a session
+// asked for a restart to load a build, and a second one on another card, mid
+// file-write, was taken down with it having consented to nothing.
+//
+// The asker's turn is different in kind -- it made the call, it knows the seat
+// dies, and waiting for it would mean waiting for a turn that cannot end until
+// this answer is written. So the exemption is the asker's alone.
 {
-    const withId = { id: 'h1', agentName: 'developer', status: 'working', sessionId: 'sess-1' };
-    // ‼️ IN FLIGHT, and unnamed by the engine — since A-02.4 an `idle` card is
+    const ASKER = 'sess-asker';
+    const asker = { id: 'h1', agentName: 'developer', status: 'working', sessionId: ASKER };
+    // ‼️ IN FLIGHT, and unnamed by the engine -- since A-02.4 an `idle` card is
     // not a blocker at all, so a resume test written on one would measure the
     // idle rule twice and X-232 not once.
     const noId = { id: 'h2', agentName: 'basit', status: 'working' };
+    // ‼️ X-310's victim, in the shape it was measured in: another agent, on
+    // another card, mid-turn, that asked for nothing.
+    const bystander = { id: 'h3', agentName: 'gemini', status: 'working', sessionId: 'sess-other' };
 
     ok('without resume, a turn in flight blocks whether or not the engine named it',
-        liveBlockers(world({ sessions: [withId, noId] }), 'extensionHost').length === 2);
+        liveBlockers(world({ sessions: [asker, noId] }), 'extensionHost').length === 2);
 
-    const saved = liveBlockers(world({ sessions: [withId, noId] }), 'extensionHost', true);
-    ok('‼️ with resume, a session the engine HAS named is no longer a blocker — it comes back',
+    const saved = liveBlockers(world({ sessions: [asker, noId] }), 'extensionHost', true, ASKER);
+    ok('‼️ X-232 -- with resume, the ASKER\'s own turn is no longer a blocker: it comes back',
         !saved.some(b => b.id === 'h1'));
-    ok('‼️ …but one it never named still is: there is nothing to resume it by',
+    ok('‼️ ...but one the engine never named still is: there is nothing to resume it by',
         saved.length === 1 && saved[0].id === 'h2');
 
-    ok('so a window full of resumable sessions restarts at once instead of waiting',
-        planRestart({ kind: 'extensionHost', resume: true },
-            world({ sessions: [withId] })).decision === 'restarting');
-    ok('…and one holding an unnamed session still arms',
-        planRestart({ kind: 'extensionHost', resume: true },
+    // ‼️ X-310 -- THE DEFECT, IN ONE LINE: this used to come back empty.
+    const withOther = liveBlockers(
+        world({ sessions: [asker, bystander] }), 'extensionHost', true, ASKER);
+    ok('‼️ X-310 -- a turn that asked for nothing is not traded away by somebody else\'s resume',
+        withOther.length === 1 && withOther[0].id === 'h3');
+    ok('...so the restart ARMS behind it instead of coming down on it',
+        planRestart({ kind: 'extensionHost', resume: true, askedBy: ASKER },
+            world({ sessions: [asker, bystander] })).decision === 'armed');
+
+    ok('a window whose only turn in flight is the asker\'s restarts at once',
+        planRestart({ kind: 'extensionHost', resume: true, askedBy: ASKER },
+            world({ sessions: [asker] })).decision === 'restarting');
+    ok('...and one holding an unnamed session still arms',
+        planRestart({ kind: 'extensionHost', resume: true, askedBy: ASKER },
             world({ sessions: [noId] })).decision === 'armed');
-    ok('‼️ a terminal is never saved by resume — a window reload still waits for it',
-        planRestart({ kind: 'window', resume: true },
-            world({ sessions: [withId], terminals: [{ name: 'claude' }] })).decision === 'armed');
+
+    // ‼️ X-310 -- AND AN UNKNOWN ASKER EXEMPTS NOBODY. An engine that publishes
+    // no session id is not a reason to kill a stranger's turn: the plan arms,
+    // the caller's own turn ends, and it fires -- slower, never destructive.
+    ok('‼️ an asker that named itself nowhere exempts nothing -- it waits instead of killing',
+        liveBlockers(world({ sessions: [asker] }), 'extensionHost', true).length === 1
+        && planRestart({ kind: 'extensionHost', resume: true },
+            world({ sessions: [asker] })).decision === 'armed');
+    ok('...and naming a session that is not the one in flight exempts nothing either',
+        planRestart({ kind: 'extensionHost', resume: true, askedBy: 'sess-ghost' },
+            world({ sessions: [asker] })).decision === 'armed');
+
+    ok('‼️ a terminal is never saved by resume -- a window reload still waits for it',
+        planRestart({ kind: 'window', resume: true, askedBy: ASKER },
+            world({ sessions: [asker], terminals: [{ name: 'claude' }] })).decision === 'armed');
+
+    // force was always "do it anyway and lose them", and X-310 does not touch
+    // that -- but what it takes is now NAMED, and the asker is not in the list.
+    const forced = planRestart(
+        { kind: 'extensionHost', resume: true, askedBy: ASKER, force: true },
+        world({ sessions: [asker, bystander] }));
+    ok('force still goes through everything, and says whose turn it is taking',
+        forced.decision === 'restarting'
+        && forced.killed.length === 1 && forced.killed[0].id === 'h3');
 
     const armed = {
-        kind: 'extensionHost', armedAt: NOW, delayMs: RESTART_DELAY_MS, waitingFor: [], resume: true
+        kind: 'extensionHost', armedAt: NOW, delayMs: RESTART_DELAY_MS, waitingFor: [],
+        resume: true, askedBy: ASKER
     };
-    ok('an armed plan waits by its OWN rule — resume was asked once, not re-asked at firing',
-        armedReady(armed, world({ sessions: [withId] }))
+    ok('an armed plan waits by its OWN rule -- resume and the asker were settled once, not re-asked',
+        armedReady(armed, world({ sessions: [asker] }))
         && !armedReady(armed, world({ sessions: [noId] })));
+    ok('‼️ ...and it keeps waiting for the bystander it armed for',
+        !armedReady(armed, world({ sessions: [asker, bystander] })));
+    ok('‼️ ...and an armed plan that never learned who asked waits for the asker too',
+        !armedReady({ kind: 'extensionHost', armedAt: NOW, delayMs: RESTART_DELAY_MS,
+            waitingFor: [], resume: true }, world({ sessions: [asker] })));
 }
 
 // ---------- armedReady: the event the firing waits for ----------
@@ -428,6 +480,34 @@ const working = (id, agentName) => ({ id, agentName, status: 'working' });
     ok('…and it still carries the three the blockers themselves are built from',
         /\bid:\s*s\.id/.test(world) && /agentName:\s*s\.agentName/.test(world)
         && /status:\s*s\.status/.test(world));
+
+    // ---------- ‼️ X-310: AND THE ASKER REACHES THE PLANNER THE SAME WAY ----------
+    //
+    // The exemption above keys on `askedBy`, and `askedBy` is worth exactly as
+    // much as the wiring that fills it. A-02.10 is the precedent and the warning
+    // in one: `resume` keyed on a field the wiring dropped, every X-232 test was
+    // green, and the branch was unreachable in the product for as long as nobody
+    // looked at the join. So the join is pinned here, beside the rule.
+    ok('‼️ the restart door is handed the CALLER, not just the args',
+        /const askRestart = \(kind: RestartKind, args: Record<string, unknown>, from\?: BridgeCaller\)/
+            .test(extTs));
+    ok('‼️ …and it reads the asker off the ENVELOPE, so no caller can name somebody else',
+        /const askedBy = String\(from\?\.sessionId \?\? ''\)\.trim\(\) \|\| undefined;/.test(extTs));
+    ok('…and both restart ops pass it through',
+        /handler: \(args, from\) => askRestart\('extensionHost', args, from\)/.test(extTs)
+        && /handler: \(args, from\) => askRestart\('window', args, from\)/.test(extTs));
+    ok('…and the planner is actually told',
+        /resume, askedBy,/.test(extTs));
+    ok('‼️ …an ARMED plan remembers who asked, or the wait would fire on a different rule '
+        + 'from the one it was armed with',
+        /\.\.\.\(askedBy \? \{ askedBy \} : \{\}\),/.test(extTs)
+        && /fireRestart\(a\.kind, a\.delayMs, a\.resume === true, a\.askedBy\)/.test(extTs));
+    ok('‼️ …and it is written into the stamp, which is the only thing that survives the death',
+        /const writeRestartStamp = \(kind: RestartKind, plan\?: RevivePlan, askedBy\?: string\)/.test(extTs)
+        && /\.\.\.\(askedBy \? \{ askedBy \} : \{\}\)\s*\n\s*\}, null, 2\), 'utf8'\);/.test(extTs));
+    ok('…and the op says out loud that another agent\'s turn is waited for, not taken',
+        /NOBODY ELSE\\?'S TURN IS TRADED AWAY BY/.test(extTs)
+        && /it consented to nothing/.test(extTs));
     ok('…and terminals, lastRestartAt, armed and build are all still sent',
         /terminals:/.test(world) && /lastRestartAt:/.test(world)
         && /armed:/.test(world) && /build:/.test(world));

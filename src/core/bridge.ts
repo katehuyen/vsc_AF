@@ -28,11 +28,31 @@ import { INTERACTIVE_CLOSES, INTERACTIVE_TARGETS, ONE_EXECUTOR, twoExecutors, va
 import { describeRetry, normalizeRetry, retryRefusal, RetryPolicy } from './retry';
 import { normalizeRounds, TaskRound } from './taskRounds';
 
+/**
+ * ‼️ X-310 — WHO WROTE THE REQUEST, when the writer can say so.
+ *
+ * A bridge request is a file on disk and says nothing about its author, which
+ * was fine while no op needed to tell one caller from another. `farm.restart*`
+ * does: the turn that ASKED to be restarted consented to dying and every other
+ * turn in flight did not, and without a name for the asker the only choices are
+ * to kill everyone or to wait for everyone.
+ *
+ * It is the engine's own session id, read by `af.js` off the environment the
+ * CLI already publishes to its children — nothing new is spawned, injected or
+ * remembered to make it true. It is a CLAIM and never a permission: no op may
+ * grant anything on the strength of it, and every op must still be correct when
+ * it is absent (a panel click, a command, an engine that publishes nothing).
+ */
+export interface BridgeCaller {
+    /** the engine's session id, as the caller's own environment stated it */
+    sessionId?: string;
+}
+
 export interface BridgeOpSpec {
     op: string;                       // e.g. "schedules.add"
     /** One-line contract shown in the farm.ops catalog: what it does + args. */
     describe: string;
-    handler: (args: Record<string, unknown>) => Promise<unknown> | unknown;
+    handler: (args: Record<string, unknown>, from?: BridgeCaller) => Promise<unknown> | unknown;
 }
 
 export interface BridgeOutcome {
@@ -115,7 +135,7 @@ export class BridgeRegistry {
             .sort((a, b) => a.op.localeCompare(b.op));
     }
 
-    async dispatch(op: string, args: Record<string, unknown>): Promise<BridgeOutcome> {
+    async dispatch(op: string, args: Record<string, unknown>, from?: BridgeCaller): Promise<BridgeOutcome> {
         const spec = this.ops.get(op);
         if (!spec) {
             return {
@@ -124,7 +144,7 @@ export class BridgeRegistry {
             };
         }
         try {
-            return { ok: true, result: await spec.handler(args) };
+            return { ok: true, result: await spec.handler(args, from) };
         } catch (e) {
             // A refusal we composed ourselves: whole sentence, and its decision.
             if (e instanceof BridgeRefusal) {
@@ -161,7 +181,8 @@ function unwrapPsString(v: unknown): unknown {
 }
 
 /** Validate a request file's content. Errors are messages for the response. */
-export function parseBridgeRequest(text: string): { op: string; args: Record<string, unknown> } | { error: string } {
+export function parseBridgeRequest(text: string):
+    { op: string; args: Record<string, unknown>; from?: BridgeCaller } | { error: string } {
     // Strip a UTF-8 BOM — PowerShell's `Set-Content -Encoding utf8` (the natural
     // way a Windows agent writes the file) prepends one, and JSON.parse rejects
     // it. The bridge must accept what the callers actually produce.
@@ -182,7 +203,14 @@ export function parseBridgeRequest(text: string): { op: string; args: Record<str
         : {};
     const args: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(raw)) { args[k] = unwrapPsString(v); }
-    return { op: o.op.trim(), args };
+    // X-310 — the envelope's own field, never one of the op's args: a caller
+    // that wrote `sessionId` into `args` is naming something for that op, and
+    // the two must not be able to be read as each other.
+    const env = o.from && typeof o.from === 'object' && !Array.isArray(o.from)
+        ? o.from as Record<string, unknown>
+        : null;
+    const sessionId = env ? String(unwrapPsString(env.sessionId) ?? '').trim() : '';
+    return { op: o.op.trim(), args, ...(sessionId ? { from: { sessionId } } : {}) };
 }
 
 /** Throw with a friendly message — handlers use this for arg validation. */

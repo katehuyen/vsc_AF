@@ -68,6 +68,25 @@
  * window reload instead, and the answer says so — because the alternative is
  * what happened: a restart that reports success, changes nothing, and sends the
  * caller into a poll loop that can never come true.
+ *
+ * ‼️ 5. AND ONLY THE SESSION THAT ASKED CONSENTED TO DYING (X-310). X-232's
+ * exemption reads "a session the engine has named comes back, so it is not a
+ * loss" — and an idle one is no blocker anyway (A-02.4), so the exemption only
+ * ever applied to sessions IN FLIGHT, where the claim is false: this file's own
+ * revive marks such a session `midTurn` precisely because the answer it was
+ * writing is lost. Measured 2026-09-15: one session asked for a restart to load
+ * a build and a second one, mid file-write on another card, was taken down with
+ * it without being waited for — it had agreed to nothing. The asker's own turn
+ * is different in kind: it made the call, it knows the seat dies, and a resume
+ * takes it up again. So the exemption is now the ASKER's alone (`askedBy`, the
+ * engine session id the bridge request carried), and every other turn in flight
+ * blocks — the plan arms and fires by itself when the last one is done.
+ *
+ * ‼️ AND AN UNKNOWN ASKER EXEMPTS NOBODY. A caller whose engine does not publish
+ * its session id is not a reason to kill a stranger's turn: with no `askedBy`
+ * the plan simply arms, the caller's own turn ends, and it fires — the
+ * pre-X-232 behaviour, which is slower and never destructive. Degrading toward
+ * waiting is the only safe direction this rule has.
  */
 
 export type RestartKind = 'extensionHost' | 'window';
@@ -112,6 +131,10 @@ export interface ArmedRestart {
      *  it fires by that rule: what a resume can save was never a reason to wait,
      *  so re-asking the question at firing time would be a different question. */
     resume?: boolean;
+    /** ‼️ X-310 — the engine session id of whoever asked, carried for the same
+     *  reason `resume` is: the exemption is the asker's, and re-deciding who
+     *  that was at firing time would be a different question. */
+    askedBy?: string;
 }
 
 export interface RestartWorld {
@@ -175,6 +198,11 @@ export interface RestartAsk {
     delayMs?: unknown;
     /** X-232 — bring the live console sessions back on the other side (consoleRevive.ts). */
     resume?: boolean;
+    /** ‼️ X-310 — WHO IS ASKING, as the engine's own session id. The bridge
+     *  reads it off the request the caller wrote (`from.sessionId`); a door
+     *  with no session behind it — a panel click, a command — states nothing,
+     *  and nothing is what it is treated as. */
+    askedBy?: string;
     /** Default true. A host restart that would leave a newly installed build on
      *  disk is planned as a window reload instead. `false` bounces the host as
      *  asked and REPORTS the build it is leaving behind — for the caller that
@@ -235,14 +263,21 @@ export function clampRestartDelay(v: unknown): number {
  * What this command would take down, right now. The terminals are counted for a
  * window reload only — see the header: they are not the extension host's.
  */
-export function liveBlockers(world: RestartWorld, kind: RestartKind, resume = false): RestartBlocker[] {
+export function liveBlockers(
+    world: RestartWorld, kind: RestartKind, resume = false, askedBy?: string
+): RestartBlocker[] {
+    const self = String(askedBy ?? '').trim();
     const out: RestartBlocker[] = (world.sessions ?? [])
         .filter(s => SESSION_IN_FLIGHT.has(String(s.status)))
-        // ‼️ X-232 — A SESSION THE ENGINE HAS NAMED IS TAKEN UP AGAIN on the
-        // other side, so it is not a loss to weigh against the restart. One it
-        // never named has nothing to be resumed BY, and is still every bit the
-        // loss it was.
-        .filter(s => !(resume && s.sessionId))
+        // ‼️ X-310 — THE ONE TURN THAT AGREED TO DIE IS THE CALLER'S OWN. It made
+        // this call, it knows the seat goes down, and a resume takes it up again
+        // — so waiting for it would be waiting for a decision already taken (and
+        // for a turn that cannot end until this answer is written, which is the
+        // deadlock X-232 was reaching for). Every OTHER turn in flight consented
+        // to nothing: it blocks, and the plan arms behind it. An asker the
+        // engine never named matches nothing here and blocks like any other,
+        // which is correct twice over — there is nothing to resume it by either.
+        .filter(s => !(resume && !!self && s.sessionId === self))
         .map(s => ({
             kind: 'console' as const,
             id: s.id,
@@ -324,7 +359,7 @@ export function planRestart(ask: RestartAsk, world: RestartWorld): RestartPlan {
         });
     }
 
-    const blockers = liveBlockers(world, kind, ask.resume === true);
+    const blockers = liveBlockers(world, kind, ask.resume === true, ask.askedBy);
 
     if (ask.force) {
         return out({ decision: 'restarting', kind, command, delayMs, killed: blockers });
@@ -406,5 +441,5 @@ function buildNote(build: RestartBuild | undefined): string | undefined {
 
 /** The event an armed plan waits for — nothing else, and no clock. */
 export function armedReady(armed: ArmedRestart, world: RestartWorld): boolean {
-    return liveBlockers(world, armed.kind, armed.resume === true).length === 0;
+    return liveBlockers(world, armed.kind, armed.resume === true, armed.askedBy).length === 0;
 }

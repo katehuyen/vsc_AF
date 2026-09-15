@@ -286,6 +286,31 @@ interface BridgeReply {
     detail?: unknown;
 }
 
+/**
+ * ‼️ X-310 — WHO IS WRITING THIS REQUEST, when the environment already says so.
+ *
+ * `farm.restartExtensionHost` has to tell the turn that ASKED to be restarted
+ * from the turns that merely happen to be running: the first consented to
+ * dying, the others did not, and without a name for the asker the op can only
+ * kill everyone or wait for everyone. Both were shipped, and the first one cost
+ * a session its work mid file-write.
+ *
+ * The name is free — every CLI this runs under publishes its session id to its
+ * own children, so a Bash tool call the agent makes inherits it. Nothing is
+ * spawned, injected or remembered to produce it. `CLAUDE_CODE_SESSION_ID` is
+ * Claude Code's; `AGENT_FARM_SESSION` is the one Agent Farm sets on the
+ * terminals it opens itself. An engine that publishes neither states nothing,
+ * which is exactly what an unknown asker must look like from the other side.
+ *
+ * It is a CLAIM, never a credential: no op may grant anything on it, and every
+ * op must still be correct when it is absent.
+ */
+function callerIdentity(): { sessionId: string } | undefined {
+    const sid = String(process.env.CLAUDE_CODE_SESSION_ID
+        || process.env.AGENT_FARM_SESSION || '').trim();
+    return sid ? { sessionId: sid } : undefined;
+}
+
 export async function executeBridgeRequest(
     op: string,
     args: Record<string, unknown>,
@@ -317,7 +342,8 @@ export async function executeBridgeRequest(
     };
 
     // Write request file
-    const requestData = JSON.stringify({ op, args }, null, 2);
+    const from = callerIdentity();
+    const requestData = JSON.stringify({ op, args, ...(from ? { from } : {}) }, null, 2);
     fs.writeFileSync(reqFile, requestData, 'utf8');
 
     const start = Date.now();

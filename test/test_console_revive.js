@@ -174,8 +174,31 @@ const live = (over = {}) => ({
     // ‼️ THE SCOPE. This is the assertion that stops a future edit from nudging
     // every revived seat, which would start spending on conversations that were
     // waiting for the user.
-    ok('‼️ ONLY a seat that was mid-turn is nudged — an idle one was waiting for a human',
-        /if \(row\.midTurn\) \{ nudgeRevived\(seatId\); \}/.test(extTs));
+    ok('‼️ ONLY a seat that was mid-turn AND ASKED for the restart is nudged',
+        /if \(row\.midTurn && itAsked\) \{ nudgeRevived\(seatId\); \}/.test(extTs));
+
+    // ‼️ X-310 — AND THE OTHER HALF OF THE SCOPE, which is the one that was
+    // measured going wrong. Being mid-turn says a turn was CUT, not that this
+    // seat wanted it cut: on 2026-09-15 a session that had asked for nothing was
+    // taken down mid file-write and then handed the same "carry on from where
+    // you were", and it woke up and acted on guesses about a conversation whose
+    // last exchange had been destroyed under it.
+    ok('‼️ X-310: the asker is read off the STAMP, so it survives the death it is about',
+        /askedBy\?: string;/.test(extTs)
+        && /const askedBy = String\(stamp\?\.askedBy \?\? ''\)\.trim\(\);/.test(extTs)
+        && /const itAsked = !!askedBy && row\.sessionId === askedBy;/.test(extTs));
+    ok('‼️ …and it is matched on the ENGINE session id, never the seat id a restart does not survive',
+        /row\.sessionId === askedBy/.test(extTs) && !/row\.id === askedBy/.test(extTs));
+    ok('‼️ …and a seat cut without asking is TOLD it is being left alone, not left silent',
+        /: REVIVE_HELD\)/.test(extTs));
+
+    const { REVIVE_HELD } = require(path.join(__dirname, '..', 'out', 'core', 'consoleRevive.js'));
+    ok('…and that sentence says all three things the reader needs: what was lost, that nothing '
+        + 'was said into it, and that it is now theirs',
+        /lost on the way/.test(REVIVE_HELD)
+        && /did not ask for the restart/.test(REVIVE_HELD)
+        && /nothing has been said into it/.test(REVIVE_HELD)
+        && /waiting for you/.test(REVIVE_HELD));
 
     // And the sentence the reader sees no longer tells them to do it by hand.
     ok('…and the card no longer says "ask again" while the farm is asking for them',

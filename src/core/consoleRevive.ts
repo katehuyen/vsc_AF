@@ -195,6 +195,36 @@ export const REVIVE_NUDGE =
     + 'were. If you cannot tell from the conversation above where that was, say so and stop — '
     + 'do not guess at work you may already have done.';
 
+/**
+ * ‼️ X-310 — AND IT GOES TO THE SEAT THAT ASKED FOR THE RESTART, NOBODY ELSE.
+ *
+ * B-03.7 narrowed the nudge from every seat to every MID-TURN seat, which is
+ * one step short of the truth: being mid-turn says a turn was cut, not that
+ * this seat wanted it cut. Measured 2026-09-15 — one session asked for the
+ * restart and a second, on another card and mid file-write, was taken down with
+ * it; both were then handed the same "carry on from where you were", and the
+ * one that had consented to nothing woke up and acted on guesses in a
+ * conversation whose last exchange had been destroyed under it.
+ *
+ * The asker is the one place continuing is resuming rather than inventing: it
+ * made the call, its last words before it are its own instructions to itself,
+ * and it knew the seat was going down. A session cut without being asked is
+ * brought back whole and left ALONE — seat live, scrollback restored, nothing
+ * spoken into it — so the next word in it is the user's. That is not a lesser
+ * outcome: an agent nobody has told what happened cannot tell a lost reply from
+ * a reply it never wrote, and this whole family of items exists because the
+ * answer to "I cannot tell" was being improvised instead of said.
+ *
+ * ‼️ AND THE CARD SAYS SO ITSELF, in the note above the scrollback, or the
+ * silence would be the one thing the reader cannot interpret: they would see a
+ * card that had been answering, is not answering now, and says nothing about
+ * why. This is the sentence that replaces "it is being asked to carry on".
+ */
+export const REVIVE_HELD =
+    ' It was ANSWERING when the host went down, so that one reply was lost on the way —'
+    + ' nothing before it is missing. This session did not ask for the restart, so nothing has'
+    + ' been said into it: it is waiting for you rather than guessing where it was.';
+
 /** A history that is nothing but the placeholder — i.e. a read that has not
  *  happened yet rather than a conversation. Anything else is left alone. */
 export function isPlaceholderHistory(rows: { id: string }[] | undefined): boolean {

@@ -130,7 +130,8 @@ import {
     newSentry, SENTRY_DEFAULT_POLL_MIN, SentryRecord, sentryRunning
 } from './core/sentryCampaign';
 import {
-    isPlaceholderHistory, planRevive, REVIVE_NUDGE, REVIVE_PLACEHOLDER_ID, reviveInit, RevivePlan, ReviveRow, ReviveSkip
+    isPlaceholderHistory, planRevive, REVIVE_HELD, REVIVE_NUDGE, REVIVE_PLACEHOLDER_ID, reviveInit, RevivePlan,
+    ReviveRow, ReviveSkip
 } from './core/consoleRevive';
 import { armedRestartWait, fleetWaits, FleetWait } from './core/waits';
 import {
@@ -354,7 +355,8 @@ import {
 } from './core/suggest';
 import { buildWeeklyFactsText, generateWeeklySummary, isoWeek, WeeklyFacts } from './core/summary';
 import {
-    argSessionIds, argStr, BridgeOutcome, BridgeRefusal, BridgeRegistry, bridgeDimsOut, bridgePage, bridgeRunDimensions,
+    argSessionIds, argStr, BridgeCaller, BridgeOutcome, BridgeRefusal, BridgeRegistry, bridgeDimsOut, bridgePage,
+    bridgeRunDimensions,
     DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, ROUTE_NOTE, SUPERPOWERS_NOTE,
     needOneExecutor, needRoutableEngine, optBool, optNum, optStr, parseBridgeRequest, stageBridgeCli
 } from './core/bridge';
@@ -15807,6 +15809,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         at: number; kind: string; fromBootId: string; fromVersion: string;
         /** X-232 — the sessions to take up on the other side, and the ones that could not be */
         revive?: ReviveRow[]; skipped?: ReviveSkip[];
+        /** ‼️ X-310 — the engine session id of the turn that ASKED for this
+         *  restart, carried across the death because only that seat may be
+         *  spoken into on the other side. Absent when nobody named themselves —
+         *  and absent is then read as "nobody", never as "everybody". */
+        askedBy?: string;
     }
     const readRestartStamp = (): RestartStamp | null => {
         try { return JSON.parse(fs.readFileSync(restartStampFile, 'utf8')) as RestartStamp; }
@@ -15816,12 +15823,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  and a guard that is written after the process is asked to die is not
      *  there on the boot it exists for. X-232 hangs the revive plan on the same
      *  write for the same reason: it has to survive the death it is about. */
-    const writeRestartStamp = (kind: RestartKind, plan?: RevivePlan): void => {
+    const writeRestartStamp = (kind: RestartKind, plan?: RevivePlan, askedBy?: string): void => {
         try {
             fs.mkdirSync(path.dirname(restartStampFile), { recursive: true });
             fs.writeFileSync(restartStampFile, JSON.stringify({
                 at: Date.now(), kind, fromBootId: bootId, fromVersion: extVersion,
-                revive: plan?.rows, skipped: plan?.skipped
+                revive: plan?.rows, skipped: plan?.skipped,
+                ...(askedBy ? { askedBy } : {})
             }, null, 2), 'utf8');
         } catch { /* the cooldown is a guard, not a precondition */ }
     };
@@ -15933,10 +15941,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         armed: armedRestart,
         build: buildOnDisk()
     });
-    const fireRestart = (kind: RestartKind, delayMs: number, resume = false): void => {
+    const fireRestart = (kind: RestartKind, delayMs: number, resume = false, askedBy?: string): void => {
         // ‼️ X-232 — WHAT IS RUNNING IS WRITTEN DOWN BEFORE THE PROCESS DIES.
-        // Same stamp, same synchronous write, same reason.
-        writeRestartStamp(kind, resume ? planRevive(consoleHost.list()) : undefined);
+        // Same stamp, same synchronous write, same reason. X-310 — and WHO ASKED
+        // rides with it, because on the other side that is the difference
+        // between a seat that is told to carry on and one that is left alone.
+        writeRestartStamp(kind, resume ? planRevive(consoleHost.list()) : undefined, askedBy);
         armedRestart = null;
         if (armTimer) { clearInterval(armTimer); armTimer = null; }
         setTimeout(() => { void vscode.commands.executeCommand(RESTART_COMMANDS[kind]); }, delayMs);
@@ -15949,24 +15959,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (armTimer) { clearInterval(armTimer); armTimer = null; }
                 return;
             }
-            if (armedReady(a, restartWorld())) { fireRestart(a.kind, a.delayMs, a.resume === true); }
+            if (armedReady(a, restartWorld())) {
+                fireRestart(a.kind, a.delayMs, a.resume === true, a.askedBy);
+            }
         }, 5000);
     };
     context.subscriptions.push({ dispose: () => { if (armTimer) { clearInterval(armTimer); } } });
     const RESTART_WHENS = new Set(['auto', 'now', 'idle', 'cancel']);
-    const askRestart = (kind: RestartKind, args: Record<string, unknown>) => {
+    const askRestart = (kind: RestartKind, args: Record<string, unknown>, from?: BridgeCaller) => {
         // An unrecognised `when` is refused rather than quietly read as `auto`:
         // a caller that asked to wait must never be restarted instead.
         if (typeof args.when === 'string' && !RESTART_WHENS.has(args.when)) {
             throw new Error(`Unknown when "${args.when}" — one of auto | now | idle | cancel.`);
         }
         const resume = args.resume === true;
+        /**
+         * ‼️ X-310 — THE ASKER, AND ONLY FROM THE ENVELOPE. A caller may not
+         * name somebody else: this is read off `from`, which `af.js` fills from
+         * the CLI's own environment, never off `args`. A door with no session
+         * behind it (a panel button, a command) states nothing and exempts
+         * nothing, which is the conservative end of the rule and the right one.
+         */
+        const askedBy = String(from?.sessionId ?? '').trim() || undefined;
         const plan = planRestart({
             kind,
             when: typeof args.when === 'string' ? args.when as RestartWhen : undefined,
             force: args.force === true,
             delayMs: args.delayMs,
-            resume,
+            resume, askedBy,
             // Only an explicit `false` opts out: an absent argument means "load
             // the build", because that is what the caller who installed one wants
             // and what the op said it would do.
@@ -15993,11 +16013,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 kind: plan.kind, armedAt: plan.armedAt,
                 // ‼️ X-231 — the plan's own sentence, carried rather than re-written.
                 delayMs: plan.delayMs, waitingFor: plan.waitingFor, resume,
+                // X-310 — asked once, not re-decided when the wait ends
+                ...(askedBy ? { askedBy } : {}),
                 reason: plan.reason
             };
             watchArmed();
         } else {
-            fireRestart(plan.kind, plan.delayMs, resume);
+            fireRestart(plan.kind, plan.delayMs, resume, askedBy);
         }
         return {
             ...plan, bootId, version: extVersion,
@@ -16150,8 +16172,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'than wait | idle = always wait for quiet | cancel = call off what is armed), force? '
                 + '(restart through live sessions and lose them), resume? (X-232 — take the live console '
                 + 'sessions up again on the other side, in their own seats, by the id their engine gave '
-                + 'them: what a resume saves stops being a reason to wait, and a session the engine never '
-                + 'named is still reported as lost. ‼️ B-03.8 — resume ALSO carries the HEADLESS runs this '
+                + 'them: YOUR OWN turn stops being a reason to wait, and a session the engine never '
+                + 'named is still reported as lost. ‼️ X-310 — BUT NOBODY ELSE\'S TURN IS TRADED AWAY BY '
+                + 'YOUR RESUME: another agent answering on another card is WAITED for (the plan arms and '
+                + 'fires by itself when its turn ends), because it consented to nothing — and on the other '
+                + 'side only the seat that asked is spoken into, while one cut without asking comes back '
+                + 'whole, is told so on its card, and is left for the user. An asker whose engine '
+                + 'publishes no session id exempts nobody and simply waits. ‼️ B-03.8 — resume ALSO carries the HEADLESS runs this '
                 + 'restart cuts: a running task is picked back up in its own conversation with the '
                 + 'continuation words, never the original prompt, and never more than 3 times in case the '
                 + 'host is restarting in a loop. Without resume they go back on the queue and wait for a '
@@ -16159,7 +16186,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'in this: they are still cancelled and offered, by an earlier decision), loadBuild? (false = bounce the host as asked and be '
                 + 'told what it is leaving on disk), delayMs?. Then poll farm.health until bootId changes '
                 + 'and build.pending is false.',
-            handler: (args) => askRestart('extensionHost', args)
+            handler: (args, from) => askRestart('extensionHost', args, from)
         },
         {
             op: 'farm.reloadWindow',
@@ -16170,7 +16197,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'it is the only one that re-scans the extensions folder; use it when a new VSIX is on '
                 + 'disk or when package.json contributions changed. Same args and same cooldown as '
                 + 'farm.restartExtensionHost.',
-            handler: (args) => askRestart('window', args)
+            handler: (args, from) => askRestart('window', args, from)
         },
         {
             op: 'farm.waits',
@@ -16361,7 +16388,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         `Agent Farm bridge: ${opName} — ${outcome.ok ? 'ok' : 'error: ' + outcome.error}`);
                 };
                 if ('error' in parsed) { finish({ ok: false, error: parsed.error }); continue; }
-                bridge.dispatch(parsed.op, parsed.args).then(finish, e => {
+                bridge.dispatch(parsed.op, parsed.args, parsed.from).then(finish, e => {
                     finish({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) });
                 });
             }
@@ -24773,7 +24800,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         /** ‼️ …and the seats whose TOTALS could not be read yet, for the same
          *  reason and with the same cure — see `ConsoleHost.applyCarried`. */
         let pendingCarried: { seatId: string; sessionId: string }[] = [];
+        /**
+         * ‼️ X-310 — WHICH SEAT ASKED FOR THIS RESTART. Absent means nobody
+         * named themselves, and that is read as "nobody" rather than
+         * "everybody": with no asker, every cut seat comes back held, which is
+         * the safe end of the rule. `askedBy` is an engine session id, so it is
+         * matched against the row's own — never against the seat id, which the
+         * restart did not survive.
+         */
+        const askedBy = String(stamp?.askedBy ?? '').trim();
         for (const { row, pid: survivor } of reclaimed) {
+            const itAsked = !!askedBy && row.sessionId === askedBy;
             try {
                 const init = reviveInit(row);
                 const past = index.byId(row.sessionId);
@@ -24792,9 +24829,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                                     + ' first, so the process behind this card is the one doing the work.'
                                     : '')
                                 + (row.midTurn
-                                    ? ' It was ANSWERING when the host went down, so that one reply was'
-                                    + ' lost on the way — nothing before it is missing, and it is being'
-                                    + ' asked to carry on from where it was.'
+                                    ? (itAsked
+                                        ? ' It was ANSWERING when the host went down, so that one reply was'
+                                        + ' lost on the way — nothing before it is missing, and it is being'
+                                        + ' asked to carry on from where it was.'
+                                        // ‼️ X-310 — cut without being asked: held, and told so.
+                                        : REVIVE_HELD)
                                     : '')
                         }
                     ],
@@ -24810,7 +24850,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // ‼️ B-03.7 — AND THE WORK IS TAKEN UP, NOT ONLY THE CONVERSATION.
                 // The user's decision. Only for a seat that was mid-turn: see
                 // REVIVE_NUDGE for why an idle one is deliberately left alone.
-                if (row.midTurn) { nudgeRevived(seatId); }
+                // ‼️ X-310 — and only for the seat that ASKED to be restarted.
+                // Being mid-turn says a turn was cut, not that this seat wanted
+                // it cut; one cut without being asked is brought back whole and
+                // left to the user (REVIVE_HELD).
+                if (row.midTurn && itAsked) { nudgeRevived(seatId); }
                 back.push(row.agentName);
             } catch (e) {
                 lost.push({

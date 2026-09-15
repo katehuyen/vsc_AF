@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.518.0 - a restart waits for the turns that did not ask for it, and speaks only into the one that did (X-310) (2026-09-15)
+
+- **‼️ ONLY THE TURN THAT ASKED CONSENTED TO DYING.** X-232 exempted every
+  session the engine had named from blocking a `resume:true` restart, on the
+  reading that a resume takes it up again so it is not a loss. An idle card is
+  no blocker at all (A-02.4), so that exemption only ever reached sessions IN
+  FLIGHT — and for those the reading is false: the revive marks them `midTurn`
+  precisely because the answer they were writing is gone. Measured 2026-09-15:
+  one session asked for a restart to load a build and a second one, on another
+  card and mid file-write, was taken down with it having agreed to nothing.
+  The exemption is now the **asker's alone** (`askedBy`); every other turn in
+  flight blocks, the plan arms behind it, and it fires by itself when the last
+  one is done.
+- **‼️ AND THE "CARRY ON" PROMPT GOES TO THAT SEAT AND NO OTHER.** B-03.7
+  narrowed the revive nudge from every seat to every *mid-turn* seat, which is
+  one step short: being mid-turn says a turn was cut, not that this seat wanted
+  it cut. Both sessions above were handed the same "carry on from where you
+  were", and the one that had consented to nothing woke up and acted on guesses
+  about a conversation whose last exchange had been destroyed under it. A
+  session cut without asking now comes back whole — seat live, scrollback
+  restored, **nothing spoken into it** — and its card says so in the note above
+  the conversation (`REVIVE_HELD`), so the next word in it is the user's.
+- **The asker is a fact the request carries, not one we guess.** `af.js` writes
+  the caller's own session id into the request envelope (`from`), read from the
+  environment the CLI already publishes to its children
+  (`CLAUDE_CODE_SESSION_ID`, or `AGENT_FARM_SESSION` for a terminal Agent Farm
+  opened) — nothing is spawned, injected or remembered to make it true. It is a
+  claim and never a credential: it rides on the envelope so an op's own
+  `sessionId` argument can never be read as the caller, and **an unknown asker
+  exempts nobody** — the plan simply arms and waits, which is slower and never
+  destructive.
+- Gates: `test_self_restart.js` (the bystander blocks, the asker does not, an
+  unnamed asker exempts nobody, an armed plan remembers who asked, and the
+  wiring from the op down to the stamp), `test_console_revive.js` (the nudge's
+  two conditions, matched on the engine session id rather than the seat id a
+  restart does not survive), `test_bridge.js` (the envelope is read back off
+  the file `af.js` really wrote, under three different environments).
+
 ## 3.517.0 - the composer's boxes and the host's doors are counted against the dimension list — step 4 of 4 (X-152) (2026-09-15)
 
 - **‼️ X-148's FAILURE NOW FAILS THE BUILD.** `providerId` and `tier` were once
