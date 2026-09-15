@@ -100,18 +100,8 @@
          * session that has never been given one starts from.
          */
         kinds: ['agent', 'user'],
-        /** sessionId → that card's own `show`, once it has been set (K-21) */
+        /** card id → that card's own `show`, once it has been set (K-21) */
         kindsBy: {},
-        /**
-         * ‼️ K-38 — HAS THE PANEL DEFAULT BEEN SETTLED YET?
-         *
-         * `null` here means two different things — "nobody has chosen" and "the
-         * reader chose everything" — and without a mark for which one it is,
-         * the line below cannot keep the second without also keeping the first.
-         * Set once, on the load that settles it; from then on a stored `null` is
-         * an answer and survives.
-         */
-        kindsSeeded: false,
         /**
          * How tall the writing box was dragged, in whole pixels.
          *
@@ -152,25 +142,15 @@
         all.afConsole = st;
         vscode.setState(all);
     };
-    // ‼️ K-38 — WHERE A CARD NOBODY HAS FILTERED STARTS.
+    // ‼️ K-40 — WHERE A CARD NOBODY HAS FILTERED STARTS: ON DIALOG, ALWAYS.
     //
-    // A page with no state of its own is a panel opening cold: closed and
-    // reopened, or a reloaded window. It takes the host's memory of the last
-    // `show` the reader chose (absent key = never chosen, so the shipped
-    // default stands). A page that HAS state keeps its own answer, and the
-    // migration below runs on it exactly once — after that a stored `null`
-    // means "everything" and is left alone.
-    if (!saved.afConsole && DATA.prefs
-        && Object.prototype.hasOwnProperty.call(DATA.prefs, 'kinds')) {
-        st.kinds = Array.isArray(DATA.prefs.kinds) ? DATA.prefs.kinds : null;
-        st.kindsSeeded = true;
-    } else if (!st.kindsSeeded) {
-        if (st.kinds === null || !Array.isArray(st.kinds)) { st.kinds = ['agent', 'user']; }
-        st.kindsSeeded = true;
-    }
-    // Settled on THIS load and written straight back: a reader who opens the
-    // panel and touches nothing would otherwise be asked the same question
-    // again next time, and the once-only migration would not be once.
+    // The panel default is not a memory and nothing on the page can set it —
+    // the picker is only drawn for a selected card, and what it sets is that
+    // card's. An earlier build seeded this from the last `show` anybody chose,
+    // so one "everything" on one card put every later session on everything;
+    // a stored `null` or a stale mark from that build is overwritten here.
+    st.kinds = ['agent', 'user'];
+    delete st.kindsSeeded;
     save();
 
     // The page is an app, not a document: it fills the window, the conversation
@@ -1625,15 +1605,26 @@
     /**
      * ‼️ K-21 — `show` IS THE CARD'S, AND ONLY THE CARD'S.
      *
-     * A card that has never been filtered starts from `st.kinds` (the panel's
-     * standing default, and the value an older install already had). The moment
-     * one is set on a card it is written under that card's id and nothing else
-     * moves — pressing another card cannot change what this one shows, which
-     * was the whole complaint.
+     * The moment one is set on a card it is written under that card's id and
+     * nothing else moves — pressing another card cannot change what this one
+     * shows, which was the whole complaint.
+     *
+     * ‼️ K-38 / K-40 — AND A CARD REMEMBERS ACROSS THE PANEL CLOSING. The
+     * page's state is emptied when the panel closes or the window reloads, so
+     * a card with no answer of its own asks the host's memory next — keyed by
+     * the CLI's session id, which is the one thing about a card that survives
+     * (`DATA.prefs.kindsBy`, refreshed with every push, so a card that arrives
+     * later finds its record too). Only then the shipped default.
      */
     function kindsOf(id) {
         const by = st.kindsBy || {};
-        return id && Object.prototype.hasOwnProperty.call(by, id) ? by[id] : st.kinds;
+        if (id && Object.prototype.hasOwnProperty.call(by, id)) { return by[id]; }
+        const s = id && (DATA.sessions || []).find(x => x.id === id);
+        const mem = DATA.prefs && DATA.prefs.kindsBy;
+        if (s && s.sessionId && mem && Object.prototype.hasOwnProperty.call(mem, s.sessionId)) {
+            return mem[s.sessionId];
+        }
+        return st.kinds;
     }
     /** The selected card's own answer — what the picker draws and the filter uses. */
     const kindsNow = () => kindsOf(DATA.selected);
@@ -4365,8 +4356,9 @@
                         title: 'Just the conversation — you and the agent. Tool calls, results, system lines and questions are hidden.'
                     }],
                     title: 'Which kinds of line the conversation shows. '
-                        + 'This belongs to THIS session card — the next card keeps its own. '
-                        + 'The last one you set is where a freshly opened Console starts.'
+                        + 'This belongs to THIS session card — the next card keeps its own, '
+                        + 'and every card starts on Dialog. What you set here is kept for this '
+                        + 'session and comes back with it when the Console is reopened.'
                 })}
                 <span class="grow"></span>
                 <span id="c-live"></span>
@@ -4628,12 +4620,12 @@
                     // always one to write under.
                     st.kindsBy[DATA.selected] = picked;
                     save();
-                    // ‼️ K-38 — …and the host keeps the LAST one, which is what
-                    // a panel opening cold starts its cards from. Nothing on
-                    // screen changes: this is for the page that does not exist
-                    // yet, because the webview's own state does not survive the
-                    // panel being closed.
-                    vscode.postMessage({ type: 'rememberKinds', kinds: picked });
+                    // ‼️ K-38 / K-40 — …and the host keeps it under THIS card's
+                    // session, which is what the same card starts from when the
+                    // panel opens cold. Nothing on screen changes: this is for
+                    // the page that does not exist yet, because the webview's
+                    // own state does not survive the panel being closed.
+                    vscode.postMessage({ type: 'rememberKinds', id: DATA.selected, kinds: picked });
                     paint();
                     // a filter change is the reader's own move: land at the tail,
                     // and what the filter let through is not "new lines"

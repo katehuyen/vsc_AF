@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.511.0 - the saved-setup list is on the door it was asked for, ▶ is itself again, and a Console card starts on Dialog (X-180 · K-40) (2026-09-15)
+
+- **‼️ X-180 HAD BEEN BUILT ON THE WRONG DOOR.** The item named the panel's
+  **Start Session…** icon and the row's Start Session… menu — `agentfarm.launchSession`,
+  the door that opens the full launcher — and the discovery note said so by name,
+  with a warning not to confuse it with the inline ▶. 3.510.0 put the layer on the
+  ▶ (`agentfarm.startSession`) anyway: the icon the user pressed did not change at
+  all, and the one-click ▶ gained a profile list it had never asked for. Both
+  undone in one move — **▶ is byte-for-byte what it was before 3.510.0**, and the
+  saved-setup list now sits in front of the full launcher, where it belongs:
+  agent known → your saved setups, first row `Full setup…` opens the dialog
+  exactly as before, pressing a setup **is** the start. Nothing saved → no list.
+  A caller that already names a surface (the agent page's Launch button) goes
+  straight to the dialog, as before.
+- The gate in `test_run_surface.js` now measures the right door — the layer in
+  front of `runLauncher`, and **▶ carrying none of it** — and the two windows
+  that had been widened to make room for the misplaced prose are back to size.
+- **‼️ K-40 — A NEW CONSOLE CARD SOMETIMES OPENED ON "EVERYTHING".** K-38 kept
+  ONE value — the last `show` anybody set on any card — and a panel opening cold
+  seeded every unfiltered card from it, so one "everything" on one card put every
+  session that arrived afterwards on everything: K-21's defect again, one
+  panel-open later. Now **every card starts on Dialog**, and the panel default is
+  not a memory. What K-38 was really asked for — *the filter I chose survives the
+  panel closing* — is kept, and kept better: the reading is filed by the host
+  **under the card's own CLI session id** (the one thing about a card that
+  survives a reload; the Console's `cs…` ids do not), bounded to the newest
+  hundred, and the same session comes back on it — the card beside it does not.
+  The picker says so on itself. `sessionViewer`'s widening on a deep link that
+  Dialog would hide (S-4) is deliberate and untouched.
+- Gates: `test_console_show.js` (the memory is per session, a later push finds
+  its record, the page's own answer wins, the earlier build's panel-wide
+  `null` is not honoured; host side measured on the source), `test_console_tail.js`
+  seeds its filter on the card.
+
 ## 3.510.0 - Start Session offers the setups you already saved, and pressing one IS the start (X-180) (2026-09-14)
 
 - **‼️ THE COMMON PRESS WAS THE LONGEST PATH.** Pressing ▶ opened the full

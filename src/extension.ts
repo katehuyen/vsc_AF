@@ -14756,30 +14756,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     });
 
     /**
-     * ‼️ K-38 — THE READING A PANEL OPENS ON, WHICH THE PANEL CANNOT KEEP.
+     * ‼️ K-38 / K-40 — THE READING A CARD WAS LEFT ON, KEPT BY THE SESSION.
      *
      * `show` belongs to the card (K-21) and the card's answer lives in the
      * webview's own state — which is emptied the moment the panel is closed or
-     * the window is reloaded, and whose session ids do not survive either. So
-     * the filter a person had chosen came back as the shipped default every
-     * time, with nothing saying it had been dropped.
+     * the window is reloaded. So the filter a person had chosen came back as
+     * the shipped default every time, with nothing saying it had been dropped.
+     *
+     * ‼️ K-40 — AND THE MEMORY IS THE SESSION'S, NEVER THE PANEL'S. The first
+     * cure kept ONE value — the last `show` anybody set — and seeded every
+     * unfiltered card of a cold panel from it, so one "everything" on one card
+     * made every session that arrived afterwards open on everything. That is
+     * the K-21 defect again, one panel-open later. The record is keyed by the
+     * CLI's own session id (the one thing about a card that survives a reload,
+     * where the Console's `cs…` ids do not), a card with no record starts on
+     * Dialog like every card ever did, and the panel default is not a memory.
+     * Bounded: the newest hundred sessions, so a store nobody can reach does
+     * not grow for ever.
      *
      * Kept here for the reason `lastLaunch` and the slash catalog are: the panel
      * does not own where its memory lives, and a second reader of `globalState`
-     * is a second answer. `undefined` means nobody has ever chosen; `kinds: null`
-     * is the chosen value "everything", which is why the two cannot be the same
-     * value — conflating them is the whole item.
+     * is a second answer. `null` is the chosen value "everything".
      */
     const CONSOLE_PREFS_KEY = 'agentfarm.consolePrefs';
-    const consolePrefs = (): { kinds?: string[] | null } =>
-        context.globalState.get<{ kinds?: string[] | null }>(CONSOLE_PREFS_KEY, {});
-    const lastKinds = (): { kinds: string[] | null } | undefined => {
-        const p = consolePrefs();
-        if (!Object.prototype.hasOwnProperty.call(p, 'kinds')) { return undefined; }
-        return { kinds: Array.isArray(p.kinds) ? p.kinds.map(String) : null };
+    const KINDS_MEMORY_MAX = 100;
+    type KindsMemory = Record<string, string[] | null>;
+    const rememberedKinds = (): KindsMemory => {
+        const by = context.globalState.get<{ kindsBy?: KindsMemory }>(CONSOLE_PREFS_KEY, {}).kindsBy;
+        return by && typeof by === 'object' && !Array.isArray(by) ? by : {};
     };
-    const rememberKinds = (kinds: string[] | null): void => {
-        void context.globalState.update(CONSOLE_PREFS_KEY, { ...consolePrefs(), kinds });
+    const rememberKinds = (sessionId: string, kinds: string[] | null): void => {
+        if (!sessionId) { return; }
+        const by: KindsMemory = { ...rememberedKinds() };
+        // re-inserted last, so insertion order is recency and the cut below
+        // drops the oldest
+        delete by[sessionId];
+        by[sessionId] = kinds;
+        const keys = Object.keys(by);
+        const next: KindsMemory = {};
+        keys.slice(Math.max(0, keys.length - KINDS_MEMORY_MAX)).forEach(k => { next[k] = by[k]; });
+        // the panel-wide `kinds` key of the first cure is not carried forward
+        void context.globalState.update(CONSOLE_PREFS_KEY, { kindsBy: next });
     };
 
     // Toolbox ops (constitution §19.C): the extension inventory, one item in
@@ -24942,11 +24959,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         recallSlash: (engine: string, agentId?: string) => recallSlash(engine, agentId),
         learnSlash: (engine: string, agentId: string | undefined, r: SlashReport) =>
             learnSlash(engine, agentId, r),
-        // ‼️ K-38 — the same kind of memory again: what the reader last set
-        // `show` to, so a panel opening cold starts there instead of on the
-        // shipped default. Read on the way out, written when the picker moves.
-        lastKinds: () => lastKinds(),
-        rememberKinds: (kinds: string[] | null) => rememberKinds(kinds),
+        // ‼️ K-38 / K-40 — the same kind of memory again: what the reader set
+        // `show` to on each SESSION, so a card opening cold starts where it
+        // was left. Read on the way out, written when the picker moves.
+        rememberedKinds: () => rememberedKinds(),
+        rememberKinds: (sessionId: string, kinds: string[] | null) => rememberKinds(sessionId, kinds),
         liveOwners: () => liveCliSessions(),
         /**
          * ‼️ X-105 — WHAT A CARD IS ACTUALLY TALKING TO, in the engine's own
@@ -33089,40 +33106,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const agent = await resolveAgent(withAgentsRow(arg));
                 if (!agent) { return; }
                 /**
-                 * ‼️ X-180 — THE SETUPS THE PERSON ALREADY SAVED COME FIRST, AND
-                 * THE DIALOG THEY KNOW IS BEHIND ONE ROW.
-                 *
-                 * The full launcher is good and is not changed by a line: it is
-                 * where a NEW setup is built, an existing one edited, or a
-                 * one-off configuration assembled. What it is not is the thing
-                 * most presses want. The common press is "open the setup I
-                 * already keep" — and reaching it meant walking down into the
-                 * profile rows, loading one, then coming back up to Start. Three
-                 * moves for the answer that was already written down.
-                 *
-                 * So the saved setups are offered the moment the agent is known,
-                 * and pressing one IS the start — no second confirmation, which
-                 * is the whole point. The old flow keeps its every step and
-                 * loses nothing; it simply sits behind the first row.
-                 *
-                 * ‼️ AND WITH NOTHING SAVED THIS LAYER DOES NOT EXIST. A person
-                 * who keeps no profiles must not pay a keypress for a list with
-                 * one row in it, so an empty list falls straight through to the
-                 * dialog — which is also the state every machine starts in.
-                 *
-                 * Skipped when the caller already named a surface: that argument
-                 * means another door has decided where this runs and is calling
-                 * this one to finish, not a person pressing ▶.
-                 */
-                if (!arg?.surface) {
-                    const setup = await pickSavedSetup(agent.name);
-                    if (!setup) { return; }
-                    if (setup.profile) {
-                        await startFromSavedSetup(agent, setup.profile);
-                        return;
-                    }
-                }
-                /**
                  * ‼️ S-34 — ▶ IS THE DOOR THAT REMEMBERED NOTHING, AND IT IS THE
                  * ONE PEOPLE PRESS.
                  *
@@ -33385,6 +33368,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             async (arg: AgentArg & { surface?: RunSurface }) => {
                 const agent = await resolveAgent(arg);
                 if (!agent) { return; }
+                /**
+                 * ‼️ X-180 — THE SETUPS THE PERSON ALREADY SAVED COME FIRST, AND
+                 * THE DIALOG THEY KNOW IS BEHIND ONE ROW.
+                 *
+                 * This is the door behind the panel's Start Session… icon and the
+                 * row's Start Session… menu item — the one that opens the full
+                 * launcher. That launcher is good and is not changed by a line:
+                 * it is where a NEW setup is built, an existing one edited, or a
+                 * one-off configuration assembled. What it is not is the thing
+                 * most presses want. The common press is "open the setup I
+                 * already keep" — and reaching it meant walking down into the
+                 * profile rows, loading one, then coming back up to Start. Three
+                 * moves for the answer that was already written down.
+                 *
+                 * So the saved setups are offered the moment the agent is known,
+                 * and pressing one IS the start — no second confirmation, which
+                 * is the whole point. The old flow keeps its every step and
+                 * loses nothing; it simply sits behind the first row.
+                 *
+                 * ‼️ AND WITH NOTHING SAVED THIS LAYER DOES NOT EXIST. A person
+                 * who keeps no profiles must not pay a keypress for a list with
+                 * one row in it, so an empty list falls straight through to the
+                 * dialog — which is also the state every machine starts in.
+                 *
+                 * Skipped when the caller already named a surface: that argument
+                 * means another page has decided where this runs and wants the
+                 * dialog itself. ‼️ The inline ▶ (agentfarm.startSession) is a
+                 * DIFFERENT door and carries none of this — it asks where and on
+                 * which engine, and starts; that is the whole of it.
+                 */
+                if (!arg?.surface) {
+                    const setup = await pickSavedSetup(agent.name);
+                    if (!setup) { return; }
+                    if (setup.profile) {
+                        await startFromSavedSetup(agent, setup.profile);
+                        return;
+                    }
+                }
                 // Seeded with what this agent was last launched with — the second
                 // time you start the same kind of session it is one Enter.
                 //

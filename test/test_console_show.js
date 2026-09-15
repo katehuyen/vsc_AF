@@ -115,12 +115,15 @@ ok('…and the card that never left kept its own', (() => {
     return rows().join() === 'cs2-t';
 })());
 
-// ------------------------------------------------------- K-38: opening cold
+// ------------------------------------------- K-38 / K-40: opening cold
 // The card's answer lives in the webview's state, and that state does not
-// survive the panel closing or the window reloading — nor do the session ids it
-// is keyed by. So the panel takes the reading the reader last chose from the
-// HOST, on a page that has no state of its own, and never over a card already
-// on screen.
+// survive the panel closing or the window reloading. So the reading a card was
+// left on is kept by the HOST — under that card's CLI session id, the one thing
+// about a card that survives — and a card with no record starts on Dialog.
+//
+// ‼️ K-40 — NEVER one value for the panel. The first cure kept the last `show`
+// anybody set and seeded every unfiltered card from it, so one "everything" on
+// one card put every session that arrived afterwards on everything.
 const posted = (type) => r.posted.filter(m => m && m.type === type);
 ok('‼️ K-38 — moving the picker tells the host what was chosen',
     posted('rememberKinds').length > 0);
@@ -128,9 +131,10 @@ ok('…carrying the choice itself, "everything" included', (() => {
     const all = posted('rememberKinds');
     return all.some(m => m.kinds === null) && all.some(m => Array.isArray(m.kinds));
 })());
-ok('…and the last one is the reading a card was left on', (() => {
+ok('‼️ K-40 — …and WHICH card it was set on, so the host files it under that session', (() => {
     const all = posted('rememberKinds');
-    return String(all[all.length - 1].kinds) === 'tool';
+    return all.every(m => typeof m.id === 'string' && m.id.length > 0)
+        && all[all.length - 1].id === 'cs2' && String(all[all.length - 1].kinds) === 'tool';
 })());
 
 /** A panel opening cold: a new page, whatever the host remembers, no state. */
@@ -145,32 +149,57 @@ const c0 = cold();
 ok('a cold panel the host remembers nothing for keeps the shipped default',
     rowsOf(c0).join() === 'cs1-u,cs1-a' && c0.ms.label('c-kinds') === 'show: 2/7');
 
-const c1 = cold({ kinds: null });
+// the host's memory is keyed by the CLI session id (`S-cs1` in this fixture)
+const c1 = cold({ kindsBy: { 'S-cs1': null } });
 ok('‼️ K-38 — "everything" survives the panel being closed',
     rowsOf(c1).join() === 'cs1-u,cs1-t,cs1-r,cs1-a'
     && c1.ms.label('c-kinds') === 'show: everything');
-
-const c2 = cold({ kinds: ['tool'] });
-ok('…and so does any other reading', rowsOf(c2).join() === 'cs1-t');
-ok('…on every card, because none of them has been filtered yet', (() => {
-    c2.send({ type: 'data', data: shell('cs2', ['cs1', 'cs2'], { kinds: ['tool'] }) });
-    return rowsOf(c2).join() === 'cs2-t';
+ok('‼️ K-40 — …on THAT card only: the next card starts on Dialog, not on everything', (() => {
+    c1.send({ type: 'data', data: shell('cs2', ['cs1', 'cs2'], { kindsBy: { 'S-cs1': null } }) });
+    return rowsOf(c1).join() === 'cs2-u,cs2-a' && c1.ms.label('c-kinds') === 'show: 2/7';
 })());
 
-// ‼️ The state a page DOES have is its own answer: the seed is for the cold
-// open only, so a panel that remembers its cards is not rewritten behind them.
-const warm = cold({ kinds: ['tool'] },
-    { afConsole: { kinds: null, kindsSeeded: true, kindsBy: {} } });
-ok('‼️ K-38 — a page with its own state is not re-seeded by the host',
+const c2 = cold({ kindsBy: { 'S-cs1': ['tool'], 'S-cs2': null } });
+ok('…and so does any other reading, each card its own', rowsOf(c2).join() === 'cs1-t');
+ok('…a record that arrives with a later push is found too', (() => {
+    c2.send({ type: 'data', data: shell('cs2', ['cs1', 'cs2'], { kindsBy: { 'S-cs1': ['tool'], 'S-cs2': null } }) });
+    return rowsOf(c2).join() === 'cs2-u,cs2-t,cs2-r,cs2-a';
+})());
+
+// ‼️ The state a page DOES have wins over the host's memory for that card:
+// the record is for the cold open, never rewritten over a card on screen.
+const warm = cold({ kindsBy: { 'S-cs1': ['tool'] } },
+    { afConsole: { kinds: ['agent', 'user'], kindsBy: { cs1: null } } });
+ok('‼️ K-38 — a page with its own answer for the card is not re-seeded by the host',
     rowsOf(warm).join() === 'cs1-u,cs1-t,cs1-r,cs1-a');
 
-// An install from before the mark stored `null` meaning "nobody has chosen".
-// It is read that way ONCE, and the page settles the question from then on.
-const legacy = cold(undefined, { afConsole: { kinds: null, kindsBy: {} } });
-ok('‼️ K-38 — the migration runs once, on a record written before the mark',
+// A page state from the first cure — a panel-wide `null` and its mark — is
+// overwritten: the panel default is Dialog and is not a memory any more.
+const legacy = cold(undefined, { afConsole: { kinds: null, kindsSeeded: true, kindsBy: {} } });
+ok('‼️ K-40 — a stored panel-wide "everything" from the earlier build is not honoured',
     rowsOf(legacy).join() === 'cs1-u,cs1-a');
-ok('…and the page has settled it, so the next load leaves `null` alone',
-    legacy.state().afConsole.kindsSeeded === true);
+ok('…and the page writes Dialog back, mark gone',
+    String(legacy.state().afConsole.kinds) === 'agent,user'
+    && !('kindsSeeded' in legacy.state().afConsole));
+
+// ‼️ K-40 — THE HOST SIDE OF THE SAME RULE, measured on the source: the record
+// is filed under the session id the HOST resolves for the card (never one the
+// page claims), a card with no session is not filed at all, the store is
+// bounded, and the panel-wide key of the first cure is not carried forward.
+const fs = require('fs');
+const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
+ok('‼️ K-40 — the host files `show` under the session id it resolves itself',
+    /case 'rememberKinds': \{[\s\S]{0,400}this\.deps\.host\.list\(\)\.find\(s => s\.id === String\(msg\.id \|\| ''\)\)\?\.sessionId;\s*\n\s*if \(sid\) \{ this\.deps\.rememberKinds\?\.\(sid,/.test(panel));
+ok('…a card with no session is not filed, and the memory is bounded',
+    /const rememberKinds = \(sessionId: string, kinds: string\[\] \| null\): void => \{\s*\n\s*if \(!sessionId\) \{ return; \}/.test(ext)
+    && /const KINDS_MEMORY_MAX = 100;/.test(ext)
+    && /keys\.slice\(Math\.max\(0, keys\.length - KINDS_MEMORY_MAX\)\)/.test(ext));
+ok('…and the panel-wide `kinds` key of the first cure is not carried forward',
+    /globalState\.update\(CONSOLE_PREFS_KEY, \{ kindsBy: next \}\)/.test(ext)
+    && !/lastKinds/.test(ext) && !/lastKinds/.test(panel));
+ok('…and only the cards on the shelf travel to the page',
+    /const remembered = this\.deps\.rememberedKinds\?\.\(\) \?\? \{\};[\s\S]{0,900}prefs: \{ kindsBy \},/.test(panel));
 
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -353,12 +353,13 @@ export interface ConsoleDeps {
      * the shipped default every time. This is the seed a FRESH page starts its
      * cards from; it never touches a card that is already on screen.
      *
-     * `undefined` = never chosen. `{ kinds: null }` = chosen, and the choice was
-     * everything — the distinction the item is about.
+     * ‼️ K-40 — keyed by the CLI's session id, never one value for the panel:
+     * a card with no record starts on Dialog, whatever another card was left
+     * on. `null` = chosen, and the choice was everything.
      */
-    lastKinds?(): { kinds: string[] | null } | undefined;
-    /** …and the write-back, made when the picker moves. */
-    rememberKinds?(kinds: string[] | null): void;
+    rememberedKinds?(): Record<string, string[] | null>;
+    /** …and the write-back, made when the picker moves on a card. */
+    rememberKinds?(sessionId: string, kinds: string[] | null): void;
     /**
      * Which sessions a live process already owns (the CLI's own registry).
      *
@@ -898,16 +899,23 @@ export class ConsolePanel {
         const chipProject = this.selected
             ? (hosted.find(s => s.id === this.selected)?.projectId ?? '')
             : this.composerProject;
-        const kinds = this.deps.lastKinds?.();
+        // ‼️ K-38 / K-40 — the `show` each hosted session was left on, keyed
+        // by its CLI session id; only the cards on the shelf travel. A card
+        // with no entry starts on Dialog, and `null` is itself a choice here
+        // ("everything").
+        const remembered = this.deps.rememberedKinds?.() ?? {};
+        const kindsBy: Record<string, string[] | null> = {};
+        hosted.forEach(s => {
+            if (s.sessionId && Object.prototype.hasOwnProperty.call(remembered, s.sessionId)) {
+                kindsBy[s.sessionId] = remembered[s.sessionId];
+            }
+        });
         return {
             generatedAt: Date.now(),
             selected: this.selected ?? '',
             presetAgent: preset ?? '',
             composerSeed: this.composerSeed,
-            // ‼️ K-38 — what a page with no state of its own starts from. The
-            // key is ABSENT when nothing was ever chosen, because `null` is
-            // itself a choice here ("everything").
-            prefs: kinds ? { kinds: kinds.kinds } : {},
+            prefs: { kindsBy },
             // the conversation of the selected session in full; the others as headers
             sessions: hosted.map(s => ({
                 id: s.id, agentId: s.agentId, agentName: s.agentName,
@@ -2038,7 +2046,14 @@ export class ConsolePanel {
                 this.refresh();
                 break;
             /**
-             * ‼️ K-38 — the picker moved, so the NEXT cold page knows where.
+             * ‼️ K-38 / K-40 — the picker moved on a card, so the NEXT cold
+             * page knows where THAT session was left.
+             *
+             * The page names the card (`id`, the Console's own); the session id
+             * it is filed under is read from the host's registry here, not
+             * trusted from the page. A card that has no session yet (a composer
+             * that has not spawned) has nothing to file under, and the page's
+             * own state carries it until the panel closes — as before.
              *
              * No refresh: nothing on screen changes, and a repaint here would
              * push the host's data back over the card the reader is filtering.
@@ -2047,7 +2062,8 @@ export class ConsolePanel {
              */
             case 'rememberKinds': {
                 const k = msg.kinds;
-                this.deps.rememberKinds?.(Array.isArray(k) ? k.map(String) : null);
+                const sid = this.deps.host.list().find(s => s.id === String(msg.id || ''))?.sessionId;
+                if (sid) { this.deps.rememberKinds?.(sid, Array.isArray(k) ? k.map(String) : null); }
                 break;
             }
             /**

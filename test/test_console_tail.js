@@ -164,11 +164,12 @@ const rowTop = (g, mid) => {
 // ‼️ THIS FILE IS ABOUT THE TAIL, NOT THE FILTER. The panel's standing default
 // shows the dialog only, so a tool row pushed below would never be drawn and
 // every anchor measurement here would be measuring the filter instead. Seeded
-// with every kind on, deliberately: what the filter does is measured in
+// with every kind on — on the CARD, because the panel default is Dialog and is
+// not a setting (K-40) — deliberately: what the filter does is measured in
 // test_console_show.js, and what it must NOT do is measured further down.
 const ALL_KINDS = ['user', 'agent', 'tool', 'result', 'error', 'system', 'ask'];
 const live = { messages: baseMessages() };
-const r = runPage('console.js', shell(live.messages), undefined, { afConsole: { kinds: ALL_KINDS } });
+const r = runPage('console.js', shell(live.messages), undefined, { afConsole: { kindsBy: { cs1: ALL_KINDS } } });
 const g = attachGeometry(r, live);
 
 /** Push a new data snapshot and let the page repaint, as the host does. */
