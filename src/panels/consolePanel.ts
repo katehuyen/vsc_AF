@@ -510,8 +510,6 @@ export class ConsolePanel {
     private static current?: ConsolePanel;
     private disposables: vscode.Disposable[] = [];
     private selected?: string;
-    /** agent to preselect in the composer (opened from an agent row) */
-    private presetAgent?: string;
     /**
      * Is the resume list open, and what is it being asked for?
      *
@@ -630,19 +628,15 @@ export class ConsolePanel {
      * the composer opens on it — the same answers, still editable, nothing
      * spawned until Send.
      *
-     * One-shot, like `presetAgent`: it seeds a composer once (a bumped
-     * `composerSeed` is what makes the page read it) and is let go on the next
-     * start, or the setup would silently reapply itself to a later session.
-     *
-     * ‼️ AND IT NAMES THE ENGINE IT WAS BUILT FOR. A model is a word in one
-     * engine's vocabulary; handed over without saying whose, the page has no
-     * way to tell a value it should keep (an alias this engine runs but does
-     * not advertise) from one it must drop (the model of the engine the user
-     * just switched away from). Both look identical in the box.
+     * ‼️ X-152 — the eight dimensions of that setup go straight into the record
+     * (`seedIntent`, narrowed for the engine the caller states in the same
+     * call); what is left here is the one part that is CONTENT rather than
+     * intent: the first prompt, into the box the user is about to type in.
+     * One-shot: a bumped `composerSeed` is what makes the page read it, and it
+     * is let go on the next start, or it would reapply itself to a session
+     * nobody launched from it.
      */
-    private composerLaunch?: {
-        model?: string; effort?: string; permissionMode?: string; prompt?: string; engine?: string;
-    };
+    private composerPrompt?: string;
 
     /**
      * The engine the NEXT session will be started on, and the answer cache.
@@ -691,8 +685,8 @@ export class ConsolePanel {
 
     /**
      * The agent this composer is FIXED to, when it was opened from that agent.
-     * `presetAgent` seeds the picker once; this replaces the picker with the
-     * name, because a composer reached from an agent's row is about that agent
+     * `composerAgent` is who the record is for; this replaces the picker with
+     * the name, because a composer reached from an agent's row is about that agent
      * and a dropdown there is only a way to lose it by accident. It is let go
      * the moment a session starts, or when the user says so.
      */
@@ -742,7 +736,6 @@ export class ConsolePanel {
                 const last = remembered
                     ? rememberedOn(c.composerEngine, remembered) : undefined;
                 c.composerSeed++;
-                c.presetAgent = opts.agentId;
                 c.selected = '';
                 c.pinnedAgent = opts.pinAgent ? opts.agentId : undefined;
                 // A caller that handed over a setup of its own is answered by
@@ -773,20 +766,20 @@ export class ConsolePanel {
                     ? c.deps.agentSeedDefaults?.(agentDir, c.composerEngine) ?? { model: '', effort: '' }
                     : { model: '', effort: '' };
                 // ‼️ X-152 — the record knows who it is for, and opens with the
-                // same three layers below, on this side: what the page used to
-                // read off `composerLaunch` and narrow itself, narrowed here.
+                // same three layers below, narrowed here for the engine above.
+                // A door that hands over no prompt leaves none pending either:
+                // this is a new launch decision, not the launcher's.
                 c.composerAgent = opts.agentId;
+                c.composerPrompt = undefined;
                 if (!opts.launch && (last || own.model || own.effort)) {
                     const pick = (...v: (string | undefined)[]) =>
                         v.map(x => (x ?? '').trim()).find(x => x) ?? '';
-                    c.composerLaunch = {
+                    c.composerSuperpowers = last?.superpowers;
+                    c.seedIntent({
                         model: pick(last?.model, own.model, d.model),
                         effort: pick(last?.effort, own.effort, d.effort),
-                        permissionMode: pick(last?.permissionMode, d.permissionMode),
-                        engine: c.composerEngine
-                    };
-                    c.composerSuperpowers = last?.superpowers;
-                    c.seedIntent(c.composerLaunch, true);
+                        permissionMode: pick(last?.permissionMode, d.permissionMode)
+                    }, true);
                 } else if (!opts.launch) {
                     // nothing remembered, nothing set for this agent: the fleet
                     // defaults, and the catalogue decides whether the engine
@@ -803,16 +796,11 @@ export class ConsolePanel {
                 const l = opts.launch;
                 // The engine is `composerEngine` and not something the setup
                 // carries separately: the caller states it in the same call
-                // (`opts.engine`), and a setup describing one engine while the
-                // panel opens on another is the disagreement this records.
-                c.composerLaunch = {
-                    model: l.model, effort: l.effort,
-                    permissionMode: l.permissionMode, prompt: l.prompt,
-                    engine: c.composerEngine
-                };
+                // (`opts.engine`), and the record is narrowed for that engine
+                // as the setup is written into it — trusted, because it is a
+                // real launch's answer (X-152).
+                c.composerPrompt = (l.prompt ?? '').trim() || undefined;
                 c.composerSuperpowers = l.superpowers;
-                // X-152 — the same setup into the record, trusted: it is a real
-                // launch's answer for the engine this composer opens on
                 c.seedIntent(l, true);
                 // ‼️ X-103 — the route the calling door picked, carried rather
                 // than dropped. ‼️ X-105 — and now NARROWED on the way in, by
@@ -922,10 +910,9 @@ export class ConsolePanel {
      * call is what creates it) the bootstrap `window.__DATA__` carried none of
      * the caller's answers, and the `refresh()` that followed pushed them into
      * a webview whose script had not run yet. A push into an unloaded page is
-     * not late, it is LOST; and because `presetAgent` is one-shot (`data()`
-     * consumes it) the agent went with it and no later refresh could say it
-     * again. Hence "the play button works, but only if the Console was already
-     * open".
+     * not late, it is LOST — the door's agent and setup went with it, and no
+     * later refresh could say them again. Hence "the play button works, but
+     * only if the Console was already open".
      *
      * Loading the page is therefore a second step the caller takes once the
      * instance describes what is to be shown. An already-open panel is
@@ -947,9 +934,6 @@ export class ConsolePanel {
         // An explicit "new session" (selected === '') is respected; only an
         // unset selection falls back to the newest hosted session.
         if (this.selected === undefined && hosted.length) { this.selected = hosted[0].id; }
-        const d = this.deps.launchDefaults();
-        const preset = this.presetAgent;
-        this.presetAgent = undefined;   // one-shot: it seeds the picker once
         // What the strip above the box is ABOUT (see chipProjectId below): the
         // selected session's own project, or — in composer mode — the picker's.
         const chipProject = this.selected
@@ -969,7 +953,6 @@ export class ConsolePanel {
         return {
             generatedAt: Date.now(),
             selected: this.selected ?? '',
-            presetAgent: preset ?? '',
             composerSeed: this.composerSeed,
             prefs: { kindsBy },
             // the conversation of the selected session in full; the others as headers
@@ -1158,36 +1141,7 @@ export class ConsolePanel {
                 // switch against whichever agent the picker is showing, and a
                 // second list keyed by name would have to be kept in step with
                 // this one for no gain.
-                superpowers: this.deps.superpowersDefault(a.name),
-                // ‼️ S-34 — …and what THIS one was last started with, on the row
-                // for the same reason the switch above is: the picker can change
-                // the agent without the host hearing about it, and the boxes
-                // have to follow the agent that is showing. `null` is "never
-                // started", which falls through to the fleet defaults — a
-                // different answer from a record that says nothing.
-                lastLaunch: this.deps.lastLaunch(a.id) ?? null,
-                /**
-                 * ‼️ …AND THE LAYER UNDER THAT MEMORY, ON THE SAME ROW AND FOR
-                 * THE SAME REASON.
-                 *
-                 * Changing the engine box re-seeds model and effort from the
-                 * record's row for the new engine — and when that engine has no
-                 * row, it used to empty them. Empty is the right answer for a
-                 * MEMORY and the wrong one for the box: the agent still has
-                 * whatever Farm Settings says it runs that engine as, and
-                 * jumping over it is the same defect as the composer opening on
-                 * `Model: Default` for an agent set to `opus`.
-                 *
-                 * One row per engine, resolved host-side because Claude's layer
-                 * is a file on disk. `{}` for an agent with nothing set anywhere,
-                 * which leaves the fleet default to answer exactly as before.
-                 */
-                engineDefaults: this.deps.agentSeedDefaults
-                    ? Object.fromEntries(this.engineList()
-                        .map(e => [e.id, this.deps.agentSeedDefaults!(a.dir, e.id)])
-                        .filter(([, v]) => (v as { model: string; effort: string }).model
-                            || (v as { model: string; effort: string }).effort))
-                    : {}
+                superpowers: this.deps.superpowersDefault(a.name)
             })),
             // The flat pair stays as the FALLBACK every surface had before
             // engines existed; `engineModels` below is what a picker actually
@@ -1211,22 +1165,16 @@ export class ConsolePanel {
              */
             composerForm: this.deps.providerForm?.(
                 engineOf(this.chosenEngine()).id, this.composerRoute ?? {}, 'acp') ?? null,
+            // …and WHAT IS CURRENTLY PICKED is two fields of `composerIntent`
+            // (providerId · tier), echoed rather than inferred from the form: a
+            // vocabulary cannot say "chosen, and since deleted in Settings".
             /**
-             * …and WHAT IS CURRENTLY PICKED, echoed separately rather than read
-             * back out of the form. The form is a vocabulary; the pick is an
-             * answer, and a page that had to infer one from the other could not
-             * tell "nothing chosen" from "chosen, and the catalog has since
-             * stopped offering it" — which is exactly the case a route deleted
-             * in Settings produces.
-             */
-            composerPick: this.composerRoute ?? null,
-            /**
-             * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, AND WHICH ONE IS PICKED.
-             *
-             * Two fields for the reason the route needs two: the list is a
-             * vocabulary and the pick is an answer, and a page that inferred one
-             * from the other could not tell "nobody chose" from "chosen, and the
-             * slot has since been forgotten".
+             * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS. Which one is picked is
+             * `composerIntent.account` (accountShown), kept apart for the
+             * reason the route's two fields are: the list is a vocabulary and
+             * the pick is an answer, and a page that inferred one from the
+             * other could not tell "nobody chose" from "chosen, and the slot
+             * has since been forgotten".
              *
              * An empty list is the ordinary answer on four of the five engines
              * and on a machine that has never captured an account — the page
@@ -1235,7 +1183,6 @@ export class ConsolePanel {
              * docs/CONVENTIONS.md forbids.
              */
             composerAccounts: this.deps.accountsFor?.(engineOf(this.chosenEngine()).id) ?? [],
-            composerAccount: this.accountShown(),
             /**
              * ‼️ X-213 — WHETHER THE BOX EXISTS IS A FACT ABOUT THE ENGINE, not
              * about the length of the list.
@@ -1288,15 +1235,10 @@ export class ConsolePanel {
                 // one line: what changes about talking to it
                 note: engineNote(e.id)
             })),
-            engine: this.chosenEngine(),
             // ‼️ K-35 — the fixed swatches come DOWN rather than being a list in
             // the page. The same ten are what `sessions.color` documents to an
             // agent, and a palette written out twice is a palette that drifts.
             sessionColors: SESSION_COLORS,
-            defaults: {
-                engine: d.engine ?? '', model: d.model ?? '',
-                effort: d.effort ?? '', permissionMode: d.permissionMode ?? ''
-            },
             // The page-wide drop zone, and a way to turn it off. It is on by
             // default; the switch exists because a drag-and-drop that misbehaves
             // on a particular machine must be something the user can END, not
@@ -1378,20 +1320,16 @@ export class ConsolePanel {
             superpowersOn: this.selected
                 ? !!hosted.find(s => s.id === this.selected)?.superpowers
                 : undefined,
-            superpowersChoice: this.composerSuperpowers === undefined
-                ? '' : (this.composerSuperpowers ? 'on' : 'off'),
-            // ‼️ K-34 — null, not an empty object: "no setup was handed over" is
-            // a different answer from "a setup that says nothing", and only the
-            // first may fall through to the user's launch defaults.
-            composerLaunch: this.composerLaunch ?? null,
-            // ‼️ X-152 — THE WHOLE INTENT, ALREADY NARROWED, and who it is for.
-            // What the page draws its strip from; the fields above it that say
-            // the same things one at a time are on their way out.
+            // ‼️ X-152 — THE WHOLE INTENT, ALREADY NARROWED, and who it is for:
+            // the one record the page draws its strip from. The composer's
+            // choice for the discipline is its `superpowers` (null = the
+            // agent's own, X-133), the route its `providerId`/`tier`, the
+            // sign-in its `account`, the engine its `engine`.
             composerIntent: this.composerIntentShown(),
             composerAgent: this.composerAgent,
             // …and the one part of a handed-over setup that is CONTENT rather
             // than intent: the first prompt, into the box, once per seed (K-34)
-            composerPrompt: this.composerLaunch?.prompt ?? '',
+            composerPrompt: this.composerPrompt ?? '',
             // the exact text, for the hover — never a description of it
             superpowersText: this.deps.superpowersText(),
             superpowersHealth: this.deps.superpowersHealth(),
@@ -1606,7 +1544,7 @@ export class ConsolePanel {
     private moveEngine(next: string): void {
         this.composerEngine = next;
         const engine = engineOf(this.chosenEngine()).id;
-        const agentId = this.composerAgent || this.presetAgent || '';
+        const agentId = this.composerAgent;
         const remembered = agentId ? this.deps.lastLaunch(agentId) : undefined;
         const mem = remembered ? rememberedOn(engine, remembered) : undefined;
         const agentDir = this.deps.getAgents().find(a => a.id === agentId)?.dir ?? '';
@@ -1720,10 +1658,9 @@ export class ConsolePanel {
     }
 
     refresh(): void {
-        // ‼️ S-50 — a page that has not been loaded cannot read a push, and the
-        // push would still SPEND the one-shot `presetAgent` on the way out. The
+        // ‼️ S-50 — a page that has not been loaded cannot read a push. The
         // window this closes is short (construction to `mount()`), but it is the
-        // window a host event landing in it would empty the door's message in.
+        // window a host event landing in it would lose the door's message in.
         if (!this.mounted) { return; }
         const data = this.data();
         // The tab says how many conversations are waiting for you, so the nudge
@@ -1892,75 +1829,22 @@ export class ConsolePanel {
                 this.composerProject = str('id');
                 this.refresh();
                 break;
-            // ‼️ X-133 — the engineering discipline the NEXT session opens with.
-            // `null` is the way back to the agent's own default, so a switch
-            // touched by accident is not a decision the user is stuck with for
-            // the rest of the composer's life (see composerSuperpowers).
-            case 'setSuperpowers':
-                this.composerSuperpowers = msg.on === null || msg.on === undefined
-                    ? undefined : msg.on === true;
-                this.refresh();
-                break;
-            // Which engine the next session opens on. It is only ever a choice
-            // about the session being started — a running one cannot change
-            // engine, and the composer does not draw the box for it.
-            case 'setEngine':
-                // ‼️ X-105 — A ROUTE BELONGS TO ONE ENGINE, exactly as a model
-                // does. A Claude route carried onto Codex is an endpoint its CLI
-                // was never going to be pointed at, and the pick is dropped by
-                // the new engine's own adapter rather than by a rule written
-                // here — an engine with no provider axis prunes everything away
-                // and says so, which is the honest answer for four of the five.
-                // ‼️ X-169 — and the sign-in with it, for the same reason and by
-                // the same rule: an account belongs to one engine. ‼️ X-152 —
-                // and the model, the effort and the permission mode under it,
-                // answered again for the new engine (moveEngine).
-                this.moveEngine(str('id'));
-                this.refresh();
-                break;
             /**
              * ‼️ X-152 — ONE DIMENSION OF THE NEXT SESSION, CHANGED. The page
              * names a field and a value; the record is narrowed here and pushed
-             * back whole. This is the message every composer control converges
-             * on (the per-field ones above are its older names).
+             * back whole. This is the ONE message every composer control sends:
+             * the engine (re-answering the three under it — moveEngine), the
+             * model (its own default effort — preferModelDefault), the effort,
+             * the permission mode, the discipline (X-133: null is the way back
+             * to the agent's own default), the route and the tier under it
+             * (X-105: moving the route clears the tier, and the engine's own
+             * adapter prunes what it cannot serve), the sign-in (X-169: pruned
+             * by the engine the same way), and the agent (S-49: the agent alone).
              */
             case 'setIntent':
                 this.applyIntent(str('field'), msg.value);
                 this.refresh();
                 break;
-            /**
-             * ‼️ X-105 — WHICH ROUTE THE NEXT SESSION RUNS ON.
-             *
-             * It goes back to the host rather than into the page's own state for
-             * the same two reasons the engine does: the narrowing lives here
-             * (the adapter is the only thing that knows a tier stopped existing
-             * when the route moved), and the answer has to survive a repaint
-             * that rebuilds the whole row. `''` is a real answer and the
-             * important one — "no route" means the child inherits this window's
-             * environment, which is what every launch made before X-101 did.
-             */
-            /**
-             * ‼️ X-169 — WHICH SIGN-IN THE NEXT SESSION RUNS ON.
-             *
-             * It goes back to the host rather than into the page's own state for
-             * the two reasons the route does: the narrowing lives here (only this
-             * side knows the slot list), and the answer has to survive a repaint
-             * that rebuilds the whole strip. `''` is a real answer and the
-             * important one — it means the main sign-in, which is what every
-             * session started before this ran as.
-             */
-            case 'setAccount':
-                this.composerAccount = this.prunedAccount(str('id'));
-                this.refresh();
-                break;
-            case 'setRoute': {
-                const providerId = str('providerId');
-                const tier = str('tier');
-                this.composerRoute = this.prunedRoute(
-                    providerId ? { providerId, ...(tier ? { tier } : {}) } : undefined);
-                this.refresh();
-                break;
-            }
             // "this composer is no longer about that agent" — the way out of a
             // pin, so a fixed agent is never a trap (see pinnedAgent).
             case 'unpinAgent':
@@ -2075,9 +1959,9 @@ export class ConsolePanel {
                 // the second plan must not hand it to the next session nobody
                 // launched from it.
                 this.composerAccount = undefined;
-                // ‼️ K-34 — one-shot. A setup left standing would reapply itself
+                // ‼️ K-34 — one-shot. A prompt left standing would reapply itself
                 // to the NEXT session, which nobody launched from it.
-                this.composerLaunch = undefined;
+                this.composerPrompt = undefined;
                 // ‼️ …but NOT the engine. A project is about one piece of work
                 // and the next session is usually different work; an engine is
                 // about which machine you are working on today, and re-picking

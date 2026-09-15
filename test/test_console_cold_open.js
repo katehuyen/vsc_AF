@@ -147,33 +147,36 @@ ConsolePanel.show(deps, {
 ok('a closed Console is created by the door that was pressed', panels.length === 1);
 const cold = bootstrap(panels[0]);
 ok('…and it is loaded with a payload at all', !!cold);
+// X-152 — the door's answers are the host's ONE record (composerIntent +
+// composerAgent), and the prompt travels apart from it as content.
 ok('‼️ S-50 — the agent the door named is IN the bootstrap payload',
-    cold && cold.presetAgent === 'a-dev');
-ok('‼️ S-50 — …and so is the engine it settled', cold && cold.engine === 'agy');
-ok('‼️ S-50 — …and the composer seed that makes the page read the setup',
+    cold && cold.composerAgent === 'a-dev');
+ok('‼️ S-50 — …and so is the engine it settled', cold && cold.composerIntent.engine === 'agy');
+ok('‼️ S-50 — …and the composer seed that makes the page read the prompt',
     cold && Number(cold.composerSeed) > 0);
-ok('‼️ S-50 — …and the launcher\'s whole setup', cold && cold.composerLaunch
-    && cold.composerLaunch.model === 'gemini-2.5-pro'
-    && cold.composerLaunch.effort === 'high'
-    && cold.composerLaunch.permissionMode === 'plan'
-    && cold.composerLaunch.prompt === 'ilk soru'
-    && cold.composerLaunch.engine === 'agy');
+ok('‼️ S-50 — …and the launcher\'s whole setup, as the record', cold && cold.composerIntent
+    && cold.composerIntent.model === 'gemini-2.5-pro'
+    && cold.composerIntent.effort === 'high'
+    && cold.composerIntent.permissionMode === 'plan'
+    && cold.composerIntent.providerId === 'google'
+    && cold.composerPrompt === 'ilk soru');
 ok('…the pin, so the agent cannot be lost by accident',
     cold && cold.pinnedAgent === 'a-dev');
-ok('…the Superpowers answer the door made', cold && cold.superpowersChoice === 'on');
+ok('…the Superpowers answer the door made', cold && cold.composerIntent.superpowers === true);
 ok('…and the project it is to be started under', cold && cold.activeProjectId === 'prj_x');
 
-// ‼️ THE ONE-SHOT IS THE REASON THIS WAS UNRECOVERABLE. `presetAgent` is
-// consumed by whichever payload carries it; if that payload is the dropped one,
-// no later refresh can say the agent again. Having spent it on the bootstrap,
-// the next refresh must NOT still be claiming it.
+// ‼️ THE RECORD IS NOT ONE-SHOT. The old `presetAgent` was consumed by
+// whichever payload carried it, so a payload dropped on the way (the cold
+// path) could never be said again; the record is stated on EVERY push, and
+// the next refresh still says the same agent and the same setup.
 ConsolePanel.refreshIfOpen();
 const after = panels[0].webview.posted.filter(m => m && m.type === 'data').pop();
-ok('the one-shot agent is spent exactly once — on the payload the page read',
-    after && after.data.presetAgent === '');
-ok('…while the seed and the setup, which are not one-shot, stay',
+ok('the agent is stated again on the next refresh, not spent',
+    after && after.data.composerAgent === 'a-dev');
+ok('…and so are the seed and the setup',
     after && Number(after.data.composerSeed) === Number(cold.composerSeed)
-    && after.data.composerLaunch && after.data.composerLaunch.model === 'gemini-2.5-pro');
+    && after.data.composerIntent && after.data.composerIntent.model === 'gemini-2.5-pro'
+    && after.data.composerPrompt === 'ilk soru');
 
 // ------------------------------------------------- 2. the warm path, unbroken
 //
@@ -189,13 +192,13 @@ ConsolePanel.show(deps, {
 ok('an open Console is reused, never opened a second time', panels.length === 1);
 ok('…and revealed, so the door still brings it to the front', panels[0].revealed > 0);
 const warm = panels[0].webview.posted.filter(m => m && m.type === 'data').pop();
-ok('the second door\'s agent arrives by push', warm && warm.data.presetAgent === 'a-dev');
-ok('…on its own engine', warm && warm.data.engine === 'claude');
-ok('…with a HIGHER seed, or the page would ignore the setup',
+ok('the second door\'s agent arrives by push', warm && warm.data.composerAgent === 'a-dev');
+ok('…on its own engine', warm && warm.data.composerIntent.engine === 'claude');
+ok('…with a HIGHER seed, or the page would ignore the prompt',
     warm && Number(warm.data.composerSeed) > seedWas);
 ok('…and the second door\'s setup, not the first\'s',
-    warm && warm.data.composerLaunch && warm.data.composerLaunch.model === 'opus'
-    && warm.data.composerLaunch.engine === 'claude');
+    warm && warm.data.composerIntent && warm.data.composerIntent.model === 'opus'
+    && warm.data.composerIntent.effort === 'low' && warm.data.composerPrompt === '');
 
 // ------------------------------------------------- 3. the plain door
 //
@@ -206,8 +209,8 @@ ConsolePanel.current = undefined;   // as if the panel had been closed
 ConsolePanel.show(deps);
 ok('a plain Open Console opens a plain composer', panels.length === 2);
 const plain = bootstrap(panels[1]);
-ok('…with nobody preselected', plain && plain.presetAgent === '' && plain.pinnedAgent === '');
-ok('…and no setup handed over', plain && !plain.composerLaunch);
+ok('…with nobody preselected', plain && plain.composerAgent === '' && plain.pinnedAgent === '');
+ok('…and no setup handed over', plain && plain.composerIntent.model === '' && plain.composerPrompt === '');
 
 Module._load = origLoad;
 console.log(`test_console_cold_open: ${pass} passed, ${fail} failed`);

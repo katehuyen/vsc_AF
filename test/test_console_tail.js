@@ -44,7 +44,7 @@ const session = (messages, o) => Object.assign({
 }, o);
 
 const shell = (messages) => ({
-    generatedAt: NOW, selected: 'cs1', presetAgent: '',
+    generatedAt: NOW, selected: 'cs1',
     sessions: [session(messages)],
     agents: [{ id: 'a-dev', name: 'developer', dir: 'D:\\ajan' }],
     models: [{ id: '', label: 'Default' }], efforts: [{ id: '', label: 'Default' }],

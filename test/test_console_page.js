@@ -281,7 +281,7 @@ const CONVO = [
     msg('result', { text: '', cost: 0.01 })
 ];
 const data = (msgs, extra) => ({
-    generatedAt: 1, selected: 'cs1', presetAgent: '', sessions: [session(msgs, extra)],
+    generatedAt: 1, selected: 'cs1', sessions: [session(msgs, extra)],
     agents: [{ id: 'dev', name: 'developer', dir: 'D:/a/dev' }],
     models: [], efforts: [], permissions: [{ id: 'default', label: 'default' }],
     grants: [], defaults: {}, owned: [], resumable: []
@@ -1435,7 +1435,7 @@ const intentOf = (o) => Object.assign({
         const fx = require(require('path').resolve(__dirname, 'fixtures', 'console.js'));
         const agyScene = fx.variants().find(v => v.id === 'console-agy');
         ok('…and the fixture draws that scene, with Antigravity chosen and its own rows on the host list',
-            !!agyScene && agyScene.data.engine === 'agy'
+            !!agyScene && agyScene.data.composerIntent.engine === 'agy'
             && Array.isArray(agyScene.data.permissionsByEngine.agy)
             && !agyScene.data.permissionsByEngine.agy.some(r => r.id === 'manual' || r.id === 'dontAsk'));
     }
@@ -3025,7 +3025,7 @@ const intentOf = (o) => Object.assign({
 // makes the picker able to say what it means.
 {
     const composer = (extra) => ({
-        generatedAt: 1, selected: '', presetAgent: '', sessions: [],
+        generatedAt: 1, selected: '', sessions: [],
         agents: [{ id: 'dev', name: 'developer', dir: 'D:/a/dev' }],
         models: [], efforts: [], permissions: [{ id: 'default', label: 'default' }],
         grants: [], defaults: {}, owned: [], resumable: [],

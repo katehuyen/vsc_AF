@@ -142,7 +142,6 @@ const session = (o) => Object.assign({
 const data = () => ({
     generatedAt: NOW,
     selected: 'cs2',
-    presetAgent: '',
     sessions: [
         // ‼️ The Codex one is SELECTED: its composer is what has to be looked at
         // (a held message, next-turn pickers, tokens where the dollars go).
@@ -225,35 +224,10 @@ const data = () => ({
     agents: [
         // X-133 — the per-agent default rides on the agent's own row: the page
         // resolves the switch against whichever agent the picker is showing.
-        {
-            id: 'a-dev', name: 'developer', dir: 'D:\\zone\\agent\\ajanlar\\developer', superpowers: true,
-            // ‼️ X-145 — what this one was last started with. It rides on the
-            // agent row so the page can resolve it without a round trip: the
-            // engine switch reads it through memoryOn in media/console.js.
-            lastLaunch: {
-                engine: 'claude', model: 'opus', effort: 'high',
-                permissionMode: 'plan', superpowers: true, surface: 'console'
-            },
-            // ‼️ …AND THE LAYER UNDER THAT MEMORY: what Farm Settings says this
-            // agent runs each engine as. The engine switch reads it when the
-            // record has no row for the engine moved to — empty is the right
-            // answer for a MEMORY and the wrong one for the box, because the
-            // agent still has a standing setting there. Codex is deliberately
-            // an engine this record says nothing about.
-            engineDefaults: {
-                claude: { model: 'opus', effort: 'xhigh' },
-                codex: { model: 'gpt-5.6-sol', effort: 'xhigh' }
-            }
-        },
-        {
-            id: 'a-mgr', name: 'manager', dir: 'D:\\zone\\agent\\ajanlar\\manager', superpowers: false,
-            // …and one that has never been started, which falls through to the
-            // fleet defaults. `null` is a different answer from an empty record.
-            lastLaunch: null,
-            // …and nothing set for it anywhere either, which is what keeps the
-            // fleet default the ordinary answer.
-            engineDefaults: {}
-        }
+        // X-152 — the memory and the Settings layer no longer ride on the row:
+        // the host reads both when the engine moves and pushes the record.
+        { id: 'a-dev', name: 'developer', dir: 'D:\\zone\\agent\\ajanlar\\developer', superpowers: true },
+        { id: 'a-mgr', name: 'manager', dir: 'D:\\zone\\agent\\ajanlar\\manager', superpowers: false }
     ],
     // The flat pair is the pre-engine FALLBACK, so it stays Claude's own.
     models: [
@@ -342,7 +316,6 @@ const data = () => ({
     ],
     grants: [{ mode: 'acceptEdits', label: 'Allow edits', detail: 'file edits auto-approved' }],
     engines: ENGINES,
-    engine: 'codex',
     composerIntent: intentOf({ engine: 'codex', account: 'work-1' }),
     composerAgent: '',
     /**
@@ -356,7 +329,6 @@ const data = () => ({
      * fallen over — which is also the widest label the box will ever hold.
      */
     composerAccountAxis: true,
-    composerAccount: 'work-1',
     composerAccounts: [
         { id: 'work-1', label: 'murvietnam-2', health: 'ready', active: true,
             percent: 91, resetsAt: Date.now() + 42 * 60000 },
@@ -364,7 +336,6 @@ const data = () => ({
         { id: 'old', label: 'claude-murvietnam', health: 'needs-signin', active: false,
             percent: 12, resetsAt: Date.now() + 3 * 3600000 }
     ],
-    defaults: { engine: '', model: '', effort: '', permissionMode: '' },
     dropZone: true,
     attachMax: 20,
     owned: [],
@@ -385,7 +356,6 @@ const data = () => ({
     // X-133 — the OTHER half of the same appended system prompt: what this
     // session is told ABOUT, and how it is expected to WORK.
     superpowersOn: true,
-    superpowersChoice: '',
     superpowersText: '# Superpowers — engineering discipline\n\nInvoke the relevant skill BEFORE any response.\n\n## The skills, and where they are\n\n- **test-driven-development** — Use when writing any code: RED, GREEN, REFACTOR\n- **systematic-debugging** — Use when something is broken: find the root cause',
     superpowersHealth: { usable: true, why: '', skills: 14 },
     pinnedAgent: '',
@@ -399,7 +369,7 @@ const composerData = () => Object.assign(data(), {
     selected: '', sessions: [], chipProjectId: '', projectContext: '',
     // In composer mode the switch is a CHOICE, and untouched it follows the
     // agent the picker is showing rather than any answer of its own.
-    superpowersOn: undefined, superpowersChoice: ''
+    superpowersOn: undefined
 });
 
 /** ‼️ X-133 — the same composer with the skills folder UNABLE to supply the
@@ -424,15 +394,10 @@ const noSkillsData = () => Object.assign(composerData(), {
  */
 const rememberedComposerData = () => Object.assign(composerData(), {
     // ‼️ THE ENGINE IS PART OF THE RECORD, and it has to agree with the model in
-    // the picture: `ConsolePanel.show` seeds both from the SAME record, and the
-    // page then drops a model the chosen engine does not offer (reconcileComposer).
-    // A fixture that remembered `opus` on Codex would draw "Default" and look
-    // like the bug this item fixes.
-    engine: 'claude',
+    // the picture: `ConsolePanel.show` seeds both from the SAME record and
+    // narrows the model by the engine (X-152). A fixture that remembered
+    // `opus` on Codex would draw "Default" and look like the bug this item fixes.
     composerSeed: 1,
-    composerLaunch: { model: 'opus', effort: 'high', permissionMode: 'plan' },
-    superpowersChoice: 'on',
-    // X-152 — the same setup as the host's record, which is what is drawn
     composerIntent: intentOf({
         engine: 'claude', model: 'opus', effort: 'high', permissionMode: 'plan',
         account: 'work-1', superpowers: true
@@ -444,12 +409,12 @@ const rememberedComposerData = () => Object.assign(composerData(), {
  *  only state in which the effort box is absent and the permission tooltip says
  *  the engine can stop and ask. Five boxes become four; that is the picture. */
 const opencodeComposerData = () => Object.assign(composerData(), {
-    engine: 'opencode', composerIntent: intentOf({ engine: 'opencode', account: 'work-1' })
+    composerIntent: intentOf({ engine: 'opencode', account: 'work-1' })
 });
 /** S-60 — the composer with Antigravity chosen: the permission box draws only
  *  the rows that engine can keep — no `manual`, no `dontAsk`. */
 const agyComposerData = () => Object.assign(composerData(), {
-    engine: 'agy', composerIntent: intentOf({ engine: 'agy', account: 'work-1' })
+    composerIntent: intentOf({ engine: 'agy', account: 'work-1' })
 });
 
 /**
@@ -464,8 +429,6 @@ const agyComposerData = () => Object.assign(composerData(), {
  * more controls in a row measured at nowrap, and whether they still fit.
  */
 const routedComposerData = () => Object.assign(composerData(), {
-    engine: 'claude',
-    composerPick: { providerId: 'kimi', tier: 'opus' },
     composerIntent: intentOf({ engine: 'claude', providerId: 'kimi', tier: 'opus', account: 'work-1' }),
     composerForm: {
         engine: 'claude', applies: true, noun: 'Route', scope: 'session',
@@ -505,7 +468,6 @@ const accountComposerData = () => Object.assign(routedComposerData(), {
         { id: 'personal', label: 'personal@gmail', health: 'ready', active: false, percent: 12 },
         { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false, percent: -1 }
     ],
-    composerAccount: 'personal',
     composerIntent: intentOf({ engine: 'claude', providerId: 'kimi', tier: 'opus', account: 'personal' }),
     // ‼️ X-213 — the axis is a fact about the ENGINE, so it is stated rather
     // than inferred from the length of the list above.
@@ -523,7 +485,6 @@ const accountComposerData = () => Object.assign(routedComposerData(), {
  */
 const machineGlobalComposerData = () => Object.assign(routedComposerData(), {
     composerAccounts: [],
-    composerAccount: '@machine',
     composerIntent: intentOf({ engine: 'claude', providerId: 'kimi', tier: 'opus', account: '@machine' }),
     composerAccountAxis: true
 });
@@ -955,7 +916,6 @@ module.exports = {
             id: 'console-engine-switch-default',
             label: 'Console — switching engine falls to what Farm Settings says, not to "Default"',
             data: Object.assign(composerData(), {
-                engine: 'codex',
                 composerIntent: intentOf({ engine: 'codex', model: 'gpt-5.6-sol', effort: 'xhigh', account: 'work-1' }),
                 composerAgent: 'a-dev'
             })

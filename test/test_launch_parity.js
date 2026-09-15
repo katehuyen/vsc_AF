@@ -188,19 +188,23 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('…and a handed-over setup is seeded into the record, trusted, at the door',
         /c\.seedIntent\(l, true\);/.test(panelTs)
         && /cur: intent\(\)\.model,/.test(consoleJs));
-    // ‼️ ONE-SHOT, like `presetAgent`. A setup left standing would silently
-    // reapply itself to the NEXT session, which nobody launched from it.
-    ok('the setup is let go on the next start',
-        /this\.composerLaunch = undefined;/.test(panelTs));
-    // null vs {} — "nothing was handed over" and "a setup that says nothing"
-    // are different answers, and only the first falls through to the defaults.
-    ok('no setup is null, not an empty object',
-        /composerLaunch: this\.composerLaunch \?\? null,/.test(panelTs));
+    // ‼️ ONE-SHOT. The prompt is the one part of a setup that is content; left
+    // standing it would reapply itself to the NEXT session, which nobody
+    // launched from it. (The eight dimensions are the record, which the next
+    // start clears field by field — route, sign-in, discipline — and keeps
+    // the engine and the boxes on screen.)
+    ok('the prompt is let go on the next start',
+        /this\.composerPrompt = undefined;/.test(panelTs));
+    // step 3 — the one-shot setup record is gone from the wire: the record is
+    // the only statement of the setup, and the prompt travels beside it
+    ok('no one-at-a-time setup rides beside the record any more',
+        !/composerLaunch/.test(panelTs) && !/superpowersChoice/.test(panelTs)
+        && !/composerPick/.test(panelTs) && !/presetAgent/.test(panelTs));
     // ‼️ THE PROMPT IS PUT IN THE BOX, NOT SENT. The whole point is that nothing
     // runs until the person presses Send — and a draft they have already started
     // is not overwritten by it.
     ok('a first prompt lands in the box rather than being sent',
-        /composerPrompt: this\.composerLaunch\?\.prompt \?\? '',/.test(panelTs)
+        /composerPrompt: this\.composerPrompt \?\? '',/.test(panelTs)
         && /const prompt = DATA\.composerPrompt \|\| '';\s*\n\s*if \(prompt && !st\.draft\)/.test(consoleJs));
 }
 
@@ -534,11 +538,13 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('…without the record arguing with a box the user just cleared',
         /Seeding is the mechanism; a second layer at the last moment/.test(panelTs));
 
-    // ---- and the one door the host never hears about ----
-    // The agent picker changes page-side and repaints; without this the boxes
-    // describe the PREVIOUS agent, which is the X-133 defect one row along.
-    ok('the record rides on the agent row, for the picker to resolve',
-        /lastLaunch: this\.deps\.lastLaunch\(a\.id\) \?\? null/.test(panelTs));
+    // ---- and the one door the host used not to hear about ----
+    // X-152 — the agent picker asks the host (`setIntent agentId`), so the
+    // record no longer has to ride on the agent row for the page to resolve
+    // it: the host reads `lastLaunch` itself when the engine moves.
+    ok('the record is read on the host when the engine moves, not carried on the agent row',
+        /const remembered = agentId \? this\.deps\.lastLaunch\(agentId\) : undefined;/.test(panelTs)
+        && !/lastLaunch: this\.deps\.lastLaunch\(a\.id\)/.test(panelTs));
     // ‼️ S-49 — AND THE PICKER DOES NOT SPEND IT. A DOOR seeds this composer;
     // the picker sitting in front of the boxes is not a door. Changing the
     // agent after the model, the effort and the permission mode have been set
@@ -569,9 +575,11 @@ const launchTs = read('src', 'core', 'launch.ts');
     // check that cannot fail — it silenced the catalog reconcile completely
     // instead of narrowing it. The engine the setup was built for is the fact
     // that decides, and it has to travel with the setup to be readable here.
-    ok('the handed-over setup names the engine it was built for',
-        /model\?: string; effort\?: string; permissionMode\?: string; prompt\?: string; engine\?: string;/
-            .test(panelTs));
+    // X-152 — the engine is stated by the caller in the same call (`opts.engine`)
+    // and is the record's own field by the time the setup is narrowed into it.
+    ok('the handed-over setup is narrowed for the engine the caller states',
+        /if \(opts\?\.engine\) \{ c\.composerEngine = opts\.engine; \}/.test(panelTs)
+        && /c\.composerPrompt = \(l\.prompt \?\? ''\)\.trim\(\) \|\| undefined;/.test(panelTs));
     // X-152 — the check moved with the seeding: the door states the engine in
     // the same call (`opts.engine`), and the record is narrowed for THAT engine
     // as it is written (`seedIntent` → `narrowComposer`).
@@ -638,7 +646,7 @@ const launchTs = read('src', 'core', 'launch.ts');
         /narrowIntent\(this\.composerCatalogFor\(engine\),\s*\n\s*\{ model: this\.composerIntent\.model \?\? '', effort: this\.composerIntent\.effort \?\? '' \},\s*\n\s*\{ keep, preferModelDefault \}\)/.test(panelTs)
         && !/AFLaunch\.narrow\(/.test(consoleJs));
     ok('a handed-over setup is kept',
-        /c\.seedIntent\(l, true\);/.test(panelTs) && /c\.seedIntent\(c\.composerLaunch, true\);/.test(panelTs));
+        /c\.seedIntent\(l, true\);/.test(panelTs) && /c\.seedIntent\(\{\s*\n\s*model: pick\(last\?\.model, own\.model, d\.model\),[\s\S]{0,200}?\}, true\);/.test(panelTs));
     // ‼️ S-49 — the agent picker reconciles nothing, because it writes nothing.
     // The ENGINE switch still does, and it is the one that has to: a model
     // belongs to one engine, so moving between them is the case this exists for.
@@ -692,11 +700,11 @@ const launchTs = read('src', 'core', 'launch.ts');
      * about the box: the agent still has whatever Farm Settings says it runs
      * that engine as. Switch an agent set to `opus` on Claude away and back and
      * the model box came up `Default` — the composer's own seeding defect, one
-     * control later. The layer rides on the agent ROW for the same reason the
-     * memory does: the picker changes the agent without the host hearing.
+     * control later. X-152 — the layer is read on the host as the engine
+     * moves (`moveEngine`), for the agent the record names.
      */
-    ok('…and the Settings layer rides on the same row the memory does',
-        /engineDefaults: this\.deps\.agentSeedDefaults/
+    ok('…and the Settings layer is read under the memory as the engine moves',
+        /private moveEngine\(next: string\): void \{[\s\S]{0,900}?this\.deps\.agentSeedDefaults\?\.\(agentDir, engine\)/
             .test(read('src', 'panels', 'consolePanel.ts')));
     ok('…through the core rule itself (rememberedOn), with no mirror of it on the page',
         !/function memoryOn/.test(consoleJs) && /engine: \(\) => this\.moveEngine\(s\),/.test(panelTs));

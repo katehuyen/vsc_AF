@@ -1,4 +1,4 @@
-// X-152 (step 1) — THE COMPOSER'S INTENT HAS ONE OWNER, AND IT IS THE HOST.
+// X-152 — THE COMPOSER'S INTENT HAS ONE OWNER, AND IT IS THE HOST.
 //
 // The strip's answers used to live half in `ConsolePanel` (engine, route,
 // sign-in, discipline) and half in the page's own state (model, effort,
@@ -9,8 +9,9 @@
 // (`core/aflaunch.ts` = `media/afLaunch.js`), changed by one message
 // (`setIntent`), and pushed to the page whole (`composerIntent`).
 //
-// The page still keeps its own copy in this step (it is made a pure view in
-// step 2); nothing here is about what the page draws.
+// The page is a pure view of it (step 2: it draws `composerIntent` and posts
+// `setIntent`; step 3: the per-field messages and the one-at-a-time fields
+// are gone from the wire). Nothing here is about what the page draws.
 'use strict';
 const path = require('path');
 const Module = require('module');
@@ -168,9 +169,12 @@ const send = async (p, msg) => {
         && cold.composerIntent.tier === 'pro'
         && cold.composerIntent.superpowers === true);
     ok('…and it says who it is for', cold && cold.composerAgent === 'a-dev');
-    ok('…the older one-at-a-time fields still say the same things (the page reads them in this step)',
-        cold && cold.engine === 'agy' && cold.composerPick && cold.composerPick.providerId === 'google'
-        && cold.superpowersChoice === 'on');
+    ok('…the first prompt travels apart from it, as content (composerPrompt)',
+        cold && cold.composerPrompt === 'ilk soru');
+    ok('‼️ step 3 — the one-at-a-time fields are off the wire: the record is the only statement',
+        cold && !('engine' in cold) && !('composerPick' in cold) && !('composerAccount' in cold)
+        && !('superpowersChoice' in cold) && !('composerLaunch' in cold) && !('defaults' in cold)
+        && !('presetAgent' in cold));
 
     // ------------------------------------------ 2. one message changes one field
     let d = await send(p, { type: 'setIntent', field: 'permissionMode', value: 'acceptEdits' });
@@ -178,20 +182,29 @@ const send = async (p, msg) => {
         d.composerIntent.permissionMode === 'acceptEdits'
         && d.composerIntent.model === 'gemini-2.5-pro' && d.composerIntent.engine === 'agy');
     d = await send(p, { type: 'setIntent', field: 'superpowers', value: null });
-    ok('…superpowers back to "the agent\'s own" is null on the wire, and the old field agrees',
-        d.composerIntent.superpowers === null && d.superpowersChoice === '');
+    ok('…superpowers back to "the agent\'s own" is null on the wire',
+        d.composerIntent.superpowers === null);
     d = await send(p, { type: 'setIntent', field: 'nonsense', value: 'x' });
     ok('…a dimension the record does not hold is ignored, not stored',
         !('nonsense' in d.composerIntent) && d.composerIntent.model === 'gemini-2.5-pro');
 
     // ------------------------------------------ 3. the engine moves: answered again, HERE
-    d = await send(p, { type: 'setEngine', id: 'claude' });
+    d = await send(p, { type: 'setIntent', field: 'engine', value: 'claude' });
     ok('‼️ moving the engine re-answers model/effort/permission from THIS agent\'s row for the new engine (X-145)',
         d.composerIntent.engine === 'claude'
         && d.composerIntent.model === 'sonnet' && d.composerIntent.effort === 'medium'
         && d.composerIntent.permissionMode === 'acceptEdits');
     ok('…and a route that belongs to the old engine is gone with it (X-105)',
-        d.composerIntent.providerId === '' && d.composerIntent.tier === '' && d.composerPick === null);
+        d.composerIntent.providerId === '' && d.composerIntent.tier === '');
+    // ‼️ step 3 — the older per-field doors are gone: a message by one of their
+    // names is not a door any more and changes nothing
+    const was = JSON.stringify(d.composerIntent);
+    p.webview._onMsg({ type: 'setEngine', id: 'agy' });
+    p.webview._onMsg({ type: 'setRoute', providerId: 'google' });
+    p.webview._onMsg({ type: 'setSuperpowers', on: true });
+    await settle();
+    ok('‼️ setEngine / setRoute / setAccount / setSuperpowers are not doors any more',
+        JSON.stringify(lastData(p).composerIntent) === was);
 
     // ------------------------------------------ 4. narrowing is the host's
     d = await send(p, { type: 'setIntent', field: 'model', value: 'opus' });
@@ -212,16 +225,12 @@ const send = async (p, msg) => {
         d.composerIntent.engine === 'claude'
         && d.composerIntent.model === 'sonnet' && d.composerIntent.effort === 'medium'
         && d.composerIntent.permissionMode === 'acceptEdits');
-    ok('…and the record agrees with the one-shot setup the page still reads in this step',
-        d.composerLaunch && d.composerLaunch.model === d.composerIntent.model
-        && d.composerLaunch.effort === d.composerIntent.effort);
+    ok('…and no prompt rides with a plain door', d.composerPrompt === '');
 
     // ------------------------------------------ 6. Send: the record knows who, and what clears
     await send(p, { type: 'setIntent', field: 'providerId', value: 'anthropic' });
-    d = await send(p, {
-        type: 'start', agentId: 'a-dev', engine: 'claude',
-        model: 'sonnet', effort: 'medium', permissionMode: 'acceptEdits', text: 'merhaba'
-    });
+    // step 2 — Send carries content only; the record says who and what
+    d = await send(p, { type: 'start', text: 'merhaba' });
     ok('a session was started', started.length === 1 && started[0].agentId === 'a-dev');
     ok('‼️ after Send the route, the sign-in and the discipline are cleared for the NEXT session…',
         d.composerIntent.providerId === '' && d.composerIntent.superpowers === null

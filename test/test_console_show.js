@@ -39,7 +39,7 @@ const session = (id, messages) => ({
 });
 
 const shell = (selected, ids, prefs) => ({
-    generatedAt: NOW, selected, presetAgent: '',
+    generatedAt: NOW, selected,
     // K-38 — the host's memory of the last `show`; absent key = never chosen.
     prefs: prefs || {},
     sessions: ids.map(id => session(id, messages(id))),

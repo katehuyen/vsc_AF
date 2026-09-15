@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.516.0 - the composer's one-at-a-time fields and per-field messages are gone — step 3 of 4 (X-152) (2026-09-15)
+
+- **‼️ ONE STATEMENT OF THE SETUP ON THE WIRE, AND ONE DOOR INTO IT.** The host
+  no longer pushes `engine`, `composerPick`, `composerAccount`,
+  `superpowersChoice`, `composerLaunch`, `defaults` or `presetAgent`, and the
+  agent rows no longer carry `lastLaunch`/`engineDefaults` (the host reads
+  both itself when the engine moves — `moveEngine`). `composerIntent` +
+  `composerAgent` + `composerPrompt` are the whole of what the page is told
+  about the next session. `setEngine`, `setRoute`, `setAccount` and
+  `setSuperpowers` are not doors any more: a message by one of those names
+  changes nothing (measured), `setIntent` is the one message, and the parity
+  manifest lost the four entries.
+- `composerLaunch` (the one-shot setup record) is reduced to what it really
+  was for: `composerPrompt`, the first prompt a launcher handed over, into the
+  draft once per seed and let go on the next start. A plain door (an agent
+  row) leaves no prompt pending. The `presetAgent` one-shot is gone with it —
+  the record is stated on every push, so the cold-open failure it caused
+  (S-50: a payload dropped on the way could never be said again) has no
+  mechanism left to happen through.
+- Gates: `test_console_intent.js` (the retired names are not doors; the
+  one-at-a-time fields are off the wire), `test_console_cold_open.js` (S-50
+  reads the record and the prompt; the agent is stated again on the next
+  refresh, not spent), `test_console_agent_default.js` §5, `test_launch_parity.js`,
+  `test_parity.js`; fixtures carry only the record. Step 4 adds the S-50/S-51
+  gates on the record and the dimension matrix.
+
 ## 3.515.0 - the Console composer is a pure view of the host's record — step 2 of 4 (X-152) (2026-09-15)
 
 - **‼️ THE PAGE KEEPS NO COPY OF THE NEXT SESSION'S SETUP.** `media/console.js`

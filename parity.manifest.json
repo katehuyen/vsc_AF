@@ -1156,15 +1156,6 @@
       ]
     },
     {
-      "capability": "consolePanel.ts#setAccount",
-      "ui": [
-        "page:consolePanel.ts#setAccount"
-      ],
-      "ops": [
-        "console.start"
-      ]
-    },
-    {
       "capability": "consolePanel.ts#setEffort",
       "ui": [
         "page:consolePanel.ts#setEffort"
@@ -1172,16 +1163,6 @@
       "ops": [
         "console.setEffort"
       ]
-    },
-    {
-      "capability": "consolePanel.ts#setEngine",
-      "ui": [
-        "page:consolePanel.ts#setEngine"
-      ],
-      "exempt": {
-        "kind": "visual",
-        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
     },
     {
       "capability": "consolePanel.ts#setLiveAccount",
@@ -1221,31 +1202,12 @@
       ]
     },
     {
-      "capability": "consolePanel.ts#setRoute",
-      "ui": [
-        "page:consolePanel.ts#setRoute"
-      ],
-      "ops": [
-        "console.start"
-      ]
-    },
-    {
       "capability": "consolePanel.ts#setSessionColor",
       "ui": [
         "page:consolePanel.ts#setSessionColor"
       ],
       "ops": [
         "sessions.color"
-      ]
-    },
-    {
-      "capability": "consolePanel.ts#setSuperpowers",
-      "ui": [
-        "page:consolePanel.ts#setSuperpowers"
-      ],
-      "ops": [
-        "console.start",
-        "superpowers.set"
       ]
     },
     {

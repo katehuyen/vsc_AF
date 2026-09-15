@@ -111,10 +111,11 @@ const deps = {
     // under test has to OFFER the rows the sections below pick by hand.
     engineModels: () => ({
         codex: {
-            models: [{ id: 'gpt-5.6-terra' }, { id: 'gpt-5.6-sol' }, { id: 'sonnet' }],
+            models: [{ id: 'gpt-5.6-terra' }, { id: 'gpt-5.6-sol' }, { id: 'gpt-5.6-luna' }, { id: 'sonnet' }],
             efforts: {
                 'gpt-5.6-terra': [{ id: 'medium' }, { id: 'xhigh' }],
                 'gpt-5.6-sol': [{ id: 'medium' }, { id: 'xhigh' }],
+                'gpt-5.6-luna': [{ id: 'medium' }, { id: 'xhigh' }],
                 sonnet: [{ id: 'low' }, { id: 'medium' }]
             },
             defaultEffort: {}
@@ -241,9 +242,9 @@ ok('a host that answers nothing leaves the fleet default in place'
 // model was not. The value was right and unsayable, which is the same defect as
 // a control with no referent.
 //
-// So this reads the payload the panel PUSHES: `composerLaunch` is the setup the
-// door resolved, and `applyComposerSeed` in media/console.js puts it in the
-// boxes. Nothing is started here — that is the point.
+// So this reads the payload the panel PUSHES: `composerIntent` is the record
+// the door seeded (X-152), and media/console.js draws the boxes from it.
+// Nothing is started here — that is the point.
 // ‼️ READ OFF THE PAGE THE DOOR ACTUALLY WROTE. The first payload does not
 // arrive by `postMessage` — `mount()` puts it in the shell as `window.__DATA__`
 // and a push before that is refused (S-50), which is precisely the moment a
@@ -253,7 +254,7 @@ const seedOf = (p) => {
     const m = /window\.__DATA__ = ([\s\S]*?); window\.__AFUI__/.exec(p.webview.html || '');
     if (!m) { return undefined; }
     return JSON.parse(m[1].replace(/\\u003c/g, '<').replace(/\\u003e/g, '>')
-        .replace(/\\u0026/g, '&')).composerLaunch;
+        .replace(/\\u0026/g, '&')).composerIntent;
 };
 {
     panels[panels.length - 1].onDispose();
