@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.517.0 - the composer's boxes and the host's doors are counted against the dimension list — step 4 of 4 (X-152) (2026-09-15)
+
+- **‼️ X-148's FAILURE NOW FAILS THE BUILD.** `providerId` and `tier` were once
+  added to `LaunchOptions`, wired into the launcher, and simply never given a
+  box in the Console composer — and nothing went red, because nothing counted.
+  `test_console_intent.js` now reads the page's `askIntent` fields out of
+  `media/console.js` and the host's `applyIntent` arms out of
+  `src/panels/consolePanel.ts` and compares both against
+  `LAUNCH_DIMENSIONS`: a box the host does not answer, a door no box reaches,
+  and a user-answered dimension arriving with neither are each a separate red
+  line. The five dimensions that are deliberately not in the strip (`name`,
+  `prompt`, `resume`, `continueLast`, `cli`) are named with their reason and
+  the exemption is itself checked, so it cannot quietly cover a sixth.
+- **S-50 on the page, not only on the host.** A cold page — no saved state of
+  its own, and a stale one from the build before this item — is booted through
+  `lib_page_dom` and every box is read out of the markup: the engine, the
+  model, the effort, the permission mode, the agent, the sign-in and the
+  Superpowers chip all come from the bootstrap `composerIntent`, and nothing a
+  previous build left in `afConsole` is drawn. And the page's convergence is
+  measured from the page's own side: a box changed posts one `setIntent` and
+  draws nothing meanwhile, and when the host's answer refuses the pick the
+  page draws the ANSWER rather than keeping the value the hand chose.
+- The four names `media/console.js` stripped out of a saved state by hand are
+  now the dimension list itself (`AFDimensions.ids()` + the agent), so a
+  dimension the page must never keep a copy of is covered by arriving.
+
 ## 3.516.0 - the composer's one-at-a-time fields and per-field messages are gone — step 3 of 4 (X-152) (2026-09-15)
 
 - **‼️ ONE STATEMENT OF THE SETUP ON THE WIRE, AND ONE DOOR INTO IT.** The host

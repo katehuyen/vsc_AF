@@ -147,7 +147,7 @@
     // parseInt reads both that and the number, so nothing below has to care.
     st.boxH = parseInt(st.boxH, 10) || 0;
     if (!st.kindsBy || typeof st.kindsBy !== 'object') { st.kindsBy = {}; }
-    ['agentId', 'model', 'effort', 'permissionMode'].forEach(k => { delete st[k]; });
+    window.AFDimensions.ids().concat(['agentId']).forEach(k => { delete st[k]; });
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         all.afConsole = st;
