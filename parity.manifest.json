@@ -1212,6 +1212,15 @@
       }
     },
     {
+      "capability": "consolePanel.ts#setIntent",
+      "ui": [
+        "page:consolePanel.ts#setIntent"
+      ],
+      "ops": [
+        "console.start"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#setRoute",
       "ui": [
         "page:consolePanel.ts#setRoute"

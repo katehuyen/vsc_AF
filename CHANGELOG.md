@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.513.0 - the composer's intent has one owner, the host — step 1 of 4 (X-152) (2026-09-15)
+
+- **‼️ ONE RECORD FOR THE NEXT SESSION.** The strip's answers lived in two
+  places with five rules between them: the engine, the route, the sign-in and
+  the discipline on the host (each its own field, each pruned by its own
+  handler), the model, the effort and the permission mode in the page's own
+  state (narrowed there, seeded from a one-shot record the page had to notice),
+  and Send stitched the halves back together. Every race this family is named
+  after — the cold open losing the setup (S-50), the boxes answering only when
+  the hand let go (S-51) — was that seam. `ConsolePanel.composerIntent` is the
+  seam closed: every dimension in one `LaunchIntent`, held on the host, narrowed
+  there by the one rule (`core/aflaunch.ts` = `media/afLaunch.js`, X-149),
+  changed by one message (`setIntent { field, value }`), pushed to the page
+  whole (`composerIntent` + `composerAgent`). The four old fields are accessors
+  over it; the doors seed it (`seedIntent`); moving the engine re-answers the
+  three under it on the host (`moveEngine`: memory → the agent's own setting →
+  narrowed). `setIntent` is on the parity manifest beside `setRoute`.
+- **Nothing on screen changes in this step.** The page still reads the older
+  one-at-a-time fields and keeps its own copy; step 2 makes it a pure view
+  (reads `composerIntent`, posts `setIntent`, keeps only the draft and the
+  attachments), step 3 retires the per-field messages, step 4 adds the S-50/S-51
+  gates. The plan with all four steps is in the project's X-148 plan note, §6.
+- Gate: `test_console_intent.js` — the whole intent is in the bootstrap payload
+  narrowed; `setIntent` changes one field and ignores a dimension the record
+  does not hold; moving the engine re-answers model/effort/permission from THIS
+  agent's row for the new engine and drops the old engine's route; a hand-picked
+  model takes its own default effort, an unknown one drops to Default; a plain
+  door seeds memory → own setting → fleet; after Send the route, the sign-in and
+  the discipline clear while the engine and the boxes stay.
+
 ## 3.512.0 - the Start Session… icon opens ON your saved setups — no agent question first, one press is the start (X-180) (2026-09-15)
 
 - **‼️ THE LIST STILL CAME SECOND.** 3.511.0 put the saved setups on the right

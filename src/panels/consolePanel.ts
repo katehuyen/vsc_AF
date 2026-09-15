@@ -22,6 +22,8 @@ import {
     EFFORT_CHOICES, LastLaunch, LaunchOptions, modelChoices, PERMISSION_CHOICES, permissionChoicesByEngine,
     rememberedOn, RunSurface
 } from '../core/launch';
+import { LaunchIntent } from '../core/launchDimensions';
+import { catalog as launchCatalog, narrow as narrowIntent } from '../core/aflaunch';
 import { totalTokens, Usage } from '../core/pricing';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
@@ -537,6 +539,34 @@ export class ConsolePanel {
     private composerProject = '';
 
     /**
+     * ‼️ X-152 — THE COMPOSER'S WHOLE INTENT, IN ONE RECORD, ON THIS SIDE.
+     *
+     * The strip's answers used to live in two places with five rules between
+     * them: the engine, the route, the sign-in and the discipline here (each
+     * its own field, each pruned by its own handler), the model, the effort
+     * and the permission mode in the page's own state (narrowed there, seeded
+     * from a one-shot record the page had to notice), and Send stitched the
+     * two halves back together. Every race this family is named after — a
+     * cold open losing the setup (S-50), the boxes answering only when the
+     * hand let go (S-51) — was the seam between those halves.
+     *
+     * This is the seam closed: every dimension of the next session is a field
+     * of ONE `LaunchIntent`, held here, narrowed here by the one rule
+     * (`core/aflaunch.ts` = `media/afLaunch.js`, X-149), and pushed to the page
+     * whole. The page draws it and asks for changes (`setIntent`); it does not
+     * keep a copy. The four accessors below are the old names over the new
+     * record, so the readers that grew up on them are not rewritten.
+     *
+     * What is NOT in it: the project (not a launch dimension — it is what the
+     * session is filed under) and the agent (the subject of the intent, not a
+     * dimension of it); both are siblings. The draft and the attachments are
+     * content, not intent, and stay on the page.
+     */
+    private composerIntent: LaunchIntent = {};
+    /** …and WHO the next session is for — the page's picker echoes into it. */
+    private composerAgent = '';
+
+    /**
      * ‼️ X-133 — THE ENGINEERING DISCIPLINE THE NEXT SESSION WILL BE STARTED
      * WITH, and `undefined` is a THIRD answer, not a missing one.
      *
@@ -551,7 +581,8 @@ export class ConsolePanel {
      * being started, not about the window. Cleared on `start`, exactly as the
      * project picker is — the next session gets its own agent's default back.
      */
-    private composerSuperpowers: boolean | undefined = undefined;
+    private get composerSuperpowers(): boolean | undefined { return this.composerIntent.superpowers; }
+    private set composerSuperpowers(v: boolean | undefined) { this.composerIntent.superpowers = v; }
 
     /**
      * ‼️ X-103 — THE ROUTE THE DOOR THAT OPENED THIS COMPOSER PICKED.
@@ -568,7 +599,14 @@ export class ConsolePanel {
      * the same reason the project and the discipline are, and cleared on `start`
      * so the NEXT session does not inherit a route nobody chose for it.
      */
-    private composerRoute: { providerId?: string; tier?: string } | undefined = undefined;
+    private get composerRoute(): { providerId?: string; tier?: string } | undefined {
+        const { providerId, tier } = this.composerIntent;
+        return providerId ? { providerId, ...(tier ? { tier } : {}) } : undefined;
+    }
+    private set composerRoute(v: { providerId?: string; tier?: string } | undefined) {
+        this.composerIntent.providerId = v?.providerId || undefined;
+        this.composerIntent.tier = v?.providerId ? (v.tier || undefined) : undefined;
+    }
     /**
      * ‼️ X-169 — WHICH SIGN-IN THE NEXT CARD STARTS ON.
      *
@@ -578,7 +616,8 @@ export class ConsolePanel {
      * ordinary answer and means "whatever `agentFarm.activeAccounts` says at
      * spawn" — which is the one place the "use this next" button writes.
      */
-    private composerAccount: string | undefined = undefined;
+    private get composerAccount(): string | undefined { return this.composerIntent.account; }
+    private set composerAccount(v: string | undefined) { this.composerIntent.account = v || undefined; }
 
     /**
      * ‼️ K-34 — A SETUP THE COMPOSER OPENS ON, rather than a session spawned
@@ -620,7 +659,10 @@ export class ConsolePanel {
      * PATH a hundred times, short enough that an install you did in a terminal
      * is offered before you have finished reading the toast.
      */
-    private composerEngine?: string;
+    private get composerEngine(): string | undefined { return this.composerIntent.engine; }
+    private set composerEngine(v: string | undefined) {
+        this.composerIntent.engine = ((v ?? '').trim() || undefined) as EngineId | undefined;
+    }
     /**
      * A new-agent entry point is a new composer, even when the Console panel is
      * already open. The webview keeps drafts and picker state deliberately, so
@@ -730,6 +772,10 @@ export class ConsolePanel {
                 const own = agentDir
                     ? c.deps.agentSeedDefaults?.(agentDir, c.composerEngine) ?? { model: '', effort: '' }
                     : { model: '', effort: '' };
+                // ‼️ X-152 — the record knows who it is for, and opens with the
+                // same three layers below, on this side: what the page used to
+                // read off `composerLaunch` and narrow itself, narrowed here.
+                c.composerAgent = opts.agentId;
                 if (!opts.launch && (last || own.model || own.effort)) {
                     const pick = (...v: (string | undefined)[]) =>
                         v.map(x => (x ?? '').trim()).find(x => x) ?? '';
@@ -740,6 +786,13 @@ export class ConsolePanel {
                         engine: c.composerEngine
                     };
                     c.composerSuperpowers = last?.superpowers;
+                    c.seedIntent(c.composerLaunch, true);
+                } else if (!opts.launch) {
+                    // nothing remembered, nothing set for this agent: the fleet
+                    // defaults, and the catalogue decides whether the engine
+                    // can run them (no `keep` — they name no engine)
+                    c.composerSuperpowers = undefined;
+                    c.seedIntent({ model: d.model, effort: d.effort, permissionMode: d.permissionMode }, false);
                 }
             }
             // ‼️ K-34 — the setup lands on the composer, and the seed is bumped
@@ -758,6 +811,9 @@ export class ConsolePanel {
                     engine: c.composerEngine
                 };
                 c.composerSuperpowers = l.superpowers;
+                // X-152 — the same setup into the record, trusted: it is a real
+                // launch's answer for the engine this composer opens on
+                c.seedIntent(l, true);
                 // ‼️ X-103 — the route the calling door picked, carried rather
                 // than dropped. ‼️ X-105 — and now NARROWED on the way in, by
                 // the engine this composer is opening on: a door that offered a
@@ -1328,6 +1384,11 @@ export class ConsolePanel {
             // a different answer from "a setup that says nothing", and only the
             // first may fall through to the user's launch defaults.
             composerLaunch: this.composerLaunch ?? null,
+            // ‼️ X-152 — THE WHOLE INTENT, ALREADY NARROWED, and who it is for.
+            // What the page draws its strip from; the fields above it that say
+            // the same things one at a time are on their way out.
+            composerIntent: this.composerIntentShown(),
+            composerAgent: this.composerAgent,
             // the exact text, for the hover — never a description of it
             superpowersText: this.deps.superpowersText(),
             superpowersHealth: this.deps.superpowersHealth(),
@@ -1476,6 +1537,141 @@ export class ConsolePanel {
         const map = this.deps.engineModels?.();
         if (!map) { return undefined; }
         return map[(engine || 'claude') as EngineId];
+    }
+
+    /**
+     * ‼️ X-152 — WHAT THE COMPOSER'S ENGINE IS OFFERING, in the one shape the
+     * narrowing rule reads. The same three sources the page's `composerCatalog`
+     * assembles, assembled here instead: the engine's published catalogue, the
+     * alias rows when it has none, the flat effort list to fall back on, and
+     * whether the engine has an effort flag at all (a fact about the engine,
+     * true before any handshake has landed).
+     */
+    private composerCatalogFor(engine: string) {
+        const em = this.engineModelsFor(engine);
+        return launchCatalog({
+            known: true,
+            em: em ?? null,
+            models: em?.models ?? modelChoices(this.deps.modelAliases()),
+            efforts: EFFORT_CHOICES,
+            takesEffort: engineTakesEffort(engine)
+        });
+    }
+
+    /**
+     * The model and the effort, narrowed by the engine the composer is on — the
+     * one rule, applied on this side (X-149). `keep` is S-34: a pair a real
+     * launch on THIS engine ran is runnable on it whatever the catalogue
+     * advertises; `preferModelDefault` is a model picked by hand, whose own
+     * default effort then wins.
+     */
+    private narrowComposer(keep: { model?: string; effort?: string } | null, preferModelDefault: boolean): void {
+        const engine = engineOf(this.chosenEngine()).id;
+        const out = narrowIntent(this.composerCatalogFor(engine),
+            { model: this.composerIntent.model ?? '', effort: this.composerIntent.effort ?? '' },
+            { keep, preferModelDefault });
+        this.composerIntent.model = out.model || undefined;
+        this.composerIntent.effort = out.effort || undefined;
+    }
+
+    /**
+     * ‼️ X-152 — A DOOR SEEDS THE COMPOSER, HERE (S-49, now literally on this
+     * side). The handed-over three are written into the record and narrowed by
+     * the engine the composer is opening on. `trusted` is S-34: a setup a real
+     * launch ran, or the agent's own per-engine answer, beats the catalogue;
+     * the fleet defaults name no engine and are not trusted (no `keep`).
+     */
+    private seedIntent(
+        from: { model?: string; effort?: string; permissionMode?: string }, trusted: boolean
+    ): void {
+        this.composerIntent.model = (from.model ?? '').trim() || undefined;
+        this.composerIntent.effort = (from.effort ?? '').trim() || undefined;
+        this.composerIntent.permissionMode = (from.permissionMode ?? '').trim() || undefined;
+        const keep = trusted && (this.composerIntent.model || this.composerIntent.effort)
+            ? { model: this.composerIntent.model, effort: this.composerIntent.effort } : null;
+        this.narrowComposer(keep, false);
+    }
+
+    /**
+     * ‼️ X-152 — THE ENGINE MOVED. Everything under it is answered again, here,
+     * by the order every door resolves at spawn (X-145): this agent's memory
+     * for the NEW engine → its own setting for that engine in Farm Settings →
+     * nothing, then narrowed by what the engine offers (with the first two
+     * layers trusted as `keep`, because both are per-engine facts). The route
+     * and the sign-in are pruned by the engine's own adapter, as before.
+     */
+    private moveEngine(next: string): void {
+        this.composerEngine = next;
+        const engine = engineOf(this.chosenEngine()).id;
+        const agentId = this.composerAgent || this.presetAgent || '';
+        const remembered = agentId ? this.deps.lastLaunch(agentId) : undefined;
+        const mem = remembered ? rememberedOn(engine, remembered) : undefined;
+        const agentDir = this.deps.getAgents().find(a => a.id === agentId)?.dir ?? '';
+        const own = agentDir
+            ? this.deps.agentSeedDefaults?.(agentDir, engine) ?? { model: '', effort: '' }
+            : { model: '', effort: '' };
+        this.composerIntent.model = mem?.model || own.model || undefined;
+        this.composerIntent.effort = mem?.effort || own.effort || undefined;
+        this.composerIntent.permissionMode = mem?.permissionMode || undefined;
+        const keep = (this.composerIntent.model || this.composerIntent.effort)
+            ? { model: this.composerIntent.model, effort: this.composerIntent.effort } : null;
+        this.narrowComposer(keep, false);
+        this.composerRoute = this.prunedRoute(this.composerRoute);
+        this.composerAccount = this.prunedAccount(this.composerAccount);
+    }
+
+    /**
+     * ‼️ X-152 — ONE CHANGE TO THE INTENT, BY FIELD. This is the whole of what
+     * the page may ask for about the next session: it names a dimension and a
+     * value, and the answer — narrowed, pruned, or refused into the default —
+     * comes back with the next push. A field this record does not hold is
+     * ignored rather than stored: the page cannot invent a dimension.
+     */
+    private applyIntent(field: string, value: unknown): void {
+        const s = typeof value === 'string' ? value.trim() : '';
+        // a map rather than a switch: the parity gate reads every `case` arm of
+        // this file as a door of its own, and the one door here is `setIntent`
+        const apply: Record<string, () => void> = {
+            engine: () => this.moveEngine(s),
+            model: () => {
+                this.composerIntent.model = s || undefined;
+                this.narrowComposer(null, true);
+            },
+            effort: () => { this.composerIntent.effort = s || undefined; },
+            permissionMode: () => { this.composerIntent.permissionMode = s || undefined; },
+            // X-133 — `''`/null is the way back to the agent's own default
+            superpowers: () => {
+                this.composerSuperpowers = value === true || value === 'on' ? true
+                    : value === false || value === 'off' ? false : undefined;
+            },
+            account: () => { this.composerAccount = this.prunedAccount(s); },
+            // X-105 — the route is the one above the tier: moving it clears the tier
+            providerId: () => { this.composerRoute = this.prunedRoute(s ? { providerId: s } : undefined); },
+            tier: () => {
+                const providerId = this.composerRoute?.providerId;
+                this.composerRoute = this.prunedRoute(
+                    providerId ? { providerId, ...(s ? { tier: s } : {}) } : undefined);
+            },
+            agentId: () => { this.composerAgent = s; }
+        };
+        if (Object.prototype.hasOwnProperty.call(apply, field)) { apply[field](); }
+    }
+
+    /**
+     * The intent as the page draws it: every dimension present, `''` where
+     * nothing is stated (the page's "Default" row), the engine and the sign-in
+     * already resolved the way their boxes show them. `superpowers` keeps its
+     * three answers (X-133): true, false, or null for "the agent's own".
+     */
+    private composerIntentShown(): Record<string, string | boolean | null> {
+        const i = this.composerIntent;
+        return {
+            engine: this.chosenEngine(),
+            model: i.model ?? '', effort: i.effort ?? '', permissionMode: i.permissionMode ?? '',
+            providerId: i.providerId ?? '', tier: i.tier ?? '',
+            account: this.accountShown(),
+            superpowers: i.superpowers === undefined ? null : i.superpowers
+        };
     }
 
     private resumeRow(s: SessionInfo): Record<string, unknown> {
@@ -1706,17 +1902,27 @@ export class ConsolePanel {
             // about the session being started — a running one cannot change
             // engine, and the composer does not draw the box for it.
             case 'setEngine':
-                this.composerEngine = str('id');
                 // ‼️ X-105 — A ROUTE BELONGS TO ONE ENGINE, exactly as a model
                 // does. A Claude route carried onto Codex is an endpoint its CLI
                 // was never going to be pointed at, and the pick is dropped by
                 // the new engine's own adapter rather than by a rule written
                 // here — an engine with no provider axis prunes everything away
                 // and says so, which is the honest answer for four of the five.
-                this.composerRoute = this.prunedRoute(this.composerRoute);
                 // ‼️ X-169 — and the sign-in with it, for the same reason and by
-                // the same rule: an account belongs to one engine.
-                this.composerAccount = this.prunedAccount(this.composerAccount);
+                // the same rule: an account belongs to one engine. ‼️ X-152 —
+                // and the model, the effort and the permission mode under it,
+                // answered again for the new engine (moveEngine).
+                this.moveEngine(str('id'));
+                this.refresh();
+                break;
+            /**
+             * ‼️ X-152 — ONE DIMENSION OF THE NEXT SESSION, CHANGED. The page
+             * names a field and a value; the record is narrowed here and pushed
+             * back whole. This is the message every composer control converges
+             * on (the per-field ones above are its older names).
+             */
+            case 'setIntent':
+                this.applyIntent(str('field'), msg.value);
                 this.refresh();
                 break;
             /**
@@ -1764,6 +1970,8 @@ export class ConsolePanel {
                     void vscode.window.showWarningMessage('Agent Farm: pick an agent first.');
                     return;
                 }
+                // X-152 — the record knows who it was started for
+                this.composerAgent = agent.id;
                 const d = this.deps.launchDefaults();
                 // ‼️ THE ENGINE IS CHECKED HERE, NOT TRUSTED FROM THE PAGE. The
                 // picker already disables what cannot run, but the page is a
