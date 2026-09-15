@@ -106,7 +106,20 @@ const deps = {
     index: { all: () => [], external: () => [] },
     colorFor: () => '',
     modelAliases: () => [],
-    engineModels: () => ({}),
+    // X-152 — the host narrows what the boxes hold against the engine's
+    // catalogue (there is no page-side reconcile any more), so the engine
+    // under test has to OFFER the rows the sections below pick by hand.
+    engineModels: () => ({
+        codex: {
+            models: [{ id: 'gpt-5.6-terra' }, { id: 'gpt-5.6-sol' }, { id: 'sonnet' }],
+            efforts: {
+                'gpt-5.6-terra': [{ id: 'medium' }, { id: 'xhigh' }],
+                'gpt-5.6-sol': [{ id: 'medium' }, { id: 'xhigh' }],
+                sonnet: [{ id: 'low' }, { id: 'medium' }]
+            },
+            defaultEffort: {}
+        }
+    }),
     engines: () => ([
         { id: 'claude', label: 'Claude Code', ready: true, auth: 'subscription' },
         { id: 'codex', label: 'Codex', ready: true, auth: 'subscription' }
@@ -156,6 +169,15 @@ const send = async (msg) => {
     for (const fn of panels[panels.length - 1].webview.onMsgs) { fn(msg); }
     await new Promise(r => setImmediate(r));
 };
+/** ‼️ X-152 — THE BOXES ARE THE HOST'S RECORD. The page sets them one
+ *  `setIntent` at a time (the agent first, so the engine move resolves for
+ *  THAT agent) and Send carries content only; this is that sequence. */
+const startWith = async (o, text) => {
+    for (const field of ['agentId', 'engine', 'model', 'effort', 'permissionMode']) {
+        await send({ type: 'setIntent', field, value: o[field] });
+    }
+    await send({ type: 'start', text });
+};
 
 async function main() {
 
@@ -163,10 +185,7 @@ async function main() {
 //
 // The case the repair is about: nothing typed in the composer, and the agent has
 // a row of its own in Farm Settings.
-await send({
-    type: 'start', agentId: 'a-dev', text: 'go',
-    engine: 'codex', model: '', effort: '', permissionMode: ''
-});
+await startWith({ agentId: 'a-dev', engine: 'codex', model: '', effort: '', permissionMode: '' }, 'go');
 const one = started[0];
 ok('the composer started a session at all', !!one);
 ok('‼️ AN EMPTY EFFORT BOX TAKES THE AGENT\'S OWN SETTING, NOT THE FLEET\'S'
@@ -179,10 +198,7 @@ ok('‼️ …and the same for the model (got ' + (one && one.model) + ')',
 // The layer is UNDER the box, never over it: a value the person actually typed
 // is the answer, and a per-agent default that overrode it would be a picker
 // that cannot pick.
-await send({
-    type: 'start', agentId: 'a-dev', text: 'go',
-    engine: 'codex', model: 'gpt-5.6-sol', effort: 'medium', permissionMode: ''
-});
+await startWith({ agentId: 'a-dev', engine: 'codex', model: 'gpt-5.6-sol', effort: 'medium', permissionMode: '' }, 'go');
 const two = started[1];
 ok('what the box says still wins over the agent\'s row (model)',
     !!two && two.model === 'gpt-5.6-sol');
@@ -192,10 +208,7 @@ ok('…and over it for the effort too', !!two && two.effort === 'medium');
 //
 // The layer is inserted, not substituted: an agent with nothing of its own must
 // still fall through to `agentFarm.launchDefaults` exactly as before.
-await send({
-    type: 'start', agentId: 'a-bas', text: 'go',
-    engine: 'codex', model: '', effort: '', permissionMode: ''
-});
+await startWith({ agentId: 'a-bas', engine: 'codex', model: '', effort: '', permissionMode: '' }, 'go');
 const three = started[2];
 ok('an agent with no row of its own still falls through to the fleet (model)',
     !!three && three.model === 'sonnet');
@@ -211,10 +224,7 @@ started.length = 0;
 // Console of its own: close this one the way VS Code would.
 panels[panels.length - 1].onDispose();
 ConsolePanel.show(quiet);
-await send({
-    type: 'start', agentId: 'a-dev', text: 'go',
-    engine: 'codex', model: '', effort: '', permissionMode: ''
-});
+await startWith({ agentId: 'a-dev', engine: 'codex', model: '', effort: '', permissionMode: '' }, 'go');
 ok('a host that answers nothing leaves the fleet default in place'
     + ' (got ' + JSON.stringify(started[0] && [started[0].model, started[0].effort]) + ')',
     !!started[0] && started[0].model === 'sonnet' && started[0].effort === 'low');

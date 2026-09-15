@@ -1389,6 +1389,9 @@ export class ConsolePanel {
             // the same things one at a time are on their way out.
             composerIntent: this.composerIntentShown(),
             composerAgent: this.composerAgent,
+            // …and the one part of a handed-over setup that is CONTENT rather
+            // than intent: the first prompt, into the box, once per seed (K-34)
+            composerPrompt: this.composerLaunch?.prompt ?? '',
             // the exact text, for the hover — never a description of it
             superpowersText: this.deps.superpowersText(),
             superpowersHealth: this.deps.superpowersHealth(),
@@ -1965,21 +1968,24 @@ export class ConsolePanel {
                 this.refresh();
                 break;
             case 'start': {
-                const agent = this.agentById(str('agentId'));
+                // ‼️ X-152 — THE PAGE SENDS CONTENT; THE SETUP IS THE RECORD.
+                // Who the session is for and every dimension it starts with are
+                // `composerAgent` and `composerIntent`, seeded by the door and
+                // changed by `setIntent`; Send carries the text and the files.
+                const agent = this.agentById(this.composerAgent);
                 if (!agent) {
                     void vscode.window.showWarningMessage('Agent Farm: pick an agent first.');
                     return;
                 }
-                // X-152 — the record knows who it was started for
-                this.composerAgent = agent.id;
                 const d = this.deps.launchDefaults();
+                const i = this.composerIntent;
                 // ‼️ THE ENGINE IS CHECKED HERE, NOT TRUSTED FROM THE PAGE. The
                 // picker already disables what cannot run, but the page is a
                 // webview: the refusal has to live on this side of the wall, and
                 // it is the same sentence every other entry point uses
                 // (engineRefusal). Starting on an absent CLI produces a session
                 // that dies on its first turn with a shell error.
-                const engine = (str('engine') || this.chosenEngine()).trim().toLowerCase();
+                const engine = this.chosenEngine().toLowerCase();
                 const refused = engineRefusal(this.engineList(), engine);
                 if (refused) {
                     void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
@@ -2010,10 +2016,12 @@ export class ConsolePanel {
                 const own = this.deps.agentEngineDefaults?.(agent.dir, engine) ?? {};
                 const started: LaunchOptions = {
                     engine: engine as EngineId,
-                    model: str('model') || own.model || d.model,
-                    effort: str('effort') || own.effort || d.effort,
-                    permissionMode: str('permissionMode') || d.permissionMode,
-                    superpowers: msg.superpowers === true,
+                    model: i.model || own.model || d.model,
+                    effort: i.effort || own.effort || d.effort,
+                    permissionMode: i.permissionMode || d.permissionMode,
+                    // ‼️ X-133 — RESOLVED HERE NOW (X-152): the record's third
+                    // answer, `undefined`, means "this agent's own default".
+                    superpowers: i.superpowers ?? this.deps.superpowersDefault(agent.name),
                     // ‼️ X-103 — from the composer's carried value, NOT from the
                     // page: there is no route control on it yet (X-105), so a
                     // `str('providerId')` here would read an empty box and erase
@@ -2046,13 +2054,7 @@ export class ConsolePanel {
                     // down (ConsoleHost.start), which is the inheritance the box
                     // above exists to replace.
                     projectId: this.composerProject,
-                    // ‼️ X-133 — RESOLVED BY THE PAGE, because the page is where
-                    // the agent picker lives: the switch's untouched state means
-                    // "whatever this agent's default is", and the panel does not
-                    // know which agent is showing until this message arrives.
-                    // The choice itself is still kept here (composerSuperpowers)
-                    // so a repaint cannot lose it.
-                    superpowers: msg.superpowers === true,
+                    superpowers: started.superpowers === true,
                     firstPrompt: str('text') || undefined,
                     firstAttachments: attachmentsOf(msg)
                 });
@@ -2145,20 +2147,22 @@ export class ConsolePanel {
                     if (choice !== 'New session in the same folder') { return; }
                     const agentForNew = this.deps.getAgents().find(a => a.name === row.agentName);
                     const dn = this.deps.launchDefaults();
-                    // …and the same three-layer order as the composer: the box,
-                    // then THIS agent's own Settings row, then the fleet.
+                    // …and the same three-layer order as the composer: the box
+                    // (X-152: the host's own record of it), then THIS agent's
+                    // own Settings row, then the fleet.
+                    const box = this.composerIntent;
                     const ownNew = agentForNew
                         ? this.deps.agentEngineDefaults?.(agentForNew.dir, engine) ?? {}
                         : {};
                     const fresh = narrowLaunch(this.engineModelsFor(engine),
-                        str('model') || ownNew.model || dn.model,
-                        str('effort') || ownNew.effort || dn.effort);
+                        box.model || ownNew.model || dn.model,
+                        box.effort || ownNew.effort || dn.effort);
                     this.selected = host.start({
                         agentId: agentForNew?.id ?? '', agentName: row.agentName ?? 'session',
                         cwd: row.cwd, engine,
                         model: fresh.model,
                         effort: fresh.effort,
-                        permissionMode: str('permissionMode') || dn.permissionMode,
+                        permissionMode: box.permissionMode || dn.permissionMode,
                         // A fresh session, but reached by trying to continue that
                         // one: it is the same work, so it starts under the same
                         // project rather than under whatever the window says.
@@ -2172,13 +2176,15 @@ export class ConsolePanel {
                 }
                 const agent = this.deps.getAgents().find(a => a.name === row.agentName);
                 const d = this.deps.launchDefaults();
+                // X-152 — the composer's boxes are the host's own record
+                const box = this.composerIntent;
                 // ‼️ X-30 / K-17 — the composer's boxes and the fleet defaults
                 // are BOTH written without knowing which engine this row was
                 // recorded with, so they are narrowed to what that engine (and
                 // that model) actually offers before they become flags.
                 // !! S-45 - THE SESSION'S OWN LAST SETTING COMES FIRST, and it has
                 // to be first for the feature to exist at all: the composer's
-                // boxes are seeded FROM `launchDefaults()`, so `str('model')`
+                // boxes are seeded FROM `launchDefaults()`, so the record's model
                 // is normally holding the fleet default rather than nothing,
                 // and a transcript value placed after it could never win. The
                 // order is therefore transcript -> box -> fleet default.
@@ -2195,15 +2201,15 @@ export class ConsolePanel {
                     ? this.deps.agentEngineDefaults?.(agent.dir, engine) ?? {}
                     : {};
                 const back = narrowLaunch(this.engineModelsFor(engine),
-                    inherit.model || str('model') || ownBack.model || d.model,
-                    inherit.effort || str('effort') || ownBack.effort || d.effort);
+                    inherit.model || box.model || ownBack.model || d.model,
+                    inherit.effort || box.effort || ownBack.effort || d.effort);
                 this.selected = host.start({
                     agentId: agent?.id ?? '', agentName: row.agentName ?? 'session',
                     cwd: row.cwd, resume: sessionId, engine,
                     model: back.model,
                     effort: back.effort,
                     // S-45 — the mode the transcript last stated (see above).
-                    permissionMode: inherit.permissionMode || str('permissionMode') || d.permissionMode,
+                    permissionMode: inherit.permissionMode || box.permissionMode || d.permissionMode,
                     // ‼️ …and the project it comes back UNDER is its OWN. Left
                     // out, ConsoleHost.start falls back to the window's active
                     // project — which is not this session's answer and is

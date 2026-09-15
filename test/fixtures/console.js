@@ -106,6 +106,18 @@ const msgs = () => ([
     { id: 'm6', ts: NOW - 20000, role: 'user', text: 'Now count the words in it.' }
 ]);
 
+/**
+ * ‼️ X-152 — THE NEXT SESSION'S SETUP, WHOLE, exactly as `ConsolePanel`
+ * pushes it (`composerIntentShown`): every dimension present, `''` for the
+ * "Default" row, `superpowers: null` for "the agent's own". The page draws
+ * its strip from this and nothing else, so a scene that wants a box to read
+ * a value says it HERE.
+ */
+const intentOf = (o) => Object.assign({
+    engine: 'claude', model: '', effort: '', permissionMode: '',
+    providerId: '', tier: '', account: '', superpowers: null
+}, o || {});
+
 /** A session shaped exactly as ConsolePanel.data() builds one. */
 const session = (o) => Object.assign({
     id: 'cs1', agentId: 'a-dev', agentName: 'developer', sessionId: '019fe7bc-545c-70d2',
@@ -331,6 +343,8 @@ const data = () => ({
     grants: [{ mode: 'acceptEdits', label: 'Allow edits', detail: 'file edits auto-approved' }],
     engines: ENGINES,
     engine: 'codex',
+    composerIntent: intentOf({ engine: 'codex', account: 'work-1' }),
+    composerAgent: '',
     /**
      * ‼️ X-263 — THE ACCOUNT BOX, so it can actually be LOOKED AT.
      *
@@ -417,16 +431,26 @@ const rememberedComposerData = () => Object.assign(composerData(), {
     engine: 'claude',
     composerSeed: 1,
     composerLaunch: { model: 'opus', effort: 'high', permissionMode: 'plan' },
-    superpowersChoice: 'on'
+    superpowersChoice: 'on',
+    // X-152 — the same setup as the host's record, which is what is drawn
+    composerIntent: intentOf({
+        engine: 'claude', model: 'opus', effort: 'high', permissionMode: 'plan',
+        account: 'work-1', superpowers: true
+    }),
+    composerAgent: 'a-dev'
 });
 
 /** ‼️ U-59 — the same composer with the SHARED-ACP engine chosen, which is the
  *  only state in which the effort box is absent and the permission tooltip says
  *  the engine can stop and ask. Five boxes become four; that is the picture. */
-const opencodeComposerData = () => Object.assign(composerData(), { engine: 'opencode' });
+const opencodeComposerData = () => Object.assign(composerData(), {
+    engine: 'opencode', composerIntent: intentOf({ engine: 'opencode', account: 'work-1' })
+});
 /** S-60 — the composer with Antigravity chosen: the permission box draws only
  *  the rows that engine can keep — no `manual`, no `dontAsk`. */
-const agyComposerData = () => Object.assign(composerData(), { engine: 'agy' });
+const agyComposerData = () => Object.assign(composerData(), {
+    engine: 'agy', composerIntent: intentOf({ engine: 'agy', account: 'work-1' })
+});
 
 /**
  * ‼️ X-105 — THE COMPOSER WITH A ROUTE PICKED, which is the only state the two
@@ -442,6 +466,7 @@ const agyComposerData = () => Object.assign(composerData(), { engine: 'agy' });
 const routedComposerData = () => Object.assign(composerData(), {
     engine: 'claude',
     composerPick: { providerId: 'kimi', tier: 'opus' },
+    composerIntent: intentOf({ engine: 'claude', providerId: 'kimi', tier: 'opus', account: 'work-1' }),
     composerForm: {
         engine: 'claude', applies: true, noun: 'Route', scope: 'session',
         scopeNote: 'a route is fixed for the whole session on this engine',
@@ -481,6 +506,7 @@ const accountComposerData = () => Object.assign(routedComposerData(), {
         { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false, percent: -1 }
     ],
     composerAccount: 'personal',
+    composerIntent: intentOf({ engine: 'claude', providerId: 'kimi', tier: 'opus', account: 'personal' }),
     // ‼️ X-213 — the axis is a fact about the ENGINE, so it is stated rather
     // than inferred from the length of the list above.
     composerAccountAxis: true
@@ -498,6 +524,7 @@ const accountComposerData = () => Object.assign(routedComposerData(), {
 const machineGlobalComposerData = () => Object.assign(routedComposerData(), {
     composerAccounts: [],
     composerAccount: '@machine',
+    composerIntent: intentOf({ engine: 'claude', providerId: 'kimi', tier: 'opus', account: '@machine' }),
     composerAccountAxis: true
 });
 
@@ -919,22 +946,19 @@ module.exports = {
          * `a-dev`'s record names Claude; Codex has no row in it. That used to
          * empty both boxes — right about the MEMORY and wrong about the box,
          * because Farm Settings says this agent runs Codex on `gpt-5.6-sol` at
-         * `xhigh`. The scene presses the engine picker, which is the only way
-         * the state exists: a fixture that merely declared the values would
-         * photograph the page rather than the rule.
+         * `xhigh`. ‼️ X-152 — the rule is the HOST's now (`moveEngine`, run in
+         * test_console_intent.js), so pressing the picker here would only post
+         * `setIntent` into a harness with nobody to answer it. What the reader
+         * meets is the answer the host pushes back, and that is the scene.
          */
         {
             id: 'console-engine-switch-default',
             label: 'Console — switching engine falls to what Farm Settings says, not to "Default"',
-            data: Object.assign(composerData(), { engine: 'claude', presetAgent: 'a-dev' }),
-            state: { afConsole: { agentId: 'a-dev' } },
-            // ‼️ THE VALUE TRAVELS ON `target`, not beside it. The handler reads
-            // `e.target.value`, and an `extra` of `{ value }` lands on the EVENT
-            // — so the first version of this scene fired a change that carried
-            // the box's old value and photographed the page it started on.
-            act: r => {
-                r.query('#c-engine').forEach(b => b.fire('change', { target: { value: 'codex' } }));
-            }
+            data: Object.assign(composerData(), {
+                engine: 'codex',
+                composerIntent: intentOf({ engine: 'codex', model: 'gpt-5.6-sol', effort: 'xhigh', account: 'work-1' }),
+                composerAgent: 'a-dev'
+            })
         },
         /**
          * ‼️ S-62 — THE COMMANDS STILL RUNNING BEHIND THE TURN. Measured: a Bash

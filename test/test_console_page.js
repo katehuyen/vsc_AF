@@ -572,15 +572,25 @@ const html = allHtml;
 }
 
 // ---------- "Talk to Agent" lands on the composer, with that agent chosen ----------
+//
+// ‼️ X-152 — THE SETUP IS THE HOST'S RECORD. What used to be measured here in
+// the page's own state (`afConsole.agentId / model / effort / permissionMode`)
+// travels as `composerIntent` + `composerAgent` now: the page draws the record
+// and keeps nothing. So every assertion below reads the MARKUP or the control,
+// and every change is one `setIntent` that the host answers with its next push
+// — which this harness plays, because there is no host behind it.
+const intentOf = (o) => Object.assign({
+    engine: 'claude', model: '', effort: '', permissionMode: '',
+    providerId: '', tier: '', account: '', superpowers: null
+}, o || {});
 {
     const withPreset = data(CONVO.slice());
     withPreset.selected = '';            // composer mode, as the command opens it
-    withPreset.presetAgent = 'dev';
-    withPreset.composerSeed = 1;
-    withPreset.engine = 'codex';
-    withPreset.defaults = {
+    withPreset.composerAgent = 'dev';
+    withPreset.composerIntent = intentOf({
         engine: 'codex', model: 'gpt-5.6-terra', effort: 'medium', permissionMode: 'acceptEdits'
-    };
+    });
+    withPreset.permissions = [{ id: 'default', label: 'default' }, { id: 'acceptEdits', label: 'acceptEdits' }];
     withPreset.engines = [{ id: 'claude', label: 'Claude', ready: true }, { id: 'codex', label: 'Codex', ready: true }];
     withPreset.engineModels = {
         claude: {
@@ -600,36 +610,43 @@ const html = allHtml;
     push(withPreset);
     ok('the agent picker asks as a sentence', allHtml().includes('Choose an agent…'));
     ok('…and the agent handed over is the one selected',
-        state.afConsole.agentId === 'dev'
-        && (els['c-agent'] ? els['c-agent'].value === 'dev' : /value="dev" selected/.test(allHtml())));
+        /value="dev" selected/.test(allHtml()) && els['c-agent'].value === 'dev');
     ok('…while a session that agent already has running is offered, not hidden',
         /already has a session running here/.test(allHtml()));
-    ok('a fresh agent composer takes the current engine launch settings, not the previous composer state',
-        state.afConsole.model === 'gpt-5.6-terra'
-        && state.afConsole.effort === 'medium'
-        && state.afConsole.permissionMode === 'acceptEdits'
-        && /value="codex" selected/.test(allHtml())
-        && /value="gpt-5\.6-terra" selected/.test(allHtml()));
+    ok('‼️ a fresh agent composer draws the record the door seeded, not a previous composer\'s state',
+        /value="codex" selected/.test(allHtml())
+        && /value="gpt-5\.6-terra" selected/.test(allHtml())
+        && /value="medium" selected/.test(allHtml())
+        && /value="acceptEdits" selected/.test(allHtml()));
+    ok('‼️ …and the page keeps NO copy of it',
+        !('model' in state.afConsole) && !('effort' in state.afConsole)
+        && !('permissionMode' in state.afConsole) && !('agentId' in state.afConsole));
 
-    // A model change must rebuild the dependent effort box immediately. Terra
-    // defaults to medium here; carrying an unrelated stale value is K-15/S-27.
+    // A model change is one question to the host, which narrows the effort
+    // under it (preferModelDefault); nothing is decided on this side.
+    posted.length = 0;
     els['c-model'].value = '';
     els['c-model'].listeners.change({ target: els['c-model'] });
-    ok('changing model immediately reconciles its effort vocabulary',
-        state.afConsole.model === '' && state.afConsole.effort === '');
+    ok('changing the model asks the host for that one field, and nothing else',
+        posted.length === 1 && posted[0].type === 'setIntent'
+        && posted[0].field === 'model' && posted[0].value === '');
+    push(Object.assign({}, withPreset, {
+        composerIntent: intentOf({ engine: 'codex', model: '', effort: '', permissionMode: 'acceptEdits' })
+    }));
+    ok('…and the effort box is redrawn from the host\'s answer for the new model',
+        !/value="medium" selected/.test(allHtml()) && !/>medium</.test(allHtml()));
 
     // Reusing the same open Console for another Talk to Agent invocation is a
-    // new launch decision. The increasing seed is the host/webview handshake.
+    // new launch decision — the door seeds the record again, and the page
+    // draws whatever it now says.
     const again = Object.assign({}, withPreset, {
-        composerSeed: 2, engine: 'claude',
-        defaults: { engine: 'claude', model: 'sonnet', effort: 'high', permissionMode: 'default' }
+        composerIntent: intentOf({ engine: 'claude', model: 'sonnet', effort: 'high', permissionMode: 'default' })
     });
     push(again);
     ok('a second Talk to Agent invocation reseeds the already-open composer',
-        state.afConsole.model === 'sonnet' && state.afConsole.effort === 'high'
-        && state.afConsole.permissionMode === 'default'
-        && /value="claude" selected/.test(allHtml())
-        && /value="sonnet" selected/.test(allHtml()));
+        /value="claude" selected/.test(allHtml())
+        && /value="sonnet" selected/.test(allHtml())
+        && /value="high" selected/.test(allHtml()));
 
     // ---- ‼️ S-49 — AND THE PICKER IS NOT ONE OF THOSE DOORS ----
     //
@@ -637,52 +654,46 @@ const html = allHtml;
     // door: it stands in front of boxes that are already drawn and already
     // answered. It used to reseed the model, the effort and the permission mode
     // from the newly chosen agent's record, so a setup typed by hand was thrown
-    // away by the LAST decision of a launch — choosing who runs it. An agent
-    // change repaints, and that is the whole of it: the Superpowers chip
-    // resolves an untouched choice against the agent the picker is showing, so
-    // it follows the new agent without a value being written anywhere.
+    // away by the LAST decision of a launch — choosing who runs it. Choosing an
+    // agent asks the host for the agent and nothing else; the host's handler
+    // for that field touches nothing else (test_console_intent.js); and the
+    // Superpowers chip follows the new agent on the echo, because an untouched
+    // choice is resolved against whichever agent the record names.
     const twoAgents = Object.assign({}, again, {
-        composerSeed: 3,
         agents: [
-            { id: 'dev', name: 'developer', dir: 'D:/a/dev', superpowers: false, lastLaunch: null },
-            {
-                id: 'ops', name: 'ops', dir: 'D:/a/ops', superpowers: false,
-                lastLaunch: {
-                    engine: 'codex', model: 'gpt-5.6-terra', effort: 'high',
-                    permissionMode: 'acceptEdits', superpowers: true, surface: 'terminal'
-                }
-            }
+            { id: 'dev', name: 'developer', dir: 'D:/a/dev', superpowers: false },
+            { id: 'ops', name: 'ops', dir: 'D:/a/ops', superpowers: true }
         ]
     });
     push(twoAgents);
     posted.length = 0;
     els['c-agent'].value = 'ops';
     els['c-agent'].listeners.change({ target: els['c-agent'] });
-    ok('‼️ choosing another agent changes the agent, and only the agent',
-        state.afConsole.agentId === 'ops');
-    ok('‼️ …the launch boxes are left exactly as the hand that set them left them',
-        state.afConsole.model === 'sonnet' && state.afConsole.effort === 'high'
-        && state.afConsole.permissionMode === 'default');
-    // The engine and the discipline live host-side, and nothing is asked of it
-    // either: a picker that moved the engine under the boxes would leave a
-    // model belonging to a different program sitting in front of the user.
-    ok('…the engine is not moved under them',
-        !posted.some(m => m.type === 'setEngine'));
+    ok('‼️ choosing another agent asks for the agent, and only the agent',
+        posted.length === 1 && posted[0].type === 'setIntent'
+        && posted[0].field === 'agentId' && posted[0].value === 'ops');
+    ok('…the engine is not moved under the boxes',
+        !posted.some(m => m.type === 'setEngine' || (m.type === 'setIntent' && m.field === 'engine')));
     ok('…nor the discipline, which the repaint answers on its own',
-        !posted.some(m => m.type === 'setSuperpowers'));
+        !posted.some(m => m.type === 'setSuperpowers' || (m.type === 'setIntent' && m.field === 'superpowers')));
+    // the host's answer: the agent moved, the boxes exactly where the hand left them
+    push(Object.assign({}, twoAgents, { composerAgent: 'ops' }));
+    ok('‼️ …the launch boxes are left exactly as the hand that set them left them',
+        /value="sonnet" selected/.test(allHtml()) && /value="high" selected/.test(allHtml())
+        && els['c-agent'].value === 'ops');
+    ok('‼️ …and the chip follows the agent the record now names (its own default, untouched)',
+        /Superpowers/.test(allHtml()) && /ops/.test(allHtml()));
 
-    // …and back again, with the host believing the switch is ON. The rule holds
-    // in the other direction too: an agent that has never been started does not
-    // drag the boxes down to the fleet defaults.
-    push(Object.assign({}, twoAgents, { composerSeed: 3, superpowersChoice: 'on' }));
+    // …and back again: an agent that has never been started does not drag the
+    // boxes down to the fleet defaults, because nothing on this side writes them.
     posted.length = 0;
     els['c-agent'].value = 'dev';
     els['c-agent'].listeners.change({ target: els['c-agent'] });
+    push(Object.assign({}, twoAgents, { composerAgent: 'dev' }));
     ok('‼️ an agent with no record does not empty the boxes either',
-        state.afConsole.model === 'sonnet' && state.afConsole.effort === 'high'
-        && state.afConsole.permissionMode === 'default');
+        /value="sonnet" selected/.test(allHtml()) && /value="high" selected/.test(allHtml()));
     ok('…and the chip is left to the repaint, never to a message',
-        !posted.some(m => m.type === 'setSuperpowers'));
+        !posted.some(m => m.type === 'setSuperpowers' || (m.type === 'setIntent' && m.field === 'superpowers')));
 }
 
 // ---------- ‼️ S-51 — THE ENGINE MOVES, AND THE BOXES MOVE WITH IT ----------
@@ -693,15 +704,17 @@ const html = allHtml;
 //
 // That last sentence is the whole diagnosis. The model list, the effort list
 // and the engine's own hint are ALL drawn off `engineNow()`, which only moves
-// on a shell rebuild — and the rebuild was arriving as the HOST's echo of
-// `setEngine`, at the one moment the reader's hand is still on the picker they
-// just used (a native `<select>` keeps focus after a choice). M-33 read that as
-// hands-on and put the rebuild on the slate; the debt was then paid by the
-// `focusout` of the user reaching for the model box, which is exactly why the
-// list corrected itself the instant they went to argue with it.
+// on a shell rebuild — and the rebuild arrives as the HOST's echo, at the one
+// moment the reader's hand is still on the picker they just used (a native
+// `<select>` keeps focus after a choice). M-33 read that as hands-on and put
+// the rebuild on the slate; the debt was then paid by the `focusout` of the
+// user reaching for the model box, which is exactly why the list corrected
+// itself the instant they went to argue with it.
 //
-// A picker the reader pressed is the reader's own act — the same rule the model
-// picker beside it already follows — so it repaints on the spot.
+// ‼️ X-152 — the answer is the HOST's (moveEngine re-answers model, effort and
+// mode for the new engine); what the page owes is to draw it the moment it
+// lands, hand on the picker or not (`askedHost`), and to hand focus back to
+// the picker the rebuild replaced (`refocus`).
 {
     const composer = () => app()._html;
     const engines = [
@@ -720,12 +733,12 @@ const html = allHtml;
             defaultEffort: {}
         }
     };
-    const onEngine = id => Object.assign(data(CONVO.slice()), {
-        selected: '', presetAgent: '', composerSeed: 10, engine: id, engines, engineModels,
-        defaults: { engine: 'claude', model: 'sonnet', effort: 'high', permissionMode: 'default' }
+    const onEngine = (id, model, effort) => Object.assign(data(CONVO.slice()), {
+        selected: '', engines, engineModels,
+        composerIntent: intentOf({ engine: id, model: model || '', effort: effort || '', permissionMode: 'default' })
     });
 
-    push(onEngine('claude'));
+    push(onEngine('claude', 'sonnet', 'high'));
     // ‼️ B-03.21 (round 2) — THE OPTION CARRIES ITS VALUE AND NOTHING ELSE. The
     // axis moved to the list's own `<optgroup>` heading, where it costs the
     // value no characters at all; round 1 had put it in front of every option
@@ -745,11 +758,19 @@ const html = allHtml;
     els['c-engine'].value = 'codex';
     els['c-engine'].listeners.change({ target: els['c-engine'] });
 
-    ok('the choice reaches the host, which owns the refusal',
-        posted.some(m => m.type === 'setEngine' && m.id === 'codex'));
-    ok('‼️ …and the model box is the new engine\'s AT ONCE, without waiting for '
-        + 'a round trip or for the hand to leave the control',
-        composer().includes('GPT 5.6 Terra') && !composer().includes('Sonnet'));
+    ok('the choice reaches the host, which owns the refusal and the answer',
+        posted.length === 1 && posted[0].type === 'setIntent'
+        && posted[0].field === 'engine' && posted[0].value === 'codex');
+    ok('‼️ …and nothing is guessed on this side meanwhile: no half-answer is drawn',
+        composer().includes('Sonnet') && !composer().includes('GPT 5.6 Terra'));
+    // The host's answer lands with the hand still on the picker.
+    const before = app()._writes;
+    const focusWas = els['c-engine']._focus;
+    push(onEngine('codex'));
+    ok('‼️ …and the model box is the new engine\'s THE MOMENT THE ANSWER LANDS, without '
+        + 'waiting for the hand to leave the control',
+        app()._writes > before
+        && composer().includes('GPT 5.6 Terra') && !composer().includes('Sonnet'));
     ok('‼️ …and so is the effort box, which is looked up by engine and model both',
         composer().includes('>xhigh<') && !composer().includes('>high<'));
     ok('‼️ …and the hint that says what this engine changes about the composer',
@@ -757,13 +778,15 @@ const html = allHtml;
     ok('…with the picker itself showing the engine that was chosen',
         /value="codex" selected/.test(composer()));
     ok('…and a model belonging to the engine just left is not carried over',
-        state.afConsole.model === '' && state.afConsole.effort === '');
+        !/value="sonnet" selected/.test(composer()));
+    ok('‼️ …and focus is handed back to the picker the rebuild replaced',
+        els['c-engine']._focus > focusWas);
 
     // The host's echo agrees with what is already on screen, so it costs
     // nothing: same engine, same shell key, no second rebuild.
     const writes = app()._writes;
     push(onEngine('codex'));
-    ok('…and the host\'s echo of the same choice does not rebuild it a second time',
+    ok('…and the same answer pushed again does not rebuild it a second time',
         app()._writes === writes && composer().includes('GPT 5.6 Terra'));
 
     // ‼️ AND M-33 IS NOT WEAKENED. A shell change the reader did NOT ask for,
@@ -834,8 +857,11 @@ const html = allHtml;
         variantsWhy: 'ACP declares only model and mode, so no variant can be carried here'
     });
     const base = (engine, form, pick) => Object.assign(data(CONVO.slice()), {
-        selected: '', presetAgent: '', composerSeed: 20, engine, engines, engineModels,
-        defaults: {}, composerForm: form, composerPick: pick || null
+        selected: '', engines, engineModels, composerForm: form,
+        // X-152 — the pick is two fields of the host's record
+        composerIntent: intentOf({
+            engine, providerId: (pick && pick.providerId) || '', tier: (pick && pick.tier) || ''
+        })
     });
 
     push(base('claude', claudeForm(null), null));
@@ -865,13 +891,16 @@ const html = allHtml;
     els['c-route'].value = 'kimi';
     els['c-route'].listeners.change({ target: els['c-route'] });
     ok('choosing a route tells the host, which owns the narrowing',
-        posted.some(m => m.type === 'setRoute' && m.providerId === 'kimi'));
-    ok('‼️ …and the box shows it AT ONCE — the same rule as the engine picker (S-51), '
-        + 'because the only rebuild is an echo that lands while the hand is still on it',
-        /value="kimi" selected/.test(composer()));
+        posted.length === 1 && posted[0].type === 'setIntent'
+        && posted[0].field === 'providerId' && posted[0].value === 'kimi');
 
-    // …and the host's answer brings the tier axis with it.
+    // …and the host's answer — the pick, and the tier axis it brings with it —
+    // is drawn the moment it lands, hand still on the select (S-51: the only
+    // rebuild is this echo, and M-33 would otherwise hold it until focusout).
+    const before = app()._writes;
     push(base('claude', claudeForm('kimi'), { providerId: 'kimi' }));
+    ok('‼️ …and the box shows the answer AT ONCE, with the hand still on it',
+        app()._writes > before && /value="kimi" selected/.test(composer()));
     ok('a picked route brings its tier box, in the adapter\'s own label',
         /<select id="c-tier">/.test(composer()) && composer().includes('>opus<'));
     els['c-tier'].tagName = 'SELECT';
@@ -879,17 +908,20 @@ const html = allHtml;
     posted.length = 0;
     els['c-tier'].value = 'opus';
     els['c-tier'].listeners.change({ target: els['c-tier'] });
-    ok('choosing a tier keeps the route it belongs to',
-        posted.some(m => m.type === 'setRoute' && m.providerId === 'kimi' && m.tier === 'opus'));
+    ok('choosing a tier asks for the tier, under the route it belongs to',
+        posted.length === 1 && posted[0].type === 'setIntent'
+        && posted[0].field === 'tier' && posted[0].value === 'opus');
 
     // ‼️ AND CHANGING THE ROUTE DROPS THE TIER, because `standard` on one route
-    // is not `standard` on another — the adapter would drop it anyway; this
-    // stops the box showing a word that is already gone.
+    // is not `standard` on another — the host clears it as the route moves
+    // (applyIntent.providerId, run in test_console_intent.js); the page asks
+    // for the route alone and never re-sends a tier it is about to lose.
     posted.length = 0;
     els['c-route'].value = '';
     els['c-route'].listeners.change({ target: els['c-route'] });
     ok('‼️ moving the route does not carry the old route\'s tier with it',
-        posted.some(m => m.type === 'setRoute' && !m.providerId && !m.tier));
+        posted.length === 1 && posted[0].field === 'providerId' && posted[0].value === ''
+        && !posted.some(m => m.field === 'tier'));
 
     // ---- an engine with no provider axis says so by drawing nothing ----
     sandbox.document.activeElement = null;
@@ -3001,7 +3033,8 @@ const html = allHtml;
     });
 
     // an engine that CAN hold a second sign-in, with nothing captured for it
-    push(composer({ composerAccountAxis: true, composerAccount: '@machine', composerAccounts: [] }));
+    // X-152 — the pick is the record's `account` field
+    push(composer({ composerAccountAxis: true, composerIntent: intentOf({ account: '@machine' }), composerAccounts: [] }));
     ok('‼️ X-213: the box is drawn on a machine with NOTHING captured — that is the case it is for',
         /id="c-account"/.test(html()));
     ok('…with the machine own sign-in as a real row, BY NAME',
@@ -3009,13 +3042,13 @@ const html = allHtml;
         && /Machine Global/.test(html()));
 
     // …and an engine that cannot hold one at all still draws nothing
-    push(composer({ composerAccountAxis: false, composerAccount: '', composerAccounts: [] }));
+    push(composer({ composerAccountAxis: false, composerIntent: intentOf({ account: '' }), composerAccounts: [] }));
     ok('an engine with no account axis draws no box — a picker with no referent',
         !/id="c-account"/.test(html()));
 
     // the standing account opens the box, with the dot that marks it
     push(composer({
-        composerAccountAxis: true, composerAccount: 'work-1',
+        composerAccountAxis: true, composerIntent: intentOf({ account: 'work-1' }),
         composerAccounts: [
             { id: 'work-1', label: 'work@studio', health: 'ready', active: true, percent: 91 },
             { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false, percent: -1 }

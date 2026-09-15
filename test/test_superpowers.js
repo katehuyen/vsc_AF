@@ -248,20 +248,29 @@ fs.writeFileSync(path.join(root, 'README.md'), '# not a skill\n', 'utf8');
         /pchip sw broken/.test(page) && /Superpowers unavailable/.test(page));
     ok('a running session wears its answer and cannot be re-switched under itself',
         /pchip sw fixed/.test(page) && /written once, at spawn/.test(page));
+    // X-152 — the choice is one field of the host's record, asked through setIntent
     ok('‼️ pressing it back onto the agent\'s own answer CLEARS the choice',
-        /on: next === sp\.def \? null : next/.test(page));
+        /askIntent\('superpowers', next === sp\.def \? null : next\)/.test(page));
     // ‼️ S-49 — the handler REPAINTS and does nothing else. That is enough for
     // the chip, and it is the whole point: `choice === ''` is resolved against
     // the agent the picker is showing, so an untouched chip follows the new
     // agent's own default without a value being written anywhere — while a chip
     // the user has pressed keeps their answer, exactly as the model, effort and
     // permission boxes beside it now do.
-    ok('…and the agent picker repaints, or the strip describes the previous agent',
-        /byId\('c-agent', 'change', e => \{\s*\n\s*st\.agentId = e\.target\.value;\s*\n\s*save\(\);\s*\n\s*paint\(\);\s*\n\s*\}\)/.test(page));
+    // X-152 — the picker asks the host for the agent alone; the host's push
+    // repaints the strip, and the chip resolves against the agent the record
+    // now names (`agentNow()`).
+    ok('…and the agent picker asks for the agent alone, and the strip follows the record',
+        /byId\('c-agent', 'change', e => askIntent\('agentId', e\.target\.value, 'c-agent'\)\);/.test(page)
+        && /const agent = \(DATA\.agents \|\| \[\]\)\.find\(a => a\.id === agentNow\(\)\);\s*\n\s*const def = !!\(agent && agent\.superpowers\);/.test(page));
     ok('‼️ S-49 — …and repaints WITHOUT reseeding the launch boxes under the user',
         !/seedFromAgent/.test(page));
-    ok('the answer the page resolves is what start carries',
-        /superpowers: superpowersState\(\)\.on,/.test(page));
+    // X-152 — resolved on the HOST now, from the record's third answer: the
+    // page sends content only, and the agent is the record's.
+    ok('the answer start carries is the record\'s, resolved against the agent\'s own default',
+        /superpowers: i\.superpowers \?\? this\.deps\.superpowersDefault\(agent\.name\),/
+            .test(fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8'))
+        && /vscode\.postMessage\(\{ type: 'start', text: value, attach: files \}\);/.test(page));
 
     // ------------------------------- X-136 · the cockpit, and the portable root
     //

@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.515.0 - the Console composer is a pure view of the host's record — step 2 of 4 (X-152) (2026-09-15)
+
+- **‼️ THE PAGE KEEPS NO COPY OF THE NEXT SESSION'S SETUP.** `media/console.js`
+  no longer holds `agentId`, `model`, `effort` or `permissionMode` in its own
+  state (a saved state that still carries them is stripped on load); every box
+  on the strip is drawn from `DATA.composerIntent` + `DATA.composerAgent`, and
+  every change — agent, engine, model, effort, permission mode, route, tier,
+  sign-in, the Superpowers chip — is ONE message, `setIntent { field, value }`,
+  posted through `askIntent`. There is no reconcile on the page any more
+  (`reconcileComposer`, `memoryOn` and the engine handler's memory/Settings
+  lookup are gone — the host's `narrowComposer` and `moveEngine` are the one
+  rule), no local echo, and no half-answer drawn while the host thinks.
+- **‼️ S-51 IS THE ECHO, DRAWN THE MOMENT IT LANDS.** `askedHost` lets the
+  host's answer through M-33 with the hand still on the picker, and the box the
+  rebuild replaced gets focus back (`refocus`) — an arrow-key walk through the
+  engine list keeps its place. M-33 itself is untouched: a rebuild nobody asked
+  for still waits for `focusout`. And the boxes MIRROR the record on every
+  pass, not only on a rebuild: a value the host narrowed away is corrected in
+  the control, never left as the hand's pick over a different truth.
+- **Send carries content only** (`start { text, attach }`): the host starts from
+  `composerAgent` and `composerIntent` — model/effort from the record, then the
+  agent's own Settings row, then the fleet; the discipline from the record's
+  third answer (`undefined` = the agent's own default, resolved host-side now).
+  `resume` reads the boxes off the record too. The first prompt a door handed
+  over is the one part of a setup that is content, and it travels as
+  `composerPrompt` into the draft, once per seed.
+- Fixtures carry `composerIntent`/`composerAgent` (`intentOf`); the
+  engine-switch scene photographs the host's answer rather than pressing a
+  picker into a harness with nobody to answer it. Gates repointed:
+  `test_console_page.js` (S-49 · S-51 · route · account read the record and
+  measure `setIntent`), `test_console_agent_default.js` (`startWith` sets the
+  record the way the page does), `test_launch_parity.js`, `test_resume_dims.js`,
+  `test_console.js`. Step 3 retires `setEngine/setRoute/setAccount/
+  setSuperpowers` and the one-at-a-time fields on the host; step 4 adds the
+  S-50/S-51 gates on the record.
+
 ## 3.514.0 - a saved setup that names no agent is given one ONCE and keeps it; Edit has an Agent row (X-180) (2026-09-15)
 
 - **‼️ "PRESSING A SETUP IS THE START" WAS NOT TRUE OF A SETUP WITH A QUESTION

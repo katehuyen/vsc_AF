@@ -183,9 +183,11 @@ const launchTs = read('src', 'core', 'launch.ts');
         && /providerId: started\.providerId, tier: started\.tier/.test(panelTs));
     ok('…and is cleared on start, so the NEXT session inherits no endpoint nobody chose',
         /this\.composerRoute = undefined;/.test(panelTs));
-    ok('…and the page prefers a handed-over setup to the user\'s defaults',
-        /const seeded = DATA\.composerLaunch \|\| null;/.test(consoleJs)
-        && /const d = seeded \|\| DATA\.defaults \|\| \{\};/.test(consoleJs));
+    // ‼️ X-152 — the setup goes into the HOST's record at the door (trusted:
+    // a real launch's answer), and the page draws that record, never a copy.
+    ok('…and a handed-over setup is seeded into the record, trusted, at the door',
+        /c\.seedIntent\(l, true\);/.test(panelTs)
+        && /cur: intent\(\)\.model,/.test(consoleJs));
     // ‼️ ONE-SHOT, like `presetAgent`. A setup left standing would silently
     // reapply itself to the NEXT session, which nobody launched from it.
     ok('the setup is let go on the next start',
@@ -198,7 +200,8 @@ const launchTs = read('src', 'core', 'launch.ts');
     // runs until the person presses Send — and a draft they have already started
     // is not overwritten by it.
     ok('a first prompt lands in the box rather than being sent',
-        /if \(seeded && seeded\.prompt && !st\.draft\)/.test(consoleJs));
+        /composerPrompt: this\.composerLaunch\?\.prompt \?\? '',/.test(panelTs)
+        && /const prompt = DATA\.composerPrompt \|\| '';\s*\n\s*if \(prompt && !st\.draft\)/.test(consoleJs));
 }
 
 // ---------- and the shared list is SHARED, not copied ----------
@@ -541,12 +544,15 @@ const launchTs = read('src', 'core', 'launch.ts');
     // agent after the model, the effort and the permission mode have been set
     // by hand used to replace all three with a stranger's record — the last
     // decision of a launch silently undoing the first three.
+    // X-152 — the picker asks the host to change ONE field, and the host's
+    // handler for that field touches the agent and nothing else.
     ok('…and changing the agent reseeds NOTHING: the boxes are the user\'s',
         !/seedFromAgent/.test(consoleJs)
-        && /byId\('c-agent', 'change', e => \{\s*\n\s*st\.agentId = e\.target\.value;\s*\n\s*save\(\);\s*\n\s*paint\(\);\s*\n\s*\}\)/.test(consoleJs));
+        && /byId\('c-agent', 'change', e => askIntent\('agentId', e\.target\.value, 'c-agent'\)\);/.test(consoleJs)
+        && /agentId: \(\) => \{ this\.composerAgent = s; \}/.test(panelTs));
     ok('…and the seeding that remains belongs to the door, host-side',
-        /composerLaunch: this\.composerLaunch \?\? null/.test(panelTs)
-        && /const seeded = DATA\.composerLaunch \|\| null;/.test(consoleJs));
+        /private seedIntent\(/.test(panelTs)
+        && !/\bst\.model/.test(consoleJs) && /const prompt = DATA\.composerPrompt \|\| '';/.test(consoleJs));
 
     // ‼️ S-34 (reopened) — AND THE PANEL SCOPES THE RECORD BY THE ENGINE IT IS
     // ABOUT TO SHOW. This door reads `lastLaunch` directly instead of going
@@ -566,8 +572,12 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('the handed-over setup names the engine it was built for',
         /model\?: string; effort\?: string; permissionMode\?: string; prompt\?: string; engine\?: string;/
             .test(panelTs));
-    ok('…and the page keeps it only while that engine is the one on screen',
-        /seeded && \(!seeded\.engine \|\| seeded\.engine === engineNow\(\)\)/.test(consoleJs));
+    // X-152 — the check moved with the seeding: the door states the engine in
+    // the same call (`opts.engine`), and the record is narrowed for THAT engine
+    // as it is written (`seedIntent` → `narrowComposer`).
+    ok('…and it is narrowed for the engine the composer opens on, as it is seeded',
+        /this\.narrowComposer\(keep, false\);/.test(panelTs)
+        && /const engine = engineOf\(this\.chosenEngine\(\)\)\.id;\s*\n\s*const out = narrowIntent\(this\.composerCatalogFor\(engine\),/.test(panelTs));
 }
 
 /* =========================================================================
@@ -589,8 +599,12 @@ const launchTs = read('src', 'core', 'launch.ts');
  * ========================================================================= */
 {
     const consoleJs = read('media', 'console.js');
+    const panelTs = read('src', 'panels', 'consolePanel.ts');
+    // X-152 — the reconcile is the host's (`narrowComposer`); the page has none.
     ok('the reconcile takes what a real launch on this engine used',
-        /function reconcileComposer\(engineId, preferModelDefault, keep\) \{/.test(consoleJs));
+        /private narrowComposer\(keep: \{ model\?: string; effort\?: string \} \| null, preferModelDefault: boolean\)/.test(panelTs)
+        && /const keep = trusted && \(this\.composerIntent\.model \|\| this\.composerIntent\.effort\)/.test(panelTs)
+        && !/reconcileComposer/.test(consoleJs));
     // ‼️ X-149 — THIS GUARANTEE IS NOW RUN, NOT READ.
     //
     // These two used to be regexes over `reconcileComposer`'s body, and the
@@ -620,11 +634,11 @@ const launchTs = read('src', 'core', 'launch.ts');
     const moved = AFL.narrow(stale, { model: 'my-alias', effort: 'xhigh' }, { keep: null });
     ok('…while an engine change drops what belonged to the other program',
         moved.model === '' && moved.effort === '');
-    ok('…and the Console is what hands the keep in',
-        /window\.AFLaunch\.narrow\(composerCatalog\(engineId\),/.test(consoleJs)
-        && /\{ keep: keep \|\| null, preferModelDefault: !!preferModelDefault \}/.test(consoleJs));
+    ok('…and the Console panel is what hands the keep in',
+        /narrowIntent\(this\.composerCatalogFor\(engine\),\s*\n\s*\{ model: this\.composerIntent\.model \?\? '', effort: this\.composerIntent\.effort \?\? '' \},\s*\n\s*\{ keep, preferModelDefault \}\)/.test(panelTs)
+        && !/AFLaunch\.narrow\(/.test(consoleJs));
     ok('a handed-over setup is kept',
-        /reconcileComposer\(engineNow\(\), false,\s*\n\s*forThisEngine \?/.test(consoleJs));
+        /c\.seedIntent\(l, true\);/.test(panelTs) && /c\.seedIntent\(c\.composerLaunch, true\);/.test(panelTs));
     // ‼️ S-49 — the agent picker reconciles nothing, because it writes nothing.
     // The ENGINE switch still does, and it is the one that has to: a model
     // belongs to one engine, so moving between them is the case this exists for.
@@ -633,7 +647,7 @@ const launchTs = read('src', 'core', 'launch.ts');
     // are per-ENGINE facts, so both are keepable; the fleet default names no
     // engine and is left for `narrow` to judge, which is why it is not in here.
     ok('…and so is the engine switch\'s own record',
-        /reconcileComposer\(next, false,\s*\n\s*\(st\.model \|\| st\.effort\) \? \{ model: st\.model, effort: st\.effort \} : null\)/.test(consoleJs));
+        /private moveEngine\(next: string\): void \{[\s\S]{0,1200}?const keep = \(this\.composerIntent\.model \|\| this\.composerIntent\.effort\)\s*\n\s*\? \{ model: this\.composerIntent\.model, effort: this\.composerIntent\.effort \} : null;\s*\n\s*this\.narrowComposer\(keep, false\);/.test(panelTs));
     // ‼️ AND THE BOX HAS TO DRAW WHAT SURVIVED, or the select shows its first
     // row while the state says something else — a control that lies.
     // ‼️ X-105 — THE COMPOSER'S MODEL LIST IS `composerModels`, NOT `modelsFor`,
@@ -648,8 +662,8 @@ const launchTs = read('src', 'core', 'launch.ts');
     // is drawn, it is wrapped in `withCurrent`.
     ok('the select carries the current value even when the catalog does not',
         /function withCurrent\(list, current\) \{/.test(consoleJs)
-        && /axis: 'Model', id: 'c-model', cur: st\.model,\s*\n\s*list: withCurrent\(composerModels\(engineNow\(\)\), st\.model\),/.test(consoleJs)
-        && /axis: 'Effort', id: 'c-effort', cur: st\.effort,\s*\n\s*list: withCurrent\(effortsForModel\(engineNow\(\), st\.model\), st\.effort\),/.test(consoleJs));
+        && /axis: 'Model', id: 'c-model', cur: intent\(\)\.model,\s*\n\s*list: withCurrent\(composerModels\(engineNow\(\)\), intent\(\)\.model\),/.test(consoleJs)
+        && /axis: 'Effort', id: 'c-effort', cur: intent\(\)\.effort,\s*\n\s*list: withCurrent\(effortsForModel\(engineNow\(\), intent\(\)\.model\), intent\(\)\.effort\),/.test(consoleJs));
     // ‼️ AN ENGINE CHANGE IS STILL A RESET, AND THAT IS WHAT THIS FUNCTION IS
     // FOR. The claim used to be that the keep was per-engine "by construction",
     // and it was not: `applyComposerSeed` handed it values it had itself just
@@ -666,8 +680,11 @@ const launchTs = read('src', 'core', 'launch.ts');
      * leaves that engine's own settings file in charge. The permission box moves
      * with the other two, because it was the one carrying a value across.
      */
+    // X-152 — recalled on the HOST (`moveEngine`), by the same three layers;
+    // the page posts `setIntent engine` and draws the answer.
     ok('changing the engine recalls THAT engine\'s row',
-        /const mem = memoryOn\(row\.lastLaunch, next\);\s*\n\s*const own = \(row\.engineDefaults \|\| \{\}\)\[next\] \|\| \{\};\s*\n\s*st\.model = \(mem && mem\.model\) \|\| own\.model \|\| '';\s*\n\s*st\.effort = \(mem && mem\.effort\) \|\| own\.effort \|\| '';\s*\n\s*st\.permissionMode = \(mem && mem\.permissionMode\) \|\| '';/.test(consoleJs));
+        /const mem = remembered \? rememberedOn\(engine, remembered\) : undefined;[\s\S]{0,600}?this\.composerIntent\.model = mem\?\.model \|\| own\.model \|\| undefined;\s*\n\s*this\.composerIntent\.effort = mem\?\.effort \|\| own\.effort \|\| undefined;\s*\n\s*this\.composerIntent\.permissionMode = mem\?\.permissionMode \|\| undefined;/.test(panelTs)
+        && /askIntent\('engine', e\.target\.value, 'c-engine'\)/.test(consoleJs));
     /**
      * ‼️ …AND UNDER THAT ROW, WHAT THE AGENT IS SET TO ON THE ENGINE IT MOVED TO.
      *
@@ -681,15 +698,16 @@ const launchTs = read('src', 'core', 'launch.ts');
     ok('…and the Settings layer rides on the same row the memory does',
         /engineDefaults: this\.deps\.agentSeedDefaults/
             .test(read('src', 'panels', 'consolePanel.ts')));
-    ok('…through the page\'s mirror of the core rule, not a second guess',
-        /function memoryOn\(last, engineId\) \{[\s\S]{0,400}last\.byEngine\[eng\][\s\S]{0,300}was === eng\) \{ return last; \}\s*\n\s*return null;/.test(consoleJs));
+    ok('…through the core rule itself (rememberedOn), with no mirror of it on the page',
+        !/function memoryOn/.test(consoleJs) && /engine: \(\) => this\.moveEngine\(s\),/.test(panelTs));
     // ‼️ …AND AN ENGINE WITH NEITHER STILL ENDS UP EMPTY, which is what silence
     // means. The `keep` is now asked of the RESOLVED pair rather than of the
     // record, because a Farm Settings answer for that engine is as much a
     // per-engine fact as a remembered one — while the fleet default, which names
     // no engine, is deliberately not in it and is left for `narrow` to judge.
     ok('…and an engine with no row still ends up empty, which is what silence means',
-        /reconcileComposer\(next, false,\s*\n\s*\(st\.model \|\| st\.effort\) \? \{ model: st\.model, effort: st\.effort \} : null\);/.test(consoleJs));
+        /this\.composerIntent\.model = mem\?\.model \|\| own\.model \|\| undefined;/.test(panelTs)
+        && /own = agentDir\s*\n\s*\? this\.deps\.agentSeedDefaults\?\.\(agentDir, engine\) \?\? \{ model: '', effort: '' \}\s*\n\s*: \{ model: '', effort: '' \};/.test(panelTs));
 }
 
 /* ---------- the setup line: what is about to start, on the row that starts it */

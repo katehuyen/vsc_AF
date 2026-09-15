@@ -82,8 +82,18 @@
         { v: 'active', t: 'busiest on top' }
     ];
     const ORDER_DEFAULT = () => ({ mode: 'fixed', holdSec: 20, minTicks: 4 });
+    /**
+     * ‼️ X-152 — WHAT IS NOT IN HERE: the next session's setup. The agent,
+     * the engine, the model, the effort, the permission mode, the route, the
+     * sign-in and the discipline are ONE record on the host (`composerIntent`
+     * + `composerAgent`), pushed with every payload; this page draws it and
+     * asks for changes (`askIntent`) and keeps no copy. What stays here is
+     * CONTENT — the draft and its attachments — and the page's own reading
+     * state. A saved state from before that still carries the four is read
+     * once and stripped below.
+     */
     let st = Object.assign({
-        agentId: '', model: '', effort: '', permissionMode: '', draft: '', showResume: false,
+        draft: '', showResume: false,
         // files hung on the message being written — paths only, never payload;
         // the bytes are read in the extension at send time (see loadAttachments)
         attach: [],
@@ -137,6 +147,7 @@
     // parseInt reads both that and the number, so nothing below has to care.
     st.boxH = parseInt(st.boxH, 10) || 0;
     if (!st.kindsBy || typeof st.kindsBy !== 'object') { st.kindsBy = {}; }
+    ['agentId', 'model', 'effort', 'permissionMode'].forEach(k => { delete st[k]; });
     const save = () => {
         const all = (typeof vscode.getState === 'function' && vscode.getState()) || {};
         all.afConsole = st;
@@ -2941,8 +2952,8 @@
             // agent already chosen. If it ALSO has a session running in this
             // window, say so — starting a second one by accident is the one
             // mistake this screen can cause.
-            const live = st.agentId
-                ? (DATA.sessions || []).find(x => x.agentId === st.agentId
+            const live = agentNow()
+                ? (DATA.sessions || []).find(x => x.agentId === agentNow()
                     && x.status !== 'ended' && x.status !== 'error')
                 : undefined;
             const intro = live
@@ -3367,9 +3378,56 @@
         }).join('');
     }
 
-    /** The engine currently chosen for a NEW session, as the page knows it. */
-    const engineNow = () => (DATA.engine || 'claude');
+    /**
+     * ‼️ X-152 — THE NEXT SESSION'S SETUP HAS ONE OWNER, AND IT IS THE HOST.
+     *
+     * `composerIntent` is every dimension of the session about to be started —
+     * engine · model · effort · permissionMode · providerId · tier · account ·
+     * superpowers — already narrowed by the one rule (`media/afLaunch.js`,
+     * X-149) and pruned by the engine's own adapter, and `composerAgent` is who
+     * it is for. Both arrive with every payload and are read HERE, never
+     * copied: the page used to hold four of the eight in its own state and
+     * narrow them itself, and the two halves disagreed at exactly the moments
+     * that were reported (S-50, S-51). Every field is present; `''` is the
+     * "Default" row, and `superpowers` keeps its third answer (`null` = the
+     * agent's own, X-133).
+     */
+    const intent = () => DATA.composerIntent || {};
+    const agentNow = () => DATA.composerAgent || '';
+    /** The engine currently chosen for a NEW session — the record's answer. */
+    const engineNow = () => (intent().engine || 'claude');
     const engineRow = id => (DATA.engines || []).find(e => e.id === id);
+    /** The box the host's answer should hand focus back to (see askIntent). */
+    let refocus = '';
+    /**
+     * ‼️ X-152 — ONE CHANGE TO THE NEXT SESSION, ASKED OF THE HOST. This is the
+     * whole of what a composer control does: name a dimension and a value.
+     * Nothing is written on this side — the host narrows (a model this engine
+     * does not offer, a tier the route no longer has, an account that belongs
+     * to another engine) and pushes the record back whole, and the strip is
+     * drawn from that.
+     *
+     * ‼️ S-51 — AND THE ANSWER IS DRAWN THE MOMENT IT LANDS, hand on the picker
+     * or not. A native `<select>` keeps focus after a choice, so the echo
+     * arrives while M-33 reads the page as hands-on; `askedHost` is the page
+     * saying "this push is my own answer" and lets that one through. M-33 is
+     * not loosened: a rebuild nobody asked for still waits. The rebuild
+     * replaces the very control the hand is on, so focus is handed back to it
+     * (`refocus`) — without that an arrow-key walk through the engine list
+     * would lose its place on the first step.
+     *
+     * ‼️ S-49 — A DOOR SEEDS THE COMPOSER; A CONTROL ON IT DOES NOT. Choosing
+     * another agent changes the agent and nothing else — the host's record
+     * holds the model, the effort and the mode the hand already set, and
+     * `agentId` touches none of them. The Superpowers chip follows the new
+     * agent on its own, because an untouched choice (`null`) is resolved
+     * against whichever agent the record names.
+     */
+    function askIntent(field, value, focusId) {
+        askedHost = true;
+        refocus = focusId || '';
+        vscode.postMessage({ type: 'setIntent', field, value });
+    }
 
     /**
      * The one line under the composer's controls that says what this engine
@@ -3575,7 +3633,10 @@
      * set a route up. Nothing is drawn for either.
      */
     const composerForm = () => DATA.composerForm || null;
-    const routePick = () => DATA.composerPick || {};
+    const routePick = () => {
+        const i = intent();
+        return i.providerId ? { providerId: i.providerId, tier: i.tier || '' } : {};
+    };
     /**
      * ‼️ X-169 — THE SIGN-INS THIS ENGINE HAS, AND WHICH ONE THE NEXT SESSION
      * TAKES. Both come from the host for the reason the route does: the slot
@@ -3588,7 +3649,7 @@
      * one row that is already true is the control with no referent.
      */
     const accountRows = () => DATA.composerAccounts || [];
-    const accountPick = () => DATA.composerAccount || '';
+    const accountPick = () => intent().account || '';
     /**
      * ‼️ X-213 — the axis is a fact about the ENGINE, and the host answers it.
      *
@@ -3789,127 +3850,36 @@
         const row = (wider || []).find(x => x && x.id === v);
         return row ? (list || []).concat([row]) : withCurrent(list, v);
     }
-    /**
-     * Keep all three launch boxes inside the vocabulary of the engine/model
-     * currently in front of them — ‼️ X-149: BY ASKING THE ONE RULE
-     * (`media/afLaunch.js`), which the host and the Tasks form ask too.
-     *
-     * The two things that are the Console's OWN answer, and are therefore named
-     * options rather than a second copy of the rule:
-     *
-     * `preferModelDefault` — used after a model is picked by hand; an engine
-     * change otherwise preserves an effort when the new model genuinely offers
-     * the same value.
-     *
-     * `keep` — S-34: A REMEMBERED SETUP FOR **THIS** ENGINE WINS. This is where
-     * "it forgets the model" and "it forgets the effort" came from, and it was
-     * one line each: a seeded value absent from the engine's published catalog
-     * was cleared, and clearing the model then cascaded into the effort (the
-     * effort list is looked up BY model, so an emptied model lands on a
-     * different list and the level goes with it). A value a real launch on this
-     * same engine used is by definition runnable on it — the catalog simply does
-     * not advertise every alias. An ENGINE CHANGE still drops both, which is the
-     * case this function exists for: those values belong to a different program.
-     */
-    function reconcileComposer(engineId, preferModelDefault, keep) {
-        const out = window.AFLaunch.narrow(composerCatalog(engineId),
-            { model: st.model, effort: st.effort },
-            { keep: keep || null, preferModelDefault: !!preferModelDefault });
-        st.model = out.model;
-        st.effort = out.effort;
-    }
+    // ‼️ X-152 — THERE IS NO RECONCILE ON THIS SIDE. The page used to narrow
+    // the model and the effort itself against the engine's catalogue and
+    // recall the agent's memory when the engine moved — a second copy of the
+    // rule the host runs, and the two answered differently (S-50, S-51). The
+    // host narrows (`narrowIntent`, `moveEngine`) and pushes the result; the
+    // boxes below draw `intent()` and nothing else.
 
     // Host-side fresh-composer edge (K-15). It is intentionally local to this
     // webview lifetime: a newly created panel has never inherited an open
     // composer's state, while a reused one must observe every increasing seed.
     let appliedComposerSeed = 0;
+    /**
+     * ‼️ K-34 — THE FIRST PROMPT A DOOR HANDED OVER lands in the box the user
+     * is about to type in — never sent on their behalf, and never over a draft
+     * they have already started. It is the one part of a handed-over setup
+     * that is CONTENT rather than intent, which is why it is the one part
+     * still read here: the eight dimensions went into the host's record at
+     * the door (`seedIntent`) and arrive drawn.
+     */
     function applyComposerSeed() {
         const seed = Number(DATA.composerSeed || 0);
         if (!seed || seed === appliedComposerSeed) { return; }
         appliedComposerSeed = seed;
-        // ‼️ K-34 — A SETUP HANDED OVER BY A LAUNCHER WINS OVER THE DEFAULTS.
-        //
-        // The launcher used to spawn the session itself the moment Start was
-        // pressed, so every dimension was fixed before the person had a window
-        // to change one in. It hands the setup here instead: the composer opens
-        // ON it, still editable, and nothing runs until Send. `null` means no
-        // setup was handed over at all — a DIFFERENT answer from a setup that
-        // says nothing, and only the first falls through to the user's defaults.
-        const seeded = DATA.composerLaunch || null;
-        const d = seeded || DATA.defaults || {};
-        st.model = d.model || '';
-        st.effort = d.effort || '';
-        st.permissionMode = d.permissionMode || '';
-        // The first prompt travels with the setup, into the box the user is
-        // about to type in — never sent on their behalf. A draft they have
-        // already started is not overwritten by it.
-        if (seeded && seeded.prompt && !st.draft) {
-            st.draft = seeded.prompt;
+        const prompt = DATA.composerPrompt || '';
+        if (prompt && !st.draft) {
+            st.draft = prompt;
             const box = document.getElementById('c-text');
-            if (box) { box.value = seeded.prompt; }
+            if (box) { box.value = prompt; }
+            save();
         }
-        // ‼️ S-34 (reopened) - AND THE SETUP ONLY SURVIVES ON THE ENGINE IT WAS
-        // BUILT FOR.
-        //
-        // A handed-over setup is a real launch's answer, so it beats the
-        // engine's published catalog - the catalog lists what an engine is
-        // OFFERING, not everything it can run. But that is only true while the
-        // setup and the composer are talking about the SAME engine. The check
-        // here used to compare the seeded value against itself (st.model had
-        // just been assigned out of the same object two lines up), so it could
-        // not fail and the reconcile was silenced rather than narrowed: switch
-        // the launcher from Antigravity to Claude and the Claude engine box came
-        // up with the Antigravity model beside it. The engine the setup names is
-        // the fact that decides. A setup from before it was carried names none,
-        // and is trusted, exactly as it was yesterday.
-        const forThisEngine = seeded && (!seeded.engine || seeded.engine === engineNow());
-        reconcileComposer(engineNow(), false,
-            forThisEngine ? { model: st.model, effort: st.effort } : null);
-        save();
-    }
-
-    /**
-     * ‼️ S-49 — A DOOR SEEDS THE COMPOSER. THE COMPOSER ITSELF NEVER RESEEDS
-     * ITSELF.
-     *
-     * Where the launch boxes OPEN on is a question about arriving here, and it
-     * is answered once, host-side, by whichever door opened the panel
-     * (`ConsolePanel.show` → `composerLaunch`, applied by `applyComposerSeed`).
-     * Once they are drawn they are the user's own controls, and the only thing
-     * that writes them is a hand on them.
-     *
-     * The picker used to reseed model, effort and permission mode from the
-     * newly chosen agent's record — the same rule as the doors, applied one
-     * step too late. Set a model, set an effort, set a permission mode, then
-     * change your mind about WHO runs it, and the three answers you had just
-     * typed were replaced by a stranger's. A person standing at a control is
-     * not asking to be helped; they are already deciding.
-     *
-     * The repaint stays, and is the whole of what an agent change does here:
-     * the Superpowers chip resolves `''` (nobody has touched it) against the
-     * agent the picker is showing, so it follows the new agent's own default
-     * without anything being written — while a chip the user HAS pressed keeps
-     * their answer, for exactly the same reason the boxes do (X-133).
-     */
-    /**
-     * ‼️ X-145 — ONE AGENT'S RECORD, READ FOR ONE ENGINE.
-     *
-     * The host keeps `byEngine`: one row of model/effort/permission per engine,
-     * because those three are the engine's own answer and a single shared row
-     * meant OpenCode's `manual` turned up on Claude. The page is the mirror of
-     * `rememberedOn` in `core/launch.ts` and follows the same three steps: the
-     * engine's own row, else the flat record when it names this engine or names
-     * none (it predates `byEngine` and cannot contradict anything), else
-     * nothing — which is what lets the engine's own settings file decide.
-     */
-    function memoryOn(last, engineId) {
-        if (!last) { return null; }
-        const eng = (engineId || '').trim();
-        const own = eng && last.byEngine ? last.byEngine[eng] : null;
-        if (own) { return own; }
-        const was = (last.engine || '').trim();
-        if (!was || !eng || was === eng) { return last; }
-        return null;
     }
 
     /**
@@ -4364,7 +4334,7 @@
                 <span id="c-live"></span>
                 <button id="c-send"${dead ? ' disabled' : ''}>Send</button>`
             : `${pinnedAgentHtml() || axisBox({
-                    axis: 'Agent', id: 'c-agent', cur: st.agentId || '',
+                    axis: 'Agent', id: 'c-agent', cur: agentNow(),
                     list: [{ id: '', label: 'Choose an agent…', detail: 'nothing is chosen yet' },
                         ...(DATA.agents || []).map(a => ({ id: a.id, label: a.name, detail: a.dir }))],
                     standard: 'Which agent the session belongs to — it opens in that agent\'s own folder.'
@@ -4386,8 +4356,8 @@
                 ${routeBoxesHtml()}
                 ${accountBoxHtml()}
                 ${axisBox({
-                    axis: 'Model', id: 'c-model', cur: st.model,
-                    list: withCurrent(composerModels(engineNow()), st.model),
+                    axis: 'Model', id: 'c-model', cur: intent().model,
+                    list: withCurrent(composerModels(engineNow()), intent().model),
                     standard: window.AFTip.lines([
                         'Model for the new session' + flagOf(engineNow(), 'model') + '.',
                         modelNote(engineNow())
@@ -4395,8 +4365,8 @@
                 })}
                 ${drawsEffort(engineNow())
                     ? axisBox({
-                        axis: 'Effort', id: 'c-effort', cur: st.effort,
-                        list: withCurrent(effortsForModel(engineNow(), st.model), st.effort),
+                        axis: 'Effort', id: 'c-effort', cur: intent().effort,
+                        list: withCurrent(effortsForModel(engineNow(), intent().model), intent().effort),
                         standard: 'How hard the model thinks before it answers'
                             + flagOf(engineNow(), 'effort')
                             + ' — more effort costs more time and more tokens, and buys nothing on work '
@@ -4407,7 +4377,7 @@
                     axis: 'Perm', name: 'Permissions', id: 'c-perm',
                     // A remembered mode this engine cannot keep is NOT re-added
                     // here: before the spawn it is a choice, not a fact.
-                    list: permissionsFor(engineNow()), cur: st.permissionMode, standard: startPermTip
+                    list: permissionsFor(engineNow()), cur: intent().permissionMode, standard: startPermTip
                 })}
                 ${axisBox({
                     axis: 'Project', id: 'c-proj', cur: DATA.activeProjectId || '',
@@ -4596,7 +4566,7 @@
             post: vscode, boxId: 'c-text', hostId: 'c-slashpop',
             context: () => {
                 const cur = sel();
-                const agent = (DATA.agents || []).find(a => a.id === (st.agentId || ''));
+                const agent = (DATA.agents || []).find(a => a.id === agentNow());
                 return {
                     engine: (cur && cur.engine) || engineNow(),
                     agent: (cur && cur.agentName) || (agent && agent.name) || '',
@@ -4633,27 +4603,14 @@
                 }
             });
         } else {
-            const pick = (id, key) => byId(id, 'change', e => { st[key] = e.target.value; save(); });
-            // ‼️ X-133 — the agent picker REPAINTS, which the shared `pick` does
-            // not. The Superpowers chip beside the project one shows this
-            // agent's own default until the user presses it, so an agent chosen
-            // after the strip was drawn left the strip describing the previous
-            // one — a switch reading "on" for an agent that starts plain.
-            // ‼️ S-49 — …AND THE REPAINT IS ALL OF IT. The picker does not touch
-            // the model, the effort or the permission mode: those are on screen
-            // and they are the user's (see the S-49 note above memoryOn).
-            byId('c-agent', 'change', e => {
-                st.agentId = e.target.value;
-                save();
-                paint();
-            });
-            pick('c-effort', 'effort');
-            byId('c-model', 'change', e => {
-                st.model = e.target.value;
-                reconcileComposer(engineNow(), true);
-                save();
-                paint();
-            });
+            // ‼️ X-152 — every box asks the host and draws its answer (askIntent).
+            // S-49: the agent picker changes the agent and nothing else; the
+            // chip beside the project one follows the new agent on the echo.
+            byId('c-agent', 'change', e => askIntent('agentId', e.target.value, 'c-agent'));
+            byId('c-effort', 'change', e => askIntent('effort', e.target.value, 'c-effort'));
+            // a model picked by hand takes its own default effort — the host's
+            // `preferModelDefault`, and the effort list under it is redrawn
+            byId('c-model', 'change', e => askIntent('model', e.target.value, 'c-model'));
         }
         // Mid-session model switch. The picker is NOT set back from `s.model`
         // on a repaint until the CLI has agreed to it (see pendingModel) —
@@ -4676,7 +4633,7 @@
                 // live, mid-session — the same control the permission box uses
                 vscode.postMessage({ type: 'permissionMode', id: cur.id, mode, retry: false });
             } else {
-                st.permissionMode = mode; save();
+                askIntent('permissionMode', mode, 'c-perm');
             }
         });
         // The project picker moves the WINDOW's active project — the same one
@@ -4684,136 +4641,22 @@
         // a second answer to "what am I working on", and the two would disagree
         // within a minute.
         byId('c-proj', 'change', e => vscode.postMessage({ type: 'setProject', id: e.target.value }));
-        // The engine of the NEXT session. It goes back to the extension rather
-        // than into `st` because the refusal lives there (a webview's disabled
-        // attribute is a courtesy, not a guard) and because the choice has to
-        // survive a repaint that rebuilds this whole row.
-        byId('c-engine', 'change', e => {
-            // ‼️ A MODEL BELONGS TO ONE ENGINE. Carrying `sonnet` over to Codex
-            // would leave a value in the box that its CLI can only reject, so a
-            // chosen model — and the effort that was chosen for it — is dropped
-            // the moment the new engine stops offering it. Keeping it quietly is
-            // how the box came to disagree with the engine in the first place.
-            const next = e.target.value;
-            /**
-             * ‼️ X-145 — AND THE ENGINE YOU MOVED TO HAS ITS OWN SETUP.
-             *
-             * Dropping the previous engine's model was right and was only half
-             * the answer: an agent used on two engines has two setups, and
-             * emptying the boxes made the user retype the one they had chosen on
-             * that engine an hour earlier. The record is per engine now, so the
-             * switch RECALLS rather than clears — and the permission mode moves
-             * with it, because it is the box that had been carrying one engine's
-             * answer onto every other one.
-             *
-             * A engine with no row of its own still ends up empty, and empty is
-             * what leaves that engine's own settings file in charge.
-             */
-            /**
-             * ‼️ …AND UNDER THE MEMORY, WHAT THE AGENT IS *SET* TO ON THAT
-             * ENGINE.
-             *
-             * "An engine with no row of its own ends up empty" was true of the
-             * MEMORY and wrong about the box: the agent still has whatever Farm
-             * Settings says it runs that engine as, and the record's silence was
-             * jumping straight over it. Switch an agent set to `opus` on Claude
-             * over to Codex and back and the model box came up `Default` — the
-             * same defect the composer's own seeding had, one control later.
-             *
-             * `engineDefaults` is that layer, resolved host-side per engine
-             * (Claude's half of it is a file on disk). It is a per-ENGINE fact
-             * like the memory, so it is trusted the same way — passed as `keep`
-             * — while the fleet default is deliberately NOT, because it names no
-             * engine and `narrow` is what decides whether this one can run it.
-             */
-            const row = (DATA.agents || []).find(x => x.id === (st.agentId || '')) || {};
-            const mem = memoryOn(row.lastLaunch, next);
-            const own = (row.engineDefaults || {})[next] || {};
-            st.model = (mem && mem.model) || own.model || '';
-            st.effort = (mem && mem.effort) || own.effort || '';
-            st.permissionMode = (mem && mem.permissionMode) || '';
-            reconcileComposer(next, false,
-                (st.model || st.effort) ? { model: st.model, effort: st.effort } : null);
-            save();
-            vscode.postMessage({ type: 'setEngine', id: next });
-            /**
-             * ‼️ S-51 — AND THE BOXES ANSWER NOW, NOT WHEN THE HAND LETS GO.
-             *
-             * The model list, the effort list and the hint under them are all
-             * drawn off `engineNow()`, so none of them moves without a shell
-             * rebuild — and the only rebuild this handler had was the HOST's
-             * echo of the message above. That echo arrives at the one moment
-             * the reader's hand is still on the picker they just used, because
-             * a native `<select>` keeps focus after a choice, so M-33 read the
-             * page as hands-on and put the rebuild on the slate. The debt was
-             * then paid by the `focusout` of the user reaching for the model
-             * box — which is precisely why the list corrected itself the
-             * instant they went to argue with it.
-             *
-             * ‼️ M-33 IS NOT THE THING TO LOOSEN: its rule is already "only a
-             * rebuild NOBODY ASKED FOR waits", and this one was asked for by
-             * the hand it was waiting on. So the answer is the same one the
-             * model picker beside it has always used — repaint on the spot.
-             *
-             * The engine is echoed into DATA first because the redraw asks
-             * `engineNow()` and the host has not spoken yet. Nothing is risked:
-             * the next push replaces DATA whole, the host's answer for this box
-             * is the value posted one line above, and the refusal that matters
-             * lives at start, not here.
-             */
-            DATA.engine = next;
-            paint();
-            // …and the rebuild replaced the very control the hand is on, so it
-            // is handed back. Without this an arrow-key walk through the engine
-            // list would lose focus on its first step and never reach a second.
-            const box = document.getElementById('c-engine');
-            if (box && box.focus) { box.focus(); }
-        });
         /**
-         * ‼️ X-105 — WHICH ROUTE THE NEXT SESSION RUNS ON, and the tier under it.
-         *
-         * Both go back to the host rather than into `st` for the reason the
-         * engine does: the NARROWING lives there. Only the engine's own adapter
-         * knows that a tier stopped existing because the route moved, and it
-         * says out loud what it dropped — a pick pruned silently on this side
-         * would leave the box agreeing with a value the launch will not use.
-         *
-         * ‼️ AND THE ROUTE IS THE ONE ABOVE THE TIER, so changing it clears the
-         * tier rather than carrying it: `standard` on one route is not
-         * `standard` on another, and the adapter would drop it anyway — this
-         * just stops the box showing a word that is about to go.
-         *
-         * ‼️ S-51 — AND BOTH REPAINT ON THE SPOT, for exactly the reason the
-         * engine picker does: the boxes below them are drawn off this pick, the
-         * only rebuild is the host's echo, and that echo lands while the hand is
-         * still on the select. See the S-51 note above.
+         * ‼️ X-152 — THE ENGINE, THE ROUTE, THE TIER AND THE SIGN-IN, asked of
+         * the host exactly as the boxes above them are (askIntent). Everything
+         * that used to be decided on this side when the engine moved — this
+         * agent's memory for the new engine (X-145), its own setting for it in
+         * Farm Settings, the narrowing of the model and the effort, the pruning
+         * of the route (X-105) and the account (X-169) — is `moveEngine` on the
+         * host, and the strip is drawn from its answer the moment it lands
+         * (S-51). ‼️ AND THE ROUTE IS THE ONE ABOVE THE TIER: moving it clears
+         * the tier host-side, so the box never shows a word that is about to
+         * go. A live card's mid-session swap stays its own message below.
          */
-        const sendRoute = (providerId, tier, focusId) => {
-            DATA.composerPick = providerId ? { providerId, ...(tier ? { tier } : {}) } : null;
-            // the tiers under a route can only come from the host, and they must
-            // not have to wait for the hand to leave the box that asked
-            askedHost = true;
-            vscode.postMessage({ type: 'setRoute', providerId, tier });
-            paint();
-            const box = document.getElementById(focusId);
-            if (box && box.focus) { box.focus(); }
-        };
-        byId('c-route', 'change', e => sendRoute(e.target.value, '', 'c-route'));
-        /**
-         * ‼️ X-169 — the pick goes to the HOST, like the route and for the same
-         * reason: only that side holds the slot list, so only that side can say
-         * that an account stopped applying when the engine moved. The echo is
-         * painted straight away so the box does not sit on the old value while
-         * the round trip happens.
-         */
-        byId('c-account', 'change', e => {
-            DATA.composerAccount = e.target.value || '';
-            askedHost = true;
-            vscode.postMessage({ type: 'setAccount', id: e.target.value || '' });
-            paint();
-            const box = document.getElementById('c-account');
-            if (box && box.focus) { box.focus(); }
-        });
+        byId('c-engine', 'change', e => askIntent('engine', e.target.value, 'c-engine'));
+        byId('c-route', 'change', e => askIntent('providerId', e.target.value, 'c-route'));
+        byId('c-tier', 'change', e => askIntent('tier', e.target.value, 'c-tier'));
+        byId('c-account', 'change', e => askIntent('account', e.target.value || '', 'c-account'));
         /**
          * ‼️ X-213 — the mid-session swap. The host owns every refusal (a card
          * with no id yet, a shared connection), so the page states the wish and
@@ -4831,10 +4674,7 @@
                 type: 'setLiveAccount', id: cur.id, account: e.target.value || ''
             });
         });
-        byId('c-tier', 'change', e =>
-            sendRoute((routePick().providerId || ''), e.target.value, 'c-tier'));
-        // giving the pin back: the picker returns, and st keeps whatever agent
-        // was pinned as its starting selection
+        // giving the pin back: the picker returns, on the agent the record names
         byId('c-unpin', 'click', () => vscode.postMessage({ type: 'unpinAgent' }));
         resetTail();
     }
@@ -4868,10 +4708,8 @@
                 r.addEventListener('click', ev => {
                     if (ev.target && ev.target.dataset && ev.target.dataset.backforget) { return; }
                     if (ev.target && ev.target.dataset && ev.target.dataset.endremove) { return; }
-                    vscode.postMessage({
-                        type: 'resume', sessionId: r.dataset.back,
-                        model: st.model, effort: st.effort, permissionMode: st.permissionMode
-                    });
+                    // X-152 — the boxes' answers ride on the host's record
+                    vscode.postMessage({ type: 'resume', sessionId: r.dataset.back });
                 }));
             // S-55 — the card's own ✕: end and remove, in one gesture. The
             // press must not also SELECT the card it is standing on, which
@@ -4965,8 +4803,7 @@
         if (slot('c-rlist', resumeListHtml())) {
             document.querySelectorAll('[data-resume]').forEach(r =>
                 r.addEventListener('click', () => vscode.postMessage({
-                    type: 'resume', sessionId: r.dataset.resume,
-                    model: st.model, effort: st.effort, permissionMode: st.permissionMode
+                    type: 'resume', sessionId: r.dataset.resume
                 })));
             wireColorDots('c-rlist');
         }
@@ -5200,9 +5037,11 @@
         const h = DATA.superpowersHealth || { usable: false, why: '', skills: 0 };
         const s = sel();
         if (s) { return { fixed: true, usable: h.usable, why: h.why, skills: h.skills, on: !!DATA.superpowersOn }; }
-        const agent = (DATA.agents || []).find(a => a.id === (st.agentId || ''));
+        const agent = (DATA.agents || []).find(a => a.id === agentNow());
         const def = !!(agent && agent.superpowers);
-        const choice = DATA.superpowersChoice || '';
+        // X-152 — the record's third answer: null is "the agent's own"
+        const sp = intent().superpowers;
+        const choice = sp === true ? 'on' : sp === false ? 'off' : '';
         return {
             fixed: false, usable: h.usable, why: h.why, skills: h.skills,
             def, choice, agentName: agent ? agent.name : '',
@@ -5279,7 +5118,7 @@
         // the key by construction now (`media/afDimensions.js`), so the next one
         // repaints without anybody remembering this line exists.
         const composerShape = s ? '' : '|' + window.AFDimensions.shellKeyOf({
-            engine: engineNow(), model: st.model,
+            engine: engineNow(), model: intent().model,
             providerId: routePick().providerId, tier: routePick().tier
         }) + '|' + routeShape() + '|' + accountShape();
         const key = `${DATA.selected || ''}|${s ? s.status === 'ended' || s.status === 'error' : 'none'}|${DATA.pinnedAgent || ''}${composerShape}${liveAccountShape(s)}${liveBrainShape(s)}`;
@@ -5320,26 +5159,37 @@
                 shellOwed = false;
                 shellKey = key;
                 buildShell(s);
+                // the rebuild replaced the control the hand was on (askIntent)
+                if (refocus) {
+                    const box = document.getElementById(refocus);
+                    if (box && box.focus) { box.focus(); }
+                }
             }
         }
         // ‼️ ONE-SHOT, and consumed whether or not the shape actually moved: the
         // answer arrived either way, and a flag left standing would let the next
         // unrelated push through the guard as well.
-        if (fromHost) { askedHost = false; }
-        // A pinned composer has no picker to disagree with, and the agent it is
-        // fixed to is the one that must be started — not whatever was last left
-        // in the page's own state.
-        if (DATA.pinnedAgent && st.agentId !== DATA.pinnedAgent) {
-            st.agentId = DATA.pinnedAgent;
-            save();
+        if (fromHost) { askedHost = false; refocus = ''; }
+        /**
+         * ‼️ X-152 — THE BOXES MIRROR THE RECORD ON EVERY PASS, not only when
+         * the shell is rebuilt. Most dimensions rebuild nothing when they move
+         * (`redraws: false` in `media/afDimensions.js`), so a `<select>` drawn
+         * once would keep showing the hand's pick after the host had narrowed
+         * it to something else — a control that lies. An agent chosen for us
+         * ("Talk to Agent" on an agent's page) reaches the picker the same way.
+         * A running card's strip is that card's own and is left alone.
+         */
+        if (!s) {
+            const i = intent();
+            [['c-agent', agentNow()], ['c-engine', engineNow()], ['c-model', i.model],
+                ['c-effort', i.effort], ['c-perm', i.permissionMode],
+                ['c-route', i.providerId], ['c-tier', i.tier], ['c-account', i.account]
+            ].forEach(([id, v]) => {
+                const el = document.getElementById(id);
+                const want = v || '';
+                if (el && 'value' in el && el.value !== want) { el.value = want; }
+            });
         }
-        // The shell is only rebuilt when the SELECTED SESSION changes, so an
-        // agent chosen for us — "Talk to Agent" on an agent's page — would land
-        // in st and never reach the markup whenever the composer was already on
-        // screen, and the button would look exactly like plain Open Console.
-        // The picker mirrors st on every pass instead of only at build time.
-        const agentSel = document.getElementById('c-agent');
-        if (agentSel && agentSel.value !== (st.agentId || '')) { agentSel.value = st.agentId || ''; }
 
         const talkEl = document.getElementById('talk');
         // Where the reader is, BEFORE anything is written. The element itself is
@@ -5424,7 +5274,7 @@
                 sw.addEventListener('click', () => {
                     const sp = superpowersState();
                     const next = !sp.on;
-                    vscode.postMessage({ type: 'setSuperpowers', on: next === sp.def ? null : next });
+                    askIntent('superpowers', next === sp.def ? null : next);
                 });
             }
         }
@@ -5515,7 +5365,7 @@
             // hands it a new element, and a listener from the last one is gone.
             byId('c-attach', 'click', () => vscode.postMessage({ type: 'attachPick' }));
             byId('c-goto-live', 'click', () => {
-                const live = (DATA.sessions || []).find(x => x.agentId === st.agentId
+                const live = (DATA.sessions || []).find(x => x.agentId === agentNow()
                     && x.status !== 'ended' && x.status !== 'error');
                 if (live) { vscode.postMessage({ type: 'select', id: live.id }); }
             });
@@ -5881,24 +5731,17 @@
         if (cur && cur.status !== 'ended' && cur.status !== 'error') {
             vscode.postMessage({ type: 'send', id: cur.id, text: value, hold: hold === true, attach: files });
         } else {
-            if (!st.agentId) {
+            if (!agentNow()) {
                 // the picker is right there; say what is missing rather than
                 // swallowing the message
                 const a = document.getElementById('c-agent');
                 if (a) { a.focus(); }
                 return;
             }
-            vscode.postMessage({
-                type: 'start', agentId: st.agentId, text: value,
-                engine: engineNow(),
-                model: st.model, effort: st.effort, permissionMode: st.permissionMode,
-                // ‼️ X-133 — RESOLVED HERE, because this is where the agent is
-                // known. The switch's untouched state means "this agent's own
-                // default", and the panel cannot resolve that: the picker lives
-                // on the page. It is sent as the answer, never as the choice.
-                superpowers: superpowersState().on,
-                attach: files
-            });
+            // ‼️ X-152 — CONTENT ONLY. Who the session is for and every
+            // dimension it starts with are the host's record already, drawn
+            // in the boxes above; Send carries what was typed and attached.
+            vscode.postMessage({ type: 'start', text: value, attach: files });
         }
         st.draft = '';
         st.attach = [];
@@ -5944,8 +5787,7 @@
             // host sends the WHOLE hosted list every time, so anything not in it
             // is a session that will never be looked at again.
             pruneKinds();
-            // opened from an agent row: preselect that agent in the composer
-            if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
+            // opened from a door: the prompt it handed over, once (K-34)
             applyComposerSeed();
             // ‼️ M-33 — this one is the HOST's: see paint(fromHost).
             paint(true);
@@ -5960,7 +5802,6 @@
             setTimeout(() => { if (shellOwed && !window.AFRepaint.inAField(document)) { paint(); } }, 0);
         });
     }
-    if (DATA.presetAgent) { st.agentId = DATA.presetAgent; save(); }
     applyComposerSeed();
     // The answer card's ceiling is a share of the WINDOW, so dragging the panel
     // taller or shorter changes whether it is cut — and nothing else on the page

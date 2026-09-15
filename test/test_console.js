@@ -808,10 +808,12 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     }
     ok('new-session mode is the only place the agent is picked',
         split > 0 && controls.indexOf('Choose an agent…') > split);
+    // X-152 — the agent is the host's record (`composerAgent`), read as `agentNow()`
     ok('starting without an agent focuses the picker instead of swallowing the message',
-        /if \(!st\.agentId\)/.test(js));
+        /if \(!agentNow\(\)\)/.test(js));
     ok('an agent row can open the Console with that agent preselected',
-        /presetAgent/.test(js));
+        /c\.composerAgent = opts\.agentId;/.test(
+            fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8')));
     // ‼️ …and PINNED, which is a different thing: preselected is a picker with a
     // value in it, pinned is the name and no picker. ▶ → In the Console used to
     // spawn on the spot, so the composer went straight to its running shape —
@@ -1613,7 +1615,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     // agent is already chosen. The shell is not rebuilt when the composer is
     // already up, so the picker is mirrored on every pass, not only at build.
     ok('an agent chosen for us reaches the picker even when the composer is already up',
-        /agentSel\.value = st\.agentId/.test(js));
+        /\['c-agent', agentNow\(\)\]/.test(js) && /el\.value = want;/.test(js));
     ok('…and the picker asks for it as a sentence, capital first',
         /Choose an agent…/.test(js) && !/choose an agent/.test(js));
     ok('file writes offer open + diff', /data-open=/.test(js) && /data-diff=/.test(js));
@@ -1750,7 +1752,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     const js = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
     const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8');
     ok('the composer has an engine box, and only when starting a session',
-        /axis: 'Engine', id: 'c-engine'/.test(js) && /type: 'setEngine'/.test(js));
+        /axis: 'Engine', id: 'c-engine'/.test(js) && /askIntent\('engine', e\.target\.value, 'c-engine'\)/.test(js));
     ok('‼️ …offering an engine that cannot run here as DISABLED rather than hiding it',
         /\$\{e\.ready \? '' : ' disabled'\}/.test(js));
     ok('…with the one thing to do about it on the row itself',
