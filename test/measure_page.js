@@ -23,6 +23,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
+const { headlessFlags, sweepAndReport } = require('./headless_chrome');
 
 const ROOT = path.resolve(__dirname, '..');
 const RENDER = path.join(ROOT, 'dist', 'render');
@@ -75,16 +76,13 @@ function main() {
 
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'af-measure-'));
     try {
-        const dom = execFileSync(browser(), [
-            '--headless=new', '--disable-gpu', '--hide-scrollbars',
-            '--force-device-scale-factor=1',
-            `--user-data-dir=${profile}`,
-            '--no-first-run', '--no-default-browser-check',
+        // ‼️ X-311 — the flags live in ONE file (test/headless_chrome.js).
+        const dom = execFileSync(browser(), headlessFlags(profile).concat([
             `--window-size=${width},2400`,
             '--virtual-time-budget=4000',
             '--dump-dom',
             'file:///' + tmp.replace(/\\/g, '/')
-        ], { encoding: 'utf8', timeout: 90000, stdio: ['ignore', 'pipe', 'pipe'] });
+        ]), { encoding: 'utf8', timeout: 90000, stdio: ['ignore', 'pipe', 'pipe'] });
         const m = new RegExp('<pre id="' + MARK + '">([\\s\\S]*?)</pre>').exec(dom);
         if (!m) { console.error('the page did not report — is the expression valid?'); process.exitCode = 1; return; }
         console.log(m[1]
@@ -92,6 +90,7 @@ function main() {
     } finally {
         try { fs.rmSync(tmp, { force: true }); } catch { /* nothing to clean */ }
         try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* a locked profile is not our problem */ }
+        sweepAndReport();
     }
 }
 

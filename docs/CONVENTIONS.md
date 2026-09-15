@@ -593,6 +593,23 @@ node test/shoot_page.js  track --light                 → BOTH take --light
 - `shoot_page.js` photographs it with a headless Chrome **already on the
   machine** — no Playwright download. It uses a throwaway profile: the user's
   own browser windows are never touched, which is not a nicety.
+- **‼️ AND THE FLAGS COME FROM ONE FILE — `test/headless_chrome.js` (X-311).**
+  A throwaway profile is a profile Chrome has never seen, so on every launch it
+  installed the machine's EXTERNAL extensions into it (the registry names Adobe
+  Acrobat and IDM here): CRX downloaded to `%TEMP%\<guid>.tmp`, unpacked into
+  `%TEMP%\scoped_dir<pid>_<n>`, and the process killed by `--dump-dom` finishing
+  before the install ever completed. Measured 2026-09-15: **15.5 GB, the system
+  drive at zero, a VSIX install failing with ENOSPC** — ~40 leftovers per suite
+  run, at the suite's own minutes. `--disable-extensions` measured to zero
+  (three rounds; `--disable-component-update` alone did nothing). So every
+  launch takes `headlessFlags(profile)` and calls `sweepAndReport()` in its
+  `finally`; the sweeper takes only the leak's exact shape older than two hours
+  (an empty or manifest-holding `scoped_dir`, a `Cr24`-headed `<guid>.tmp`) and
+  skips whatever is locked; `run-all.js` sweeps once more at the end;
+  `node test/headless_chrome.js --sweep [--hours N]` does it by hand.
+  `test_headless_chrome.js` fails on a fourth hand-written list (a quoted
+  `--headless=new` followed by a comma outside that file), and its browser half
+  launches the real Chrome and counts what appeared in `%TEMP%`.
 - **‼️ AND IT PHOTOGRAPHS THE WHOLE PAGE, WHICH IT DID NOT UNTIL A-12.10.**
   Chrome's `--screenshot` captures the VIEWPORT, and this tool used to hand it a
   fixed `--window-size=<w>,2400` — so every fixture taller than that was cut at

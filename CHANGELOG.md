@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.519.0 - the headless Chrome the tests drive no longer fills the system drive (X-311) (2026-09-15)
+
+- **‼️ THE LEAK WAS THE THROWAWAY PROFILE ITSELF.** `shoot_page.js`,
+  `measure_page.js` and `test_shot_height.js` each launched Chrome with a fresh
+  `--user-data-dir` — right, the user's own browser is never touched — but a
+  profile Chrome has never seen is one it installs the machine's EXTERNAL
+  extensions into on every launch (the registry names Adobe Acrobat twice and
+  the IDM integration module here): the CRX lands in `%TEMP%\<guid>.tmp`, is
+  unpacked into `%TEMP%\scoped_dir<pid>_<n>`, and `--dump-dom` finishing kills
+  the process before the install completes, so nothing is ever cleaned up.
+  Measured 2026-09-15: 2,584 folders and 4,145 CRX files, **15.5 GB, the system
+  drive at ZERO and a VSIX install failing with ENOSPC**; today's leftovers
+  arrived in four bursts, each at the exact minutes a full suite was running,
+  ~40 per run. Neither the MCP browsers nor a schedule was the source.
+- **Measured fix, three rounds each against the installed Chrome:** the old
+  list left 1 `scoped_dir` per launch every time; **`--disable-extensions`
+  left none** every time; `--disable-component-update` alone left 1 (it is an
+  extension, not a component). The flags now live in ONE file,
+  `test/headless_chrome.js` (`headlessFlags(profile)`), with
+  `--disable-component-update` and `--disable-background-networking` behind
+  the one that mattered — a longer page gives the component updater time to
+  start downloads that end the same way.
+- **And a sweeper for what is already there.** `sweepAndReport()` runs in every
+  launch's `finally` and once more at the end of `run-all.js`: it takes only
+  the leak's exact shape older than two hours — an empty or manifest-holding
+  `scoped_dir<pid>_<n>`, a `<guid>.tmp` whose first bytes are the CRX magic
+  `Cr24` — and leaves alone anything fresh, anything of another shape and
+  anything the OS holds locked. First run on this machine: 60 folders and 100
+  CRX files, 521.8 MB. `node test/headless_chrome.js --sweep [--hours N]` by
+  hand.
+- **Gate:** `test_headless_chrome.js` — a fourth hand-written flag list
+  anywhere under `test/` or `tools/` fails by shape (a quoted `--headless=new`
+  followed by a comma), the three sites are checked for `headlessFlags` and a
+  sweep in their `finally`, the sweeper is proved on a fixture of eleven
+  shapes, and the browser half launches the real Chrome with the flags and
+  counts what appeared in `%TEMP%`. Mutations: the bare list put back into
+  `measure_page.js` → 2 named failures; `--disable-extensions` removed → the
+  live launch leaves 1 folder and the assertion says so.
+
 ## 3.518.0 - a restart waits for the turns that did not ask for it, and speaks only into the one that did (X-310) (2026-09-15)
 
 - **‼️ ONLY THE TURN THAT ASKED CONSENTED TO DYING.** X-232 exempted every

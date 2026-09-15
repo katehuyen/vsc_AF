@@ -80,6 +80,9 @@ for (const f of files) {
         } catch { /* in use, or gone already — either way not ours to force */ }
     }
     if (swept) { console.log(`\nswept ${swept} stale af-* fixture folder(s) out of ${tmp}`); }
+    // ‼️ X-311 — and what the headless Chrome those fixtures drove left behind
+    // (the other disk-filler: 15.5 GB of half-installed extensions in %TEMP%).
+    try { require('./headless_chrome').sweepAndReport(); } catch { /* the sweep is a backstop, never a failure */ }
 }
 
 console.log(`\n${files.length} files · ${totalPass} passed · ${totalFail} failed · ${((Date.now() - t0) / 1000).toFixed(1)}s`);

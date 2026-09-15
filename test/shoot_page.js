@@ -36,6 +36,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { execFileSync } = require('child_process');
+const { headlessFlags, sweepAndReport } = require('./headless_chrome');
 
 const ROOT = path.resolve(__dirname, '..');
 const RENDER = path.join(ROOT, 'dist', 'render');
@@ -182,14 +183,9 @@ function main() {
     fs.writeFileSync(tmp, instrument(fs.readFileSync(html, 'utf8'), scene), 'utf8');
     const url = 'file:///' + tmp.replace(/\\/g, '/');
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'af-shoot-'));
-    const common = [
-        '--headless=new',
-        '--disable-gpu',
-        '--hide-scrollbars',
-        '--force-device-scale-factor=1',
-        `--user-data-dir=${profile}`,
-        '--no-first-run', '--no-default-browser-check'
-    ];
+    // ‼️ X-311 — the flags live in ONE file; a fresh profile launched without
+    // them installs the machine's external extensions into %TEMP% on every run.
+    const common = headlessFlags(profile);
     try {
         // PASS 1 — ask the laid-out page how tall it is and what its scenes are
         // called. Failing here is never silent: it falls back to the old fixed
@@ -256,6 +252,7 @@ function main() {
     } finally {
         try { fs.rmSync(tmp, { force: true }); } catch { /* nothing to clean */ }
         try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* a locked profile is not our problem */ }
+        sweepAndReport();
     }
 }
 

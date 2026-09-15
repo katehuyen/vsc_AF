@@ -36,6 +36,7 @@ const { pathToFileURL } = require('url');
 const ROOT = path.resolve(__dirname, '..');
 const RENDER = path.join(ROOT, 'dist', 'render');
 const shoot = require('./shoot_page.js');
+const { headlessFlags, sweepAndReport } = require('./headless_chrome');
 
 let pass = 0, fail = 0;
 function ok(what, cond) {
@@ -65,14 +66,12 @@ function measure(fixture, scene) {
     fs.writeFileSync(tmp, shoot.instrument(fs.readFileSync(src, 'utf8'), scene), 'utf8');
     const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'af-height-'));
     try {
-        const dom = execFileSync(bin, [
-            '--headless=new', '--disable-gpu', '--hide-scrollbars',
-            '--force-device-scale-factor=1', `--user-data-dir=${profile}`,
-            '--no-first-run', '--no-default-browser-check',
+        // ‼️ X-311 — the flags live in ONE file (test/headless_chrome.js).
+        const dom = execFileSync(bin, headlessFlags(profile).concat([
             `--window-size=1400,${shoot.FALLBACK_HEIGHT}`,
             '--virtual-time-budget=4000', '--dump-dom',
             pathToFileURL(tmp).href + '?af=measure'
-        ], { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
+        ]), { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
         const m = new RegExp(`<pre id="${shoot.MARK}">([\\s\\S]*?)</pre>`).exec(dom);
         if (!m) { return null; }
         return JSON.parse(m[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>')
@@ -80,6 +79,7 @@ function measure(fixture, scene) {
     } finally {
         try { fs.rmSync(tmp, { force: true }); } catch { /* nothing to clean */ }
         try { fs.rmSync(profile, { recursive: true, force: true }); } catch { /* locked is not our problem */ }
+        sweepAndReport();
     }
 }
 
