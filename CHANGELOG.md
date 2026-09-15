@@ -2,6 +2,20 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.514.0 - a saved setup that names no agent is given one ONCE and keeps it; Edit has an Agent row (X-180) (2026-09-15)
+
+- **‼️ "PRESSING A SETUP IS THE START" WAS NOT TRUE OF A SETUP WITH A QUESTION
+  STILL IN IT.** Every profile saved before 3.512.0 names nobody, so the press
+  asked the agent — every time. Now the answer is **written into the profile**
+  the moment it is given (`launch.profile.set` records it the same way), so the
+  next press starts; a fleet of one agent is not asked at all. The Edit picker
+  has an **Agent** row (`Ask each time` is a real answer there, for a setup that
+  is meant to be general).
+- The user's three "Developer …" profiles were pinned to `developer` through
+  the running extension's own op; the two "Genel …" ones ask once, then keep it.
+- Gate: `test_run_surface.js` — the one answer is written into the profile, and
+  the Edit picker has the row.
+
 ## 3.513.0 - the composer's intent has one owner, the host — step 1 of 4 (X-152) (2026-09-15)
 
 - **‼️ ONE RECORD FOR THE NEXT SESSION.** The strip's answers lived in two

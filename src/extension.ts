@@ -22208,13 +22208,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const agentForSetup = async (p: LaunchProfile): Promise<AgentInfo | undefined> => {
         const own = p.agentId ? agents.find(a => a.id === p.agentId) : undefined;
         if (own) { return own; }
-        if (p.agentId) {
-            void vscode.window.showWarningMessage(
-                `Agent Farm: “${p.name}” was saved for "${p.agentId}", which is not in the fleet any `
-                + 'more — pick the agent to start it on. Open the full setup and save the profile '
-                + 'again to pin it to a live one.');
-        }
-        return resolveAgent({});
+        /**
+         * ‼️ A SETUP WITHOUT AN AGENT IS GIVEN ONE — ONCE — AND KEEPS IT.
+         *
+         * Every profile saved before profiles carried an agent names nobody,
+         * and "pressing a setup is the start" cannot be true of a setup that
+         * still has a question in it. So the answer is written INTO the
+         * profile the moment it is given: the next press starts, and the Edit
+         * picker's Agent row is where the choice is changed later. A fleet of
+         * one agent is not asked at all — there is nothing to choose.
+         */
+        const pinned = agents.length === 1 ? agents[0] : await vscode.window.showQuickPick(
+            agents.map(a => ({ label: a.name, description: a.dir, agent: a })),
+            {
+                title: `“${p.name}” — which agent does it start?`,
+                placeHolder: p.agentId
+                    ? `saved for "${p.agentId}", which is not in the fleet any more — pick the agent; it is kept in the profile`
+                    : 'this setup was saved before profiles carried an agent — pick one; it is kept in the profile and never asked again',
+                ignoreFocusOut: true
+            }).then(x => x?.agent);
+        if (!pinned) { return undefined; }
+        await writeLaunchProfiles(
+            editProfile(launchProfiles(), p.name, { ...p, agentId: pinned.id }),
+            `profile "${p.name}" now starts ${pinned.name}`);
+        return pinned;
     };
 
     /** The one write path for `agentFarm.launchProfiles`, so save, rename,
@@ -22270,6 +22287,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     label: '$(bookmark) Name', description: draft.name,
                     detail: 'what the profile is called — NOT the session\'s name, which stays per launch',
                     act: 'name'
+                },
+                // ‼️ X-180 — WHO the setup starts, one press from the Start
+                // Session… icon. Absent means that press asks (and keeps the
+                // answer here).
+                {
+                    label: '$(person) Agent',
+                    description: agents.find(a => a.id === draft.agentId)?.name
+                        ?? (draft.agentId ? `"${draft.agentId}" — not in the fleet` : 'asks which agent'),
+                    detail: 'the agent a press on this setup starts — from the Start Session… icon, with no question',
+                    act: 'agent'
                 },
                 { label: 'The setup it stores', kind: vscode.QuickPickItemKind.Separator },
                 {
@@ -22371,6 +22398,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (go !== 'Replace it') { continue; } // back to the picker
                 }
                 return profileFrom(draft, draft.name, profileSurface(draft), draft.agentId);
+            }
+            if (pick.act === 'agent') {
+                const v = await vscode.window.showQuickPick(
+                    [
+                        { label: '$(question) Ask each time', description: 'the press asks which agent', agent: undefined as AgentInfo | undefined },
+                        ...agents.map(a => ({ label: a.name, description: a.dir, agent: a }))
+                    ],
+                    { title: `“${draft.name}” — which agent does it start?`, ignoreFocusOut: true });
+                if (!v) { continue; }
+                draft = { ...draft, agentId: v.agent?.id };
+                if (!draft.agentId) { delete draft.agentId; }
+                continue;
             }
             if (pick.act === 'name') {
                 const v = await vscode.window.showInputBox({

@@ -191,6 +191,10 @@ const base = read('src/panels/base.ts');
     ok('‼️ X-180: …a setup starts the agent it was saved for, and asks only when it names none',
         /const agentForSetup = async \(p: LaunchProfile\)[\s\S]{0,200}const own = p\.agentId \? agents\.find\(a => a\.id === p\.agentId\) : undefined;\s*\n\s*if \(own\) \{ return own; \}/.test(ext)
         && /profileFrom\(\{ \.\.\.merged, prompt: o\.prompt \}, name, where, agent\.id\)/.test(ext));
+    ok('‼️ X-180: …and the one answer it takes is WRITTEN INTO the profile, so it is never asked again',
+        /const pinned = agents\.length === 1 \? agents\[0\] : await vscode\.window\.showQuickPick\(/.test(ext)
+        && /editProfile\(launchProfiles\(\), p\.name, \{ \.\.\.p, agentId: pinned\.id \}\)/.test(ext)
+        && /act: 'agent'/.test(ext));
     ok('‼️ X-180: …and the inline ▶ (startSession) carries none of it — it asks where and starts',
         !/pickSavedSetup|startFromSavedSetup/.test(startBody));
     ok('‼️ X-180: …and with nothing saved the layer does not exist at all',
