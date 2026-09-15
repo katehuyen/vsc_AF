@@ -43,8 +43,13 @@ const base = read('src/panels/base.ts');
         // window is a character count rather than a parse, so it has to be wide
         // enough for the prose these handlers carry — a comment added above the
         // line being measured must not read as the line having been removed.
+        // X-180 put a saved-setup layer in front of startSession's surface
+        // question, and its reason is written where the reason belongs — which
+        // pushed the line this measures past the old 2800 and read exactly like
+        // the line having been deleted. Widened rather than trimmed: the prose
+        // is the point, and this window is the thing that is arbitrary.
         const i = ext.indexOf(`registerCommand('agentfarm.${cmd}'`);
-        return i < 0 ? '' : ext.slice(i, i + 2800);
+        return i < 0 ? '' : ext.slice(i, i + 4600);
     };
     ok('agentfarm.startSession asks where it should run',
         /\? \{\s*\n\s*surface: arg\.surface, projectId: '',\s*\n\s*engine: [^\n]+\n\s*\}\s*\n\s*: await pickRunSurface\(/.test(body('startSession')));
@@ -132,8 +137,10 @@ const base = read('src/panels/base.ts');
     // it: the command had not changed, the comment above it had. A window that
     // must be re-measured every time somebody writes a paragraph reports prose
     // as a missing behaviour, which is the one thing a test must not do.
+    // widened for the same reason as `body` above: X-180's layer and its reason
+    // sit in front of the lines these regexes measure (see the note there).
     const startBody = ext.slice(ext.indexOf("registerCommand('agentfarm.startSession'"),
-        ext.indexOf("registerCommand('agentfarm.startSession'") + 9000);
+        ext.indexOf("registerCommand('agentfarm.startSession'") + 11000);
     ok('‼️ one-click Start asks for the project as well as the place',
         /pickRunSurface\(`New session for \$\{agent\.name\}`, \{\s*\n\s*project: true, last, agentName: agent\.name,/.test(startBody));
     /**
@@ -160,6 +167,32 @@ const base = read('src/panels/base.ts');
     // blind spot. So the door is CALLED and asked which of the two seeders it
     // used — the whole content of the rule above.
     const treeRow = require(path.join(__dirname, '..', 'out', 'launch', 'doors', 'treeRow.js')).treeRowDoor;
+    /**
+     * ‼️ X-180 — THE SAVED SETUPS ARE OFFERED BEFORE THE DIALOG, AND PRESSING
+     * ONE IS THE START.
+     *
+     * The three rules that make this safe, each measured rather than trusted:
+     * (1) an empty profile list draws NOTHING and falls straight through, so a
+     * person who keeps no setups pays no keypress; (2) a caller that already
+     * named a surface skips the layer, because that argument means another door
+     * is calling this one to finish; (3) the setup is reproduced through the
+     * launcher's own two functions, never a hand-built object — a dimension the
+     * profile stores and this path forgot is a session quietly running as
+     * something else (A-11, X-103).
+     */
+    ok('‼️ X-180: the saved setups are asked before the surface dialog',
+        /if \(!arg\?\.surface\) \{\s*\n\s*const setup = await pickSavedSetup\(agent\.name\);/.test(startBody)
+        && /if \(setup\.profile\) \{\s*\n\s*await startFromSavedSetup\(agent, setup\.profile\);/.test(startBody));
+    ok('‼️ X-180: …and with nothing saved the layer does not exist at all',
+        /const saved = launchProfiles\(\);\s*\n\s*if \(!saved\.length\) \{ return \{\}; \}/.test(ext));
+    ok('‼️ X-180: …the full dialog is still a row, so the old flow loses nothing',
+        /label: '\$\(gear\) Full setup…'/.test(ext));
+    ok('‼️ X-180: pressing a setup reproduces it through applyProfile, not by hand',
+        /const gone = profileAccountGone\(p, storedAccounts\(\)\.map\(s => s\.id\)\);[\s\S]{0,2600}const o = applyProfile\(\{\}, use\) as LaunchOptions;/.test(ext));
+    ok('‼️ X-180: …a profile that never stored a surface is ASKED, never guessed',
+        /let surface = profileSurface\(p\);\s*\n\s*if \(!surface\) \{/.test(ext));
+    ok('‼️ X-180: …and the terminal arm records it like every other door',
+        /if \(!startClaudeSession\(agent, o, undefined, undefined, projectId\)\) \{ return; \}\s*\n\s*await rememberLaunch\(agent\.id, o, 'terminal'\);/.test(ext));
     ok('…and the answer really reaches the launch',
         treeRow.collect({
             agentId: 'a', engine: 'codex',

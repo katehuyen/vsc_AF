@@ -2,6 +2,41 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.510.0 - Start Session offers the setups you already saved, and pressing one IS the start (X-180) (2026-09-14)
+
+- **‼️ THE COMMON PRESS WAS THE LONGEST PATH.** Pressing ▶ opened the full
+  launcher — the right surface for building a NEW setup or assembling a one-off,
+  and the wrong one for "open the setup I already keep". Reaching a saved
+  profile meant walking down into the profile rows, loading one, then coming
+  back up to Start: three moves for an answer that was already written down.
+- **The saved setups are now offered the moment the agent is known**, and
+  pressing one **is** the launch — no second confirmation. The full dialog is
+  the first row of that list (`Full setup…`) and **nothing about it changed**:
+  every step, every row, save/load/edit, all exactly as before, simply behind
+  one keypress.
+- **‼️ WITH NOTHING SAVED THE LAYER DOES NOT EXIST.** An empty profile list
+  falls straight through to the dialog and draws nothing — a person who keeps no
+  profiles must not pay a keypress for a list with one row in it, and that is
+  also the state every machine starts in.
+- **The setup is reproduced through the launcher's own two functions**
+  (`profileAccountGone` then `applyProfile`), never a hand-built object: a
+  dimension the profile stores and this path forgot would be a session quietly
+  running as something else, which is the exact defect A-11 and X-103 were
+  written for. A sign-in that has since left the machine is dropped **and said**
+  (X-253), and the account is otherwise resolved by `launchAccountFor` (X-169).
+- **A profile that never stored a surface is ASKED, not guessed.** Every profile
+  saved before A-11 says nothing about where it runs, and the two answers are
+  not interchangeable — a terminal spawns the CLI now, the Console opens a
+  composer that spawns on the first message. Picking one for the reader would be
+  the same silent substitution the account guard refuses.
+- The Console arm keeps K-34 (it opens its composer and does not spawn; Send is
+  the launch and Send records it); the terminal arm records with the one shared
+  recorder like every other door.
+- Guarded by six new gates in `test_run_surface.js`. Two windows in that file
+  were widened rather than trimmed: it measures the source with fixed character
+  slices, so the reason written in front of a measured line reads exactly like
+  the line having been deleted — the trap its own comment names.
+
 ## 3.509.0 - When nobody set a vault folder, Obsidian is asked — and when it cannot answer, it SAYS so (X-308) (2026-09-14)
 
 - **‼️ THE DEFECT WAS THE SILENCE, NOT THE LAW.** `agentFarm.vaultDir` had never

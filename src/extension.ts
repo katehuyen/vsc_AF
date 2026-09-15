@@ -22052,6 +22052,124 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const launchProfiles = (): LaunchProfile[] =>
         (cfg().get<LaunchProfile[]>('launchProfiles', []) ?? []).filter(p => p?.name);
 
+    /**
+     * ‼️ X-180 — WHICH SAVED SETUP, OR THE FULL DIALOG.
+     *
+     * Returns `undefined` when the person pressed Escape (nothing starts), a
+     * row carrying a `profile` when they picked one (that IS the launch), and a
+     * row with no profile for "open the dialog", which is the old flow exactly
+     * as it was. With nothing saved it answers the dialog without drawing
+     * anything: a list whose only row is "everything else" is a keypress that
+     * buys nobody anything.
+     */
+    const pickSavedSetup = async (agentName: string): Promise<{ profile?: LaunchProfile } | undefined> => {
+        const saved = launchProfiles();
+        if (!saved.length) { return {}; }
+        type Row = vscode.QuickPickItem & { profile?: LaunchProfile };
+        const where = (p: LaunchProfile): string => {
+            const s = profileSurface(p);
+            return s === 'console' ? 'the Console panel'
+                : s === 'terminal' ? 'a terminal'
+                    : 'asks where';
+        };
+        const rows: Row[] = [
+            {
+                label: '$(gear) Full setup…',
+                description: 'the dialog you know',
+                detail: 'Choose engine, model, effort, permissions, project and where to run — '
+                    + 'and save, load or edit profiles. Nothing about it has changed.'
+            },
+            { label: 'Start on a saved setup', kind: vscode.QuickPickItemKind.Separator },
+            ...saved.map((p): Row => ({
+                label: `$(rocket) ${p.name}`,
+                description: where(p),
+                // the setup's own sentence, so the row says what it will DO
+                // rather than only what it is called
+                detail: describeProfile(p),
+                profile: p
+            }))
+        ];
+        const hit = await vscode.window.showQuickPick(rows, {
+            title: `New session for ${agentName}`,
+            placeHolder: 'Press a saved setup to start on it — or open the full dialog',
+            matchOnDetail: true
+        });
+        if (!hit) { return undefined; }
+        return { profile: hit.profile };
+    };
+
+    /**
+     * ‼️ X-180 — PRESSING A SAVED SETUP IS THE START.
+     *
+     * The setup is reproduced through the same two functions the launcher's own
+     * load uses (`profileAccountGone` then `applyProfile`), never a hand-built
+     * object: a dimension the profile stores and this path forgot would be a
+     * session quietly running as something else, which is the exact defect A-11
+     * and X-103 were both written for.
+     *
+     * `superpowers` is left unstated on purpose, the way the tree-row door
+     * leaves it: unstated is how `agentFarm.superpowersDefaults` gets to answer.
+     */
+    const startFromSavedSetup = async (agent: AgentInfo, p: LaunchProfile): Promise<void> => {
+        // ‼️ X-253 — a sign-in that is no longer on this machine is dropped and
+        // SAID, before the setup is applied: the one outcome that must never
+        // happen is a saved launch quietly opening on somebody else's plan.
+        const gone = profileAccountGone(p, storedAccounts().map(s => s.id));
+        const use = gone ? { ...p, account: undefined } : p;
+        if (gone) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: “${p.name}” is saved on the sign-in "${gone}", which is not on this `
+                + 'machine any more — the standing choice will answer instead. Open the full setup '
+                + 'and save the profile again to pin it to a live one.');
+        }
+        /**
+         * ‼️ A PROFILE THAT NEVER STORED A SURFACE CANNOT BE GUESSED.
+         *
+         * Every profile saved before A-11 says nothing about where it runs, and
+         * the two answers are not interchangeable — a terminal spawns the CLI
+         * now, the Console opens a composer that spawns on the first message.
+         * Picking one for the reader would be the same silent substitution the
+         * account guard above exists to refuse, so it is asked — once, as two
+         * rows, and only for the profiles that really cannot say.
+         */
+        let surface = profileSurface(p);
+        if (!surface) {
+            const ans = await vscode.window.showQuickPick(
+                [
+                    { label: '$(comment-discussion) The Console panel', value: 'console' as RunSurface },
+                    { label: '$(terminal) A terminal', value: 'terminal' as RunSurface }
+                ],
+                {
+                    title: `“${p.name}” — where should it run?`,
+                    placeHolder: 'This setup was saved before profiles stored a surface, so it cannot say'
+                });
+            if (!ans) { return; }
+            surface = ans.value;
+        }
+        const o = applyProfile({}, use) as LaunchOptions;
+        // ‼️ X-169 — and whose plan pays, resolved from the one place that holds
+        // it whenever the profile itself does not name a sign-in.
+        o.account = launchAccountFor(o.engine, o.account, agent.id);
+        // the window's active project, the same answer `launchProjectRow` opens
+        // on — a setup stores a SHAPE, never which project it was last used for.
+        const projectId = activeProjectId() || undefined;
+        if (surface === 'console') {
+            // K-34 — the Console opens its composer and does not spawn; Send is
+            // the launch and Send is what records it.
+            ConsolePanel.show(consoleDeps, {
+                agentId: agent.id, pinAgent: true, projectId,
+                engine: o.engine,
+                launch: {
+                    model: o.model, effort: o.effort, permissionMode: o.permissionMode,
+                    superpowers: o.superpowers, account: o.account, prompt: o.prompt
+                }
+            });
+            return;
+        }
+        if (!startClaudeSession(agent, o, undefined, undefined, projectId)) { return; }
+        await rememberLaunch(agent.id, o, 'terminal');
+    };
+
     /** The one write path for `agentFarm.launchProfiles`, so save, rename,
      *  replace and delete cannot disagree about where the list lives or how a
      *  refusal is reported. */
@@ -32970,6 +33088,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // is the one that asks the view when the action arrived empty.
                 const agent = await resolveAgent(withAgentsRow(arg));
                 if (!agent) { return; }
+                /**
+                 * ‼️ X-180 — THE SETUPS THE PERSON ALREADY SAVED COME FIRST, AND
+                 * THE DIALOG THEY KNOW IS BEHIND ONE ROW.
+                 *
+                 * The full launcher is good and is not changed by a line: it is
+                 * where a NEW setup is built, an existing one edited, or a
+                 * one-off configuration assembled. What it is not is the thing
+                 * most presses want. The common press is "open the setup I
+                 * already keep" — and reaching it meant walking down into the
+                 * profile rows, loading one, then coming back up to Start. Three
+                 * moves for the answer that was already written down.
+                 *
+                 * So the saved setups are offered the moment the agent is known,
+                 * and pressing one IS the start — no second confirmation, which
+                 * is the whole point. The old flow keeps its every step and
+                 * loses nothing; it simply sits behind the first row.
+                 *
+                 * ‼️ AND WITH NOTHING SAVED THIS LAYER DOES NOT EXIST. A person
+                 * who keeps no profiles must not pay a keypress for a list with
+                 * one row in it, so an empty list falls straight through to the
+                 * dialog — which is also the state every machine starts in.
+                 *
+                 * Skipped when the caller already named a surface: that argument
+                 * means another door has decided where this runs and is calling
+                 * this one to finish, not a person pressing ▶.
+                 */
+                if (!arg?.surface) {
+                    const setup = await pickSavedSetup(agent.name);
+                    if (!setup) { return; }
+                    if (setup.profile) {
+                        await startFromSavedSetup(agent, setup.profile);
+                        return;
+                    }
+                }
                 /**
                  * ‼️ S-34 — ▶ IS THE DOOR THAT REMEMBERED NOTHING, AND IT IS THE
                  * ONE PEOPLE PRESS.
