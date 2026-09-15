@@ -4,6 +4,7 @@ import {
     liveSource, mintSlotId, slotDir
 } from './engineAccounts';
 import { expandPath, PortableRoot, tokenizePath } from './portablePaths';
+import { AccountPolicy, isPolicyId, policyRefusal } from './accountPolicy';
 
 /**
  * X-171 — THE SLOTS AS A LIST, AND WHAT CAPTURING ONE ACTUALLY DOES.
@@ -372,12 +373,19 @@ export function planReauth(stated: string | undefined, list: EngineAccountSlot[]
 }
 
 export function accountRefusal(
-    stated: string | undefined, list: EngineAccountSlot[], engine: string | undefined
+    stated: string | undefined, list: EngineAccountSlot[], engine: string | undefined,
+    /** X-305 — the user's named rules, so `@night` is a policy and `@nihgt` is a typo */
+    policies?: AccountPolicy[]
 ): string {
     const id = String(stated || '').trim();
     // Empty = nothing stated; `@machine` = the machine's own sign-in stated
     // outright. Neither names a slot, and neither is a mistake.
     if (!id || id === MACHINE_ACCOUNT) { return ''; }
+    // ‼️ X-305 — A POLICY IS NOT A MISSING SLOT. `@emptiest` names a RULE that
+    // will choose a slot when the process is spawned; refusing it here as
+    // "no account @emptiest is stored" would be the door contradicting the
+    // seam. What IS refused here is a policy that does not exist.
+    if (isPolicyId(id)) { return policyRefusal(id, policies); }
     const slot = findSlot(list, id);
     if (!slot) {
         return `No account "${id}" is stored on this machine — it may have been forgotten. `

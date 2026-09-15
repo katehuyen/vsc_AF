@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.520.0 - an account chosen at launch by a rule, against the figures of that moment — the core, step 1 of X-305 (2026-09-15)
+
+- **‼️ THE POLICY CORE, PURE AND PROVEN — NOT YET WIRED.** `src/core/accountPolicy.ts`
+  turns a stated `@emptiest` / `@pool` / `@standing` / `@round-robin`, or one of
+  the user's own named rules (`@Night`), into a slot against the usage figures
+  it is handed — never a disk, never a clock of its own. `@emptiest` is
+  `roomOrder`'s head for the launch's engine; `@pool` walks the running
+  campaign's pool exactly as the sentry does (`accountOrder`, its order, its
+  rotation, its ceiling); `@standing` is the layered answer a launch stating
+  nothing gets, said out loud; `@round-robin` takes the next usable slot after
+  the one handed back as `cursor`. A named rule is a chain of steps — a slot or
+  a policy, each with its own wall and an optional model filter — walked top to
+  bottom, refusing loops at depth five.
+- **‼️ A POLICY THAT FINDS NOTHING REFUSES; IT NEVER FALLS TO THE MAIN SIGN-IN**
+  (X-302's lesson, applied at the spawn seam): the refusal names every slot with
+  its figure and the first reset. **And a wall is 95 here, not 100** — a policy
+  chooses where to START a session, and a slot with five per cent left is the
+  one that ends it ten minutes in.
+- `accountRefusal` no longer calls `@emptiest` a forgotten slot: a policy id is
+  checked against the built-ins and the named rules (`policyRefusal`), so a typo
+  is refused at the door and a real policy passes to the seam. `policyShapeRefusal`
+  refuses a rule on its way in (no name, untypeable name, a built-in's name, an
+  empty chain, a step with neither or both, a step pointing at itself or at
+  nothing, a ceiling outside 1–100).
+- **Gate:** `test_account_policies.js`, 63 assertions over the four policies,
+  named chains (model filter, per-step wall, engine mismatch, loop, nothing
+  usable, a step naming an unstored slot), the door's refusal and the shape
+  check. **What remains** (steps 2–4 of X-305): the seam (`launchAccountFor`
+  resolves a policy with `accountUsage.current()`, the campaign pool, the
+  standing layers and a persisted round-robin cursor; `launchAccountRefusal`
+  passes the named rules), `media/afAccount.js` gaining the two groups, the
+  Engines page CRUD, `agentFarm.accountPolicies` and `policies.list/save/delete`.
+
 ## 3.519.0 - the headless Chrome the tests drive no longer fills the system drive (X-311) (2026-09-15)
 
 - **‼️ THE LEAK WAS THE THROWAWAY PROFILE ITSELF.** `shoot_page.js`,
