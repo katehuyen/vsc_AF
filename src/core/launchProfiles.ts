@@ -95,13 +95,17 @@ const put = (o: LaunchProfile | LaunchOptions, k: ProfileKey, v: string): void =
  * it, which is not what "save this setup" means to anybody.
  */
 export function profileFrom(
-    o: LaunchOptions, name: string, surface?: RunSurface
+    o: LaunchOptions, name: string, surface?: RunSurface, agentId?: string
 ): LaunchProfile {
     const out: LaunchProfile = { name: name.trim() };
     for (const k of PROFILE_KEYS) {
         const v = o[k];
         if (typeof v === 'string' && v.trim()) { put(out, k, v.trim()); }
     }
+    // ‼️ X-180 — WHO it was saved for, when the caller knows (the launcher
+    // always does; the bridge may not). Absent stays absent: "asks which
+    // agent" is what every profile saved before this has always meant.
+    if (agentId && agentId.trim()) { out.agentId = agentId.trim(); }
     // ‼️ Only a REAL answer is stored. `undefined` means "this profile says
     // nothing about where", which is what every profile saved before this
     // meant, and what it must go on meaning — writing a default in here would
@@ -233,9 +237,11 @@ export function renameProfile(
 
 /** Replace what a profile stores, keeping its name and its place. */
 export function replaceProfile(
-    list: LaunchProfile[], name: string, o: LaunchOptions, surface?: RunSurface
+    list: LaunchProfile[], name: string, o: LaunchOptions, surface?: RunSurface, agentId?: string
 ): LaunchProfile[] {
-    return list.map(x => (x.name === name ? profileFrom(o, name, surface) : x));
+    // the agent is part of "what I have in front of me" too; a replace that
+    // does not know it keeps the one the row already had
+    return list.map(x => (x.name === name ? profileFrom(o, name, surface, agentId ?? x.agentId) : x));
 }
 
 /**

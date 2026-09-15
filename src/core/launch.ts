@@ -630,6 +630,14 @@ export interface LaunchProfile extends LaunchOptions {
      * surface starts the session, not what is on its command line.
      */
     surface?: RunSurface;
+    /**
+     * ‼️ X-180 — WHO the setup was saved for. The launcher is opened for one
+     * agent, so Save knows; stored here, a saved setup is a whole start — one
+     * press on the Start Session… icon, no agent question. Absent means the
+     * profile predates this and the agent is asked for once. Not a
+     * `LaunchOptions` field: it is the subject of the session, not a flag.
+     */
+    agentId?: string;
 }
 
 /** The always-applied defaults (`agentFarm.launchDefaults`) — the three

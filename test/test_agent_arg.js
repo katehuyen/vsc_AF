@@ -126,10 +126,15 @@ const FLEET = [dev, mgr];
 
     // The doors that were NOT touched, so a regression there is visible here:
     // they take what the caller published and ask when there is nothing.
+    // The window is a character count, not a parse, so it is wide enough for
+    // the reason a door carries above the line measured (X-180 wrote one on
+    // launchSession); the claim is the line AND that the belt is not worn.
     for (const cmd of ['launchSession', 'continueSession', 'startSessionWith', 'consoleForAgent']) {
         const i = ext.indexOf(`registerCommand('agentfarm.${cmd}'`);
+        const body = ext.slice(i, i + 6000);
         ok(`${cmd} still resolves from its own argument alone`,
-            i > 0 && /const agent = await resolveAgent\(arg\);/.test(ext.slice(i, i + 900)));
+            i > 0 && /const agent = await resolveAgent\(arg\);/.test(body)
+            && !/withAgentsRow\(/.test(body.slice(0, body.indexOf('const agent = await resolveAgent(arg);'))));
     }
 }
 

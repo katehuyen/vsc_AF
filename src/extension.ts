@@ -22079,15 +22079,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * anything: a list whose only row is "everything else" is a keypress that
      * buys nobody anything.
      */
-    const pickSavedSetup = async (agentName: string): Promise<{ profile?: LaunchProfile } | undefined> => {
+    const pickSavedSetup = async (agent?: AgentInfo): Promise<{ profile?: LaunchProfile } | undefined> => {
         const saved = launchProfiles();
         if (!saved.length) { return {}; }
         type Row = vscode.QuickPickItem & { profile?: LaunchProfile };
+        // ‼️ X-180 — THE LIST COMES BEFORE ANY AGENT QUESTION, so when nobody
+        // is known yet each row says WHO it starts (the agent it was saved
+        // for), or that it will ask. A caller that already knows the agent
+        // (a row's menu) starts that one, and the row says only where.
+        const who = (p: LaunchProfile): string => {
+            if (agent) { return ''; }
+            const a = p.agentId ? agents.find(x => x.id === p.agentId) : undefined;
+            return a ? a.name : p.agentId ? `"${p.agentId}" is gone — asks which agent` : 'asks which agent';
+        };
         const where = (p: LaunchProfile): string => {
             const s = profileSurface(p);
-            return s === 'console' ? 'the Console panel'
+            const w = s === 'console' ? 'the Console panel'
                 : s === 'terminal' ? 'a terminal'
                     : 'asks where';
+            return [who(p), w].filter(Boolean).join(' · ');
         };
         const rows: Row[] = [
             {
@@ -22107,8 +22117,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }))
         ];
         const hit = await vscode.window.showQuickPick(rows, {
-            title: `New session for ${agentName}`,
-            placeHolder: 'Press a saved setup to start on it — or open the full dialog',
+            title: agent ? `New session for ${agent.name}` : 'New session',
+            placeHolder: agent
+                ? 'Press a saved setup to start on it — or open the full dialog'
+                : 'Press a saved setup to start it — or open the full dialog (which asks the agent first)',
             matchOnDetail: true
         });
         if (!hit) { return undefined; }
@@ -22185,6 +22197,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         if (!startClaudeSession(agent, o, undefined, undefined, projectId)) { return; }
         await rememberLaunch(agent.id, o, 'terminal');
+    };
+
+    /**
+     * ‼️ X-180 — WHO A SAVED SETUP STARTS. The agent it was saved for, when it
+     * is still in the fleet; otherwise the picker, and — when the setup named
+     * one that has since gone — a sentence saying so first, because a setup
+     * quietly starting somebody else is the substitution this door refuses.
+     */
+    const agentForSetup = async (p: LaunchProfile): Promise<AgentInfo | undefined> => {
+        const own = p.agentId ? agents.find(a => a.id === p.agentId) : undefined;
+        if (own) { return own; }
+        if (p.agentId) {
+            void vscode.window.showWarningMessage(
+                `Agent Farm: “${p.name}” was saved for "${p.agentId}", which is not in the fleet any `
+                + 'more — pick the agent to start it on. Open the full setup and save the profile '
+                + 'again to pin it to a live one.');
+        }
+        return resolveAgent({});
     };
 
     /** The one write path for `agentFarm.launchProfiles`, so save, rename,
@@ -22340,7 +22370,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         'Replace it');
                     if (go !== 'Replace it') { continue; } // back to the picker
                 }
-                return profileFrom(draft, draft.name, profileSurface(draft));
+                return profileFrom(draft, draft.name, profileSurface(draft), draft.agentId);
             }
             if (pick.act === 'name') {
                 const v = await vscode.window.showInputBox({
@@ -22472,7 +22502,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * finished by the time this resolves.
      */
     const manageLaunchProfiles = async (
-        current: LaunchOptions, currentSurface?: RunSurface
+        current: LaunchOptions, currentSurface?: RunSurface, currentAgentId?: string
     ): Promise<LaunchProfile | undefined> => {
         const edit = {
             iconPath: new vscode.ThemeIcon('edit'),
@@ -22544,9 +22574,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             if (chosen.act === 'replace') {
                 // The surface is part of "what I have in front of me", so it is
                 // part of what replace stores — the same rule as Save.
-                const next = profileFrom(current, chosen.profile.name, currentSurface);
+                const next = profileFrom(current, chosen.profile.name, currentSurface, currentAgentId);
                 await writeLaunchProfiles(
-                    replaceProfile(launchProfiles(), chosen.profile.name, current, currentSurface),
+                    replaceProfile(launchProfiles(), chosen.profile.name, current, currentSurface, currentAgentId),
                     `profile "${chosen.profile.name}" now stores ${describeProfile(next)}`);
                 continue;
             }
@@ -23045,7 +23075,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // set to; handing over a hand-built object that listed three of
                 // the five dimensions is how "replace" quietly dropped the
                 // engine and the prompt of the very launch it was replacing.
-                const loaded = await manageLaunchProfiles(merged, where);
+                const loaded = await manageLaunchProfiles(merged, where, agent.id);
                 // …and applyProfile puts back every dimension the profile
                 // stores, clears the ones it does not, and leaves the session's
                 // own name alone. That is the whole load, in one call that a
@@ -23123,7 +23153,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // same reason: it is part of the setup in front of the user.
                 await writeLaunchProfiles(
                     saveProfile(launchProfiles(),
-                        profileFrom({ ...merged, prompt: o.prompt }, name, where)),
+                        profileFrom({ ...merged, prompt: o.prompt }, name, where, agent.id)),
                     `profile "${name.trim()}" saved`);
                 continue;
             }
@@ -33366,11 +33396,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // WHERE it runs, which is a dimension like any other (see the Where row).
         vscode.commands.registerCommand('agentfarm.launchSession',
             async (arg: AgentArg & { surface?: RunSurface }) => {
-                const agent = await resolveAgent(arg);
-                if (!agent) { return; }
                 /**
-                 * ‼️ X-180 — THE SETUPS THE PERSON ALREADY SAVED COME FIRST, AND
-                 * THE DIALOG THEY KNOW IS BEHIND ONE ROW.
+                 * ‼️ X-180 — THE SETUPS THE PERSON ALREADY SAVED COME FIRST —
+                 * BEFORE ANY QUESTION, THE AGENT ONE INCLUDED — AND THE DIALOG
+                 * THEY KNOW IS BEHIND ONE ROW.
                  *
                  * This is the door behind the panel's Start Session… icon and the
                  * row's Start Session… menu item — the one that opens the full
@@ -33378,34 +33407,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * it is where a NEW setup is built, an existing one edited, or a
                  * one-off configuration assembled. What it is not is the thing
                  * most presses want. The common press is "open the setup I
-                 * already keep" — and reaching it meant walking down into the
-                 * profile rows, loading one, then coming back up to Start. Three
-                 * moves for the answer that was already written down.
+                 * already keep" — and reaching it meant picking the agent, then
+                 * walking down into the profile rows, loading one, then coming
+                 * back up to Start. Four moves for an answer already written.
                  *
-                 * So the saved setups are offered the moment the agent is known,
-                 * and pressing one IS the start — no second confirmation, which
-                 * is the whole point. The old flow keeps its every step and
-                 * loses nothing; it simply sits behind the first row.
+                 * So the icon opens ON the saved setups. A setup knows who it
+                 * was saved for (`agentId`, written by the launcher's Save), and
+                 * pressing it IS the start — no agent question, no second
+                 * confirmation, which is the whole point. A setup saved before
+                 * profiles carried an agent asks for one, once. The old flow
+                 * keeps its every step and loses nothing; it simply sits behind
+                 * the first row: Full setup… → the agent → the dialog.
                  *
                  * ‼️ AND WITH NOTHING SAVED THIS LAYER DOES NOT EXIST. A person
                  * who keeps no profiles must not pay a keypress for a list with
-                 * one row in it, so an empty list falls straight through to the
-                 * dialog — which is also the state every machine starts in.
+                 * one row in it, so an empty list falls straight through — which
+                 * is also the state every machine starts in.
                  *
-                 * Skipped when the caller already named a surface: that argument
-                 * means another page has decided where this runs and wants the
-                 * dialog itself. ‼️ The inline ▶ (agentfarm.startSession) is a
-                 * DIFFERENT door and carries none of this — it asks where and on
-                 * which engine, and starts; that is the whole of it.
+                 * A caller that already names the agent (a row's own menu, the
+                 * agent page, the portfolio) starts THAT agent on the pressed
+                 * setup — the row is the answer (S-48). Skipped when the caller
+                 * already named a surface: that argument means another page has
+                 * decided where this runs and wants the dialog itself. ‼️ The
+                 * inline ▶ (agentfarm.startSession) is a DIFFERENT door and
+                 * carries none of this — it asks where and on which engine, and
+                 * starts; that is the whole of it.
                  */
                 if (!arg?.surface) {
-                    const setup = await pickSavedSetup(agent.name);
+                    const known = resolveAgentArg(arg, agents).agent;
+                    const setup = await pickSavedSetup(known);
                     if (!setup) { return; }
                     if (setup.profile) {
+                        const agent = known ?? await agentForSetup(setup.profile);
+                        if (!agent) { return; }
                         await startFromSavedSetup(agent, setup.profile);
                         return;
                     }
                 }
+                const agent = await resolveAgent(arg);
+                if (!agent) { return; }
                 // Seeded with what this agent was last launched with — the second
                 // time you start the same kind of session it is one Enter.
                 //
@@ -36989,7 +37029,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'headless run can carry it — the TUI takes no --variant and ACP declares none), '
                 + 'effort?, '
                 + 'permissionMode?, prompt?, surface? (console|terminal — omit it and the profile says '
-                + 'nothing about where, so the launcher keeps the surface it is on) — each empty means '
+                + 'nothing about where, so the launcher keeps the surface it is on), agentId? (X-180 — '
+                + 'the agent the setup starts from the Start Session… icon with one press; omit it and '
+                + 'that press asks which agent) — each empty means '
                 + '"no flag", exactly as it does in the launcher. Replacing keeps the row\'s place in '
                 + 'the list. ‼️ Check providers.runtime and engines.models '
                 + 'first: a model or an effort the engine does not offer is stored happily here and '
@@ -37021,7 +37063,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // terminal is finding it out in the worst possible place.
                 const bad = validateLaunch(setup);
                 need(!bad.length, bad.join(' · '));
-                const p = profileFrom(setup, name, (surface || undefined) as RunSurface | undefined);
+                const agentId = optStr(args, 'agentId') ?? '';
+                need(!agentId || agents.some(a => a.id === agentId),
+                    `agentId "${agentId}" is not an agent in the fleet (agents.list has the ids)`);
+                const p = profileFrom(setup, name, (surface || undefined) as RunSurface | undefined, agentId);
                 need(await writeLaunchProfiles(
                     saveProfile(launchProfiles(), p), `profile "${name}" saved`),
                     'agentFarm.launchProfiles could not be written');

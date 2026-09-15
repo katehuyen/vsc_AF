@@ -225,5 +225,27 @@ const names = list => list.map(p => p.name).join(',');
         names(editProfile(list, 'gece', { name: 'sabah', model: 'opus' })) === 'sabah');
 }
 
+// ‼️ X-180 — A SETUP KNOWS WHO IT WAS SAVED FOR, so the Start Session… icon can
+// open ON the saved setups and one press is the whole start: no agent question.
+// The launcher is opened for one agent, so Save and Replace know; a profile
+// saved before this names nobody and goes on naming nobody (it asks, once).
+{
+    const launcher = { engine: 'claude', model: 'opus', effort: 'high' };
+    ok('‼️ Save from the launcher stores the agent it was opened for',
+        profileFrom(launcher, 'gece', 'console', 'a-dev').agentId === 'a-dev');
+    ok('…a blank agent is not stored as one',
+        !('agentId' in profileFrom(launcher, 'gece', 'console', '  '))
+        && !('agentId' in profileFrom(launcher, 'gece')));
+    const list = [profileFrom(launcher, 'gece', 'console', 'a-dev'), profileFrom(launcher, 'eski')];
+    ok('‼️ Replace stores the agent in front of the user',
+        replaceProfile(list, 'gece', { model: 'sonnet' }, 'console', 'a-psy')[0].agentId === 'a-psy');
+    ok('…and a Replace that does not know the agent keeps the one the row had',
+        replaceProfile(list, 'gece', { model: 'sonnet' }, 'console')[0].agentId === 'a-dev');
+    ok('…while a profile that never named one stays that way',
+        replaceProfile(list, 'eski', { model: 'sonnet' })[1].agentId === undefined);
+    ok('the agent is not one of the dimensions a load applies or a match compares',
+        !PROFILE_KEYS.includes('agentId'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

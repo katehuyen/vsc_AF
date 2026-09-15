@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.512.0 - the Start Session… icon opens ON your saved setups — no agent question first, one press is the start (X-180) (2026-09-15)
+
+- **‼️ THE LIST STILL CAME SECOND.** 3.511.0 put the saved setups on the right
+  door but still asked the agent first, and the item said the opposite in as
+  many words: *press the icon and the profiles appear*. The reason it could not
+  be first was structural — a profile did not know who it was for.
+- **A profile now knows its agent.** The launcher is opened for one agent, so
+  **Save** and **Replace** write `agentId` into the profile (the bridge's
+  `launch.profile.save` takes `agentId?` too). Pressing the **Start Session…**
+  icon opens straight on the saved setups; each row says *who · where*; pressing
+  one **is** the start — no agent question, no second confirmation. A setup
+  saved before profiles carried an agent asks for one, once, and says so when
+  the agent it named has left the fleet.
+- The first row, `Full setup…`, is the old flow untouched: the agent, then the
+  dialog. Nothing saved → no list. A door that already knows the agent (a row's
+  own Start Session… menu, the agent page, the portfolio) starts that agent on
+  the pressed setup. The inline ▶ is untouched.
+- Gates: `test_run_surface.js` measures the layer in front of `resolveAgent`
+  and the profile's agent taking precedence; `test_launch_profiles.js` — Save
+  stores the agent, Replace stores the one in front of the user and keeps the
+  row's when it does not know, a profile that never named one stays that way,
+  and `agentId` is not a dimension a load applies or a match compares.
+
 ## 3.511.0 - the saved-setup list is on the door it was asked for, ▶ is itself again, and a Console card starts on Dialog (X-180 · K-40) (2026-09-15)
 
 - **‼️ X-180 HAD BEEN BUILT ON THE WRONG DOOR.** The item named the panel's

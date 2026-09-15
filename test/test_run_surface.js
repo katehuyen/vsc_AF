@@ -182,11 +182,15 @@ const base = read('src/panels/base.ts');
      * something else (A-11, X-103).
      */
     const launchBody = ext.slice(ext.indexOf("registerCommand('agentfarm.launchSession'"),
-        ext.indexOf("registerCommand('agentfarm.launchSession'") + 4000);
-    ok('‼️ X-180: Start Session… asks for a saved setup before opening the full launcher',
-        /if \(!arg\?\.surface\) \{\s*\n\s*const setup = await pickSavedSetup\(agent\.name\);/.test(launchBody)
-        && /if \(setup\.profile\) \{\s*\n\s*await startFromSavedSetup\(agent, setup\.profile\);/.test(launchBody)
-        && launchBody.indexOf('pickSavedSetup(') < launchBody.indexOf('await runLauncher(agent, seed,'));
+        ext.indexOf("registerCommand('agentfarm.launchSession'") + 5000);
+    ok('‼️ X-180: Start Session… offers the saved setups BEFORE the agent question and the launcher',
+        /if \(!arg\?\.surface\) \{\s*\n\s*const known = resolveAgentArg\(arg, agents\)\.agent;\s*\n\s*const setup = await pickSavedSetup\(known\);/.test(launchBody)
+        && /const agent = known \?\? await agentForSetup\(setup\.profile\);\s*\n\s*if \(!agent\) \{ return; \}\s*\n\s*await startFromSavedSetup\(agent, setup\.profile\);/.test(launchBody)
+        && launchBody.indexOf('pickSavedSetup(') < launchBody.indexOf('const agent = await resolveAgent(arg);')
+        && launchBody.indexOf('const agent = await resolveAgent(arg);') < launchBody.indexOf('await runLauncher(agent, seed,'));
+    ok('‼️ X-180: …a setup starts the agent it was saved for, and asks only when it names none',
+        /const agentForSetup = async \(p: LaunchProfile\)[\s\S]{0,200}const own = p\.agentId \? agents\.find\(a => a\.id === p\.agentId\) : undefined;\s*\n\s*if \(own\) \{ return own; \}/.test(ext)
+        && /profileFrom\(\{ \.\.\.merged, prompt: o\.prompt \}, name, where, agent\.id\)/.test(ext));
     ok('‼️ X-180: …and the inline ▶ (startSession) carries none of it — it asks where and starts',
         !/pickSavedSetup|startFromSavedSetup/.test(startBody));
     ok('‼️ X-180: …and with nothing saved the layer does not exist at all',
