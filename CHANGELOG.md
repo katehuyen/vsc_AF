@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.521.0 - the rule now reaches the spawn: a launch really asks it, and a rule that can choose nothing refuses instead of spending the main sign-in — step 2 of X-305 (2026-09-16)
+
+- **‼️ ONE RESOLVER, AND EVERY DOOR IS ALREADY BEHIND IT.** `launchAccountPick`
+  is the single place an account box becomes an answer: a stated slot passes
+  straight through, a stated rule is walked by `resolvePolicy` against
+  `policyWorldFor` — the live usage snapshot, what the standing layers answer,
+  the running campaign's pool, the round-robin cursor and the user's own rules.
+  `launchAccountFor`, `launchAccountSlot` and `launchAccountEnv` all resolve
+  through it, so the account a door SHOWS and the account a process GETS cannot
+  differ. No door had to be taught anything: the seam was already singular
+  (X-169), which is the whole return on having built it that way.
+- **‼️ A REFUSAL IS A THROW, NEVER AN EMPTY STRING.** `''` on this seam means
+  "inject no variable", and no variable means the machine's main sign-in — so a
+  rule that answered `''` would spend exactly the plan it was written to protect,
+  on a launch nobody was watching (X-302). `launchAccountEnv` refuses the spawn
+  **before** it looks the slot up, and `launchAccountRefusal` asks the rule at
+  the DOOR as well, so "every sign-in is walled, the first is back at 14:49" is
+  said where the box was typed rather than thrown at the spawn. It also now
+  hands the named rules to `accountRefusal`, so `@nihgt` is a typo and `@night`
+  is a rule.
+- **‼️ THE ROTATION MOVES ONLY WHERE A LAUNCH IS REAL.** `@round-robin`'s cursor
+  is remembered in `workspaceState` by the three doors that really start a
+  process and by `launchAccountEnv` — never by `launchAccountPick` itself, so a
+  page that merely describes a setup cannot advance the rotation every time it
+  is drawn. The Console door also stopped resolving the account **twice**, which
+  a rule makes wrong as well as wasteful: two calls, two different slots, and
+  the card keeps the second.
+- **‼️ THE DOOR AND THE SPAWN ASK THE SAME QUESTION.** A named rule may carry a
+  model-filtered step, so a `launchAccountRefusal` that checked without the
+  model was guarding a launch it had not described — the door would pass and the
+  spawn throw, or it would refuse something that would have worked. Every door
+  with a launch shape in hand now hands the model over, and the gate names the
+  four of them one by one.
+- **The pickers speak rules.** `accountRowsFor` offers the built-ins and the
+  user's named rules above the stored slots, each row saying what it would pick
+  **right now** or why it cannot (MIRROR); `accountRowLabel` prints
+  `@emptiest → Work` rather than today's answer alone, so a standing rule and a
+  slot somebody typed can be told apart. The profile editor stopped printing
+  `@emptiest (not on this machine)` — it asks the same label. Both bridge
+  session doors document the rules in their `account?` describe.
+- **Gate:** `test_account_policy_wire.js`, 41 assertions, and it measures the
+  WIRE rather than the core (A-02.10): the seam is singular, the refusal comes
+  before the slot lookup, the commit sites are exactly the doors that spawn —
+  and `PolicyWorld` is read out of the core's own source so **every** field of
+  it must be supplied by `policyWorldFor`, with one named exemption (`now`,
+  which is the real clock). Mutation-checked. **What remains** (steps 3–4):
+  `media/afAccount.js` gaining the two groups, the Engines page CRUD,
+  `agentFarm.accountPolicies` and `policies.list/save/delete`.
+
 ## 3.520.0 - an account chosen at launch by a rule, against the figures of that moment — the core, step 1 of X-305 (2026-09-15)
 
 - **‼️ THE POLICY CORE, PURE AND PROVEN — NOT YET WIRED.** `src/core/accountPolicy.ts`

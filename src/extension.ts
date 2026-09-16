@@ -246,7 +246,7 @@ import {
     CapturePlan, MACHINE_ACCOUNT, MACHINE_GLOBAL, MACHINE_GLOBAL_ROW, OrphanSlot, accountEnvFor, accountLabelOf,
     accountResolution, planReauth,
     accountRefusal, addSlot, findSlot,
-    forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, portableSlots, resolveAccount, slotLabel,
+    forgetActive, forgetSlot, normalizeActive, normalizeSlots, planCapture, portableSlots, slotLabel,
     slotsFor, statedAccountLabel, unportableDirs
 } from './core/accountStore';
 import {
@@ -254,6 +254,10 @@ import {
     slotCredentialsFile, slotIsUsable,
     slotSessionDir, windowNameOf, windowPhraseOf
 } from './core/accountUsage';
+import {
+    AccountPolicy, BUILT_IN_POLICIES, PolicyPool, PolicyResolution, PolicyWorld,
+    isPolicyId, resolvePolicy
+} from './core/accountPolicy';
  import * as accountQueue from './core/accountQueue';
 import {
     PATH_VARS, PathVarContext, PreviewedPath, previewPathList, resolvePathList, resolvePathVars
@@ -10037,7 +10041,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             op: 'sessions.start',
             describe: 'Start an INTERACTIVE session in an agent\'s folder — the same launch the Start Session… picker performs, with the same flags. Not a headless run: it opens a session a human then talks in (use tasks.add for work that should run by itself). args: agent (name|id), surface? (terminal = a real CLI terminal, the default | console = hosted in the Console panel), engine? ('
                 + Object.values(ENGINES).map(e => `${e.id} = ${e.label}`).join(', ')
-                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), provider? (‼️ X-103 — WHICH ROUTE THIS SESSION RUNS ON. On Claude it is the id of a stored route profile (providers.list) and it is injected as environment, in isolation from whatever this window carries; on OpenCode it is the engine\'s own provider id and travels in its `-m`. UNSET IS A REAL ANSWER AND THE DEFAULT ONE: the agent\'s stored route applies, and if it has none then NOTHING is injected and NOTHING is cleared — which is not "Anthropic", it is inheritance, and the window may already name somebody else\'s endpoint. Ask providers.runtime to see exactly what a launch of this agent would clear and inject), tier? (Claude only, and only alongside a provider — which tier of that route. It is not a model: `opus` is kimi-k2-thinking on one route and MiniMax-M2 on another, so the route has to be chosen before the word means anything. A tier with no provider is REFUSED rather than dropped), account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list. Unset is a real answer and the default one: the ACTIVE account of that engine applies (accounts.activate, agentFarm.activeAccounts) and if there is none then nothing is injected at all — which is the main sign-in, the identity this machine is logged in as. An id naming no stored slot is REFUSED rather than downgraded, because falling back to the main account would start the run on whoever happens to be signed in. An account belongs to ONE engine and is refused on another. The response says which account it really started as), model? (alias or id), variant? (the reasoning variant, only where the engine publishes one FOR THAT MODEL — measured per model, not per engine. ‼️ A terminal cannot carry it: the bare TUI takes no --variant and ACP declares only model and mode, so it belongs to a headless run), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults — this op is deliberately NOT seeded from what the agent was last started with, because an unattended call that says nothing means the documented defaults and not whatever a person last clicked. ‼️ S-34 — but what it DOES start IS recorded as this agent\'s last setup (engine, model, effort, permissionMode, superpowers, surface), so the UI doors that DO inherit are offering a fact rather than a stale one; ask sessions.lastLaunch to read it. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
+                + '; default claude. ‼️ on a terminal this opens THAT engine\'s own TUI, and two of Claude\'s dimensions have no equivalent on any of the others: `name` (-n) and the project brief (none of them has a system-prompt channel, so a terminal session is NOT told about the project and says so). Resume/continue depends on the engine and is a measured fact, not a rule — the ones that resume in a terminal are ' + Object.values(ENGINES).filter(e => e.resumeInTerminal).map(e => e.id).join(', ') + ', each with its own flag (Gemini --resume <id>, Antigravity --conversation <id>, OpenCode -s <ses_...>); ' + Object.values(ENGINES).filter(e => !e.resumeInTerminal).map(e => e.id).join(', ') + ' does NOT — its resume is a separate subcommand and goes through the Console. ‼️ Not every engine HAS a reasoning effort — ' + enginesWithoutEffort() + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused — ask engines.status), provider? (‼️ X-103 — WHICH ROUTE THIS SESSION RUNS ON. On Claude it is the id of a stored route profile (providers.list) and it is injected as environment, in isolation from whatever this window carries; on OpenCode it is the engine\'s own provider id and travels in its `-m`. UNSET IS A REAL ANSWER AND THE DEFAULT ONE: the agent\'s stored route applies, and if it has none then NOTHING is injected and NOTHING is cleared — which is not "Anthropic", it is inheritance, and the window may already name somebody else\'s endpoint. Ask providers.runtime to see exactly what a launch of this agent would clear and inject), tier? (Claude only, and only alongside a provider — which tier of that route. It is not a model: `opus` is kimi-k2-thinking on one route and MiniMax-M2 on another, so the route has to be chosen before the word means anything. A tier with no provider is REFUSED rather than dropped), account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list — or, X-305, a RULE that chooses one at the moment this launch starts: @emptiest (the sign-in of this engine with the most of its five-hour window left), @pool (the next account with room in the running sentry campaign\'s pool, walked the way that campaign walks it), @standing (this agent\'s own standing sign-in, else the machine-wide one), @round-robin (the usable sign-ins in turn across launches), or @<name> for one of the user\'s own rules in agentFarm.accountPolicies. A rule that can choose nothing right now REFUSES the launch and says why — it never falls through to the main sign-in, which is the plan the rule was written to protect. Unset is a real answer and the default one: the ACTIVE account of that engine applies (accounts.activate, agentFarm.activeAccounts) and if there is none then nothing is injected at all — which is the main sign-in, the identity this machine is logged in as. An id naming no stored slot is REFUSED rather than downgraded, because falling back to the main account would start the run on whoever happens to be signed in. An account belongs to ONE engine and is refused on another. The response says which account it really started as), model? (alias or id), variant? (the reasoning variant, only where the engine publishes one FOR THAT MODEL — measured per model, not per engine. ‼️ A terminal cannot carry it: the bare TUI takes no --variant and ACP declares only model and mode, so it belongs to a headless run), effort? (low|medium|high|xhigh|max — ‼️ refused on an engine that has no such setting: ' + enginesWithoutEffort() + '), permissionMode? (plan|acceptEdits|auto|manual|dontAsk|bypassPermissions — ‼️ the words are shared and the mechanisms are not, so this is what each engine turns it into: ' + Object.values(ENGINES).filter(e => e.id !== 'claude').map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ') + '), name? (session display name), prompt? (first message), resume? (session id — ‼️ the model, effort and permission mode that session was LAST run at are inherited from its transcript for whichever of the three you do not pass; an argument you DO pass wins, and the launch defaults are consulted only for what neither answers), continue? (true = latest session in that folder), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none. The UI\'s start pickers now OPEN on the active project too and say where it came from, so the two agree — except the Console composer, which is per-session and starts at none by design). Unset fields fall back to agentFarm.launchDefaults — this op is deliberately NOT seeded from what the agent was last started with, because an unattended call that says nothing means the documented defaults and not whatever a person last clicked. ‼️ S-34 — but what it DOES start IS recorded as this agent\'s last setup (engine, model, effort, permissionMode, superpowers, surface), so the UI doors that DO inherit are offering a fact rather than a stale one; ask sessions.lastLaunch to read it. surface=console ignores resume/continue — console.start and resumeInConsole own those.',
             handler: (args) => {
                 const agent = findAgent(argStr(args, 'agent'));
                 const engine = (optStr(args, 'engine') ?? '').trim().toLowerCase();
@@ -10095,8 +10099,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const engineRefused = engineRefusal(engineMatrix(), merged.engine);
                 need(!engineRefused, engineRefused ?? '');
                 // ‼️ X-169 — and whether the account it names is on this machine.
-                const accountRefused = launchAccountRefusal(
-                    { engine: engineOf(merged.engine).id, account: merged.account, agentId: agent.id });
+                // ‼️ X-305 — THE MODEL TRAVELS WITH THE QUESTION. A named rule
+                // may have a model-filtered step, so a door that checks without
+                // one is asking a different question from the launch it guards.
+                const accountRefused = launchAccountRefusal({
+                    engine: engineOf(merged.engine).id, account: merged.account,
+                    agentId: agent.id, model: merged.model || ''
+                });
                 need(!accountRefused, accountRefused);
                 const surface = optStr(args, 'surface') || 'terminal';
                 need(surface === 'terminal' || surface === 'console',
@@ -10998,7 +11007,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + Object.values(ENGINES).map(e => `[${e.id}] ${engineModeNote(e.id, '')}`).join(' ')
                 + ' Gemini and agy cannot be handed an image, and neither has a system-prompt channel. ‼️ Not every engine HAS a reasoning effort: '
                 + enginesWithoutEffort()
-                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list. Omit and the ACTIVE account of that engine applies, and failing that nothing is injected at all — which is the main sign-in and what every card started before this ran as. An id naming no stored slot is REFUSED rather than downgraded; an account belongs to ONE engine. The answer says which one it really started as), providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does). Returns the console id to talk to. ‼️ Not every engine states a price: '
+                + ' have none, and passing one is refused rather than dropped. An engine that is not installed or not signed in is refused here — ask engines.status for what is missing, and engines.test to prove a call really gets through), model?, effort?, permissionMode?, account? (‼️ X-169 — WHICH SIGN-IN OF THAT ENGINE PAYS FOR IT, a slot id from accounts.list — or, X-305, a RULE that chooses one at the moment this session starts: @emptiest (the sign-in of this engine with the most of its five-hour window left), @pool (the next account with room in the running sentry campaign\'s pool), @standing (this agent\'s own standing sign-in, else the machine-wide one), @round-robin (the usable sign-ins in turn across launches), or @<name> for one of the user\'s own rules in agentFarm.accountPolicies. A rule that can choose nothing right now REFUSES the start and says why, rather than falling through to the main sign-in. Omit and the ACTIVE account of that engine applies, and failing that nothing is injected at all — which is the main sign-in and what every card started before this ran as. An id naming no stored slot is REFUSED rather than downgraded; an account belongs to ONE engine. The answer says which one it really started as), providerId? (‼️ X-105 — WHICH ROUTE THE SESSION IS SERVED BY: the endpoint the process really talks to, which the engine does not say. On Claude it is one of the route profiles Agent Farm owns and injects, fixed for the whole session; on OpenCode it is the engine\'s own provider id. Omit and NOTHING IS INJECTED AND NOTHING IS CLEARED — the child inherits this window\'s environment, which is what every launch made before routes existed did. engines.providers lists what is set up; a route this engine cannot be pointed at is REFUSED here rather than dropped, because a caller who asked for an endpoint and silently got another one cannot tell), tier? (Claude routes only — which model that route serves for this name; "opus" is a different model on two routes, which is why it is not folded into model), resume? (a session/thread/conversation id to continue — ‼️ ONE CARD PER SESSION: if the panel already holds a card for that id you get THAT id back, the ended one taking the session up again in its own seat and a still-running one handed back untouched, so nothing here can put a second process on one transcript or a second card in the list), project? (id or name — the session is told about it and filed under it; omit to inherit the window\'s active project, "" for none), superpowers? (X-55 — start this session under the engineering-discipline skills: its appended system prompt carries the library\'s root hook plus an index of where the fourteen skills are, and it reads the one it needs when it needs it. Omit = the agent\'s own default, which superpowers.status prints; the skills themselves cost nothing until this is on. ‼️ On an engine with no system-prompt channel the hook rides inside the first prompt, exactly as the project brief does). Returns the console id to talk to. ‼️ Not every engine states a price: '
                 + Object.values(ENGINES).filter(e => e.reportsCost).map(e => e.id).join(' and ')
                 + ' publish what each turn cost and the figure is theirs; '
                 + Object.values(ENGINES).filter(e => !e.reportsCost).map(e => e.id).join(', ')
@@ -11067,9 +11076,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  * told nothing, and the transcript records neither.
                  */
                 const wantAccount = optStr(args, 'account');
-                const accountNo = launchAccountRefusal({ engine, account: wantAccount, agentId: agent.id });
+                const accountNo = launchAccountRefusal({
+                    engine, account: wantAccount, agentId: agent.id,
+                    model: optStr(args, 'model') || ''
+                });
                 need(!accountNo, accountNo);
-                const account = launchAccountFor(engine, wantAccount, agent.id);
+                // X-305 — `commit`: this door really starts the process, so a
+                // `@round-robin` pick made here is the one the rotation remembers.
+                const account = launchAccountFor(engine, wantAccount, agent.id,
+                    { model: optStr(args, 'model') || '', commit: true });
                 /**
                  * ‼️ S-59 — A HELD ID IS SETTLED BEFORE A PROCESS IS STARTED ON IT.
                  * This door started `--resume` against whatever held the id and
@@ -19156,13 +19171,129 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * per-agent rung simply is not there for it, which is the honest answer
      * rather than an invented one.
      */
-    const launchAccountFor = (engine: string | undefined, stated?: string, agentId?: string): string =>
-        resolveAccount(stated, engine, activeAccounts(), agentStandingAccount(agentId, engine));
-    /** The slot a launch resolves to, or nothing — which IS the main account. */
+    /** X-305 — the user's named rules, as `agentFarm.accountPolicies` holds them. */
+    const accountPolicies = (): AccountPolicy[] =>
+        cfg().get<AccountPolicy[]>('accountPolicies', []) ?? [];
+    /**
+     * ‼️ X-305 — THE POOL `@pool` WALKS IS THE CAMPAIGN'S OWN, derived here the
+     * same way the round derives it (see the sentry tick) rather than restated:
+     * the named accounts in the user's order, or — when the campaign named an
+     * engine and no accounts — every slot of that engine. A campaign that named
+     * neither fences nothing off, so there is no pool to walk and `@pool`
+     * refuses rather than quietly meaning "any account".
+     */
+    const policyPool = (): PolicyPool | undefined => {
+        const rec = taskManager.sentry;
+        if (!rec || rec.stoppedAt) { return undefined; }
+        const engineId = String(rec.engine ?? '').trim().toLowerCase();
+        const accounts = (rec.pool ?? []).length
+            ? (rec.pool ?? [])
+            : engineId
+                ? accountUsage.current()
+                    .filter(u => String(u.engine ?? '').toLowerCase() === engineId)
+                    .map(u => u.slotId)
+                : [];
+        if (!accounts.length) { return undefined; }
+        return {
+            accounts,
+            ...(rec.rotation ? { rotation: String(rec.rotation) } : {}),
+            ceiling: typeof rec.ceiling === 'number' ? rec.ceiling : SENTRY_DEFAULT_CEILING,
+            ...(engineId ? { engine: engineId } : {})
+        };
+    };
+    /** Where `@round-robin` remembers the slot it picked last, per engine. */
+    const roundRobinKey = (engine: string): string =>
+        `af.roundRobinCursor.${(engine || 'claude').trim().toLowerCase() || 'claude'}`;
+    /**
+     * ‼️ X-305 — THE FIGURES A POLICY DECIDES AGAINST, AT THE MOMENT IT IS
+     * ASKED. The core is pure and engine-agnostic by design, so everything it
+     * reads about this machine is assembled here: the usage snapshot, what the
+     * standing layers answer, the campaign's pool, the round-robin cursor and
+     * the user's own rules. One assembly, so a policy cannot mean one thing to
+     * the launcher and another to the spawn.
+     */
+    const policyWorldFor = (
+        engine: string | undefined, agentId?: string, model?: string
+    ): PolicyWorld => {
+        const eng = (String(engine || '').trim() || 'claude').toLowerCase();
+        const standing = accountResolution('', eng, activeAccounts(),
+            agentStandingAccount(agentId, eng));
+        const pool = policyPool();
+        return {
+            engine: eng,
+            usage: accountUsage.current(),
+            standing: standing.id,
+            standingOrigin: standing.origin,
+            ...(pool ? { pool } : {}),
+            cursor: context.workspaceState.get<string>(roundRobinKey(eng), ''),
+            policies: accountPolicies(),
+            ...(model ? { model } : {}),
+            stored: storedAccounts().filter(s => s.engine === eng).map(s => s.id),
+            labelOf: (id: string) => {
+                const sl = findSlot(storedAccounts(), id);
+                return sl ? slotLabel(sl) : id;
+            }
+        };
+    };
+    /**
+     * ‼️ X-305 — WHAT THE ACCOUNT BOX RESOLVES TO RIGHT NOW, REFUSAL AND ALL,
+     * and the ONE place that answers it. A stated slot passes straight through
+     * (`resolvePolicy` hands a non-policy back untouched), so every launch may
+     * be sent through here and only the policies are changed.
+     *
+     * ‼️ IT NEVER THROWS AND IT NEVER COMMITS. The doors that are about to
+     * SPAWN ask `launchAccountFor`, which refuses out loud; a page that is
+     * merely describing a setup asks this and gets the refusal as a fact it can
+     * draw. The round-robin cursor moves only where a launch is real.
+     */
+    const launchAccountPick = (
+        o: { engine?: string; account?: string; agentId?: string; model?: string }
+    ): PolicyResolution => {
+        const stated = String(o.account ?? '').trim();
+        if (!isPolicyId(stated)) {
+            const r = accountResolution(stated, o.engine, activeAccounts(),
+                agentStandingAccount(o.agentId, o.engine),
+                id => { const sl = findSlot(storedAccounts(), id); return sl ? slotLabel(sl) : id; });
+            return { id: r.id, policy: '', note: r.note };
+        }
+        return resolvePolicy(stated, policyWorldFor(o.engine, o.agentId, o.model));
+    };
+    /**
+     * ‼️ X-169 / X-305 — WHICH SIGN-IN A LAUNCH RUNS ON, IN ONE FUNCTION, and
+     * the answer a door about to spawn asks for.
+     *
+     * ‼️ A STATED POLICY THAT CAN CHOOSE NOTHING THROWS RATHER THAN ANSWERING
+     * `''` (X-302). `''` on this seam means "inject no variable", and no
+     * variable means the machine's main sign-in — so a silent empty answer
+     * would spend exactly the plan the rule was written to protect, on a launch
+     * nobody was watching. The sentence the core wrote is the one the user sees.
+     *
+     * `commit` moves the `@round-robin` cursor, and only a door that is really
+     * starting a process passes it: a refusal check and a readout that both ask
+     * the same question must not each advance the rotation by one.
+     */
+    const launchAccountFor = (
+        engine: string | undefined, stated?: string, agentId?: string,
+        o?: { model?: string; commit?: boolean }
+    ): string => {
+        const r = launchAccountPick({ engine, account: stated, agentId, model: o?.model });
+        if (r.refusal) { throw new Error(r.refusal); }
+        if (o?.commit && r.cursor) {
+            void context.workspaceState.update(
+                roundRobinKey(String(engine || 'claude')), r.cursor);
+        }
+        return r.id;
+    };
+    /**
+     * The slot a launch resolves to, or nothing — which IS the main account.
+     * ‼️ X-305 — a policy that refuses is "no slot" HERE rather than a throw:
+     * this is what the readouts resolve with, and a page cannot draw an
+     * exception. The spawn seam (`launchAccountEnv`) asks for itself.
+     */
     const launchAccountSlot = (
         o: { engine?: string; account?: string; agentId?: string }
     ): EngineAccountSlot | undefined => {
-        const id = launchAccountFor(o.engine, o.account, o.agentId);
+        const id = launchAccountPick(o).id;
         return id ? findSlot(storedAccounts(), id) : undefined;
     };
     /**
@@ -19194,7 +19325,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if ((o.account || '').trim() === MACHINE_ACCOUNT) {
             return accountEnvFor(o.engine, MACHINE_ACCOUNT, storedAccounts());
         }
-        const slot = launchAccountSlot(o);
+        /**
+         * ‼️ X-305 — AND THE POLICY IS SPENT HERE, at the one moment a slot
+         * really becomes a process's environment. A rule that can choose
+         * nothing REFUSES the spawn: returning no variable would hand the turn
+         * to the machine's main sign-in, which is the accident this family
+         * exists to end (X-302). This is also where `@round-robin` remembers
+         * what it picked, so a readout that merely describes the setup never
+         * advances the rotation — and a door that resolved the policy earlier
+         * (and so passes a slot id down) has already committed it.
+         */
+        const pick = launchAccountPick(o);
+        if (pick.refusal) { throw new Error(pick.refusal); }
+        if (pick.cursor) {
+            void context.workspaceState.update(
+                roundRobinKey(String(o.engine || 'claude')), pick.cursor);
+        }
+        const slot = pick.id ? findSlot(storedAccounts(), pick.id) : undefined;
         // ‼️ X-271 / X-269 / X-284 — THE WHOLE CONTRACT IS ASKED BEFORE THE
         // ENGINE IS HANDED THE SLOT. This is the only moment that PREVENTS the
         // family of faults rather than repairing them: once `CLAUDE_CONFIG_DIR`
@@ -19309,9 +19456,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * on whichever identity happens to be signed in, which is the exact accident
      * this family exists to end.
      */
-    const launchAccountRefusal = (o: { engine?: string; account?: string; agentId?: string }): string => {
-        const stated = accountRefusal(o.account, storedAccounts(), o.engine);
-        if (stated || (o.account || '').trim()) { return stated; }
+    const launchAccountRefusal = (
+        o: { engine?: string; account?: string; agentId?: string; model?: string }
+    ): string => {
+        const stated = accountRefusal(o.account, storedAccounts(), o.engine, accountPolicies());
+        if (stated) { return stated; }
+        /**
+         * ‼️ X-305 — AND A POLICY THAT EXISTS CAN STILL CHOOSE NOTHING RIGHT
+         * NOW. `accountRefusal` answers the question a typo makes ("no such
+         * rule"); this one asks the rule itself, against this moment's figures,
+         * so the door says "every sign-in is walled, the first is back at 14:49"
+         * where it was typed instead of throwing at the spawn.
+         */
+        if (isPolicyId(String(o.account ?? '').trim())) {
+            return launchAccountPick(o).refusal || '';
+        }
+        if ((o.account || '').trim()) { return ''; }
         /**
          * ‼️ X-255 — AND A STANDING ACCOUNT THAT NAMES NOTHING IS REFUSED THE
          * SAME WAY. A slot the user forgot is still written on the agent's row,
@@ -19330,8 +19490,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * the launcher, the composer and the bridge, so the words on all three are
      * one statement rather than three that agree today.
      */
-    const accountRowsFor = (engine: string): { id: string; label: string; detail: string }[] =>
-        slotsFor(storedAccounts(), engine).map(sl => {
+    const accountRowsFor = (engine: string): { id: string; label: string; detail: string }[] => [
+        /**
+         * ‼️ X-305 — THE RULES COME FIRST, because a rule is the answer that
+         * stays right. A slot picked by hand is the figure of one moment; a
+         * policy is re-decided at every launch, so it is what a person setting
+         * up a standing choice is usually reaching for.
+         *
+         * MIRROR — each row's panel opens with what the rule WOULD pick right
+         * now (or why it cannot), then the rule's own description: a control
+         * that names a rule has to say what the rule currently means, or the
+         * reader is choosing blind.
+         */
+        ...[...BUILT_IN_POLICIES, ...accountPolicies().map(p => ({
+            id: '@' + p.name, label: '@' + p.name,
+            detail: p.note || `${p.chain.length} step${p.chain.length === 1 ? '' : 's'}, in order.`
+        }))].map(p => {
+            const r = launchAccountPick({ engine, account: p.id });
+            return {
+                id: p.id, label: p.label,
+                // ‼️ ONE LINE. These rows are drawn in a QuickPick, whose
+                // `detail` is a single line — a paragraph break here is not a
+                // paragraph, it is a swallowed separator.
+                detail: [r.refusal ? `cannot choose right now — ${r.refusal}` : r.note, p.detail]
+                    .filter(Boolean).join(' · ')
+            };
+        }),
+        ...slotsFor(storedAccounts(), engine).map(sl => {
             const id = slotIdentityFresh(sl);
             const u = accountUsage.current().find(x => x.slotId === sl.id);
             return {
@@ -19346,7 +19531,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     u && u.percent >= 0 ? `${u.percent}% of the 5-hour window used` : ''
                 ].filter(Boolean).join(' · ')
             };
-        });
+        })
+    ];
     /**
      * ‼️ X-169 — EVERY ENGINE'S SIGN-INS AT ONCE, for a form whose engine box can
      * move under the reader. The Tasks form redraws locally when the engine
@@ -19402,6 +19588,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     /** What to print beside the launcher's Account row. */
     const accountRowLabel = (engine: string, stated: string | undefined, agentId?: string): string => {
+        /**
+         * ‼️ X-305 — A RULE IS PRINTED AS THE RULE, then what it picks. The row
+         * has to say `@emptiest → Work` rather than `Work`: a reader who is
+         * shown only today's answer cannot tell a standing rule from a slot
+         * somebody typed, and those two behave differently at the next launch.
+         */
+        if (isPolicyId(String(stated ?? '').trim())) {
+            const p = launchAccountPick({ engine, account: stated, agentId });
+            if (p.refusal) { return `${String(stated).trim()} (cannot choose right now)`; }
+            const sl = p.id ? findSlot(storedAccounts(), p.id) : undefined;
+            return `${String(stated).trim()} → ${sl ? slotLabel(sl) : p.id || 'Main account'}`;
+        }
         const r = accountResolution(stated, engine, activeAccounts(),
             agentStandingAccount(agentId, engine));
         if (!r.id) { return 'Main account'; }
@@ -21618,7 +21816,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // silently downgraded: an id naming no slot would otherwise start the
         // session on whoever happens to be logged in, which looks identical to
         // it having worked.
-        const accountNo = launchAccountRefusal({ engine: spec.id, account: merged.account, agentId: agent.id });
+        const accountNo = launchAccountRefusal({
+            engine: spec.id, account: merged.account, agentId: agent.id, model: merged.model || ''
+        });
         if (accountNo) {
             void vscode.window.showWarningMessage(`Agent Farm: ${accountNo}`);
             return undefined;
@@ -22205,7 +22405,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const o = applyProfile({}, use) as LaunchOptions;
         // ‼️ X-169 — and whose plan pays, resolved from the one place that holds
         // it whenever the profile itself does not name a sign-in.
-        o.account = launchAccountFor(o.engine, o.account, agent.id);
+        o.account = launchAccountFor(o.engine, o.account, agent.id,
+            { model: o.model || '', commit: true });
         // the window's active project, the same answer `launchProjectRow` opens
         // on — a setup stores a SHAPE, never which project it was last used for.
         const projectId = activeProjectId() || undefined;
@@ -22360,15 +22561,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  */
                 ...(accountRowsFor(spec.id).length ? [{
                     label: '$(account) Account',
+                    // ‼️ X-305 — THROUGH THE ONE LABEL, because a profile may now
+                    // hold a RULE rather than a slot. The hand-rolled lookup this
+                    // replaces asked `findSlot` and printed "@emptiest (not on
+                    // this machine)" for the one answer that is always available.
                     description: draft.account?.trim()
-                        ? (findSlot(storedAccounts(), draft.account.trim())
-                            ? slotLabel(findSlot(storedAccounts(), draft.account.trim())!)
-                            : `${draft.account.trim()} (not on this machine)`)
+                        ? accountRowLabel(spec.id, draft.account.trim())
                         : 'says nothing — the standing choice answers',
-                    detail: 'which sign-in a session started from this profile runs as. '
-                        + 'It is a SEED, not a lock: the launcher opens on it and you can '
-                        + 'move it before starting, and a profile pointing at a sign-in that '
-                        + 'is gone opens empty and says so.',
+                    detail: 'which sign-in a session started from this profile runs as, or a '
+                        + 'RULE that chooses one at each launch. It is a SEED, not a lock: the '
+                        + 'launcher opens on it and you can move it before starting, and a '
+                        + 'profile pointing at a sign-in that is gone opens empty and says so.',
                     act: 'account'
                 } as Row] : []),
                 {
@@ -22822,11 +23025,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...(accountRowsFor(spec.id).length ? [{
                     label: '$(account) Account',
                     description: accountRowLabel(spec.id, merged.account, agent.id),
-                    detail: 'which sign-in of this engine the session runs as — blank is the main '
-                        + 'account. What you pick here is for this launch only and is not '
-                        + 'remembered: an account is a state, not a preference. The standing '
-                        + 'answers are typed elsewhere — this agent’s own on its Settings row, '
-                        + 'the machine-wide one on the Engines page.',
+                    /**
+                     * ‼️ X-305 — A RULE SAYS WHY, not just what. The row's
+                     * description can only carry `@emptiest → Work`; the reason
+                     * that slot won (its figure, what would have been next, or
+                     * which step of a named chain answered) is the whole of what
+                     * a rule is for, and it is one line the core already wrote.
+                     */
+                    detail: (() => {
+                        const p = isPolicyId(String(merged.account ?? '').trim())
+                            ? launchAccountPick({
+                                engine: spec.id, account: merged.account,
+                                agentId: agent.id, model: merged.model || ''
+                            })
+                            : undefined;
+                        return (p ? (p.refusal || p.note) + ' — ' : '')
+                            + 'which sign-in of this engine the session runs as — blank is the main '
+                            + 'account. What you pick here is for this launch only and is not '
+                            + 'remembered: an account is a state, not a preference. The standing '
+                            + 'answers are typed elsewhere — this agent’s own on its Settings row, '
+                            + 'the machine-wide one on the Engines page.';
+                    })(),
                     act: 'account'
                 } as Row] : []),
                 {
@@ -25706,8 +25925,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // picker too. Nothing reachable today can hand this an id that names no
         // slot; the check is here because the silent alternative — starting on
         // whoever happens to be logged in — is indistinguishable from success.
-        const accountNo = launchAccountRefusal(
-            { engine: engineOf(merged.engine).id, account: merged.account, agentId: agent.id });
+        const accountNo = launchAccountRefusal({
+            engine: engineOf(merged.engine).id, account: merged.account,
+            agentId: agent.id, model: merged.model || ''
+        });
         if (accountNo) {
             void vscode.window.showWarningMessage(`Agent Farm: ${accountNo}`);
             return;
@@ -25740,6 +25961,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             surface: 'console',
             superpowers: merged.superpowers ?? superpowersOnFor(agent.name)
         });
+        const sessionAccount = launchAccountFor(
+            engineOf(merged.engine).id, merged.account, agent.id,
+            { model: merged.model || '', commit: true });
         const id = consoleHost.start({
             agentId: agent.id, agentName: agent.name, cwd: agent.dir,
             engine: engineOf(merged.engine).id,
@@ -25760,8 +25984,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // plan the "use this next" button was last pressed for. Empty is the
             // main sign-in and stays absent, because an empty string on the
             // state would look like an answer somebody gave.
-            ...(launchAccountFor(engineOf(merged.engine).id, merged.account, agent.id)
-                ? { account: launchAccountFor(engineOf(merged.engine).id, merged.account, agent.id) } : {}),
+            // ‼️ X-305 — resolved ONCE (it used to be asked twice, which a rule
+            // makes wrong as well as wasteful: `@round-robin` would answer two
+            // different slots and the card would keep the second). `commit`
+            // because this is a real spawn, so the rotation remembers it.
+            ...(sessionAccount ? { account: sessionAccount } : {}),
             // undefined = inherit the window's active project (ConsoleHost does
             // the read); '' = explicitly none. See launchClaudeTerminal.
             ...(project !== undefined ? { projectId: project } : {}),
