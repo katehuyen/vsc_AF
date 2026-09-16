@@ -834,6 +834,9 @@
          */
         const accountRowsFor = (engine) =>
             ((DATA.accounts || {})[engine || 'claude'] || []).filter(a => a && a.id);
+        /** ‼️ X-305 — the RULES this engine offers, from the twin matrix. */
+        const policyRowsFor = (engine) =>
+            ((DATA.policies || {})[engine || 'claude'] || []).filter(p => p && p.id);
         // ‼️ X-263 — the sentinel and the row's name from the component; they
         // were typed out in three page files.
         const MACHINE_ACCOUNT = window.AFAccount.MACHINE;
@@ -855,7 +858,8 @@
                 // this picker cannot fall behind the Console's on the one figure
                 // the choice turns on. The two rows above stay here because they
                 // are this SITE's sentence, not the account's (ONE SUBJECT).
-                + window.AFAccount.options(rows, sel, C);
+                // ‼️ X-305 — and the rules come with them, in their own group.
+                + window.AFAccount.grouped(policyRowsFor(engine), rows, sel, C);
         };
         // MIRROR: the box is narrow, so its tooltip opens with what it is set to
         // right now and then says what the field is.

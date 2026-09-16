@@ -183,13 +183,27 @@ const fnBlock = (name) => {
 
 // ------------------------------------- 5. every rule the core knows is offered
 {
+    /**
+     * ‼️ THE WHOLE DECLARATION, not a bracket group. `policyRowsFor`'s body is
+     * `[...].map(p => ({…}))` — an array literal followed by a call — so taking
+     * what the arrow points at stops at the `]` and misses every field the map
+     * builds. Read to the next declaration instead.
+     */
+    const pRows = ext.slice(ext.indexOf('const policyRowsFor'),
+        ext.indexOf('const accountRowsFor'));
+    ok('policyRowsFor offers the built-in policies', /BUILT_IN_POLICIES/.test(pRows));
+    ok('…and the user\'s own named rules', /accountPolicies\(\)/.test(pRows));
+    // MIRROR — a control that names a rule says what the rule means RIGHT NOW,
+    // and `picks` / `refusal` travel APART from the standing `detail` so the
+    // page can draw the first over the second rather than a joined sentence.
+    ok('…and each row carries what it would pick now, kept apart from its description',
+        /launchAccountPick\(\{ engine, account: p\.id/.test(pRows)
+        && /picks: r\.refusal \?/.test(pRows) && /refusal: r\.refusal \|\| ''/.test(pRows));
+    // ‼️ ONE derivation behind both kinds of picker, or the QuickPicks and the
+    // webviews become two answers to "what does @emptiest mean right now".
     const rows = fnBlock('accountRowsFor');
-    ok('accountRowsFor offers the built-in policies', /BUILT_IN_POLICIES/.test(rows));
-    ok('…and the user\'s own named rules', /accountPolicies\(\)/.test(rows));
-    // MIRROR — a control that names a rule says what the rule means RIGHT NOW.
-    ok('…and each row says what it would pick right now, or why it cannot',
-        /launchAccountPick\(\{ engine, account: p\.id \}\)/.test(rows)
-        && /r\.refusal \?/.test(rows));
+    ok('accountRowsFor is that same reader, shaped for a QuickPick',
+        /policyRowsFor\(engine\)\.map\(/.test(rows));
 
     const label = fnBlock('accountRowLabel');
     ok('accountRowLabel prints the rule AND what it picks',
@@ -215,6 +229,50 @@ const fnBlock = (name) => {
         ext.indexOf('which sign-in a session started from this profile'));
     ok('the profile editor asks accountRowLabel rather than findSlot',
         /accountRowLabel\(spec\.id, draft\.account\.trim\(\)\)/.test(profileRow));
+}
+
+// ------------------ 6. EVERY picker that offers slots also offers the rules
+/**
+ * ‼️ THE FAILURE `_REF/agentfarm-dev.md` NAMES BY NAME: a dimension added to the
+ * Console composer alone and forgotten on the launcher, the profiles and the
+ * trees. `AFAccount.options` is the account picker — every site that calls it is
+ * a box a person chooses a sign-in in, so every one of them must now call
+ * `grouped` instead. The list is DERIVED from the pages, not written here, so a
+ * sixth picker cannot be added without this noticing.
+ */
+{
+    const PAGES = ['console.js', 'missions.js', 'tasksPage.js', 'queue.js'];
+    for (const f of PAGES) {
+        const src = fs.readFileSync(path.join(ROOT, 'media', f), 'utf8');
+        // The Console builds its own rows for `axisBox` (a native <select> may
+        // not nest optgroups), so it groups there instead of through `grouped`.
+        const groups = f === 'console.js'
+            ? /AFAccount\.policyRow\(/.test(src) && /AFAccount\.POLICY_GROUP/.test(src)
+            : /AFAccount\.grouped\(/.test(src);
+        ok(`media/${f} offers the rules beside the slots`, groups);
+        ok(`media/${f} has no ungrouped AFAccount.options left in a picker`,
+            !/AFAccount\.options\(/.test(src));
+    }
+    // …and the host really sends them: a page asking for rows nothing supplies
+    // draws the flat list for ever and every string test above still passes.
+    ok('the Console is handed the composer\'s rules', /composerPolicies:/.test(
+        fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8')));
+    ok('…and each live card its OWN engine\'s rules', /policyRows:/.test(
+        fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8')));
+    for (const p of ['tasksPanel.ts', 'queuePanel.ts']) {
+        ok(`src/panels/${p} sends the rules to its form`,
+            /policies: deps\.enginePolicies/.test(
+                fs.readFileSync(path.join(ROOT, 'src', 'panels', p), 'utf8')));
+    }
+    ok('Missions is sent the rules too', /policies: enginePolicyMatrix\(\)/.test(ext));
+    ok('‼️ the matrix and the per-engine reader are ONE derivation',
+        /const enginePolicyMatrix[\s\S]{0,700}?policyRowsFor\(e\.engine\)/.test(ext)
+        && /policiesFor: \(engine: string\) => policyRowsFor\(engine\)/.test(ext));
+
+    // ‼️ AND THE SCENE EXISTS, or the two groups ship unphotographed.
+    const fix = fs.readFileSync(path.join(ROOT, 'test', 'fixtures', 'console.js'), 'utf8');
+    ok('a fixture scene really sets the account box to a RULE',
+        /composerPolicies:/.test(fix) && /account: '@emptiest'/.test(fix));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

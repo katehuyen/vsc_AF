@@ -175,6 +175,80 @@
     }
 
     /**
+     * ‼️ X-305 — THE TWO GROUPS, AND WHY A RULE IS NOT JUST ANOTHER ROW.
+     *
+     * A slot is an answer that was true when it was picked; a RULE is re-decided
+     * at every launch. Those are different kinds of choice and a flat list makes
+     * them look like the same one — so every picker draws them as two groups,
+     * with the rules FIRST because a standing choice is usually what somebody
+     * reaching for this box wants.
+     *
+     * The headings are here rather than at the call sites for the same reason
+     * the row body is: three pages spelling a group differently is three pages
+     * the reader has to learn separately.
+     */
+    const POLICY_GROUP = 'Smart policies — decided at each launch';
+    const ACCOUNT_GROUP = 'Fixed accounts — this one, every time';
+
+    /**
+     * SHORTHAND — the rule, then what it comes to RIGHT NOW. `@emptiest` alone
+     * tells the reader nothing about which plan is about to be spent, and the
+     * resolved slot alone hides that the answer will move next time.
+     *
+     * ‼️ A RULE THAT CANNOT CHOOSE IS STILL OFFERED. "Right now" is not "at
+     * launch": every sign-in being walled at 11:02 says nothing about 14:50,
+     * when the first window turns over. Hiding it would remove the only control
+     * that survives the wall. It SAYS so instead, here and in the panel.
+     */
+    function policyLabel(p) {
+        if (!p) { return ''; }
+        const id = p.id || '';
+        if (p.refusal) { return id + ' · nothing to pick right now'; }
+        return id + (p.picks ? ' → ' + p.picks : '');
+    }
+
+    /**
+     * MIRROR — the control's CURRENT value first, then what the rule means.
+     *
+     * The first line is the host's own sentence about this moment (which slot
+     * won and on what figure, or why none could): the rule's description is the
+     * standing explanation and belongs under it, never over it.
+     */
+    function policyDetail(p) {
+        if (!p) { return ''; }
+        return [p.refusal || p.note || '', p.detail || '']
+            .map(function (x) { return String(x).trim(); }).filter(Boolean).join('\n\n');
+    }
+
+    /** id, label, detail for a RULE — the twin of `row`, so a page asks once. */
+    function policyRowOf(p) {
+        return { id: p && p.id, label: policyLabel(p), detail: policyDetail(p) };
+    }
+
+    /**
+     * The `<option>`s for both kinds at once, each under its own heading — the
+     * whole of X-305's page half. A picker with no rules to offer draws no
+     * heading at all rather than an empty group, so nothing changes on a machine
+     * that has never written one.
+     */
+    function grouped(policies, accounts, selected, C, now) {
+        const pol = policies || [];
+        const acc = accounts || [];
+        // Nothing to group by: the flat list is still the right drawing.
+        if (!pol.length) { return options(acc, selected, C, now); }
+        const inner = pol.map(function (p) {
+            return C.option(p.id, policyLabel(p), {
+                selected: p.id === selected, detail: policyDetail(p)
+            });
+        }).join('');
+        return '<optgroup label="' + C.esc(POLICY_GROUP) + '">' + inner + '</optgroup>'
+            + (acc.length
+                ? '<optgroup label="' + C.esc(ACCOUNT_GROUP) + '">'
+                    + options(acc, selected, C, now) + '</optgroup>'
+                : '');
+    }
+
+    /**
      * The `<option>`s for the ACCOUNT rows — never the fixed rows above them,
      * which are the call site's own sentence (see the header).
      *
@@ -195,6 +269,9 @@
         MACHINE: MACHINE, MACHINE_ROW: MACHINE_ROW,
         figure: figure, turns: turns, label: label, detail: detail,
         windowPhrase: windowPhrase,
-        row: row, options: options
+        row: row, options: options,
+        POLICY_GROUP: POLICY_GROUP, ACCOUNT_GROUP: ACCOUNT_GROUP,
+        policyLabel: policyLabel, policyDetail: policyDetail,
+        policyRow: policyRowOf, grouped: grouped
     };
 });

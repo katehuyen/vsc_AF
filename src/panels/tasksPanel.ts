@@ -101,6 +101,17 @@ export interface TasksDeps {
      * ‼️ NOTHING SECRET — an id, a label and a health verdict.
      */
     engineAccounts?(): Record<string, { id: string; label: string; health: string; active: boolean }[]>;
+    /**
+     * ‼️ X-305 — …AND THE RULES. A chain step fires headless with nobody in
+     * front of it, which is the case a rule was written for: the slot that had
+     * room when the chain was SAVED is not the one that has room when it runs.
+     * `picks` / `refusal` are about this moment; `detail` is the standing
+     * description, kept separate because MIRROR draws them in that order.
+     */
+    enginePolicies?(): Record<string, {
+        id: string; label: string; detail: string;
+        picks: string; note: string; refusal: string;
+    }[]>;
     launchDefaults(): { engine?: string; model?: string; effort?: string; permissionMode?: string };
     /** X-18 — which engines this machine can run, for the form's engine row.
      *  Optional so a caller written before engines existed still type-checks;
@@ -875,6 +886,8 @@ function buildData(deps: TasksDeps, tab?: TasksTab, archive?: string): Record<st
             routes: deps.engineRoutes?.() ?? null,
             // ‼️ X-169 — and which sign-in may pay for it (see engineAccounts).
             accounts: deps.engineAccounts?.() ?? null,
+            // X-305 — …and the rules, drawn as their own group above the slots.
+            policies: deps.enginePolicies?.() ?? null,
             permissions: PERMISSION_CHOICES,
             // S-60 — the rows an engine can keep, where they differ from the one list.
             permissionsByEngine: permissionChoicesByEngine(),

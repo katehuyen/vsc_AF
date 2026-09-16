@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.521.0",
+  "version": "3.522.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9333,6 +9333,64 @@
           },
           "default": [],
           "description": "Rule-based model routing for farm-launched tasks; first match wins. Example: [{\"source\": \"trigger\", \"model\": \"haiku\"}] runs all trigger-born work on a cheap model."
+        },
+        "agentFarm.accountPolicies": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "chain"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "what the rule is picked by; referred to as @<name>. Letters, digits, _ and - only, and never a built-in's name."
+              },
+              "note": {
+                "type": "string",
+                "description": "one line for the picker's panel, under what the rule currently comes to"
+              },
+              "engine": {
+                "type": "string",
+                "description": "when set, the rule is for one engine and refuses a launch on another (an account belongs to one engine, so a rule does too)"
+              },
+              "ceiling": {
+                "type": "number",
+                "description": "the wall, as a percentage of the window, for every step that names none (default 95 — a session STARTED on a slot with 5% left is a session that ends ten minutes in)"
+              },
+              "chain": {
+                "type": "array",
+                "description": "walked top to bottom; the first step with a usable answer wins. A step names an account OR a policy, never both.",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "type": "string",
+                      "description": "a stored slot id (accounts.list)"
+                    },
+                    "policy": {
+                      "type": "string",
+                      "description": "a built-in (@emptiest, @pool, @standing, @round-robin) or another named rule (@<name>)"
+                    },
+                    "ceiling": {
+                      "type": "number",
+                      "description": "this step's own wall; the rule's, then the default, otherwise"
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "description": "taken only when the launch's model is one of these (empty/absent = any)"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": [],
+          "markdownDescription": "**Named rules for which sign-in a launch runs on**, offered in every account picker beside the four built-ins (`@emptiest`, `@pool`, `@standing`, `@round-robin`). A rule is re-decided at each launch, which a slot picked by hand is not. ‼️ **A rule that can choose nothing REFUSES the launch** and says why — it never falls through to the main sign-in, which is the plan it was written to protect. Example: `[{\"name\": \"Night\", \"chain\": [{\"account\": \"spare\"}, {\"policy\": \"@emptiest\", \"ceiling\": 80}]}]` is then picked as `@Night`."
         },
         "agentFarm.quotaDowngradePercent": {
           "type": "number",

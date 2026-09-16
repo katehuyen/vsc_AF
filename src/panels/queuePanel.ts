@@ -46,6 +46,17 @@ export interface QueueDeps {
      * choice turns on, but nothing here spends it.
      */
     engineAccounts?: () => Record<string, { id: string; label: string; health: string; active: boolean; percent?: number; resetsAt?: number }[]>;
+    /**
+     * ‼️ X-305 — …AND THE RULES, which is the answer an item in a QUEUE usually
+     * wants. An item waits, sometimes for hours, and a slot named today is the
+     * one fact about it most likely to be stale when somebody takes it; a rule
+     * is re-decided at that moment. `picks` / `refusal` describe RIGHT NOW and
+     * `detail` is the standing description — MIRROR wants them apart.
+     */
+    enginePolicies?: () => Record<string, {
+        id: string; label: string; detail: string;
+        picks: string; note: string; refusal: string;
+    }[]>;
     /** Open projects, for the capture box, the row picker and the filter. */
     projects: () => ProjectRef[];
     /** The window's active project — what a capture made here is stamped with. */
@@ -107,7 +118,9 @@ function buildData(deps: QueueDeps, focusItem?: string): Record<string, unknown>
             efforts: deps.efforts ? deps.efforts() : [],
             // X-254 (2/n) — …and the sign-ins, keyed by engine, in the same
             // shape the Tasks form reads them (`AFAccount` draws the row).
-            accounts: deps.engineAccounts ? deps.engineAccounts() : null
+            accounts: deps.engineAccounts ? deps.engineAccounts() : null,
+            // X-305 — …and the rules, drawn as their own group above the slots.
+            policies: deps.enginePolicies ? deps.enginePolicies() : null
         },
         projects: deps.projects(),
         activeProjectId: deps.activeProjectId(),

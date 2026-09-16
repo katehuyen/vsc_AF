@@ -255,8 +255,8 @@ import {
     slotSessionDir, windowNameOf, windowPhraseOf
 } from './core/accountUsage';
 import {
-    AccountPolicy, BUILT_IN_POLICIES, PolicyPool, PolicyResolution, PolicyWorld,
-    isPolicyId, resolvePolicy
+    AccountPolicy, BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, PolicyPool, PolicyResolution,
+    PolicyWorld, findPolicy, isPolicyId, policyShapeRefusal, resolvePolicy
 } from './core/accountPolicy';
  import * as accountQueue from './core/accountQueue';
 import {
@@ -15683,6 +15683,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // vocabulary its fourth route box needs to be a picker rather than a
         // free-text field where `aicozums` and `aicozums-2` are equally true.
         engineAccounts: () => engineAccountMatrix(),
+        // ‼️ X-305 — …and the RULES each engine offers, through the twin reader.
+        enginePolicies: () => enginePolicyMatrix(),
         // ‼️ The whole list, closed ones included. A picker wants the open
         // projects; a ROW that is already stamped with a finished one still has
         // to draw its name, and dropping it would print an item's project as
@@ -16739,6 +16741,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // machine with nothing captured — and an empty list draws no box,
             // which is the rule a control with no referent falls under.
             accounts: engineAccountMatrix(),
+            // ‼️ X-305 — …and the RULES, out of the twin reader. A delegation
+            // fires hours after anybody looked at this window, which is exactly
+            // when "the emptiest sign-in" beats a slot picked by hand today.
+            policies: enginePolicyMatrix(),
             // ‼️ M-18 — WHAT EACH FAILURE CLASS MEANS, from the one registry the
             // LEAD is told it from. The page shows the reader the same sentence
             // the model was given, so the two can never drift into describing
@@ -19490,6 +19496,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * the launcher, the composer and the bridge, so the words on all three are
      * one statement rather than three that agree today.
      */
+    /**
+     * ‼️ X-305 — THE RULES THIS ENGINE OFFERS, WITH WHAT EACH COMES TO RIGHT
+     * NOW. The one reader behind every picker: the QuickPicks take it through
+     * `accountRowsFor`, the webview pages get it as rows of their own, so a rule
+     * cannot read one way in the launcher and another in the Console.
+     *
+     * `detail` is the rule's STANDING description and `note` / `refusal` are
+     * about this moment — kept apart because MIRROR puts the current value
+     * first and the explanation under it, and a page that was handed them
+     * already joined could not.
+     */
+    const policyRowsFor = (engine: string, model?: string): {
+        id: string; label: string; detail: string;
+        picks: string; note: string; refusal: string;
+    }[] =>
+        [...BUILT_IN_POLICIES, ...accountPolicies().map(p => ({
+            id: '@' + p.name, label: '@' + p.name,
+            detail: p.note || `${p.chain.length} step${p.chain.length === 1 ? '' : 's'}, in order.`
+        }))].map(p => {
+            const r = launchAccountPick({ engine, account: p.id, ...(model ? { model } : {}) });
+            const sl = r.id ? findSlot(storedAccounts(), r.id) : undefined;
+            return {
+                id: p.id, label: p.label, detail: p.detail,
+                // '' with no refusal IS an answer: `@standing` resolves to the
+                // machine's own sign-in when nothing is set anywhere.
+                picks: r.refusal ? '' : (sl ? slotLabel(sl) : (r.id || 'Main account')),
+                note: r.note || '', refusal: r.refusal || ''
+            };
+        });
     const accountRowsFor = (engine: string): { id: string; label: string; detail: string }[] => [
         /**
          * ‼️ X-305 — THE RULES COME FIRST, because a rule is the answer that
@@ -19502,20 +19537,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * that names a rule has to say what the rule currently means, or the
          * reader is choosing blind.
          */
-        ...[...BUILT_IN_POLICIES, ...accountPolicies().map(p => ({
-            id: '@' + p.name, label: '@' + p.name,
-            detail: p.note || `${p.chain.length} step${p.chain.length === 1 ? '' : 's'}, in order.`
-        }))].map(p => {
-            const r = launchAccountPick({ engine, account: p.id });
-            return {
-                id: p.id, label: p.label,
-                // ‼️ ONE LINE. These rows are drawn in a QuickPick, whose
-                // `detail` is a single line — a paragraph break here is not a
-                // paragraph, it is a swallowed separator.
-                detail: [r.refusal ? `cannot choose right now — ${r.refusal}` : r.note, p.detail]
-                    .filter(Boolean).join(' · ')
-            };
-        }),
+        ...policyRowsFor(engine).map(p => ({
+            id: p.id,
+            label: p.label + (p.refusal ? '' : p.picks ? ` → ${p.picks}` : ''),
+            // ‼️ ONE LINE. These rows are drawn in a QuickPick, whose `detail`
+            // is a single line — a paragraph break here is not a paragraph, it
+            // is a swallowed separator.
+            detail: [p.refusal ? `cannot choose right now — ${p.refusal}` : p.note, p.detail]
+                .filter(Boolean).join(' · ')
+        })),
         ...slotsFor(storedAccounts(), engine).map(sl => {
             const id = slotIdentityFresh(sl);
             const u = accountUsage.current().find(x => x.slotId === sl.id);
@@ -19583,6 +19613,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 active: active[sl.engine] === sl.id,
                 ...accountFigure(sl, usage)
             });
+        }
+        return out;
+    };
+    /**
+     * ‼️ X-305 — EVERY ENGINE'S RULES AT ONCE, the twin of `engineAccountMatrix`
+     * and handed to the same forms for the same reason: a page whose engine box
+     * can move under the reader redraws locally, so it is given the whole matrix
+     * rather than one engine's slice (a round trip under the pointer is X-150).
+     */
+    const enginePolicyMatrix = (): Record<string, ReturnType<typeof policyRowsFor>> => {
+        const out: Record<string, ReturnType<typeof policyRowsFor>> = {};
+        for (const e of ENGINE_AUTH_ADAPTERS) {
+            // A rule chooses between SIGN-INS, so an engine that cannot hold a
+            // second one has nothing to choose between: offering rules there
+            // would be the control-with-no-referent X-213 already named.
+            if (!canIsolateAccounts(e.engine)) { continue; }
+            out[e.engine] = policyRowsFor(e.engine);
         }
         return out;
     };
@@ -20978,6 +21025,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         engineRoutes: () => engineRouteMatrix(),
         // ‼️ X-169 — and the sign-ins each engine has, through the one reader.
         engineAccounts: () => engineAccountMatrix(),
+        // ‼️ X-305 — …and the RULES each engine offers, through the twin reader.
+        enginePolicies: () => enginePolicyMatrix(),
         // The same accessor the session launcher uses (declared below; this only
         // ever runs when the page builds its data) — one reading of the setting,
         // trimming included, rather than a second copy that drifts.
@@ -25214,6 +25263,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         engineRoutes: () => engineRouteMatrix(),
         // ‼️ X-169 — and the sign-ins each engine has, through the one reader.
         engineAccounts: () => engineAccountMatrix(),
+        // ‼️ X-305 — …and the RULES each engine offers, through the twin reader.
+        enginePolicies: () => enginePolicyMatrix(),
         launchDefaults: () => launchDefaults(),
         /**
          * ‼️ THE LAYER THE COMPOSER USED TO JUMP OVER — the agent's own model
@@ -25272,6 +25323,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ...accountFigure(sl, usage)
             }));
         },
+        // ‼️ X-305 — …and the RULES, out of the one reader the launcher and the
+        // bridge are answered from, so a rule cannot mean two things.
+        policiesFor: (engine: string) => policyRowsFor(engine),
         // X-213 — whether the axis exists on this engine at all, which is not
         // the same question as whether anything has been captured for it.
         accountAxis: (engine: string) => canIsolateAccounts(engine),
@@ -36515,6 +36569,118 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + '(`accounts.promotions` has the journal). args: dryRun? '
                 + '(default true), id? (one slot; omit for all)',
             handler: (args) => completeSlots(optBool(args, 'dryRun', true), optStr(args, 'id'))
+        },
+        {
+            op: 'policies.list',
+            describe: '‼️ X-305 — THE RULES THAT CHOOSE A SIGN-IN AT LAUNCH, and what each one comes '
+                + 'to RIGHT NOW. Four are built in — @emptiest (the sign-in of that engine with the '
+                + 'most of its five-hour window left), @pool (the next account with room in the '
+                + 'running sentry campaign\'s pool, walked the way that campaign walks it), @standing '
+                + '(this agent\'s own standing sign-in, else the machine-wide one, else the main '
+                + 'sign-in) and @round-robin (the usable sign-ins in turn across launches) — and the '
+                + 'rest are the user\'s own, from `agentFarm.accountPolicies`, picked as @<name>. Each '
+                + 'row answers `picks` (the slot it would choose this second, or `Main account`), '
+                + '`note` (which figure decided it and what would have been next) and `refusal` (why '
+                + 'it can choose nothing, with the first window that turns over). ‼️ A REFUSAL IS NOT '
+                + 'A DISQUALIFICATION: "right now" is not "at launch", so a rule that is walled at '
+                + '11:02 is still the right answer for a session that starts at 14:50. Anywhere an '
+                + 'account id is taken — session.start, console.start, a task, a queue item — a rule '
+                + 'may be given instead. args: engine? (default claude), model? (rules may have '
+                + 'model-filtered steps, so the answer can depend on it), raw? (true also returns the '
+                + 'stored rule objects rather than only what they resolve to)',
+            handler: (args) => {
+                const engine = optStr(args, 'engine') || 'claude';
+                const model = optStr(args, 'model');
+                return {
+                    engine,
+                    rows: policyRowsFor(engine, model || undefined),
+                    ...(optBool(args, 'raw', false) ? { policies: accountPolicies() } : {}),
+                    builtIn: BUILT_IN_POLICIES.map(p => p.id),
+                    ceiling: POLICY_DEFAULT_CEILING
+                };
+            }
+        },
+        {
+            op: 'policies.save',
+            describe: '‼️ X-305 — WRITE ONE NAMED RULE into `agentFarm.accountPolicies`, creating it '
+                + 'or replacing the one with that name (case-insensitive — two rules whose names '
+                + 'differ only in case could not be told apart when typed as @<name>). A rule is a '
+                + 'CHAIN walked top to bottom, and the first step with a usable answer wins; a step '
+                + 'names an account OR a policy, never both, and may carry its own `ceiling` and a '
+                + '`models` filter that makes it apply only to certain launches. ‼️ THE SHAPE IS '
+                + 'CHECKED ON THE WAY IN (`policyShapeRefusal`) so a rule that could never choose is '
+                + 'never stored: no name, a name that cannot be typed as @<name>, a built-in\'s name, '
+                + 'an empty chain, a step naming neither or both, a step pointing at itself or at a '
+                + 'policy that does not exist, a ceiling outside 1-100. The refusal says which step '
+                + 'and why. It is written to the USER settings, so it follows this machine rather '
+                + 'than a workspace. args: name, chain (array of {account?|policy?, ceiling?, '
+                + 'models?}), note?, engine? (the rule then refuses a launch on another engine), '
+                + 'ceiling? (the wall for every step that names none; default '
+                + String(POLICY_DEFAULT_CEILING) + ')',
+            handler: async (args) => {
+                const rule: AccountPolicy = {
+                    name: argStr(args, 'name'),
+                    chain: (Array.isArray((args as Record<string, unknown>).chain)
+                        ? (args as Record<string, unknown>).chain : []) as AccountPolicy['chain'],
+                    ...(optStr(args, 'note') ? { note: optStr(args, 'note') } : {}),
+                    ...(optStr(args, 'engine') ? { engine: optStr(args, 'engine') } : {}),
+                    ...(optNum(args, 'ceiling', 0) ? { ceiling: optNum(args, 'ceiling', 0) } : {})
+                };
+                const all = accountPolicies();
+                // ‼️ The shape check is given the OTHER rules, never this one: a
+                // step pointing at a rule being replaced must still resolve, and
+                // a rule is allowed to be rewritten into something that no longer
+                // points where it did.
+                const others = all.filter(p =>
+                    String(p.name ?? '').toLowerCase() !== rule.name.trim().toLowerCase());
+                const bad = policyShapeRefusal(rule, others);
+                need(!bad, bad);
+                await cfg().update('accountPolicies', [...others, rule],
+                    vscode.ConfigurationTarget.Global);
+                return {
+                    saved: '@' + rule.name, replaced: all.length !== others.length,
+                    steps: rule.chain.length,
+                    // What it comes to this second, so a caller knows at once
+                    // whether the rule it just wrote can actually choose.
+                    now: policyRowsFor(rule.engine || 'claude')
+                        .find(r => r.id.toLowerCase() === ('@' + rule.name).toLowerCase()) ?? null,
+                    policies: [...others, rule].map(p => '@' + p.name)
+                };
+            }
+        },
+        {
+            op: 'policies.delete',
+            describe: '‼️ X-305 — REMOVE A NAMED RULE from `agentFarm.accountPolicies`. Refused when '
+                + 'another rule STEPS THROUGH it: deleting it would leave that one pointing at '
+                + 'nothing, and a chain whose step names no policy refuses every launch it is asked '
+                + 'about — so the rules that depend on it are named instead and nothing is written. '
+                + 'The built-in four cannot be deleted; they are not stored anywhere to delete from. '
+                + '‼️ THIS DOES NOT UNPICK IT. Anything already pointing at @<name> — an agent\'s '
+                + 'standing account, a task, a queue item, a launch profile — keeps the text, and '
+                + 'those launches are then REFUSED by name rather than falling to the main sign-in, '
+                + 'which is the behaviour this whole family exists to guarantee. args: name',
+            handler: async (args) => {
+                const want = argStr(args, 'name').trim().replace(/^@/, '');
+                const all = accountPolicies();
+                const hit = findPolicy(want, all);
+                need(!!hit, `No account policy "@${want}" is stored — the ones on this machine are `
+                    + (all.length ? all.map(p => '@' + p.name).join(', ') : 'none')
+                    + `. The built-in ${BUILT_IN_POLICIES.map(p => p.id).join(', ')} are not stored `
+                    + 'and cannot be removed.');
+                const users = all.filter(p => p !== hit && (p.chain ?? []).some(st =>
+                    String(st.policy ?? '').trim().replace(/^@/, '').toLowerCase() === want.toLowerCase()));
+                need(!users.length, `@${want} is a step of ${users.map(p => '@' + p.name).join(', ')} `
+                    + '— removing it would leave that rule pointing at nothing, which refuses every '
+                    + 'launch it is asked about. Change those rules first.');
+                const next = all.filter(p => p !== hit);
+                await cfg().update('accountPolicies', next, vscode.ConfigurationTarget.Global);
+                return {
+                    deleted: '@' + (hit as AccountPolicy).name,
+                    left: next.map(p => '@' + p.name),
+                    note: 'Anything still pointing at this rule by name is now REFUSED at launch '
+                        + 'rather than falling back to the main sign-in.'
+                };
+            }
         },
         {
             op: 'accounts.repairs',

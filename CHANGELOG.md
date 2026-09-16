@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.522.0 - every account picker now offers the rules, and a rule can be written, read and removed without touching a settings file — steps 3 and most of 4 of X-305 (2026-09-16)
+
+- **‼️ TWO KINDS OF ANSWER, DRAWN AS TWO GROUPS.** A slot is an answer that was
+  true when somebody picked it; a rule is re-decided at every launch. A flat
+  list makes them look like the same kind of choice, so every account picker now
+  draws **Smart policies — decided at each launch** above **Fixed accounts —
+  this one, every time**. The headings live in `media/afAccount.js` beside the
+  row body, for the reason the row body is there: three pages spelling a group
+  differently is three pages the reader has to learn separately.
+- **‼️ AND EVERY PICKER MEANS EVERY PICKER** — the Console composer, a live
+  card's account box, the Missions delegation row, the Tasks step card, the
+  Tasks run form and the Queue's fourth box. That is the failure
+  `_REF/agentfarm-dev.md` names by name (added to the composer, forgotten
+  everywhere else), so the gate DERIVES the list from the pages: any file that
+  still called the ungrouped `AFAccount.options` fails it.
+- **A rule reads as the rule AND what it comes to** — `@emptiest → aicozums`,
+  and `@pool · nothing to pick right now` when it can choose nothing. ‼️ **A rule
+  that cannot choose is still offered**: "right now" is not "at launch", and a
+  rule walled at 11:02 may be the only thing that can answer at 14:50 when the
+  first window turns over. The panel opens with the rule's own reason for this
+  moment and puts its standing description under it (MIRROR).
+- **The Console's box needed one structural change.** `axisBox` wrapped every
+  list in a single `<optgroup>` named after the axis, and HTML has no nested
+  `<optgroup>` — so a box may now pass `groups` instead, which replaces that one
+  heading. The axis is already the heading of the box's own panel, so the one
+  grouping level is spent on the distinction that is said nowhere else. Every
+  other box passes no `groups` and is drawn exactly as before.
+- **`agentFarm.accountPolicies` is now a real setting** with its full schema, and
+  three bridge ops make it reachable without editing JSON: **`policies.list`**
+  (every rule with what it comes to this second, its deciding figure, and its
+  refusal), **`policies.save`** (refused by `policyShapeRefusal` if the rule
+  could never choose — checked against the OTHER rules, so one can be rewritten)
+  and **`policies.delete`** (refused while another rule steps through it, and it
+  says out loud that anything still naming the rule is then REFUSED at launch
+  rather than quietly taking the main sign-in).
+- **Looked at, not assumed.** A new fixture scene sets the account box TO a rule
+  — the state that can only go wrong in a picture — and the DOM was measured:
+  two groups in the right order, all four policy shapes drawing correctly
+  (`→ slot`, `→ Main account`, `· nothing to pick right now`, a named rule), the
+  rule selected, box 111px. The label clips to `@emptiest → per` at strip width,
+  which is SHORTHAND working as intended: the rule is the stable identity and
+  the resolved slot is in the panel.
+- **Gate:** `test_af_account.js` +10 on the component, `test_bridge.js` +12 on
+  the three ops, `test_account_policy_wire.js` now 57. **What remains** (the
+  rest of step 4): the Engines page CRUD — the rules are fully usable from the
+  bridge and the settings file, but not yet written from a panel.
+
 ## 3.521.0 - the rule now reaches the spawn: a launch really asks it, and a rule that can choose nothing refuses instead of spending the main sign-in — step 2 of X-305 (2026-09-16)
 
 - **‼️ ONE RESOLVER, AND EVERY DOOR IS ALREADY BEHIND IT.** `launchAccountPick`

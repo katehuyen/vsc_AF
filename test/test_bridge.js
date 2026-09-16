@@ -5578,6 +5578,43 @@ const { opencodeStatus, syncToOpencode } =
         ok('…and it says out loud that it signs nobody in',
             /signs nobody in/.test(re) && /statusArgs/.test(re));
 
+        // ---------- X-305: the rules that choose a sign-in are on the bridge ----------
+        // An agent can already PASS `@emptiest` anywhere an account is taken; what it
+        // could not do is find out the rules exist, see what one comes to, or write
+        // one. Three ops, and the shape rule they all obey: the CORE decides and the
+        // op adds nothing of its own (the same doctrine `accounts.reauth` follows).
+        for (const op of ['policies.list', 'policies.save', 'policies.delete']) {
+            ok('extension.ts registers ' + op, src.includes("op: '" + op + "'"));
+        }
+        const pl = cut("op: 'policies.list'", "op: 'policies.save'");
+        ok('‼️ policies.list answers from the ONE reader, never a list of its own',
+            /policyRowsFor\(engine/.test(pl) && /BUILT_IN_POLICIES/.test(pl));
+        ok('…and it takes the model, because a rule may have model-filtered steps',
+            /optStr\(args, 'model'\)/.test(pl));
+        ok('‼️ …and it says that a refusal now is not a refusal at launch',
+            /right now" is not "at launch"/.test(pl));
+
+        const ps = cut("op: 'policies.save'", "op: 'policies.delete'");
+        ok('‼️ policies.save refuses a rule the CORE says could never choose',
+            /policyShapeRefusal\(rule, others\)/.test(ps) && /need\(!bad, bad\)/.test(ps));
+        // ‼️ The shape check must NOT be handed the rule it is replacing, or a
+        // rule can never be rewritten to stop pointing where it used to.
+        ok('‼️ …checked against the OTHER rules, so one can be rewritten',
+            /const others = all\.filter/.test(ps));
+        ok('…and the answer says what the rule comes to right now',
+            /now: policyRowsFor\(/.test(ps));
+
+        const pd = cut("op: 'policies.delete'", "op: 'accounts.repairs'");
+        ok('‼️ policies.delete refuses while another rule steps through it',
+            /const users = all\.filter/.test(pd) && /need\(!users\.length/.test(pd));
+        // ‼️ The honest half: deleting the rule does not unpick it anywhere, and
+        // those launches are then REFUSED rather than quietly taking the main
+        // sign-in — which is the one promise this whole family makes.
+        ok('‼️ …and says so: what still names it is refused, not downgraded',
+            /rather than falling back to the main sign-in/.test(pd));
+        ok('…the built-in four are not stored, so they cannot be deleted',
+            /are not stored /.test(pd));
+
         // ---------- X-271: a slot is an identity, not a place to keep anything ----------
         // The junctions that keep ONE pool of transcripts are made at capture and
         // never looked at again; a move, a clone or a new machine leaves a real

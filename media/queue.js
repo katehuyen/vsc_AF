@@ -421,7 +421,7 @@
                 + 'rotation resolves to. This is a real answer, and it is what "(none)" '
                 + 'filters for.')}${opt(window.AFAccount.MACHINE, window.AFAccount.MACHINE_ROW, d.account || '',
                 'The identity this machine itself is signed in as, asked for OUTRIGHT — '
-                + 'unlike the empty row above, this is a claim somebody made.')}${strayAccountOption(d.account || '', accounts, opt)}${window.AFAccount.options(accounts, d.account || '', C)}</select></span>`;
+                + 'unlike the empty row above, this is a claim somebody made.')}${strayAccountOption(d.account || '', accounts, opt)}${window.AFAccount.grouped(enginePolicies(eng), accounts, d.account || '', C)}</select></span>`;
         }
         if (eng && models.length) {
             h += `<span><select id="${prefix}-model" data-route="model" ${at}
@@ -440,6 +440,18 @@
     function engineAccounts(engine) {
         const all = (DATA.launch || {}).accounts || {};
         return (all[engine || ''] || []).filter(a => a && a.id);
+    }
+
+    /**
+     * ‼️ X-305 — …AND THE RULES, which is usually the better answer HERE.
+     *
+     * An item sits in a queue, sometimes for hours, before anybody takes it. A
+     * slot named when it was written is the fact about it most likely to be
+     * stale by then — a rule is decided at the moment it is taken.
+     */
+    function enginePolicies(engine) {
+        const all = (DATA.launch || {}).policies || {};
+        return (all[engine || ''] || []).filter(p => p && p.id);
     }
 
     /**

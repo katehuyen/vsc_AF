@@ -1660,6 +1660,16 @@
         const all = (DATA.launch || {}).accounts || {};
         return (all[engine || 'claude'] || []).filter(a => a && a.id);
     }
+    /**
+     * ‼️ X-305 — …AND THE RULES, held here for the same reason. A chain step or
+     * a scheduled run fires with nobody in front of it, hours after this form
+     * was filled in — which is exactly when "whichever sign-in has room" beats
+     * a slot that was the right answer when it was typed.
+     */
+    function ntPolicies(engine) {
+        const all = (DATA.launch || {}).policies || {};
+        return (all[engine || 'claude'] || []).filter(p => p && p.id);
+    }
     /** ‼️ X-223 — the machine's own sign-in, stated. The value is the sentinel
      *  the host and the core share (core/accountStore.ts), never ''.
      *  ‼️ X-263 — read from the component now, for the reason the option body
@@ -2188,7 +2198,8 @@
             // ‼️ X-263 — the ACCOUNT rows come from the component, so this
             // picker carries the five-hour figure the Console's already had.
             // The two rows above are this SITE's sentence and stay here.
-            + window.AFAccount.options(rows, s.saccount, C);
+            // ‼️ X-305 — and the rules come with them, in their own group.
+            + window.AFAccount.grouped(ntPolicies(s.sengine), rows, s.saccount, C);
         return `<label class="ntf" title="${C.esc('Which sign-in pays for THIS step. '
             + 'A chain runs headless with nobody in front of it, so a step that names none takes '
             + 'whichever account is standing when it fires — and three steps on one plan is how a '
@@ -2673,7 +2684,8 @@
             })].join('')
                 // ‼️ X-263 — see the step card above: the account rows are the
                 // component's, the two fixed rows are this form's own sentence.
-                + window.AFAccount.options(rows, c.account, C);
+                // ‼️ X-305 — and the rules come with them, in their own group.
+                + window.AFAccount.grouped(ntPolicies(c.engine), rows, c.account, C);
             return `<label class="ntf" title="${C.esc('Which sign-in of this engine pays for the run. '
                 + 'Leave it empty and the ACTIVE account of that engine answers when the run fires — the '
                 + 'one the Engines page points at — and failing that the main sign-in, which is what '

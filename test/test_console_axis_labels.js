@@ -86,8 +86,28 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     const say = (list) => list.length ? '\n      ' + list.slice(0, 6).join('\n      ') : '';
 
     // ---- 1. the axis is the LIST's heading --------------------------------
-    const headless = all.filter(b => b.groups.length !== 1 || !String(b.groups[0] || '').trim())
-        .map(b => `row ${b.row}: #${b.id} has ${b.groups.length} optgroup headings`);
+    /**
+     * ‼️ THE RULE IS "EVERY HEADING NAMES THE AXIS", NOT "THERE IS EXACTLY ONE".
+     *
+     * Counting to one was the right guard while every box had one flat list, and
+     * X-305 is the case it could not express: the account box offers two KINDS
+     * of answer — rules, re-decided at every launch, and slots, which are not —
+     * and a flat list makes them look like the same choice. So it draws two
+     * headings, and each one still opens with `Account`, which is the whole of
+     * what B-03.21 asked for: these boxes are ~110px, the axis is printed
+     * nowhere beside them, and the list's heading is the only thing that answers
+     * "which box is this?". A box that grouped without naming the axis would
+     * break the rule; one that names it twice does not.
+     */
+    // ‼️ The heading is the axis in its SHORT form (`Perm` for `Permissions`),
+    // so it is not compared against `data-axis-name`. What is held is that every
+    // heading on one box opens on the SAME word — the axis — and that a box
+    // which groups says the axis in each group rather than once and then not.
+    const root = (g) => String(g || '').split(' · ')[0].trim();
+    const headless = all.filter(b => !b.groups.length
+        || b.groups.some(g => !root(g))
+        || new Set(b.groups.map(root)).size !== 1)
+        .map(b => `row ${b.row}: #${b.id} headings [${b.groups.join(' | ')}]`);
     ok(`‼️ EVERY BOX NAMES ITS AXIS AS THE HEADING OF ITS OWN LIST (${all.length})${say(headless)}`,
         all.length > 0 && headless.length === 0);
     const loose = all.filter(b => b.bare > 0)

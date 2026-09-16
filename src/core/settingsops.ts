@@ -259,7 +259,7 @@ const CATEGORY_OF: Record<string, string> = {
     // start a session as", not "what does a new session start as". No token is
     // in either of them — the credentials stay in the account's own directory,
     // which is why these can sit in an ordinary category at all.
-    accounts: 'cli', activeAccounts: 'cli',
+    accounts: 'cli', activeAccounts: 'cli', accountPolicies: 'cli',
     // reaching the farm from outside this VS Code window
     'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
     'telegram.enabled': 'access', 'telegram.allowedChats': 'access',

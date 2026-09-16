@@ -468,10 +468,61 @@ const accountComposerData = () => Object.assign(routedComposerData(), {
         { id: 'personal', label: 'personal@gmail', health: 'ready', active: false, percent: 12 },
         { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false, percent: -1 }
     ],
+    /**
+     * ‼️ X-305 — AND THE RULES, or the two groups ship unphotographed.
+     *
+     * The box now offers two KINDS of answer under two headings, and a fixture
+     * with no rules takes the flat branch — so the grouped drawing, which is
+     * the whole page half of this item, would never be in a picture.
+     *
+     * Four rows, because they are the four shapes the group has to survive: a
+     * rule that comes to a slot, one that comes to the MAIN sign-in (no slot at
+     * all), one that can choose NOTHING right now (the label says so where a
+     * slot name would be), and one of the user's own with a name of its own.
+     */
+    composerPolicies: [
+        { id: '@emptiest', label: '@emptiest', picks: 'personal@gmail', refusal: '',
+            note: 'personal@gmail — @emptiest: the claude sign-in with the most room right now '
+                + '(12% of its five-hour window); next would be work@studio (91%).',
+            detail: 'The sign-in of this engine with the most of its five-hour window left at '
+                + 'the moment the session starts. A measured account beats an unread one; '
+                + 'anything at or past the ceiling is out.' },
+        { id: '@standing', label: '@standing', picks: 'Main account', refusal: '',
+            note: 'the main sign-in — @standing: nothing is set for this agent and nothing '
+                + 'standing for claude, so nothing is injected.',
+            detail: 'This agent’s own standing sign-in, else the machine-wide "use this '
+                + 'next", else the main sign-in.' },
+        { id: '@pool', label: '@pool', picks: '', note: '',
+            refusal: '@pool: no sentry campaign pool is running on this machine — pick '
+                + '@emptiest, a named rule, or an account.',
+            detail: 'The next account with room in the running sentry campaign’s pool, '
+                + 'walked the way the campaign walks it.' },
+        { id: '@Night', label: '@Night', picks: 'work@studio', refusal: '',
+            note: 'work@studio — @Night step 2 of 3 (91% of its five-hour window, wall 95%).',
+            detail: 'Spare first, then the big plan, then whatever has room.' }
+    ],
     composerIntent: intentOf({ engine: 'claude', providerId: 'kimi', tier: 'opus', account: 'personal' }),
     // ‼️ X-213 — the axis is a fact about the ENGINE, so it is stated rather
     // than inferred from the length of the list above.
     composerAccountAxis: true
+});
+
+/**
+ * ‼️ X-305 — THE STATE THE READER HAS TO LEARN TO RECOGNISE: a RULE is what the
+ * box is set to, not a sign-in.
+ *
+ * The scene above has a slot picked and could be drawn before this item existed.
+ * This one is the new thing and it is the one that can go wrong in a picture:
+ * the closed box has to read `@emptiest → personal@gmail` — the rule AND what it
+ * comes to — in a strip that is already eight pickers wide. A box that clipped
+ * to `@emptiest` would hide the plan about to be spent; one that clipped to the
+ * slot would hide that the answer moves at the next launch. Only the photograph
+ * says which half survives.
+ */
+const policyComposerData = () => Object.assign(accountComposerData(), {
+    composerIntent: intentOf({
+        engine: 'claude', providerId: 'kimi', tier: 'opus', account: '@emptiest'
+    })
 });
 
 /**
@@ -770,6 +821,11 @@ module.exports = {
             id: 'console-account',
             label: 'Console — and which sign-in pays for it, on a machine rotating three (X-169)',
             data: accountComposerData()
+        },
+        {
+            id: 'console-account-policy',
+            label: 'Console — the account box set to a RULE, which says what it comes to (X-305)',
+            data: policyComposerData()
         },
         {
             // ‼️ X-213 — the swap the whole family exists for, caught mid-promise:

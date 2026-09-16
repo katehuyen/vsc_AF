@@ -3649,6 +3649,8 @@
      * one row that is already true is the control with no referent.
      */
     const accountRows = () => DATA.composerAccounts || [];
+    /** ‼️ X-305 — the RULES this engine offers, beside the slots (see policiesFor). */
+    const policyRows = () => DATA.composerPolicies || [];
     const accountPick = () => intent().account || '';
     /**
      * ‼️ X-213 — the axis is a fact about the ENGINE, and the host answers it.
@@ -3982,10 +3984,33 @@
          */
         const axisBox = (o) => {
             const name = o.name || o.axis;
+            /**
+             * ‼️ X-305 — AN AXIS WHOSE VALUES ARE OF TWO KINDS SAYS SO IN THE
+             * LIST. The account box offers RULES (re-decided at every launch)
+             * and SLOTS (this one, every time), and a flat list makes them look
+             * like the same kind of answer.
+             *
+             * `groups` REPLACES the axis-named optgroup rather than nesting
+             * inside it — HTML has no nested `<optgroup>`, and the axis is
+             * already the heading of the box's own panel, so nothing is lost by
+             * spending the one grouping level on the distinction that is not
+             * said anywhere else. Every other box passes no `groups` and is
+             * drawn exactly as before.
+             */
+            const body = o.groups
+                ? o.groups.filter(g => g && (g.list || []).length)
+                    // ‼️ THE AXIS IS STILL THE HEADING (B-03.21 round 2). These
+                    // boxes are ~110px and the axis is printed nowhere beside
+                    // them, so the list's heading is the only thing that answers
+                    // "which box is this?" — the KIND is added to it rather than
+                    // written over it. The other pages print the axis in their
+                    // own <label>, so there the component's bare words are right.
+                    .map(g => `<optgroup label="${C.esc(o.axis + ' · ' + g.label)}">${opts(g.list, o.cur)}</optgroup>`).join('')
+                : `<optgroup label="${C.esc(o.axis)}">${o.inner || opts(o.list, o.cur)}</optgroup>`;
             return window.AFTip.wrap(
                 (o.before || '')
                 + `<select id="${o.id}">`
-                + `<optgroup label="${C.esc(o.axis)}">${o.inner || opts(o.list, o.cur)}</optgroup>`
+                + body
                 + '</select>',
                 axisHead(name, o.list, o.cur),
                 axisBody(o.list, o.cur, o.standard),
@@ -4093,8 +4118,28 @@
                 'An agent that should always start on one sign-in is given it on its own row in '
                 + 'Farm Settings, which this box then overrules the same way.'
             ]);
-            const shown = withCurrent(rows, cur);
-            return axisBox({ axis: 'Account', id: 'c-account', list: shown, cur: cur, standard: tip });
+            /**
+             * ‼️ X-305 — TWO KINDS OF ANSWER, TWO GROUPS. The rules come first
+             * because a standing choice is what somebody reaching for this box
+             * usually wants; Machine Global sits with the SLOTS because it is
+             * the same kind of answer — this one, every time.
+             *
+             * The flat list is still what the panel is built from (`axisHead` /
+             * `axisBody` read it), so a rule and a slot are described by the
+             * same machinery whichever group drew them.
+             */
+            const pols = policyRows().map(p => window.AFAccount.policyRow(p));
+            const shown = withCurrent(pols.concat(rows), cur);
+            const inPols = new Set(pols.map(p => p.id));
+            return axisBox({
+                axis: 'Account', id: 'c-account', list: shown, cur: cur, standard: tip,
+                ...(pols.length ? {
+                    groups: [
+                        { label: window.AFAccount.POLICY_GROUP, list: shown.filter(r => inPols.has(r.id)) },
+                        { label: window.AFAccount.ACCOUNT_GROUP, list: shown.filter(r => !inPols.has(r.id)) }
+                    ]
+                } : {})
+            });
         };
         const dead = s && (s.status === 'ended' || s.status === 'error');
         const placeholder = s
@@ -4221,7 +4266,11 @@
             // the account a session is swapped TO reads exactly as it did when
             // it was chosen.
             }].concat((s.accountRows || []).map(a => window.AFAccount.row(a)));
-            const shown = withCurrent(rows, cur);
+            // ‼️ X-305 — and the rules, in their own group, exactly as the
+            // composer draws them: a live swap is the same choice made later.
+            const pols = (s.policyRows || []).map(p => window.AFAccount.policyRow(p));
+            const inPols = new Set(pols.map(p => p.id));
+            const shown = withCurrent(pols.concat(rows), cur);
             // MIRROR — the box is far too narrow for an address, so the first
             // line of its hover is what is actually sealed right now, and the
             // second says what is about to change if the two differ.
@@ -4245,7 +4294,13 @@
             return axisBox({
                 axis: 'Account', id: 'c-account-live', list: shown, cur: cur, standard: tip,
                 cls: s.accountNext ? 'pend' : '',
-                before: s.accountNext ? '<span class="pendmark" aria-hidden="true">→</span>' : ''
+                before: s.accountNext ? '<span class="pendmark" aria-hidden="true">→</span>' : '',
+                ...(pols.length ? {
+                    groups: [
+                        { label: window.AFAccount.POLICY_GROUP, list: shown.filter(r => inPols.has(r.id)) },
+                        { label: window.AFAccount.ACCOUNT_GROUP, list: shown.filter(r => !inPols.has(r.id)) }
+                    ]
+                } : {})
             });
         };
         const effortBox = (engineId, model, cur, id, tip) => {

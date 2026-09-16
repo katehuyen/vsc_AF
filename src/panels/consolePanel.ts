@@ -295,6 +295,23 @@ export interface ConsoleDeps {
         percent: number;
     }[];
     /**
+     * ‼️ X-305 — THE RULES THIS ENGINE OFFERS, the twin of `accountsFor`.
+     *
+     * A slot is an answer that was true when somebody picked it; a rule is
+     * re-decided at every launch. They are different kinds of choice, so the
+     * page draws them as two groups and is handed them as two lists — joining
+     * them here would be the host deciding a layout.
+     *
+     * `picks` / `note` / `refusal` are about THIS MOMENT (which slot the rule
+     * comes to and on what figure, or why none); `detail` is the rule's
+     * standing description. MIRROR draws the first over the second, so they
+     * travel apart.
+     */
+    policiesFor?(engine: string): {
+        id: string; label: string; detail: string;
+        picks: string; note: string; refusal: string;
+    }[];
+    /**
      * ‼️ X-213 — CAN THIS ENGINE HOLD A SECOND SIGN-IN AT ALL?
      *
      * Separate from `accountsFor` because it answers a different question: that
@@ -1027,6 +1044,10 @@ export class ConsolePanel {
                 // drawn anyway.
                 accountRows: this.deps.accountAxis?.(engineOf(s.engine).id)
                     ? (this.deps.accountsFor?.(engineOf(s.engine).id) ?? []) : [],
+                // ‼️ X-305 — …and THIS card's engine's rules, on the same rule
+                // as the slots above: a card's engine is its own question.
+                policyRows: this.deps.accountAxis?.(engineOf(s.engine).id)
+                    ? (this.deps.policiesFor?.(engineOf(s.engine).id) ?? []) : [],
                 permissionMode: s.permissionMode,
                 // ‼️ K-22 — what the process is REALLY in, beside what was asked
                 // for. They are different facts and showing only the request is
@@ -1183,6 +1204,13 @@ export class ConsolePanel {
              * docs/CONVENTIONS.md forbids.
              */
             composerAccounts: this.deps.accountsFor?.(engineOf(this.chosenEngine()).id) ?? [],
+            /**
+             * ‼️ X-305 — …AND THE RULES THE COMPOSER MAY PICK. Same engine, same
+             * moment, one reader: a rule that reads `@emptiest → Work` here and
+             * something else on the card below it would be two answers to one
+             * question.
+             */
+            composerPolicies: this.deps.policiesFor?.(engineOf(this.chosenEngine()).id) ?? [],
             /**
              * ‼️ X-213 — WHETHER THE BOX EXISTS IS A FACT ABOUT THE ENGINE, not
              * about the length of the list.

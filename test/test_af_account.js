@@ -207,6 +207,55 @@ const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
         /accountFigure\(/.test(afBody));
 }
 
+// ---------- X-305 — a RULE is drawn as a rule, and in its own group ----------
+{
+    const C = {
+        esc: s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
+        option: (v, l, o) => '<option value="' + v + '"' + (o && o.selected ? ' selected' : '')
+            + ' title="' + String((o && o.detail) || '') + '">' + l + '</option>'
+    };
+    const pol = [
+        { id: '@emptiest', label: '@emptiest', picks: 'work@studio', refusal: '',
+            note: 'work@studio — @emptiest: the most room right now (12%).',
+            detail: 'The sign-in with the most of its window left.' },
+        { id: '@pool', label: '@pool', picks: '', note: '',
+            refusal: '@pool: no campaign pool is running.', detail: 'The campaign pool.' }
+    ];
+    const acc = [{ id: 'work-1', label: 'work@studio', health: 'ready', active: true, percent: 12 }];
+
+    // SHORTHAND — the rule is the stable identity, what it comes to is today's
+    // answer. Both, in that order, because the box is ~110px and the half that
+    // survives the clipping must be the half that identifies the choice.
+    ok('‼️ a rule reads as the rule AND what it comes to',
+        A.policyLabel(pol[0]) === '@emptiest → work@studio');
+    // ‼️ "Right now" is not "at launch": a rule that cannot choose at 11:02 may
+    // be the only thing that can at 14:50, so it is still offered — and says so
+    // where a slot name would be, rather than pretending to an answer.
+    ok('‼️ …and one that can choose nothing says so instead of naming a slot',
+        A.policyLabel(pol[1]) === '@pool · nothing to pick right now');
+    ok('a rule resolving to no slot at all is still an answer',
+        A.policyLabel({ id: '@standing', picks: 'Main account' }) === '@standing → Main account');
+
+    // MIRROR — this moment first, the standing description under it.
+    ok('‼️ the panel opens with what the rule comes to NOW, then what it means',
+        A.policyDetail(pol[0]).startsWith('work@studio — @emptiest:')
+        && A.policyDetail(pol[0]).indexOf('\n\nThe sign-in with the most') > 0);
+    ok('…and a refusal takes that first line, because it IS the current value',
+        A.policyDetail(pol[1]).startsWith('@pool: no campaign pool is running.'));
+
+    const g = A.grouped(pol, acc, '@emptiest', C);
+    ok('‼️ two groups, and the RULES come first',
+        g.indexOf(A.POLICY_GROUP) >= 0 && g.indexOf(A.ACCOUNT_GROUP) > g.indexOf(A.POLICY_GROUP));
+    ok('…the rule that is set is the selected option', /@emptiest"\s+selected/.test(g));
+    ok('…and the slots are all still there', g.indexOf('work@studio · 12% •') > 0);
+    // ‼️ NOTHING CHANGES ON A MACHINE THAT HAS WRITTEN NO RULE. An empty group
+    // heading over an empty list is a control describing something that is not
+    // there, so the flat drawing stays the answer.
+    ok('‼️ no rules = the flat list, with no heading at all',
+        A.grouped([], acc, '', C) === A.options(acc, '', C)
+        && A.grouped([], acc, '', C).indexOf('optgroup') < 0);
+}
+
 // ---------- the component ships ----------
 {
     ok('‼️ afAccount.js is loaded by the shell, or every page above is blank',
