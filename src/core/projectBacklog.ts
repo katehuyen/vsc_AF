@@ -185,6 +185,38 @@ export function compareCodes(a: string, b: string): number {
 const field = (names: string): RegExp =>
     new RegExp(`[\\[(]\\s*(?:${names})\\s*::\\s*([^\\])]*?)\\s*[\\])]`, 'iu');
 
+/**
+ * ‼️ X-318 — WHAT IS INSIDE BACKTICKS IS QUOTED TEXT, NOT A FIELD.
+ *
+ * An inline field is something this code wrote; a backtick code span is
+ * something the PERSON wrote, and the two look identical to a regex. Measured:
+ * X-312's own body quoted `[closed:: 2145c0a0#3]` as the evidence of the bug it
+ * was describing. Closing the item read that quote as the item's `closed`
+ * field, and the writer then replaced it in place — so the user's sentence
+ * silently became a different session id, and the real stamp was never
+ * appended. The promise that nothing else on the line is touched was broken by
+ * the one function whose whole job is to keep it.
+ *
+ * Every backtick run is blanked to the SAME LENGTH, so an index found in the
+ * mask is the same index in the real line: reads match nothing inside a quote,
+ * and a write splices the real string by position. The mask is never written to
+ * a file — it exists only to be matched against.
+ */
+const maskCodeSpans = (s: string): string =>
+    s.replace(/(`+)[\s\S]*?\1/g, (m) => ' '.repeat(m.length));
+
+/** X-318 — run a rewrite over the QUOTED-OUT parts of a line only, leaving every
+ *  backtick span exactly as the person typed it. */
+const outsideCode = (s: string, fn: (part: string) => string): string => {
+    const re = /(`+)[\s\S]*?\1/g;
+    let out = '', last = 0;
+    for (let m = re.exec(s); m; m = re.exec(s)) {
+        out += fn(s.slice(last, m.index)) + m[0];
+        last = m.index + m[0].length;
+    }
+    return out + fn(s.slice(last));
+};
+
 const F_EFFORT = field('effort|efor|boyut|size');
 const F_PLAN = field('plan');
 /**
@@ -500,12 +532,15 @@ export interface BacklogItem {
  *  ‼️ The ORDER is load-bearing: inline fields come off before the icons, or
  *  `🔽 [effort:: XS]` loses its bracket to the icon pass and leaves `S]` behind. */
 function displayText(body: string): string {
-    return body
+    // ‼️ X-318 — and only OUTSIDE the backticks. A quoted `[closed:: …]` or a
+    // quoted `#tag` is the person's example, and stripping it deleted the
+    // evidence out of the sentence that was making a point of it.
+    return outsideCode(body, part => part
         .replace(LEADING_CODE, '')
         .replace(F_ANY, ' ')
         .replace(META_VALUED, ' ')
         .replace(META_BARE, ' ')
-        .replace(TAG, ' ')
+        .replace(TAG, ' '))
         .replace(/\s+/g, ' ')
         .trim();
 }
@@ -674,6 +709,10 @@ function parseItemLine(
     const m = TASK_LINE.exec(line);
     if (!m) { return undefined; }
     const body = m[3] ?? '';
+    // X-318 — the same body with every backtick quote blanked out, which is
+    // what an inline field is read from. Positions are preserved, so nothing
+    // that works off an index has to know the difference.
+    const fieldBody = maskCodeSpans(body);
     const state = stateOf(m[2]);
     const code = LEADING_CODE.exec(body)?.[1];
     // Derived from the heading exactly as the walk derives them, so a line read
@@ -694,13 +733,13 @@ function parseItemLine(
     for (const [icon, p] of Object.entries(ICON_PRIORITY)) {
         if (line.includes(icon)) { priority = p; break; }
     }
-    const effortRaw = F_EFFORT.exec(body)?.[1]?.trim().toUpperCase();
+    const effortRaw = F_EFFORT.exec(fieldBody)?.[1]?.trim().toUpperCase();
     const effort = BACKLOG_EFFORTS.includes(effortRaw as BacklogEffort)
         ? effortRaw as BacklogEffort : undefined;
     // Read in whatever case it was typed and held in ONE case, because
     // everything downstream compares codes as strings — `[parent:: p-4]`
     // typed in Obsidian must be the same link as `[parent:: P-4]`.
-    const parentRaw = F_PARENT.exec(body)?.[1]?.trim().toUpperCase();
+    const parentRaw = F_PARENT.exec(fieldBody)?.[1]?.trim().toUpperCase();
     const parent = parentRaw && BACKLOG_CODE.test(parentRaw) ? parentRaw : undefined;
 
     return {
@@ -720,7 +759,7 @@ function parseItemLine(
         ...(HOLD.test(line) ? { onHold: true } : {}),
         ...(/🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1]
             ? { taskId: /🆔\s*([A-Za-z0-9_-]+)/u.exec(line)?.[1] as string } : {}),
-        ...(F_PLAN.exec(body)?.[1] ? { plan: F_PLAN.exec(body)?.[1]?.trim() as string } : {}),
+        ...(F_PLAN.exec(fieldBody)?.[1] ? { plan: F_PLAN.exec(fieldBody)?.[1]?.trim() as string } : {}),
         ...(parent ? { parent } : {}),
         // ‼️ A field that is THERE but is not a code is reported, not
         // swallowed. Somebody typed `[parent:: the big one]` in Obsidian and
@@ -728,9 +767,9 @@ function parseItemLine(
         // leave them with a line that looks linked and is not.
         ...(parentRaw && !parent ? { warn: `"${parentRaw}" is not a backlog code, so the parent link does nothing` } : {}),
         children: [],
-        ...(F_FROM.exec(body)?.[1] ? { from: F_FROM.exec(body)?.[1]?.trim() as string } : {}),
-        ...(F_WAS.exec(body)?.[1] ? { was: F_WAS.exec(body)?.[1]?.trim() as string } : {}),
-        ...(F_CLOSED.exec(body)?.[1] ? { closed: F_CLOSED.exec(body)?.[1]?.trim() as string } : {}),
+        ...(F_FROM.exec(fieldBody)?.[1] ? { from: F_FROM.exec(fieldBody)?.[1]?.trim() as string } : {}),
+        ...(F_WAS.exec(fieldBody)?.[1] ? { was: F_WAS.exec(fieldBody)?.[1]?.trim() as string } : {}),
+        ...(F_CLOSED.exec(fieldBody)?.[1] ? { closed: F_CLOSED.exec(fieldBody)?.[1]?.trim() as string } : {}),
         ...(dateAfter(line, '📅') ? { due: dateAfter(line, '📅') as string } : {}),
         ...(dateAfter(line, '✅') ? { doneOn: dateAfter(line, '✅') as string } : {}),
         score: PRIORITY_WEIGHT[priority] /
@@ -1426,12 +1465,28 @@ export function stampBacklogClosed(
     }
     if ((item.closed ?? '') === want) { return { ok: true, text: src, item }; }
 
-    const existing = new RegExp(F_CLOSED.source, 'giu');
     let line = item.raw;
     if (item.closed) {
-        line = want
-            ? line.replace(existing, `[closed:: ${want}]`)
-            : line.replace(existing, '').replace(/\s{2,}/g, ' ').trimEnd();
+        /**
+         * ‼️ X-318 — SPLICED BY POSITION, NEVER BY `replace`. A plain replace
+         * rewrites every match on the line, and a line may carry a `[closed::
+         * …]` the PERSON typed inside backticks as an example — which is
+         * exactly how X-312's own body lost its evidence. The mask blanks the
+         * quotes and keeps the offsets, so what is found is the real field and
+         * what is cut is the real field's characters.
+         */
+        const existing = new RegExp(F_CLOSED.source, 'giu');
+        const masked = maskCodeSpans(line);
+        const hits: { start: number; end: number }[] = [];
+        for (let m = existing.exec(masked); m; m = existing.exec(masked)) {
+            hits.push({ start: m.index, end: m.index + m[0].length });
+        }
+        // From the end, so an earlier hit's offsets are still good.
+        for (let i = hits.length - 1; i >= 0; i--) {
+            const h = hits[i] as { start: number; end: number };
+            line = line.slice(0, h.start) + (want ? `[closed:: ${want}]` : '') + line.slice(h.end);
+        }
+        if (!want) { line = line.replace(/\s{2,}/g, ' ').trimEnd(); }
     } else if (want) {
         line = `${line.trimEnd()} [closed:: ${want}]`;
     }

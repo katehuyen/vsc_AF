@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.526.0 - what is inside backticks is quoted text, not a field: closing an item no longer rewrites the sentence it was quoted in (X-318) (2026-09-16)
+
+- **‼️ MEASURED ON THE VERY NEXT WRITE.** X-312's own backlog line quoted
+  `` `[closed:: 2145c0a0#3]` `` as the evidence of the bug it was describing.
+  Closing that item read the quote as the item's `closed` FIELD, and
+  `stampBacklogClosed` — the one function whose whole promise is that nothing
+  else on the line is touched — replaced it where it stood. The user's sentence
+  silently named a different session, and the real stamp was never appended at
+  all. Two of the three things a closure is supposed to do went wrong, and
+  neither of them was visible in the reply.
+- **An inline field is something Agent Farm wrote; a backtick span is something
+  the person wrote**, and to a regex they are identical. So every field is now
+  read from the line with its backtick runs blanked out (same length, so an
+  index found in the mask is the index in the real line), and the stamp writer
+  splices by POSITION rather than calling `replace` — which rewrote every match
+  on the line, quoted or not.
+- **And the quote survives into the text the reader is shown.** `displayText`
+  strips fields, icons and tags to leave the words; it was deleting the quoted
+  example too, so the sentence making a point of it arrived with a hole in it.
+  Stripping now runs over the un-quoted parts only. A field REBUILD
+  (`setBacklogFields`) is correct by construction once that is true, since it
+  rebuilds the line out of those words.
+- The item that was damaged has been repaired in place: the quote is back to
+  what it said, and the real `[closed:: …]` is where it belongs.
+- `test/test_project_backlog.js` (+10) pins it from both ends — a quoted
+  `[closed:: …]` and a quoted `[effort:: …]` beating neither the parse nor the
+  real field, the stamp appended rather than swapped, clearing taking only the
+  real one, and a field rebuild carrying the quote through byte for byte.
+
 ## 3.525.0 - a sentry round is reopened by its campaign and by nothing else, and the ledger is stamped with the session that actually closed the item (X-312) (2026-09-16)
 
 - **‼️ MEASURED ON THE SAME FIRE DRILL** (X-309 scenario 1, campaign

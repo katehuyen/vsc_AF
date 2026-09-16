@@ -1361,5 +1361,60 @@ const FAMILY = [
     })());
 }
 
+// ===========================================================================
+// X-318 — WHAT IS INSIDE BACKTICKS IS QUOTED TEXT, NOT A FIELD
+// ===========================================================================
+//
+// An inline field is something this module wrote; a backtick code span is
+// something the PERSON wrote, and to a regex they are identical. Measured:
+// X-312's body quoted `[closed:: 2145c0a0#3]` as the evidence of the very bug
+// it was describing. Closing the item read that quote as the item's `closed`
+// field and the writer replaced it where it stood — so the user's sentence
+// silently named a different session, and the real stamp was never appended.
+// The one function whose whole promise is "nothing else on the line is
+// touched" was the one that broke it.
+{
+    const QUOTED = '# Backlog\n\n## X — General\n\n'
+        + '- [ ] X-9 the bridge wrote `[closed:: aaaa1111#3]` onto the wrong session '
+        + 'and the `#bug` tag in `[effort:: XS]` is quoted too [effort:: M]\n';
+    const item = B.parseBacklog(QUOTED).items.find(i => i.code === 'X-9');
+
+    ok('‼️ X-318 — a `[closed:: …]` inside backticks is NOT read as the item\'s stamp',
+        !!item && item.closed === undefined);
+    ok('‼️ …and a quoted `[effort:: XS]` does not beat the real field at the end',
+        !!item && item.effort === 'M');
+    ok('‼️ …and the quote survives into the text the reader is shown',
+        !!item && /\[closed:: aaaa1111#3\]/.test(item.text)
+        && /\[effort:: XS\]/.test(item.text));
+    ok('…while the real field is still stripped out of that text',
+        !!item && !/\[effort:: M\]/.test(item.text));
+
+    // Closing it: the stamp must be APPENDED, and the quote left alone.
+    const closed = B.stampBacklogClosed(QUOTED, { code: 'X-9' }, 'bbbb2222#7');
+    const line = closed.ok ? closed.text.split('\n').find(l => /X-9/.test(l)) : '';
+    ok('‼️ X-318 — closing appends the real stamp instead of overwriting the quote',
+        closed.ok && /\[closed:: bbbb2222#7\]$/.test(line.trimEnd()));
+    ok('‼️ …and the person\'s quoted example is byte-for-byte where they left it',
+        /`\[closed:: aaaa1111#3\]`/.test(line));
+    ok('…and the item now reads its own stamp, not the quoted one',
+        B.parseBacklog(closed.text).items.find(i => i.code === 'X-9').closed === 'bbbb2222#7');
+
+    // Clearing it must not eat the quote either.
+    const cleared = B.stampBacklogClosed(closed.text, { code: 'X-9' }, null);
+    const bare = cleared.ok ? cleared.text.split('\n').find(l => /X-9/.test(l)) : '';
+    ok('‼️ …and clearing the stamp takes the real one only',
+        cleared.ok && !/\[closed:: bbbb2222#7\]/.test(bare)
+        && /`\[closed:: aaaa1111#3\]`/.test(bare));
+
+    // A field edit rebuilds the whole line from `text` — the quote rides along.
+    const edited = B.setBacklogFields(closed.text, { code: 'X-9' }, { effort: 'L' });
+    ok('‼️ …and a field rebuild carries the quote through untouched',
+        edited.ok && /`\[closed:: aaaa1111#3\]`/.test(edited.text)
+        && /\[effort:: L\]/.test(edited.text));
+    ok('…without the quoted stamp becoming the item\'s own',
+        edited.ok && B.parseBacklog(edited.text).items
+            .find(i => i.code === 'X-9').closed === 'bbbb2222#7');
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
