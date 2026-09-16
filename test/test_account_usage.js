@@ -27,10 +27,12 @@ const { RATE_LIMIT_BACKOFF_START_MS } = require(path.join(__dirname, '..', 'out'
 const NOW = Date.parse('2026-09-04T12:00:00Z');
 const slot = (id, engine = 'claude') => ({ id, engine, dir: 'D:/slots/' + id });
 
-/** The endpoint's shape, with the five-hour row at a given percentage. */
-const payload = (pct, resetsAt) => JSON.stringify({
+/** The endpoint's shape, with the five-hour row at a given percentage. The
+ *  week sits BELOW every five-hour figure these tests use, so the five-hour
+ *  window is the one that binds (X-309: the fuller window is the figure). */
+const payload = (pct, resetsAt, week = 2) => JSON.stringify({
     five_hour: { utilization: pct, resets_at: new Date(resetsAt).toISOString() },
-    seven_day: { utilization: 12, resets_at: new Date(resetsAt + 86400_000).toISOString() }
+    seven_day: { utilization: week, resets_at: new Date(resetsAt + 86400_000).toISOString() }
 });
 
 /** A service wired to counted fakes — no disk, no network, no clock. */
@@ -553,9 +555,44 @@ async function main() {
                 { id: 'seven_day', title: 'Current week', percent: 71, resetsAt: t + 86400_000 }
             ]
         };
-        ok('a row shows the five-hour window, not the weekly one',
-            usageFrom(slot('a'), snap).percent === 33 && fiveHourBar(snap).percent === 33);
-        ok('…and carries the reset the countdown needs', usageFrom(slot('a'), snap).resetsAt === t);
+        // ‼️ X-309 — THE FULLER WINDOW BINDS. This used to pin "the five-hour
+        // window, not the weekly one", and the first fire drill measured the
+        // cost: a slot at 0% of its five hours and 100% of its week read as the
+        // emptiest account in the pool, and every round opened on it died on
+        // "You've hit your weekly limit". So a row carries whichever window is
+        // fuller, names it when it is the week, and the reset it carries is
+        // THAT window's — the one the countdown has to wait for.
+        const weekly = usageFrom(slot('a'), snap);
+        ok('a row shows the window that BINDS — here the week at 71 over the five hours at 33',
+            weekly.percent === 71 && fiveHourBar(snap).percent === 33);
+        ok('…names it, so the card says "of its current week" rather than lying about five hours',
+            weekly.window === 'Current week');
+        ok('…and carries THAT window\'s reset, the one the countdown has to wait for',
+            weekly.resetsAt === t + 86400_000);
+        const fiveBinds = {
+            ...snap, bars: [
+                { id: FIVE_HOUR, title: 'Current session', percent: 60, resetsAt: t },
+                { id: 'seven_day', title: 'Current week', percent: 30, resetsAt: t + 86400_000 }
+            ]
+        };
+        const f = usageFrom(slot('a'), fiveBinds);
+        ok('the five-hour window binds when it is the fuller one, and names nothing (the default)',
+            f.percent === 60 && f.window === undefined && f.resetsAt === t);
+        const tie = { ...snap, bars: [
+            { id: FIVE_HOUR, title: 'Current session', percent: 50, resetsAt: t },
+            { id: 'seven_day', title: 'Current week', percent: 50, resetsAt: t + 86400_000 }
+        ] };
+        ok('a tie is the five-hour window — the ordinary case', usageFrom(slot('a'), tie).window === undefined
+            && usageFrom(slot('a'), tie).resetsAt === t);
+        const walledWeek = { ...snap, bars: [
+            { id: FIVE_HOUR, title: 'Current session', percent: 0, resetsAt: 0 },
+            { id: 'seven_day', title: 'Current week (all models)', percent: 100, resetsAt: t + 3600_000 }
+        ] };
+        ok('‼️ the drill\'s exact case: 0% of five hours, 100% of the week → the slot is NOT usable',
+            !slotIsUsable(usageFrom(slot('a'), walledWeek), 95)
+            && usageFrom(slot('a'), walledWeek).window === 'Current week (all models)');
+        ok('a snapshot with only the five-hour bar reads exactly as before',
+            usageFrom(slot('a'), { ...snap, bars: [{ id: FIVE_HOUR, title: 'Current session', percent: 33, resetsAt: t }] }).percent === 33);
     }
 
     // ---------- X-207: the pool the user allowed, and how it is walked --------

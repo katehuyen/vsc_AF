@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.524.0 - the fire drill's first finding: a weekly wall was invisible to the pool, and the brake blamed permissions for it (X-309, scenario 1 run 1) (2026-09-16)
+
+- **‼️ MEASURED ON THE FIRST FIRE DRILL** (campaign `sc-mu3psbkz`, `basit` ·
+  haiku · `bypassPermissions` · pool `aicozums, wmmuratvural` tiered): round 1
+  opened on `wmmuratvural` — correctly past `aicozums` at 100% of its five
+  hours — and died in one line: *You've hit your weekly limit · resets 7pm*.
+  Round 2 opened on the SAME account and died the same way. The brake stopped
+  the campaign after two, saying the rounds "produced nothing … usually a
+  permission or a working-directory mismatch". The permission mode was already
+  `bypassPermissions`; the account was at 100% of its WEEK.
+- **The slot read `0% · ok`.** `usageFrom` took the `five_hour` bar out of the
+  snapshot and dropped the `seven_day` one that was sitting beside it, so a
+  weekly wall was invisible to `slotIsUsable`, to the pool's rotation and to
+  `@emptiest` alike — the account looked like the emptiest on the machine.
+  **A slot now carries whichever window is FULLER** (`bindingBar`), names it
+  when it is the week (`window: 'Current week (all models)'` — the card already
+  says "of its current week", X-215 taught it for Codex), and carries THAT
+  window's reset, which is what the campaign's sleep has to wait for. A tie or
+  a fuller five-hour window reads exactly as before. The per-model weekly bars
+  are not folded in: whether they bind depends on the launch's model.
+- **A round that ended `failed` on the account's own wall is not barren.**
+  `barren()` counted every `failed` row; a `wall-limit` diagnosis now exempts it
+  the way X-307 already exempted a `done` one — the plan window being spent is
+  the account's fault, answered by the rotation and the sleep, never by the
+  brake. And the brake's permissions hint is written for `wall-unfinished` only,
+  so a spent window is no longer explained as a cwd mismatch.
+- The drill is still open: run 1 is the finding, not the pass. `test_account_usage`
+  pins the drill's exact case (0% of five hours, 100% of the week → not usable);
+  `test_sentry_driver` pins a `failed` wall-limit round at streak 0 through
+  `failLimit + 1` repetitions.
+
 ## 3.523.0 - a rule can be written by hand: the Engines page grows an Account policies section with a chain editor — the last half of X-305 (2026-09-16)
 
 - **‼️ THE ONE SURFACE A HAND COULD NOT REACH.** Steps 1–3 made a rule

@@ -201,9 +201,37 @@ export function unreadUsage(slot: { id: string; engine: string }): SlotUsage {
     };
 }
 
+/** The all-models week — the OTHER window a Claude plan is walled by. */
+export const SEVEN_DAY = 'seven_day';
+
+/**
+ * ‼️ X-309 — THE WINDOW THAT BINDS, not always the five-hour one.
+ *
+ * Measured on the first fire drill (campaign `sc-mu3psbkz`, 2026-09-16): a
+ * slot read `0% of its five-hour window · ok` while the account was at 100% of
+ * its WEEK — every round the pool opened on it died on "You've hit your weekly
+ * limit", the pool went on calling it the emptiest account, and the campaign
+ * stopped on the failure brake blaming permissions. The weekly bar was in the
+ * snapshot the whole time; this function dropped it.
+ *
+ * So the figure a slot carries is whichever of the two windows is FULLER, and
+ * `window` names it when it is not the five-hour one — the card already knows
+ * how to say "of its current week" (X-215 taught it for Codex). A tie is the
+ * five-hour window, the ordinary case. The per-model weekly bars are not
+ * folded in: whether they bind depends on the launch's model, which a slot
+ * figure does not know.
+ */
+export function bindingBar(snap: PlanUsageSnapshot | undefined): PlanBar | undefined {
+    const five = fiveHourBar(snap);
+    const week = snap?.bars.find(b => b.id === SEVEN_DAY);
+    if (!five) { return week; }
+    if (!week) { return five; }
+    return week.percent > five.percent ? week : five;
+}
+
 /** A snapshot, narrowed to what a slot row shows. */
 export function usageFrom(slot: { id: string; engine: string }, snap: PlanUsageSnapshot): SlotUsage {
-    const bar = fiveHourBar(snap);
+    const bar = bindingBar(snap);
     return {
         slotId: slot.id, engine: slot.engine,
         state: snap.state,
@@ -211,6 +239,7 @@ export function usageFrom(slot: { id: string; engine: string }, snap: PlanUsageS
         resetsAt: bar?.resetsAt ?? 0,
         plan: snap.plan,
         fetchedAt: snap.fetchedAt,
+        ...(snap.state === 'ok' && bar && bar.id !== FIVE_HOUR && bar.title ? { window: bar.title } : {}),
         note: snap.note
     };
 }

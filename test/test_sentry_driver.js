@@ -222,6 +222,32 @@ const step = (over) => sentryStep(Object.assign({
     });
     ok('‼️ a spent plan window is not the campaign failing — that wall never counts here',
         walled.diagnosis.rule === 'wall-limit' && walled.failStreak === 0);
+    // ‼️ X-309 — …AND NOT WHEN THE ROW ENDED `failed` EITHER. Measured on the
+    // first fire drill: the engine printed "You've hit your weekly limit" and
+    // exited non-zero, the diagnosis said wall-limit, and `failed` alone made
+    // the round barren — two of them stopped the campaign blaming permissions.
+    const weekly = Object.assign({}, noTrace, {
+        status: 'failed',
+        facts: Object.assign({}, noTrace.facts, { output: 'You\'ve hit your weekly limit · resets 7pm (Asia/Bangkok)' })
+    });
+    const failedOnWall = step({ finished: weekly });
+    ok('‼️ a round that ended FAILED on the account\'s own wall is still not barren',
+        failedOnWall.diagnosis.rule === 'wall-limit' && failedOnWall.failStreak === 0);
+    {
+        const r2 = rec();
+        let l2;
+        for (let n = 1; n <= SENTRY_DEFAULT_FAIL_LIMIT + 1; n++) {
+            l2 = sentryStep({ campaign: r2, usage: [slot('a')], next: NEXT, finished: weekly, now: NOW });
+            applySentryStep(r2, l2, l2.round ? 'w' + n : undefined, NOW);
+        }
+        ok('…so any number of them never trips the brake — the rotation and the sleep answer a wall',
+            l2.plan.rule !== 'fail-streak' && r2.status === 'running');
+    }
+    // and when the brake DOES fire on a wall the session walked into, the
+    // permissions sentence is for that wall only
+    ok('the permissions hint is written for wall-unfinished, never for a spent plan window',
+        /wall-unfinished/.test(require('fs').readFileSync(path.join(__dirname, '..', 'src', 'core', 'sentryDriver.js').replace(/\.js$/, '.ts'), 'utf8')
+            .split('const trace = ')[1].split(';')[0]));
 
     const worked = step({
         finished: Object.assign({}, noTrace, {

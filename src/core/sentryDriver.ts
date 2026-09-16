@@ -179,6 +179,14 @@ function failLimitOf(c: SentryRecord): number {
  */
 function barren(fin: FinishedRound, d: SessionDiagnosis | undefined): boolean {
     if (fin.status === 'cancelled') { return false; }
+    // ‼️ X-309 — A ROUND THAT DIED ON THE ACCOUNT'S OWN WALL IS NOT BARREN.
+    // Measured (2026-09-16): two rounds ended `failed` on "You've hit your
+    // weekly limit", were diagnosed `wall-limit`, and the brake stopped the
+    // campaign blaming permissions. The plan window being spent is the
+    // ACCOUNT's fault, and the answer to it is the rotation and the sleep,
+    // never the brake — which is X-307's own law, stated for `done` rounds
+    // and now kept for `failed` ones too.
+    if (d?.outcome === 'hit-the-wall' && d.rule === 'wall-limit') { return false; }
     if (fin.status === 'failed' || d?.outcome === 'nothing-to-continue') { return true; }
     return d?.outcome === 'hit-the-wall' && d.rule === 'wall-unfinished' && d.left === 'nothing';
 }
@@ -267,7 +275,11 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
         // ‼️ X-307 — a brake that only says "nothing" leaves the user to find
         // out why by reading four identical transcripts. The no-trace wall has
         // one overwhelmingly common cause, so it is named here.
-        const trace = diagnosis?.outcome === 'hit-the-wall' && diagnosis.left === 'nothing'
+        // …and only for the wall the SESSION walked into (`wall-unfinished`):
+        // a plan window spent is the account's, and naming permissions there
+        // sends the reader to fix the wrong thing (X-309).
+        const trace = diagnosis?.outcome === 'hit-the-wall' && diagnosis.rule === 'wall-unfinished'
+            && diagnosis.left === 'nothing'
             ? ' Each session answered and left no trace at all, which is usually a permission or a '
             + 'working-directory mismatch: an unattended round writing outside its own cwd needs '
             + 'bypassPermissions, because acceptEdits approves nothing out there.'
