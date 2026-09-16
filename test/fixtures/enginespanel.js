@@ -68,11 +68,59 @@ const contract = (engine, gaps, repairs, promotions) => {
     };
 };
 
+/**
+ * ‼️ X-305 — THE RULES, ASKED OF THE PRODUCT. What `@emptiest` comes to on
+ * these five slots is `resolvePolicy`'s answer against their own figures, the
+ * same function the host's `policyRowsFor` runs — a scene that typed "→
+ * work@studio" by hand would be photographing a claim the rule never made, and
+ * the section exists to draw what the rule DECIDES. Only the user's rules
+ * (`rules`) are the scene's own, because those are the objects the form makes.
+ */
+const { BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, resolvePolicy } = require('../../out/core/accountPolicy.js');
+const policiesFor = (accounts, rules) => {
+    const engines = [...new Set(accounts.map(a => a.engine))];
+    const usage = accounts.map(a => ({
+        slotId: a.id, engine: a.engine, state: a.usageState, percent: a.percent,
+        resetsAt: a.resetsAt, plan: a.plan, fetchedAt: a.fetchedAt, window: a.window
+    }));
+    const labelOf = id => (accounts.find(a => a.id === id) || {}).label || id;
+    const nowFor = (id, only) => (only ? [only] : engines).map(engine => {
+        const active = accounts.find(a => a.engine === engine && a.active);
+        const r = resolvePolicy(id, {
+            engine, usage, standing: active ? active.id : '', standingOrigin: active ? 'machine' : '',
+            policies: rules, stored: accounts.filter(a => a.engine === engine).map(a => a.id),
+            labelOf, now: NOW
+        });
+        return {
+            engine, picks: r.refusal ? '' : (r.id ? labelOf(r.id) : 'Main account'),
+            note: r.note || '', refusal: r.refusal || ''
+        };
+    });
+    return {
+        engines: engines.length ? engines : ['claude'],
+        builtIn: BUILT_IN_POLICIES.map(p => ({ ...p, now: nowFor(p.id) })),
+        rules: rules.map(p => ({ ...p, now: nowFor('@' + p.name, p.engine) })),
+        ceiling: POLICY_DEFAULT_CEILING
+    };
+};
+/** Three rules of the user's, the shapes the form has to draw: a chain of a
+ *  rule and two slots with a model filter; a one-step pinned rule with its
+ *  own wall that is walled RIGHT NOW (the yellow chip); and a rule stepping
+ *  through another rule — the one Delete must refuse for. */
+const RULES = [
+    {
+        name: 'Gece_Nobeti', note: 'the overnight sentry — spare first, never below 60%', ceiling: 60,
+        chain: [{ account: 'spare' }, { policy: '@emptiest' }, { account: 'work-1', models: ['haiku', 'sonnet'] }]
+    },
+    { name: 'Agir_Isler', engine: 'claude', ceiling: 40, chain: [{ account: 'work-1', ceiling: 40 }] },
+    { name: 'Varsayilan', note: 'the night rule, else round-robin', chain: [{ policy: '@Gece_Nobeti' }, { policy: '@round-robin' }] }
+];
+
 const data = () => {
     const engines = base.engines();
     // The panel's own payload adds the verdicts and the clock they are read
     // against — the AGE is part of the claim.
-    return {
+    const d = {
         engines,
         now: NOW,
         ready: engines.filter(e => e.ready).length,
@@ -405,6 +453,28 @@ const data = () => {
             // gemini: deliberately untested — the third state.
         ]
     };
+    // ‼️ X-305 — the SMALLEST arity is the default scene: no rule of the
+    // user's own, only the built-in four. The scenes with rules are below.
+    d.policies = policiesFor(d.accounts, []);
+    return d;
+};
+
+/**
+ * ‼️ X-305 — ONE RULE, THEN MANY, THEN THE FORM. One and many are two pictures
+ * (a card row alone wraps differently from one in a stack), and the form is a
+ * third: it exists only after a press, so the scene PRESSES Edit on the first
+ * rule the way a reader would — the step list, the nested step editor and the
+ * chips all have to lay out together, and nothing before this scene drew them.
+ */
+const oneRuleData = () => {
+    const d = data();
+    d.policies = policiesFor(d.accounts, RULES.slice(0, 1));
+    return d;
+};
+const rulesData = () => {
+    const d = data();
+    d.policies = policiesFor(d.accounts, RULES);
+    return d;
 };
 
 /**
@@ -543,6 +613,16 @@ module.exports = {
         { id: 'enginesprompt', label: 'Engines panel — one slot on the simplified prompt', data: promptDriftData() },
         { id: 'enginesincomplete', label: 'Engines panel — a slot missing three clauses of its contract', data: incompleteData() },
         { id: 'enginesoneslot', label: 'Engines panel — a single captured account', data: oneSlotData() },
-        { id: 'enginessignin', label: 'Engines panel — a sign-in running out, and one dead while the machine is signed in as it', data: signinData() }
+        { id: 'enginessignin', label: 'Engines panel — a sign-in running out, and one dead while the machine is signed in as it', data: signinData() },
+        { id: 'enginesonerule', label: 'Engines panel — one account rule of the user\'s own', data: oneRuleData() },
+        { id: 'enginesrules', label: 'Engines panel — three rules: a chain, a walled one, one stepping through another', data: rulesData() },
+        {
+            id: 'enginesruleform', label: 'Engines panel — the rule form open on @Gece_Nobeti, a step open in the nested editor',
+            data: rulesData(),
+            act: (r) => {
+                r.query('[data-poledit="Gece_Nobeti"]')[0].click();
+                r.query('[data-afl="edit"]')[2].click();
+            }
+        }
     ]
 };

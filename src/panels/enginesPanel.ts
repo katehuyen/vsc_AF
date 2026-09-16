@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { AccountPolicy, PolicyStep } from '../core/accountPolicy';
 import { EngineId, EngineStatus } from '../core/engines';
 import { EngineTestResult } from '../core/engineTest';
 import { OwnershipRow, PublicProviderProfile } from '../core/providerOwnership';
@@ -23,6 +24,44 @@ import { handleAfNav, htmlShell } from './base';
  * the vault's own form; the docs link is https only. The page is shipped
  * metadata and verdicts, never a value.
  */
+
+/** X-305 — what a rule comes to on one engine at this moment. */
+export interface PolicyNow { engine: string; picks: string; note: string; refusal: string }
+
+/**
+ * ‼️ X-305 — THE PAGE HANDS OVER A FORM, NOT A RECORD. Everything the webview
+ * posts as a rule goes through this allow-list, so a field the page invented
+ * — or one a compromised page appended — is dropped rather than stored. The
+ * SHAPE (name, chain, ceilings) is then judged by the core, not here.
+ */
+export function policyFromForm(input: unknown): AccountPolicy {
+    const o = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+    const str = (v: unknown): string => String(v ?? '').trim();
+    const pct = (v: unknown): number | undefined => {
+        const n = typeof v === 'number' ? v : Number(str(v));
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+    };
+    const chain: PolicyStep[] = (Array.isArray(o.chain) ? o.chain : []).map((raw): PolicyStep => {
+        const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+        const models = Array.isArray(s.models) ? s.models.map(str).filter(Boolean)
+            : str(s.models).split(',').map(x => x.trim()).filter(Boolean);
+        const ceiling = pct(s.ceiling);
+        return {
+            ...(str(s.account) ? { account: str(s.account) } : {}),
+            ...(str(s.policy) ? { policy: str(s.policy) } : {}),
+            ...(ceiling !== undefined ? { ceiling } : {}),
+            ...(models.length ? { models } : {})
+        };
+    });
+    const ceiling = pct(o.ceiling);
+    return {
+        name: str(o.name),
+        chain,
+        ...(str(o.note) ? { note: str(o.note) } : {}),
+        ...(str(o.engine) ? { engine: str(o.engine).toLowerCase() } : {}),
+        ...(ceiling !== undefined ? { ceiling } : {})
+    };
+}
 
 export interface EnginesPanelDeps {
     extensionUri: vscode.Uri;
@@ -182,6 +221,27 @@ export interface EnginesPanelDeps {
      */
     queueAccountRefresh(ids: string[], gesture: 'toggle' | 'all'): void;
     /**
+     * ‼️ X-305 — THE RULES THAT CHOOSE A SIGN-IN AT LAUNCH, and what each comes
+     * to right now on every engine that holds a slot. The built-in four are
+     * read-only; `rules` are the user's own, editable here. `now` per engine
+     * rather than one figure, because a rule is asked about an engine and the
+     * page draws the engines side by side.
+     */
+    policies(): {
+        engines: string[];
+        builtIn: { id: string; label: string; detail: string; now: PolicyNow[] }[];
+        rules: (AccountPolicy & { now: PolicyNow[] })[];
+        ceiling: number;
+    };
+    /**
+     * ‼️ X-305 — THE SAME TWO FUNCTIONS THE BRIDGE'S `policies.save` AND
+     * `policies.delete` CALL. The page hands over a FORM; whether the rule
+     * could ever choose, whether another rule steps through the one being
+     * removed, and the write itself are decided in one place. '' = written.
+     */
+    savePolicy(rule: AccountPolicy): Promise<string>;
+    deletePolicy(name: string): Promise<string>;
+    /**
      * ‼️ X-187 — ASK FOR A LIVE READING. NOT OPTIONAL.
      *
      * `accounts()` answers from `AccountUsageService.current()`, which never
@@ -237,6 +297,7 @@ function buildData(deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestRes
         // …and what each engine could do about one at all, which is what makes
         // the Capture picker offer only the engines it can really serve.
         accountEngines: deps.accountEngines(),
+        policies: deps.policies(),
         ownership: deps.ownership()
     };
 }
@@ -433,6 +494,19 @@ export class EnginesPanel {
                 // the folder goes by default, after the slot is drained.
                 await this.wroteAccount(await this.deps.forgetAccount(String(msg.id ?? '')));
                 break;
+            /* ---- X-305 — the rules that choose a sign-in at launch ---------- */
+            //
+            // ‼️ BOTH CALL THE FUNCTION THE BRIDGE OP CALLS. The page hands over
+            // a form; whether the rule could ever choose, whether another rule
+            // steps through the one being removed, and the write itself are
+            // decided in `savePolicy` / `deletePolicy`, so `policies.save` and
+            // this button cannot come to mean two different things.
+            case 'policySave':
+                await this.wrotePolicy(await this.deps.savePolicy(policyFromForm(msg.policy)));
+                break;
+            case 'policyDelete':
+                await this.wrotePolicy(await this.deps.deletePolicy(String(msg.name ?? '')));
+                break;
             case 'engineDocs':
                 // https only — a docs button is not a way to open anything else.
                 if (typeof msg.url === 'string' && /^https:\/\//.test(msg.url)) {
@@ -467,6 +541,16 @@ export class EnginesPanel {
         // are to have figures for, so the reading is asked for again rather
         // than waiting out the interval on a card that has never been read.
         if (!refusal) { this.live(); }
+    }
+
+    /**
+     * X-305 — the same rule again, for the policies section: the refusal lands
+     * in the form that was submitted. An empty one closes the form and redraws
+     * — the page reads `pol-msg` with no text as "written".
+     */
+    private async wrotePolicy(refusal: string): Promise<void> {
+        await this.panel.webview.postMessage({ type: 'pol-msg', text: refusal });
+        if (!refusal) { this.refresh(); }
     }
 
     /**

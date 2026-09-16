@@ -5594,26 +5594,44 @@ const { opencodeStatus, syncToOpencode } =
         ok('‼️ …and it says that a refusal now is not a refusal at launch',
             /right now" is not "at launch"/.test(pl));
 
+        // ‼️ X-305 step 4 — the two writes live in ONE function each, and the op
+        // and the Engines page's form both call it. The op body is a call and
+        // a `need`; everything pinned below is pinned on the shared function.
         const ps = cut("op: 'policies.save'", "op: 'policies.delete'");
-        ok('‼️ policies.save refuses a rule the CORE says could never choose',
-            /policyShapeRefusal\(rule, others\)/.test(ps) && /need\(!bad, bad\)/.test(ps));
+        ok('‼️ policies.save is a call to the function the Engines page calls',
+            /await savePolicy\(rule\)/.test(ps) && /need\(!refusal, refusal\)/.test(ps));
+        const sp = cut('const savePolicy = async', 'const deletePolicy = async');
+        ok('‼️ savePolicy refuses a rule the CORE says could never choose',
+            /policyShapeRefusal\(rule, others\)/.test(sp) && /if \(bad\)/.test(sp));
         // ‼️ The shape check must NOT be handed the rule it is replacing, or a
         // rule can never be rewritten to stop pointing where it used to.
         ok('‼️ …checked against the OTHER rules, so one can be rewritten',
-            /const others = all\.filter/.test(ps));
+            /const others = all\.filter/.test(sp));
         ok('…and the answer says what the rule comes to right now',
-            /now: policyRowsFor\(/.test(ps));
+            /now: policyRowsFor\(/.test(sp));
+        ok('…and an open Engines page is redrawn, so the form sees its own write',
+            /EnginesPanel\.refreshIfOpen\(\)/.test(sp));
 
         const pd = cut("op: 'policies.delete'", "op: 'accounts.repairs'");
-        ok('‼️ policies.delete refuses while another rule steps through it',
-            /const users = all\.filter/.test(pd) && /need\(!users\.length/.test(pd));
+        ok('‼️ policies.delete is a call to the function the Engines page calls',
+            /await deletePolicy\(/.test(pd) && /need\(!refusal, refusal\)/.test(pd));
+        const dp = cut('const deletePolicy = async', 'const policyPageData = ');
+        ok('‼️ deletePolicy refuses while another rule steps through it',
+            /const users = all\.filter/.test(dp) && /if \(users\.length\)/.test(dp));
         // ‼️ The honest half: deleting the rule does not unpick it anywhere, and
         // those launches are then REFUSED rather than quietly taking the main
         // sign-in — which is the one promise this whole family makes.
         ok('‼️ …and says so: what still names it is refused, not downgraded',
-            /rather than falling back to the main sign-in/.test(pd));
+            /rather than falling back to the main sign-in/.test(dp));
         ok('…the built-in four are not stored, so they cannot be deleted',
-            /are not stored /.test(pd));
+            /are not stored /.test(dp));
+        // The page's deps are the same two functions — not copies of them.
+        const ed = cut('const enginesPanelDeps', 'const toolboxDeps');
+        ok('‼️ the Engines page is handed savePolicy / deletePolicy themselves',
+            /savePolicy: async \(rule: AccountPolicy\)[^\n]*savePolicy\(rule\)/.test(ed)
+            && /deletePolicy: async \(name: string\)[^\n]*deletePolicy\(name\)/.test(ed));
+        ok('…and reads the rules through policyPageData, the one reader',
+            /policies: \(\) => policyPageData\(\)/.test(ed));
 
         // ---------- X-271: a slot is an identity, not a place to keep anything ----------
         // The junctions that keep ONE pool of transcripts are made at capture and

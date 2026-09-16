@@ -1935,6 +1935,24 @@
       ]
     },
     {
+      "capability": "enginesPanel.ts#policyDelete",
+      "ui": [
+        "page:enginesPanel.ts#policyDelete"
+      ],
+      "ops": [
+        "policies.delete"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#policySave",
+      "ui": [
+        "page:enginesPanel.ts#policySave"
+      ],
+      "ops": [
+        "policies.save"
+      ]
+    },
+    {
       "capability": "enginesPanel.ts#refresh",
       "ui": [
         "page:enginesPanel.ts#refresh"

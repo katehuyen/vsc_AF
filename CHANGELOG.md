@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.523.0 - a rule can be written by hand: the Engines page grows an Account policies section with a chain editor — the last half of X-305 (2026-09-16)
+
+- **‼️ THE ONE SURFACE A HAND COULD NOT REACH.** Steps 1–3 made a rule
+  choosable everywhere an account is taken and gave it a bridge; a named rule
+  could still only be WRITTEN by editing `agentFarm.accountPolicies` in a JSON
+  file or calling `policies.save`. The Engines page — already the page for
+  "which sign-ins does this machine hold" — now carries **Account policies**
+  between Accounts (what a rule chooses among) and Providers.
+- **The built-in four are a table, not cards.** One row per rule, one chip per
+  engine that holds a captured slot, and the chip is what the rule comes to
+  RIGHT NOW (`→ personal@gmail`, `→ Main account`) or that it cannot choose
+  (`nothing right now`, in the palette's yellow for *your move* — never red,
+  because a rule walled at 11:02 is the right answer at 14:50). The hover opens
+  with the figure that decided it and puts the rule's standing description under
+  it (MIRROR). They are not editable because they are not stored anywhere to
+  edit; the vocabulary a named rule is written in needs no buttons.
+- **A named rule is a card**: its chips, its engine pill (`any engine` or the
+  one it is pinned to), its wall (`≤ 60%`, or the default with the hover saying
+  so), its note and its chain read as numbered steps — `1. spare@gmail →
+  2. @emptiest → 3. work@studio (haiku, sonnet)` — with Edit and Delete. ‼️ A
+  chip names its engine only where nothing beside it does: a table column or a
+  pinned rule's pill already says it, and saying it twice is the DENSITY fault.
+- **The form is the `AFForm` card, and the chain is an `F.list` acting on the
+  DRAFT.** Name (a stat when editing — a rename is a new rule), engine (a
+  redraw field, because it changes which accounts a step can name), wall, note,
+  then the steps with `↑ ↓ edit ✕`, and ONE step open at a time in a nested
+  editor: kind (a rule | a fixed account — a redraw field), the value box drawn
+  from that half (built-ins + the OTHER named rules, or the engine's slots),
+  its own wall and a model filter. Reordering and removing post nothing; Save
+  posts the whole draft, and a step still open when Save is pressed is kept
+  rather than lost to a press one button over.
+- **‼️ SAME FUNCTIONS AS THE BRIDGE.** `policies.save` and `policies.delete` had
+  their logic inline; it now lives in `savePolicy` / `deletePolicy` in
+  `extension.ts`, and the op, the page's `policySave` / `policyDelete` handlers
+  and the deps are all calls to those two — the parity gate derives the shared
+  symbol rather than trusting the claim. The page hands over a FORM, which
+  `policyFromForm` reads through an allow-list (a field the page invented is
+  dropped; an empty ceiling is ABSENT, not 0) before the core judges the shape.
+  A refusal lands in the form; an empty `pol-msg` closes it. Both capabilities
+  are in `parity.manifest.json` in this commit.
+- **Looked at, not assumed.** Three new fixture scenes — zero rules (the default,
+  the smallest arity), one rule, three rules (a chain, one walled right now, one
+  stepping through another) — and a fourth that PRESSES Edit and opens step 3 in
+  the nested editor. The fixture asks `resolvePolicy` for what each rule comes to
+  rather than typing it. Both themes photographed; the DOM measured: table 331px
+  (not stretched), no chip under 88px, every card head one line, the step
+  editor's four controls 319px each. `test_engines_policies.js` (84) drives the
+  real page through open → step → reorder → remove → refuse → close.
+
 ## 3.522.0 - every account picker now offers the rules, and a rule can be written, read and removed without touching a settings file — steps 3 and most of 4 of X-305 (2026-09-16)
 
 - **‼️ TWO KINDS OF ANSWER, DRAWN AS TWO GROUPS.** A slot is an answer that was

@@ -49,8 +49,10 @@ const sec = () => {
 {
     const h = html();
     ok('the Accounts section is drawn', /class="potitle">Accounts</.test(h));
+    // Three sections share the shell: Accounts, Account policies (X-305) and
+    // Providers. A fourth would be a design decision, not a count to bump.
     ok('…in the page\'s own section shell, not a new CSS family',
-        h.indexOf('<div class="posec">') >= 0 && (h.match(/class="posec"/g) || []).length === 2);
+        h.indexOf('<div class="posec">') >= 0 && (h.match(/class="posec"/g) || []).length === 3);
 }
 
 // ---- one card per captured sign-in -----------------------------------------

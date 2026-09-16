@@ -19525,6 +19525,112 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 note: r.note || '', refusal: r.refusal || ''
             };
         });
+    /**
+     * ‼️ X-305 — WRITE ONE NAMED RULE. The one function behind `policies.save`
+     * AND the Engines page's form, so a rule the page accepts is a rule the op
+     * accepts and the refusal reads the same on both.
+     *
+     * The shape check is given the OTHER rules, never this one: a step pointing
+     * at a rule being replaced must still resolve, and a rule is allowed to be
+     * rewritten into something that no longer points where it did.
+     */
+    const savePolicy = async (rule: AccountPolicy): Promise<{
+        refusal: string; saved: string; replaced: boolean; steps: number;
+        now: ReturnType<typeof policyRowsFor>[number] | null; policies: string[];
+    }> => {
+        const all = accountPolicies();
+        const name = String(rule.name ?? '').trim();
+        const others = all.filter(p => String(p.name ?? '').toLowerCase() !== name.toLowerCase());
+        const bad = policyShapeRefusal(rule, others);
+        if (bad) {
+            return { refusal: bad, saved: '', replaced: false, steps: 0, now: null, policies: all.map(p => '@' + p.name) };
+        }
+        await cfg().update('accountPolicies', [...others, rule], vscode.ConfigurationTarget.Global);
+        EnginesPanel.refreshIfOpen();
+        return {
+            refusal: '', saved: '@' + rule.name, replaced: all.length !== others.length,
+            steps: rule.chain.length,
+            // What it comes to this second, so a caller knows at once whether
+            // the rule it just wrote can actually choose.
+            now: policyRowsFor(rule.engine || 'claude')
+                .find(r => r.id.toLowerCase() === ('@' + rule.name).toLowerCase()) ?? null,
+            policies: [...others, rule].map(p => '@' + p.name)
+        };
+    };
+    /**
+     * ‼️ X-305 — REMOVE A NAMED RULE, refused while another rule STEPS THROUGH
+     * it: deleting it would leave that one pointing at nothing, and a chain
+     * whose step names no policy refuses every launch it is asked about. The
+     * built-in four are not stored anywhere to delete from.
+     */
+    const deletePolicy = async (nameOrId: string): Promise<{ refusal: string; deleted: string; left: string[]; note: string }> => {
+        const want = String(nameOrId ?? '').trim().replace(/^@/, '');
+        const all = accountPolicies();
+        const hit = findPolicy(want, all);
+        if (!hit) {
+            return {
+                refusal: `No account policy "@${want}" is stored — the ones on this machine are `
+                    + (all.length ? all.map(p => '@' + p.name).join(', ') : 'none')
+                    + `. The built-in ${BUILT_IN_POLICIES.map(p => p.id).join(', ')} are not stored `
+                    + 'and cannot be removed.',
+                deleted: '', left: all.map(p => '@' + p.name), note: ''
+            };
+        }
+        const users = all.filter(p => p !== hit && (p.chain ?? []).some(st =>
+            String(st.policy ?? '').trim().replace(/^@/, '').toLowerCase() === want.toLowerCase()));
+        if (users.length) {
+            return {
+                refusal: `@${want} is a step of ${users.map(p => '@' + p.name).join(', ')} `
+                    + '— removing it would leave that rule pointing at nothing, which refuses every '
+                    + 'launch it is asked about. Change those rules first.',
+                deleted: '', left: all.map(p => '@' + p.name), note: ''
+            };
+        }
+        const next = all.filter(p => p !== hit);
+        await cfg().update('accountPolicies', next, vscode.ConfigurationTarget.Global);
+        EnginesPanel.refreshIfOpen();
+        return {
+            refusal: '', deleted: '@' + hit.name, left: next.map(p => '@' + p.name),
+            note: 'Anything still pointing at this rule by name is now REFUSED at launch '
+                + 'rather than falling back to the main sign-in.'
+        };
+    };
+    /**
+     * ‼️ X-305 — THE POLICIES SECTION OF THE ENGINES PAGE, as data. Every rule
+     * — the built-in four and the user's own — with what it comes to RIGHT NOW
+     * on every engine that holds a captured slot (`claude` when none does: a
+     * rule is asked about an engine, and that is the one every door defaults
+     * to). A rule pinned to one engine is asked about that engine only, because
+     * on any other it refuses by design and the refusal would be noise.
+     *
+     * Same reader as every picker (`policyRowsFor`), so the page cannot say a
+     * rule comes to one slot while the launcher gives it another.
+     */
+    const policyPageData = (): {
+        engines: string[];
+        builtIn: { id: string; label: string; detail: string; now: { engine: string; picks: string; note: string; refusal: string }[] }[];
+        rules: (AccountPolicy & { now: { engine: string; picks: string; note: string; refusal: string }[] })[];
+        ceiling: number;
+    } => {
+        const withSlots = [...new Set(storedAccounts().map(s => s.engine))];
+        const engines = withSlots.length ? withSlots : ['claude'];
+        const rowsBy = new Map(engines.map(e => [e, policyRowsFor(e)] as const));
+        const nowFor = (id: string, only?: string) =>
+            (only ? [only] : engines).map(engine => {
+                const r = (rowsBy.get(engine) ?? policyRowsFor(engine))
+                    .find(x => x.id.toLowerCase() === id.toLowerCase());
+                return { engine, picks: r?.picks ?? '', note: r?.note ?? '', refusal: r?.refusal ?? '' };
+            });
+        return {
+            engines,
+            builtIn: BUILT_IN_POLICIES.map(p => ({ ...p, now: nowFor(p.id) })),
+            rules: accountPolicies().map(p => ({
+                ...p,
+                now: nowFor('@' + p.name, p.engine ? String(p.engine).trim().toLowerCase() : undefined)
+            })),
+            ceiling: POLICY_DEFAULT_CEILING
+        };
+    };
     const accountRowsFor = (engine: string): { id: string; label: string; detail: string }[] => [
         /**
          * ‼️ X-305 — THE RULES COME FIRST, because a rule is the answer that
@@ -20502,6 +20608,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         queueAccountRefresh: (ids: string[], gesture: 'toggle' | 'all'): void =>
             queueAccountRefresh(ids, gesture),
+        /**
+         * ‼️ X-305 — THE RULES, AND THE TWO WRITES. `policies()` is the same
+         * reader every picker uses (`policyRowsFor`), so a rule cannot come to
+         * one slot on this page and another in the launcher; `savePolicy` and
+         * `deletePolicy` are the very functions `policies.save` / `.delete`
+         * call, so the form and the op cannot learn different refusals.
+         */
+        policies: () => policyPageData(),
+        savePolicy: async (rule: AccountPolicy): Promise<string> => (await savePolicy(rule)).refusal,
+        deletePolicy: async (name: string): Promise<string> => (await deletePolicy(name)).refusal,
         ownership: () => ownershipTable(),
         saveProfile: async (input: Record<string, unknown>): Promise<string[]> => {
             const list = providerProfiles();
@@ -36626,26 +36742,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(optStr(args, 'engine') ? { engine: optStr(args, 'engine') } : {}),
                     ...(optNum(args, 'ceiling', 0) ? { ceiling: optNum(args, 'ceiling', 0) } : {})
                 };
-                const all = accountPolicies();
-                // ‼️ The shape check is given the OTHER rules, never this one: a
-                // step pointing at a rule being replaced must still resolve, and
-                // a rule is allowed to be rewritten into something that no longer
-                // points where it did.
-                const others = all.filter(p =>
-                    String(p.name ?? '').toLowerCase() !== rule.name.trim().toLowerCase());
-                const bad = policyShapeRefusal(rule, others);
-                need(!bad, bad);
-                await cfg().update('accountPolicies', [...others, rule],
-                    vscode.ConfigurationTarget.Global);
-                return {
-                    saved: '@' + rule.name, replaced: all.length !== others.length,
-                    steps: rule.chain.length,
-                    // What it comes to this second, so a caller knows at once
-                    // whether the rule it just wrote can actually choose.
-                    now: policyRowsFor(rule.engine || 'claude')
-                        .find(r => r.id.toLowerCase() === ('@' + rule.name).toLowerCase()) ?? null,
-                    policies: [...others, rule].map(p => '@' + p.name)
-                };
+                // ‼️ THE SAME FUNCTION THE ENGINES PAGE'S FORM CALLS — the shape
+                // check (against the OTHER rules), the write and the "what it
+                // comes to now" answer all live in `savePolicy`.
+                const { refusal, ...w } = await savePolicy(rule);
+                need(!refusal, refusal);
+                return w;
             }
         },
         {
@@ -36660,26 +36762,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'those launches are then REFUSED by name rather than falling to the main sign-in, '
                 + 'which is the behaviour this whole family exists to guarantee. args: name',
             handler: async (args) => {
-                const want = argStr(args, 'name').trim().replace(/^@/, '');
-                const all = accountPolicies();
-                const hit = findPolicy(want, all);
-                need(!!hit, `No account policy "@${want}" is stored — the ones on this machine are `
-                    + (all.length ? all.map(p => '@' + p.name).join(', ') : 'none')
-                    + `. The built-in ${BUILT_IN_POLICIES.map(p => p.id).join(', ')} are not stored `
-                    + 'and cannot be removed.');
-                const users = all.filter(p => p !== hit && (p.chain ?? []).some(st =>
-                    String(st.policy ?? '').trim().replace(/^@/, '').toLowerCase() === want.toLowerCase()));
-                need(!users.length, `@${want} is a step of ${users.map(p => '@' + p.name).join(', ')} `
-                    + '— removing it would leave that rule pointing at nothing, which refuses every '
-                    + 'launch it is asked about. Change those rules first.');
-                const next = all.filter(p => p !== hit);
-                await cfg().update('accountPolicies', next, vscode.ConfigurationTarget.Global);
-                return {
-                    deleted: '@' + (hit as AccountPolicy).name,
-                    left: next.map(p => '@' + p.name),
-                    note: 'Anything still pointing at this rule by name is now REFUSED at launch '
-                        + 'rather than falling back to the main sign-in.'
-                };
+                // ‼️ THE SAME FUNCTION THE ENGINES PAGE'S Delete PRESS CALLS —
+                // "is it stored", "does another rule step through it" and the
+                // write are decided once, in `deletePolicy`.
+                const { refusal, ...w } = await deletePolicy(argStr(args, 'name'));
+                need(!refusal, refusal);
+                return w;
             }
         },
         {
