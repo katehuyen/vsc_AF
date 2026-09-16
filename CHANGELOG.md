@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.527.0 - a round that takes an item is told what the item says, whichever verdict fired (X-319) (2026-09-16)
+
+- **‼️ MEASURED ON THE SECOND FIRE DRILL** (X-309 scenario 1 run 2, campaign
+  `sc-mu403dqa`, `basit` · haiku · `bypassPermissions`, pool
+  `wmmuratvural, murvietnam` tiered): the weekly wall was skipped correctly and
+  no retry escaped the pool — and then **five rounds in a row took `P-1` and
+  every one of them ended having done nothing**, until the failure brake
+  stopped the campaign.
+- **The round was taking real work off the backlog and was never told what it
+  was.** Of the five built-in templates only `item-done` and
+  `nothing-to-continue` name the item; `hit-the-wall` and the `*` fallback hand
+  the round the DIAGNOSIS of the previous session and nothing else. A model
+  given an instruction with a hole in it fills the hole: one round decided the
+  item "was already closed" without looking (zero tool calls), another read the
+  diagnosis as a file-naming problem and **renamed a file in the vault nobody
+  had asked it to touch**.
+- **So the item is now attached where the words are built** (`buildNextPrompt`),
+  not in the templates. The templates are the USER'S to write — that is the
+  whole point of the file — and a rule every block has to remember is a rule the
+  next block forgets. A template that already names the code is left exactly as
+  it is, and a round that took no item is given no item line.
+- **`clean-handover` is the one verdict this must not fight.** There IS a trace
+  to carry on from and the block deliberately says not to restart the item, so
+  the item is NAMED there without the "this is the work" line — knowing which
+  item the note is about is not the same as being told to start it over.
+- `test/test_sentry_prompt.js` (+10) pins every verdict including the catch-all,
+  a block the user wrote, the no-double-naming rule and the empty-backlog case.
+
 ## 3.526.0 - what is inside backticks is quoted text, not a field: closing an item no longer rewrites the sentence it was quoted in (X-318) (2026-09-16)
 
 - **‼️ MEASURED ON THE VERY NEXT WRITE.** X-312's own backlog line quoted

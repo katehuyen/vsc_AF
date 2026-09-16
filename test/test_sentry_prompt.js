@@ -305,5 +305,76 @@ const facts = (over) => Object.assign({
         && one.covers.slice().sort().join() === 'hit-the-wall,item-done');
 }
 
+// ===========================================================================
+// X-319 — A ROUND THAT TAKES AN ITEM IS TOLD WHAT THE ITEM SAYS
+// ===========================================================================
+//
+// Measured in X-309's second drill (campaign `sc-mu403dqa`): five rounds in a
+// row took P-1 and every one of them ended having done nothing, until the
+// failure brake stopped the campaign. Of the five built-in templates only
+// `item-done` and `nothing-to-continue` name the item; `hit-the-wall` and the
+// `*` fallback hand the round the DIAGNOSIS of the previous session and nothing
+// else. The round was taking real work off the backlog and was never told what
+// it was — and a model given an instruction with a hole in it fills the hole:
+// one decided the item "was already closed" without looking, another read the
+// diagnosis as a file-naming problem and renamed a file in the vault.
+{
+    const NEXT = { code: 'P-1', text: 'write sentry_hello.md with one line', effort: 'XS' };
+    const round = (outcome, rule) => S.buildNextPrompt({
+        diagnosis: {
+            session: 'aaaa1111', outcome, rule, why: 'the session left no trace',
+            evidence: [], unknown: []
+        },
+        next: NEXT, project: 'TST', repos: []
+    });
+
+    // Every verdict, including the two that never named it and the catch-all.
+    for (const [outcome, rule] of [
+        ['hit-the-wall', 'wall-unfinished'], ['item-done', 'all-done'],
+        ['nothing-to-continue', 'no-turn'], ['clean-handover', 'note'],
+        ['something-nobody-named', 'unknown']
+    ]) {
+        const p = round(outcome, rule).prompt;
+        ok(`‼️ X-319 — "${outcome}" names the item the round is on`,
+            p.includes('P-1') && p.includes('write sentry_hello.md with one line'));
+    }
+
+    // ‼️ The template is the USER'S to write, so the guarantee cannot live in it.
+    const mine = [{ when: '*', id: 'mine', source: 'file', text: 'Devam et. {why}' }];
+    const own = S.buildNextPrompt({
+        diagnosis: {
+            session: 'aaaa1111', outcome: 'hit-the-wall', rule: 'wall-unfinished',
+            why: 'nothing', evidence: [], unknown: []
+        },
+        next: NEXT, project: 'TST', repos: []
+    }, mine).prompt;
+    ok('‼️ X-319 — a block the USER wrote gets the item too, without having to remember it',
+        own.includes('P-1') && own.includes('write sentry_hello.md with one line'));
+
+    // A template that already says it is left exactly as it was.
+    const twice = round('item-done', 'all-done').prompt;
+    ok('…and a template that already names the code is not given it a second time',
+        (twice.match(/P-1/g) || []).length === 1);
+
+    // ‼️ `clean-handover` has a real trace to carry on from — naming the item
+    // must not turn into "start it over".
+    const carry = round('clean-handover', 'note').prompt;
+    ok('‼️ X-319 — a clean handover names the item WITHOUT telling the round to restart it',
+        carry.includes('P-1') && !/this is the work/.test(carry));
+    ok('…while a round with nothing behind it is told plainly that the item IS the work',
+        /this is the work/.test(round('hit-the-wall', 'wall-unfinished').prompt));
+
+    // No item taken (an empty backlog is a WAIT) — nothing is invented.
+    const none = S.buildNextPrompt({
+        diagnosis: {
+            session: 'aaaa1111', outcome: 'hit-the-wall', rule: 'wall-unfinished',
+            why: 'nothing', evidence: [], unknown: []
+        },
+        project: 'TST', repos: []
+    }).prompt;
+    ok('a round that took no item is given no item line to read',
+        !/THE ITEM THIS ROUND IS ON/.test(none));
+}
+
 console.log(`test_sentry_prompt: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

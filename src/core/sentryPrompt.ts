@@ -420,6 +420,47 @@ export function promptVars(i: PromptInputs): Record<string, string> {
 }
 
 /**
+ * ‼️ X-319 — A ROUND THAT TAKES AN ITEM IS TOLD WHAT THE ITEM SAYS, whichever
+ * verdict fired.
+ *
+ * Measured in X-309's second drill (campaign `sc-mu403dqa`): five rounds in a
+ * row took `P-1` and every one of them ended having done nothing, until the
+ * failure brake stopped the campaign. Of the five built-in templates only
+ * `item-done` and `nothing-to-continue` name the item; `hit-the-wall` and the
+ * `*` fallback hand the round the DIAGNOSIS of the previous session and nothing
+ * else. So the round was taking real work off the backlog and was never told
+ * what it was — and a model given an instruction with a hole in it fills the
+ * hole: one decided the item "was already closed" without looking, one read the
+ * diagnosis as a file-naming problem and renamed a file in the vault nobody had
+ * asked it to touch.
+ *
+ * ‼️ AND IT IS DONE HERE RATHER THAN IN THE TEMPLATES, because the templates
+ * are the USER'S to write (that is the whole point of the file) and a rule that
+ * every block must remember is a rule that the next block forgets. A template
+ * that already names the code is left exactly as it is.
+ *
+ * `clean-handover` is the one verdict this must not fight: there IS a trace to
+ * carry on from, and the block deliberately says not to restart the item. The
+ * item is still named — knowing which item the note is about is not the same as
+ * being told to start it over — and the reminder line is only added where the
+ * previous round left nothing at all.
+ */
+function withItem(prompt: string, i: PromptInputs): string {
+    const code = String(i.next?.code ?? '').trim();
+    const text = String(i.next?.text ?? '').trim();
+    if (!code || !text) { return prompt; }
+    if (prompt.includes(code)) { return prompt; }
+    const effort = String(i.next?.effort ?? '').trim();
+    const fresh = i.diagnosis.outcome !== 'clean-handover';
+    return `${prompt}\n\nTHE ITEM THIS ROUND IS ON — ${code}: ${text}`
+        + (effort ? ` (effort ${effort})` : '')
+        + (fresh
+            ? '\n\nNothing was left behind to carry on from, so this is the work: do what the '
+            + 'item says, and close it with a note somebody can read in three months.'
+            : '');
+}
+
+/**
  * The sentence the next session opens on. `templates` defaults to the built-in
  * set, so a caller that has configured nothing still gets a working prompt.
  */
@@ -427,7 +468,7 @@ export function buildNextPrompt(i: PromptInputs, templates?: SentryTemplate[]): 
     const list = templates && templates.length ? templates : BUILT_IN_SENTRY_TEMPLATES;
     const t = pickTemplate(list, i.diagnosis.outcome);
     const vars = promptVars(i);
-    const prompt = t ? fillContinuation(t.text, vars) : i.diagnosis.why;
+    const prompt = withItem(t ? fillContinuation(t.text, vars) : i.diagnosis.why, i);
     return {
         prompt,
         templateId: t?.id || '',
