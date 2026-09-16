@@ -12718,8 +12718,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.check',
-            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. ‼️ `note` is REQUIRED when you close one (state done or cancelled) and it is checked, not merely asked for: say what was done, how it was closed and anything a reader should watch out for later. That is the closing note a person reads three months from now, it has room to be a real one, and every surface that shows a closure shows it — a closure with no note is the one thing nothing else can reconstruct, so it is refused here. ‼️ X-142 — REOPENING SOMETHING THAT WAS ARCHIVED ALSO TAKES IT OUT OF THE ARCHIVE. A line left hanging under `## 🗄 Archive` with an open box is the worst of both states: it counts as open and every default view hides it (the page folds the archive away, `backlog.next` reads the file from the top), so the work is neither shown nor finished. So the line is carried back under its own area heading in the SAME write, verbatim — nothing about its text changes — and `reseated: true` comes back saying so. ONLY that item moves; the full sweep is still the deliberate `projects.backlog.tidy`. It is one-way: a CLOSED line under 🗄 belongs there and is never dragged out, and nothing is ever auto-archived. If the item\'s area has no heading to go home to, it stays put and the note says so rather than pretending. ‼️ REOPENING (state:"open") TAKES A SNAPSHOT: the words the item has at that moment are stored as that round\'s asking, so the line is then free to be rewritten with what is wanted THIS time — nobody has to preserve the old text by hand, and the next agent is handed every earlier asking with the item (see projects.backlog.next). args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — it is inferred otherwise)',
-            handler: (args) => {
+            describe: '‼️ Move one backlog item between states — EXACTLY ONE CHARACTER of the document changes, the one inside `[ ]`. `[ ]` open · `[/]` doing · `[x]` done · `[-]` cancelled. Nothing else on the line is touched: not the bullet, not the icons, not the Tasks metadata, not the line endings, and no ✅ done-date is invented (Obsidian\'s Tasks plugin writes that when the box is ticked THERE). Say which item by `code` (the stable handle), by `line`, or by a unique piece of its text; text matching more than one item is an error rather than a guess. ‼️ An item WITH A CODE is also tracked: the session and turn you are in are worked out and written to the project\'s track ledger, the line gets a `[closed:: <session>#<turn>]` stamp when it closes, and Backloglog.md is rebuilt — so three months from now the code leads back to this conversation. ‼️ `note` is REQUIRED when you close one (state done or cancelled) and it is checked, not merely asked for: say what was done, how it was closed and anything a reader should watch out for later. That is the closing note a person reads three months from now, it has room to be a real one, and every surface that shows a closure shows it — a closure with no note is the one thing nothing else can reconstruct, so it is refused here. ‼️ X-142 — REOPENING SOMETHING THAT WAS ARCHIVED ALSO TAKES IT OUT OF THE ARCHIVE. A line left hanging under `## 🗄 Archive` with an open box is the worst of both states: it counts as open and every default view hides it (the page folds the archive away, `backlog.next` reads the file from the top), so the work is neither shown nor finished. So the line is carried back under its own area heading in the SAME write, verbatim — nothing about its text changes — and `reseated: true` comes back saying so. ONLY that item moves; the full sweep is still the deliberate `projects.backlog.tidy`. It is one-way: a CLOSED line under 🗄 belongs there and is never dragged out, and nothing is ever auto-archived. If the item\'s area has no heading to go home to, it stays put and the note says so rather than pretending. ‼️ REOPENING (state:"open") TAKES A SNAPSHOT: the words the item has at that moment are stored as that round\'s asking, so the line is then free to be rewritten with what is wanted THIS time — nobody has to preserve the old text by hand, and the next agent is handed every earlier asking with the item (see projects.backlog.next). args: project (id or name), code?, line? (1-based, as projects.backlog reports it), item? (text), state? (open|doing|done|cancelled, default done), note?, session? (only if you know your own session id — otherwise it is read from your own process when the CLI you run under publishes it (X-312), and inferred from the live sessions only when it does not)',
+            handler: (args, from) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
                 // ‼️ `optStr` returns '' for an absent arg, and `'' ?? 'done'`
@@ -12769,7 +12769,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     projectId: project.id, folder, code, by: 'agent',
                     event: state === 'open' ? 'reopen' : state as TrackEvent,
                     ...(note ? { note } : {}),
-                    ...(optStr(args, 'session') ? { session: optStr(args, 'session') as string } : {})
+                    ...(callerSession(args, from) ? { session: callerSession(args, from) } : {})
                 }) : null;
                 projectDocWritten(project.id);
                 return {
@@ -13132,8 +13132,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.track',
-            describe: '‼️ SAY THAT YOU WORKED ON A BACKLOG ITEM IN THIS TURN. Records one event against a code in the project\'s track ledger — which session, which turn, when, by whom — and rebuilds Backloglog.md. This is what turns a pile of transcripts into a searchable record: three months from now `K-8` leads back to the exact turns it was fought in, not just to a ticked box. Use `touch` for "I looked at this and it is not finished" — the attempts are the history that a log of endings throws away; state changes (doing/done/cancelled/reopen) are usually better made with projects.backlog.check, which records the same thing AND moves the checkbox. Which session you are in is INFERRED (you are mid-turn, so your session is live); when that is ambiguous the record is stamped `uncertain` with the reason — multi (two of your sessions were live) · none (nothing was) · stale (the candidate had gone quiet) · turn (session sure, turn not). Nothing is ever guessed silently. ‼️ `note` is REQUIRED — and checked — when the event CLOSES the item (done or cancelled), exactly as projects.backlog.check requires it: the rule lives on the ledger, so no door into it can close an item without saying what was done. ‼️ `opened` is written FOR YOU by whichever door creates the coded line (X-135), so an item added through projects.backlog.add is already dated at both ends and sorts as the newest thing on `sort:"opened"` and `sort:"touched"` — pass it by hand only to date an item that was written down before any of this was recorded. args: project (id or name), code (an item WITH a code — an uncoded capture cannot be tracked), event? (opened|touch|doing|done|cancelled|reopen, default touch), note? (one line: what you did, or why it is not finished; required to close), session? (only if you know your own id)',
-            handler: (args) => {
+            describe: '‼️ SAY THAT YOU WORKED ON A BACKLOG ITEM IN THIS TURN. Records one event against a code in the project\'s track ledger — which session, which turn, when, by whom — and rebuilds Backloglog.md. This is what turns a pile of transcripts into a searchable record: three months from now `K-8` leads back to the exact turns it was fought in, not just to a ticked box. Use `touch` for "I looked at this and it is not finished" — the attempts are the history that a log of endings throws away; state changes (doing/done/cancelled/reopen) are usually better made with projects.backlog.check, which records the same thing AND moves the checkbox. Which session you are in is READ FROM YOUR OWN PROCESS when the CLI you are running under publishes its id (X-312), and INFERRED from the live sessions only when it does not; when that inference is ambiguous the record is stamped `uncertain` with the reason — multi (two of your sessions were live) · none (nothing was) · stale (the candidate had gone quiet) · turn (session sure, turn not). Nothing is ever guessed silently. ‼️ `note` is REQUIRED — and checked — when the event CLOSES the item (done or cancelled), exactly as projects.backlog.check requires it: the rule lives on the ledger, so no door into it can close an item without saying what was done. ‼️ `opened` is written FOR YOU by whichever door creates the coded line (X-135), so an item added through projects.backlog.add is already dated at both ends and sorts as the newest thing on `sort:"opened"` and `sort:"touched"` — pass it by hand only to date an item that was written down before any of this was recorded. args: project (id or name), code (an item WITH a code — an uncoded capture cannot be tracked), event? (opened|touch|doing|done|cancelled|reopen, default touch), note? (one line: what you did, or why it is not finished; required to close), session? (only if you know your own id)',
+            handler: (args, from) => {
                 const { project, folder } = projectDocsFor(argStr(args, 'project'));
                 const code = argStr(args, 'code').toUpperCase();
                 need(BACKLOG_CODE.test(code), `"${code}" is not a backlog code — it looks like K-8 or P-5.3`);
@@ -13142,7 +13142,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const rec = recordTrack({
                     projectId: project.id, folder, code, event, by: 'agent',
                     ...(optStr(args, 'note') ? { note: optStr(args, 'note') as string } : {}),
-                    ...(optStr(args, 'session') ? { session: optStr(args, 'session') as string } : {})
+                    ...(callerSession(args, from) ? { session: callerSession(args, from) } : {})
                 });
                 return { project: project.name, ...trackOut(rec) };
             }
@@ -28002,6 +28002,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         need(t.code || t.line !== undefined || t.text, 'say which item: code, line or item (text)');
         return t;
     };
+
+    /**
+     * ‼️ X-312 — WHOSE TURN A TRACK ROW BELONGS TO, asked of the caller itself.
+     *
+     * `attributeTrack` ranks the live sessions of the same agent and takes the
+     * freshest. That is a good last resort and a bad first one: with two of an
+     * agent's sessions alive it is a coin toss, and the row it writes looks
+     * exactly as certain as a right one. Measured (X-309 scenario 1): a headless
+     * sentry retry closed P-1 through this door and the stamp landed on a
+     * DIFFERENT session of the same agent — `[closed:: 2145c0a0#3]` pointed a
+     * reader at a transcript where nothing of the sort happened.
+     *
+     * The caller already says who it is. `from.sessionId` is what the CLI it is
+     * running under published to its own children (X-310) — nothing is spawned,
+     * walked or remembered to read it, and an engine that publishes nothing
+     * still falls through to the ranking, stamped `uncertain` as before.
+     *
+     * An EXPLICIT `session` still wins: a caller that names one is answering
+     * this question on purpose, and the environment is only the answer when
+     * nobody gave one.
+     */
+    const callerSession = (args: Record<string, unknown>, from?: BridgeCaller): string =>
+        (optStr(args, 'session') || String(from?.sessionId ?? '')).trim();
 
     /** One item as the bridge reports it. `line` is 1-BASED here and 0-based
      *  inside the parser — the boundary is this function, so a caller can read a

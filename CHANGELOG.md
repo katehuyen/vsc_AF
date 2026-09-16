@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.525.0 - a sentry round is reopened by its campaign and by nothing else, and the ledger is stamped with the session that actually closed the item (X-312) (2026-09-16)
+
+- **‼️ MEASURED ON THE SAME FIRE DRILL** (X-309 scenario 1, campaign
+  `sc-mu3psbkz`): a round walled on a pool account ended `failed`, and the task
+  layer then retried it by itself — *"Sentry R1 · P-1 (retry 1)"*. The retry
+  escaped the campaign in both directions at once, and neither half was
+  visible from the other.
+- **OUT OF THE POOL.** The retry's account came from `carryOnAccount`, which
+  ranks every sign-in captured on the machine and has never heard of a campaign
+  pool. So the work carried on to an account the user had deliberately fenced
+  OUT of it — the one plan the pool exists to protect — and spent it all night.
+- **OFF THE LEDGER.** `runExtras` carries a run's DIMENSIONS and not its
+  lineage, so the retry was born without `sentryOf`: invisible to the campaign,
+  which went on counting two rounds, saw nothing come out of them and stopped
+  on the failure brake — while the retry it could not see was writing files,
+  committing and closing backlog items.
+- **The whole reopening decision goes back to the one place that owns it.**
+  A sentry round is no longer retried by the retry policy at all; the
+  campaign's own next round IS the retry, and it is a fresh reading of the
+  backlog on an account `campaignPick` chose. This is exactly the rule the
+  watchdog already stated for a round that goes quiet (X-178), asked now of
+  every ending rather than one of them. Narrowing the handover to the pool
+  would have fixed the first half and left the second. The round's own record
+  says which rule stopped the retry, so nothing is refused in silence.
+- **The gate is narrow.** An ordinary headless run that meets the same wall is
+  retried exactly as before and still carries on to a sign-in with room —
+  X-226 is untouched.
+- **‼️ AND WHOSE TURN CLOSED THE ITEM IS ASKED OF THE CALLER, not guessed.**
+  The escaped retry closed `P-1` through `projects.backlog.check` and the stamp
+  landed on a DIFFERENT session of the same agent (`[closed:: 2145c0a0#3]`),
+  pointing a reader at a transcript where nothing of the sort happened:
+  `attributeTrack` ranks the agent's live sessions and takes the freshest,
+  which is a coin toss whenever two are alive — and the wrong row looks exactly
+  as certain as a right one. The caller already says who it is; X-310 put
+  `from.sessionId` in every bridge envelope, read from what the CLI published
+  to its own children. Both doors into the ledger (`projects.backlog.check`,
+  `projects.track`) were throwing it away and now read it. An explicit
+  `session` argument still wins, and an engine that publishes nothing still
+  falls through to the ranking, stamped `uncertain` as before.
+- `test/test_sentry_retry.js` (14) pins all of it — including `runExtras`
+  dropping the lineage, so a later change there cannot quietly make this
+  reasoning obsolete without failing.
+
 ## 3.524.0 - the fire drill's first finding: a weekly wall was invisible to the pool, and the brake blamed permissions for it (X-309, scenario 1 run 1) (2026-09-16)
 
 - **‼️ MEASURED ON THE FIRST FIRE DRILL** (campaign `sc-mu3psbkz`, `basit` ·

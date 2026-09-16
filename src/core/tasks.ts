@@ -4300,6 +4300,33 @@ export class TaskManager implements vscode.Disposable {
      */
     private maybeScheduleRetry(task: FarmTask): void {
         if (task.mode !== 'headless' || !task.agentId || task.workflowId !== undefined) { return; }
+        /**
+         * ‼️ X-312 — A SENTRY ROUND IS NOT RETRIED BY THIS LAYER. The rule the
+         * watchdog already states (X-178) is the campaign's everywhere: the
+         * campaign's own next round IS the retry, and it is a fresh reading of
+         * the backlog on an account the POOL chose.
+         *
+         * A retry made here escapes all three of those, and it was measured
+         * doing it (X-309 scenario 1, campaign `sc-mu3psbkz`): `runExtras`
+         * carries dimensions and not lineage, so the retry is born WITHOUT
+         * `sentryOf` — invisible to the campaign, which went on counting two
+         * rounds and stopped on the failure brake for producing nothing while
+         * the retry was writing to the project. And its account came from
+         * `carryOnAccount` over every captured sign-in, which does not know the
+         * campaign has a pool: a round walled on a pool account carried on to
+         * an account the user had fenced OUT of it.
+         *
+         * Narrowing the handover to the pool would fix the second half and
+         * leave the first, so the whole reopening decision goes back to the one
+         * place that owns it.
+         */
+        if (task.sentryOf) {
+            noteTaskEvent(task, 'finished',
+                'no retry — a sentry round is reopened by its campaign, never by the retry policy: '
+                + 'the next round is a fresh reading of the backlog on an account the pool chooses');
+            this.save();
+            return;
+        }
         let out = '';
         try { if (task.outputFile) { out = fs.readFileSync(task.outputFile, 'utf8'); } } catch { /* no output yet */ }
         const fallback = this.opts.defaultRetry?.();
