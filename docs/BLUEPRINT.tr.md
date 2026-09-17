@@ -1764,6 +1764,57 @@ Aynı yöntem her servis için geçerlidir: `ELEVENLABS_KEY`, `N8N_TOKEN`… —
 - **Canlı Kota ve Pencereli Sorgulama (`X-187`, `X-206`, `X-215`):** Her hesap kartı 5 saatlik pencere ve haftalık kullanım çubuklarını canlı gösterir. Claude kotaları ağ üzerinden tüm filonun ortak bütçesine istek atarken (5 saniye aralık ve 429 geri çekilme), Codex kotaları yerel diski okur.
 - **Tüm Motorlar İçin Tek Tıkla Yenileme (`[🔄 Refresh all accounts (All Engines)]` - `X-218`):** Hesaplar bölümünün tepesinde yer alır. Ağ istekleriyle disk okumalarını birbirinin arkasında bekletmeden tüm hesapları paralel/sıralı olarak tazeler ve kuyruk ilerleyişini buton üzerinde (`◍ 3 in the line`) canlı çizer.
 
+### Akıllı Hesap Seçim Politikaları, Protokolleri ve Kota Mimarisi (X-305 / X-324) {#hesap-politikalari}
+
+*(3.520.0 — 3.535.0)* Çoklu hesap ortamlarında (özellikle birden fazla Claude Pro/Max veya kurumsal hesap kullanılan makinelerde), her görev, zamanlama veya konsol oturumu için **"Gelecekteki saatte hangi hesabımın kotası açık olacak?"** tahmininde bulunma zorunluluğu, Agent Farm'ın **Dinamik Hesap Politikaları (Account Policies)** motoru ile ortadan kaldırılmıştır.
+
+Sistem, hesapları statik bir kimlik olmaktan çıkarıp **çalışma anında (runtime) canlı kotaya göre çözümlenen dinamik hedeflere** dönüştürür.
+
+#### 1. Yerleşik Akıllı Politikalar (Built-in Policies)
+
+Arayüzdeki ortak hesap seçicisinde (`media/afAccount.js` — Konsol, Tasks, Missions, Schedules, Workflows, Workqueue) ve Bridge API'sinde doğrudan kullanılabilen 4 yerleşik akıllı politika bulunur:
+
+1. **`@emptiest` (En Boş Hesap):** O motorun altındaki kayıtlı **BÜTÜN** hesapları tarar. 5 saatlik penceresinde (ve haftalık tavanında) kullanılabilir boşluğu (`% room`) en yüksek olan hesabı otomatik seçer.
+2. **`@pool` (Nöbet / Kampanya Havuzu):** Arka planda aktif koşan bir **Sentry Kampanyası (otonom nöbet)** havuzundan sıradaki en uygun hesabı seçer. Kampanya yoksa kural reddi verir.
+3. **`@standing` (Sabit / Varsayılan Hesap):** Ajanın özel ayarlarında atanmış veya makinede o an `standing` (varsayılan) işaretlenmiş sabit hesabı kullanır.
+4. **`@round-robin` (Dönüşümlü Dağıtım):** Sağlıklı ve kotası açık hesaplar arasında her yeni oturumda sırayla bir sonraki hesaba geçerek yükü eşit dağıtır.
+
+#### 2. Özel Hesap Politikaları ve Kurallar (Custom Named Policies)
+
+Kullanıcılar **Engines & Slots** sayfasından (`src/panels/enginesPanel.ts`) veya Bridge üzerinden (`policies.save`) kendi adlandırdıkları özel kuralları (örn. `Gece_Nobeti`, `Agir_Isler`, `Ucuz_Havuz`) tanımlayabilir. Her özel politika bir adımlar zincirinden oluşur.
+
+##### İki Strateji Modu (Strategy Switch — X-324)
+Her kural kartının tepe şablon alanında iki seçenekli bir strateji anahtarı yer alır:
+
+- **`🔗 Zincirleme (Chain)` Modu (Varsayılan):** Sıralı bir yedekleme (fallback) zinciridir: `1. Adım → 2. Adım → 3. Adım`. Sistem 1. adımdaki hesabı kullanır. 1. hesap kota eşiğine (örn. %50 duvarına) ulaştığında otomatik olarak 2. adıma geçer; o da dolarsa 3. adıma geçer.
+- **`⚡ Seçilenler Arasında En Boş (Emptiest Pool)` Modu:** Kuralın adımlarında listelenen doğrudan hesaplar (whitelist) arasında **bağımsız bir alt-havuz** oluşturur. `@emptiest` makinedeki *tüm* hesapları körlemesine tararken, bu mod **yalnızca kullanıcının seçtiği hesaplar** (örn. 5 hesaptan seçilen 3 hesap) arasından o an kotası en boş olanı seçer. Kampanya gerektirmeden tekil görev ve konsol oturumlarında çalışır.
+
+##### Emniyet Kilidi ve Kural Kısıtı (Auto-Lock Constraint)
+- Eğer bir kuralın adımları arasına doğrudan bir hesap yerine başka bir kural/politika (örn. `@standing`, `@round-robin` veya özel bir alt kural) eklenirse; kuralların tekil bir kota yüzdesi bulunamayacağı için `En Boş` modu mantıksal olarak uygulanamaz.
+- Bu durumda seçim arayüzde **otomatik ve zorunlu olarak `Zincirleme (Chain)` moduna kilitlenir**, `En Boş` seçeneği devre dışı bırakılır ve açıklayıcı bir **AFTip** ipucu gösterilir (*"Adımlar arasında kural bulunduğu için bu kural yalnızca Zincirleme modunda çalışabilir"*).
+
+#### 3. Kota Eşiği ve Duvar Mantığı (Launch-Time Filter vs. Mid-Flight Wall)
+
+- **Kota Duvarı Süreci Bölmez:** Kota eşiği (%50 Wall vb.), çalışan aktif bir oturumun ortasında süreci aniden kesen bir mekanizma **DEĞİLDİR**.
+- **Başlatma Anı Filtresi (Launch-Time Filter):** Kota eşiği, **yalnızca yeni bir oturum veya görev başlatılırken** hesap seçimi yapılırken çalışır. Hesap belirlenen tavanın (örn. %50) altındaysa oturum o hesapla güvenle başlatılır.
+- **Kesintisiz Çalışma:** Oturum başladıktan sonra tur içinde harcama yapılıp kota %50'yi aşsa bile oturum bölünmez, işini tamamlar. Ancak oturum bittikten sonra başlayacak bir *sonraki* yeni iş için sistem hesabı tekrar kontrol ettiğinde duvarı aşmış görür ve sıradaki diğer hesaba geçer.
+
+#### 4. Kota Önbelleği, Yenileme Döngüsü ve Hız Sınırı Koruması (Rate Limits)
+
+- **Hafıza Önbelleği (`AccountUsageService`):** Anthropic ve servis sağlayıcıların OAuth uç noktaları katı hız sınırlarına (**HTTP 429 Too Many Requests**) tabidir. Her oturum açılışında 3–5 hesaba birden canlı istek atılması makinenin anında kilitlenmesine ve saatlerce kota okuyamamasına yol açar (*"Kotayı sormak, kotayı tüketen şey olmamalıdır — X-170"*). Bu yüzden sistem bellekte tutulan güvenli bir önbellek üzerinden karar verir.
+- **Tazeleme Kanalları:**
+  1. *Periyodik Nabız (`beat`):* Arka plandaki servis, eldeki hesapları sırayla (en eski okunan hesaptan başlayarak — *round-robin by staleness*) tek tek sorgular.
+  2. *Tur Sonu (`readOnEdge`):* Bir ajan işini bitirdiği (harcama yaptığı) anda o hesabın güncel durumu taranır.
+  3. *Manuel Yenileme:* Engines sayfasından veya durum çubuğundan tek tıkla zorlama.
+  4. *Çalışma Anı Duvar Tespiti (Hit-the-Wall Failsafe):* Bir hesap gerçekte duvara çarptığında Claude CLI'ın döndürdüğü hata Agent Farm tarafından yakalanır, o hesabın kaydı hafızada derhal zorunlu güncellenir (`refreshSlot`) ve nöbet/retry mekanizması (`carryOnAccount`) işi sıradaki hesaba devreder.
+
+#### 5. Köprü ve Parite (Bridge Parity)
+
+Hesap politikaları UI'a sıkışmış bir özellik değildir; Farm Bridge üzerinden tam programatik kontrole sahiptir:
+- `policies.list` — Kayıtlı tüm özel politikaları ve stratejilerini listeler.
+- `policies.save` — Yeni bir politika oluşturur veya günceller (`id`, `label`, `engine`, `strategy: 'chain' | 'emptiest'`, `steps: [{account, rule, ceiling}]`).
+- `policies.delete` — Belirtilen politikayı siler.
+
 ### Sağlayıcı, Rota ve Tier Omurgası (X-97 — X-117, X-148 — X-151) {#rota-mimarisi}
 
 *(3.341.0 — 3.369.0)* Klasik mimaride motor (Claude Code, OpenCode) ile model doğrudan birbirine bağlıydı. Yeni mimaride motor bir **çalıştırma kabuğu**, sağlayıcı (provider) bir **uç nokta ve servis sağlayıcı**, rota (route) ise **bağlantı hattıdır**:

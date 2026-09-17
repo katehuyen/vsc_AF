@@ -1690,6 +1690,58 @@ The same method works for every service: `ELEVENLABS_KEY`, `N8N_TOKEN`… — wh
 - **Live Quota & Staggered Polling (`X-187`, `X-206`, `X-215`):** Displays live 5-hour and weekly quota bars per account. Network-bound Claude reads observe rate-limit delays (5s gap, 429 backoff), while local Codex file reads execute without network queuing.
 - **Refresh All Accounts Button (`[🔄 Refresh all accounts (All Engines)]` - `X-218`):** Top-level action refreshing every slot across engines, displaying live progress directly on the control (`◍ 3 in the line`).
 
+### Smart Account Selection Policies, Protocols & Quota Architecture (X-305 / X-324) {#hesap-politikalari}
+
+*(3.520.0 — 3.535.0)* In multi-account environments (especially machines hosting multiple Claude Pro/Max or corporate accounts), the burden of manually guessing **"Which of my accounts will have available quota at that future hour?"** for every task, schedule, or console session has been eliminated through Agent Farm's **Dynamic Account Policies** engine.
+
+The system elevates accounts from static identities into **runtime-resolved dynamic targets based on live quota**.
+
+#### 1. Built-in Smart Policies
+
+The unified account picker (`media/afAccount.js` — Console, Tasks, Missions, Schedules, Workflows, Workqueue) and Farm Bridge offer 4 built-in smart policies:
+
+1. **`@emptiest` (Emptiest Account):** Evaluates **ALL** registered accounts under the engine. Selects whichever account currently has the most available room (`% room`) within its 5-hour (and weekly binding) window.
+2. **`@pool` (Sentry Campaign Pool):** Dynamically allocates the next eligible account from the active background **Sentry Campaign** pool. Refuses if no campaign is currently running.
+3. **`@standing` (Standing / Default Account):** Binds to the agent's configured account or the machine's current `standing` default slot.
+4. **`@round-robin` (Rotational Distribution):** Cycles evenly across all healthy, unwalled accounts on each successive launch to balance load.
+
+#### 2. Custom Named Policies & Rules
+
+Users can create and edit custom named policies (e.g. `Night_Sentry`, `Heavy_Duty`, `Budget_Pool`) via the **Engines & Slots** management view (`src/panels/enginesPanel.ts`) or via Bridge (`policies.save`). Each policy consists of a step list.
+
+##### Two Strategy Modes (Strategy Switch — X-324)
+Each policy card features a top-level 2-way Strategy Switch:
+
+- **`🔗 Chain` Mode (Default):** Sequential fallback chain: `Step 1 → Step 2 → Step 3`. The system starts with Step 1. When Step 1 hits its quota ceiling (e.g. 50% wall), it automatically advances to Step 2; if Step 2 is also walled, it falls back to Step 3.
+- **`⚡ Emptiest Pool` Mode:** Establishes an **isolated whitelist sub-pool** across the specific accounts listed in the policy steps. Unlike `@emptiest` (which scans *all* accounts across the entire engine), this mode **only evaluates the user's curated subset** (e.g. 3 chosen accounts out of 5) and selects whichever is emptiest at launch time, without requiring a running Sentry Campaign.
+
+##### Auto-Lock Constraint & Safety Guard
+- If a custom policy includes nested rules (e.g. `@standing`, `@round-robin`, or another policy) instead of concrete account slots, the `Emptiest` strategy cannot compute a single scalar quota percentage.
+- The UI **automatically and strictly locks the strategy to `Chain` mode**, disables the `Emptiest` chip, and attaches an explanatory **AFTip** tooltip (*"Policies with nested rule steps can only operate in Chain mode"*).
+
+#### 3. Launch-Time Filter vs. Mid-Flight Wall
+
+A vital architectural distinction to understand:
+- **Quota Ceilings Do Not Interrupt In-Flight Sessions:** A quota ceiling (e.g. 50% wall) is **NOT** a watchdog that abruptly halts or switches an active turn mid-execution.
+- **Launch-Time Gate:** Quota ceilings act strictly as a **pre-flight filter** when deciding which account is eligible to *start* a new session or task. If an account is below the ceiling, the session launches safely.
+- **Uninterrupted Turns:** If token consumption during the turn pushes the account past 50%, the session continues to completion without disruption. When the *next* separate task/session starts, the pre-flight check detects the wall and routes the new run to the next available account.
+
+#### 4. Quota Caching, Refresh Cycles & Rate-Limit Protection
+
+- **In-Memory Snapshot (`AccountUsageService`):** Anthropic and provider OAuth endpoints enforce strict rate limits (**HTTP 429 Too Many Requests**). Bombarding the endpoint with live HTTP queries for 3–5 accounts on every single launch would instantly blind the machine (*"Asking how much quota is left must not become what spends it — X-170"*). Decision engines read from a polite in-memory cache.
+- **Refresh Channels:**
+  1. *Periodic Beat (`beat`):* Background daemon updates accounts one by one starting with the stalest (*round-robin by staleness*).
+  2. *Turn Completion (`readOnEdge`):* Triggered whenever an agent completes an active turn and settles token spend.
+  3. *Manual Refresh:* Triggered on demand from the Engines panel or status bar.
+  4. *Hit-the-Wall Failsafe:* If an account encounters an unexpected quota error during launch, Agent Farm catches the event, immediately updates that slot (`refreshSlot`), and hands the run off to the next account (`carryOnAccount`).
+
+#### 5. Bridge Parity
+
+Account policies are fully accessible programmatically via the Farm Bridge:
+- `policies.list` — Lists all registered custom policies and their active strategies.
+- `policies.save` — Creates or updates a policy (`id`, `label`, `engine`, `strategy: 'chain' | 'emptiest'`, `steps: [{account, rule, ceiling}]`).
+- `policies.delete` — Removes a policy definition.
+
 ### Provider, Route and Tier Architecture (X-97 — X-117, X-148 — X-151) {#rota-mimarisi}
 
 *(3.341.0 — 3.369.0)* Decouples the execution engine (Claude Code, OpenCode) from the serving endpoint and provider:
