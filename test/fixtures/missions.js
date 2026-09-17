@@ -165,12 +165,19 @@ const RUN = {
                     // `grok-code-fast-1` is the CLI expanding a short name, and
                     // flagging that would put ≠ on nearly every row. See
                     // sameModel().
+                    // X-225/X-107 - and the two the panel could not print until
+                    // they were on its own list: whose plan paid, and WHICH
+                    // ENDPOINT served it. The route is the one dimension here
+                    // that no transcript preserves, so a scene without it
+                    // photographs the panel's only permanent blind spot.
                     ran: {
                         engine: 'opencode', model: 'grok-code', effort: 'high',
                         permissionMode: 'acceptEdits', workDir: 'D:/zone/dev/git/miropharm/vsc_AgentFarm',
+                        account: 'work@studio', providerId: 'kimi-work', tier: 'opus',
                         origin: {
                             engine: 'member', model: 'member', effort: 'agent',
-                            permissionMode: 'fleet', workDir: 'mission'
+                            permissionMode: 'fleet', workDir: 'mission',
+                            account: 'mission', providerId: 'member'
                         }
                     },
                     // ‼️ X-124 — evidence BOUND to the two turns this delegation's own

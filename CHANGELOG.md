@@ -2,6 +2,30 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.535.0 - the provenance panel says which endpoint served the work, and whose plan paid (X-107) (2026-09-17)
+
+- **‼️ MEASURED: the panel that exists to answer "why did it run like that" was
+  silent about two of its dimensions.** `provLines` prints one row per entry of
+  the page's own `DIMS` list, and that list was written out by hand with five
+  entries. X-225 put an `account` on the resolver's record months ago and this
+  never printed it — so the one dimension a reader chases when a bill looks
+  wrong was missing from the only surface that could have said it, and the
+  route would have gone the same way.
+- **Route and Sign-in are on the list now.** The tier prints UNDER its route
+  (`kimi-work/opus`), never as a line of its own: alone the word says nothing,
+  because it means a different model on every endpoint (X-101).
+- **The row chip carries the route and leaves the sign-in to the panel.** That
+  is a judgement about the reader, not about width: the chip answers "what did
+  this work run as", and the endpoint that served it is the one part of that
+  answer no transcript preserves (X-98). Which plan was billed is a question
+  about the invoice and has its own line one hover away (ONE SUBJECT).
+- Neither reports an `applied` reading, which is correct rather than missing —
+  no engine states the route or the sign-in it ran under, so nothing is
+  compared and no row can wear a false `≠`.
+- Fixture: the delegate scene now carries a route and a sign-in; panel and
+  chip both measured in the laid-out DOM. Tests: `test_mission_route` +4
+  (37 total). Suite 366 files / 22345 green.
+
 ## 3.534.0 - a mission says which endpoint carries its workers and which carries its planner (X-107) (2026-09-17)
 
 - **‼️ X-107 (1/n) — MEASURED: a mission could not state a route anywhere.**

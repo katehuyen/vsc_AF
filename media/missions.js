@@ -1646,6 +1646,21 @@
         { k: 'model', label: 'Model' },
         { k: 'effort', label: 'Effort' },
         { k: 'permissionMode', label: 'Permissions' },
+        // X-107 - WHICH ENDPOINT SERVED IT, and it is the one dimension on this
+        // list nothing downstream can recover: a Claude transcript does not
+        // preserve the route it ran through (X-98), so the resolver's own answer
+        // is the only witness there will ever be. The tier is printed UNDER the
+        // route it belongs to, never as a line of its own - the word means a
+        // different model on every endpoint (X-101), so alone it says nothing.
+        {
+            k: 'providerId', label: 'Route',
+            value: d => String(d.providerId || '') + (d.tier ? '/' + String(d.tier) : '')
+        },
+        // X-225 - and whose plan paid. It was on the resolver's record from the
+        // day that item landed and this list never printed it, so the panel that
+        // exists to answer "why did it run like that" was silent about the one
+        // dimension a reader chases when a bill looks wrong.
+        { k: 'account', label: 'Sign-in' },
         { k: 'workDir', label: 'Workdir' }
     ];
     const NOT_SET = '— CLI chooses —';
@@ -1736,7 +1751,7 @@
     function provLines(dims, applied) {
         if (!dims) { return []; }
         return DIMS.map(d => {
-            const value = String(dims[d.k] || '').trim();
+            const value = (d.value ? String(d.value(dims) || '') : String(dims[d.k] || '')).trim();
             const from = originOfDim(dims, d.k);
             const got = appliedValue(applied, d.k);
             // ‼️ "applied" is printed when it ADDS something: a value that came
@@ -1807,9 +1822,17 @@
         // not a choice and its sentence belongs in the panel, not on the row.
         // The engine is the exception — it is one word and it is the first
         // thing a reader wants off this chip.
-        return DIMS.filter(d => dims[d.k] && d.k !== 'workDir'
+        //
+        // X-225/X-107 - THE SIGN-IN STAYS OFF THE CHIP AND THE ROUTE GOES ON IT,
+        // and that is a judgement about the reader rather than about width. This
+        // chip answers "what did this piece of work run as": the endpoint that
+        // served it is part of that answer and is the one part no transcript
+        // preserves. Which plan was billed is a question about the invoice, not
+        // about the work, and it has its own line in the panel one hover away.
+        const OFF_CHIP = ['workDir', 'account'];
+        return DIMS.filter(d => dims[d.k] && !OFF_CHIP.includes(d.k)
             && (d.k === 'engine' || originOfDim(dims, d.k) !== 'fixed'))
-            .map(d => String(dims[d.k])).join(' · ');
+            .map(d => d.value ? String(d.value(dims)) : String(dims[d.k])).join(' · ');
     }
     /** Which layer decided one dimension. The workdir has no per-dimension
      *  origin on a delegate's record — it comes from the mission or nowhere. */

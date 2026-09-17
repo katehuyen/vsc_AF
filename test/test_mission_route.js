@@ -184,6 +184,30 @@ console.log('\n== X-107 — nothing is dropped between the bridge, the door and 
     // the resolver's own shape
     ok('‼️ `DelegateRun` states the route and its origin, so the trace keeps the unsummarised answer',
         /providerId\?: string;/.test(modeTs) && /'account' \| 'providerId',/.test(modeTs));
+
+    /**
+     * ‼️ AND IT IS READ WHERE THE QUESTION IS ASKED. `provLines` prints one row
+     * per entry of the page's `DIMS`, and that list was written out by hand: it
+     * had five entries and X-225's `account` had been on the resolver's record
+     * since the day that item landed. So the panel that exists to answer "why
+     * did it run like that" was silent about the dimension a reader chases when
+     * a bill looks wrong, and would have been silent about the route too.
+     */
+    const page = fs.readFileSync(path.join(ROOT, 'media', 'missions.js'), 'utf8');
+    const dimList = (() => {
+        const a = page.indexOf('const DIMS = [');
+        return a < 0 ? '' : page.slice(a, page.indexOf('\n    ];', a));
+    })();
+    ok('the provenance dimension list was found', dimList.length > 100);
+    ok('‼️ the panel prints the ROUTE and the SIGN-IN, not only the original five',
+        /k: 'providerId', label: 'Route'/.test(dimList)
+        && /k: 'account', label: 'Sign-in'/.test(dimList));
+    ok('‼️ …and the tier is printed UNDER its route rather than as a line of its own',
+        /value: d => String\(d\.providerId \|\| ''\) \+ \(d\.tier \? '\/' \+ String\(d\.tier\) : ''\)/.test(dimList)
+        && !/label: 'Tier'/.test(dimList));
+    ok('…the row chip carries the route and leaves the sign-in to the panel',
+        /const OFF_CHIP = \['workDir', 'account'\];/.test(page)
+        && /\.map\(d => d\.value \? String\(d\.value\(dims\)\) : String\(dims\[d\.k\]\)\)\.join\(' · '\)/.test(page));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
