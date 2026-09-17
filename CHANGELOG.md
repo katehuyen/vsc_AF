@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.537.0 - the mission form can say which endpoint serves each member and the planner (X-107, closes) (2026-09-17)
+
+- **‼️ MEASURED: the spec had carried a route per member and per planner since
+  3.534.0 and the form could not say either** — the dimension was reachable
+  from the bridge only. A person starting a mission from the page had no box
+  for the one fact no transcript preserves (X-98).
+- **Each team row carries a Route box and, under a route that serves tiers, a
+  Tier box** (`pr-`/`tr-`), in the Tasks form's own words (`ntRouteRows`): the
+  label is the bare value, the meaning is the hover, the MIRROR line opens
+  with what the box holds. Drawn only where the engine has routes at all; on
+  an engine with none the slot is held by a `—` that says why (B-02.2), so
+  the rows stay columns — measured in the laid-out DOM, three rows on the
+  same edges.
+- **The tier belongs to its route.** Moving the route drops the tier under it
+  on the spot and the row says so (`tier opus cleared — it belonged to the
+  route this row was on`): unlike a model the engine no longer offers (U-101
+  asks), a tier without its route has no meaning at all (X-101). Moving the
+  ENGINE goes through the same ask-first plan as the model and the effort,
+  with `lostRoute`/`lostTier` beside them — and the strip now names a lost
+  sign-in too, which it had been leaving out.
+- **The Orchestrator block carries its own pair** (`f-planner-route`,
+  `f-planner-tier`) beside the planner's sign-in: one long-lived headless
+  claude, not a delegation, and the workers' route says nothing about it.
+- **Apply profile writes both onto every included row.** The profile's tier
+  list is the profile's route's own — with the route left on "don't change"
+  the rows may be on different routes, so only keep/clear is offered. A kept
+  route the profile's engine cannot take, or a tier the route does not serve,
+  refuses the press before any row is touched (X-123).
+- **No mission-wide route box on the form**, for the reason U-101 removed the
+  mission-wide engine box: a level the rows cannot see is a form disagreeing
+  with itself. `MissionSpec.providerId` stays for the bridge and for
+  inheritance, exactly as `engine` and `account` do.
+- What the item's list still named — task templates carry the route through
+  `RunDimensions` (X-106), a pool member and the adaptive delegate resolve
+  through `resolveDelegateRun` (3.534.0), a delegation is made with its
+  dimensions by the shape, a rerun or a resume runs the spec's own route,
+  a task retry is a new enqueue that seals itself. There is no mission
+  template entity to carry one.
+- Host: the missions page receives `routes` from `engineRouteMatrix`, the
+  same matrix the Tasks form reads. Fixture: a `form-routes` scene (a member
+  on Kimi/opus beside one on OpenCode, the planner on Kimi). Tests:
+  `test_team_row_columns` +3 (two more axes, each placeholder naming its
+  own), `test_missions_webview` +14 (boxes, payload, route move, profile).
+
 ## 3.536.0 - an agent reads what a session said through the bridge, in one shape for every engine (B-24) (2026-09-17)
 
 - **‼️ MEASURED: the bridge could say where a transcript is and could not hand

@@ -118,6 +118,19 @@ const DATA = {
             { id: 'personal', label: 'personal@gmail', health: 'stale', active: false }
         ]
     },
+    // ‼️ X-107 — THE ROUTES each engine may be pointed at, in the shape the
+    // host's `engineRouteMatrix` publishes. Claude only, like the sign-ins: a
+    // member on OpenCode has to draw the placeholders, not the boxes.
+    routes: {
+        claude: {
+            noun: 'Route',
+            providers: [
+                { id: 'kimi-work', label: 'Kimi (work)', detail: 'https://api.moonshot.ai/anthropic',
+                    tiers: [{ id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' }, { id: 'sonnet', label: 'sonnet', detail: 'kimi-k2' }] },
+                { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [] }
+            ]
+        }
+    },
     defaults: { maxRounds: 8, maxTasks: 12, maxCostUSD: 5, maxMinutes: 120, maxParallel: 2 },
     pending: { questions: [], approvals: ['run1'] },
     // ‼️ U-64 — THE ENGINE MATRIX AND WHAT EACH ENGINE OFFERS, in the shape
@@ -559,6 +572,37 @@ ok('‼️ …and a slot that needs signing in again is MARKED rather than offer
     /⚠ personal@gmail/.test(html()));
 getEl('f-planner-account').value = 'personal';
 getEl('ac-1').value = 'work-1';
+/**
+ * ‼️ X-107 — AND WHICH ENDPOINT SERVES IT, with the tier of that route. The
+ * spec has carried `providerId`/`tier` per member and per planner since
+ * 3.534.0 and this form could not say either: the dimension was reachable
+ * from the bridge only. The tier box does not exist until a route is named
+ * above it — a tier is one word meaning a different model on every route —
+ * so the test chooses the way a hand does: route first, tier after the redraw.
+ */
+ok('‼️ X-107 — the orchestrator block asks which route the planner is served by',
+    html().includes('id="f-planner-route"') && html().includes('Kimi (work)'));
+ok('…and no planner TIER box yet — a tier belongs to a route nobody has named',
+    !html().includes('id="f-planner-tier"'));
+ok('…and a member row asks the same of its own delegations',
+    html().includes('id="pr-1"'));
+ok('…with the tier slot HELD by a placeholder rather than dropped (B-02.2)',
+    /data-axis="tier"/.test(html()) && !html().includes('id="tr-1"'));
+getEl('pr-1').value = 'kimi-work';
+getEl('pr-1').listeners.change();
+ok('naming the route draws the tier box under it, offering that route\'s own tiers',
+    html().includes('id="tr-1"') && /kimi-k2-thinking/.test(html()));
+getEl('tr-1').value = 'opus';
+getEl('tr-1').listeners.change();
+getEl('f-planner-route').value = 'minimax-lab';
+getEl('f-planner-route').listeners.change();
+ok('‼️ a route that serves no named tiers draws no planner tier box',
+    !html().includes('id="f-planner-tier"'));
+getEl('f-planner-route').value = 'kimi-work';
+getEl('f-planner-route').listeners.change();
+ok('…and one that does, does',
+    html().includes('id="f-planner-tier"'));
+getEl('f-planner-tier').value = 'sonnet';
 getEl('f-approval').value = 'each-round';
 getEl('f-start').listeners.click();
 const created = posted.find(p => p.type === 'create');
@@ -572,6 +616,35 @@ ok('‼️ X-225 — …and the sign-in the planner is billed to',
     created && created.input.plannerAccount === 'personal');
 ok('‼️ X-225 — …and the one the member\'s delegations are billed to, on its own row',
     created && created.input.team[0].account === 'work-1');
+ok('‼️ X-107 — …and the route the planner is served by, with its tier',
+    created && created.input.plannerProviderId === 'kimi-work' && created.input.plannerTier === 'sonnet');
+ok('‼️ X-107 — …and the member\'s own route and tier, on its own row',
+    created && created.input.team[0].providerId === 'kimi-work' && created.input.team[0].tier === 'opus');
+/**
+ * ‼️ X-107 — MOVING THE ROUTE DROPS THE TIER UNDER IT, AND SAYS SO. `opus` on
+ * Kimi is `kimi-k2-thinking`; carried onto MiniMax the same word would be a
+ * different model, and the row would claim a tier its new route never served.
+ */
+{
+    getEl('pr-1').value = 'minimax-lab';
+    getEl('pr-1').listeners.change();
+    ok('the tier box is gone — MiniMax serves no named tiers',
+        !html().includes('id="tr-1"'));
+    ok('…and the row SAYS the tier was cleared and why',
+        /tier opus cleared/.test(html()));
+    // (the shim never removes an element the page stopped drawing, so the
+    // vanished tier box is read back the way any other repaint reads the form)
+    getEl('tr-1').value = '';
+    posted = [];
+    getEl('f-start').listeners.click();
+    const moved = posted.find(p => p.type === 'create');
+    ok('…and what is posted carries the new route and NO tier',
+        moved && moved.input.team[0].providerId === 'minimax-lab' && moved.input.team[0].tier === '');
+    // Back to no route at all, for the profile tests below: a kept route the
+    // profile's engine cannot take refuses the press by design (X-123).
+    getEl('pr-1').value = '';
+    getEl('pr-1').listeners.change();
+}
 /**
  * ‼️ X-94 — THE PROJECT IS A THREE-WAY ANSWER AND IT IS POSTED AS THREE.
  *
@@ -1103,16 +1176,53 @@ getEl('en-1').listeners.change();
 getEl('md-1').value = 'opus';
 getEl('md-1').listeners.change();
 getEl('f-profile').listeners.click();
-ok('the profile tool opens with all four dimensions and a "don\'t change" answer on each',
+ok('the profile tool opens with all six dimensions and a "don\'t change" answer on each',
     html().includes('id="pf-engine"') && html().includes('id="pf-model"')
     && html().includes('id="pf-effort"') && html().includes('id="pf-permissionMode"')
-    && (html().match(/>don't change</g) || []).length === 4);
+    // ‼️ X-107 — the route and its tier, drawn because the rows are on Claude,
+    // which has routes; the tier box offers only keep/clear until a route is
+    // set above it.
+    && html().includes('id="pf-providerId"') && html().includes('id="pf-tier"')
+    && (html().match(/>don't change</g) || []).length === 6);
 getEl('pf-permissionMode').value = 'plan';
 getEl('pf-permissionMode').listeners.change();
 getEl('f-profile-apply').listeners.click();
 ok('‼️ applying ONE dimension leaves the others alone — an engine apply cannot wipe the models beside it',
     pmBox(1).includes('value="plan" selected') && mdBox(1).includes('value="opus" selected'));
 getEl('f-profile').listeners.click();
+/**
+ * ‼️ X-107 — THE ROUTE AND ITS TIER THROUGH THE SAME TOOL. The tier list is
+ * the PROFILE's route's own, so it is empty (keep/clear only) until the route
+ * box names one — and the press writes both onto every included row.
+ */
+{
+    const profBox = (key) => {
+        const h = html();
+        const at = h.indexOf('<select id="pf-' + key + '"');
+        return at < 0 ? '' : h.slice(at, h.indexOf('</select>', at));
+    };
+    ok('the profile\'s tier box offers NO tier while the route is left alone',
+        !/value="opus"/.test(profBox('tier')));
+    getEl('pf-providerId').value = 'kimi-work'; getEl('pf-providerId').listeners.change();
+    ok('…and offers that route\'s own tiers once one is named',
+        /value="opus"/.test(profBox('tier')) && /kimi-k2-thinking/.test(profBox('tier')));
+    getEl('pf-tier').value = 'opus'; getEl('pf-tier').listeners.change();
+    getEl('f-profile-apply').listeners.click();
+    const prBox = (i) => { const h = html(); const at = h.indexOf('<select id="pr-' + i + '"'); return at < 0 ? '' : h.slice(at, h.indexOf('</select>', at)); };
+    const trBox = (i) => { const h = html(); const at = h.indexOf('<select id="tr-' + i + '"'); return at < 0 ? '' : h.slice(at, h.indexOf('</select>', at)); };
+    ok('‼️ the press writes the route AND the tier onto the included row',
+        prBox(1).includes('value="kimi-work" selected') && trBox(1).includes('value="opus" selected'));
+    // back to none, and the shim's stale boxes with it
+    getEl('f-profile').listeners.click();
+    getEl('pf-providerId').value = 'clear'; getEl('pf-providerId').listeners.change();
+    getEl('f-profile-apply').listeners.click();
+    getEl('pr-1').value = ''; getEl('tr-1').value = '';
+    ok('…and clearing the route takes its tier with it',
+        prBox(1).includes('value="" selected') && trBox(1) === '');
+    getEl('f-profile').listeners.click();
+    getEl('pf-providerId').value = 'keep'; getEl('pf-providerId').listeners.change();
+    getEl('pf-tier').value = 'keep'; getEl('pf-tier').listeners.change();
+}
 getEl('pf-engine').value = 'clear';
 getEl('pf-engine').listeners.change();
 getEl('f-profile-apply').listeners.click();

@@ -16970,6 +16970,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // fires hours after anybody looked at this window, which is exactly
             // when "the emptiest sign-in" beats a slot picked by hand today.
             policies: enginePolicyMatrix(),
+            // ‼️ X-107 — AND THE ROUTES each engine may be pointed at, from the
+            // same matrix the Tasks form reads (`engineRouteMatrix`). The spec
+            // has carried a route per member and per planner since 3.534.0 and
+            // this form could not say either: the dimension was reachable from
+            // the bridge only. Absent for an engine with no provider axis or
+            // nothing set up — and an absent entry draws no box, the same rule
+            // the sign-ins above follow.
+            routes: engineRouteMatrix(),
             // ‼️ M-18 — WHAT EACH FAILURE CLASS MEANS, from the one registry the
             // LEAD is told it from. The page shows the reader the same sentence
             // the model was given, so the two can never drift into describing

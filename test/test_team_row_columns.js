@@ -43,7 +43,13 @@ const AXES = [
     { name: 'model', re: /id="md-/ },
     { name: 'effort', re: /id="ef-/ },
     { name: 'permissions', re: /id="pm-/ },
-    { name: 'account', re: /id="ac-|class="tmnone"/ }
+    { name: 'account', re: /id="ac-|data-axis="account"/ },
+    // ‼️ X-107 — two more axes on the same rule: the box where the engine has
+    // routes, the placeholder where it has none, and the tier's placeholder
+    // until a route that serves tiers is named above it. Each placeholder
+    // names ITS axis, so a route dash cannot satisfy the account column.
+    { name: 'route', re: /id="pr-|data-axis="route"/ },
+    { name: 'tier', re: /id="tr-|data-axis="tier"/ }
 ];
 
 /** Everything the page wrote — the same reach `render_page.js` takes a picture
@@ -72,7 +78,7 @@ function teamRows(html) {
     return out;
 }
 
-let rowsSeen = 0, accountless = 0;
+let rowsSeen = 0, accountless = 0, routeless = 0, tiered = 0;
 const findings = [];
 for (const v of fixture.variants()) {
     let html;
@@ -85,7 +91,9 @@ for (const v of fixture.variants()) {
         rowsSeen++;
         const missing = AXES.filter(a => !a.re.test(row)).map(a => a.name);
         if (missing.length) { findings.push(`${v.id} row ${i + 1}: no ${missing.join(', ')}`); }
-        if (/class="tmnone"/.test(row)) { accountless++; }
+        if (/data-axis="account"/.test(row)) { accountless++; }
+        if (/data-axis="route"/.test(row)) { routeless++; }
+        if (/id="tr-/.test(row)) { tiered++; }
     }
 }
 
@@ -97,6 +105,12 @@ ok('‼️ EVERY TEAM ROW CARRIES EVERY AXIS — a dropped slot is a shifted col
 ok('…and at least one row is on an engine with no sign-ins, so the placeholder'
     + ` is really being exercised (${accountless} of ${rowsSeen})`,
     accountless > 0);
+ok('‼️ X-107 — …and one on an engine with no routes, so THAT placeholder is'
+    + ` exercised too (${routeless} of ${rowsSeen})`,
+    routeless > 0);
+ok('…and one on a route that serves tiers, so the tier box is really drawn'
+    + ` and not only its placeholder (${tiered} of ${rowsSeen})`,
+    tiered > 0);
 
 // The placeholder holds the column only if it is given the select's own flex
 // slot; a bare <span> would collapse and put the rows back out of line.

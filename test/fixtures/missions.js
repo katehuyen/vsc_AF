@@ -946,6 +946,26 @@ const data = (over) => Object.assign({
             { id: 'personal', label: 'personal@gmail', health: 'stale', active: false }
         ]
     },
+    // ‼️ X-107 — the routes each engine may be pointed at, in the shape the
+    // host's `engineRouteMatrix` publishes. Only Claude has any, for the same
+    // reason only Claude has sign-ins above: the row on OpenCode has to show
+    // the two placeholders holding their columns beside a row that draws the
+    // boxes, and one route serves tiers while the other serves none.
+    routes: {
+        claude: {
+            noun: 'Route',
+            providers: [
+                {
+                    id: 'kimi-work', label: 'Kimi (work)', detail: 'https://api.moonshot.ai/anthropic',
+                    tiers: [
+                        { id: 'opus', label: 'opus', detail: 'kimi-k2-thinking' },
+                        { id: 'sonnet', label: 'sonnet', detail: 'kimi-k2' }
+                    ]
+                },
+                { id: 'minimax-lab', label: 'MiniMax (lab)', detail: 'https://api.minimax.io/anthropic', tiers: [] }
+            ]
+        }
+    },
     /** The host's own FAILURE_KINDS (M-18) — the page must never carry a copy,
      *  or the reader and the lead get told different things about one failure. */
     failureKinds: {
@@ -1167,6 +1187,41 @@ module.exports = {
                 // ticking a member is what re-reads the form and redraws it —
                 // the same path a hand takes, so the picture is of real state
                 fire(el('tm-1'), 'change');
+            }
+        },
+        {
+            /**
+             * ‼️ X-107 — THE ROW WITH ITS ROUTE AND TIER NAMED, beside a row
+             * whose engine has neither. Seven pickers plus the role box on one
+             * row now, and two placeholders on the OpenCode row holding the
+             * columns the boxes would take: whether the rows still read as
+             * columns when one draws boxes and the other draws dashes is a
+             * layout question, and a string test cannot answer it. The
+             * orchestrator block carries the same pair, so the picture also
+             * says whether that block still reads as one question.
+             */
+            id: 'form-routes', label: 'New Mission — a member on a named route and tier, one on an engine with none (X-107)',
+            data: data({ newForm: true }),
+            act: (r) => {
+                const el = (id) => r.sandbox.document.getElementById(id);
+                el('f-goal').value = SPEC.goal;
+                el('f-lead').value = 'a0';
+                el('tm-1').checked = true;
+                el('tm-2').checked = true;
+                el('rl-1').value = 'implements';
+                el('rl-2').value = 'reviewer';
+                el('en-1').value = 'opencode';
+                fire(el('tm-1'), 'change');
+                // the route is chosen the way a hand chooses it: the tier box
+                // does not exist until the route above it names one
+                el('pr-2').value = 'kimi-work';
+                fire(el('pr-2'), 'change');
+                el('tr-2').value = 'opus';
+                fire(el('tr-2'), 'change');
+                el('f-planner-route').value = 'kimi-work';
+                fire(el('f-planner-route'), 'change');
+                el('f-planner-tier').value = 'sonnet';
+                fire(el('f-planner-tier'), 'change');
             }
         },
         {

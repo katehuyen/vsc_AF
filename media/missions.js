@@ -127,6 +127,15 @@
          */
         plannerAccount: '',
         /**
+         * ‼️ X-107 — AND WHICH ENDPOINT SERVES THE ORCHESTRATOR'S OWN CALLS,
+         * with the tier of that route. Its own pair beside `plannerAccount` for
+         * the same reason: the planner is one long-lived headless claude, not a
+         * delegation, and the mission's route for its workers says nothing
+         * about it. The tier travels WITH the route and is dropped without one
+         * (X-101: `opus` is a different model on every route).
+         */
+        plannerProviderId: '', plannerTier: '',
+        /**
          * ‼️ X-94 — WHICH PROJECT THIS RUN IS FILED UNDER, as a CHOICE.
          *
          * There was no control here at all, and the host's contract has three
@@ -166,7 +175,13 @@
         // runs on the account that still has window left" is the decision a
         // person actually makes. It used to be refused for the whole surface on
         // the mission's behalf (see `missionDoor`).
+        // ‼️ X-107 — …and `routes` + `tiers`, the seventh and eighth: which
+        // endpoint serves THIS member's delegations and which tier of it. Per
+        // member for the reason the account is — "the reviewer on the plan-billed
+        // endpoint, the drafter on the cheap one" is the decision a person makes.
+        // The core has carried both since 3.534.0 and this form offered neither.
         team: {}, roles: {}, models: {}, engines: {}, perms: {}, efforts: {}, accounts: {},
+        routes: {}, tiers: {},
         maxRounds: '', maxTasks: '', maxCostUSD: '', maxMinutes: '', maxParallel: '',
         // ‼️ …and the token ceiling, which was INVISIBLE. On a subscription
         // engine no delegation ever states a dollar, so `maxCostUSD` — the limit
@@ -396,7 +411,11 @@
      * inherit again. Anything else is an explicit value.
      */
     let profileOpen = false;
-    const profile = { engine: 'keep', model: 'keep', effort: 'keep', permissionMode: 'keep' };
+    const profile = { engine: 'keep', model: 'keep', effort: 'keep', permissionMode: 'keep', providerId: 'keep', tier: 'keep' };
+    /** The dimensions the profile tool carries, in the order it draws them —
+     *  one list, read by the DOM read and the wiring alike, so a dimension
+     *  added here cannot be drawn and then never read back. */
+    const PROFILE_KEYS = ['engine', 'model', 'effort', 'permissionMode', 'providerId', 'tier'];
     /**
      * Rows whose explicit model/effort no longer fits the engine they are on,
      * held for the user to decide about. ‼️ NOT dropped silently: U-97 narrowed
@@ -420,8 +439,29 @@
         // ‼️ X-225 — and whose plan pays for it. Empty travels as empty and the
         // host stores nothing, which is what leaves the standing sign-in to
         // answer at the spawn — the behaviour of every mission before this.
-        account: form.accounts[a.id] || ''
+        account: form.accounts[a.id] || '',
+        // ‼️ X-107 — and which endpoint serves it. The tier travels only WITH
+        // a route: sent alone it would be one word meaning a different model
+        // on whatever route the mission or the agent's standing record names.
+        providerId: form.routes[a.id] || '',
+        tier: form.routes[a.id] ? (form.tiers[a.id] || '') : ''
     }));
+    /**
+     * ‼️ X-107 — THE ROUTES THIS ENGINE MAY BE POINTED AT, or null. From the
+     * host's one matrix (`engineRouteMatrix`), the same the Tasks form reads.
+     * Null for the engines with no provider axis and for one with nothing set
+     * up — both complete answers, and neither draws a box (the rule the
+     * sign-ins follow). A tier belongs to ONE route: `tiersOf` answers for the
+     * route named, and nothing else.
+     */
+    const routesFor = (engine) => {
+        const f = (DATA.routes || {})[engine || 'claude'];
+        return (f && (f.providers || []).length) ? f : null;
+    };
+    const routeRowsFor = (engine) => ((routesFor(engine) || {}).providers || []);
+    const routeNoun = (engine) => String((routesFor(engine) || {}).noun || 'Route');
+    const tiersOf = (engine, providerId) =>
+        ((routeRowsFor(engine).find(p => p.id === (providerId || '')) || {}).tiers || []);
     /**
      * ‼️ U-97 — MODEL IS A SELECT HERE, NOT FREE TEXT OVER A DATALIST.
      *
@@ -498,6 +538,25 @@
         const account = form.accounts[agentId] || '';
         const acctKept = !account || account === '@machine'
             || ((DATA.accounts || {})[eng || 'claude'] || []).some(a => a && a.id === account);
+        /**
+         * ‼️ X-107 — AND A ROUTE BELONGS TO ONE ENGINE, AND A TIER TO ONE ROUTE.
+         * A Kimi route carried onto Codex names an endpoint its CLI was never
+         * going to be pointed at (the host refuses it at creation, X-106), and
+         * a tier kept across a route change is a word that meant
+         * `kimi-k2-thinking` on the route being left (X-101). Both are words
+         * the row can lose when its engine moves, and both go through this
+         * one plan — announced, then cleared on a press, never behind a back.
+         */
+        const route = form.routes[agentId] || '';
+        const tier = route ? (form.tiers[agentId] || '') : '';
+        const routeKept = !route || routeRowsFor(eng).some(p => p.id === route);
+        const tierKept = !tier || (routeKept && tiersOf(eng, route).some(t => t.id === tier));
+        const routePart = {
+            providerId: routeKept ? route : '',
+            tier: tierKept ? tier : '',
+            lostRoute: routeKept ? '' : route,
+            lostTier: tierKept ? '' : tier
+        };
         const cat = (window.AFEngine.models(launchView(), eng) || []).filter(m => m.id);
         if (cat.length) {
             const fixed = window.AFEngine.narrow(launchView(), eng, model, effort);
@@ -507,7 +566,8 @@
                 account: acctKept ? account : '',
                 lostModel: model && fixed.model !== model ? model : '',
                 lostEffort: effort && fixed.effort !== effort ? effort : '',
-                lostAccount: acctKept ? '' : account
+                lostAccount: acctKept ? '' : account,
+                ...routePart
             };
         }
         const rows = window.AFEngine.efforts(launchView(), eng, model) || [];
@@ -516,7 +576,8 @@
             agentId, engine: eng, model, effort: keeps ? effort : '',
             account: acctKept ? account : '',
             lostModel: '', lostEffort: keeps ? '' : effort,
-            lostAccount: acctKept ? '' : account
+            lostAccount: acctKept ? '' : account,
+            ...routePart
         };
     };
     /** Write one plan onto the row, and leave the reason where the row is. */
@@ -525,20 +586,50 @@
         const lost = [
             plan.lostModel ? `model ${plan.lostModel}` : '',
             plan.lostEffort ? `effort ${plan.lostEffort}` : '',
-            plan.lostAccount ? `account ${plan.lostAccount}` : ''
+            plan.lostAccount ? `account ${plan.lostAccount}` : '',
+            plan.lostRoute ? `${routeNoun(plan.engine).toLowerCase()} ${plan.lostRoute}` : '',
+            plan.lostTier ? `tier ${plan.lostTier}` : ''
         ].filter(Boolean);
         form.models[plan.agentId] = plan.model;
         form.efforts[plan.agentId] = plan.effort;
         form.accounts[plan.agentId] = plan.account;
+        form.routes[plan.agentId] = plan.providerId;
+        form.tiers[plan.agentId] = plan.tier;
         if (lost.length) { narrowNote[plan.agentId] = `${lost.join(' and ')} cleared — ${engLabel} does not offer it`; }
     };
+    /** What a narrowing plan would take off a row, in the words the strip
+     *  prints — one list, so the strip and the row's note cannot name
+     *  different losses (the account was missing from the strip once). */
+    const lostWords = (p) => [
+        p.lostModel ? `model <b>${C.esc(p.lostModel)}</b>` : '',
+        p.lostEffort ? `effort <b>${C.esc(p.lostEffort)}</b>` : '',
+        p.lostAccount ? `account <b>${C.esc(p.lostAccount)}</b>` : '',
+        p.lostRoute ? `${C.esc(routeNoun(p.engine).toLowerCase())} <b>${C.esc(p.lostRoute)}</b>` : '',
+        p.lostTier ? `tier <b>${C.esc(p.lostTier)}</b>` : ''
+    ].filter(Boolean);
     /** Every row whose explicit words no longer fit its engine — collected for
      *  the user to decide about, never applied behind their back. */
     const askNarrow = () => {
         narrowAsk = (DATA.agents || [])
             .filter(a => included(a.id))
             .map(a => narrowPlan(a.id))
-            .filter(p => p.lostModel || p.lostEffort || p.lostAccount);
+            .filter(p => p.lostModel || p.lostEffort || p.lostAccount || p.lostRoute || p.lostTier);
+    };
+    /**
+     * ‼️ X-107 — THE TIER IS THE ROUTE'S OWN, so moving the route drops the
+     * tier under it ON THE SPOT rather than asking (U-101 asks about a value
+     * the ENGINE no longer offers; this one has no meaning at all once its
+     * route is gone — `opus` on the new route is a different model, and
+     * carrying the word over would be the exact defect X-101 named). The row
+     * says what went and why, as every other clearing does.
+     */
+    const narrowTier = (agentId) => {
+        const route = form.routes[agentId] || '';
+        const tier = form.tiers[agentId] || '';
+        if (!tier) { return; }
+        if (route && tiersOf(effEngine(agentId), route).some(t => t.id === tier)) { return; }
+        form.tiers[agentId] = '';
+        narrowNote[agentId] = `tier ${tier} cleared — it belonged to the ${routeNoun(effEngine(agentId)).toLowerCase()} this row was on`;
     };
     /**
      * Read the bulk profile's four boxes back out of the DOM.
@@ -551,7 +642,7 @@
      * wipe a dimension the user had left alone.
      */
     const readProfile = () => {
-        ['engine', 'model', 'effort', 'permissionMode'].forEach(key => {
+        PROFILE_KEYS.forEach(key => {
             const el = document.getElementById('pf-' + key);
             if (el && el.value) { profile[key] = el.value; }
         });
@@ -623,6 +714,17 @@
                 if (!rows.some(e => e.id === effort)) {
                     faults.push(`${a.name} — ${model || engine} does not take effort ${effort}`);
                 }
+            }
+            // ‼️ X-107 — a route this engine cannot be pointed at, or a tier
+            // the resulting route does not serve, refuses the press the same
+            // way: the host would refuse the mission by name at creation, and
+            // a half-profiled pool is the thing this preflight exists to stop.
+            const route = pick('providerId', form.routes[a.id] || '');
+            const tier = route ? pick('tier', form.tiers[a.id] || '') : '';
+            if (route && !routeRowsFor(engine).some(p => p.id === route)) {
+                faults.push(`${a.name} — ${engine} has no ${routeNoun(engine).toLowerCase()} ${route}`);
+            } else if (tier && !tiersOf(engine, route).some(t => t.id === tier)) {
+                faults.push(`${a.name} — ${route} does not serve tier ${tier}`);
             }
         });
         return faults;
@@ -873,6 +975,51 @@
                 + ' choice of that engine answers at the spawn, exactly as it always has. A dot marks the'
                 + ' standing choice; a warning sign marks a slot that needs signing in again.';
         };
+        /**
+         * ‼️ X-107 — WHICH ENDPOINT THIS MEMBER'S DELEGATIONS ARE SERVED BY,
+         * and which tier of it. The same two boxes the Tasks form draws
+         * (`ntRouteRows`), in the same words: the label is the bare value, the
+         * axis is the tooltip's first line, the meaning lives in the hover
+         * (audit B-07.2). Drawn only where the engine has routes at all, and
+         * the tier box only under a route that serves tiers — a box with no
+         * referent is what docs/CONVENTIONS.md forbids.
+         */
+        const routeOpts = (engine, sel) => {
+            const noun = routeNoun(engine).toLowerCase();
+            return [C.option('', '— inherit —', {
+                selected: !sel,
+                detail: 'The mission’s own ' + noun + ' if it names one, else whichever ' + noun
+                    + ' this agent happens to be set to when the delegation fires — and nobody is watching when it does.'
+            })].concat(routeRowsFor(engine).map(p =>
+                C.option(p.id, p.label, { selected: p.id === sel, detail: p.detail || '' }))).join('');
+        };
+        const tierOpts = (engine, route, sel) => [C.option('', '— the route’s own choice —', {
+            selected: !sel,
+            detail: 'No tier named, so the route serves whatever it serves by default.'
+        })].concat(tiersOf(engine, route).map(t =>
+            C.option(t.id, t.label, {
+                selected: t.id === sel,
+                detail: (t.detail ? 'Served by: ' + t.detail + '\n\n' : '')
+                    + 'A tier is not a model: this name is served by a different model on every route, which is why it is asked here and not in the model box.'
+            }))).join('');
+        // MIRROR: too narrow to say what it is, so the tooltip opens with the
+        // value it holds RIGHT NOW and then explains the field.
+        const routeTitle = (engine, sel) => {
+            const row = routeRowsFor(engine).find(p => p.id === sel);
+            return (row ? row.label : 'inherit')
+                + '\n\n' + routeNoun(engine) + ': the endpoint this member’s delegations really talk to, which the'
+                + ' engine itself never says. A mission runs for hours with nobody in front of it, so a member that'
+                + ' names none takes the mission’s ' + routeNoun(engine).toLowerCase() + ', and failing that whichever'
+                + ' one this agent happens to be set to when the round fires. Changing it drops the tier under it:'
+                + ' a tier is one word meaning a different model on every ' + routeNoun(engine).toLowerCase() + '.';
+        };
+        const tierTitle = (engine, route, sel) => {
+            const row = tiersOf(engine, route).find(t => t.id === sel);
+            return (sel ? sel + (row && row.detail ? ' — ' + row.detail : '') : 'the route’s own choice')
+                + '\n\nWhich model ' + (route || 'the route') + ' serves for that name. A tier is not a model:'
+                + ' "opus" is one model on one route and another on the next, which is why it is asked here and'
+                + ' not in the model box.';
+        };
         // ‼️ M-18 — the effort vocabulary, from the host's one list too. Same
         // rule as the permissions above: never a copy typed in here, or the two
         // surfaces start offering different words for the same setting.
@@ -993,7 +1140,25 @@
                     // stands: nothing here offers a choice that has no referent);
                     // what stands in its place says WHY the axis is missing,
                     // which is more than the hole was saying.
-                    : `<span class="tmnone" title="${C.esc(engLabel + ' keeps no separate sign-ins on this machine, so there is nothing to choose on this axis — every delegation of this member runs on whatever account that CLI is already signed in as.')}">—</span>`}
+                    : `<span class="tmnone" data-axis="account" title="${C.esc(engLabel + ' keeps no separate sign-ins on this machine, so there is nothing to choose on this axis — every delegation of this member runs on whatever account that CLI is already signed in as.')}">—</span>`}
+                ${/* ‼️ X-107 — and which endpoint serves it, with the tier of
+                     that route. Two more axes on the same rule as the sign-in:
+                     the box where the engine has routes, the placeholder where
+                     it has none, so every row keeps every column (B-02.2). The
+                     tier stands in its slot as a placeholder until a route that
+                     serves tiers is named above it. */''}
+                ${routesFor(eng) ? `<select id="pr-${i}" class="mdl${ovr(form.routes[a.id])}" data-route="${C.esc(a.id)}"
+                    title="${C.esc(mirror(pv, 'providerId', routeTitle(eng, form.routes[a.id] || '')))}"
+                    ${inRow ? '' : 'disabled'}>${routeOpts(eng, form.routes[a.id] || '')}</select>`
+                    : `<span class="tmnone" data-axis="route" title="${C.esc(engLabel + ' has no separate routes on this machine — nothing to choose on this axis. Every delegation of this member talks to whatever endpoint that CLI is already pointed at.')}">—</span>`}
+                ${routesFor(eng) && tiersOf(eng, form.routes[a.id] || '').length ? `<select id="tr-${i}" class="mdl${ovr(form.tiers[a.id])}" data-tier="${C.esc(a.id)}"
+                    title="${C.esc(mirror(pv, 'tier', tierTitle(eng, form.routes[a.id] || '', form.tiers[a.id] || '')))}"
+                    ${inRow ? '' : 'disabled'}>${tierOpts(eng, form.routes[a.id] || '', form.tiers[a.id] || '')}</select>`
+                    : `<span class="tmnone" data-axis="tier" title="${C.esc(routesFor(eng)
+                        ? (form.routes[a.id]
+                            ? (routeRowsFor(eng).find(p => p.id === form.routes[a.id]) || {}).label + ' serves no named tiers — the route’s own choice answers.'
+                            : 'A tier belongs to one ' + routeNoun(eng).toLowerCase() + '. Name one beside this and its tiers are offered here.')
+                        : engLabel + ' has no routes, so it has no tiers either.')}">—</span>`}
                 ${narrowNote[a.id] ? `<span class="narrownote" title="This row's own words were cleared because the engine it is on does not offer them — said here rather than left as a value that quietly vanished.">${C.esc(narrowNote[a.id])}</span>` : ''}
             </div>`;
         }).join('');
@@ -1136,6 +1301,25 @@
                         + '\n\nLeft empty the standing choice of this engine answers when each round fires — which'
                         + ' is what every mission written before this did.')}"
                         >${accountOpts('claude', form.plannerAccount)}</select></label>` : ''}
+                ${/* ‼️ X-107 — AND WHICH ENDPOINT SERVES THE ORCHESTRATOR'S OWN
+                     CALLS, with the tier of that route. Beside the sign-in
+                     because it is the same kind of answer about the same call:
+                     the planner is one long-lived headless claude, and the
+                     workers' route says nothing about it — before this its
+                     command line ran on whatever route the lead's standing
+                     record held. Drawn only where Claude has routes set up. */''}
+                ${routesFor('claude') ? `<label>${C.esc(routeNoun('claude'))} override
+                    <select id="f-planner-route" title="${C.esc(plannerMirror('providerId',
+                        routeNoun('claude') + ' for the LEAD’s planning calls only; a delegate keeps its own row’s.'
+                        + ' The planner is always Claude Code, so these are Claude routes.'
+                        + '\n\nLeft empty, no route is injected and the lead’s own standing record answers'
+                        + ' when each round fires — which is what every mission written before this did.'
+                        + ' Changing it drops the tier under it: a tier is one word meaning a different model on every route.'))}"
+                        >${routeOpts('claude', form.plannerProviderId)}</select></label>
+                ${form.plannerProviderId && tiersOf('claude', form.plannerProviderId).length ? `<label>Tier override
+                    <select id="f-planner-tier" title="${C.esc(plannerMirror('tier',
+                        tierTitle('claude', form.plannerProviderId, form.plannerTier)))}"
+                        >${tierOpts('claude', form.plannerProviderId, form.plannerTier)}</select></label>` : ''}` : ''}
             </div>
             <div class="frow"><span class="muted small">${!adaptive
                 ? 'Its CLAUDE.md is the orchestration identity — a planning-minded agent leads best.'
@@ -1215,6 +1399,25 @@
                         : (DATA.permissions || [])),
                     'What these members may do unattended. A delegation is headless — there is nobody to ask. '
                     + 'The rows follow the engine the profile is setting: Antigravity cannot ask, so its "ask me" rows are not offered there.')}
+                ${/* ‼️ X-107 — the route and its tier, drawn only where the
+                     profile's engine has routes at all: three of the five
+                     engines have no provider axis, and a box with no referent
+                     is what docs/CONVENTIONS.md forbids. The tier list is the
+                     PROFILE's route's own — with the route left on "don't
+                     change" the rows may be on different routes, so no tier
+                     is right for all of them and only keep/clear are offered. */''}
+                ${profEngine && routesFor(profEngine) ? profDim('providerId', routeNoun(profEngine),
+                    profOpts('providerId', routeRowsFor(profEngine).map(p => ({ id: p.id, label: p.label, detail: p.detail || '' }))),
+                    routeNoun(profEngine) + ' for these delegations — the endpoint they really talk to, which the engine itself never says. '
+                    + 'Cleared, each row falls through to the mission\'s route and then to that agent\'s standing record at the spawn.')
+                    + profDim('tier', 'Tier',
+                        profile.providerId !== 'keep' && profile.providerId !== 'clear'
+                            ? profOpts('tier', tiersOf(profEngine, profile.providerId).map(t => ({ id: t.id, label: t.label, detail: t.detail ? 'Served by: ' + t.detail : '' })))
+                            : '',
+                        profile.providerId !== 'keep' && profile.providerId !== 'clear'
+                            ? 'Which model ' + profile.providerId + ' serves for that name. A tier is not a model: the same word is a different model on every route, which is why it is asked under the route and not in the model box.'
+                            : 'A tier belongs to ONE route. Set a ' + routeNoun(profEngine).toLowerCase() + ' above to offer its tiers here; with the route left alone the rows may be on different routes, so only keep or clear is honest.')
+                    : ''}
                 ${profWhy ? `<div class="profnote">⚠ ${C.esc(profWhy)}</div>` : ''}
                 ${profileErr ? `<div class="fperr"><b>Nothing was applied.</b><ul class="fplist">${
                     profileErr.split('\n').map(l => `<li>${C.esc(l)}</li>`).join('')}</ul></div>` : ''}
@@ -1229,13 +1432,11 @@
          * the reason is named, and the clearing waits for a press.
          */
         const narrowStrip = narrowAsk.length ? `<div class="narrowask"
-            title="These rows carry an explicit model or effort the engine they are now on does not offer. Left as they are, the launch refuses them by name — the draft's own refusal list above Start says so too.">
+            title="These rows carry an explicit model, effort, sign-in, route or tier the engine they are now on does not offer. Left as they are, the launch refuses them by name — the draft's own refusal list above Start says so too.">
             <b>⚠ ${narrowAsk.length} row${narrowAsk.length > 1 ? 's' : ''} no longer fit${narrowAsk.length > 1 ? '' : 's'} their engine:</b>
             <ul class="fplist">${narrowAsk.map(p => {
                 const who = ((DATA.agents || []).find(a => a.id === p.agentId) || {}).name || p.agentId;
-                const bits = [p.lostModel ? `model <b>${C.esc(p.lostModel)}</b>` : '',
-                    p.lostEffort ? `effort <b>${C.esc(p.lostEffort)}</b>` : ''].filter(Boolean);
-                return `<li>${C.esc(who)} — ${bits.join(' and ')} on ${C.esc(p.engine)}</li>`;
+                return `<li>${C.esc(who)} — ${lostWords(p).join(' and ')} on ${C.esc(p.engine)}</li>`;
             }).join('')}</ul>
             <button type="button" class="small" id="f-narrow-clear">Clear them</button>
             <button type="button" class="secondary small" id="f-narrow-keep">Keep as they are</button>
@@ -1422,6 +1623,11 @@
         // machine with no Claude sign-in captured, and an unguarded read would
         // wipe a choice the moment a slot was forgotten.
         form.plannerAccount = val('f-planner-account', form.plannerAccount);
+        // ‼️ X-107 — the planner's route and tier, guarded the same way: the
+        // tier box exists only under a route that serves tiers, so an
+        // unguarded read would wipe it the moment the route box redrew.
+        form.plannerProviderId = val('f-planner-route', form.plannerProviderId);
+        form.plannerTier = form.plannerProviderId ? val('f-planner-tier', form.plannerTier) : '';
         DATA.agents.forEach((a, i) => {
             const cb = document.getElementById('tm-' + i);
             if (!cb) { return; }
@@ -1437,6 +1643,8 @@
             form.roles[a.id] = val('rl-' + i, form.roles[a.id]);
             form.models[a.id] = val('md-' + i, form.models[a.id]);
             form.accounts[a.id] = val('ac-' + i, form.accounts[a.id]);
+            form.routes[a.id] = val('pr-' + i, form.routes[a.id]);
+            form.tiers[a.id] = val('tr-' + i, form.tiers[a.id]);
             form.engines[a.id] = val('en-' + i, form.engines[a.id]);
             form.perms[a.id] = val('pm-' + i, form.perms[a.id]);
             form.efforts[a.id] = val('ef-' + i, form.efforts[a.id]);
@@ -1486,6 +1694,12 @@
             // see is a form disagreeing with itself. `MissionSpec.account` stays
             // for the bridge and for child inheritance, exactly as `engine` does.
             plannerAccount: form.plannerAccount,
+            // ‼️ X-107 — and the orchestrator's own route, with its tier. Sent
+            // like the sign-in beside it: empty travels as empty and the host
+            // stores nothing, so the lead's standing record answers at the
+            // spawn — the behaviour of every mission before this.
+            plannerProviderId: form.plannerProviderId,
+            plannerTier: form.plannerProviderId ? form.plannerTier : '',
             /**
              * ‼️ U-101 — NO `engine` HERE. The composer used to carry a
              * `Delegation engine` box that looked like a bulk switch over the
@@ -5344,7 +5558,29 @@
                 // answers per engine AND per model), so it redraws the row too.
                 const md = document.getElementById('md-' + i);
                 if (md) { md.addEventListener('change', () => { readForm(); askNarrow(); render(); }); }
+                // ‼️ X-107 — the tier list is the ROUTE's own, so moving the
+                // route redraws the box under it and drops a tier the new route
+                // does not serve (narrowTier says so on the row). The tier
+                // itself only needs the preview to catch up, which a repaint
+                // asks for.
+                const pr = document.getElementById('pr-' + i);
+                if (pr) { pr.addEventListener('change', () => { readForm(); narrowTier(a.id); render(); }); }
+                const tr = document.getElementById('tr-' + i);
+                if (tr) { tr.addEventListener('change', () => { readForm(); render(); }); }
             });
+            // ‼️ X-107 — the planner's route decides whether its tier box exists
+            // at all, so it redraws; the guarded read in readForm already drops
+            // a tier whose route went.
+            const plannerRoute = document.getElementById('f-planner-route');
+            if (plannerRoute) {
+                plannerRoute.addEventListener('change', () => {
+                    readForm();
+                    if (!tiersOf('claude', form.plannerProviderId).some(t => t.id === form.plannerTier)) { form.plannerTier = ''; }
+                    render();
+                });
+            }
+            const plannerTier = document.getElementById('f-planner-tier');
+            if (plannerTier) { plannerTier.addEventListener('change', () => { readForm(); render(); }); }
             // ‼️ U-101 — THE BULK PROFILE. It writes onto the rows and leaves
             // nothing behind it; the dimensions left on "don't change" are not
             // touched, which is what stops an engine apply from wiping models.
@@ -5372,17 +5608,23 @@
                     set('model', form.models);
                     set('effort', form.efforts);
                     set('permissionMode', form.perms);
+                    // ‼️ X-107 — the route, and the tier under it. Clearing
+                    // the route takes its tier with it: a tier with no route
+                    // is one word meaning a different model on every route.
+                    set('providerId', form.routes);
+                    set('tier', form.tiers);
+                    if (!form.routes[a.id]) { form.tiers[a.id] = ''; }
                     delete narrowNote[a.id];
                 });
                 profileOpen = false;
                 askNarrow();
                 render();
             });
-            ['engine', 'model', 'effort', 'permissionMode'].forEach(key => {
+            PROFILE_KEYS.forEach(key => {
                 const el = document.getElementById('pf-' + key);
                 // The engine and the model change what the boxes below them may
-                // offer, so choosing one redraws the tool — the same rule a
-                // member row follows, for the same reason.
+                // offer (and the route what the tier box may), so choosing one
+                // redraws the tool — the same rule a member row follows.
                 if (el) { el.addEventListener('change', () => { readForm(); readProfile(); render(); }); }
             });
             wire('f-narrow-clear', () => {
