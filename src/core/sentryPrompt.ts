@@ -444,14 +444,28 @@ export function promptVars(i: PromptInputs): Record<string, string> {
  * item is still named — knowing which item the note is about is not the same as
  * being told to start it over — and the reminder line is only added where the
  * previous round left nothing at all.
+ *
+ * ‼️ AND THE FIRST ROUND IS A ROUND. It has no previous session, so it builds no
+ * continuation sentence at all and opens on the campaign's own opening words —
+ * which are the user's, written before anybody knew which item the backlog would
+ * give. The driver therefore runs the opening through this too, and `fresh`
+ * defaults to true because a first round has nothing behind it by definition.
  */
-function withItem(prompt: string, i: PromptInputs): string {
-    const code = String(i.next?.code ?? '').trim();
-    const text = String(i.next?.text ?? '').trim();
+export function withItemLine(
+    prompt: string,
+    next?: { code?: string; text?: string; effort?: string },
+    fresh = true
+): string {
+    const code = String(next?.code ?? '').trim();
+    const text = String(next?.text ?? '').trim();
     if (!code || !text) { return prompt; }
+    // ‼️ AN EMPTY PROMPT STAYS EMPTY. A campaign started with no opening words is
+    // REFUSED by the planner (`no-prompt`) rather than opening an empty session;
+    // an item line appended to nothing would make that emptiness look like words
+    // and send a paid round out on a sentence nobody wrote.
+    if (!prompt.trim()) { return prompt; }
     if (prompt.includes(code)) { return prompt; }
-    const effort = String(i.next?.effort ?? '').trim();
-    const fresh = i.diagnosis.outcome !== 'clean-handover';
+    const effort = String(next?.effort ?? '').trim();
     return `${prompt}\n\nTHE ITEM THIS ROUND IS ON — ${code}: ${text}`
         + (effort ? ` (effort ${effort})` : '')
         + (fresh
@@ -468,7 +482,11 @@ export function buildNextPrompt(i: PromptInputs, templates?: SentryTemplate[]): 
     const list = templates && templates.length ? templates : BUILT_IN_SENTRY_TEMPLATES;
     const t = pickTemplate(list, i.diagnosis.outcome);
     const vars = promptVars(i);
-    const prompt = withItem(t ? fillContinuation(t.text, vars) : i.diagnosis.why, i);
+    const prompt = withItemLine(
+        t ? fillContinuation(t.text, vars) : i.diagnosis.why,
+        i.next,
+        i.diagnosis.outcome !== 'clean-handover'
+    );
     return {
         prompt,
         templateId: t?.id || '',

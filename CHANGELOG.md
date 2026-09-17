@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.528.0 - and the FIRST round is a round: the opening words carry the item too (X-320) (2026-09-17)
+
+- **‼️ X-319 FIXED ROUNDS 2+ AND LEFT ROUND 1 AS BLIND AS THE FIVE THAT FAILED
+  THE DRILL.** `sentryStep` only builds words when a session has finished
+  (`words = fin && diagnosis ? buildNextPrompt(…)`), so the first round of every
+  campaign has no verdict at all and opens on `i.opening` — the sentence the
+  user typed when starting the campaign, **written before anybody knew which
+  item the backlog would hand out**. The round takes the item (`taken: P-1`) and
+  is never told what it says.
+- **The same hole sat on two more paths.** The leader's own sentence REPLACES
+  the built template and so never passed through the item attachment; and a tick
+  that wakes from a sleep whose carried sentence no longer fits drops it and
+  falls back to the opening, which was equally bare.
+- **So the attachment moved to where every path passes** — `withItem` is now the
+  exported `withItemLine` and the driver runs the prompt it is about to send
+  through it, whatever produced that prompt. `fresh` still follows the verdict,
+  so `clean-handover` keeps naming the item without the "this is the work" line.
+- **‼️ AN EMPTY OPENING STAYS EMPTY.** A campaign started with no words is
+  refused by the planner (`no-prompt`) rather than opening an empty session; an
+  item line appended to nothing would make that emptiness look like words and
+  send a paid round out on a sentence nobody wrote.
+- `test/test_sentry_driver.js` (+6) pins the itemless opening, the opening that
+  already names the code, the empty opening's refusal, the leader sentence and
+  the dropped carry.
+
 ## 3.527.0 - a round that takes an item is told what the item says, whichever verdict fired (X-319) (2026-09-16)
 
 - **‼️ MEASURED ON THE SECOND FIRE DRILL** (X-309 scenario 1 run 2, campaign

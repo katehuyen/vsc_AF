@@ -81,6 +81,30 @@ const step = (over) => sentryStep(Object.assign({
         wordless.plan.action === 'blocked' && wordless.plan.rule === 'no-prompt' && !wordless.round);
 }
 
+// ---- ‼️ X-320 — and the FIRST round is told what the item says --------------
+//
+// X-319 gave rounds 2+ the item line and left round 1 exactly as blind as the
+// five rounds that failed the drill: it has no previous session, so it builds
+// no continuation sentence at all and opens on the campaign's opening words —
+// which are the USER'S, typed before anybody knew what the backlog would give.
+{
+    const blind = step({ opening: 'Carry on with the project.' });
+    ok('‼️ opening words that name no item still arrive with the item spelled out',
+        /X-177/.test(blind.round.prompt) && /NOBET YUZEYI/.test(blind.round.prompt));
+    ok('...and the user\'s own sentence survives in front of it',
+        blind.round.prompt.startsWith('Carry on with the project.'));
+    ok('...with the effort, so a round knows the size of what it took',
+        /effort M/.test(blind.round.prompt));
+
+    const named = step({ opening: 'Take X-177 and work through it.' });
+    ok('‼️ an opening that already names the code is left exactly as it was written',
+        named.round.prompt === 'Take X-177 and work through it.');
+
+    const nothing = step({ opening: '   ' });
+    ok('‼️ …and an EMPTY opening stays empty, so the refusal still fires',
+        nothing.plan.action === 'blocked' && nothing.plan.rule === 'no-prompt' && !nothing.round);
+}
+
 // ---- a round that ended: measure → diagnose → words → plan -----------------
 {
     const s = step({ finished: goodRound(), project: 'PRS.MuratVural_DEV_VSC.AgentFarm' });
@@ -348,7 +372,12 @@ const step = (over) => sentryStep(Object.assign({
         opening: 'FIRST ROUND WORDS', now: NOW + 60 * MIN
     });
     ok('‼️ words written for an item that is no longer next are DROPPED — they name it by code',
-        moved.plan.action === 'start' && moved.round.prompt === 'FIRST ROUND WORDS');
+        moved.plan.action === 'start' && moved.round.prompt.startsWith('FIRST ROUND WORDS')
+        && moved.round.prompt.indexOf(asleep.words.prompt) < 0);
+    // ‼️ X-320 — and the opening that stands in is not sent out blind either:
+    // the item that IS next now travels with it.
+    ok('...and the opening that stands in carries the item that is next NOW',
+        /X-999/.test(moved.round.prompt) && /something else/.test(moved.round.prompt));
     const cleared = rec({ carry: r.carry });
     applySentryStep(cleared, moved, undefined, NOW + 60 * MIN);
     ok('...and the stale sentence does not sit on the record for ever', cleared.carry === undefined);
@@ -419,7 +448,11 @@ const step = (over) => sentryStep(Object.assign({
 
     const s = step({ finished: goodRound(), usage: [slot('a'), slot('b')], leader: LEAD });
     ok('the leader\'s own words are what the next round opens on',
-        s.plan.action === 'start' && s.round.prompt === LEAD.prompt);
+        s.plan.action === 'start' && s.round.prompt.startsWith(LEAD.prompt));
+    // ‼️ X-320 — the leader is a model too, and a model that names no item leaves
+    // the round to guess. Its sentence is kept whole and the item follows it.
+    ok('...and a leader sentence that names no item still arrives with the item spelled out',
+        /X-177/.test(s.round.prompt));
     ok('...and the record says they came from the leader, not from a template',
         s.words.source === 'leader' && s.words.templateId === 'leader');
     ok('...and the template it replaced is still readable, so nothing is lost',

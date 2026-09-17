@@ -6,7 +6,7 @@ import {
     DiagnosisPolicy, diagnoseSession, SessionDiagnosis, SessionFacts
 } from './sessionDiagnosis';
 import {
-    buildNextPrompt, ModelAssist, NextPrompt, SentryTemplate
+    buildNextPrompt, ModelAssist, NextPrompt, SentryTemplate, withItemLine
 } from './sentryPrompt';
 import { planSentry, SentryPlan } from './sentryRun';
 import {
@@ -291,7 +291,17 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     }
 
     // ---- and then the ordinary decision -----------------------------------
-    const prompt = words ? words.prompt : (carry?.prompt ?? String(i.opening ?? ''));
+    // ‼️ X-320 — THE OPENING WORDS GET THE ITEM LINE TOO. `words` only exists
+    // once a session has finished, so the FIRST round of every campaign — and
+    // any round crossed by a tick whose carried sentence was dropped — opens on
+    // the user's opening sentence, written before anybody knew which item the
+    // backlog would hand out. X-319 told rounds 2+ what they were working on and
+    // left round 1 exactly as blind as the five that failed the drill.
+    const prompt = withItemLine(
+        words ? words.prompt : (carry?.prompt ?? String(i.opening ?? '')),
+        i.next,
+        diagnosis ? diagnosis.outcome !== 'clean-handover' : true
+    );
 
     // ‼️ X-191 — THE LEADER MAY SAY WAIT, and waiting is not finishing. It is
     // `idle`, the same standing-still the driver already has: the campaign is
