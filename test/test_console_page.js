@@ -1235,6 +1235,31 @@ const intentOf = (o) => Object.assign({
     }));
     ok('an order that was obeyed stops shouting and says so',
         /class="ctxsig done">HANDOVER ✓</.test(status()));
+    // ‼️ S-64 (5/n) — THE LAW'S NEXT STEP IS ON THE CARD THAT STOPPED. A run
+    // told to hand over (or whose note is found) is never resumed; the button
+    // opens the composer with the same setup and the note as the first
+    // message. Drawn only there — a quiet card has no handover to continue.
+    ok('a handed-over card offers "Continue from handover" beside Open transcript',
+        /id="c-continue">Continue from handover</.test(status())
+        && status().indexOf('id="c-continue"') < status().indexOf('id="c-transcript"'));
+    ok('…MIRROR: the tooltip opens with the state the card is in — the note that closed it',
+        /Handed over: yes — 30s ago — devir\.md/.test(status()));
+    ok('…and says what the click does and does not do',
+        /Nothing starts until you press Send/.test(status()) && /never resumed/.test(status())
+        && /console\.continueFromHandover id=/.test(status()));
+    push(sigged({
+        state: 'delivered', level: 'handover', chip: 'HANDOVER', handedOver: false,
+        lines: ['Discipline signal: CONTEXT HANDOVER 41% delivered — 1m ago, through the Claude live hook (PostToolUse).']
+    }));
+    ok('a card told to hand over offers it before the note exists — the run may be writing it now',
+        /id="c-continue"/.test(status()) && /CONTEXT HANDOVER 41% delivered/.test(status()));
+    push(sigged({
+        state: 'delivered', level: 'converge', chip: 'CONVERGE', handedOver: false,
+        lines: ['Discipline signal: CONTEXT CONVERGE 36% delivered — 4m ago, through the Claude live hook (PostToolUse).']
+    }));
+    ok('‼️ a card at CONVERGE is still working — no button', !/id="c-continue"/.test(status()));
+    push(sigged(null));
+    ok('‼️ a quiet card has no handover to continue from — no button', !/id="c-continue"/.test(status()));
 
     // A reading larger than the window is two moments, not a full bar.
     push(data(CONVO.slice(), { contextTokens: 300000, contextWindowTokens: 258400 }));

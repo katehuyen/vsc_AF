@@ -83,7 +83,7 @@ import {
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
 import { cliSourceOf, LiveMonitor, LiveSession, mirrorOwns } from './core/live';
-import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, DEFAULT_CONTEXT_THRESHOLDS, lastCallFromTranscriptTail, normalizeThresholds } from './core/contextGuard';
+import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, DEFAULT_CONTEXT_THRESHOLDS, handoverContinuePrompt, handoverNoteWrittenBy, lastCallFromTranscriptTail, normalizeThresholds } from './core/contextGuard';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
@@ -1456,12 +1456,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             port: cfg().get<number>('livePort', 8377),
             // ‼️ S-64 — the listener's answer to a hook, when the session that
             // posted it is due the converge or the handover sentence.
-            contextSignal: (p) => contextGuard.check(String(p.session_id ?? ''), {
-                event: p.hook_event_name,
-                engine: cliSourceOf(String(p.session_id ?? '')) || undefined,
-                transcriptPath: p.transcript_path,
-                cwd: p.cwd
-            }),
+            contextSignal: (p) => {
+                const sid = String(p.session_id ?? '');
+                // ‼️ S-64 (5/n) — the note this session just wrote under its
+                // own name IS its "handed over"; recorded here, at the write,
+                // so a run that handed over on the quota trigger is not left
+                // reading "not yet" until somebody searches a folder for it.
+                const note = handoverNoteWrittenBy({
+                    sessionId: sid, event: p.hook_event_name, tool: p.tool_name,
+                    filePath: String(p.tool_input?.file_path ?? '')
+                });
+                if (note) { contextGuard.markHandedOver(sid, note); }
+                return contextGuard.check(sid, {
+                    event: p.hook_event_name,
+                    engine: cliSourceOf(sid) || undefined,
+                    transcriptPath: p.transcript_path,
+                    cwd: p.cwd
+                });
+            },
             // ‼️ B-23 — the bridge rule, held by the code. Narrow on purpose:
             // only a search tool, only a real session id, never a call already
             // going through the bridge, and `af:allow-id` always wins. The known
@@ -11574,6 +11586,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'console.continueFromHandover',
+            describe: '‼️ S-64 — THE LAW\'S NEXT STEP FOR A CARD THAT STOPPED: a Console card that was told CONTEXT HANDOVER, or whose handover note has been found, is a conversation that is never resumed — the next run is a FRESH session that starts from the note. This is that run, from the card\'s own setup (agent, engine, model, effort, permission mode, sign-in, route, project, superpowers), with a first message the host writes: the note\'s path when it is found (the project\'s folder and the answer folders are searched now, on this call), the transcript route (sessions.read) when it is not. args: id (the console id of the card that handed over — it needs a session id and a signal record that names handover; a quiet card is refused), open? (true = only open the composer with the setup and the message in the box and leave Send to the user — the card\'s own button does exactly this, because a run that stopped on its five-hour window is the one whose account you change first; default false = start the session at once through console.start, with every refusal that door has). Returns what was found — note, pct, the prompt — and, when started, console.start\'s own answer.',
+            handler: async (args, from) => {
+                const id = argStr(args, 'id');
+                const s = consoleHost.get(id);
+                need(!!s, `no console session "${id}" — console.sessions lists them`);
+                need(!!s!.sessionId, `"${id}" has no session id yet — nothing to continue from`);
+                const view = contextSignalView(contextGuard.record(s!.sessionId!), contextGuard.thresholds());
+                need(view.level === 'handover' || view.handedOver,
+                    `"${id}" was never told to hand over and no handover note names it (sessions.contextGuard id=${s!.sessionId}) — a quiet card has no handover to continue from`);
+                if (args.open === true) {
+                    const found = ConsolePanel.continueFromHandover(consoleDeps, id);
+                    return { id, opened: true, started: null, ...found };
+                }
+                const found = handoverContinueFor(s!.sessionId!, s!.projectId);
+                const r = await bridge.dispatch('console.start', {
+                    agent: s!.agentId, engine: s!.engine || 'claude',
+                    ...(s!.model ? { model: s!.model } : {}),
+                    ...(s!.effort ? { effort: s!.effort } : {}),
+                    ...(s!.permissionMode ? { permissionMode: s!.permissionMode } : {}),
+                    ...(s!.account ? { account: s!.account } : {}),
+                    ...(s!.providerId ? { providerId: s!.providerId } : {}),
+                    ...(s!.tier ? { tier: s!.tier } : {}),
+                    project: s!.projectId ?? '',
+                    ...(typeof s!.superpowers === 'boolean' ? { superpowers: s!.superpowers } : {}),
+                    prompt: found.prompt
+                }, from);
+                need(r.ok, `the fresh session was not started — ${r.ok ? '' : r.error}`);
+                return { id, opened: false, started: r.ok ? r.result : null, ...found };
+            }
+        },
+        {
             op: 'console.send',
             // ‼️ B-12 — "IT GOES INTO THE RUNNING TURN" IS ONE ENGINE'S
             // ANSWER, AND IT WAS PRINTED AS EVERY ENGINE'S. Only a persistent
@@ -15951,6 +15995,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // stops a smart retry resuming the conversation the note replaced.
         if (d.hit?.file) { contextGuard.markHandedOver(sid, d.hit.file); }
         return d;
+    };
+
+    /** ‼️ S-64 (5/n) — what the fresh run that continues a handed-over session
+     *  opens with: the note's path when the search finds it, the name the live
+     *  hook saw when it does not, the transcript route when there is neither.
+     *  The search lists folders, so it runs on the click, never on a render. */
+    const handoverContinueFor = (sessionId: string, projectId?: string): { prompt: string; note?: string; pct?: number } => {
+        const folder = (projectId ? projectStore.get(projectId)?.folder ?? '' : '').trim() || undefined;
+        const d = findHandover(sessionId, folder);
+        const ev = handoverEvidenceOf(sessionId);
+        const note = d.hit?.path ?? d.hit?.file ?? ev?.note;
+        return {
+            prompt: handoverContinuePrompt({ sessionId, note, pct: ev?.pct }),
+            ...(note ? { note } : {}),
+            ...(typeof ev?.pct === 'number' ? { pct: ev.pct } : {})
+        };
     };
 
     /** ‼️ X-191 — the OPENING of a note, not the whole of it. The leader gets
@@ -26085,6 +26145,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // …declared just below; the panel only ever calls them from a message
         leftoverOwner: (sessionId: string) => leftoverOwner(sessionId),
         endLeftover: (sessionId: string, pid: number) => endLeftover(sessionId, pid),
+        // S-64 (5/n) — the first message of the run that continues a handed-over card
+        handoverContinue: (sessionId: string, projectId?: string) => handoverContinueFor(sessionId, projectId),
         // a turn's cost while it is still running — see ConsoleDeps.estimateCost
         estimateCost: (model: string, u: Usage) => pricing.costFor(model, u),
         projects: () => projectStore.all().map(p => ({

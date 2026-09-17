@@ -1004,6 +1004,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#continueFromHandover",
+      "ui": [
+        "page:consolePanel.ts#continueFromHandover"
+      ],
+      "ops": [
+        "console.continueFromHandover"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#forget",
       "ui": [
         "page:consolePanel.ts#forget"

@@ -3045,6 +3045,7 @@
             : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}${guardChip(s)}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
             <span class="grow"></span>
             ${attachBtnHtml()}
+            ${continueBtnHtml(s)}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}
             ${dead ? '<button class="secondary" id="c-forget">Remove from list</button>' : '<button class="secondary" id="c-close">End session</button>'}`;
     }
@@ -5474,6 +5475,7 @@
             byId('c-transcript', 'click', () => vscode.postMessage({
                 type: 'openTranscript', sessionId: s ? s.sessionId : ''
             }));
+            byId('c-continue', 'click', () => vscode.postMessage({ type: 'continueFromHandover', id: DATA.selected }));
         }
     }
 
@@ -5570,6 +5572,39 @@
         // folder is attached by dropping it, and that is worth one clause here
         // rather than a dead end at the dialog.
         return `<button class="secondary" id="c-attach" title="Attach files — click here, drop them anywhere on this page, or paste a screenshot into the box. A FOLDER can only be dropped, not picked (Windows has no files-and-folders dialog). Images travel inside the message; everything else is handed over as a path the agent opens itself.">📎${n ? ' ' + n : ''}</button>`;
+    }
+
+    /**
+     * ‼️ S-64 (5/n) — THE LAW'S NEXT STEP, ONE CLICK FROM THE CARD THAT STOPPED.
+     *
+     * A card that was told CONTEXT HANDOVER, or whose note has been found, is a
+     * conversation that will never be continued — the next run is a FRESH
+     * session that starts from the note. Until now that meant finding the
+     * note's path, recalling the card's setup and typing the paragraph by hand.
+     * The button opens the composer on this agent with the same setup and the
+     * host's first message already in the box; it does not press Send, because
+     * a run that stopped on the quota is the one whose sign-in you change first.
+     * Drawn only on a card the signal has actually named — a quiet card has no
+     * handover to continue from. MIRROR: the tooltip opens with what the card
+     * is in right now.
+     */
+    function continueBtnHtml(s) {
+        const v = s.contextSignalView;
+        if (!s.sessionId || !v || !(v.level === 'handover' || v.handedOver)) { return ''; }
+        const lines = v.lines || [];
+        const now = (v.handedOver && lines.find(l => /^Handed over: yes/.test(l))) || lines[0] || 'CONTEXT HANDOVER';
+        return cardTip('<button class="secondary" id="c-continue">Continue from handover</button>',
+            now,
+            window.AFTip.lines([
+                'Opens the composer for this agent with this card\'s whole setup — engine, model, '
+                    + 'effort, permission mode, sign-in, route, project — and the handover note as '
+                    + 'the first message. Nothing starts until you press Send: change the account '
+                    + 'first if this run stopped on its five-hour window.',
+                window.AFTip.GAP,
+                'This conversation itself is never resumed — a window at the handover line walks '
+                    + 'straight back into the wall. The same door for an agent: '
+                    + 'console.continueFromHandover id=' + (s.id || '') + ' open=true.'
+            ]));
     }
 
     function chipsHtml() {

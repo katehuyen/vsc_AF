@@ -425,6 +425,13 @@ export interface ConsoleDeps {
     /** end that leftover, resolving once the session is really free */
     endLeftover(sessionId: string, pid: number): Promise<boolean>;
     /**
+     * ‼️ S-64 (5/n) — the first message of the fresh run that continues a
+     * handed-over session: the host finds the note (a folder search, so only
+     * on the click) and writes the paragraph. `note` and `pct` are what it
+     * found, for the answer the bridge gives.
+     */
+    handoverContinue(sessionId: string, projectId?: string): { prompt: string; note?: string; pct?: number };
+    /**
      * What the tokens a running turn has spent are worth, at the rates the rest
      * of the extension prices everything else with.
      *
@@ -708,6 +715,37 @@ export class ConsolePanel {
      * the moment a session starts, or when the user says so.
      */
     private pinnedAgent?: string;
+
+    /**
+     * ‼️ S-64 (5/n) — CONTINUE FROM A HANDOVER: THE COMPOSER, NOT A SPAWN.
+     *
+     * The law sends the next run into a fresh session that starts from the
+     * note, and this is the one door for it, shared by the card's button and
+     * the bridge (`console.continueFromHandover open=true`). It opens the
+     * composer on the card's agent with the card's setup — engine, model,
+     * effort, permission mode, superpowers, route, sign-in, project — and the
+     * host's first message already in the box, and STOPS there: a run that
+     * handed over on the quota trigger is exactly the one whose account the
+     * user wants to change before pressing Send. What was found is returned
+     * so the bridge can say it. Undefined when the card has no session id
+     * yet — there is nothing to continue from.
+     */
+    static continueFromHandover(deps: ConsoleDeps, id: string): { prompt: string; note?: string; pct?: number } | undefined {
+        const s = deps.host.get(String(id ?? '').trim());
+        if (!s?.sessionId) { return undefined; }
+        const found = deps.handoverContinue(s.sessionId, s.projectId);
+        ConsolePanel.show(deps, {
+            agentId: s.agentId, pinAgent: true,
+            projectId: s.projectId ?? '',
+            engine: s.engine,
+            launch: {
+                model: s.model, effort: s.effort, permissionMode: s.permissionMode,
+                superpowers: s.superpowers, providerId: s.providerId, tier: s.tier,
+                account: s.account, prompt: found.prompt
+            }
+        });
+        return found;
+    }
 
     static show(deps: ConsoleDeps, opts?: {
         sessionId?: string; agentId?: string; pinAgent?: boolean; projectId?: string;
@@ -2494,6 +2532,13 @@ export class ConsolePanel {
             // (`webview/context` → agentfarm.renameSession), which is why there
             // is no 'rename' message here: the row carries its identity in
             // `data-vscode-context` and the command does the rest.
+            case 'continueFromHandover': {
+                // ‼️ S-64 (5/n) — the card was told to hand over (or wrote the
+                // note): the next run is a FRESH session, opened in the composer
+                // with this card's whole setup and the host's first message.
+                ConsolePanel.continueFromHandover(this.deps, str('id'));
+                break;
+            }
             case 'openTranscript': {
                 // ‼️ A VISIBLE BUTTON THAT DOES NOTHING IS WORSE THAN NO BUTTON
                 // (X-35). This searched the Claude-only pool, so on a Codex,

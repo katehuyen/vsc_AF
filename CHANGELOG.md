@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.544.0 - continue from handover, one click from the card that stopped; the note is seen the moment it is written (S-64, closes) (2026-09-17)
+
+- **‼️ "Continue from handover" on the Console card.** A card that was told
+  CONTEXT HANDOVER, or whose handover note has been found, now carries the law's
+  next step beside "Open transcript": the button opens the composer on that
+  agent with the card's whole setup — engine, model, effort, permission mode,
+  superpowers, route, sign-in, project — and the host's first message already in
+  the box (the note's path, the reading that fired, and the protocol the fresh
+  run is bound to). It does not press Send: a run that stopped on its five-hour
+  window is the one whose account you change first. The conversation on the
+  card is never resumed. MIRROR: the tooltip opens with the state the card is
+  in. Drawn on no quiet card — a card at CONVERGE is still working.
+- **‼️ The note is seen at the write, not at the next search.** The guard used
+  to learn "handed over" only when the sentry listed the answer folders after a
+  round; a Console session that handed over by hand sat on the card as "not
+  yet". The live hook already sees every Write and Edit, so the write of a file
+  under the canonical name, by the session the eight characters in it belong
+  to, marks the record on the spot (`handoverNoteWrittenBy`) — a note written
+  for another session is that session's fact and is ignored.
+- **The same door for an agent: `console.continueFromHandover id=<console id>`**
+  — `open=true` is the button's path (composer only); the default starts the
+  fresh session at once through `console.start`, with every refusal that door
+  has. A quiet card is refused by name. `handoverContinueFor` in the host runs
+  the one search the sentry uses (`findHandover`) on the click, never on a
+  render, and writes the paragraph (`handoverContinuePrompt`).
+- S-64 closes: signal (1) · words on the surfaces (2) · retry's smart continue
+  (3) · rounds, lanes and the lead (4) · the fresh run itself (5).
+
 ## 3.543.0 - a handed-over conversation is not resumed by a task's next round, a mission lane, or the lead (S-64, 4/n) (2026-09-17)
 
 - **‼️ A round is never sent into a conversation that was handed over.** A

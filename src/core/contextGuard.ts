@@ -35,6 +35,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { ContextSample, contextPercent } from './consoleproto';
+import { parseHandoverName, shortSessionId } from './sessionDiagnosis';
 
 /** The two words the law waits for — `_REF/handover.md` names exactly these. */
 export const CONTEXT_CONVERGE_WORD = 'CONTEXT CONVERGE';
@@ -442,4 +443,64 @@ export function lastCallFromTranscriptTail(
         } catch { /* torn or foreign line */ }
     }
     return undefined;
+}
+
+/* ============ THE RUN THAT CONTINUES A HANDED-OVER ONE =================== */
+
+/**
+ * ‼️ S-64 (5/n) — A HANDOVER NOTE IS SEEN THE MOMENT IT IS WRITTEN.
+ *
+ * The guard learns that a run obeyed from the note it wrote, and until now
+ * the note was only looked for AFTER the run — by the sentry, at the end of
+ * a round. A Console session that handed over by hand (the 5-hour quota, the
+ * other trigger) sat on the card as "not yet" for as long as nobody searched.
+ * The live hook already sees every Write and Edit the session makes, so the
+ * write of a file under the canonical name, by the session that name
+ * belongs to, IS the fact — no folder listing needed.
+ *
+ * Narrow on purpose: only a PostToolUse, only a file tool, only the canonical
+ * name, and only when the eight characters in it are THIS session's. A note
+ * an agent writes for another session is that session's fact, not this one's.
+ */
+export function handoverNoteWrittenBy(p: {
+    sessionId?: string; event?: string; tool?: string; filePath?: string;
+}): string | undefined {
+    if (p.event !== 'PostToolUse') { return undefined; }
+    const tool = String(p.tool ?? '').trim();
+    if (tool !== 'Write' && tool !== 'Edit' && tool !== 'MultiEdit') { return undefined; }
+    const file = path.basename(String(p.filePath ?? '').replace(/\\/g, '/'));
+    const note = parseHandoverName(file);
+    if (!note) { return undefined; }
+    const short = shortSessionId(String(p.sessionId ?? ''));
+    if (short.length < 8 || note.session !== short) { return undefined; }
+    return file;
+}
+
+/**
+ * ‼️ S-64 (5/n) — THE FIRST MESSAGE OF THE FRESH RUN, WRITTEN BY THE HOST.
+ *
+ * The law's next step after a handover is a NEW session that starts from the
+ * note — and starting it by hand means finding the note's path, recalling the
+ * card's setup and typing the same paragraph again. The card knows all three.
+ * This is the paragraph; it lands in the composer, not in a spawned process,
+ * because the run that hands over on the QUOTA trigger is exactly the one
+ * whose account the user may want to change before pressing Send.
+ *
+ * `note` is the path when the host found it and the bare name when only the
+ * live hook saw it; without either, the fresh run is pointed at the transcript
+ * through the bridge, as a task's next round is.
+ */
+export function handoverContinuePrompt(o: { sessionId: string; note?: string; pct?: number }): string {
+    const sid = String(o.sessionId ?? '').trim();
+    const note = String(o.note ?? '').trim();
+    const closed = typeof o.pct === 'number' && o.pct > 0
+        ? `reached the context handover line at ${o.pct}% and was closed`
+        : 'was handed over and closed';
+    const from = note
+        ? `Its handover note is ${note} — read it first and continue from where it stops.`
+        : `No handover note has been found for it — read what it did with \`af.js sessions.read id=${sid}\` before you start.`;
+    return `The session before you (${sid}) ${closed}, so this is a fresh session that continues its work.\n`
+        + `${from}\n`
+        + 'Follow the handover protocol yourself: work at full capacity below the thresholds, '
+        + 'and when a trigger fires, finish the atomic step, commit, write the next note and stop.';
 }

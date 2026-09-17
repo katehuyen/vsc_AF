@@ -183,7 +183,13 @@ console.log('\n== the wiring — the host reads, the hook answers, the bridge re
         /normalizeThresholds\(/.test(setBlock) && /update\('contextConvergePct'/.test(setBlock) && /update\('contextHandoverPct'/.test(setBlock));
     const liveCfg = ext.slice(ext.indexOf('const live = new LiveMonitor('), ext.indexOf('context.subscriptions.push(live)'));
     ok('‼️ the live listener\'s config carries contextSignal → contextGuard.check, with the event, the transcript and the engine',
-        /contextSignal: \(p\) => contextGuard\.check\(/.test(liveCfg) && /event: p\.hook_event_name/.test(liveCfg) && /transcriptPath: p\.transcript_path/.test(liveCfg));
+        /contextSignal: \(p\) => \{/.test(liveCfg) && /return contextGuard\.check\(sid, \{/.test(liveCfg)
+        && /event: p\.hook_event_name/.test(liveCfg) && /transcriptPath: p\.transcript_path/.test(liveCfg));
+    // S-64 (5/n) — the write of the note is seen at the hook, BEFORE the check
+    ok('‼️ …and marks the session handed over the moment it writes its own note',
+        /handoverNoteWrittenBy\(\{/.test(liveCfg) && /tool: p\.tool_name/.test(liveCfg)
+        && /filePath: String\(p\.tool_input\?\.file_path/.test(liveCfg)
+        && liveCfg.indexOf('contextGuard.markHandedOver(sid, note)') < liveCfg.indexOf('return contextGuard.check(sid'));
     const reader = ext.slice(ext.indexOf('const contextReadingFor = '), ext.indexOf('const contextGuard = new ContextGuard('));
     ok('the reader asks the live stream first, then the transcript the hook named, then the index',
         reader.indexOf('consoleHostRef?.list()') < reader.indexOf('lastCallFromTranscriptTail(') && reader.indexOf('lastCallFromTranscriptTail(') < reader.indexOf('index.byId('));
@@ -256,6 +262,70 @@ console.log('\n== the view — what a surface says: told, told-and-unreachable, 
     ok('a handover line switched off is SAID, not silently implied',
         off.lines.some(l => /switched off, so nothing will stop this run/.test(l)));
     ok('with no `ago` the lines carry no second time format', !/ — .*ago/.test(off.lines[0]));
+}
+
+// ‼️ S-64 (5/n) — THE RUN THAT CONTINUES A HANDED-OVER ONE. Two facts the
+// card needs and a door for the law's next step: the note is seen the moment
+// the session writes it (the live hook, not a folder search after the round),
+// and "continue from handover" opens a FRESH session in the composer with the
+// card's setup and the host's first message — never a resume.
+console.log('\n== continuing from a handover — the note is seen at the write, the next run is fresh ==');
+{
+    const SID = '6af1b927-8eb7-4118-aac0-1aabadc45630';
+    const NOTE = '2026-09-17_devir_06_6af1b927_b23-kapandi.md';
+    const seen = (o) => G.handoverNoteWrittenBy(Object.assign({ sessionId: SID, event: 'PostToolUse', tool: 'Write' }, o));
+    eq('a Write of the canonical name by the session it names IS the handover',
+        seen({ filePath: 'D:\\zone\\vault\\01_CEVAPLAR\\' + NOTE }), NOTE);
+    eq('…a forward-slash path too', seen({ filePath: '/vault/01_CEVAPLAR/' + NOTE }), NOTE);
+    eq('…and an Edit of it (a note revised is still the note)', seen({ tool: 'Edit', filePath: NOTE }), NOTE);
+    eq('‼️ a note written FOR ANOTHER session is that session\'s fact, not this one\'s',
+        seen({ filePath: '2026-09-17_devir_05_b19bd67f_s64.md' }), undefined);
+    eq('a file that is not a handover note is nothing', seen({ filePath: 'D:\\repo\\src\\extension.ts' }), undefined);
+    eq('a PreToolUse (the write has not happened) is nothing', seen({ event: 'PreToolUse', filePath: NOTE }), undefined);
+    eq('a Bash call naming the file is nothing — only a file tool writes it', seen({ tool: 'Bash', filePath: NOTE }), undefined);
+    eq('no session id, no match', seen({ sessionId: '', filePath: NOTE }), undefined);
+
+    const withNote = G.handoverContinuePrompt({ sessionId: SID, note: 'D:\\vault\\' + NOTE, pct: 41 });
+    ok('the first message names the session, the line it hit and the note\'s path',
+        withNote.includes(SID) && /handover line at 41%/.test(withNote) && withNote.includes('D:\\vault\\' + NOTE));
+    ok('…says the session is FRESH and continues, never resumes', /fresh session that continues its work/.test(withNote));
+    ok('…and binds the new run to the same protocol', /handover protocol/.test(withNote) && /write the next note and stop/.test(withNote));
+    const quota = G.handoverContinuePrompt({ sessionId: SID, note: NOTE });
+    ok('a quota handover (no pct) is worded as handed over, not as a line hit',
+        /was handed over and closed/.test(quota) && !/handover line at/.test(quota));
+    const noNote = G.handoverContinuePrompt({ sessionId: SID, pct: 41 });
+    ok('‼️ with no note found the run is pointed at the transcript through the bridge, not left blind',
+        new RegExp('sessions\\.read id=' + SID).test(noNote) && /No handover note has been found/.test(noNote));
+
+    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8');
+    const door = panel.slice(panel.indexOf('static continueFromHandover('), panel.indexOf('static show('));
+    ok('the panel has one door for it, shared by the button and the bridge',
+        /case 'continueFromHandover':/.test(panel) && /ConsolePanel\.continueFromHandover\(this\.deps, str\('id'\)\)/.test(panel));
+    ok('‼️ the door opens the COMPOSER on the card\'s agent with the card\'s whole setup — never a spawn',
+        /ConsolePanel\.show\(deps, \{/.test(door) && /pinAgent: true/.test(door)
+        && ['model', 'effort', 'permissionMode', 'superpowers', 'providerId', 'tier', 'account'].every(k => new RegExp(k + ': s\\.' + k).test(door))
+        && /prompt: found\.prompt/.test(door) && !/host\.start\(/.test(door));
+    ok('…asking the host for the note only on the click', /deps\.handoverContinue\(s\.sessionId, s\.projectId\)/.test(door));
+    ok('a card with no session id has nothing to continue from', /if \(!s\?\.sessionId\) \{ return undefined; \}/.test(door));
+
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const op = ext.slice(ext.indexOf("op: 'console.continueFromHandover'"), ext.indexOf("op: 'console.send'"));
+    ok('the bridge has the same door — console.continueFromHandover', op.length > 200);
+    ok('…refusing a quiet card by name', /view\.level === 'handover' \|\| view\.handedOver/.test(op) && /a quiet card has no handover/.test(op));
+    ok('…open=true is the button\'s path, the default starts through console.start itself (one source of refusals)',
+        /args\.open === true/.test(op) && /ConsolePanel\.continueFromHandover\(consoleDeps, id\)/.test(op)
+        && /bridge\.dispatch\('console\.start', \{/.test(op) && /prompt: found\.prompt/.test(op));
+    const host = ext.slice(ext.indexOf('const handoverContinueFor = '), ext.indexOf('const headOf = '));
+    ok('the host finds the note through the ONE search the sentry uses, and records the hit',
+        /findHandover\(sessionId, folder\)/.test(host) && /handoverContinuePrompt\(\{ sessionId, note, pct: ev\?\.pct \}\)/.test(host));
+
+    const page = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
+    ok('the card draws the button only on a card the signal has named',
+        /v\.level === 'handover' \|\| v\.handedOver/.test(page) && /id="c-continue"/.test(page)
+        && /type: 'continueFromHandover', id: DATA\.selected/.test(page));
+    const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'parity.manifest.json'), 'utf8'));
+    const row = manifest.entries.find(c => c.capability === 'consolePanel.ts#continueFromHandover');
+    ok('…and the parity manifest binds the button to the op', !!row && (row.ops || []).includes('console.continueFromHandover'));
 }
 
 console.log('\n== the listener — the hook is answered with the signal, and never broken ==');
