@@ -368,6 +368,43 @@ Hosted sessions therefore carry `--allow-dangerously-skip-permissions`. The CLI'
 
 Every `Edit`/`Write` appears with its file and two buttons: **open** and **vs HEAD** (3.25.0's diff surface, reused rather than rebuilt).
 
+### ⚡ Superpowers Engineering Discipline — Dormant on Disk & Composer Switch (3.287.0 — X-55, X-132, X-133) {#superpowers}
+
+*(3.286.0 - 3.287.0)* Software engineering disciplines (Test-Driven Development - TDD, Systematic Root Cause Debugging, Step-by-Step Planning, Brainstorming, Verification and Code Review, etc.) from the **Obra Superpowers (v6.3.0)** library are integrated into Agent Farm.
+
+- **Philosophy (0 Token Cost on Disk):** Preloading 14 comprehensive discipline files into every session prompt wastes substantial token budget and slows non-engineering tasks. Skills remain dormant on disk (`D:\zone\agent\ajanlar\_SKILLS\superpowers` or configured via `agentFarm.superpowersPath`) at **0 token cost**.
+- **Composer Switch (`[⚡ Superpowers]` Toggle):** Located in the Console header strip beside the Project chip. Hovering (AFTip panel) reveals the exact Root Hook text and index of all 14 skills.
+- **Root Hook Injection (`systemPromptFileFor`):** Merges the project brief and Superpowers hook into a single system prompt file. Sends only a lightweight ~2.5 KB Root Hook (`using-superpowers/SKILL.md`) and a disk path manifest to the model.
+- **On-Demand Reading:** When debugging or writing code, the model references the manifest and reads only the specific `SKILL.md` needed using its own file reading tools.
+- **Agent Defaults:** Default is **ON** for the `developer` agent and OFF for general fleet agents (`agentFarm.superpowersDefaults`).
+- **Bridge Operations:** `superpowers.status`, `superpowers.set { agent, on }`, `superpowers.hook`.
+
+### Slash Commands Catalog (/ Menu — 3.333.0 — 3.338.0 — K-29 — K-36)
+
+- **Composer `/` Picker (`K-30`):** Typing `/` in the Console text box opens a dynamic search popup listing all built-in slash commands supported by the active engine (Claude Code, OpenCode, etc.).
+- **Engine Parity & Filtering (`K-31`, `K-32`):** Only commands genuinely executable on that session's engine are presented, filtering out unrecognized engine tools.
+- **Shell & Terminal Integrity (`K-33`):** Clean separation between PTY shell processes and hosted CLI streams; commands hand off safely to the ready environment.
+
+### Self-Restart & Resilient Console Sessions Surviving Host Reloads (3.408.0 / 3.410.0 — X-230, X-232)
+
+When Agent Farm updates or a new VSIX package is installed, the extension host can refresh without human intervention while preserving open conversations:
+
+- **Self-Restart Bridge (`src/core/selfRestart.ts`):** Three dedicated bridge operations: `farm.health`, `farm.restartExtensionHost`, and `farm.reloadWindow`.
+- **Deadlock and Loop Prevention:** Restart commands are fired outside bridge response handlers with a 600ms debounce gap and a synchronous 20s cooldown stamp on disk to strictly prevent boot loops.
+- **Draining Active Sessions (`when: "auto"`):** Arms a deferred restart when active sessions are running, automatically restarting the host once the last turn settles.
+- **Session Survival (`X-232`):** `farm.restartExtensionHost { resume: true }` seals active session IDs, spend totals, and scrollback state to disk. After host reboot, each card revives in its slot with conversation history restored from transcript **without losing continuity**.
+
+### Composer & Session Launch Architecture (X-152 / X-180 / K-40 / U-136)
+
+*(3.510.0 — 3.517.0)* The control strip below the composer text area (Agent, Engine, Route, Model, Effort, Permissions, Account, Superpowers) manages all **16 Launch Dimensions (`RunDimensions`)**.
+
+- **Pure View of Host Record (`X-152`):** Eliminates fragmented individual messages and disjointed local webview state for dropdowns. The composer is now a pure view over the Extension Host's canonical `RunDimensions` record. Changing an engine or route atomically narrows child dimensions (model, effort, account) reactively without race conditions.
+- **One-Click Launch from Saved Setups (`X-180`):** The `Start Session…` action opens directly into the user's **Saved Setups (Launch Profiles)** list. Clicking any saved profile **instantly launches the session** without preliminary dialog friction.
+- **Responsive Shorthand Layout (`U-136`):** On narrow panels, control labels automatically adopt compact shorthand forms to prevent wrapping or overflowing.
+- **Default Dialog Mode & Per-Session Filter Memory (`K-40`):** New Console session cards consistently open in clean **Dialog** mode (hiding machine traffic). Filter choices (`show`) are remembered per CLI session ID (`consolePrefs.kindsBy[sessionId]`) on the host.
+- **Stop / Interrupt Safety (`S-62`):** Clicking **Stop** (or `Interrupt`) tracks trailing background shell processes (`run_in_background`), preventing delayed task notifications from spawning unprompted new turns.
+- **Live Dimension Adjustments:** While the session directory (agent) is fixed after launch, model, effort, and permission modes remain adjustable mid-conversation via live control requests (`/model`, `/effort`, `set_permission_mode`).
+
 ### ‼️ Two processes cannot share one session (3.29.0)
 
 Claude Code **cannot join a running session.** "Resuming" a session that a terminal already has open starts a **second process** on the same transcript: both write to it, neither sees the other's turns, and the session list stitches them into **one conversation nobody actually had**.
@@ -633,14 +670,20 @@ Every session used to open as a bare `claude`, with the model, the effort, the p
 - **Defaults that apply to every session — `agentFarm.launchDefaults`.** `model` · `effort` · `permissionMode`. Set once; **Start Session, Continue Latest and Resume** all carry them. Every field is optional and **an empty one emits no flag at all** — with the default `{}` a launch is exactly the bare `claude` it always was.
 - **The Start Session… launcher** (`Ctrl+Alt+S`, the 🚀 in the Agents view title, the agent right-click menu, the **Start session…** button on the Agent Detail page). One picker that stays open: every row is a dimension of the launch, the top row is the trigger — and **its description is the exact command line that will run.** No hidden flags.
 
-| Row | What it does | CLI |
+| Row | What it does | CLI / System Flag |
 | --- | --- | --- |
 | **▶ Start** | launches; its description is the full command line | — |
 | Agent | which folder it opens in | `cwd` |
-| Where | **a terminal or the Console** — see below | — |
+| Where | **a terminal or the Console** (`surface` / `interactiveTarget`) | — |
+| Engine | Claude, Codex, Gemini, OpenCode, OpenClaw | `--engine` |
 | Model | from your own model knowledge base (`agentFarm.modelAliases`) + free text | `--model` |
 | Effort | low · medium · high · xhigh · max | `--effort` |
 | Permissions | plan · acceptEdits · auto · manual · dontAsk · ⚠ bypassPermissions | `--permission-mode` |
+| Route (Provider) | Claude / OpenRouter provider route | `providerId` |
+| Tier | Provider tier | `tier` |
+| Account | Explicit slot or smart policy (`@standing`, `@emptiest`, `@round-robin`, `@rule`) | `account` |
+| Superpowers | Agent engineering discipline hook On/Off | `superpowers` |
+| Project | Associated project scope (`PRS.*`) | `projectId` |
 | Session name | shown in the prompt box, the `/resume` picker, the terminal title **and Agent Farm's own session lists** | `-n` |
 | First prompt | opens with an opening message instead of an empty session | positional argument |
 
@@ -1551,18 +1594,25 @@ Below are the 5 foundational architectural differences between the two modes and
 
 ## Autonomous Sentry System — Multi-Account Rotation & Campaigns (Sentry) {#otonom-nobet}
 
-*(3.373.0 — 3.411.0, X-167 family)* In long-running development efforts and overnight shifts, a single Pro account's 5-hour quota window (~85-90%) eventually runs out. The **Autonomous Sentry (Sentry)** engine was built to ensure that development continues uninterrupted by rotating across authorized accounts and fallback engines.
+*(3.373.0 — 3.531.0, X-167, X-309 family)* In long-running development efforts and overnight shifts, a single Pro account's 5-hour quota window (~85-90%) or weekly limit eventually runs out. The **Autonomous Sentry (Sentry)** engine was built to ensure that development continues uninterrupted by rotating across authorized accounts and fallback engines.
 
 ### Sentry Architecture and Key Actors
 
 1. **Sentry Leader Agent (`X-191`):** When a sentry shift activates, the leader agent (default `developer` or `manager`) wakes up. Its first duty is reading transcripts, git logs, and recent handover notes to grasp project status (`plans/2026-09-05-x191-sentry-leader.md`). It synthesizes progress, selects next steps, executes or delegates tasks, writes a new handover note, and goes back to sleep until the next cycle.
-2. **Policy & Condition Engine (`X-190`, `X-194`):** Governs when shifts rotate, pause, or terminate.
-   - **Quota Boundaries:** When the active account reaches 90% of its 5-hour quota, the turn performs a structured handover and hands execution over to the next standing account.
+2. **Policy & Condition Engine (`X-190`, `X-194`, `X-309`):** Governs when shifts rotate, pause, or terminate.
+   - **5-Hour & 7-Day Weekly Quota Ceilings (Binding Bar - `X-309`):** The pool evaluates both the 5-hour and 7-day all-models weekly windows (`seven_day` bar). An account at 100% of its weekly limit is recognized as walled and is never mistakenly picked as the emptiest slot; the campaign automatically advances to the next viable account.
    - **AND Condition Groups:** Conditions evaluate live quota metrics alongside turn/error limits.
    - **Sentry Live Probe (`sentry.probe`):** Inspects the active account, remaining quota, and campaign metrics on demand.
 3. **Sentry Watchdog (`X-178`):** Monitors runs during unattended hours (e.g. 02:00 AM), terminating deadlocked child processes or hung network calls and resuming the campaign loop cleanly.
-4. **Template and Prompt Pool (`X-175`, `X-192`):** Sentry instructions are dynamically assembled from `agentFarm.sentryTemplatesFile`, injecting model costs and handover paths directly into the prompt (`sentry.templates`, `sentry.prompt`).
-5. **Account Whitelist & Multi-Engine Fallback (`X-207`):** Explicitly bounds which accounts a campaign is allowed to spend. If Claude accounts exhaust their window, fallback routes to Codex or OpenCode.
+4. **Template and Prompt Pool (`X-175`, `X-192`, `X-319`, `X-320`):**
+   - **First Round Item Injection (`X-320`):** Whatever the campaign opening prompt is, the taken backlog item's code and description (`withItemLine`) are injected directly into the first round's instructions, preventing blind starts.
+   - **Task Delivery After Empty Turns (`X-319`):** If a previous turn terminated without producing progress (hit-the-wall / nothing-to-continue), the next round receives the original item definition rather than a blind "carry on" command.
+5. **Account Whitelist & Multi-Engine Fallback (`X-207`, `X-312`):** Explicitly bounds which accounts a campaign is allowed to spend. If Claude accounts exhaust their window, fallback routes to Codex or OpenCode. Retries initiated from a sentry turn remain strictly inside the campaign pool (`X-312`).
+6. **Fire Drills & Handover Discipline (`X-309`, `X-321`–`X-323`):**
+   - **Pre-Allocated Session IDs (`X-321`):** Fresh headless Claude rounds launch with `--session-id <uuid>`, ensuring transcript bindings are established immediately without relying on fuzzy timestamp heuristics.
+   - **Handover Note Discrimination (`X-322`):** Distinguishes genuine handover notes from ordinary markdown artifacts written during code execution, eliminating irrelevant evidence dumps.
+   - **CLI Item Check Command Injection (`X-323`):** Injects the full shell command (`node <af.js> projects.backlog.check ...`) into the prompt so models can reliably close backlog items without searching for nonexistent tools.
+   - **Failure Brake:** Automatically stops the campaign loop if 5 consecutive rounds complete without forward progress.
 
 ### Surfaces and Controls
 
@@ -3206,6 +3256,70 @@ Completed phases (all 2026-07-08):
 **What comes next lives in a separate, detailed document:** from the command palette, **Agent Farm: Open Development Plan** — the far-sighted development plan: event triggers, verify steps, the MCP panel, the n8n/webhook bridge, the multimedia production pipeline (a content factory with Kling/Seedance/Nano Banana-class models), smart oversight, multiple machines and the visionary horizon. Coding follows the priority order in that plan.
 
 ## Release Notes
+
+### 3.531.0 — X-324 / X-106: Strategy Selector for Smart Account Policies (Chain vs. Emptiest Pool) and Launch Dimensions on Console Tasks (2026-09-17)
+
+- **Strategy Selector on Account Policies (X-324):** Added `strategy: 'chain' | 'emptiest'` to user-defined account policies. Previously, policies evaluated steps strictly in order (`chain`), meaning load could not distribute across multiple accounts until the first hit a wall. In `emptiest` mode, the listed accounts form an isolated pool compared at launch against live quota readings (`roomOrder`), spawning on the account with the most available room.
+- **Shape Lock for Rules (X-324):** A rule containing another rule as a step cannot be reduced to a single quota figure; the system automatically locks such policies to `chain` mode, disabling the `emptiest` selector on the Engines page with an informative tooltip.
+- **Dimension Preservation on Console Tasks (X-106):** Tasks launched into the Console (`interactiveTarget: 'console'`) now carry their full `RunDimensions` matrix via `runExtras(task)`, ensuring `providerId`, `tier`, `account` (resolved once via `launchAccountFor`), and `superpowers` are preserved at the door.
+
+### 3.529.0 — 3.530.0 — X-309 / X-321 / X-322 / X-323: Sentry Fire Drill Findings, Pre-Allocated Session IDs, and Warning Types (2026-09-17)
+
+- **Pre-Allocated Session IDs (X-321):** Fresh headless Claude runs are spawned with `--session-id <uuid>`, allowing immediate transcript resolution without ambiguous 120-second timestamp bindings across back-to-back rounds.
+- **Handover Note Discrimination (X-322):** Files authored by a session are not adopted as handover notes unless they match explicit handover naming conventions, preventing unrelated notes from cluttering prompt contexts.
+- **CLI Item Check Command Injection (X-323):** Sentry rounds are injected with the exact shell command (`node <af.js> projects.backlog.check ...`) to close backlog items, preventing agents from hallucinating missing MCP tools.
+- **Notice Type Correction (X-309):** Sentry failure brake and leader stop notifications now publish as legitimate `warning` notices rather than loose 'alert' strings.
+
+### 3.524.0 — 3.528.0 — X-309 / X-312 / X-318 / X-319 / X-320: Sentry Drills, First-Round Item Injection, and Weekly Quota Ceiling (2026-09-16)
+
+- **First-Round Item Injection (X-320):** Opening prompts across all campaign paths automatically receive the backlog item code and description via `withItemLine`, eliminating blind first rounds.
+- **Task Transfer after Empty Rounds (X-319):** If a previous round terminates without progress, the subsequent round is supplied with the original item specification rather than a blind resume prompt.
+- **Sentry Retry Pool Boundary (X-312):** Automatic retries for sentry rounds are strictly confined to the campaign's account rotation whitelist.
+- **Binding Weekly Quota Bar (X-309):** The sentry pool enforces the 7-day weekly quota limit (`seven_day`) alongside the 5-hour rolling window, preventing exhausted accounts from being selected.
+
+### 3.520.0 — 3.523.0 — X-305: Smart Account Selection Policies, Engine UI Editor, and Bridge Operations (2026-09-15 — 2026-09-16)
+
+- **Smart Account Policies Core:** Introduced user-configurable account selection rules (`agentFarm.accountPolicies`) alongside system rules (`@standing`, `@emptiest`, `@round-robin`).
+- **Launch-Time Quota Resolution (`launchAccountFor`):** Rules resolve dynamically at spawn time against real-time quota probe readings.
+- **Engines View Rule Editor:** Added an interactive Account Policies section on the Engines page with visual rule cards, drag-and-drop step reordering, and instant test simulation.
+- **Bridge Integration:** Added `policies.list`, `policies.save`, `policies.delete`, and `policies.test` IPC operations.
+
+### 3.513.0 — 3.517.0 — X-152: Composer Architectural Simplification and Host-Record Model (2026-09-15)
+
+- **Host-Record Architecture:** Centralized composer intent and state in the Extension Host, transforming the webview into a pure view.
+- **IPC Traffic Optimization:** Eliminated 16+ piecemeal UI sync messages in favor of a single unified state broadcast, eliminating UI desynchronization.
+
+### 3.510.0 — 3.512.0 — X-180 / K-40: Saved Setups, One-Click Launch, and Default Dialog Mode (2026-09-14 — 2026-09-15)
+
+- **Saved Setups Menu (X-180):** `Start Session…` opens directly onto user-defined Saved Setups for instant one-click session creation.
+- **Default Dialog Mode (K-40):** Console cards default to Dialog view, with per-session filter preferences stored in host state.
+
+### 3.500.0 — 3.509.0 — S-60 / S-62 / U-136 / X-307 / X-252 / X-258: Stop Safety, Responsive Layout, and Account Analytics (2026-09-14)
+
+- **Background Process Tracking on Stop (S-62):** Interrupting a turn halts detached shell subprocesses, preventing orphaned notifications from triggering unintended turns.
+- **Responsive Shorthand Layout (U-136):** Composer controls adapt gracefully to narrow sidebars using shorthand labels without layout clipping.
+- **Account Cost Analytics (X-252):** Account cards display monthly and per-session token usage and USD cost breakdowns.
+- **Live Account Occupancy (X-258):** Account cards show live running agent and queued turn indicators.
+- **Antigravity Permission Guard (S-60):** Unsupported permission modes are filtered out for the Antigravity engine.
+
+### 3.460.0 — 3.499.0 — X-301 / X-302 / X-277 / S-53 / X-296 / S-63 / S-59 / X-268: Pool Leadership, Process Isolation, and Resilience (2026-09-13 — 2026-09-14)
+
+- **Sentry Leader Quota Reservation (X-302):** Dedicated quota allocation and execution guarantees for campaign leader turns.
+- **Fleet-Wide Command History (X-277):** Unified terminal command history across the fleet.
+- **Self-Healing Slot Maintenance (X-301):** Background maintenance automatically detects and repairs corrupted account slots.
+- **Active Turn Duration Calculation (S-53):** Session metrics measure actual turn compute duration rather than open wall-clock time.
+- **429 Rate-Limit Exponential Backoff (S-63 / X-278):** Intelligent backoff handling when hitting API rate limits.
+- **Orphan Process Cleanup (S-59):** Detection and graceful termination of orphaned background CLI processes.
+- **Bridge Request Pre-Claiming (X-268):** IPC requests are claimed synchronously on disk before execution to prevent race conditions.
+
+### 3.412.0 — 3.459.0 — X-230 / X-232 / X-217 / X-218 / X-226 / X-228 / X-229: Self-Restart Bridge, Console Revive, and Launch Dimensions (2026-09-06 — 2026-09-13)
+
+- **Self-Restart Bridge (X-230):** Extension host restart automation via `farm.health`, `farm.restartExtensionHost`, and `farm.reloadWindow`.
+- **Console Session Revive (X-232):** Active Console sessions survive extension host restarts via serialized transcript replay.
+- **Standing Account Radio Chips (X-217):** Replaced toggle switches on account cards with clear `🟢 standing` and `⚡ Use this one` chips.
+- **Unified Account Refresh (X-218):** Single button to refresh all account quotas across all engines.
+- **Workflow Step Launch Dimensions (X-228):** Step cards support engine, model, effort, permissions, route, and tier dimensions.
+- **Multi-Round Dimension Inheritance (X-229):** Second and subsequent session rounds reliably inherit accounts and dimensions.
 
 ### 3.411.0 — X-218 — one press for every account, and the two costs under it (2026-09-06)
 

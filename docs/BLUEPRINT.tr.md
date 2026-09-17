@@ -359,9 +359,16 @@ Agent Farm güncellendiğinde veya yeni bir VSIX paketi kurulduğunda, insan mü
 - **Restart'tan Sağ Çıkan Konsol Oturumları (`X-232`):** `farm.restartExtensionHost { resume: true }` çağrıldığında, çalışan tüm Konsol oturumlarının kimlikleri, harcanan token tutarları ve scrollback geçmişi diske mühürlenir. Yeniden başlatma sonrasında her kart kendi koltuğunda, konuşma geçmişi transkriptten okunmuş olarak **kaldığı yerden devam eder**; oturumlar düşürülmez.
 
 
-### Kompozitör
+### Kompozitör ve Başlatma Mimarisi (X-152 / X-180 / K-40 / U-136)
 
-Yazma kutusunun altında **ajan · model · efor · izin modu** — hepsi launcher'ın sözlüğünden (`core/launch.ts`), yani eklentide tek bir sözlük var. `Ctrl+Enter` gönderir. **Oturum çalışırken üç ayar boyutu da canlı kalır (3.44.0)** — süreç açıldıktan sonra gerçekten sabit olan tek şey klasördür (ajan); model, efor ve izin modu üçü de CLI'ın konuşma ortasında kabul ettiği kontrol istekleri olarak gider (`/model`, `/effort`, `set_permission_mode`), yani bir ajan satırından açılan oturum, kompozitörden açılanla tam olarak aynı kadar değiştirilebilir.
+*(3.510.0 — 3.517.0)* Yazma kutusunun altındaki kontrol şeridi (Ajan, Motor, Rota, Model, Efor, İzin Modu, Hesap, Superpowers) **16 Başlatma Boyutunun (`RunDimensions`)** tamamını yönetir.
+
+- **Tek Kayıt Mimarisi (Pure View of Host Record — `X-152`):** Eski mimaride her açılır kutu için ayrı ayrı gönderilen parçalı mesajlar ve bağımsız state değişkenleri kaldırılmıştır. Kompozitör artık Extension Host'taki tek ve kanonik `RunDimensions` kaydının saf bir görünümüdür (`pure view`). Motor veya rota değiştiğinde altındaki model, efor ve hesap alanları anında ve atomik olarak reaktif daraltılır (`narrowing`).
+- **Kayıtlı Kurulumlar / Profillerden Tek Tıkla Başlatma (`X-180`):** Sol paneldeki `Start Session…` (veya `agentfarm.startSessionWith`) menüsü gereksiz "Ajan seç" sorusunu atlayarak doğrudan kullanıcının **Kayıtlı Kurulumlar (Saved Setups / Launch Profiles)** listesiyle açılır. Listeden bir profile tıklamak **anında oturumu başlatır**. Profilde ajan atanmamışsa tek seferlik atanır ve kalıcı olarak hatırlanır.
+- **Dar Panel Uyumlu Responsive Düzen (`U-136`):** Panel daraldığında kutular birbirinin üstüne binmez veya sayfadan taşmaz; etiketler otomatik olarak kompakt kısa isimlere (`shorthand`) geçer ve tüm butonlar erişilebilir kalır.
+- **Varsayılan Dialog Modu ve Oturum Bazlı Filtre Hafızası (`K-40`):** Konsolda açılan yeni oturum kartları her zaman temiz **Dialog** modunda başlar (makine trafiği gizli). Kullanıcının bir oturum kartında seçtiği filtre (`show`) host tarafında oturum kimliğine (`consolePrefs.kindsBy[sessionId]`) bağlı olarak hatırlanır; genel panel varsayılanı bozulmaz.
+- **Durdurma (Stop / Interrupt) ve Arka Plan Görev Emniyeti (`S-62`):** Kullanıcı Konsol üzerinde **Stop** (veya `Interrupt`) butonuna bastığında, turun başlattığı arka plan kabuk süreçleri (`run_in_background`) sistem tarafından takip edilir. Bu süreçlerin sonradan tamamlanıp CLI kuyruğuna sahipsiz `<task-notification>` bildirimleri basarak kullanıcıdan habersiz yeni turlar açması engellenir.
+- **Canlı Boyut Ayarları:** Oturum çalışırken klasör (ajan) sabit kalırken; model, efor ve izin modu konuşma ortasında CLI'a canlı kontrol komutları (`/model`, `/effort`, `set_permission_mode`) olarak iletilir.
 
 - **⎋ Interrupt:** çalışan turu durdurur — CLI'ın kendi kontrol kanalı üzerinden. **Tur biter, oturum ve bağlamı kalır.**
 - **‼️ Tur içinde yazmak o turu yönlendirir (3.39.0).** Ajan çalışırken yazdığın mesaj **çalışan turun içine** gider — CLI onu turun bir sonraki adımında modele teslim eder; terminalde çalışırken yazdıklarının teslim edildiği yolun aynısı. Böylece "hayır, şöyle yap" hâlâ yönlendirilecek bir iş varken varıyor. Satır konuşmaya **↯** işaretiyle girer, çünkü üstündeki turu o başlatmadı. **İki kez ölçüldü:** çıplak CLI'da (araç çağıran bir turun altıncı saniyesinde stdin'e yazılan mesaj, turun bir sonraki adımında modele ulaştı) ve Console'un kendi host'undan `smoke_console_live.js` içinde — orada kelime ancak turu **kapatan satırdan önce** düşerse sayılıyor.
@@ -695,14 +702,20 @@ Eskiden her oturum çıplak `claude` ile açılıyordu; model, efor, izin modu v
 - **Her oturuma uygulanan varsayılanlar — `agentFarm.launchDefaults`.** `model` · `effort` · `permissionMode`. Bir kere ayarla; **Start Session, Continue Latest ve Resume** dahil her başlatma bunları taşır. Her alan isteğe bağlıdır ve **boş alan hiç bayrak üretmez** — varsayılan `{}` ile başlatma, her zamanki çıplak `claude`'un aynısıdır.
 - **Start Session… launcher'ı** (`Ctrl+Alt+S`, Agents panelinin başlığındaki 🚀, ajan sağ tık menüsü, Ajan Detay sayfasındaki **Start session…** düğmesi). Açık kalan tek bir seçici: her satır başlatmanın bir boyutu, en üstteki satır ise tetiktir — ve **açıklaması, çalışacak komut satırının tam kendisidir.** Gizli bayrak yok.
 
-| Satır | Ne yapar | CLI karşılığı |
+| Satır | Ne yapar | CLI / Sistem Karşılığı |
 | --- | --- | --- |
 | **▶ Start** | başlatır; açıklaması tam komut satırıdır | — |
 | Agent | hangi klasörde açılacağı | `cwd` |
-| Where | **terminalde mi, Console'da mı** — aşağıya bak | — |
+| Where | **terminalde mi, Console'da mı** (`surface` / `interactiveTarget`) | — |
+| Engine | Claude, Codex, Gemini, OpenCode, OpenClaw | `--engine` |
 | Model | senin model bilgi tabanından (`agentFarm.modelAliases`) + serbest metin | `--model` |
 | Effort | low · medium · high · xhigh · max | `--effort` |
 | Permissions | plan · acceptEdits · auto · manual · dontAsk · ⚠ bypassPermissions | `--permission-mode` |
+| Route (Provider) | Claude / OpenRouter sağlayıcı rotası | `providerId` |
+| Tier | Sağlayıcı katmanı | `tier` |
+| Account | Seçili veya kural hesabı (`@standing`, `@emptiest`, `@round-robin`, `@kural`) | `account` |
+| Superpowers | Standart ajan disiplini kancası On/Off | `superpowers` |
+| Project | Oturumun ilişkilendirileceği proje (`PRS.*`) | `projectId` |
 | Session name | prompt kutusunda, `/resume` seçicisinde, terminal başlığında **ve Agent Farm'ın oturum listelerinde** görünür | `-n` |
 | First prompt | boş oturum yerine ilk mesajla açılır | konumsal argüman |
 
@@ -1623,20 +1636,27 @@ Aşağıda iki modun çalışma prensipleri arasındaki 5 temel mimari fark ve s
 
 ## Otonom Nöbet Sistemi — Çoklu Hesap Rotasyonu ve Kampanyalar (Sentry) {#otonom-nobet}
 
-*(3.373.0 — 3.411.0, X-167 ailesi)* Uzun soluklu projelerde ve gece boyu süren geliştirme döngülerinde tek bir Claude veya Codex hesabının 5 saatlik kullanım kotası (~%85-90) tükendiğinde sistemin durmaması, nöbeti devralan diğer hesaplara ve motorlara kesintisiz geçebilmesi için **Otonom Nöbet (Sentry)** motoru inşa edilmiştir.
+*(3.373.0 — 3.531.0, X-167, X-309 ailesi)* Uzun soluklu projelerde ve gece boyu süren geliştirme döngülerinde tek bir Claude veya Codex hesabının 5 saatlik kullanım kotası (~%85-90) veya haftalık tavanı tükendiğinde sistemin durmaması, nöbeti devralan diğer hesaplara ve motorlara kesintisiz geçebilmesi için **Otonom Nöbet (Sentry)** motoru inşa edilmiştir.
 
 ### Nöbet Mimarisi ve Temel Aktörler
 
 Otonom nöbet, sıradan bir zamanlanmış görev değildir; kendi durumunu, kotasını ve çalışma ortamını izleyen canlı bir orkestrasyondur:
 
 1. **Nöbet Lider Ajanı (`X-191`):** Nöbet başladığında lider ajan (varsayılan `developer` veya `manager`) uyanır. İlk yaptığı iş transkriptleri, git geçmişini ve son devir notlarını (`handover notes`) okuyarak projenin o anki durumunu kavramaktır (`plans/2026-09-05-x191-sentry-leader.md`). Durumu özetler, sıradaki adımları belirler, işleri alt ajanlara delege eder veya kendisi yürütür; ardından bir sonraki nöbet turuna kadar uykuya geçer.
-2. **Nöbet Koşul ve Politika Motoru (`X-190`, `X-194`):** Kampanyanın ne zaman uyuyacağını, ne zaman uyanacağını ve ne zaman duracağını yöneten kural motorudur.
-   - **Kota Eşikleri:** Bir hesabın 5 saatlik kotası `%90`'a ulaştığında tur güvenle kapatılır (`handoff`), sonraki hesaba geçilir.
+2. **Nöbet Koşul ve Politika Motoru (`X-190`, `X-194`, `X-309`):** Kampanyanın ne zaman uyuyacağını, ne zaman uyanacağını ve ne zaman duracağını yöneten kural motorudur.
+   - **5 Saatlik ve Haftalık Kota Tavanları (Binding Bar - `X-309`):** Kampanya havuzu yalnızca 5 saatlik pencereye değil, **7 günlük haftalık kullanım tavanına (`seven_day` bar)** da bakar. Haftalık duvarı aşmış (%100) bir hesap asla 'en boş' sanılıp seçilmez; havuz otomatik olarak sıradaki hesaba veya motora geçer.
    - **VE Grupları (AND Conditions):** Koşul satırları hem canlı kota okumalarını hem de tur limitlerini bir arada değerlendirir.
    - **Canlı Durum Sondası (`sentry.probe`):** Sistemin o an hangi hesapta olduğunu, kotanın ne kadar kaldığını ve nöbetin ilerleyişini anlık sorgular.
 3. **Nöbet Bekçisi (Watchdog - `X-178`):** Gece yarısı (ör. 02:00) takılan turları, cevap vermeyen süreçleri ve düşen bağlantıları izler; kilitlenmiş oturumları güvenle sonlandırıp nöbet zincirini kurtarır.
-4. **Talimat ve Şablon Havuzu (`X-175`, `X-192`):** Nöbet promptları sabit metinler değildir; `agentFarm.sentryTemplatesFile` ayarındaki şablon dosyasından dinamik olarak derlenir ve model maliyeti doğrudan prompta işlenir (`sentry.templates`, `sentry.prompt`).
-5. **Nöbet Rotasyon Havuzu (Whitelist) ve Çok Motorlu Yedekleme (`X-207`):** Kullanıcı nöbetin hangi hesapları harcamaya yetkili olduğunu tek tek belirler (ör. Claude Hesap 1 + Claude Hesap 2 + Codex Hesap 1). İzin verilmeyen hesaplara asla dokunulmaz. Claude kotası tükenirse sistem otomatik olarak Codex veya OpenCode'a devredebilir.
+4. **Talimat ve Şablon Havuzu (`X-175`, `X-192`, `X-319`, `X-320`):**
+   - **İlk Turun Kalemi Öğrenmesi (`X-320`):** Kampanyanın açılış cümlesi ne olursa olsun, ilk turun sözlerine backlog kaleminin kodu ve metni (`withItemLine`) eksiksiz enjekte edilir; kör başlangıçlar önlenir.
+   - **Boş Tur Sonrası Görev Aktarımı (`X-319`):** Eğer önceki tur hiçbir şey üretmeden kapandıysa (hit-the-wall / nothing-to-continue), sonraki tur kör bir "devam et" yerine kalemin asıl görev tanımını öğrenerek başlar.
+5. **Nöbet Rotasyon Havuzu (Whitelist) ve Çok Motorlu Yedekleme (`X-207`, `X-312`):** Kullanıcı nöbetin hangi hesapları harcamaya yetkili olduğunu tek tek belirler (ör. Claude Hesap 1 + Claude Hesap 2 + Codex Hesap 1). İzin verilmeyen hesaplara asla dokunulmaz. Nöbet turunun retry işlemi kampanya havuzundan kaçamaz (`X-312`).
+6. **Yangın Tatbikatı ve Devir Disiplini (`X-309`, `X-321`–`X-323`):**
+   - **Oturum Kimliği Ön-Tahsisi (`X-321`):** Taze headless Claude turları `--session-id <uuid>` ile başlatılır; böylece turlar kendi oturum kimliklerini kesin olarak bilir ve transkript bağları saat tahminine dayanmadan kurulur.
+   - **Devir Notu Ayrıştırması (`X-322`):** Oturumun yazdığı her markdown dosyası (kod/not) körlemesine devir notu sayılmaz; açık kimlik/handover işareti aranır.
+   - **Kalem Kapatma Komut Enjeksiyonu (`X-323`):** Nöbet turuna kalemi kapatması için af.js köprüsünün tam yolu (`node <af.js> projects.backlog.check ...`) açık bir kabuk komutu olarak verilir; modelin araç arayıp halüsinasyona düşmesi engellenir.
+   - **Hata Freni (Failure Brake):** Art arda 5 boş/başarısız tur geldiğinde sonsuz döngüye girmeden fren devreye girer ve nöbeti güvenle durdurur.
 
 ### Arayüz ve Kontroller
 
@@ -3285,6 +3305,70 @@ Tamamlanan fazlar (hepsi 2026-07-08):
 **Bundan sonrası ayrı ve ayrıntılı bir belgede yaşıyor:** komut paletinden **Agent Farm: Open Development Plan** — uzak görüşlü gelişim planı: olay tetikleyicileri, doğrulayıcı adımlar, MCP paneli, n8n/webhook köprüsü, multimedya üretim hattı (Kling/Seedance/Nano Banana sınıfı modellerle içerik fabrikası), zeki gözetim, çoklu makine ve vizyoner ufuk. Kodlama o plandaki öncelik sırasını izler.
 
 ## Sürüm Notları
+
+### 3.531.0 — X-324 / X-106: Özel Hesap Politikalarında Strateji Seçici (Zincirleme vs. En Boş Havuz) ve Konsol Görevlerinde Lansman Boyutları (2026-09-17)
+
+- **Temel Geliştirme (X-324):** Kullanıcı tanımlı akıllı hesap politikalarına `strategy: 'chain' | 'emptiest'` boyutu eklendi. Önceden kurallar yalnızca katı bir adımlama zinciri (`chain`) olarak çalışıyordu ve sıradaki hesap duvara çarpmadıkça yük sonraki hesaplara dağıtılamıyordu. Artık kural kartında `emptiest` stratejisi seçildiğinde, listelenen hesaplar kendi özel havuzunu oluşturur ve başlatma anında ölçülen kullanım verilerine göre en boş olanı (`roomOrder`) seçilerek oturum başlatılır.
+- **Biçim Kilidi (Shape Lock - X-324):** Başka bir kuralı adım olarak içeren kurallar (`rule step`), tekil bir kota metriğine indirgenemeyeceği için sistem tarafından otomatik olarak `chain` modunda kilitlenir; Engines arayüzünde `locked` rozeti ve AFTip açıklaması ile korunur.
+- **Konsol Görevlerinde Boyut Korunumu (X-106):** Görev kuyruğundan Konsol modunda başlatılan (`interactiveTarget: 'console'`) işlerde `providerId`, `tier`, `account` (tek seferlik `launchAccountFor` çözümü) ve `superpowers` boyutlarının kapıda düşmesi engellendi; `runExtras(task)` ile tam `RunDimensions` matrisi Konsol hostuna aktarıldı.
+
+### 3.529.0 — 3.530.0 — X-309 / X-321 / X-322 / X-323: Üçüncü Nöbet Tatbikatı, Oturum Kimliği Ön-Tahsisi ve Uyarı Bildirimleri (2026-09-17)
+
+- **Oturum Kimliği Ön-Tahsisi (X-321):** Headless Claude oturumları `--session-id <uuid>` ile başlatılarak transkript dosyasının anında netleşmesi sağlandı; arka arkaya açılan nöbet turlarında 120 saniyelik tolerans kaynaklı transkript bağlama gecikmeleri ve belirsizlikleri ortadan kaldırıldı.
+- **Devir Notu ve Kanıt Ayrıştırması (X-322):** Bir turun ürettiği her markdown dosyası körlemesine devir notu kabul edilmez; oturum kimliği veya açık devir deseni aranır. Ortak klasördeki ilgisiz devir notlarının nöbet promptunu şişirmesi tek satırlık özetle sınırlandı.
+- **Kalem Kapatma Komut Enjeksiyonu (X-323):** Nöbet turlarına backlog kalemini kapatabilmesi için af.js köprüsünün tam yolu ve parametreleri (`node <af.js> projects.backlog.check ...`) kabuk komutu olarak açıkça enjekte edildi; modelin olmayan araçları araması engellendi.
+- **Uyarı Bildirimi Tipi Düzeltmesi (X-309):** Nöbet freni ve lider durdurma olaylarının bildirim tipi geçersiz 'alert' yerine 'warning' olarak düzeltildi.
+
+### 3.524.0 — 3.528.0 — X-309 / X-312 / X-318 / X-319 / X-320: Nöbet Tatbikatları, İlk Tur Kalem Enjeksiyonu ve Haftalık Kota Duvarı (2026-09-16)
+
+- **İlk Tur Kalem Enjeksiyonu (X-320):** Kampanyanın açılış cümlesi ne olursa olsun, backlogdan alınan kalemin başlığı ve kodu ilk turun sistem promptuna (`withItemLine`) otomatik olarak enjekte edilir; ilk turun kör başlaması engellendi.
+- **Boş Tur Sonrası Görev Aktarımı (X-319):** Önceki tur hiçbir ilerleme kaydetmeden kapandığında, sonraki tura kör bir 'devam et' yerine kalemin gerçek tanımı aktarılır.
+- **Nöbet Yeniden Deneme İzolasyonu (X-312):** Nöbet turlarının retry mekanizması ana kullanıcı profiline kaçamaz, yalnızca kampanya havuzundaki hesaplar üzerinde döner.
+- **Haftalık Kota Tavanı (Binding Bar - X-309):** Nöbet havuzu seçimlerinde 5 saatlik pencerenin yanı sıra 7 günlük haftalık kota tavanı (`seven_day`) bağlayıcı filtre yapıldı; haftalık limiti dolmuş hesaplar en boş sanılarak seçilmez.
+
+### 3.520.0 — 3.523.0 — X-305: Akıllı Hesap Seçim Politikaları, Protokolleri ve Arayüz Düzenleyicisi (2026-09-15 — 2026-09-16)
+
+- **Akıllı Hesap Politikaları Çekirdeği:** Çiftlik genelindeki `@standing`, `@emptiest`, `@round-robin` kurallarına ek olarak kullanıcının özel hesap zincirleri tanımlayabilmesi sağlandı (`agentFarm.accountPolicies`).
+- **Lansman Anı Çözümleme (`launchAccountFor`):** Politika kuralları başlatma anında canlı kota okumalarıyla değerlendirilir; duvara çarpan hesaplar atlanır ve ilk uygun hesaba geçilir. Tüm hesaplar doluysa sistem ana hesabı harcamaz, gerekçeli bir red ile durur.
+- **Engines Arayüzü ve Kural Düzenleyici:** Motorlar sayfasına hesap kurallarının görsel olarak yönetildiği, adımların sürüklenebildiği ve test edilebildiği dinamik Kural Kartları ve Zincir Editörü entegre edildi.
+- **Köprü Desteği:** `policies.list`, `policies.save`, `policies.delete`, `policies.test` operasyonları köprüye eklendi.
+
+### 3.513.0 — 3.517.0 — X-152: Kompozitör Mimari Sadeleştirmesi ve Tekil Host-Record Modeli (2026-09-15)
+
+- **Host-Record Mimarisi:** Konsol kompozitörünün niyet ve durum yönetimi bütünüyle Extension Host tarafına taşındı. Webview katmanı saf bir görüntüleyici (`pure view`) haline getirildi.
+- **IPC Trafiğinin Sadeleştirilmesi:** 16+ farklı parçalı durum güncelleme mesajı kaldırılarak tekil, senkronize durum yayını modeline geçildi; durum sızıntıları ve arayüz desenskronizasyonları tamamen önlendi.
+
+### 3.510.0 — 3.512.0 — X-180 / K-40: Kayıtlı Kurulumlar (Saved Setups) ve Tek Tıkla Lansman (2026-09-14 — 2026-09-15)
+
+- **Kayıtlı Kurulumlar Menüsü (X-180):** `Start Session…` butonu aradaki ajan seçim adımlarını atlayarak doğrudan kullanıcının Kayıtlı Kurulumlar listesiyle açılır; listeden bir profile tıklamak anında oturumu başlatır.
+- **Varsayılan Dialog Modu (K-40):** Konsol kartları varsayılan olarak temiz Dialog görünümünde açılır; oturum bazlı filtre tercihleri host tarafında oturum kimliğine bağlı olarak saklanır.
+
+### 3.500.0 — 3.509.0 — S-60 / S-62 / U-136 / X-307 / X-252 / X-258: Durdurma Emniyeti, Dar Panel Düzeni ve Maliyet Analitiği (2026-09-14)
+
+- **Arka Plan Süreç Takibi ve Durdurma Emniyeti (S-62):** `Stop` (Interrupt) butonuna basıldığında turun başlattığı arka plan kabuk süreçleri de takip edilir ve yetim bildirimlerin yeni turlar tetiklemesi engellenir.
+- **Dar Panel Uyumlu Responsive Düzen (U-136):** Dar kenar çubuklarında kompozitör kontrolleri taşma yapmadan kompakt kısa isimlere (`shorthand`) geçer.
+- **Hesap Maliyet Analitiği (X-252):** Hesap kartlarında aylık ve oturum bazlı token harcamaları ve USD maliyet dökümleri gösterilir.
+- **Canlı Hesap Sahipliği ve Kuyruk Göstergesi (X-258):** Hesap kartlarında o an hangi ajanın/oturumun çalıştığı ve sırada kimin beklediği gösterilir.
+- **Antigravity İzin Modu Güvenliği (S-60):** Antigravity motorunda desteklenmeyen izin modları arayüzden filtrelenir.
+
+### 3.460.0 — 3.499.0 — X-301 / X-302 / X-277 / S-53 / X-296 / S-63 / S-59 / X-268: Havuz Liderliği, Süreç İzolasyonu ve Hata Toleransı (2026-09-13 — 2026-09-14)
+
+- **Nöbet Lider Turu Rezervasyonu (X-302):** Kampanya lider turları için kota ayrımı ve kesintisiz yürütme garantisi sağlandı.
+- **Filo Komut Geçmişi (X-277):** Entegre terminal geçmişi hesap bazlı değil filo genelinde birleşik hale getirildi.
+- **Kendi Kendini Onaran Slot Bakımı (X-301):** Arka plan bakım süreçlerinde slot bozulmaları otomatik tespit edilip onarılır.
+- **Gerçek Aktif Tur Süresi Hesaplaması (S-53):** Oturum süresi açık kalma süresine değil, fiilen çalışan tur sürelerinin toplamına göre hesaplanır.
+- **429 Hata Yönetimi ve Üstel Bekleme (S-63 / X-278):** API hız sınırları algılandığında akıllı bekleme süresi hesaplanır.
+- **Sahipsiz Süreç Temizliği (S-59):** Arka planda başıboş kalan CLI süreçleri tespit edilip güvenle sonlandırılır.
+- **Köprü Talep Ön-Tahsis Kilidi (X-268):** Köprü istekleri işlenmeden önce diske kilitlenerek zaman aşımı çakışmaları engellenir.
+
+### 3.412.0 — 3.459.0 — X-230 / X-232 / X-217 / X-218 / X-226 / X-228 / X-229: Kendini Yenileme Köprüsü, Konsol Diriltme ve Lansman Boyutları (2026-09-06 — 2026-09-13)
+
+- **Kendini Yenileme Köprüsü (X-230):** `farm.health`, `farm.restartExtensionHost`, `farm.reloadWindow` köprü operasyonları ile eklenti yeniden başlatma otomasyonu kuruldu.
+- **Konsol Oturumu Diriltme (X-232):** Extension host yeniden başlatmalarında canlı Konsol oturumlarının transkript ve durumlarıyla birlikte yeniden dirilmesi (`resume`) sağlandı.
+- **Tekil Hesap Seçim Rozetleri (X-217):** Hesap kartlarında karmaşık On/Off anahtarları kaldırılarak `🟢 standing` ve `⚡ Use this one` çipleri getirildi.
+- **Tüm Motorlarda Tek Tıkla Kota Yenileme (X-218):** Accounts görünümü tepesinde tüm motorların kotalarını tek tıkla yenileyen birleşik buton eklendi.
+- **İş Akışı Adım Kartlarında Lansman Boyutları (X-228):** İş akışı adımlarına model, efor, izin, rota ve tier boyutları eklendi.
+- **Çok Turlu Oturumlarda Boyut Kalıtımı (X-229):** İkinci ve sonraki turların doğru hesap ve konfigürasyonla devam etmesi garanti altına alındı.
 
 ### 3.411.0 — X-218: Tüm Motorlarda Tek Tıkla Hesap Yenileme ve Ayrık Maliyet Modeli (2026-09-06)
 
