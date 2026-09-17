@@ -362,7 +362,8 @@ import {
     argSessionIds, argStr, BridgeCaller, BridgeOutcome, BridgeRefusal, BridgeRegistry, bridgeDimsOut, bridgePage,
     bridgeRunDimensions,
     DIMS_OUT_NOTE, FINISH_SOUND_NOTE, INTERACTIVE_NOTE, need, ROUNDS_NOTE, ROUTE_NOTE, SUPERPOWERS_NOTE,
-    needOneExecutor, needRoutableEngine, optBool, optNum, optStr, parseBridgeRequest, stageBridgeCli
+    needOneExecutor, needRoutableEngine, optBool, optNum, optStr, parseBridgeRequest, stageBridgeCli,
+    stagedBridgeCliPath
 } from './core/bridge';
 import {
     archivedOutputBody, archivedReplyText, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
@@ -3746,7 +3747,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // (M-26). Declaring it is what keeps an interactive run off the
                 // clock-and-folder path, where a conversation the user opened
                 // themselves in the same folder could have been claimed (S-41).
-                sessionId: t.resumeSessionId || t.consoleSessionId,
+                // …and X-321: a fresh headless Claude run was TOLD its id at
+                // the spawn (`--session-id`), which is a declaration too.
+                sessionId: t.resumeSessionId || t.consoleSessionId || t.spawnSessionId,
                 // …and once the cost matcher has named the transcript, that is a
                 // recorded fact too — it survives the restart in the same row.
                 transcriptFile: t.costSessionFile,
@@ -28635,6 +28638,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             templates: pool.templates,
             ...(rec.opening ? { opening: rec.opening } : {}),
             project: doc.project.name,
+            bridge: stagedBridgeCliPath(context.globalStorageUri.fsPath),
             running: taskManager.sentryBusy(),
             now: Date.now()
         });

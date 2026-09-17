@@ -105,6 +105,48 @@ const step = (over) => sentryStep(Object.assign({
         nothing.plan.action === 'blocked' && nothing.plan.rule === 'no-prompt' && !nothing.round);
 }
 
+// ---- ‼️ X-323 — and it is told HOW to close the item ------------------------
+//
+// Measured on the third drill: a haiku round wrote the file, searched its TOOL
+// list for `projects.backlog.check`, found nothing, and reported the item closed.
+{
+    const BRIDGE = 'C:\\Users\\someone\\AppData\\Roaming\\Code\\User\\globalStorage\\muvusoft.agent-farm\\bridge\\af.js';
+    const told = step({ opening: 'Carry on with the project.', project: 'TST.Sentry_E2E', bridge: BRIDGE });
+    const p = told.round.prompt;
+    ok('‼️ the round is handed the exact command that closes its item',
+        p.includes('projects.backlog.check project="TST.Sentry_E2E" code=X-177 note="'));
+    ok('...through the real helper, with forward slashes a bash and a PowerShell both take',
+        p.includes('node "C:/Users/someone/AppData/Roaming/Code/User/globalStorage/muvusoft.agent-farm/bridge/af.js"'));
+    ok('...and is told it is a COMMAND, because a tool search is how the last one failed',
+        /shell command, not a tool/.test(p));
+    ok('...and that "closed" may only be said once the command answered ok',
+        /only when that command answers ok/.test(p));
+
+    const named = step({ opening: 'Take X-177 and work through it.', project: 'TST.Sentry_E2E', bridge: BRIDGE });
+    ok('an opening that already names the code still learns how to close it',
+        named.round.prompt.startsWith('Take X-177 and work through it.')
+        && named.round.prompt.includes('code=X-177'));
+
+    const already = step({
+        opening: 'Take X-177; close it with projects.backlog.check when done.',
+        project: 'TST.Sentry_E2E', bridge: BRIDGE
+    });
+    ok('an opening that already says how to close is left exactly as it was written',
+        already.round.prompt === 'Take X-177; close it with projects.backlog.check when done.');
+
+    const blind = step({ opening: 'Carry on with the project.', project: 'TST.Sentry_E2E' });
+    ok('‼️ with no helper path nothing is invented — no command at all',
+        !blind.round.prompt.includes('projects.backlog.check'));
+
+    const quoted = step({ opening: 'Carry on.', project: 'A "quoted" name', bridge: BRIDGE });
+    ok('‼️ a value a one-line command cannot quote safely produces no command',
+        !quoted.round.prompt.includes('projects.backlog.check'));
+
+    const later = step({ finished: goodRound(), project: 'TST.Sentry_E2E', bridge: BRIDGE });
+    ok('...and a round built from a finished session is told the same thing',
+        later.round.prompt.includes('code=X-177') && later.round.prompt.includes('projects.backlog.check'));
+}
+
 // ---- a round that ended: measure → diagnose → words → plan -----------------
 {
     const s = step({ finished: goodRound(), project: 'PRS.MuratVural_DEV_VSC.AgentFarm' });

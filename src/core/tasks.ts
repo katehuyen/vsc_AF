@@ -1,4 +1,5 @@
 import * as cp from 'child_process';
+import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -15,7 +16,7 @@ import {
 import { buildBrowserPrompt, hostAllowed } from './browser';
 import { engineConcurrencyWeight } from './engines';
 import {
-    claudeResumeArgs, engineContextPrefix, engineFirstPromptFlag, engineModeNote, engineOf,
+    claudeNewSessionArgs, claudeResumeArgs, engineContextPrefix, engineFirstPromptFlag, engineModeNote, engineOf,
     enginePermissionSetting, headlessEffortRefusal, headlessResumeRefusal, runArgs, tuiArgs
 } from './consoleEngine';
 import {
@@ -356,6 +357,14 @@ export interface FarmTask {
      * binding, so it survives a restart and is there before any cost is.
      */
     runSessionId?: string;
+    /**
+     * ‼️ X-321 — THE ID THIS RUN WAS TOLD TO USE AT ITS SPAWN (`--session-id`).
+     * Unlike `runSessionId`, which may have been deduced from a clock, this one
+     * is a declaration, so the launch binding carries it and nothing is guessed.
+     * Written per spawn and never copied to a retry: each spawn is its own
+     * conversation.
+     */
+    spawnSessionId?: string;
     /** ‼️ M-12 — what the run managed to do before it failed. Absent on a run
      *  that has not failed, and `unknown` until its transcript is bound. */
     failurePhase?: FailurePhase;
@@ -3851,6 +3860,16 @@ export class TaskManager implements vscode.Disposable {
         if (safeResume && !profile && !perTurn) {
             extra = claudeResumeArgs(safeResume).join(' ') + (extra ? ' ' + extra : '');
         }
+        // ‼️ X-321 — …AND A RUN THAT OPENS A CONVERSATION IS TOLD ITS ID, so the
+        // binding is declared instead of deduced off a clock that back-to-back
+        // runs in one folder make ambiguous (`claudeNewSessionArgs`).
+        const declaredId = !safeResume && !profile && !perTurn ? randomUUID() : '';
+        if (declaredId) {
+            extra = claudeNewSessionArgs(declaredId).join(' ') + (extra ? ' ' + extra : '');
+            task.spawnSessionId = declaredId;
+        } else {
+            delete task.spawnSessionId;
+        }
         // ‼️ ON A PER-TURN ENGINE THE PROMPT GOES DOWN A PIPE, NOT ONTO THE
         // COMMAND LINE — which is what lets it carry the project brief and its
         // own newlines. `codex` has no system-prompt flag at all (measured
@@ -3965,6 +3984,9 @@ export class TaskManager implements vscode.Disposable {
             } catch { /* the close handler reports what the run did */ }
         }
         this.processes.set(task.id, child);
+        // X-321 — known at the spawn, so written at the spawn: a run killed a
+        // second from now is still one somebody can find and resume.
+        if (declaredId) { this.setRunProgress(task.id, { sessionId: declaredId }); }
         /**
          * ‼️ M-14 — THIS ENGINE STATES ITS OWN CONVERSATION ID AND ITS OWN PRICE,
          * AND THE ARCHIVE WAS THE ONLY PLACE EITHER OF THEM LANDED.

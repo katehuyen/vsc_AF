@@ -78,6 +78,8 @@ export interface SentryStepInputs {
     policy?: Partial<DiagnosisPolicy>;
     /** the project's name, for the words */
     project?: string;
+    /** X-323 — the staged bridge helper, so the words can say HOW an item is closed */
+    bridge?: string;
     handoverPath?: string;
     /** what a cheap model turn cost, if the caller made one */
     assist?: ModelAssist;
@@ -230,6 +232,7 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
             next: i.next,
             handoverPath: i.handoverPath,
             project: i.project,
+            bridge: i.bridge,
             repos: (fin.facts.repos || []).map(r => r.path),
             assist: i.assist
         }, i.templates)
@@ -300,7 +303,8 @@ export function sentryStep(i: SentryStepInputs): SentryStep {
     const prompt = withItemLine(
         words ? words.prompt : (carry?.prompt ?? String(i.opening ?? '')),
         i.next,
-        diagnosis ? diagnosis.outcome !== 'clean-handover' : true
+        diagnosis ? diagnosis.outcome !== 'clean-handover' : true,
+        { bridge: i.bridge, project: i.project }
     );
 
     // ‼️ X-191 — THE LEADER MAY SAY WAIT, and waiting is not finishing. It is

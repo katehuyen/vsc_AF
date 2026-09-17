@@ -126,6 +126,79 @@ ok('the threshold is a named default, not a number buried in a comparison',
         s.identified === true && s.parts.includes('word'));
 }
 
+// ---- ‼️ X-322 — whose file it is is not what the file is ---------------------
+//
+// Measured on X-309's third drill: the round's own deliverable
+// `10_Notes/sentry_hello.md` was adopted at score 4 (authored + fresh mtime) and
+// the next round was told to "read the handover note FIRST".
+{
+    const d = discoverHandover([
+        { source: 'transcript', dir: '/vault/10_Notes', files: ['sentry_hello.md'],
+            authored: ['sentry_hello.md'], mtimes: { 'sentry_hello.md': NOW - 60000 } }
+    ], AT());
+    ok('the measured case scores at the threshold — the floor is not what failed',
+        d.considered.length === 1 && d.considered[0].score >= DEFAULT_HANDOVER_THRESHOLD);
+    ok('‼️ …and an authored file whose name says nothing of a handover is NOT adopted',
+        d.hit === undefined);
+    ok('…it stays on the list, ranked, so a surface can still show it',
+        d.considered[0].file === 'sentry_hello.md' && d.considered[0].identified === true);
+    ok('…and the evidence says why it was passed over, by name',
+        d.evidence.some(e => /sentry_hello\.md/.test(e) && /not taken/.test(e)));
+    ok('…without claiming it was the best HANDOVER note that fell short',
+        !d.evidence.some(e => /the best was sentry_hello/.test(e)));
+}
+{
+    const d = discoverHandover([
+        { source: 'transcript', files: ['sentry_hello.md', 'devir-notu.md'],
+            authored: ['sentry_hello.md', 'devir-notu.md'] }
+    ], AT());
+    ok('an authored file that SAYS handover is adopted, whatever else the session wrote',
+        d.hit && d.hit.file === 'devir-notu.md');
+}
+{
+    // the measured folder: many notes of other sessions, reached through two sources
+    const many = Array.from({ length: 27 }, (_, i) =>
+        `2026-09-${String(10 + (i % 7)).padStart(2, '0')}_devir_${String(i + 1).padStart(2, '0')}_${(0x10000000 + i).toString(16)}_konu.md`);
+    const d = discoverHandover([
+        { source: 'configured', dir: '/vault/01_CEVAPLAR', files: many },
+        { source: 'fallback', dir: '/vault/01_CEVAPLAR', files: many }
+    ], AT());
+    const lines = d.evidence.filter(e => /handover note/.test(e));
+    ok('‼️ 27 notes of other sessions, seen twice, become ONE line in the evidence',
+        lines.length === 2 && lines.some(e => /^27 handover notes of other sessions were passed over/.test(e)));
+    ok('…which still names a few, so a person can see what kind of thing was passed over',
+        lines.some(e => /among them/.test(e) && /_konu\.md/.test(e)));
+    ok('…and no single rejection is recited on its own any more',
+        !d.evidence.some(e => /is the handover note of session/.test(e)));
+
+    const few = discoverHandover([
+        { source: 'configured', dir: '/v', files: [OTHER] },
+        { source: 'fallback', dir: '/v', files: [OTHER] }
+    ], AT());
+    ok('a near miss reached through two sources is reported ONCE',
+        few.evidence.filter(e => /deadbeef/.test(e)).length === 1);
+}
+{
+    const d = discoverHandover([
+        { source: 'transcript', files: ['gece-notu.md'], authored: ['gece-notu.md'] }
+    ], AT());
+    ok('‼️ X-189 still holds: a NOTE the session called something else is adopted',
+        d.hit && d.hit.file === 'gece-notu.md');
+}
+{
+    const d = discoverHandover([{ source: 'transcript', files: ['689569e7.md'], authored: [] }], AT());
+    ok('a file named after the session is about the session — the id in the name is enough',
+        d.hit && d.hit.file === '689569e7.md');
+}
+{
+    const d = discoverHandover([
+        { source: 'transcript', files: ['CHANGELOG.md'], authored: ['CHANGELOG.md'],
+            mtimes: { 'CHANGELOG.md': NOW - 1000 } }
+    ], AT());
+    ok('‼️ a developer session that edited CHANGELOG.md did not thereby hand over',
+        d.hit === undefined);
+}
+
 // ------------------------------------------------------------------ discovery
 {
     const d = discoverHandover([

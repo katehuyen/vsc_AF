@@ -45,6 +45,10 @@ import { HandoverNote, parseHandoverName, shortSessionId } from './sessionDiagno
  *   canonical +2  the full `YYYY-MM-DD_devir_##_<sid8>_<topic>.md` pattern —
  *                 still PREFERRED, just no longer required
  *
+ * ‼️ AND ADOPTION ASKS ONE THING MORE (`saysHandover`): the id in the name, the
+ * word, or the canonical pattern. Authorship alone proves whose file it is, not
+ * that it is a handover note.
+ *
  * ‼️ AND NOT LISTED IS NOT EMPTY. X-174's law, unchanged: a source that could
  * not be read goes on `unknown`, a source that was read and had nothing in it
  * is evidence. Blurring them is how "no handover note" gets said about a folder
@@ -166,6 +170,10 @@ export interface HandoverDiscovery {
 const MD_RE = /\.md$/i;
 const DATE_RE = /(\d{4})-(\d{2})-(\d{2})/;
 const WORD_RE = /(^|[^a-z0-9])(devir|handover|hand-over)([^a-z0-9]|$)/i;
+/** X-322 — how many passed-over notes are named before the rest become a count. */
+const NEAR_MISS_NAMED = 3;
+/** X-322 — a note by any other name: enough to ADOPT an authored file, worth no points. */
+const NOTE_RE = /(^|[^a-z0-9])(not|notu|notlar|notlari|note|notes)([^a-z0-9]|$)/i;
 const DAY_MS = 86400000;
 
 /** Days between two `YYYY-MM-DD` strings, read as calendar days rather than as
@@ -258,6 +266,29 @@ function join(dir: string | undefined, file: string): string | undefined {
     return /[\\/]$/.test(d) ? d + file : d + sep + file;
 }
 
+/**
+ * ‼️ X-322 — IDENTITY SAYS WHOSE FILE IT IS, NOT THAT IT IS A HANDOVER NOTE.
+ *
+ * Authorship is worth +3 and the default threshold is 3, so on its own it
+ * adopted EVERY markdown file the session wrote. Measured on X-309's third
+ * drill: the round's own deliverable, `10_Notes/sentry_hello.md`, was adopted
+ * at score 4 (authored + a fresh mtime) and the next round was told to "read
+ * the handover note FIRST and carry on from exactly where it stopped" — about a
+ * one-line file that says nothing of the kind. A session writes reports, notes
+ * and changelogs; none of them is a handover because the session wrote it.
+ *
+ * So adoption needs one thing that speaks of a handover: the session's id in
+ * the NAME (a file named after a session is about that session), the word, the
+ * canonical pattern — or the word NOTE (`NOTE_RE`), because X-189's whole point
+ * was a note the agent called something else (`gece-notu.md`), and that is
+ * still found. The file stays identified and ranked — only the adoption asks
+ * for more.
+ */
+function saysHandover(c: HandoverHit): boolean {
+    return c.parts.includes('id') || c.parts.includes('word') || c.parts.includes('canonical')
+        || NOTE_RE.test(c.file.toLowerCase());
+}
+
 const rank = (s: HandoverSource): number => {
     const i = HANDOVER_SOURCES.indexOf(s);
     return i < 0 ? HANDOVER_SOURCES.length : i;
@@ -277,6 +308,8 @@ export function discoverHandover(
     const unknown: string[] = [];
     const evidence: string[] = [];
     const considered: HandoverHit[] = [];
+    // near misses, by file name — a folder reached through two sources is one folder
+    const passed = new Map<string, string>();
     const threshold = typeof o.threshold === 'number' ? o.threshold : DEFAULT_HANDOVER_THRESHOLD;
     const short = shortSessionId(o.sessionId ?? '');
 
@@ -316,7 +349,7 @@ export function discoverHandover(
                 // as rejected — listing every unrelated file in the folder is
                 // noise. A near miss is exactly what a person wants to see when
                 // they are wondering why their note was not picked up.
-                if (s.note || s.parts.includes('word')) { evidence.push(s.why); }
+                if (s.note || s.parts.includes('word')) { passed.set(file, s.why); }
                 continue;
             }
             considered.push({
@@ -327,6 +360,25 @@ export function discoverHandover(
                 ...(s.note ? { date: s.note.date, seq: s.note.seq, session: s.note.session, topic: s.note.topic } : {})
             });
         }
+    }
+
+    /**
+     * ‼️ X-322 — THE NEAR MISSES ARE COUNTED, NOT RECITED, once there are many.
+     *
+     * This list is not only read by a person: it is `{evidence}` in the words the
+     * next round opens on. Measured on X-309's third drill: the shared handover
+     * folder held 27 notes of other sessions, reached through two sources, and a
+     * round that was supposed to write one line was handed 54 sentences about
+     * sessions it had never heard of — the "wall of evidence" run 2 had already
+     * seen send a model after the wrong work. A few are named, because a near
+     * miss is what a person wonders about; the rest are a number.
+     */
+    const misses = [...passed.values()];
+    if (misses.length > NEAR_MISS_NAMED) {
+        evidence.push(`${misses.length} handover notes of other sessions were passed over `
+            + `(${[...passed.keys()].sort().slice(-NEAR_MISS_NAMED).join(', ')} among them)`);
+    } else {
+        evidence.push(...misses);
     }
 
     if (!measured && !rows.length) {
@@ -340,12 +392,21 @@ export function discoverHandover(
         || ((b.mtimeMs ?? 0) - (a.mtimeMs ?? 0))
         || (a.file < b.file ? 1 : a.file > b.file ? -1 : 0));
 
-    const hit = considered.find(c => c.score >= threshold);
+    const hit = considered.find(c => c.score >= threshold && saysHandover(c));
+    // ‼️ X-322 — an authored file that was passed over is named, because "the
+    // session wrote this and it was not taken" is exactly the question a person
+    // asks when a round was sent after the wrong thing.
+    for (const c of considered) {
+        if (c === hit || saysHandover(c) || c.score < threshold) { continue; }
+        evidence.push(`${c.file} was written by this session, but nothing in its name says it is a `
+            + 'handover note, so it is not taken for one');
+    }
     if (hit) {
         evidence.push(`handover note: ${hit.path ?? hit.file} (${hit.source}, score ${hit.score})`);
     } else if (measured) {
-        evidence.push(considered.length
-            ? `no handover note reached the threshold of ${threshold}; the best was ${considered[0].file} at ${considered[0].score}`
+        const best = considered.find(saysHandover);
+        evidence.push(best
+            ? `no handover note reached the threshold of ${threshold}; the best was ${best.file} at ${best.score}`
             : 'no handover note names this session');
     }
 

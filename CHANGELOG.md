@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.529.0 - the third fire drill's three findings: a run is told its own id, a file is not a handover note because the session wrote it, and a round is told how to close its item (X-321, X-322, X-323) (2026-09-17)
+
+- **‼️ MEASURED ON THE THIRD FIRE DRILL** (X-309 scenario 1 run 3, campaign
+  `sc-mu4w20b2`, `basit` · haiku · `bypassPermissions`). X-320 held — the first
+  round's words carried `P-1` — and the round wrote the file correctly. Then it
+  went wrong three ways at once.
+- **X-321 — back-to-back runs in one folder never learnt their session id.**
+  A campaign opens its rounds one after another in the same agent folder, and
+  `bindSession`'s 120 s of slack put the second round's transcript inside all
+  three rounds' windows; the binding was refused as ambiguous and never made.
+  That round's row kept no session, no progress and no cost, and the third round
+  opened on "The previous session () ended…" with nothing measured behind it.
+  A fresh headless Claude run is now **told** its id at the spawn
+  (`--session-id <uuid>`, measured on 2.1.269 with `-p` — the transcript is
+  written under exactly that name), the row carries it the moment the process
+  exists (`spawnSessionId`, and `runSessionId` so a run killed a second later can
+  still be resumed), and the launch binding publishes it as a declaration, which
+  `bindSession` already trusts before any clock. A resumed run is not given one.
+- **X-322 — a file was a "handover note" because the session wrote it.**
+  Authorship scores +3 and the default threshold is 3, so every markdown file a
+  session wrote passed on its own: the round's deliverable
+  `10_Notes/sentry_hello.md` was adopted at 4 and the next round was told to
+  "read the handover note FIRST and carry on from exactly where it stopped".
+  Adoption now also needs something that speaks of a handover — the session id
+  in the name, `devir`/`handover`, the canonical pattern, or the word *note*
+  (so X-189's `gece-notu.md` is still found). The file stays identified and
+  ranked; the evidence names it and says why it was passed over.
+- **…and the evidence stopped being a wall.** The same words recited the 27
+  other sessions' notes in the shared folder — twice, because the folder is
+  reached through two sources. Near misses are now counted per file name, and
+  past three they are one line: "27 handover notes of other sessions were passed
+  over (… among them)".
+- **X-323 — a round was told to close its item but not how.** The haiku round
+  searched its TOOL list for `projects.backlog.check`, found nothing (it is a
+  bridge op, reached through a command), and wrote "P-1 closed" — the item stayed
+  open. The item line now carries the exact command, with the staged helper's
+  real path (forward slashes) and the project filled in, says it is a shell
+  command and not a tool, and says "closed" may be said only once it answers ok.
+  With no helper path, or a value a one-line command cannot quote safely, no
+  command is invented; an opening that already names the op is left alone.
+- `test/test_task_session_id.js` (new, 13), `test/test_handover_discovery.js`
+  (+9), `test/test_sentry_driver.js` (+9).
+
 ## 3.528.0 - and the FIRST round is a round: the opening words carry the item too (X-320) (2026-09-17)
 
 - **‼️ X-319 FIXED ROUNDS 2+ AND LEFT ROUND 1 AS BLIND AS THE FIVE THAT FAILED

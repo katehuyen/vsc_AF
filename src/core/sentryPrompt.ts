@@ -43,6 +43,8 @@ export interface PromptInputs {
     /** where the handover note really is — the caller owns the folder, not this file */
     handoverPath?: string;
     project?: string;
+    /** X-323 — the staged bridge helper (`af.js`), so a round is told how to close its item */
+    bridge?: string;
     /** the repositories the campaign works in */
     repos?: string[];
     /** ‼️ What the cheap turn ACTUALLY cost, when one was made. The item asks
@@ -454,7 +456,8 @@ export function promptVars(i: PromptInputs): Record<string, string> {
 export function withItemLine(
     prompt: string,
     next?: { code?: string; text?: string; effort?: string },
-    fresh = true
+    fresh = true,
+    close?: ItemClose
 ): string {
     const code = String(next?.code ?? '').trim();
     const text = String(next?.text ?? '').trim();
@@ -464,14 +467,49 @@ export function withItemLine(
     // an item line appended to nothing would make that emptiness look like words
     // and send a paid round out on a sentence nobody wrote.
     if (!prompt.trim()) { return prompt; }
-    if (prompt.includes(code)) { return prompt; }
+    const how = prompt.includes(CLOSE_OP) ? '' : closeLine(code, close);
+    if (prompt.includes(code)) { return how ? `${prompt}\n\n${how}` : prompt; }
     const effort = String(next?.effort ?? '').trim();
     return `${prompt}\n\nTHE ITEM THIS ROUND IS ON — ${code}: ${text}`
         + (effort ? ` (effort ${effort})` : '')
         + (fresh
             ? '\n\nNothing was left behind to carry on from, so this is the work: do what the '
             + 'item says, and close it with a note somebody can read in three months.'
-            : '');
+            : '')
+        + (how ? `\n\n${how}` : '');
+}
+
+/** Where a round closes its item: the bridge helper and the project it names. */
+export interface ItemClose {
+    /** the staged `af.js` — absent means the host could not say, and no command is invented */
+    bridge?: string;
+    project?: string;
+}
+
+const CLOSE_OP = 'projects.backlog.check';
+
+/**
+ * ‼️ X-323 — A ROUND IS TOLD HOW TO CLOSE, NOT ONLY THAT IT SHOULD.
+ *
+ * Measured on X-309's third drill: a haiku round wrote the file its item asked
+ * for, then searched its TOOL list for `projects.backlog.check`, found nothing
+ * (it is a bridge op, reached through a command) and reported "P-1 closed" —
+ * the item stayed open, and the campaign went on opening rounds on it. "Close
+ * it" names a wish; this names the command, with the helper's real path and the
+ * project filled in, so a small model has nothing to look for.
+ *
+ * Forward slashes, because the round may be in Git Bash or in PowerShell and
+ * both take them; and nothing at all when a value would need quoting that a
+ * one-line command cannot give it safely.
+ */
+function closeLine(code: string, close?: ItemClose): string {
+    const bridge = String(close?.bridge ?? '').trim().replace(/\\/g, '/');
+    const project = String(close?.project ?? '').trim();
+    if (!bridge || !project || /["`$]/.test(bridge + project)) { return ''; }
+    return 'Close the item through the Agent Farm bridge — it is a shell command, not a tool: '
+        + `node "${bridge}" ${CLOSE_OP} project="${project}" code=${code} `
+        + 'note="<what was done and where, in one or two sentences>". '
+        + 'The item is closed only when that command answers ok — say so only then.';
 }
 
 /**
@@ -485,7 +523,8 @@ export function buildNextPrompt(i: PromptInputs, templates?: SentryTemplate[]): 
     const prompt = withItemLine(
         t ? fillContinuation(t.text, vars) : i.diagnosis.why,
         i.next,
-        i.diagnosis.outcome !== 'clean-handover'
+        i.diagnosis.outcome !== 'clean-handover',
+        { bridge: i.bridge, project: i.project }
     );
     return {
         prompt,

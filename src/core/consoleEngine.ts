@@ -891,6 +891,25 @@ export function claudeResumeArgs(sessionId: string): string[] {
 }
 
 /**
+ * ‼️ X-321 — A FRESH HEADLESS CLAUDE RUN IS TOLD WHICH CONVERSATION IT IS.
+ *
+ * Without this the run's id is DEDUCED afterwards, from the engine, the folder
+ * and the clock (`bindSession`, 120 s of slack) — and a sentry campaign opens
+ * its rounds back to back in ONE folder, so a round's transcript overlaps its
+ * neighbours' windows and is refused as ambiguous. Measured (X-309 run 3): the
+ * second round never learnt its id, and the third round opened on "The previous
+ * session ()". `--session-id <uuid>` names the transcript file before it exists
+ * (measured on 2.1.269 with `-p`), so the binding is declared rather than
+ * guessed. A UUID only: anything else is refused by the CLI and, on this string
+ * command line, would be shell syntax.
+ */
+export function claudeNewSessionArgs(sessionId: string): string[] {
+    const id = String(sessionId ?? '').trim();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+        ? ['--session-id', id] : [];
+}
+
+/**
  * ‼️ S-19 — CAN THIS RUN CONTINUE THAT CONVERSATION AT ALL? '' = yes; anything
  * else is the sentence to refuse with.
  *
