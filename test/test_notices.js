@@ -27,6 +27,20 @@ const { BridgeRegistry } = require(path.join(__dirname, '..', 'out', 'core', 'br
     ok('level kept (3)', n.level === 3);
     ok('unknown type → update', coerceType('nope') === 'update');
     ok('rich type set', ['update', 'report', 'result', 'reminder', 'suggestion', 'warning', 'question'].every(t => NOTICE_TYPES.includes(t)));
+    // ‼️ X-309 — `NoticeInput.type` is a loose string and an unknown word becomes
+    // `update` without a sound: the sentry's two warnings were posted as 'alert'
+    // and reached the user as routine updates (measured on the fire drill). So
+    // every literal type the host posts is read out of the source and checked.
+    {
+        const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        const posted = [];
+        const re = /noticesStore\.add\(\{[\s\S]{0,400}?\btype:\s*'([a-z-]+)'/g;
+        for (let m; (m = re.exec(src));) { posted.push(m[1]); }
+        const wrong = posted.filter(t => !NOTICE_TYPES.includes(t));
+        ok('the host posts notices with literal types at all (the reading found some)', posted.length >= 2);
+        ok('‼️ every notice type the host posts is a real one — none silently becomes update: '
+            + (wrong.join(', ') || 'none'), wrong.length === 0);
+    }
     ok('new types coerce', coerceType('warning') === 'warning' && coerceType('result') === 'result' && coerceType('suggestion') === 'suggestion');
     ok('bad level → 1', coerceLevel(9) === 1 && coerceLevel('x') === 1 && coerceLevel(2) === 2);
     ok('stars clamp 0..3', coerceStars(5) === 0 && coerceStars(2) === 2 && coerceStars(-1) === 0);

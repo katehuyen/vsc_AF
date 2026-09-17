@@ -2,6 +2,18 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.530.0 - the sentry's warnings reach the user as warnings (X-309) (2026-09-17)
+
+- **‼️ MEASURED ON THE FIRE DRILL (scenario 2).** The failure brake fired and
+  posted its notice — but as a routine **update**. Both sentry notices
+  ("Sentry stopped", "the leader has stopped waking") were posted with
+  `type: 'alert'`, which is not a notice type; `NoticeInput.type` is a loose
+  string and an unknown word becomes `update` without a sound. Both are
+  `warning` now.
+- `test/test_notices.js` (+2) reads every literal type the host posts out of
+  `src/extension.ts` and requires each to be a real `NOTICE_TYPES` entry
+  (mutation-checked: putting `'alert'` back fails it by name).
+
 ## 3.529.0 - the third fire drill's three findings: a run is told its own id, a file is not a handover note because the session wrote it, and a round is told how to close its item (X-321, X-322, X-323) (2026-09-17)
 
 - **‼️ MEASURED ON THE THIRD FIRE DRILL** (X-309 scenario 1 run 3, campaign

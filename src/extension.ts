@@ -28581,7 +28581,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (leader?.announce && leader.why) {
             noticesStore.add({
                 title: 'Sentry - the leader has stopped waking',
-                type: 'alert', level: 2,
+                type: 'warning', level: 2,
                 body: `${leader.why}\n\nThe campaign is NOT stopped: it carries on mechanically, `
                     + 'filling the continuation templates, and starts thinking again tomorrow. '
                     + 'agentFarm.sentryLeaderBudgetUsd is the daily figure.',
@@ -28703,7 +28703,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (step.stop) {
             noticesStore.add({
                 title: `Sentry stopped - ${doc.project.name}`,
-                type: 'alert',
+                type: 'warning',
                 level: 2,
                 body: step.stop,
                 agentName: rec.agent,
