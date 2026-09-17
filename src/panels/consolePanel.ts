@@ -293,6 +293,12 @@ export interface ConsoleDeps {
          *  where nothing has measured it. The figure the choice turns on, so it
          *  travels with the row rather than costing a click. */
         percent: number;
+        fivePercent?: number;
+        weekPercent?: number;
+        fiveResetsAt?: number;
+        weekResetsAt?: number;
+        resetsAt?: number;
+        window?: string;
     }[];
     /**
      * ‼️ X-305 — THE RULES THIS ENGINE OFFERS, the twin of `accountsFor`.
@@ -1740,6 +1746,37 @@ export class ConsolePanel {
     }
 
     /**
+     * ‼️ X-326 — IN-PLACE ACCOUNT OPTIONS SYNC.
+     *
+     * Pushes the latest in-memory account readings and rules to the webview
+     * without triggering a full page rebuild (no M-33 repaint).
+     */
+    postAccounts(): void {
+        if (!this.mounted) { return; }
+        const chosenEngine = engineOf(this.chosenEngine()).id;
+        const composerAccounts = this.deps.accountsFor?.(chosenEngine) ?? [];
+        const composerPolicies = this.deps.policiesFor?.(chosenEngine) ?? [];
+        const sessionAccounts = this.deps.host.list().map((s: { id: string; engine?: string }) => {
+            const sEng = engineOf(s.engine).id;
+            return {
+                id: s.id,
+                accountRows: this.deps.accountAxis?.(sEng) ? (this.deps.accountsFor?.(sEng) ?? []) : [],
+                policyRows: this.deps.accountAxis?.(sEng) ? (this.deps.policiesFor?.(sEng) ?? []) : []
+            };
+        });
+        void this.panel.webview.postMessage({
+            type: 'accounts',
+            composerAccounts,
+            composerPolicies,
+            sessionAccounts
+        });
+    }
+
+    static postAccountsIfOpen(): void {
+        ConsolePanel.current?.postAccounts();
+    }
+
+    /**
      * Hand the composer real paths.
      *
      * This is the ONLY way a file gets into the chip list, whichever gesture
@@ -1807,6 +1844,7 @@ export class ConsolePanel {
         if (wikiMarkMessage(this.panel.webview, msg)) { return; }
         switch (msg.type) {
             case 'refresh': this.refresh(); break;
+            case 'getAccounts': this.postAccounts(); break;
             /**
              * ‼️ K-30 — WHAT THIS BOX COULD TYPE AFTER A "/", ANSWERED ON
              * DEMAND. The same merge the bridge's `toolbox.slashCommands`

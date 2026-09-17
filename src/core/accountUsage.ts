@@ -70,6 +70,14 @@ export interface SlotUsage {
     percent: number;
     /** epoch ms of the five-hour reset; 0 when unknown */
     resetsAt: number;
+    /** ‼️ X-326 Option A — 5-hour window percentage specifically; -1 when unknown */
+    fivePercent?: number;
+    /** ‼️ X-326 Option A — weekly window percentage specifically; -1 when unknown */
+    weekPercent?: number;
+    /** ‼️ X-326 Option A — epoch ms of 5-hour reset */
+    fiveResetsAt?: number;
+    /** ‼️ X-326 Option A — epoch ms of weekly reset */
+    weekResetsAt?: number;
     /** the tier the credentials state ('pro', 'max', …) */
     plan: string;
     /** when these figures were read; 0 = never */
@@ -232,11 +240,17 @@ export function bindingBar(snap: PlanUsageSnapshot | undefined): PlanBar | undef
 /** A snapshot, narrowed to what a slot row shows. */
 export function usageFrom(slot: { id: string; engine: string }, snap: PlanUsageSnapshot): SlotUsage {
     const bar = bindingBar(snap);
+    const five = fiveHourBar(snap);
+    const week = snap?.bars.find(b => b.id === SEVEN_DAY || b.id === 'seven_day_opus' || b.id === 'seven_day_sonnet');
     return {
         slotId: slot.id, engine: slot.engine,
         state: snap.state,
         percent: snap.state === 'ok' && bar ? bar.percent : -1,
         resetsAt: bar?.resetsAt ?? 0,
+        fivePercent: snap.state === 'ok' && five ? five.percent : -1,
+        weekPercent: snap.state === 'ok' && week ? week.percent : -1,
+        fiveResetsAt: five?.resetsAt ?? 0,
+        weekResetsAt: week?.resetsAt ?? 0,
         plan: snap.plan,
         fetchedAt: snap.fetchedAt,
         ...(snap.state === 'ok' && bar && bar.id !== FIVE_HOUR && bar.title ? { window: bar.title } : {}),

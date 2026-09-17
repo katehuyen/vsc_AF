@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.546.0 - the Console account box is live: 5h and weekly figures apart, refreshed in place, never under an open menu (X-326) (2026-09-17)
+
+- **‼️ Option A — the two windows, named.** An account row reads
+  `name · 5h: 12% / wk: 40%` (one of them alone when only one is reported,
+  `—` when nothing has been read), so a weekly 40% and a five-hour 12% are never
+  the same bare number in one list. `SlotUsage` carries `fivePercent` /
+  `weekPercent` (+ their resets) beside the binding bar it already had.
+- **‼️ The figures are refreshed in place.** The host pushes `accounts` to an
+  open Console on every fresh reading (`accountUsage.onRead`), on hover of an
+  account box (mouseenter, no delay), when a card is opened or `+` pressed, and
+  every 30 seconds; the page refills `#c-account` / `#c-account-live` where they
+  stand and re-syncs their hover panels — no full repaint, no lost focus.
+  **A box that is the active element is left alone**: replacing the options of
+  an open list closes it and moves the choice.
+- **One account list, wherever it is drawn.** The composer's box, a live card's
+  box and the refresh all build through `accountAxisSpec` (root row first,
+  slots as the component draws them, rules in their own group) and fill through
+  `axisBoxBody` — the same option body the shell draws, so a refresh cannot
+  differ from a render. Page message `getAccounts` is on the parity manifest
+  (`accounts.list`).
+
 ## 3.545.0 - a saved setup starts its own agent, whatever row the Agents tree has selected (S-65) (2026-09-17)
 
 - **‼️ The profile's own agent is absolute.** `Start Session…` (the panel

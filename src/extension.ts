@@ -18544,7 +18544,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The announcement used to live inside the sentry turn, behind
         // `if (!this.sentry) return`, so a token that died while the user was
         // working by hand across three accounts was said by nobody.
-        onRead: usage => announceSlotHealth(usage),
+        // ‼️ X-326 — live sync pushes fresh figures to open Console in-place.
+        onRead: usage => { announceSlotHealth(usage); ConsolePanel.postAccountsIfOpen(); },
         readSessionTail: (slot, dir) => (String(slot.engine || '').toLowerCase() === 'codex'
             ? readCodexUsage(usageProbe, p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } }, dir)
             : undefined)
@@ -20270,6 +20271,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return {
             percent: u && u.percent >= 0 ? u.percent : -1,
             resetsAt: u && u.resetsAt ? u.resetsAt : 0,
+            fivePercent: u && typeof u.fivePercent === 'number' ? u.fivePercent : undefined,
+            weekPercent: u && typeof u.weekPercent === 'number' ? u.weekPercent : undefined,
+            fiveResetsAt: u && typeof u.fiveResetsAt === 'number' ? u.fiveResetsAt : undefined,
+            weekResetsAt: u && typeof u.weekResetsAt === 'number' ? u.weekResetsAt : undefined,
             // ‼️ audit B-04.3 — AND WHAT THAT WINDOW IS CALLED. The pickers drew
             // the figure and then named its window themselves, always "five-hour";
             // one reader sends both, so a Codex slot cannot read `72%` under a
@@ -20279,9 +20284,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const engineAccountMatrix = (): Record<string,
         { id: string; label: string; health: string; active: boolean;
-            percent: number; resetsAt: number; window: string }[]> => {
+            percent: number; resetsAt: number; fivePercent?: number; weekPercent?: number;
+            fiveResetsAt?: number; weekResetsAt?: number; window: string }[]> => {
         const out: Record<string, { id: string; label: string; health: string; active: boolean;
-            percent: number; resetsAt: number; window: string }[]> = {};
+            percent: number; resetsAt: number; fivePercent?: number; weekPercent?: number;
+            fiveResetsAt?: number; weekResetsAt?: number; window: string }[]> = {};
         const active = activeAccounts();
         // ‼️ THE USAGE IS AN IN-MEMORY SNAPSHOT (X-170), not a request — the
         // service holds one budget per account and refreshes on its own beat, so

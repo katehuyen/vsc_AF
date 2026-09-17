@@ -63,9 +63,26 @@
      * and 0 when something read it and found nothing used. Drawing both as an
      * empty cell told the reader the opposite of the truth in one of the two
      * cases, and it is the dangerous one.
+     *
+     * ‼️ X-326 Option A — EXPLICIT DUAL-WINDOW FORMATTING:
+     * When both five-hour and weekly percentages are reported (e.g. Claude Code),
+     * print `5h: X% / wk: Y%` so that a weekly limit (e.g. 40%) is never confused
+     * with a five-hour window limit (e.g. 0%).
      */
     function figure(a) {
-        const p = a && typeof a.percent === 'number' ? a.percent : -1;
+        if (!a) { return '—'; }
+        const has5 = typeof a.fivePercent === 'number' && a.fivePercent >= 0;
+        const hasW = typeof a.weekPercent === 'number' && a.weekPercent >= 0;
+        if (has5 && hasW) {
+            return '5h: ' + a.fivePercent + '% / wk: ' + a.weekPercent + '%';
+        }
+        if (has5) {
+            return '5h: ' + a.fivePercent + '%';
+        }
+        if (hasW) {
+            return 'wk: ' + a.weekPercent + '%';
+        }
+        const p = typeof a.percent === 'number' ? a.percent : -1;
         return p >= 0 ? p + '%' : '—';
     }
 
@@ -156,7 +173,15 @@
                 || 'This sign-in has fallen over — capture it again before it can pay for a run.');
         }
         if (a.active) { out.push('The standing choice for this engine right now.'); }
-        if (typeof a.percent === 'number' && a.percent >= 0) {
+        const has5 = typeof a.fivePercent === 'number' && a.fivePercent >= 0;
+        const hasW = typeof a.weekPercent === 'number' && a.weekPercent >= 0;
+        if (has5 && hasW) {
+            // X-326 — two bars the READING carried apart (fiveHourBar / the
+            // seven-day bar), so the two names are the host's, not this page's.
+            out.push('5h: ' + a.fivePercent + '% used · weekly: ' + a.weekPercent + '% used.');
+            const t = turns(a, now);
+            if (t) { out.push(t.charAt(0).toUpperCase() + t.slice(1) + '.'); }
+        } else if (typeof a.percent === 'number' && a.percent >= 0) {
             const w = windowPhrase(a);
             out.push(a.percent + '% of the ' + (w || 'window') + ' used.');
             const t = turns(a, now);

@@ -3233,5 +3233,84 @@ const intentOf = (o) => Object.assign({
         /<b>in the background<\/b>/.test(strip()) && /data-bgstop="b1"/.test(strip()));
 }
 
+// ---------- ‼️ X-326: Console account selector live sync, hover trigger & Option A ----------
+{
+    const composer = (extra) => ({
+        generatedAt: 1, selected: '', sessions: [],
+        agents: [{ id: 'dev', name: 'developer', dir: 'D:/a/dev' }],
+        models: [], efforts: [], permissions: [{ id: 'default', label: 'default' }],
+        grants: [], defaults: {}, owned: [], resumable: [],
+        ...extra
+    });
+
+    // 1. Initial composer with account axis on and Option A dual-window formatting
+    push(composer({
+        composerAccountAxis: true,
+        composerIntent: { account: 'work-1' },
+        composerAccounts: [
+            { id: 'work-1', label: 'work@studio', health: 'ready', active: true, fivePercent: 0, weekPercent: 40 },
+            { id: 'spare', label: 'aicozums', health: 'ready', active: false, fivePercent: -1, weekPercent: -1 }
+        ]
+    }));
+
+    ok('‼️ X-326: Option A dual-window labels are drawn initially in c-account',
+        /work@studio · 5h: 0% \/ wk: 40%/.test(html())
+        && /aicozums · —/.test(html()));
+
+    // 2. Incoming 'accounts' push updates select options in-place
+    msgHandler({
+        data: {
+            type: 'accounts',
+            composerAccounts: [
+                { id: 'work-1', label: 'work@studio', health: 'ready', active: true, fivePercent: 15, weekPercent: 45 },
+                { id: 'spare', label: 'aicozums', health: 'ready', active: false, fivePercent: 50, weekPercent: 20 }
+            ]
+        }
+    });
+
+    ok('‼️ X-326: accounts message updates select options in-place with fresh percentages',
+        /work@studio · 5h: 15% \/ wk: 45%/.test((els['c-account'] || {})._html)
+        && /aicozums · 5h: 50% \/ wk: 20%/.test((els['c-account'] || {})._html));
+
+    // 3. Anti-flicker protection: activeElement prevents overwriting DOM
+    sandbox.document.activeElement = els['c-account'];
+    const writesWhenActive = (els['c-account'] || {})._writes || 0;
+    msgHandler({
+        data: {
+            type: 'accounts',
+            composerAccounts: [
+                { id: 'work-1', label: 'work@studio', health: 'ready', active: true, fivePercent: 99, weekPercent: 99 }
+            ]
+        }
+    });
+    ok('‼️ X-326: anti-flicker protection skips DOM update when select has active focus',
+        (els['c-account'] || {})._writes === writesWhenActive
+        && !/99%/.test((els['c-account'] || {})._html));
+    sandbox.document.activeElement = null;
+
+    // 4. Hover trigger: mouseenter on the account box asks the host at once —
+    // no delay, no debounce. (The sandbox element has no `closest`, so the
+    // listener lands on the box itself; on the page it is the `.axisw` wrapper.)
+    posted.length = 0;
+    const hoverFn = els['c-account'] && els['c-account'].listeners.mouseenter;
+    ok('‼️ X-326: the account box listens for mouseenter', typeof hoverFn === 'function');
+    if (typeof hoverFn === 'function') { hoverFn(); }
+    ok('‼️ X-326: …and asks the host for fresh figures the instant the pointer arrives',
+        posted.some(m => m.type === 'getAccounts'));
+
+    // 5. The list is built ONCE: the composer's box, a live card's box and the
+    // in-place refresh all draw through accountAxisSpec / axisBoxBody.
+    const src = fs.readFileSync(path.join(__dirname, '..', 'media', 'console.js'), 'utf8');
+    ok('‼️ X-326: one account list builder for the composer, the live card and the refresh',
+        (src.match(/accountAxisSpec\(/g) || []).length === 5
+        && !/const rows = \[\{\s*\n\s*id: MACHINE_ACCOUNT/.test(src)
+        && /el\.innerHTML = axisBoxBody\(/.test(src)
+        && /const body = axisBoxBody\(o\);/.test(src));
+    ok('‼️ X-326: a refilled box re-syncs its hover panel from the new option', /window\.AFTip\.syncAxis\(el\)/.test(src));
+    ok('‼️ X-326: opening a card, the + button and a 30s tick all ask the host',
+        (src.match(/vscode\.postMessage\(\{ type: 'getAccounts' \}\)/g) || []).length >= 4
+        && /setInterval\(\(\) => \{\s*\n?\s*vscode\.postMessage\(\{ type: 'getAccounts' \}\);\s*\n?\s*\}, 30000\)/.test(src));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -54,6 +54,15 @@ const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
     ok('…and so does an account the host said nothing about at all',
         A.figure({}) === '—');
     ok('…and a full window still prints', A.figure({ percent: 100 }) === '100%');
+    // ‼️ X-326 Option A — dual-window formatting
+    ok('‼️ dual-window formats both 5h and weekly percentages',
+        A.figure({ fivePercent: 0, weekPercent: 40 }) === '5h: 0% / wk: 40%');
+    ok('dual-window with 5h only',
+        A.figure({ fivePercent: 12, weekPercent: -1 }) === '5h: 12%');
+    ok('dual-window with week only',
+        A.figure({ fivePercent: -1, weekPercent: 35 }) === 'wk: 35%');
+    ok('dual-window with both unread returns em dash',
+        A.figure({ fivePercent: -1, weekPercent: -1 }) === '—');
 }
 
 // ---------- the label: SHORTHAND, the shortest unambiguous form ----------
@@ -62,6 +71,12 @@ const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
         A.label({ label: 'work', health: 'ready' }) === 'work · —');
     ok('a measured slot carries the figure beside the name',
         A.label({ label: 'work', health: 'ready', percent: 42 }) === 'work · 42%');
+    ok('‼️ dual-window measured slot carries 5h and week explicitly',
+        A.label({ label: 'murvietnam', health: 'ready', fivePercent: 0, weekPercent: 40 })
+        === 'murvietnam · 5h: 0% / wk: 40%');
+    ok('the standing choice keeps its trailing dot, after the dual-window figure',
+        A.label({ label: 'wmmuratvural', health: 'ready', fivePercent: 12, weekPercent: 0, active: true })
+        === 'wmmuratvural · 5h: 12% / wk: 0% •');
     ok('the standing choice keeps its trailing dot, after the figure',
         A.label({ label: 'work', health: 'ready', percent: 42, active: true })
         === 'work · 42% •');

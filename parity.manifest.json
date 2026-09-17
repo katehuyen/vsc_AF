@@ -1031,6 +1031,15 @@
       }
     },
     {
+      "capability": "consolePanel.ts#getAccounts",
+      "ui": [
+        "page:consolePanel.ts#getAccounts"
+      ],
+      "ops": [
+        "accounts.list"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#interrupt",
       "ui": [
         "page:consolePanel.ts#interrupt"

@@ -3718,6 +3718,70 @@
      * the box has to turn up without waiting for something else to move.
      */
     function accountShape() { return accountRows().length + (accountAxisOn() ? 'a' : '-'); }
+
+    /**
+     * ‼️ X-326 — ONE ACCOUNT LIST, WHEREVER IT IS DRAWN.
+     *
+     * The composer's box, a live card's box and the in-place refresh below
+     * all show the same thing — the machine's own sign-in first (X-213),
+     * every slot as the component draws it (X-263), the rules in their own
+     * group ahead of the slots (X-305) — and had grown it three times over.
+     * One builder: the rows and their grouping, ready for `axisBox` or for a
+     * refresh of an existing `<select>`.
+     */
+    function accountAxisSpec(accountRowsIn, policyRowsIn, cur, rootDetail) {
+        const rows = [{ id: MACHINE_ACCOUNT, label: MACHINE_GLOBAL_ROW, detail: rootDetail }]
+            .concat((accountRowsIn || []).map(a => window.AFAccount.row(a)));
+        const pols = (policyRowsIn || []).map(p => window.AFAccount.policyRow(p));
+        const inPols = new Set(pols.map(p => p.id));
+        const shown = withCurrent(pols.concat(rows), cur);
+        return Object.assign({ list: shown }, pols.length ? {
+            groups: [
+                { label: window.AFAccount.POLICY_GROUP, list: shown.filter(r => inPols.has(r.id)) },
+                { label: window.AFAccount.ACCOUNT_GROUP, list: shown.filter(r => !inPols.has(r.id)) }
+            ]
+        } : {});
+    }
+    const ROOT_DETAIL = 'the identity this machine itself is signed in as — no slot, '
+        + 'nothing injected, which is what every session ran as before accounts existed';
+    const ROOT_DETAIL_LIVE = 'the identity this machine itself is signed in as';
+
+    /**
+     * ‼️ X-326 — THE FIGURES IN THE ACCOUNT BOX ARE LIVE, IN PLACE.
+     *
+     * The box says `5h: 12% / wk: 40%` beside each sign-in, and those figures
+     * used to be the ones read when the page was last built — a full repaint
+     * (M-33) was the only way to freshen them, which is the one thing you do
+     * not do under a pointer. The host pushes `accounts` (on every fresh
+     * reading, on hover, on open, every 30s) and the two boxes are re-filled
+     * where they stand: the same option body the shell draws, the same list.
+     *
+     * ‼️ AND NEVER UNDER AN OPEN MENU. A `<select>` that is the active
+     * element may have its list open; replacing its options closes the list
+     * and moves the choice. That box is left alone until the pointer leaves
+     * it — the next push gets it.
+     */
+    function updateAccountSelectsInPlace() {
+        const refill = (el, spec, cur) => {
+            if (!el || el === document.activeElement) { return; }
+            el.innerHTML = axisBoxBody({ axis: 'Account', list: spec.list, cur: cur, groups: spec.groups });
+            el.value = cur;
+            // the panel above the box reads the selected option's data-why
+            if (window.AFTip && window.AFTip.syncAxis) { window.AFTip.syncAxis(el); }
+        };
+        const comp = document.getElementById('c-account');
+        if (comp && accountAxisOn()) {
+            const cur = comp.value || accountPick();
+            refill(comp, accountAxisSpec(accountRows(), policyRows(), cur, ROOT_DETAIL), cur);
+        }
+        const s = sel();
+        const live = document.getElementById('c-account-live');
+        if (live && s && s.accountAxis) {
+            const cur = live.value || s.accountNext || s.account || MACHINE_ACCOUNT;
+            refill(live, accountAxisSpec(s.accountRows, s.policyRows, cur, ROOT_DETAIL_LIVE), cur);
+        }
+    }
+
     /**
      * ‼️ X-213 — AND THE SAME QUESTION FOR A LIVE CARD, which is a different
      * one and had no answer at all.
@@ -3959,15 +4023,22 @@
      *  list — a running card carries the agent's id, not its path. */
     const agentDirOf = id => ((DATA.agents || []).find(a => a.id === id) || {}).dir || '';
 
+    // `data-why` is the row's own sentence, kept on the option so the panel
+    // above can be rebuilt from the box itself when the choice changes —
+    // see AFTip.syncAxis. The native `title` stays: the open list is drawn
+    // by the operating system and no panel of ours can reach into it.
+    const opts = (list, cur) => (list || []).map(o =>
+        `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}`
+        + ` data-why="${C.esc(String(o.detail || ''))}"`
+        + ` title="${C.esc(optionTip(o.label || o.id, o.detail))}">${C.esc(o.label || o.id)}</option>`).join('');
+    /** What goes INSIDE an axis `<select>` — the shell draws it once, and
+     *  X-326 refills a standing box with it, so the two cannot differ. */
+    const axisBoxBody = (o) => o.groups
+        ? o.groups.filter(g => g && (g.list || []).length)
+            .map(g => `<optgroup label="${C.esc(o.axis + ' · ' + g.label)}">${opts(g.list, o.cur)}</optgroup>`).join('')
+        : `<optgroup label="${C.esc(o.axis)}">${o.inner || opts(o.list, o.cur)}</optgroup>`;
+
     function buildShell(s) {
-        // `data-why` is the row's own sentence, kept on the option so the panel
-        // above can be rebuilt from the box itself when the choice changes —
-        // see AFTip.syncAxis. The native `title` stays: the open list is drawn
-        // by the operating system and no panel of ours can reach into it.
-        const opts = (list, cur) => (list || []).map(o =>
-            `<option value="${C.esc(o.id)}"${o.id === cur ? ' selected' : ''}`
-            + ` data-why="${C.esc(String(o.detail || ''))}"`
-            + ` title="${C.esc(optionTip(o.label || o.id, o.detail))}">${C.esc(o.label || o.id)}</option>`).join('');
         /**
          * ‼️ B-03.21 (round 2) — THE AXIS IS THE HEADING OF THE LIST, NOT A
          * PREFIX ON EVERY VALUE IN IT.
@@ -4043,16 +4114,7 @@
              * said anywhere else. Every other box passes no `groups` and is
              * drawn exactly as before.
              */
-            const body = o.groups
-                ? o.groups.filter(g => g && (g.list || []).length)
-                    // ‼️ THE AXIS IS STILL THE HEADING (B-03.21 round 2). These
-                    // boxes are ~110px and the axis is printed nowhere beside
-                    // them, so the list's heading is the only thing that answers
-                    // "which box is this?" — the KIND is added to it rather than
-                    // written over it. The other pages print the axis in their
-                    // own <label>, so there the component's bare words are right.
-                    .map(g => `<optgroup label="${C.esc(o.axis + ' · ' + g.label)}">${opts(g.list, o.cur)}</optgroup>`).join('')
-                : `<optgroup label="${C.esc(o.axis)}">${o.inner || opts(o.list, o.cur)}</optgroup>`;
+            const body = axisBoxBody(o);
             return window.AFTip.wrap(
                 (o.before || '')
                 + `<select id="${o.id}">`
@@ -4144,15 +4206,11 @@
              * a row now, it is first because it is the answer everything starts
              * from, and it carries the same badge on every surface.
              */
-            const rows = [{
-                id: MACHINE_ACCOUNT,
-                label: MACHINE_GLOBAL_ROW,
-                detail: 'the identity this machine itself is signed in as — no slot, '
-                    + 'nothing injected, which is what every session ran as before accounts existed'
             // ‼️ X-263 — SHORTHAND on the row, MIRROR in the hover, and both
             // from the component: this body was hand-copied onto five pickers
             // and only the Console's two had grown the five-hour figure.
-            }].concat(accountRows().map(a => window.AFAccount.row(a)));
+            // ‼️ X-326 — and the list itself is built once, in accountAxisSpec.
+            const spec = accountAxisSpec(accountRows(), policyRows(), cur, ROOT_DETAIL);
             const tip = window.AFTip.lines([
                 'Which sign-in of this engine pays for the new session.',
                 'A dot marks the standing choice made on the Engines page; the box opens on it. '
@@ -4174,17 +4232,9 @@
              * `axisBody` read it), so a rule and a slot are described by the
              * same machinery whichever group drew them.
              */
-            const pols = policyRows().map(p => window.AFAccount.policyRow(p));
-            const shown = withCurrent(pols.concat(rows), cur);
-            const inPols = new Set(pols.map(p => p.id));
             return axisBox({
-                axis: 'Account', id: 'c-account', list: shown, cur: cur, standard: tip,
-                ...(pols.length ? {
-                    groups: [
-                        { label: window.AFAccount.POLICY_GROUP, list: shown.filter(r => inPols.has(r.id)) },
-                        { label: window.AFAccount.ACCOUNT_GROUP, list: shown.filter(r => !inPols.has(r.id)) }
-                    ]
-                } : {})
+                axis: 'Account', id: 'c-account', list: spec.list, cur: cur, standard: tip,
+                ...(spec.groups ? { groups: spec.groups } : {})
             });
         };
         const dead = s && (s.status === 'ended' || s.status === 'error');
@@ -4305,18 +4355,12 @@
         const liveAccountBoxHtml = (s) => {
             if (!s || !s.accountAxis) { return ''; }
             const cur = s.accountNext || s.account || MACHINE_ACCOUNT;
-            const rows = [{
-                id: MACHINE_ACCOUNT, label: MACHINE_GLOBAL_ROW,
-                detail: 'the identity this machine itself is signed in as'
             // ‼️ X-263 — the same component the composer's box draws from, so
             // the account a session is swapped TO reads exactly as it did when
-            // it was chosen.
-            }].concat((s.accountRows || []).map(a => window.AFAccount.row(a)));
-            // ‼️ X-305 — and the rules, in their own group, exactly as the
-            // composer draws them: a live swap is the same choice made later.
-            const pols = (s.policyRows || []).map(p => window.AFAccount.policyRow(p));
-            const inPols = new Set(pols.map(p => p.id));
-            const shown = withCurrent(pols.concat(rows), cur);
+            // it was chosen. ‼️ X-305 — and the rules, in their own group,
+            // exactly as the composer draws them: a live swap is the same
+            // choice made later. ‼️ X-326 — one builder for both.
+            const spec = accountAxisSpec(s.accountRows, s.policyRows, cur, ROOT_DETAIL_LIVE);
             // MIRROR — the box is far too narrow for an address, so the first
             // line of its hover is what is actually sealed right now, and the
             // second says what is about to change if the two differ.
@@ -4338,15 +4382,10 @@
             // promise about the next turn that you have to hover to find is a
             // promise the reader will not know was made.
             return axisBox({
-                axis: 'Account', id: 'c-account-live', list: shown, cur: cur, standard: tip,
+                axis: 'Account', id: 'c-account-live', list: spec.list, cur: cur, standard: tip,
                 cls: s.accountNext ? 'pend' : '',
                 before: s.accountNext ? '<span class="pendmark" aria-hidden="true">→</span>' : '',
-                ...(pols.length ? {
-                    groups: [
-                        { label: window.AFAccount.POLICY_GROUP, list: shown.filter(r => inPols.has(r.id)) },
-                        { label: window.AFAccount.ACCOUNT_GROUP, list: shown.filter(r => !inPols.has(r.id)) }
-                    ]
-                } : {})
+                ...(spec.groups ? { groups: spec.groups } : {})
             });
         };
         const effortBox = (engineId, model, cur, id, tip) => {
@@ -4775,6 +4814,18 @@
                 type: 'setLiveAccount', id: cur.id, account: e.target.value || ''
             });
         });
+        // ‼️ X-326 (1) SIFIR GECİKMELİ HOVER TETİKLEYİCİSİ:
+        // Immediate zero-delay trigger on mouseenter.
+        const wireAccountHover = (id) => {
+            const el = document.getElementById(id);
+            if (!el) { return; }
+            const wrap = (el.closest && el.closest('.axisw')) || el;
+            wrap.addEventListener('mouseenter', () => {
+                vscode.postMessage({ type: 'getAccounts' });
+            });
+        };
+        wireAccountHover('c-account');
+        wireAccountHover('c-account-live');
         // giving the pin back: the picker returns, on the agent the record names
         byId('c-unpin', 'click', () => vscode.postMessage({ type: 'unpinAgent' }));
         resetTail();
@@ -4791,7 +4842,10 @@
 
     function renderList() {
         if (slot('c-lhead', listHeadHtml())) {
-            byId('c-new', 'click', () => vscode.postMessage({ type: 'select', id: '' }));
+            byId('c-new', 'click', () => {
+                vscode.postMessage({ type: 'select', id: '' });
+                vscode.postMessage({ type: 'getAccounts' });
+            });
             byId('c-toggle-order', 'click', () => {
                 st.showOrder = !st.showOrder;
                 save();
@@ -4803,7 +4857,10 @@
 
         if (slot('c-list', sessionListHtml())) {
             document.querySelectorAll('[data-sel]').forEach(r =>
-                r.addEventListener('click', () => vscode.postMessage({ type: 'select', id: r.dataset.sel })));
+                r.addEventListener('click', () => {
+                    vscode.postMessage({ type: 'select', id: r.dataset.sel });
+                    vscode.postMessage({ type: 'getAccounts' });
+                }));
             // "Where you left off": the same resume, from the shelf
             document.querySelectorAll('[data-back]').forEach(r =>
                 r.addEventListener('click', ev => {
@@ -5599,7 +5656,7 @@
                 'Opens the composer for this agent with this card\'s whole setup — engine, model, '
                     + 'effort, permission mode, sign-in, route, project — and the handover note as '
                     + 'the first message. Nothing starts until you press Send: change the account '
-                    + 'first if this run stopped on its five-hour window.',
+                    + 'first if this run stopped on its quota.',
                 window.AFTip.GAP,
                 'This conversation itself is never resumed — a window at the handover line walks '
                     + 'straight back into the wall. The same door for an agent: '
@@ -5913,6 +5970,22 @@
             renderLive();
             return;
         }
+        // ‼️ X-326 (3) — In-place account options push
+        if (ev.data && ev.data.type === 'accounts') {
+            if (ev.data.composerAccounts) { DATA.composerAccounts = ev.data.composerAccounts; }
+            if (ev.data.composerPolicies) { DATA.composerPolicies = ev.data.composerPolicies; }
+            if (Array.isArray(ev.data.sessionAccounts)) {
+                for (const sa of ev.data.sessionAccounts) {
+                    const s = (DATA.sessions || []).find(x => x.id === sa.id);
+                    if (s) {
+                        if (sa.accountRows) { s.accountRows = sa.accountRows; }
+                        if (sa.policyRows) { s.policyRows = sa.policyRows; }
+                    }
+                }
+            }
+            updateAccountSelectsInPlace();
+            return;
+        }
         if (ev.data && ev.data.type === 'data') {
             const wasOn = DATA.selected;
             DATA = ev.data.data;
@@ -5942,6 +6015,11 @@
     // taller or shorter changes whether it is cut — and nothing else on the page
     // would repaint to say so.
     if (window.addEventListener) { window.addEventListener('resize', markAskOverflow); }
+
+    // ‼️ X-326 (4) — 30s background sync while Console is open
+    setInterval(() => {
+        vscode.postMessage({ type: 'getAccounts' });
+    }, 30000);
 
     paint();
     // The list you left open (and the question you left it asking) is state the

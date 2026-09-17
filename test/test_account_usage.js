@@ -737,7 +737,7 @@ async function main() {
         // posts the sentence itself (two announcers = two notices per fall).
         const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
         ok('‼️ extension.ts wires the announcement onto the thing that measures',
-            ext.includes('onRead: usage => announceSlotHealth(usage)'));
+            ext.includes('onRead: usage => { announceSlotHealth(usage); ConsolePanel.postAccountsIfOpen(); }'));
         ok('…the fleet remembers what it already said, outliving every campaign',
             ext.includes('DOWN_SLOTS_KEY') && ext.includes('globalState.update(DOWN_SLOTS_KEY'));
         ok('…and the sentry turn no longer posts it itself',
