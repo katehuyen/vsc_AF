@@ -3027,8 +3027,13 @@ const { opencodeStatus, syncToOpencode } =
                 // resolution, not the four-line `createMission` wrapper that now
                 // calls it. Pointing at the wrapper would pass this test by
                 // finding nothing to complain about.
+                // ‼️ BOUNDED BY THE NEXT FUNCTION, not by a character count. A
+                // fixed window silently stops covering the tail of the function
+                // the day it grows — measured on X-107, which pushed
+                // `normalizeObjective` past 18,000 characters and turned this
+                // into a test that found nothing and said nothing.
                 const create = src.slice(src.indexOf('const resolveMissionInput = '),
-                    src.indexOf('const resolveMissionInput = ') + 18000);
+                    src.indexOf('const createMission = '));
                 const rawAt = create.indexOf('validateMissionInput(');
                 const normAt = create.indexOf('normalizeObjective(');
                 const goalAt = create.indexOf("String(input.goal");
@@ -3098,8 +3103,14 @@ const { opencodeStatus, syncToOpencode } =
                 && /exits 0/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
             ok('…and both list ops read it back, so a caller can tell a default from a value that never arrived',
                 (src.match(/permissionMode: m\.permissionMode \?\? null/g) || []).length >= 2);
-            ok('…and the delegation actually carries it onto the task',
-                /if \(dims\.permissionMode\) \{ task\.permissionMode = dims\.permissionMode; \}/.test(src));
+            // ‼️ X-107 — MEASURED AT THE ENQUEUE NOW. The dimensions used to be
+            // written onto the row `addTask` had already returned; they are what
+            // the row is MADE with, and since X-106 a dimension arriving one line
+            // later is also one the enqueue's route seal never saw. `runExtras`
+            // is the shape, so this no longer names a field at all.
+            ok('…and the delegation actually carries it onto the task, by the shape',
+                /taskManager\.addTask\([\s\S]{0,200}\.\.\.runExtras\(\{[\s\S]{0,160}dims/.test(src)
+                && !/task\.permissionMode = dims\.permissionMode/.test(src));
             // ‼️ M-18 — the op now takes the FOURTH dimension and says what
             // happens to a field the caller leaves out, which before this was
             // "nothing, silently".
@@ -3121,8 +3132,17 @@ const { opencodeStatus, syncToOpencode } =
                 /account\? \(X-225 — WHOSE PLAN EVERY DELEGATION IS BILLED TO/.test(misBlock)
                 && /plannerAccount\? \(X-225/.test(misBlock)
                 && /is refused before/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
-            ok('…and the delegation actually carries the sign-in onto the task',
-                /if \(dims\.account\) \{ task\.account = dims\.account; \}/.test(src));
+            ok('…and the delegation actually carries the sign-in onto the task, by the same shape',
+                /taskManager\.addTask\([\s\S]{0,200}\.\.\.runExtras\(\{[\s\S]{0,160}dims/.test(src)
+                && !/task\.account = dims\.account/.test(src));
+            // ‼️ X-107 — AND THE SEVENTH: WHICH ENDPOINT SERVES IT. Two axes
+            // again, for the same reason the sign-in has two: the delegations'
+            // route (overridable per member) and the orchestrator's own, which
+            // is the longest-lived call a mission makes.
+            ok('‼️ X-107 — …and which route serves them, mission-wide and for the planner',
+                /providerId\?\/tier\? \(X-107/.test(misBlock)
+                && /plannerProviderId\?\/plannerTier\? \(X-107/.test(misBlock)
+                && /a tier alone is/.test(misBlock.replace(/'\s*\+\s*'/g, '')));
             ok('‼️ …and says out loud that the PLANNER stays on Claude Code, with why',
                 /THE PLANNER ALWAYS RUNS ON CLAUDE CODE/.test(misBlock)
                 && /--disallowedTools/.test(misBlock));

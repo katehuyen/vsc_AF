@@ -174,8 +174,12 @@ console.log('\n== one reader, and the resolver attached to it exactly once ==');
     eq('‼️ every door reads its dimensions through the ONE wrapper',
         (ext.match(/bridgeRunDimensions\(/g) || []).length, 1);
     ok('…and that wrapper is what the doors call', (ext.match(/runDims\(/g) || []).length >= 8);
+    // ‼️ X-107 moved the refusal itself into `launchRouteRefusal`, because a
+    // mission's planner, its mission-wide box and every member box now write a
+    // route down too — four doors, one rule. The wrapper is still where the
+    // automation door attaches it.
     ok('…and it is the place the route resolver is attached',
-        /const runDims = \([\s\S]{0,900}?route: \(engine, providerId, tier\) =>/.test(ext));
+        /const runDims = \([\s\S]{0,900}?route: launchRouteRefusal,/.test(ext));
     ok('‼️ …and it REFUSES rather than narrowing, which is the difference between a '
         + 'composer that redraws and an automation nobody reads again',
         /is not a route \$\{engineOf\(engine\)\.id\} can be pointed at/.test(ext));

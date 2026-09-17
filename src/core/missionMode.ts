@@ -76,6 +76,13 @@ export interface MissionPoolMember {
      *  own, and empty there = nothing stated, which is what the spawn resolves.
      *  See `resolveDelegateRun`. */
     account?: string;
+    /** ‼️ X-107 — and which endpoint serves them, on the same two rungs the
+     *  account is. A pool member is a team member the lead has not picked yet,
+     *  so it states the same dimensions or the pool is the one cast whose
+     *  choices are silently dropped (which it was, until M-18). */
+    providerId?: string;
+    /** ‼️ Claude routes only, and never carried without the route above. */
+    tier?: string;
 }
 
 /**
@@ -177,6 +184,17 @@ export function normalizePool(raw: unknown): MissionPoolMember[] {
         for (const k of ['role', 'model', 'engine', 'effort', 'permissionMode', 'account'] as const) {
             const v = String(o[k] ?? '').trim();
             if (v) { m[k] = v; }
+        }
+        // ‼️ X-107 — THE ROUTE AND ITS TIER, and the tier only ever under the
+        // route. Read in the plain loop above it would survive on its own, and a
+        // stored tier with no route is a word with no referent: `opus` is a
+        // different model on every endpoint (X-101), so the day it met a route
+        // it was not chosen against it would resolve to something nobody picked.
+        const providerId = String(o.providerId ?? '').trim();
+        if (providerId) {
+            m.providerId = providerId;
+            const tier = String(o.tier ?? '').trim();
+            if (tier) { m.tier = tier; }
         }
         out.push(m);
     }
@@ -576,17 +594,35 @@ export interface DelegateRun {
      * mission-wide and per member.
      */
     account?: string;
+    /**
+     * ‼️ X-107 — WHICH ROUTE SERVES THIS DELEGATION, resolved on the same two
+     * rungs the account is (member, then mission) and for the same reason: the
+     * rung under them is the SPAWN's own (`resolveLaunchRoute` falls through to
+     * the agent's standing record), and reading that here would answer one
+     * question twice — with the two answers disagreeing the first time somebody
+     * moved a standing route mid-mission.
+     */
+    providerId?: string;
+    /** ‼️ Claude routes only, and it never travels without the route it belongs
+     *  to: a member's tier carried onto the MISSION's route would map a word
+     *  through an endpoint that spells it differently (X-101). */
+    tier?: string;
     /** Which layer decided each field — for the day somebody asks why a
      *  delegate ran on a model nobody typed into this mission. */
-    origin: Record<'engine' | 'model' | 'effort' | 'permissionMode' | 'account', DelegateOrigin>;
+    origin: Record<
+        'engine' | 'model' | 'effort' | 'permissionMode' | 'account' | 'providerId',
+        DelegateOrigin>;
 }
 
 export function resolveDelegateRun(
     member: {
         model?: string; engine?: string; effort?: string;
-        permissionMode?: string; account?: string;
+        permissionMode?: string; account?: string; providerId?: string; tier?: string;
     } | undefined,
-    spec: { engine?: string; workdir?: string; account?: string } | undefined,
+    spec: {
+        engine?: string; workdir?: string; account?: string;
+        providerId?: string; tier?: string;
+    } | undefined,
     layers: DelegateRunLayers = {}
 ): DelegateRun {
     const t = (v: unknown) => String(v ?? '').trim();
@@ -641,15 +677,35 @@ export function resolveDelegateRun(
             : t(spec?.account) ? { value: t(spec?.account), origin: 'mission' }
                 : { value: '', origin: 'cli' };
 
+    /**
+     * ‼️ X-107 — AND THE ROUTE, ON THE SAME TWO RUNGS AS THE ACCOUNT.
+     *
+     * ‼️ THE TIER IS TAKEN FROM WHICHEVER RUNG NAMED THE ROUTE, never merged
+     * across them. A member that states only a tier while the mission states the
+     * route is asking for a word to be resolved through an endpoint it was not
+     * chosen against — `opus` is a different model on every route (X-101) — so
+     * that tier is dropped rather than applied to somebody else's endpoint.
+     */
+    const route: { value: string; tier: string; origin: DelegateOrigin } =
+        t(member?.providerId)
+            ? { value: t(member?.providerId), tier: t(member?.tier), origin: 'member' }
+            : t(spec?.providerId)
+                ? { value: t(spec?.providerId), tier: t(spec?.tier), origin: 'mission' }
+                : { value: '', tier: '', origin: 'cli' };
+
     const out: DelegateRun = {
         engine,
         origin: {
             engine: engineOrigin, model: model.origin,
             effort: effort.origin, permissionMode: perm.origin,
-            account: account.origin
+            account: account.origin, providerId: route.origin
         }
     };
     if (account.value) { out.account = account.value; }
+    if (route.value) {
+        out.providerId = route.value;
+        if (route.tier) { out.tier = route.tier; }
+    }
     if (model.value) { out.model = model.value; }
     if (effort.value) { out.effort = effort.value; }
     if (perm.value) { out.permissionMode = perm.value; }
@@ -675,5 +731,9 @@ export function describeDelegateRun(r: DelegateRun): string {
     // reason the model is: "why did that delegate bill the work account?" is a
     // question the run has to be able to answer without a settings file.
     say('account', r.account, r.origin.account);
+    // ‼️ X-107 — and which endpoint served it, which on this axis is the fact
+    // nothing downstream can recover: the transcript does not preserve the route
+    // it ran through (X-98), so the line is the only place it is ever said.
+    say('route', r.providerId ? r.providerId + (r.tier ? '/' + r.tier : '') : '', r.origin.providerId);
     return parts.join(' · ');
 }

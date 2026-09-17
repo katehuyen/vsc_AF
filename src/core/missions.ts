@@ -156,6 +156,24 @@ export interface MissionTeamMember {
      */
     effort?: string;
     /**
+     * ‼️ X-107 — WHICH ROUTE THIS MEMBER'S DELEGATIONS ARE SERVED BY, on exactly
+     * the axis `engine` and `account` are.
+     *
+     * It belongs per MEMBER for the reason the engine does: "the reviewer on the
+     * plan-billed endpoint, the drafter on the cheap one" is the decision people
+     * actually make, and before this it could only be made for the whole mission
+     * or not at all. Empty = the mission's own route, and empty there = the
+     * agent's standing record, resolved at the spawn like every other run.
+     */
+    providerId?: string;
+    /**
+     * ‼️ Claude routes only — which tier of the route ABOVE. It travels WITH
+     * `providerId` and is dropped without one: `opus` is `kimi-k2-thinking` on
+     * one route and `MiniMax-M2` on another (X-101), so a tier inherited across
+     * a route change is one word meaning two things.
+     */
+    tier?: string;
+    /**
      * ‼️ WHAT THIS MEMBER'S DELEGATIONS ARE ALLOWED TO DO WITHOUT ASKING (M-14).
      * Empty = the engine's own default.
      *
@@ -394,6 +412,21 @@ export interface MissionSpec {
      */
     account?: string;
     /**
+     * ‼️ X-107 — THE ROUTE EVERY DELEGATION IS SERVED BY unless the member
+     * overrides it, on exactly the axis `engine` and `account` are.
+     *
+     * ABSENT MEANS TODAY'S BEHAVIOUR on every spec ever written: nothing is
+     * stated, the delegation reaches the task launch path with no route, and the
+     * agent's own standing record answers at the spawn. A mission is written
+     * once and fires for hours with nobody at a window, which is precisely when
+     * "these delegations go through the Kimi endpoint" cannot be said anywhere
+     * else.
+     */
+    providerId?: string;
+    /** ‼️ Claude routes only — which tier of the route above, and never carried
+     *  without it (X-101: a tier means a different model on every route). */
+    tier?: string;
+    /**
      * ‼️ X-225 — AND THE PLANNER'S OWN, WHICH IS A DIFFERENT QUESTION.
      *
      * The planner is not a delegation: it is a headless `claude` in the lead's
@@ -408,6 +441,24 @@ export interface MissionSpec {
      * planner ran as whatever the VS Code window happened to be holding.
      */
     plannerAccount?: string;
+    /**
+     * ‼️ X-107 — AND THE ROUTE THE PLANNER ITSELF IS SERVED BY, on its own axis
+     * beside `plannerAccount` and for the same reason.
+     *
+     * The planner is not a delegation: it is one long-lived headless `claude` in
+     * the lead's folder, called once per round for the whole run, and it is the
+     * most expensive thing a mission does. "The workers go through the cheap
+     * endpoint, the planner stays on the one I trust to keep the thread" is the
+     * decision this exists for — and it is the shape of the decision, not a
+     * refinement of it: a planner that inherited the delegates' route would make
+     * the two inseparable.
+     *
+     * Absent = every mission written before this: nothing injected, and the
+     * lead's own standing record answers at the spawn.
+     */
+    plannerProviderId?: string;
+    /** ‼️ Which tier of the planner's route, never carried without it (X-101). */
+    plannerTier?: string;
     limits: MissionLimits;
     approvalMode: MissionApprovalMode;
     /**
@@ -469,14 +520,24 @@ export interface MissionPreviewMember {
     /** Exactly what the DRAFT says about this member and nothing else — the
      *  boxes as typed, so a surface can mark an explicit override apart from
      *  something inherited. An empty field is empty, not defaulted. */
-    requested: { engine?: string; model?: string; effort?: string; permissionMode?: string };
+    requested: {
+        engine?: string; model?: string; effort?: string; permissionMode?: string;
+        /** ‼️ X-107 — and the two dimensions the preview used to answer for
+         *  without being able to see them: whose plan pays (X-225) and which
+         *  endpoint serves it. A form that reports a dimension as unset while
+         *  the wave runs on it is worse than one that does not report it. */
+        account?: string; providerId?: string; tier?: string;
+    };
     /** What the ladder resolves to. A missing field = the CLI decides. */
     effective: {
         engine: string; model?: string; effort?: string;
         permissionMode?: string; workDir?: string;
+        account?: string; providerId?: string; tier?: string;
     };
-    /** Which rung decided each field — the answer to "why did it run on that?". */
-    origin: Record<'engine' | 'model' | 'effort' | 'permissionMode', DelegateOrigin>;
+    /** Which rung decided each field — the answer to "why did it run on that?".
+     *  The resolver's OWN record, so a dimension added to the ladder cannot be
+     *  reported here under a shorter list. */
+    origin: DelegateRun['origin'];
     /**
      * ‼️ X-121 — WHERE a rung that has an address said it: the settings file's
      * path, or the extra-args flag verbatim. Absent for rungs that are their own

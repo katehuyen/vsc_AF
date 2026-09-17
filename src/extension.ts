@@ -370,7 +370,7 @@ import {
     FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parkNoticeKey, parseSeedSchedules,
     InteractiveClose, InteractiveTarget,
-    previousOccurrenceKey, RouteSeal, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
+    previousOccurrenceKey, RouteSeal, routeOf, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import {
@@ -384,7 +384,7 @@ import {
     normalizeCriteria,
     MISSION_TRACE_SCHEMA, MissionAutonomy, MissionEngine, MissionEngineDeps, MissionLimits,
     missionLiveSlice, MissionMode, MissionObjective, MissionPreview, MissionPreviewMember,
-    MissionRun, MissionSpec, MissionStore,
+    MissionRun, MissionSpec, MissionStore, MissionTeamMember,
     MissionTraceEvent, MissionTraceType, MissionTraceWriter, newMissionId, normalizeObjective,
     childResultText, classifyTaskFailure, failure as missionFailure, FAILURE_KINDS, retryAdvice,
     normalizePool,
@@ -5558,10 +5558,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         cwd: lead?.dir ?? os.homedir(),
                         shell: true, windowsHide: true,
                         stdio: ['pipe', 'pipe', 'pipe'],
+                        /**
+                         * ‼️ X-107 — AND THE PLANNER GOES THROUGH THE ROUTE IT
+                         * WAS GIVEN, which is the third argument and was
+                         * `undefined` here.
+                         *
+                         * That slot is the runtime — the endpoint, its
+                         * credential and the names that have to be CLEARED so a
+                         * window's own variable cannot leak into a run that
+                         * named a different endpoint. Passing nothing left the
+                         * longest-lived call a mission makes on whatever the
+                         * window was holding, while every delegate beside it
+                         * could be pointed anywhere. Nothing stated still
+                         * resolves to the lead's standing record, exactly as
+                         * before.
+                         */
                         env: spawnEnvironment(
                             process.env,
                             [launchAccountEnv({ engine: 'claude', account: spec.plannerAccount })],
-                            undefined)
+                            engineRuntimeFor(spec.leadAgentId, 'claude', routeOf({
+                                providerId: spec.plannerProviderId, tier: spec.plannerTier
+                            })))
                     });
                     let out = '', err = '';
                     const timer = setTimeout(() => {
@@ -5786,16 +5803,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             'no agent named "' + step.agentName + '" is in this fleet');
                         continue;
                     }
-                    // ‼️ THE MISSION'S PROJECT, NOT THE WINDOW'S. A wave fires
-                    // whenever the planner decides to, which may be an hour
-                    // after anybody looked at this window — the same reason a
-                    // schedule states its own origin project (see addTask).
-                    // Passing the key explicitly is also how `undefined` means
-                    // "no project" rather than "ask the window".
-                    const task = taskManager.addTask(
-                        agent, `[Mission] ${step.title}`, step.prompt, 'headless',
-                        { projectId: spec.projectId });
-                    task.missionId = run.id;
                     // ‼️ THE POOL COUNTS TOO. This read `spec.team` alone, which
                     // an ADAPTIVE mission does not have — so every dimension a
                     // pool member stated was silently dropped on exactly the
@@ -5822,23 +5829,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             agent.dir, engine as EngineId),
                         launch: launchDefaults()
                     });
-                    if (dims.model) { task.model = dims.model; }
-                    // `claude` is written by NOT being written — an explicit
-                    // engine on every task would make each one claim a decision
-                    // nobody made, exactly as `runExtras` avoids for the rest.
-                    if (dims.engine && dims.engine !== 'claude') { task.engine = dims.engine; }
-                    if (dims.effort) { task.effort = dims.effort; }
-                    if (dims.permissionMode) { task.permissionMode = dims.permissionMode; }
-                    // ‼️ X-225 — AND WHOSE PLAN PAYS FOR IT. Written only where
-                    // the ladder resolved one: a task with no account reaches
-                    // its own launch path unstated and the engine's standing
-                    // sign-in answers there, which is what every mission before
-                    // this did. The rest is free, because a delegation IS a
-                    // task — the account layer, the `@machine` clearing and the
-                    // refusal for an engine that cannot isolate one all already
-                    // live on the task's own spawn.
-                    if (dims.account) { task.account = dims.account; }
-                    if (dims.workDir) { task.workDir = dims.workDir; }
+                    /**
+                     * ‼️ X-107 — THE DELEGATION IS MADE WITH ITS DIMENSIONS, not
+                     * patched with them afterwards, and they travel BY THE SHAPE.
+                     *
+                     * Two things were wrong with writing them onto the returned
+                     * row. The dimensions are part of MAKING a task (`addTask`
+                     * says so): a row queued before they are applied is a row
+                     * that could start wrong, and since X-106 it is also a row
+                     * whose ROUTE was never sealed — the seal is taken at the
+                     * enqueue, so a route arriving one line later leaves the
+                     * run's own history blank. And the list was written by hand,
+                     * which is the seam every dimension since X-18 has had to be
+                     * remembered at; `runExtras` is the shape, so the next one
+                     * travels without this line knowing it exists.
+                     *
+                     * `claude` is written by NOT being written — an explicit
+                     * engine on every task would make each one claim a decision
+                     * nobody made, which is the one thing `runExtras` cannot know
+                     * here because `DelegateRun.engine` is always resolved.
+                     *
+                     * ‼️ THE PROJECT IS NOT A DIMENSION and stays explicit: a
+                     * wave fires whenever the planner decides to, which may be an
+                     * hour after anybody looked at this window — the same reason
+                     * a schedule states its own origin project (see `addTask`).
+                     * Passing the key is also how `undefined` means "no project"
+                     * rather than "ask the window".
+                     */
+                    const task = taskManager.addTask(
+                        agent, `[Mission] ${step.title}`, step.prompt, 'headless',
+                        {
+                            ...runExtras({
+                                ...dims,
+                                engine: dims.engine === 'claude' ? undefined : dims.engine
+                            }),
+                            projectId: spec.projectId
+                        });
+                    task.missionId = run.id;
                     // What it ended up with AND WHO SAID SO, on the step the
                     // lead and the reader both look at. Without this the answer
                     // to "why did that delegate run on gpt-5?" is a settings
@@ -6768,6 +6795,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ? input.team as {
                 agentId?: unknown; role?: unknown; model?: unknown; engine?: unknown;
                 effort?: unknown; permissionMode?: unknown; account?: unknown;
+                providerId?: unknown; tier?: unknown;
             }[]
             : [];
         const team: MissionSpec['team'] = [];
@@ -6811,7 +6839,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // is CHECKED below rather than here, because the engine it
                     // has to be checked against is the mission's where the
                     // member states none, and that is read further down.
-                    account: String(t.account ?? '').trim() || undefined
+                    account: String(t.account ?? '').trim() || undefined,
+                    // ‼️ X-107 — and which endpoint serves it, checked below for
+                    // exactly the same reason. The tier is kept only under a
+                    // route: stored alone it is a word with no referent, and the
+                    // day it met a route it was not chosen against it would
+                    // resolve to a different model (X-101).
+                    ...(String(t.providerId ?? '').trim()
+                        ? {
+                            providerId: String(t.providerId ?? '').trim(),
+                            ...(String(t.tier ?? '').trim()
+                                ? { tier: String(t.tier ?? '').trim() } : {})
+                        }
+                        : {})
                 });
             }
         }
@@ -6844,6 +6884,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const plannerAccount = String(input.plannerAccount ?? '').trim();
         const plannerAccountBad = launchAccountRefusal({ engine: 'claude', account: plannerAccount });
         if (plannerAccountBad) { return `Planner: ${plannerAccountBad}`; }
+        /**
+         * ‼️ X-107 — AND WHICH ENDPOINT CARRIES THE ORCHESTRATOR, on its own
+         * axis beside the sign-in above and refused the same way: before the
+         * mission exists, rather than once per planning call for the rest of
+         * the run. Always Claude Code (see `MissionSpec.engine`), so the
+         * adapter asked is Claude's.
+         */
+        const plannerProviderId = String(input.plannerProviderId ?? '').trim();
+        const plannerTier = plannerProviderId ? String(input.plannerTier ?? '').trim() : '';
+        const plannerRouteBad = launchRouteRefusal('claude', plannerProviderId, plannerTier);
+        if (plannerRouteBad) { return `Planner: ${plannerRouteBad}`; }
         // The mission-wide engine for its DELEGATIONS. Refused here, before the
         // mission exists, if this machine cannot run it: a mission that plans
         // three rounds and then fails every delegation has spent planner turns
@@ -6869,9 +6920,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const missionAccount = String(input.account ?? '').trim();
         const missionAccountBad = launchAccountRefusal({ engine: missionEngine, account: missionAccount });
         if (missionAccountBad) { return missionAccountBad; }
+        /**
+         * ‼️ X-107 — THE MISSION-WIDE ROUTE, judged against the engine its
+         * delegations really land on, and a member's against the engine THAT
+         * member lands on. The same rule the account beside it follows and for
+         * the same reason: a route belongs to one engine's adapter, so checking
+         * every member against `claude` would pass a Claude route onto an
+         * OpenCode member and refuse an OpenCode provider that is right.
+         */
+        const missionProviderId = String(input.providerId ?? '').trim();
+        const missionTier = missionProviderId ? String(input.tier ?? '').trim() : '';
+        const missionRouteBad = launchRouteRefusal(
+            missionEngine || 'claude', missionProviderId, missionTier);
+        if (missionRouteBad) { return missionRouteBad; }
         for (const m of [...team, ...pool]) {
             const bad = launchAccountRefusal({ engine: m.engine || missionEngine, account: m.account });
             if (bad) { return `${m.agentName}: ${bad}`; }
+            const badRoute = launchRouteRefusal(
+                m.engine || missionEngine || 'claude', m.providerId ?? '', m.tier ?? '');
+            if (badRoute) { return `${m.agentName}: ${badRoute}`; }
         }
         const workdir = String(input.workdir ?? '').trim();
         if (workdir && !fs.existsSync(workdir)) { return `Workdir does not exist: ${workdir}`; }
@@ -6937,6 +7004,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // written before this said and still behaves as.
                 account: missionAccount || undefined,
                 plannerAccount: plannerAccount || undefined,
+                // ‼️ X-107 — and the two routes, each with its tier under it and
+                // never a tier on its own.
+                ...(missionProviderId
+                    ? { providerId: missionProviderId, ...(missionTier ? { tier: missionTier } : {}) }
+                    : {}),
+                ...(plannerProviderId
+                    ? {
+                        plannerProviderId,
+                        ...(plannerTier ? { plannerTier } : {})
+                    }
+                    : {}),
                 projectId,
                 // The mission-wide engine for DELEGATIONS; a member may override
                 // it. The planner stays on Claude Code by design — see
@@ -7012,13 +7090,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const models = engineModelMatrix();
         const launch = launchDefaults();
         const agentDefaults = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
-        /** One cast row through the SAME ladder the wave climbs. */
-        const memberView = (
-            member: {
-                agentId: string; agentName: string; role?: string; model?: string;
-                engine?: string; effort?: string; permissionMode?: string;
-            }
-        ): MissionPreviewMember => {
+        /**
+         * One cast row through the SAME ladder the wave climbs.
+         *
+         * ‼️ X-107 — IT TAKES THE MEMBER, not a copy of the fields somebody
+         * remembered. Written as a field list it had already fallen behind by
+         * one: X-225 put an `account` on a member and this signature did not
+         * name it, so the preview reported every account as unset while the
+         * wave ran on it — a form that answers "what will this do" saying the
+         * opposite of what it does.
+         */
+        const memberView = (member: MissionTeamMember): MissionPreviewMember => {
             const agent = agents.find(a => a.id === member.agentId);
             const dims = resolveDelegateRun(member, spec, {
                 farm: (engine) => agent
@@ -7050,14 +7132,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ...(member.engine ? { engine: member.engine } : {}),
                     ...(member.model ? { model: member.model } : {}),
                     ...(member.effort ? { effort: member.effort } : {}),
-                    ...(member.permissionMode ? { permissionMode: member.permissionMode } : {})
+                    ...(member.permissionMode ? { permissionMode: member.permissionMode } : {}),
+                    ...(member.account ? { account: member.account } : {}),
+                    // ‼️ X-107 — the tier is shown only under the route it was
+                    // typed against, exactly as the ladder resolves it.
+                    ...(member.providerId
+                        ? { providerId: member.providerId, ...(member.tier ? { tier: member.tier } : {}) }
+                        : {})
                 },
                 effective: {
                     engine: dims.engine,
                     ...(dims.model ? { model: dims.model } : {}),
                     ...(dims.effort ? { effort: dims.effort } : {}),
                     ...(dims.permissionMode ? { permissionMode: dims.permissionMode } : {}),
-                    ...(dims.workDir ? { workDir: dims.workDir } : {})
+                    ...(dims.workDir ? { workDir: dims.workDir } : {}),
+                    ...(dims.account ? { account: dims.account } : {}),
+                    ...(dims.providerId
+                        ? { providerId: dims.providerId, ...(dims.tier ? { tier: dims.tier } : {}) }
+                        : {})
                 },
                 origin: dims.origin,
                 note: describeDelegateRun(dims),
@@ -7067,11 +7159,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The cast is whichever list this mode keeps it in — the one function
         // that knows, so a pool is never read as an empty team.
         const cast = mode === 'adaptive' ? (spec.pool ?? []) : spec.team;
-        const workers = cast.map(m => memberView({
-            agentId: m.agentId, agentName: m.agentName, role: m.role,
-            model: m.model, engine: m.engine, effort: m.effort,
-            permissionMode: m.permissionMode
-        }));
+        const workers = cast.map(m => memberView(m));
         const leadAgent = agents.find(a => a.id === spec.leadAgentId);
         const plannerModel = spec.plannerModel;
         const plannerEffort = spec.plannerEffort;
@@ -7088,13 +7176,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             requested: {
                 engine: 'claude',
                 ...(plannerModel ? { model: plannerModel } : {}),
-                ...(plannerEffort ? { effort: plannerEffort } : {})
+                ...(plannerEffort ? { effort: plannerEffort } : {}),
+                // ‼️ X-225/X-107 — the planner's own two, which this card
+                // answered for without being able to see: whose plan the
+                // orchestrator spends and which endpoint carries it.
+                ...(spec.plannerAccount ? { account: spec.plannerAccount } : {}),
+                ...(spec.plannerProviderId
+                    ? {
+                        providerId: spec.plannerProviderId,
+                        ...(spec.plannerTier ? { tier: spec.plannerTier } : {})
+                    }
+                    : {})
             },
             effective: {
                 engine: 'claude',
                 ...(plannerRun.model.value ? { model: plannerRun.model.value } : {}),
                 ...(plannerRun.effort.value ? { effort: plannerRun.effort.value } : {}),
-                ...(leadAgent ? { workDir: leadAgent.dir } : {})
+                ...(leadAgent ? { workDir: leadAgent.dir } : {}),
+                // The planner's account and route have ONE rung — the mission
+                // itself — so what was asked for is what it runs with. Anything
+                // else is resolved at the spawn, where every other run's is.
+                ...(spec.plannerAccount ? { account: spec.plannerAccount } : {}),
+                ...(spec.plannerProviderId
+                    ? {
+                        providerId: spec.plannerProviderId,
+                        ...(spec.plannerTier ? { tier: spec.plannerTier } : {})
+                    }
+                    : {})
             },
             origin: {
                 engine: 'cli',
@@ -7104,7 +7212,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // the write and spawn tools are cut off by NAME instead
                 // (`MISSION_PLANNER_DISALLOWED_TOOLS`). Answering "fleet" here
                 // would be a claim about a flag that is not on that line.
-                permissionMode: 'cli'
+                permissionMode: 'cli',
+                account: spec.plannerAccount ? 'mission' : 'cli',
+                providerId: spec.plannerProviderId ? 'mission' : 'cli'
             },
             // ‼️ WHERE a non-mission rung said it. "settings" without the path
             // sends a reader hunting through four files, and "extra-args"
@@ -7270,6 +7380,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * would otherwise be able to get two different missions out of one payload
      * the day either copy gained a field.
      */
+    /**
+     * ‼️ X-107 — WHAT A CAST MEMBER MAY STATE, IN ONE PLACE.
+     *
+     * Written out per mapping, this list had already fallen behind by one before
+     * anybody noticed: X-225 put an `account` on a member and BOTH the team and
+     * the pool mapping here dropped it, so a caller could set the dimension over
+     * the bridge, get no refusal, and watch every delegation run on the standing
+     * sign-in. The door below it reads whatever arrives, so the only thing that
+     * had to be true is that nothing is thrown away on the way in.
+     *
+     * The keys are the ones on `MissionTeamMember`; `test_mission_route.js`
+     * reads that interface out of the source and fails the build if this list is
+     * short, so the next dimension cannot go missing quietly either.
+     */
+    const CAST_DIMENSIONS = [
+        'role', 'model', 'engine', 'effort', 'permissionMode', 'account', 'providerId', 'tier'
+    ] as const;
+    const castDims = (raw: Record<string, unknown>, agentId: string): Record<string, unknown> => {
+        const out: Record<string, unknown> = { agentId };
+        for (const k of CAST_DIMENSIONS) {
+            if (raw[k] !== undefined) { out[k] = raw[k]; }
+        }
+        return out;
+    };
+
     const bridgeMissionInput = (args: Record<string, unknown>): Record<string, unknown> => {
         const adaptive = String(args.mode ?? '') === 'adaptive';
         // An adaptive run is allowed to name neither: that is the point.
@@ -7277,21 +7412,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const lead = leadKey ? findAgent(leadKey) : undefined;
         const teamIn = Array.isArray(args.team) ? args.team as Record<string, unknown>[] : [];
         need(adaptive || teamIn.length, 'team is required: [{ "agent": "<name|id>", "role"?: "...", "model"?: "...", "engine"?: "...", "effort"?: "...", "permissionMode"?: "..." }]');
-        const team = teamIn.map(t => ({
-            agentId: findAgent(String(t.agent ?? '')).id, role: t.role, model: t.model,
-            engine: t.engine, effort: t.effort, permissionMode: t.permissionMode
-        }));
-        // ‼️ M-18 — A POOL MEMBER TAKES THE SAME FIVE. It always could in the
-        // type and never could through a caller, so `agentId` was the only
+        const team = teamIn.map(t => castDims(t, findAgent(String(t.agent ?? '')).id));
+        // ‼️ M-18 — A POOL MEMBER TAKES THE SAME DIMENSIONS. It always could in
+        // the type and never could through a caller, so `agentId` was the only
         // field this op accepted and every other one was dropped without a
         // word. `agent` is the name every other list on this bridge uses;
         // `agentId` still works for what is written.
         const poolIn = Array.isArray(args.pool) ? args.pool as Record<string, unknown>[] : [];
-        const pool = poolIn.map(p => ({
-            agentId: findAgent(String(p.agent ?? p.agentId ?? '')).id, role: p.role,
-            model: p.model, engine: p.engine, effort: p.effort,
-            permissionMode: p.permissionMode
-        }));
+        const pool = poolIn.map(p => castDims(p, findAgent(String(p.agent ?? p.agentId ?? '')).id));
         return {
             ...args, ...(lead ? { leadAgentId: lead.id } : {}), team,
             ...(pool.length ? { pool } : {})
@@ -8315,8 +8443,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // bridge and cannot READ it has no way to tell a
                         // deliberate default from a value that never arrived.
                         // null = the engine's own default.
-                        permissionMode: m.permissionMode ?? null
+                        permissionMode: m.permissionMode ?? null,
+                        // ‼️ X-225 / X-107 — and the two that decide WHERE the
+                        // work really went and WHO paid for it, readable for the
+                        // same reason as `engine` above: a dimension a caller can
+                        // set over the bridge and cannot read back leaves it
+                        // unable to tell a default from a value that never
+                        // arrived. Each falls back to the mission's own, because
+                        // that is what the delegation will actually run with.
+                        account: m.account ?? sp?.account ?? null,
+                        providerId: m.providerId ?? sp?.providerId ?? null,
+                        tier: m.providerId ? (m.tier ?? null) : (sp?.tier ?? null)
                     })),
+                    // ‼️ X-107 — …and the orchestrator's own, which is a
+                    // different question from the delegations' (see the spec).
+                    plannerProviderId: sp?.plannerProviderId ?? null,
+                    plannerTier: sp?.plannerProviderId ? (sp?.plannerTier ?? null) : null,
                     /**
                      * ‼️ B-13 — WHERE THE LEAD SAYS IT IS, AND HOW OFTEN THE
                      * APPROACH HAS MOVED. Off `run.strategy`, which M-16 keeps on
@@ -8421,6 +8563,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'and whose workers share one sign-in is exactly the run that stops in the middle. Before '
                 + 'this the planner spawned with NO environment at all and ran as whatever the VS Code '
                 + 'window happened to hold), '
+                + '‼️ providerId?/tier? (X-107 — WHICH ROUTE EVERY DELEGATION IS SERVED BY, on the same '
+                + 'axis as `engine` and `account`; a member overrides it with its own `providerId`/`tier`. '
+                + 'A mission is written once and fires for hours with nobody at a window, which is exactly '
+                + 'when "these delegations go through the Kimi endpoint" cannot be said anywhere else. '
+                + '`tier` is Claude-only and travels WITH the route it was typed against — a tier alone is '
+                + 'refused and a member\'s tier is never applied to the MISSION\'s route, because `opus` is '
+                + 'a different model on every endpoint. Omit them and nothing is injected: the agent\'s own '
+                + 'standing record answers at the spawn, which is what every mission before this did), '
+                + '‼️ plannerProviderId?/plannerTier? (X-107 — and which endpoint carries the ORCHESTRATOR, '
+                + 'a different question for the same reason plannerAccount is: "the workers go through the '
+                + 'cheap endpoint, the planner stays on the one I trust to keep the thread". Refused before '
+                + 'the mission exists rather than once per planning call for the rest of the run), '
                 + 'approvalMode? (each-round|auto), maxRounds?, maxTasks?, maxCostUSD?, '
                 + '(‼️ EVERY LIMIT IS YOURS TO SET: nothing is clamped from above, and 0 on ANY '
                 + 'of maxRounds/maxTasks/maxCostUSD/maxTokens/maxMinutes/maxParallel means UNLIMITED on '
@@ -8447,7 +8601,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'OUTCOME rather than a recipe: successCriteria ([{id?, text, required?}] — required, and '
                 + 'each id is stable for the life of the mission because evaluations refer to it), '
                 + 'constraints? ([string] — what the run may NOT do), pool? ([{agent, role?, model?, engine?, '
-                + 'effort?, permissionMode?, account?}] — whom the lead may draw on, on the SAME six dimensions a team '
+                + 'effort?, permissionMode?, account?, providerId?, tier?}] — whom the lead may draw on, on the SAME dimensions a team '
                 + 'member takes; omit for the whole fleet), '
                 + '‼️ poolScope? (fleet|selected — U-102: WHICH of the two readings of an empty pool you mean. '
                 + '`fleet` is the whole fleet and the rows are overrides on it, not a cast list; `selected` is '
@@ -20364,6 +20518,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * with no route named the agent's standing record decides at the spawn, and
      * there was no choice to seal.
      */
+    /**
+     * ‼️ X-106 / X-107 — WHY THIS ROUTE CANNOT BE WRITTEN DOWN, or nothing when
+     * it can. Asked of the ADAPTER and the user's own profiles, never restated.
+     *
+     * One function because there are now two kinds of door that write a route
+     * onto something that has not run yet — a stored automation (`runDims`) and
+     * a mission's planner, mission-wide and per-member boxes — and a second copy
+     * of this rule is a second answer the day an adapter changes its mind.
+     */
+    const launchRouteRefusal = (
+        engine: string, providerId: string, tier: string
+    ): string | undefined => {
+        if (!providerId) { return undefined; }
+        const kept = pruneProviderPick(
+            adapterFor(engineOf(engine).id, registryDeps()),
+            { providerId, ...(tier ? { tier } : {}) }, 'run').pick;
+        if (!kept.providerId) {
+            return `"${providerId}" is not a route ${engineOf(engine).id} can be pointed at — `
+                + 'engines.providers lists what is set up, and an engine with no provider axis takes none.';
+        }
+        return tier && !kept.tier
+            ? `"${tier}" is not a tier the "${providerId}" route maps — engines.providers lists what it serves.`
+            : undefined;
+    };
+
     const routeSealOf = (
         agentId: string, engine: string, route?: { providerId?: string; tier?: string }
     ): RouteSeal | undefined => {
@@ -20468,18 +20647,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         args: Record<string, unknown>, opts: { mode?: string } = {}
     ): Record<string, unknown> => bridgeRunDimensions(args, {
         ...opts,
-        route: (engine, providerId, tier) => {
-            const kept = pruneProviderPick(
-                adapterFor(engineOf(engine).id, registryDeps()),
-                { providerId, ...(tier ? { tier } : {}) }, 'run').pick;
-            if (!kept.providerId) {
-                return `"${providerId}" is not a route ${engineOf(engine).id} can be pointed at — `
-                    + 'engines.providers lists what is set up, and an engine with no provider axis takes none.';
-            }
-            return tier && !kept.tier
-                ? `"${tier}" is not a tier the "${providerId}" route maps — engines.providers lists what it serves.`
-                : undefined;
-        },
+        route: launchRouteRefusal,
         // ‼️ X-169 — and whether that sign-in is on this machine, through the
         // one reader (`accountStore.accountRefusal`). The same doctrine as the
         // route beside it: the question is asked here, the ANSWER lives where

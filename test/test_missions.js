@@ -547,9 +547,14 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
         // the two layers a LAUNCH has always had under them. The ordering is
         // exercised against the real function in test_mission_dimensions.js;
         // what is pinned here is that the wiring goes through it at all.
+        // ‼️ X-107 — `claude` is still written by NOT being written, and that is
+        // now the ONE thing the shape cannot know here: `DelegateRun.engine` is
+        // always resolved, so it is dropped on the way into `runExtras` rather
+        // than guarded by a hand-written `if`.
         ok('the delegation really carries it: member, then mission, then the launch layers',
             /const dims = resolveDelegateRun\(member, spec, \{/.test(ext)
-            && /if \(dims\.engine && dims\.engine !== 'claude'\) \{ task\.engine = dims\.engine; \}/.test(ext));
+            && /engine: dims\.engine === 'claude' \? undefined : dims\.engine/.test(ext)
+            && !/task\.engine = dims\.engine/.test(ext));
         ok('…and the run counts tokens as well as dollars, both halves',
             /run\.totalTokens = \(run\.totalTokens \?\? 0\) \+ \(pr\.tokens \?\? 0\);/.test(src)
             && /round\.steps\.reduce\(\(a, s\) => a \+ \(s\.tokens \?\? 0\), 0\)/.test(src));
@@ -586,8 +591,12 @@ const HINTS = [{ name: 'coder', role: 'implements', hint: 'writes code' }, { nam
             !/error=user rejected/.test(src));
         ok('…and `plan` is named as the thing no config can supply',
             /plan agent calls no\s*\*?\s*tool at all/.test(src.replace(/\s*\*\s*/g, ' ')));
+        // ‼️ X-107 — carried BY THE SHAPE now (`runExtras`), which is why no
+        // field is named: the list this used to pin is exactly the seam every
+        // dimension since X-18 had to be remembered at.
         ok('the delegation really carries it onto the task',
-            /if \(dims\.permissionMode\) \{ task\.permissionMode = dims\.permissionMode; \}/.test(ext));
+            /\.\.\.runExtras\(\{\s*\n\s*\.\.\.dims,/.test(ext)
+            && !/task\.permissionMode = dims\.permissionMode/.test(ext));
         ok('‼️ a typo is REFUSED at creation, not dropped like an unknown engine is',
             /validateLaunch\(\{ permissionMode: memberPerm, effort: memberEffort \}\)/.test(ext)
             && /return `\$\{a\.name\}: \$\{bad\}`;/.test(ext));

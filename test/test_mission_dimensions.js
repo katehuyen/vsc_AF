@@ -310,8 +310,13 @@ const R = M.resolveDelegateRun;
      * promise existed. Both are wired here, through the same environment layer
      * every other spawn in this codebase uses.
      */
-    ok('‼️ X-225 — the delegation is queued with the sign-in the ladder resolved',
-        /if \(dims\.account\) \{ task\.account = dims\.account; \}/.test(ext));
+    // ‼️ X-107 — AND IT IS QUEUED WITH IT rather than having it written on
+    // afterwards. The dimensions are part of MAKING a task (`addTask` says so),
+    // and since X-106 one arriving a line later is one the enqueue's route seal
+    // never saw. `runExtras` is the shape, so no field is named here any more.
+    ok('‼️ X-225/X-107 — the delegation is MADE with the dimensions the ladder resolved',
+        /taskManager\.addTask\([\s\S]{0,200}\.\.\.runExtras\(\{\s*\n\s*\.\.\.dims,/.test(ext)
+        && !/task\.account = dims\.account/.test(ext));
     ok('‼️ X-225 — …and the PLANNER call spawns with an environment, which it had none of',
         /env: spawnEnvironment\(\s*process\.env,\s*\[launchAccountEnv\(\{ engine: 'claude', account: spec\.plannerAccount \}\)\]/
             .test(ext));

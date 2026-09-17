@@ -2,6 +2,58 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.534.0 - a mission says which endpoint carries its workers and which carries its planner (X-107) (2026-09-17)
+
+- **‼️ X-107 (1/n) — MEASURED: a mission could not state a route anywhere.**
+  Every other run dimension a cast member states travels down to the
+  delegation — engine (X-18), permission mode (M-14), effort (M-18), sign-in
+  (X-225). The ROUTE did not, so "these delegations go through the Kimi
+  endpoint, the orchestrator stays on Anthropic's" could not be said at all,
+  and every participant took whichever standing route its agent happened to
+  have at 3 a.m.
+- **Two axes, because they are two questions.** `MissionSpec.providerId` /
+  `.tier` is the route every delegation is served by; a member (or a pool
+  member) overrides it with its own. `MissionSpec.plannerProviderId` /
+  `.plannerTier` is the ORCHESTRATOR's own — one long-lived headless `claude`
+  carrying the run from round to round, and the most expensive thing a mission
+  does. Same shape `plannerAccount` (X-225) already has.
+- **‼️ THE TIER COMES FROM WHICHEVER RUNG NAMED THE ROUTE.** `opus` is
+  `kimi-k2-thinking` on one endpoint and `MiniMax-M2` on another (X-101), so a
+  member's tier is never applied to the MISSION's route, and a tier with no
+  route at all is dropped rather than stored as a word with no referent.
+  Under the mission there is no third rung on purpose: `resolveLaunchRoute`
+  already falls through to the agent's standing record at the spawn, and
+  answering one question twice is how two answers start disagreeing.
+- **The planner now spawns through its route.** That call passed `undefined`
+  where the runtime layer belongs, so the longest-lived call a mission makes
+  ran on whatever the window was holding while every delegate beside it could
+  be pointed anywhere.
+- **‼️ AND THE DELEGATION IS MADE WITH ITS DIMENSIONS, BY THE SHAPE.** They
+  were written onto the row `addTask` had already returned — the dimensions
+  are part of MAKING a task, and since X-106 one arriving a line later is one
+  the enqueue's route seal never saw. `runExtras` now carries the lot, so the
+  next dimension travels without that seam knowing it exists.
+- **Two silent drops found and fixed on the way.** `bridgeMissionInput` copied
+  a cast member field by field and BOTH its team and its pool mapping had lost
+  X-225's `account`: a caller could set it over the bridge, get no refusal and
+  watch every delegation run on the standing sign-in. And the preview's
+  `memberView` took its own field list, so the draft card reported every
+  account as unset while the wave ran on it. Both take the member's own shape
+  now, measured against `MissionTeamMember` read out of the source.
+- **One refusal, four doors.** `launchRouteRefusal` is asked by the automation
+  door (`runDims`), by the planner box, by the mission-wide box and by every
+  member box — before the mission exists, not once per planning call for the
+  rest of the run. A member's is judged against the engine THAT member lands
+  on, exactly as its account is.
+- Readable back: `missions.list` gives each member's `account`, `providerId`
+  and `tier` (falling back to the mission's), plus `plannerProviderId` /
+  `plannerTier`; the run note and `step.ran` carry `route <id>/<tier>`.
+- Tests: new `test_mission_route` (33), `test_bridge` +1, and four source
+  guards updated to the new shape. Suite 366 files / 22341 green.
+- **Still open on X-107:** the missions form has no route boxes yet (the
+  dimension is reachable over the bridge only), and mission templates,
+  adaptive suggestions and resume inheritance are not wired.
+
 ## 3.533.0 - a queued run remembers what its route MEANT when somebody chose it (X-106) (2026-09-17)
 
 - **‼️ X-106 step (1) — MEASURED: a task could not tell a route that stayed
