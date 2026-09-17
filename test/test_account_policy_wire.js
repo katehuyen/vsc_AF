@@ -155,8 +155,11 @@ const fnBlock = (name) => {
 
     // The doors that pre-resolve the account must commit; the ones that only
     // REPORT or CHECK must not, or one launch advances the rotation three times.
+    // X-106 (2) made the Console task door (`consoleTaskStart`) the fourth: a
+    // task handed to the Console really starts a process there.
     const commits = [...ext.matchAll(/launchAccountFor\([\s\S]{0,200}?commit: true/g)].length;
-    ok('exactly the three pre-resolving spawn doors commit', commits === 3);
+    ok('exactly the four pre-resolving spawn doors commit', commits === 4);
+    ok('…the fourth is the Console task door', /consoleTaskStart = spec => \{[\s\S]{0,1500}?launchAccountFor\(engine, spec\.account, spec\.agentId, \{ model, commit: true \}\)/.test(ext));
 
     /**
      * ‼️ THE DOOR AND THE SPAWN ASK THE SAME QUESTION. A named rule may carry a

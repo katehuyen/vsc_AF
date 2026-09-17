@@ -2,6 +2,68 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.531.0 - a named rule may be the emptiest of the sign-ins it lists, and a task handed to the Console keeps its route, its sign-in and its discipline (X-324, X-106) (2026-09-17)
+
+- **‼️ X-106 step (2) — MEASURED: a task with `interactiveTarget: 'console'`
+  opened on the agent's defaults.** The gate from the task runner into the
+  Console (`startConsoleTask` in `extension.ts`) was a hand-written field
+  list — engine · model · effort · permissionMode · projectId — so
+  `providerId`, `tier`, `account` and `superpowers` fell out between the task
+  and `consoleHost.start`, which accepts all four. The gate now spreads
+  `runExtras(task)` (the shape, so the next dimension travels without the
+  seam knowing) and the door reads the route, resolves the task's **account
+  once** through `launchAccountFor` (a rule such as `@emptiest` or `@Night`
+  becomes a slot against this moment's figures, `commit` lets `@round-robin`
+  advance; a rule that can choose nothing is a warning and a failed task,
+  never the main sign-in — the same answer an absent engine gives), and
+  falls superpowers to the agent's default the way the headless spawn does
+  (a hosted fresh start reads absent as OFF, so the default has to be said).
+  `test_task_route` (+16) reads `RunDimensions` out of the source and
+  requires every field the Console can use at the door, the exemptions
+  named (`cli`, the interactive target/close, the finish sound, `workDir`
+  which arrives as `cwd`, and the queue's own `priority` · `rounds` ·
+  `ignoreBudget` · `retry`). Step (1) — sealing the profile revision at
+  enqueue — is still open.
+
+- **‼️ THE GAP THE USER NAMED.** "Of my five sign-ins, start on whichever of
+  THESE three has the most room" could not be said: the built-in `@emptiest`
+  scans every slot of the engine, `@pool` needs a sentry campaign running,
+  and a named rule walks its steps as a CHAIN — step 1 carries every launch
+  until it is walled, so work never spreads across the accounts the user
+  chose. And the wall is a launch-time filter, not a mid-session switch, so
+  the choice has to be right at the start.
+- **A rule now has a `strategy`**: `chain` (the default, unchanged) or
+  `emptiest` — the listed accounts are a pool of their own, compared at the
+  launch on the figures of that moment, and the one with the most room starts.
+  The ranking is `roomOrder`, the very function the engine-wide `@emptiest`
+  runs on (most room first, a measured slot before an unread one) — no second
+  copy. A step's own wall and model filter mean the same in both strategies;
+  a step the host says is not stored is out of the pool; every listed slot
+  walled is a REFUSAL naming each with its figure and the first reset, never
+  the main sign-in. A chain may still step through an emptiest rule.
+- **‼️ The lock, and why.** A step naming a RULE has no single figure to
+  compare, so a list holding one can only be walked as a chain. The core
+  refuses to store `emptiest` over such a list (`policyShapeRefusal`, the
+  sentence naming each rule step); the Engines form holds its Strategy switch
+  on chain while a rule step is in the draft — the emptiest row disabled, the
+  label reading "locked", the AFTip saying which step did it — and keeping a
+  rule step in an emptiest draft flips it to chain on the draft itself, so
+  Save posts what the drawing shows. Deciding this at the RULE rather than as
+  a new "pool of accounts" step kind keeps the step list flat: a step is still
+  an account or a rule, and how the list is read is one switch on the card.
+- Engines page: a strategy chip on every rule card (`→ chain` / `⚖ emptiest`,
+  AFTip with the definition); an emptiest card sets its steps beside each
+  other (`·`) rather than walking them (`→`). Bridge: `policies.save` takes
+  `strategy`; `policies.list` describes an emptiest rule by what it compares.
+  `agentFarm.accountPolicies` schema carries the enum.
+- Tests: `test_account_policies` (+22: the pool, per-step walls, the model
+  filter, unstored and unread slots, the refusal, the shape lock, a chain
+  through an emptiest rule), `test_engines_policies` (+20: the chip, the
+  switch, the lock on keep, the posted draft, the free switch after the rule
+  step is removed), `test_bridge` (+3); fixture rule `@Ucu_Birden` (emptiest
+  over three slots, resolving to the LAST listed) + two form scenes (free,
+  locked), both photographed and the chip measured.
+
 ## 3.530.0 - the sentry's warnings reach the user as warnings (X-309) (2026-09-17)
 
 - **‼️ MEASURED ON THE FIRE DRILL (scenario 2).** The failure brake fired and

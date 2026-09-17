@@ -1309,6 +1309,29 @@
     };
     /** `@Gece_Nobeti` for a rule object, `@emptiest` for a built-in. */
     const ruleId = (r) => r.id || ('@' + r.name);
+    /* X-324 — how a rule reads its steps; the words are the core's (POLICY_STRATEGIES). */
+    const STRATEGY = {
+        chain: {
+            label: 'chain', glyph: '→',
+            head: 'Chain: walked top to bottom',
+            body: 'Step 1 carries every launch until it is walled, then step 2, then step 3. The first step with a usable answer wins.'
+        },
+        emptiest: {
+            label: 'emptiest', glyph: '⚖',
+            head: 'Emptiest: the most room among the listed',
+            body: 'The listed sign-ins are a pool of their own: at each launch their figures are compared and the one with the most room starts. '
+                + '"Of my five sign-ins, the emptiest of these three" — which the built-in @emptiest (every sign-in of the engine) cannot say. Every step is then an account.'
+        }
+    };
+    const strategyOf = (r) => (r && r.strategy === 'emptiest') ? 'emptiest' : 'chain';
+    /** Why the switch is locked on chain: a rule among the steps has no single figure. '' when free. */
+    const emptiestLock = (chain) => {
+        const rules = (chain || []).map((st, i) => ({ st, i })).filter(x => x.st.policy);
+        if (!rules.length) { return ''; }
+        return 'Locked on chain: emptiest mode compares the listed sign-ins by their figures, and a rule has no single figure ('
+            + rules.map(x => 'step ' + (x.i + 1) + ' names ' + x.st.policy).join(', ')
+            + '). Replace the rule steps with accounts to compare them.';
+    };
 
     /**
      * What a rule comes to on one engine, as a chip. The chip is the FACT (a
@@ -1355,6 +1378,8 @@
             + T.wrap('<span class="poid">≤ ' + esc(r.ceiling || POL().ceiling) + '%</span>',
                 'Wall: ' + (r.ceiling || POL().ceiling) + '%' + (r.ceiling ? '' : ' (the default)'),
                 'Where a step refuses a slot unless it names its own. A policy is choosing where to START a session, so the wall is lower than the runner\'s: starting on a sign-in with five per cent left is choosing the one that ends ten minutes in.')
+            + T.wrap('<span class="poid postrat">' + STRATEGY[strategyOf(r)].glyph + ' ' + esc(STRATEGY[strategyOf(r)].label) + '</span>',
+                STRATEGY[strategyOf(r)].head, STRATEGY[strategyOf(r)].body)
             + '<span class="grow"></span>'
             + '<button class="secondary small" data-poledit="' + esc(r.name) + '">Edit</button>'
             + '<button class="secondary small" data-poldel="' + esc(r.name) + '" title="'
@@ -1364,8 +1389,10 @@
             + '</div>'
             + '<div class="pobody muted small">'
             + (r.note ? esc(r.note) + ' · ' : '')
+            // An arrow between steps says "then"; emptiest steps are compared,
+            // not walked, so they are set beside each other instead.
             + (chain.length
-                ? chain.map((st, i) => '<span class="polstep">' + (i + 1) + '. ' + esc(stepText(st)) + '</span>').join(' → ')
+                ? chain.map((st, i) => '<span class="polstep">' + (i + 1) + '. ' + esc(stepText(st)) + '</span>').join(strategyOf(r) === 'emptiest' ? ' · ' : ' → ')
                 : 'no steps')
             + '</div></div>';
     }
@@ -1420,10 +1447,10 @@
         polForm = rule
             ? {
                 mode: 'edit', name: rule.name, engine: rule.engine || '', ceiling: rule.ceiling || '',
-                note: rule.note || '', chain: (rule.chain || []).map(st => Object.assign({}, st)),
+                note: rule.note || '', strategy: strategyOf(rule), chain: (rule.chain || []).map(st => Object.assign({}, st)),
                 step: null, stepAt: -1
             }
-            : { mode: 'new', name: '', engine: '', ceiling: '', note: '', chain: [], step: null, stepAt: -1 };
+            : { mode: 'new', name: '', engine: '', ceiling: '', note: '', strategy: 'chain', chain: [], step: null, stepAt: -1 };
         polMsg = '';
         render();
         const box = document.getElementById('polform');
@@ -1442,6 +1469,33 @@
             : { kind: 'policy', value: '@emptiest', ceiling: '', models: '' };
         if (polForm.step.kind === 'account' && !polForm.step.value && rows.length) { polForm.step.value = rows[0].id; }
         polForm.stepAt = i;
+    }
+
+    /**
+     * X-324 — THE STRATEGY SWITCH, and its lock. A rule among the steps has no
+     * single figure to compare, so the switch is HELD on chain while one is
+     * there: the emptiest row is disabled and the draft is set back to chain
+     * on the spot (adding a rule step to an emptiest draft flips it, and the
+     * panel says so). It is an AFTip, not a title: the reason is a sentence,
+     * and MIRROR asks the current value on the first line.
+     */
+    function strategyFieldHtml(f) {
+        const C = window.AFCharts;
+        const T = window.AFTip;
+        const lock = emptiestLock(f.chain);
+        if (lock) { f.strategy = 'chain'; }
+        const cur = STRATEGY[f.strategy];
+        const inner = '<span>Strategy' + (lock ? ' — locked' : '') + '</span><select data-af="strategy" data-aft="s" data-afr="1">'
+            + C.option('chain', STRATEGY.chain.glyph + ' ' + STRATEGY.chain.label + ' — in order, first with room', { selected: f.strategy === 'chain', detail: STRATEGY.chain.body })
+            + C.option('emptiest', STRATEGY.emptiest.glyph + ' ' + STRATEGY.emptiest.label + ' — most room among the listed', { selected: f.strategy === 'emptiest', disabled: !!lock, detail: lock || STRATEGY.emptiest.body })
+            + '</select>';
+        return T.label('aff' + (lock ? ' polocked' : ''), '', inner,
+            'Strategy — ' + cur.head,
+            T.lines([
+                'Now: ' + cur.label + (lock ? ' (locked)' : ''),
+                T.GAP,
+                lock || (cur.body + ' ' + (f.strategy === 'chain' ? STRATEGY.emptiest.head + ' is the other choice.' : STRATEGY.chain.head + ' is the other choice.'))
+            ]));
     }
 
     function policyFormHtml() {
@@ -1463,7 +1517,10 @@
             + F.sec(f.stepAt >= 0 ? 'Step ' + (f.stepAt + 1) : 'New step',
                 'A step names an account OR a rule, never both; the first step with a usable answer wins.')
             + F.grid([
-                F.sel('s_kind', 'Kind', [{ id: 'policy', label: 'a rule' }, { id: 'account', label: 'a fixed account' }], s.kind, {
+                F.sel('s_kind', 'Kind', [
+                    { id: 'policy', label: 'a rule', detail: f.strategy === 'emptiest' ? 'Keeping a rule step sets the strategy back to chain: a rule has no single figure to compare.' : '' },
+                    { id: 'account', label: 'a fixed account' }
+                ], s.kind, {
                     redraw: true, tip: 'Which half of the picker this step is drawn from. Changing it redraws the box beside it.'
                 }),
                 s.kind === 'account'
@@ -1490,7 +1547,7 @@
             title: editing ? 'Edit @' + f.name : 'New rule',
             lede: editing
                 ? 'The name is the id — anything pointing at @' + f.name + ' keeps working after a save.'
-                : 'A chain, walked top to bottom at every launch; the first step with a usable answer wins, and a chain that can choose nothing REFUSES the launch rather than spending the main sign-in.',
+                : 'Steps read at every launch by the strategy: a chain walks them top to bottom and the first with a usable answer wins; emptiest compares the listed sign-ins and the most room starts. A rule that can choose nothing REFUSES the launch rather than spending the main sign-in.',
             body: F.grid([
                 editing
                     ? F.stat('Name', '@' + f.name)
@@ -1505,11 +1562,14 @@
                 F.num('ceiling', 'Wall %', f.ceiling, {
                     min: 1, max: 100, tip: 'The wall for every step that names none. Empty = ' + POL().ceiling + '%.'
                 }),
+                strategyFieldHtml(f),
                 F.text('note', 'What it is for', f.note, {
                     wide: true, ph: 'the overnight sentry · heavy opus work', tip: 'One line the picker shows under the rule.'
                 })
             ])
-                + F.sec('Steps', f.chain.length ? f.chain.length + ' step' + (f.chain.length === 1 ? '' : 's') + ', in order' : 'none yet — a rule needs at least one')
+                + F.sec('Steps', f.chain.length
+                    ? f.chain.length + ' step' + (f.chain.length === 1 ? '' : 's') + (f.strategy === 'emptiest' ? ', compared at launch' : ', in order')
+                    : 'none yet — a rule needs at least one')
                 + F.list({ items: stepRows, acts: ['up', 'down', 'edit', 'del'], empty: 'No steps yet. A rule with no steps could never choose, and is refused.' })
                 + stepEditor,
             msg: polMsg, warn: true,
@@ -1531,7 +1591,8 @@
             + '<code>@emptiest</code> in the Console, a task, a queue item, an agent\'s standing account. '
             + '<b>A rule that can choose nothing refuses the launch and says why</b> — it never falls through to '
             + 'the main sign-in, which is the plan a rule is written to protect. Four rules are built in; yours are '
-            + 'chains of them and of fixed accounts, with a wall and a model filter per step.</p>'
+            + 'lists of them and of fixed accounts, with a wall and a model filter per step, read as a <b>chain</b> '
+            + '(in order, the first with room) or as the <b>emptiest</b> of the listed sign-ins (compared at launch, the most room starts).</p>'
             + builtInHtml()
             + (polForm ? policyFormHtml() : '<div class="pomsg" id="pol-msg">' + esc(polMsg) + '</div>')
             + (P.rules.length
@@ -1567,6 +1628,9 @@
             const models = String(s.models || '').split(',').map(x => x.trim()).filter(Boolean);
             if (models.length) { st.models = models; }
             if (polForm.stepAt >= 0) { polForm.chain[polForm.stepAt] = st; } else { polForm.chain.push(st); }
+            // the lock holds on the DRAFT, not only on the drawing: Save calls
+            // keepStep last and posts straight after it
+            if (emptiestLock(polForm.chain)) { polForm.strategy = 'chain'; }
             polForm.step = null;
             polForm.stepAt = -1;
         };
@@ -1576,6 +1640,7 @@
                 if (v.engine !== undefined) { polForm.engine = v.engine; }
                 if (v.ceiling !== undefined) { polForm.ceiling = v.ceiling || ''; }
                 if (v.note !== undefined) { polForm.note = v.note; }
+                if (v.strategy !== undefined) { polForm.strategy = v.strategy === 'emptiest' ? 'emptiest' : 'chain'; }
                 if (polForm.step) {
                     if (v.s_kind !== undefined && v.s_kind !== polForm.step.kind) {
                         // the kind changed: the value box is redrawn from the
@@ -1614,7 +1679,7 @@
                     // `policyFromForm`'s allow-list and the core judges the shape.
                     policy: {
                         name: polForm.name, engine: polForm.engine, ceiling: polForm.ceiling,
-                        note: polForm.note, chain: polForm.chain
+                        note: polForm.note, strategy: polForm.strategy, chain: polForm.chain
                     }
                 });
             },

@@ -59,7 +59,9 @@ export function policyFromForm(input: unknown): AccountPolicy {
         chain,
         ...(str(o.note) ? { note: str(o.note) } : {}),
         ...(str(o.engine) ? { engine: str(o.engine).toLowerCase() } : {}),
-        ...(ceiling !== undefined ? { ceiling } : {})
+        ...(ceiling !== undefined ? { ceiling } : {}),
+        // X-324 — passed as typed; whether it is a strategy at all is the core's verdict
+        ...(str(o.strategy) ? { strategy: str(o.strategy).toLowerCase() as AccountPolicy['strategy'] } : {})
     };
 }
 

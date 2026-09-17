@@ -155,6 +155,61 @@ ok('the default wall is 95, not 100 — a policy chooses where to START', P.POLI
     ok('a step pointing at a policy that does not exist is refused', /no policy "@y"/.test(sh({ name: 'X', chain: [{ policy: '@y' }] }, [])));
     ok('…unless it exists among the others', sh({ name: 'X', chain: [{ policy: '@y' }] }, [{ name: 'y', chain: [{ account: 'a' }] }]) === '');
     ok('a ceiling outside 1–100 is refused, on the rule and on a step', /between 1 and 100/.test(sh({ name: 'X', ceiling: 0, chain: [{ account: 'a' }] })) && /between 1 and 100/.test(sh({ name: 'X', chain: [{ account: 'a', ceiling: 101 }] })));
+    // X-324 — the strategy on its way in
+    ok('the two strategies are named once, in the core', Array.isArray(P.POLICY_STRATEGIES) && P.POLICY_STRATEGIES.join() === 'chain,emptiest');
+    ok('no strategy, "chain" and "emptiest" over accounts all pass',
+        sh({ name: 'X', chain: [{ account: 'a' }] }) === '' && sh({ name: 'X', strategy: 'chain', chain: [{ policy: '@emptiest' }] }) === ''
+        && sh({ name: 'X', strategy: 'emptiest', chain: [{ account: 'a' }, { account: 'b', ceiling: 50 }] }) === '');
+    ok('a strategy that is neither word is refused by name', /"chain" or "emptiest", not "pool"/.test(sh({ name: 'X', strategy: 'pool', chain: [{ account: 'a' }] })));
+    const locked = sh({ name: 'X', strategy: 'emptiest', chain: [{ account: 'a' }, { policy: '@emptiest' }, { policy: '@round-robin' }] });
+    ok('‼️ emptiest with a rule among the steps is refused — a rule has no single figure — naming each such step',
+        /cannot be in emptiest mode/.test(locked) && /step 2 names @emptiest/.test(locked) && /step 3 names @round-robin/.test(locked));
+    ok('…and the sentence is the one the page locks its switch on', P.emptiestLockReason([{ account: 'a' }, { policy: '@pool' }]) !== '' && locked.includes(P.emptiestLockReason([{ account: 'a' }, { policy: '@emptiest' }, { policy: '@round-robin' }])));
+    ok('…which is empty for a list of accounts', P.emptiestLockReason([{ account: 'a' }, { account: 'b' }]) === '' && P.emptiestLockReason([]) === '' && P.emptiestLockReason(undefined) === '');
+    ok('policyStrategy reads chain unless the rule says emptiest', P.policyStrategy({}) === 'chain' && P.policyStrategy(undefined) === 'chain' && P.policyStrategy({ strategy: 'emptiest' }) === 'emptiest' && P.policyStrategy({ strategy: 'chain' }) === 'chain');
+}
+
+// ---- X-324 — a rule in emptiest mode: its steps are a pool of their own ----
+{
+    const policies = [
+        { name: 'Trio', strategy: 'emptiest', chain: [{ account: 'a' }, { account: 'c' }, { account: 'b' }] },
+        { name: 'Walled', strategy: 'emptiest', ceiling: 30, chain: [{ account: 'a' }, { account: 'b', ceiling: 10 }] },
+        { name: 'Fenced', strategy: 'emptiest', chain: [{ account: 'a', models: ['opus'] }, { account: 'b' }] },
+        { name: 'Mixed', strategy: 'emptiest', chain: [{ policy: '@emptiest' }, { account: 'a' }] },
+        { name: 'Order', chain: [{ account: 'a' }, { account: 'c' }, { account: 'b' }] }
+    ];
+    const trio = P.resolvePolicy('@trio', world({ policies }));
+    ok('‼️ EMPTIEST: the listed sign-ins are compared and the most room wins (b at 12%), not the first listed (a at 40%)',
+        trio.id === 'b' && trio.policy === '@trio' && /b — @Trio \(emptiest of its 3 listed\)/.test(trio.note) && /12%/.test(trio.note));
+    ok('…the note says who would be next (a), and c at 97% is not in the running', /next would be a \(40%/.test(trio.note));
+    ok('‼️ …and the SAME steps as a chain pick the FIRST listed (a) — the strategy is the whole difference',
+        P.resolvePolicy('@order', world({ policies })).id === 'a');
+    ok('‼️ only the LISTED sign-ins compete: d (unread, engine-wide @emptiest\'s runner-up) is not listed and never chosen',
+        P.resolvePolicy('@trio', world({ policies, usage: [u('a', 90), u('c', 97), unread('d')] })).id === 'a');
+    ok('an unlisted slot at 1% does not enter the pool either', P.resolvePolicy('@trio', world({ policies, usage: [u('a', 60), u('b', 70), u('zz', 1)] })).id === 'a');
+    const walled = P.resolvePolicy('@walled', world({ policies, usage: [u('a', 25), u('b', 5)] }));
+    ok('‼️ a step\'s own wall holds in emptiest mode: b at 5% clears its 10% wall and has more room than a', walled.id === 'b');
+    const walledB = P.resolvePolicy('@walled', world({ policies, usage: [u('a', 25), u('b', 15)] }));
+    ok('…b at 15% is past its 10% wall and out, so a (25% < the rule\'s 30%) wins even with less room', walledB.id === 'a');
+    const allWalled = P.resolvePolicy('@walled', world({ policies, usage: [u('a', 35), u('b', 15)] }));
+    ok('‼️ every listed sign-in walled = a refusal naming each with its figure and wall, and the first reset — never the main sign-in',
+        allWalled.id === '' && /@Walled \(emptiest\): none of its 2 listed/.test(allWalled.refusal) && /step 1: a is at 35%[^;]*wall 30%/.test(allWalled.refusal)
+        && /step 2: b is at 15%[^;]*wall 10%/.test(allWalled.refusal) && allWalled.resetsAt === NOW + 3600_000 && /resets at/.test(allWalled.refusal));
+    ok('a model-filtered step is out of the pool when the launch model does not match (sonnet → b), in when it does (opus → a at 5%)',
+        P.resolvePolicy('@fenced', world({ policies, model: 'sonnet', usage: [u('a', 5), u('b', 50)] })).id === 'b'
+        && P.resolvePolicy('@fenced', world({ policies, model: 'opus', usage: [u('a', 5), u('b', 50)] })).id === 'a');
+    ok('a listed slot the host says is not stored is out of the pool', P.resolvePolicy('@trio', world({ policies, stored: ['c', 'b'], usage: [u('a', 1), u('b', 50), u('c', 60)] })).id === 'b');
+    ok('a measured listed slot beats an unread listed one, however the list is ordered',
+        P.resolvePolicy('@trio', world({ policies, usage: [unread('a'), u('b', 80), unread('c')] })).id === 'b');
+    const unreadOnly = P.resolvePolicy('@trio', world({ policies, usage: [unread('a'), unread('c')] }));
+    ok('only unread records: the first listed unread starts — unread is usable by the rule every runner follows', unreadOnly.id === 'a');
+    const noRecord = P.resolvePolicy('@trio', world({ policies, usage: [u('x', 5, { engine: 'codex' })] }));
+    ok('no record at all for any listed slot: the first listed starts, and the note says nobody measured them', noRecord.id === 'a' && /first unmeasured one starts/.test(noRecord.note));
+    const mixed = P.resolvePolicy('@mixed', world({ policies, usage: [u('a', 40)] }));
+    ok('a hand-edited emptiest rule holding a rule step skips that step, saying why, and still compares the accounts',
+        mixed.id === 'a' && P.resolvePolicy('@mixed', world({ policies, usage: [u('a', 99)] })).refusal.includes('step 1 (@emptiest) is a rule, which has no figure to compare'));
+    const via = P.resolvePolicy('@viatrio', world({ policies: policies.concat([{ name: 'ViaTrio', chain: [{ account: 'c' }, { policy: '@Trio' }] }]) }));
+    ok('a chain may step through an emptiest rule, and the note says both', via.id === 'b' && /emptiest of its 3 listed/.test(via.note) && /via @ViaTrio step 2 of 2/.test(via.note));
 }
 
 console.log(`test_account_policies.js: ${pass} passed, ${fail} failed`);

@@ -103,17 +103,23 @@ const policiesFor = (accounts, rules) => {
         ceiling: POLICY_DEFAULT_CEILING
     };
 };
-/** Three rules of the user's, the shapes the form has to draw: a chain of a
+/** Four rules of the user's, the shapes the form has to draw: a chain of a
  *  rule and two slots with a model filter; a one-step pinned rule with its
- *  own wall that is walled RIGHT NOW (the yellow chip); and a rule stepping
- *  through another rule — the one Delete must refuse for. */
+ *  own wall that is walled RIGHT NOW (the yellow chip); a rule stepping
+ *  through another rule — the one Delete must refuse for; and (X-324) an
+ *  EMPTIEST rule over three listed slots, which picks the LAST listed
+ *  (personal, 12%) — the picture a chain could never draw. */
 const RULES = [
     {
         name: 'Gece_Nobeti', note: 'the overnight sentry — spare first, never below 60%', ceiling: 60,
         chain: [{ account: 'spare' }, { policy: '@emptiest' }, { account: 'work-1', models: ['haiku', 'sonnet'] }]
     },
     { name: 'Agir_Isler', engine: 'claude', ceiling: 40, chain: [{ account: 'work-1', ceiling: 40 }] },
-    { name: 'Varsayilan', note: 'the night rule, else round-robin', chain: [{ policy: '@Gece_Nobeti' }, { policy: '@round-robin' }] }
+    { name: 'Varsayilan', note: 'the night rule, else round-robin', chain: [{ policy: '@Gece_Nobeti' }, { policy: '@round-robin' }] },
+    {
+        name: 'Ucu_Birden', note: 'whichever of these three has the most room', engine: 'claude', strategy: 'emptiest',
+        chain: [{ account: 'work-1' }, { account: 'spare' }, { account: 'personal' }]
+    }
 ];
 
 const data = () => {
@@ -615,13 +621,27 @@ module.exports = {
         { id: 'enginesoneslot', label: 'Engines panel — a single captured account', data: oneSlotData() },
         { id: 'enginessignin', label: 'Engines panel — a sign-in running out, and one dead while the machine is signed in as it', data: signinData() },
         { id: 'enginesonerule', label: 'Engines panel — one account rule of the user\'s own', data: oneRuleData() },
-        { id: 'enginesrules', label: 'Engines panel — three rules: a chain, a walled one, one stepping through another', data: rulesData() },
+        { id: 'enginesrules', label: 'Engines panel — four rules: a chain, a walled one, one stepping through another, an emptiest one over three slots', data: rulesData() },
         {
             id: 'enginesruleform', label: 'Engines panel — the rule form open on @Gece_Nobeti, a step open in the nested editor',
             data: rulesData(),
             act: (r) => {
                 r.query('[data-poledit="Gece_Nobeti"]')[0].click();
                 r.query('[data-afl="edit"]')[2].click();
+            }
+        },
+        {
+            id: 'enginesruleemptiest', label: 'Engines panel — the form open on the emptiest rule @Ucu_Birden, the switch free (X-324)',
+            data: rulesData(),
+            act: (r) => { r.query('[data-poledit="Ucu_Birden"]')[0].click(); }
+        },
+        {
+            id: 'enginesrulelocked', label: 'Engines panel — @Ucu_Birden after a rule step was kept: the switch LOCKED on chain (X-324)',
+            data: rulesData(),
+            act: (r) => {
+                r.query('[data-poledit="Ucu_Birden"]')[0].click();
+                r.query('[data-afact="step-new"]')[0].click();
+                r.query('[data-afact="step-keep"]')[0].click();
             }
         }
     ]

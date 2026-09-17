@@ -256,7 +256,7 @@ import {
 } from './core/accountUsage';
 import {
     AccountPolicy, BUILT_IN_POLICIES, POLICY_DEFAULT_CEILING, PolicyPool, PolicyResolution,
-    PolicyWorld, findPolicy, isPolicyId, policyShapeRefusal, resolvePolicy
+    PolicyWorld, findPolicy, isPolicyId, policyShapeRefusal, policyStrategy, resolvePolicy
 } from './core/accountPolicy';
  import * as accountQueue from './core/accountQueue';
 import {
@@ -3195,10 +3195,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * that asks for the Console before there is one falls back to a terminal
      * (see `startTask`) rather than disappearing.
      */
+    /**
+     * ‼️ X-106 — THE SPEC IS THE RUN'S SHAPE, not a field list. The task gate
+     * spreads `runExtras(task)` into it, so a dimension added to
+     * `RunDimensions` reaches the Console without this seam knowing; the ones
+     * the Console has no use for (`cli`, `interactiveTarget`, …) are simply
+     * not read below. Measured before: a hand-written list here dropped the
+     * route, the account and superpowers, and a task handed to the Console
+     * opened on the agent's defaults instead of what the task said.
+     */
     let consoleTaskStart:
         | ((spec: { agentId: string; agentName: string; cwd: string; prompt: string;
-            engine?: string; model?: string; effort?: string; permissionMode?: string;
-            projectId?: string }) => string | undefined)
+            projectId?: string } & Partial<RunDimensions>) => string | undefined)
         | undefined;
     let consoleTaskRead: ((id: string) => {
         state: ConsoleStatus; answered: boolean; failed?: boolean; reason?: string;
@@ -3259,11 +3267,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ M-26 — the two doors to the Console, forwarded. The queue
             // decides WHAT to run and never learns how to open a panel; the
             // panel owns its process, its engine refusals and its own report.
+            // ‼️ X-106 — by the SHAPE (`runExtras`), never a field list: the
+            // route, the account and superpowers were dropped here once.
             startConsoleTask: spec => consoleTaskStart?.({
                 agentId: spec.agentId, agentName: spec.agentName, cwd: spec.cwd,
                 prompt: spec.prompt,
-                engine: spec.task.engine, model: spec.task.model,
-                effort: spec.task.effort, permissionMode: spec.task.permissionMode,
+                ...runExtras(spec.task),
                 projectId: spec.task.projectId
             }),
             consoleTaskState: id => consoleTaskRead?.(id),
@@ -19516,7 +19525,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }[] =>
         [...BUILT_IN_POLICIES, ...accountPolicies().map(p => ({
             id: '@' + p.name, label: '@' + p.name,
-            detail: p.note || `${p.chain.length} step${p.chain.length === 1 ? '' : 's'}, in order.`
+            detail: p.note || (policyStrategy(p) === 'emptiest'
+                ? `the emptiest of ${p.chain.length} listed sign-in${p.chain.length === 1 ? '' : 's'}.`
+                : `${p.chain.length} step${p.chain.length === 1 ? '' : 's'}, in order.`)
         }))].map(p => {
             const r = launchAccountPick({ engine, account: p.id, ...(model ? { model } : {}) });
             const sl = r.id ? findSlot(storedAccounts(), r.id) : undefined;
@@ -25553,12 +25564,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showWarningMessage(`Agent Farm: ${refused}`);
             return undefined;
         }
+        const model = spec.model || d.model;
+        /**
+         * ‼️ X-106 / X-305 — THE TASK'S OWN SIGN-IN, resolved HERE, once, the
+         * way the bridge's console door resolves it: a stated slot passes, a
+         * rule (`@emptiest`, `@Night`) is turned into a slot against the
+         * figures of this moment and `commit` lets a `@round-robin` pick
+         * advance the rotation. A rule that can choose nothing REFUSES, and a
+         * refusal is the same answer an absent engine gives — a warning and
+         * no session — so the task finishes failed with the reason rather
+         * than opening on whatever this machine is signed in as.
+         */
+        let account = '';
+        try {
+            account = launchAccountFor(engine, spec.account, spec.agentId, { model, commit: true });
+        } catch (e) {
+            void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message}`);
+            return undefined;
+        }
         const id = consoleHost.start({
             agentId: spec.agentId, agentName: spec.agentName, cwd: spec.cwd,
             engine: engine as EngineId,
-            model: spec.model || d.model,
+            model,
             effort: spec.effort || d.effort,
             permissionMode: spec.permissionMode || d.permissionMode,
+            // X-106 — the route the task named (validated when the task was
+            // written); absent means the agent's stored record decides.
+            ...(spec.providerId ? { providerId: spec.providerId } : {}),
+            ...(spec.providerId && spec.tier ? { tier: spec.tier } : {}),
+            ...(account ? { account } : {}),
+            // M-30 / X-133 — the task's own word, else the agent's default: the
+            // same rule the headless spawn applies (a hosted fresh start reads
+            // ABSENT as off, so the default has to be said here).
+            superpowers: spec.superpowers ?? superpowersOnFor(spec.agentName),
             // Explicit, including the empty string: a task's project was decided
             // when it was created, and inheriting the window's active one now
             // would file the run under whatever is on screen at 03:00.
@@ -36748,18 +36786,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             describe: '‼️ X-305 — WRITE ONE NAMED RULE into `agentFarm.accountPolicies`, creating it '
                 + 'or replacing the one with that name (case-insensitive — two rules whose names '
                 + 'differ only in case could not be told apart when typed as @<name>). A rule is a '
-                + 'CHAIN walked top to bottom, and the first step with a usable answer wins; a step '
-                + 'names an account OR a policy, never both, and may carry its own `ceiling` and a '
-                + '`models` filter that makes it apply only to certain launches. ‼️ THE SHAPE IS '
-                + 'CHECKED ON THE WAY IN (`policyShapeRefusal`) so a rule that could never choose is '
-                + 'never stored: no name, a name that cannot be typed as @<name>, a built-in\'s name, '
-                + 'an empty chain, a step naming neither or both, a step pointing at itself or at a '
-                + 'policy that does not exist, a ceiling outside 1-100. The refusal says which step '
-                + 'and why. It is written to the USER settings, so it follows this machine rather '
-                + 'than a workspace. args: name, chain (array of {account?|policy?, ceiling?, '
+                + 'list of steps read by its `strategy` (X-324): `chain` (the default) walks them top '
+                + 'to bottom and the first step with a usable answer wins, so step 1 carries every '
+                + 'launch until it is walled; `emptiest` treats the listed accounts as a pool of '
+                + 'their own and starts on whichever has the most room RIGHT NOW — "of my five '
+                + 'sign-ins, the emptiest of THESE three", which the built-in @emptiest (every slot '
+                + 'of the engine) cannot say. A step names an account OR a policy, never both, and '
+                + 'may carry its own `ceiling` and a `models` filter that makes it apply only to '
+                + 'certain launches; ‼️ in `emptiest` mode every step must be an account — a rule '
+                + 'has no single figure to compare, so a list holding one is refused for that '
+                + 'strategy. ‼️ THE SHAPE IS CHECKED ON THE WAY IN (`policyShapeRefusal`) so a rule '
+                + 'that could never choose is never stored: no name, a name that cannot be typed as '
+                + '@<name>, a built-in\'s name, an empty chain, a step naming neither or both, a step '
+                + 'pointing at itself or at a policy that does not exist, a ceiling outside 1-100, a '
+                + 'strategy that is neither word, emptiest with a rule step. The refusal says which '
+                + 'step and why. It is written to the USER settings, so it follows this machine '
+                + 'rather than a workspace. args: name, chain (array of {account?|policy?, ceiling?, '
                 + 'models?}), note?, engine? (the rule then refuses a launch on another engine), '
                 + 'ceiling? (the wall for every step that names none; default '
-                + String(POLICY_DEFAULT_CEILING) + ')',
+                + String(POLICY_DEFAULT_CEILING) + '), strategy? ("chain" | "emptiest"; default chain)',
             handler: async (args) => {
                 const rule: AccountPolicy = {
                     name: argStr(args, 'name'),
@@ -36767,7 +36812,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ? (args as Record<string, unknown>).chain : []) as AccountPolicy['chain'],
                     ...(optStr(args, 'note') ? { note: optStr(args, 'note') } : {}),
                     ...(optStr(args, 'engine') ? { engine: optStr(args, 'engine') } : {}),
-                    ...(optNum(args, 'ceiling', 0) ? { ceiling: optNum(args, 'ceiling', 0) } : {})
+                    ...(optNum(args, 'ceiling', 0) ? { ceiling: optNum(args, 'ceiling', 0) } : {}),
+                    // passed as typed; the core says whether it is a strategy at all
+                    ...(optStr(args, 'strategy') ? { strategy: optStr(args, 'strategy').toLowerCase() as AccountPolicy['strategy'] } : {})
                 };
                 // ‼️ THE SAME FUNCTION THE ENGINES PAGE'S FORM CALLS — the shape
                 // check (against the OTHER rules), the write and the "what it

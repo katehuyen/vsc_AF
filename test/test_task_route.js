@@ -217,5 +217,67 @@ console.log('\n== one reader, and the resolver attached to it exactly once ==');
             .test(fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8')));
 }
 
+/**
+ * ‼️ X-106 step (2) — THE CONSOLE DOOR. A task with `interactiveTarget:
+ * 'console'` is not spawned by the runner at all: the gate in extension.ts
+ * describes the run and `consoleHost.start` opens it. Measured 2026-09-17: the
+ * gate was a hand-written field list (engine · model · effort · permissionMode
+ * · projectId) and `providerId`, `tier`, `account` and `superpowers` fell out —
+ * a task handed to the Console opened on the agent's defaults, not on what
+ * the task said. The same doctrine as X-227/X-229 (`test_retry.js`): the list
+ * is `RunDimensions`, read out of the source, and the ones the Console has no
+ * use for are named as EXEMPT rather than left to silence.
+ */
+console.log('\n== X-106 (2) — a task handed to the Console keeps every dimension it can use ==');
+{
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    const at = tasksTs.indexOf('export interface RunDimensions');
+    const fields = [...tasksTs.slice(at, tasksTs.indexOf('\n}', at))
+        .matchAll(/^ {4}([a-zA-Z][\w]*)\??:/gm)].map(m => m[1]);
+    ok('RunDimensions was found and has fields', at > 0 && fields.length >= 10);
+
+    // the gate: by the shape, never a field list
+    const gate = (() => {
+        const a = ext.indexOf('startConsoleTask: spec => consoleTaskStart?.({');
+        return a < 0 ? '' : ext.slice(a, ext.indexOf('}),', a));
+    })();
+    ok('the task gate into the Console was found', gate.length > 50);
+    ok('‼️ the gate spreads `runExtras(spec.task)` — the shape, so the next dimension travels without this seam knowing',
+        /\.\.\.runExtras\(spec\.task\)/.test(gate));
+    ok('…and reads no dimension by hand beside it (projectId is not a dimension and stays explicit)',
+        !/engine: spec\.task\.engine/.test(gate) && !/model: spec\.task\.model/.test(gate) && /projectId: spec\.task\.projectId/.test(gate));
+    ok('…the seam\'s spec type is `Partial<RunDimensions>`, not a field list',
+        /let consoleTaskStart:[\s\S]{0,400}& Partial<RunDimensions>\)/.test(ext));
+
+    // the door: every dimension the Console can use reaches `consoleHost.start`
+    const door = (() => {
+        const a = ext.indexOf('consoleTaskStart = spec => {');
+        const b = ext.indexOf('ConsolePanel.show(consoleDeps, { sessionId: id });', a);
+        return a < 0 || b < 0 ? '' : ext.slice(a, b);
+    })();
+    ok('the Console door (`consoleTaskStart`) was found', door.length > 300 && /consoleHost\.start\(\{/.test(door));
+    // What the Console has no use for: a CLI profile is a command template for
+    // a binary the panel does not host; the interactive target/close and the
+    // finish sound are the runner's terminal furniture; workDir arrives as
+    // `cwd`; priority, rounds, ignoreBudget and retry are the queue's.
+    const EXEMPT = ['cli', 'interactiveTarget', 'interactiveClose', 'finishSound', 'workDir', 'priority', 'rounds', 'ignoreBudget', 'retry'];
+    const carried = fields.filter(f => !EXEMPT.includes(f));
+    ok('‼️ X-106 — the Console door carries EVERY dimension it can use (missing: '
+        + carried.filter(f => !new RegExp(`\\b${f}\\b`).test(door)).join(', ') + ')',
+        carried.every(f => new RegExp(`\\b${f}\\b`).test(door)));
+    ok('…the route and the account and superpowers by name — the three that were dropped',
+        /providerId: spec\.providerId/.test(door) && /tier: spec\.tier/.test(door) && /\{ account \}/.test(door) && /superpowers: spec\.superpowers/.test(door));
+    ok('‼️ the ACCOUNT is resolved at the door, once, with commit — a rule becomes a slot against this moment\'s figures',
+        /launchAccountFor\(engine, spec\.account, spec\.agentId, \{ model, commit: true \}\)/.test(door));
+    ok('‼️ …and a rule that can choose nothing REFUSES the way an absent engine does: a warning and no session, never the main sign-in',
+        /try \{[\s\S]{0,200}launchAccountFor[\s\S]{0,300}catch[\s\S]{0,200}showWarningMessage[\s\S]{0,100}return undefined;/.test(door));
+    ok('…a tier never travels without its route', /spec\.providerId && spec\.tier \? \{ tier: spec\.tier \}/.test(door));
+    ok('…superpowers falls to the agent\'s default when the task says nothing, as the headless spawn does',
+        /superpowers: spec\.superpowers \?\? superpowersOnFor\(spec\.agentName\)/.test(door));
+    ok('…the exemptions are really absent from the door, so the list above is measured and not decorative',
+        EXEMPT.every(f => !new RegExp(`\\b${f}: spec\\.${f}\\b`).test(door)));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

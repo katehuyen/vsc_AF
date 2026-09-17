@@ -5600,6 +5600,14 @@ const { opencodeStatus, syncToOpencode } =
         const ps = cut("op: 'policies.save'", "op: 'policies.delete'");
         ok('‼️ policies.save is a call to the function the Engines page calls',
             /await savePolicy\(rule\)/.test(ps) && /need\(!refusal, refusal\)/.test(ps));
+        // X-324 — the strategy travels as typed and the describe teaches both words
+        ok('X-324 — policies.save takes `strategy` and hands it to the core as typed (lower-cased), never judged in the op',
+            /optStr\(args, 'strategy'\)\.toLowerCase\(\)/.test(ps) && !/'emptiest'\s*\?/.test(ps));
+        ok('…and the describe says what each strategy does, that emptiest needs account steps, and lists the arg',
+            /`chain` \(the default\) walks them top/.test(ps) && /`emptiest` treats the listed accounts as a pool/.test(ps)
+            && /in `emptiest` mode every step must be an account/.test(ps) && /strategy\? \("chain" \| "emptiest"; default chain\)/.test(ps));
+        ok('…and policies.list\'s rows describe an emptiest rule by what it compares, not "in order"',
+            /the emptiest of \$\{p\.chain\.length\} listed sign-in/.test(src));
         const sp = cut('const savePolicy = async', 'const deletePolicy = async');
         ok('‼️ savePolicy refuses a rule the CORE says could never choose',
             /policyShapeRefusal\(rule, others\)/.test(sp) && /if \(bad\)/.test(sp));

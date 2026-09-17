@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.530.0",
+  "version": "3.531.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9359,9 +9359,22 @@
                 "type": "number",
                 "description": "the wall, as a percentage of the window, for every step that names none (default 95 — a session STARTED on a slot with 5% left is a session that ends ten minutes in)"
               },
+              "strategy": {
+                "type": "string",
+                "enum": [
+                  "chain",
+                  "emptiest"
+                ],
+                "default": "chain",
+                "enumDescriptions": [
+                  "walk the steps top to bottom; the first with a usable answer wins, so step 1 carries every launch until it is walled",
+                  "the listed accounts are a pool of their own: whichever has the most room RIGHT NOW starts. Every step must then be an account — a rule has no single figure to compare"
+                ],
+                "description": "how the steps are read (default chain)"
+              },
               "chain": {
                 "type": "array",
-                "description": "walked top to bottom; the first step with a usable answer wins. A step names an account OR a policy, never both.",
+                "description": "the steps. chain: walked top to bottom, the first with a usable answer wins; emptiest: compared, the one with the most room wins. A step names an account OR a policy, never both.",
                 "items": {
                   "type": "object",
                   "properties": {

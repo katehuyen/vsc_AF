@@ -101,10 +101,11 @@ const secOf = (h) => {
         /REFUSED at launch rather than falling back to the main sign-in/.test(one));
 
     const many = secOf(runPage('engines.js', MANY).html());
-    ok('three rules → three cards, in the stored order',
-        (many.match(/class="pocard polcard"/g) || []).length === 3
+    ok('four rules → four cards, in the stored order',
+        (many.match(/class="pocard polcard"/g) || []).length === 4
         && many.indexOf('@Gece_Nobeti<') < many.indexOf('@Agir_Isler<')
-        && many.indexOf('@Agir_Isler<') < many.indexOf('@Varsayilan<'));
+        && many.indexOf('@Agir_Isler<') < many.indexOf('@Varsayilan<')
+        && many.indexOf('@Varsayilan<') < many.indexOf('@Ucu_Birden<'));
     const walled = many.slice(many.indexOf('data-polname="Agir_Isler"'), many.indexOf('data-polname="Varsayilan"'));
     ok('a pinned rule draws ONE chip, bare — its engine pill already says Claude Code',
         (walled.match(/class="engacct polnow/g) || []).length === 1
@@ -232,9 +233,11 @@ const formOf = (s) => {
     ok('Edit opens the form on that rule', /Edit @Gece_Nobeti</.test(s));
     ok('…the name is a STAT, not a box — a rename is a new rule', /class="affstat">@Gece_Nobeti</.test(s) && !/data-af="name"/.test(s));
     const fm = formOf(s);
+    // the list alone: the strategy field above it also says "@emptiest"
+    const lst = fm.slice(fm.indexOf('class="affrow'));
     ok('…the three stored steps are in the list, in order',
         (fm.match(/class="affrow/g) || []).length === 3
-        && fm.indexOf('spare@gmail') < fm.indexOf('@emptiest') && fm.indexOf('@emptiest') < fm.indexOf('work@studio (haiku, sonnet)'));
+        && lst.indexOf('spare@gmail') < lst.indexOf('@emptiest') && lst.indexOf('@emptiest') < lst.indexOf('work@studio (haiku, sonnet)'));
     ok('…a rule step says it is re-decided at launch', /re-decided at launch/.test(s));
     ok('…the wall box carries 60 and the note its text', /data-af="ceiling"[^>]*value="60"/.test(s) && /value="the overnight sentry — spare first, never below 60%"/.test(s));
     ok('…the submit says Save changes', /data-afact="submit">Save changes</.test(s));
@@ -282,6 +285,72 @@ const formOf = (s) => {
     ok('a delete refusal lands in the section\'s message box when no form is open', /<div class="pomsg" id="pol-msg">@Gece_Nobeti is a step of/.test(s));
 }
 
+// ---- X-324 — the strategy: a chip on the card, a switch on the form, a lock --
+{
+    const r = runPage('engines.js', MANY);
+    const many = secOf(r.html());
+    const cardOf = (name) => { const a = many.indexOf('data-polname="' + name + '"'); return many.slice(a, many.indexOf('</div></div>', a)); };
+    const chain = cardOf('Gece_Nobeti');
+    const empt = cardOf('Ucu_Birden');
+    ok('‼️ every card wears a strategy chip: chain on the three chains, emptiest on the fourth',
+        /class="poid postrat">→ chain</.test(chain) && /class="poid postrat">⚖ emptiest</.test(empt) && (many.match(/class="poid postrat"/g) || []).length === 4);
+    ok('…the chip is an AFTip, its panel opening with the strategy\'s name and the sentence that defines it',
+        /Chain: walked top to bottom/.test(chain) && /Emptiest: the most room among the listed/.test(empt) && /a pool of their own/.test(empt));
+    ok('‼️ the emptiest card RESOLVES to the last listed slot (personal, 12%), the picture a chain could never draw',
+        /→ personal@gmail</.test(empt) && /emptiest of its 3 listed/.test(empt) && !/→ work@studio</.test(empt));
+    ok('…and its steps are set beside each other (·), not walked (→)',
+        /1\. work@studio<\/span> · <span class="polstep">2\. spare@gmail<\/span> · <span class="polstep">3\. personal@gmail</.test(empt) && / → <span class="polstep">2\./.test(chain));
+
+    // the form: the switch, free on a list of accounts
+    r.query('[data-poledit="Ucu_Birden"]')[0].click();
+    let s = secOf(r.html());
+    let fm = formOf(s);
+    ok('Edit on the emptiest rule opens with the switch on emptiest, both rows offered',
+        /data-af="strategy" data-aft="s" data-afr="1"/.test(fm) && /<option value="emptiest" selected/.test(fm) && !/<option value="emptiest" selected disabled/.test(fm)
+        && /<option value="chain"[^>]*>→ chain — in order, first with room</.test(fm) && /⚖ emptiest — most room among the listed</.test(fm));
+    ok('…the switch is an AFTip label (not a title), MIRROR first: "Now: emptiest"',
+        /<label class="aff af-tipw">[^<]*<span>Strategy<\/span><select data-af="strategy"/.test(fm) && /Now: emptiest/.test(fm) && !/Now: emptiest \(locked\)/.test(fm));
+    ok('…the Steps heading says the steps are compared, not ordered', /3 steps, compared at launch/.test(fm));
+    ok('…the step editor\'s "a rule" row warns that keeping one sets the strategy back to chain',
+        (() => { r.query('[data-afact="step-new"]')[0].click(); const t = formOf(secOf(r.html()));
+            return /<option value="policy"[^>]*title="a rule\n\nKeeping a rule step sets the strategy back to chain/.test(t); })());
+
+    // ‼️ THE LOCK: keep a rule step → the draft is chain, the row is disabled, the panel says why
+    r.query('[data-afact="step-keep"]')[0].click();
+    s = secOf(r.html());
+    fm = formOf(s);
+    ok('‼️ keeping a rule step LOCKS the switch on chain: chain selected, emptiest disabled, the label says locked',
+        /<option value="chain" selected/.test(fm) && /<option value="emptiest" disabled/.test(fm) && /class="aff polocked af-tipw"/.test(fm) && /<span>Strategy — locked<\/span>/.test(fm));
+    ok('…and the panel says which step did it, on its first line after the mirror',
+        /Now: chain \(locked\)/.test(fm) && /Locked on chain: emptiest mode compares the listed sign-ins by their figures/.test(fm) && /step 4 names @emptiest/.test(fm));
+    ok('…the Steps heading is back to "in order"', /4 steps, in order/.test(fm));
+    r.query('[data-afact="submit"]')[0].click();
+    let m = lastOwn(r);
+    ok('‼️ Save posts strategy: chain — the lock holds on the DRAFT, not only on the drawing',
+        m.type === 'policySave' && m.policy.strategy === 'chain' && m.policy.chain.length === 4 && m.policy.chain[3].policy === '@emptiest');
+
+    // remove the rule step → the switch is free again, and the choice can be made
+    r.query('[data-afl="del"]')[3].click();
+    s = secOf(r.html());
+    fm = formOf(s);
+    ok('removing the rule step frees the switch (still on chain — nothing is flipped back for the user)',
+        /<option value="chain" selected/.test(fm) && /<option value="emptiest"[^>]*>/.test(fm) && !/<option value="emptiest" disabled/.test(fm) && !/polocked/.test(fm));
+    const sw = r.query('[data-af="strategy"]')[0];
+    sw.value = 'emptiest'; sw.fire('change');
+    fm = formOf(secOf(r.html()));
+    ok('choosing emptiest redraws: selected, mirrored, the heading says compared', /<option value="emptiest" selected/.test(fm) && /Now: emptiest/.test(fm) && /3 steps, compared at launch/.test(fm));
+    r.query('[data-afact="submit"]')[0].click();
+    m = lastOwn(r);
+    ok('…and Save posts strategy: emptiest with the three account steps', m.policy.strategy === 'emptiest' && m.policy.chain.length === 3 && m.policy.chain.every(st => st.account));
+
+    // a new rule opens on chain
+    r.query('[data-afact="cancel"]')[1].click();
+    r.query('[data-polnew]')[0].click();
+    fm = formOf(secOf(r.html()));
+    ok('a new rule opens on chain, emptiest offered', /<option value="chain" selected/.test(fm) && /<option value="emptiest"[^>]*>/.test(fm) && !/disabled/.test(fm.slice(fm.indexOf('data-af="strategy"'), fm.indexOf('</select>', fm.indexOf('data-af="strategy"')))));
+    ok('the section lede names both strategies', /read as a <b>chain<\/b>/.test(s) && /<b>emptiest<\/b> of the listed sign-ins/.test(s));
+}
+
 // ---- the panel half: the form goes through an allow-list, then the shared fns
 {
     const origLoad = Module._load;
@@ -318,6 +387,10 @@ const formOf = (s) => {
     ok('…a zero or empty ceiling is ABSENT, not 0 (0 would be refused as out of 1-100)',
         p.chain[0].ceiling === 70 && !('ceiling' in p.chain[1]) && !('models' in p.chain[1]));
     ok('…an empty engine is absent, so the rule is unpinned', !('engine' in policyFromForm({ name: 'x', engine: '', chain: [] })));
+    ok('X-324 — strategy passes the allow-list as typed (lower-cased), absent when empty; the CORE judges the word',
+        policyFromForm({ name: 'x', strategy: ' Emptiest ', chain: [] }).strategy === 'emptiest'
+        && policyFromForm({ name: 'x', strategy: 'pool', chain: [] }).strategy === 'pool'
+        && !('strategy' in policyFromForm({ name: 'x', strategy: '', chain: [] })) && !('strategy' in policyFromForm({ name: 'x', chain: [] })));
     ok('…garbage in → an empty rule the core will refuse, never a throw',
         policyFromForm(null).name === '' && policyFromForm('str').chain.length === 0 && policyFromForm({ chain: 'no' }).chain.length === 0);
 

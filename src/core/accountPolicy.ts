@@ -78,6 +78,18 @@ export interface PolicyStep {
     models?: string[];
 }
 
+/**
+ * X-324 — HOW A RULE READS ITS STEPS. `chain` walks them top to bottom and the
+ * first with a usable answer wins, so step 1 carries every launch until it is
+ * walled. `emptiest` reads the same steps as a POOL OF ITS OWN: the listed
+ * sign-ins are compared on the spot and the one with the most room starts —
+ * "of my five accounts, whichever of THESE three has room", which neither the
+ * built-in @emptiest (every slot of the engine) nor a chain (one at a time)
+ * could say. A step's wall and model filter mean the same in both.
+ */
+export type PolicyStrategy = 'chain' | 'emptiest';
+export const POLICY_STRATEGIES: PolicyStrategy[] = ['chain', 'emptiest'];
+
 /** A rule the user wrote and named — `agentFarm.accountPolicies`. */
 export interface AccountPolicy {
     /** the name it is picked by; referred to as `@<name>` */
@@ -88,8 +100,30 @@ export interface AccountPolicy {
     engine?: string;
     /** the rule's wall for every step that names none */
     ceiling?: number;
+    /** `chain` unless it says `emptiest` — see PolicyStrategy */
+    strategy?: PolicyStrategy;
     /** walked top to bottom; the first step with a usable answer wins */
     chain: PolicyStep[];
+}
+
+/** The strategy a rule runs by — `chain` unless it says otherwise. */
+export function policyStrategy(p: Pick<AccountPolicy, 'strategy'> | undefined): PolicyStrategy {
+    return p?.strategy === 'emptiest' ? 'emptiest' : 'chain';
+}
+
+/**
+ * X-324 — WHY A RULE CANNOT BE IN EMPTIEST MODE: a step that names a rule has
+ * no single figure to compare, so a list holding one can only be walked as a
+ * chain. Empty when every step is an account. The page locks its switch on
+ * this sentence and the core refuses on it, so a hand-edited setting cannot
+ * store what the page would not let through.
+ */
+export function emptiestLockReason(chain: PolicyStep[] | undefined): string {
+    const rules = (chain ?? []).map((st, i) => ({ st, i })).filter(x => String(x.st?.policy ?? '').trim());
+    if (!rules.length) { return ''; }
+    return 'emptiest mode compares the listed sign-ins by their figures, and a rule has no single figure ('
+        + rules.map(x => `step ${x.i + 1} names ${String(x.st.policy).trim()}`).join(', ')
+        + '), so with a rule among the steps this one can only be walked as a chain.';
 }
 
 /** The campaign pool `@pool` walks — the running sentry's, handed in by the host. */
@@ -194,6 +228,11 @@ export function policyShapeRefusal(p: AccountPolicy | undefined, others: Account
         if (st.ceiling !== undefined && !(typeof st.ceiling === 'number' && st.ceiling > 0 && st.ceiling <= 100)) { return `Step ${i + 1} of "${name}": the ceiling is a percentage between 1 and 100.`; }
     }
     if (p.ceiling !== undefined && !(typeof p.ceiling === 'number' && p.ceiling > 0 && p.ceiling <= 100)) { return `Policy "${name}": the ceiling is a percentage between 1 and 100.`; }
+    if (p.strategy !== undefined && !POLICY_STRATEGIES.includes(p.strategy)) { return `Policy "${name}": the strategy is "chain" or "emptiest", not "${String(p.strategy)}".`; }
+    if (p.strategy === 'emptiest') {
+        const lock = emptiestLockReason(p.chain);
+        if (lock) { return `Policy "${name}" cannot be in emptiest mode: ${lock}`; }
+    }
     return '';
 }
 
@@ -316,25 +355,84 @@ function walk(id: string, w: PolicyWorld, ceiling: number, depth: number, outer:
     const model = String(w.model ?? '').trim().toLowerCase();
     const skipped: string[] = [];
     let earliest = 0;
-    for (let i = 0; i < (rule.chain ?? []).length; i++) {
-        const st = rule.chain[i];
-        const c = typeof st.ceiling === 'number' ? st.ceiling : ruleCeiling;
+    const noteReset = (r: SlotUsage | undefined): void => {
+        if (r && r.state === 'ok' && r.resetsAt > now) { earliest = earliest ? Math.min(earliest, r.resetsAt) : r.resetsAt; }
+    };
+    const wallOf = (st: PolicyStep): number => typeof st.ceiling === 'number' ? st.ceiling : ruleCeiling;
+    /** A model-filtered step that is not for this launch — said in `skipped`. */
+    const offModel = (st: PolicyStep, i: number): boolean => {
         const models = (st.models ?? []).map(m => String(m).trim().toLowerCase()).filter(Boolean);
-        if (models.length && (!model || !models.includes(model))) {
-            skipped.push(`step ${i + 1} is for ${models.join('/')} and this launch is ${model || 'unspecified'}`);
-            continue;
+        if (!models.length || (model && models.includes(model))) { return false; }
+        skipped.push(`step ${i + 1} is for ${models.join('/')} and this launch is ${model || 'unspecified'}`);
+        return true;
+    };
+    /**
+     * The account a step names, if a session may start on it: its record
+     * (undefined = nobody has read it, usable by the rule every runner
+     * follows), or null when it is not stored or is walled — said in `skipped`.
+     */
+    const accountOf = (acc: string, i: number, c: number): SlotUsage | undefined | null => {
+        if (w.stored && !w.stored.includes(acc)) { skipped.push(`step ${i + 1}: no account "${acc}" is stored`); return null; }
+        const u = usableOf(acc, c);
+        if (u === null) {
+            const r = w.usage.find(x => x.slotId === acc);
+            skipped.push(`step ${i + 1}: ${name(acc)} is at ${figure(r)} (wall ${c}%)`);
+            noteReset(r);
         }
+        return u;
+    };
+    const total = (rule.chain ?? []).length;
+
+    if (policyStrategy(rule) === 'emptiest') {
+        // X-324 — the steps are a pool: every account that clears its own wall
+        // is a candidate, and `roomOrder` ranks them exactly as it ranks the
+        // engine-wide @emptiest (most room first, a measured slot before an
+        // unread one). No second wall is asked of it — each candidate has
+        // already cleared the one its step names. A slot nobody holds a record
+        // for cannot be ranked and comes last, in the user's order.
+        const recorded: SlotUsage[] = [];
+        const unrecorded: string[] = [];
+        for (let i = 0; i < total; i++) {
+            const st = rule.chain[i];
+            const acc = String(st.account ?? '').trim();
+            if (!acc) { skipped.push(`step ${i + 1} (${String(st.policy ?? '').trim()}) is a rule, which has no figure to compare`); continue; }
+            if (offModel(st, i)) { continue; }
+            const u = accountOf(acc, i, wallOf(st));
+            if (u === null) { continue; }
+            if (u === undefined) { unrecorded.push(acc); } else { recorded.push(u); }
+        }
+        const line = roomOrder(recorded);
+        const pick = line[0];
+        if (pick) {
+            const next = line[1];
+            return {
+                id: pick.slotId, policy: outer,
+                note: `${name(pick.slotId)} — @${rule.name} (emptiest of its ${total} listed): the most room right now (${figure(pick)})`
+                    + (next ? `; next would be ${name(next.slotId)} (${figure(next)}).` : '.')
+            };
+        }
+        if (unrecorded.length) {
+            return {
+                id: unrecorded[0], policy: outer,
+                note: `${name(unrecorded[0])} — @${rule.name} (emptiest of its ${total} listed): no listed sign-in with room has been measured, so the first unmeasured one starts.`
+            };
+        }
+        return {
+            id: '', policy: outer, note: '', resetsAt: earliest,
+            refusal: `@${rule.name} (emptiest): none of its ${total} listed sign-ins can be chosen — ${skipped.join('; ')}.`
+                + (earliest ? ` The first one back resets at ${new Date(earliest).toLocaleTimeString()}.` : '')
+        };
+    }
+
+    for (let i = 0; i < total; i++) {
+        const st = rule.chain[i];
+        const c = wallOf(st);
+        if (offModel(st, i)) { continue; }
         const acc = String(st.account ?? '').trim();
         if (acc) {
-            if (w.stored && !w.stored.includes(acc)) { skipped.push(`step ${i + 1}: no account "${acc}" is stored`); continue; }
-            const u = usableOf(acc, c);
-            if (u === null) {
-                const r = w.usage.find(x => x.slotId === acc);
-                skipped.push(`step ${i + 1}: ${name(acc)} is at ${figure(r)} (wall ${c}%)`);
-                if (r && r.state === 'ok' && r.resetsAt > now) { earliest = earliest ? Math.min(earliest, r.resetsAt) : r.resetsAt; }
-                continue;
-            }
-            return { id: acc, policy: outer, note: `${name(acc)} — @${rule.name} step ${i + 1} of ${rule.chain.length} (${figure(u ?? undefined)}, wall ${c}%).` };
+            const u = accountOf(acc, i, c);
+            if (u === null) { continue; }
+            return { id: acc, policy: outer, note: `${name(acc)} — @${rule.name} step ${i + 1} of ${total} (${figure(u ?? undefined)}, wall ${c}%).` };
         }
         const inner = walk(String(st.policy ?? '').trim(), w, c, depth + 1, outer);
         if (!inner.refusal) {
