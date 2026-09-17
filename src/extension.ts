@@ -446,6 +446,7 @@ import {
 } from './core/slashCommands';
 import { CodexContextProbe, isStale } from './core/codexctx';
 import { corpusAt, CorpusStep } from './core/corpus';
+import { ReadableStep, readTranscriptPage, resolveSessionRef } from './core/sessionRead';
 import { MissionNode, MissionsTreeProvider } from './views/missionsTree';
 import { TriggerManager } from './core/triggers';
 import { dayKey, expandEnvPath, fmtTokens, fmtUSD, normPath, readFileTail, relTime, remapStorageIds } from './core/util';
@@ -10116,6 +10117,50 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const got = corpusFor(file, ts);
                 if (!got.text) { throw new Error(got.why); }
                 return { text: got.text, what: got.what, ts: got.ts ?? null };
+            }
+        },
+        {
+            /**
+             * ‼️ B-24 — WHAT A SESSION SAID, THE SAME SHAPE FOR EVERY ENGINE.
+             * The file goes through the transcript page's own parse, so the
+             * agent and the viewer read one thing; core/sessionRead.ts only
+             * decides which session is meant and cuts the page.
+             */
+            op: 'sessions.read',
+            describe: '‼️ WHAT A SESSION SAID — one conversation as messages, in the SAME shape for every engine (claude, codex, gemini, agy, opencode, Console-hosted runs). `role` is always user | assistant | tool | toolResult | system, never an engine\'s own word: a Console snapshot writes "agent"/"result", this answers assistant/toolResult. It is read through the transcript page\'s own parse, so an agent and the viewer can never disagree — never open a transcript file to read it yourself. '
+                + 'args: session (an id, its 8-character prefix, or the transcript path — sessions.find gives both; a prefix that fits several sessions is refused with their ids), roles? (array or comma-separated; default user,assistant; "all" = every step; agent/result are accepted as assistant/toolResult), turn? (one turn only, 1-based), from? (1-based position in the filtered list; negative counts from the end — -20 is the last twenty), limit? (default 50, max 500), maxChars? (per text and per tool input, default 4000; 0 = whole — a cut step carries `clipped` = its full length), sidechain? (default false — subagent steps are left out). '
+                + 'Returns { id, file, engine, title, agent, roles, turns, total, from, returned, next, clipped, messages: [{ i, turn, role, ts, text?, tool?, input?, isError?, model?, clipped? }] } — `total` counts the filtered steps, `next` is the `from` of the following page and null at the end.',
+            handler: (args) => {
+                const ref = optStr(args, 'session') || optStr(args, 'id') || optStr(args, 'file');
+                const pool = index.allWithExternal();
+                const hit = resolveSessionRef(pool, ref);
+                if (!hit.ok) {
+                    throw new Error(hit.error + (hit.candidates.length ? ` Candidates: ${hit.candidates.join(', ')}` : ''));
+                }
+                const s = hit.row;
+                if (!fs.existsSync(s.file)) {
+                    throw new Error(`The transcript of ${s.sessionId} is not on this machine any more (${s.file}).`);
+                }
+                // The page shows the newest `maxTranscriptMessages`; a reader
+                // paging through a conversation needs all of it.
+                const data = buildViewerData(s.file, { ...viewerDeps, maxMessages: () => Number.MAX_SAFE_INTEGER });
+                const page = readTranscriptPage(data['messages'] as ReadableStep[] | undefined, {
+                    roles: args.roles ?? args.role,
+                    turn: optNum(args, 'turn', 0),
+                    from: optNum(args, 'from', 1),
+                    limit: optNum(args, 'limit', 0),
+                    ...(args.maxChars !== undefined ? { maxChars: optNum(args, 'maxChars', 4000) } : {}),
+                    sidechain: optBool(args, 'sidechain', false)
+                });
+                if ('error' in page) { throw new Error(page.error); }
+                return {
+                    id: s.sessionId,
+                    file: s.file,
+                    engine: String(data['engine'] || s.source || 'claude'),
+                    title: String(data['title'] || s.title || ''),
+                    agent: s.agentName ?? null,
+                    ...page
+                };
             }
         },
         {

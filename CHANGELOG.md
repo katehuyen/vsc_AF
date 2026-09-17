@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.536.0 - an agent reads what a session said through the bridge, in one shape for every engine (B-24) (2026-09-17)
+
+- **‼️ MEASURED: the bridge could say where a transcript is and could not hand
+  it over.** `sessions.find` gives the file, `search.transcripts` finds words
+  across all of them, and nothing returned ONE conversation. So an agent
+  opened the raw file and had to know each engine's format — and a Console
+  snapshot calls the model's reply `agent` and a tool's answer `result`. A
+  filter written for Claude's `assistant` came back empty and an agent
+  reported "nothing there" about a session that was full (2026-09-17).
+- **`sessions.read`** answers with the session's messages in the transcript
+  page's own vocabulary — `user | assistant | tool | toolResult | system` for
+  every engine. It goes through the viewer's own `buildData`, with the page's
+  message ceiling lifted, so an agent and the viewer read one thing; nobody
+  parses a transcript of their own.
+- **Which session is meant is never guessed** (`core/sessionRead.ts`): an
+  exact id, a unique id prefix or the transcript path. A prefix that fits
+  several sessions is refused with their ids; an unknown id points at
+  `sessions.find`.
+- **Pages honestly:** `roles` (default user,assistant; `all`; an engine's own
+  `agent`/`result` accepted on the way in, an unknown word refused rather than
+  dropped), `turn`, `sidechain`, `from`/`limit` with `next` (negative `from`
+  counts from the end), `maxChars` with a `clipped` full length on every cut
+  step. Numbers are read with `optNum`, never through `optStr` (B-25).
+- Tests: `test_session_read` (34) — roles, aliases, paging, clipping,
+  reference resolution, the op's wiring, and a Console snapshot read end to
+  end through the page's parse.
+
 ## 3.535.0 - the provenance panel says which endpoint served the work, and whose plan paid (X-107) (2026-09-17)
 
 - **‼️ MEASURED: the panel that exists to answer "why did it run like that" was
