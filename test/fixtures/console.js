@@ -1032,9 +1032,56 @@ module.exports = {
             id: 'console-ctxsig-undelivered',
             label: 'Console — a Codex run past the line the sentence cannot reach: ✕, never silence',
             data: ctxSignalData('undelivered')
+        },
+        /**
+         * B-23 — the searches for a session id the bridge guard stopped on
+         * this session. One refusal first (the smallest arity), then a run
+         * stopped more times than the panel lists.
+         */
+        {
+            id: 'console-guard-one',
+            label: 'Console — the bridge guard stopped one search for a session id: guard 1 on the strip',
+            tip: 'tip-guard',
+            data: guardData(1)
+        },
+        {
+            id: 'console-guard-many',
+            label: 'Console — stopped seven times: the panel lists five and says how many it left out',
+            tip: 'tip-guard',
+            data: guardData(7)
         }
     ]
 };
+
+/** The host's own words (`bridgeGuardView`), on a Claude card under the lines. */
+function guardData(n) {
+    const G = require('../../out/core/bridgeGuard.js');
+    const ids = ['b19bd67f-c086-436a-8261-db239491084b', '116f35f0', 'a3a3b54d-e696-4fa6-abd6-5cb22113bc35'];
+    const catches = Array.from({ length: n }, (_, i) => ({
+        ts: NOW - (n - i) * 60000,
+        id: ids[i % ids.length],
+        how: ids[i % ids.length].length === 8 ? 'known' : 'full',
+        tool: ['Grep', 'Bash', 'Glob'][i % 3],
+        reason: '',
+        sessionId: 'cs1'
+    }));
+    const d = data();
+    d.selected = 'cs1';
+    d.sessions = [session({
+        id: 'cs1', status: 'working', turns: 4,
+        engine: 'claude', engineLabel: 'Claude Code',
+        model: 'claude-opus-5', effort: 'high', turnModel: 'claude-opus-5', turnEffort: 'high',
+        permissionMode: 'bypassPermissions',
+        turnStartedAt: NOW - 38000, turnTokens: 24100, turnApiCalls: 4,
+        tokens: 406000, wTokens: 320000, cost: 0.82,
+        contextTokens: 182000, contextWindowTokens: 1000000,
+        contextSource: 'stream-last-call', contextMeasuredAt: NOW - 30000,
+        bridgeGuardView: G.bridgeGuardView(catches, ts => Math.round((NOW - ts) / 60000) + 'm'),
+        account: 'aicozums', accountLabel: 'aicozums',
+        messages: msgs()
+    })];
+    return d;
+}
 
 /**
  * The three signal states, each on a card that really carries a window

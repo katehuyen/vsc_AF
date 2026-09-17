@@ -307,6 +307,9 @@
         .ctxsig.stop, .ctxsig.bad { color:var(--vscode-errorForeground, #f14c4c); }
         /* An order that was obeyed is not a warning any more. */
         .ctxsig.done { color:var(--vscode-descriptionForeground); font-weight:500; }
+        /* B-23: searches the bridge guard stopped. A rule that held is not an
+           alarm, so the warning colour and not the error one. */
+        .bgsig { font-weight:600; color:var(--vscode-editorWarning-foreground, #cca700); }
         /* ---- whose turn is it (see phaseOf) --------------------------------
            A card carries its phase three ways at once — a coloured edge, a dot
            and a WORD — so it survives a light theme, a colourblind reader and a
@@ -1488,6 +1491,17 @@
             : v.state === 'undelivered' ? 'ctxsig bad'
                 : v.level === 'handover' ? 'ctxsig stop' : 'ctxsig';
         return ` · <span class="${cls}">${C.esc(v.chip)}${v.handedOver ? ' ✓' : ''}</span>`;
+    };
+    /**
+     * ‼️ B-23 — THE SEARCHES FOR A SESSION ID THE BRIDGE GUARD STOPPED on this
+     * session, so the rule is seen being held rather than trusted. Nothing is
+     * drawn while there were none; the words are the host's (`bridgeGuardView`).
+     */
+    const guardChip = (s) => {
+        const v = s.bridgeGuardView;
+        if (!v || !v.chip) { return ''; }
+        return `${cardTip(`<span class="bgsig">${C.esc(v.chip)}</span>`, v.head,
+            window.AFTip.lines(v.lines || []), 'tip-guard')} · `;
     };
     /** MIRROR — the current value first, then what it means. */
     const ctxTip = (s) => {
@@ -3028,7 +3042,7 @@
         // the whole scheme is there — every glyph, and what each one costs.
         return `${s.sessionId
             ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
-            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
+            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}${guardChip(s)}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}

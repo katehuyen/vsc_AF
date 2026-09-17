@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.541.0",
+  "version": "3.542.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8597,7 +8597,7 @@
         "agentFarm.bridgeGuard": {
           "type": "boolean",
           "default": true,
-          "description": "Bridge discipline (B-23): refuse a search tool (Grep, Glob, or a shell find/grep/rg/ls/dir) that is hunting the disk for a session id, and point the agent at `af.js sessions.find q=<id>` instead — the file layout belongs to the engine and it changes. Only a full session id, or a short id this machine knows, ever triggers it; a call already using the bridge never does, and `af:allow-id` in the command always runs. Turn off to stop refusing."
+          "description": "Bridge discipline (B-23): refuse a search tool (Grep, Glob, or a shell find/grep/rg/ls/dir) that is hunting the disk for a session id, and point the agent at `af.js sessions.find q=<id>` instead — the file layout belongs to the engine and it changes. Only a full session id, or a short id this machine knows, ever triggers it; a call already using the bridge never does, and `af:allow-id` in the command always runs. Held on Claude and Codex (their PreToolUse hooks); Gemini, Antigravity and OpenCode have no hook Agent Farm wires, so there the rule is only written. A Console card whose session was stopped shows `guard N`. Turn off to stop refusing."
         },
         "agentFarm.liveMonitor": {
           "type": "boolean",

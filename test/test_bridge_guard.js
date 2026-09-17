@@ -128,10 +128,106 @@ console.log('\n== the wiring — the listener, the setting and the bridge op =='
     ok('‼️ the known ids are CACHED — this runs on every tool call of every agent here',
         /knownIdCache/.test(ext) && /30_000/.test(ext));
     ok('…and they are the SHORT forms, which is what a hex match can be compared against',
-        /slice\(0, 8\)/.test(ext.slice(ext.indexOf('const knownSessionIds'), ext.indexOf('const bridgeGuardCatches'))));
+        /slice\(0, 8\)/.test(ext.slice(ext.indexOf('const knownSessionIds'), ext.indexOf('const bridgeGuardLog'))));
     const opBlock = ext.slice(ext.indexOf("op: 'sessions.bridgeGuard'"), ext.indexOf("op: 'sessions.recent'"));
     ok('every refusal is counted and readable, so the rule is visible rather than trusted',
-        /bridgeGuardCatches/.test(opBlock) && /catches:/.test(opBlock) && /on: cfg\(\)\.get<boolean>\('bridgeGuard'/.test(opBlock));
+        /bridgeGuardLog\.(all|forSession)\(/.test(opBlock) && /catches:/.test(opBlock) && /on: cfg\(\)\.get<boolean>\('bridgeGuard'/.test(opBlock));
+    ok('…one session\'s refusals can be asked for by id', /optStr\(args, 'session'\)/.test(opBlock) && /forSession\(session\)/.test(opBlock));
+    ok('…and the op says, per engine, whether the guard stands there at all',
+        /engines: ENGINE_IDS\.map\(bridgeGuardCoverage\)/.test(opBlock));
+    ok('‼️ the refusals are KEPT ACROSS RELOADS — a count a reload zeroes says "held" about a run that was stopped',
+        /new BridgeGuardLog\(path\.join\(context\.globalStorageUri\.fsPath, 'bridge-guard\.json'\)\)/.test(ext)
+        && /bridgeGuardLog\.flush\(\)/.test(ext) && /bridgeGuardLog\.add\(/.test(ext));
+    ok('the Console row carries this session\'s refusals, worded by the host',
+        /bridgeGuardView: bridgeGuardView\(bridgeGuardLog\.forSession\(s\.sessionId\), relTime\) \?\? null/.test(ext));
+    ok('‼️ a Codex hook payload reaches the guard — it names no engine, and only a payload that does is let past',
+        /if \(payload && !payload\.engine\)/.test(live));
+    ok('the setting says which engines it holds on', /Held on Claude and Codex/.test(props['agentFarm.bridgeGuard'].description));
+}
+
+console.log('\n== Codex — the same hook, measured on codex-cli 0.149.0 ==');
+{
+    // The binary parses permissionDecision on PreToolUse, blocks with
+    // "Command blocked by PreToolUse hook: <reason>", and names its shell tool Bash.
+    const v = ask('Bash', { command: `Get-ChildItem -Recurse ~/.codex/sessions | Select-String ${FULL}` });
+    ok('a Codex shell search for a session id is refused under the name Codex gives it', !!v && v.tool === 'Bash');
+    const argv = ask('Bash', { command: ['rg', '-l', FULL, '.'] });
+    ok('‼️ an argv-shaped command is the same command', !!argv && argv.id === FULL);
+    eq('…and an argv that is not a search is left alone', ask('Bash', { command: ['node', 'x.js', FULL] }), undefined);
+    const body = JSON.parse(B.denyResponseBody('PreToolUse', v));
+    ok('Codex reads the same deny shape — hookEventName, permissionDecision, permissionDecisionReason',
+        body.hookSpecificOutput.hookEventName === 'PreToolUse'
+        && body.hookSpecificOutput.permissionDecision === 'deny'
+        && typeof body.hookSpecificOutput.permissionDecisionReason === 'string');
+}
+
+console.log('\n== which engines the rule is held on ==');
+{
+    const engines = require(path.join(ROOT, 'out', 'core', 'engines.js')).ENGINE_IDS;
+    const cov = engines.map(B.bridgeGuardCoverage);
+    ok('every engine Agent Farm knows has its own answer, none falls to the default',
+        cov.length >= 5 && cov.every(c => !/No hook of/.test(c.why)));
+    eq('held on Claude and Codex, and only there', cov.filter(c => c.guarded).map(c => c.engine).sort(), ['claude', 'codex']);
+    eq('…each through its own hook', cov.filter(c => c.guarded).map(c => c.channel).sort(), ['claude-hook', 'codex-hook']);
+    ok('‼️ an unguarded engine SAYS so, with the reason — silence would read as covered',
+        cov.filter(c => !c.guarded).every(c => c.channel === 'none' && /not held/.test(c.why)));
+    ok('an engine nobody listed is unguarded, never assumed covered', B.bridgeGuardCoverage('someday').guarded === false);
+    ok('the Codex answer carries its condition — the wire has to be installed and trusted',
+        /installed and trusted/.test(B.bridgeGuardCoverage('codex').why));
+}
+
+console.log('\n== the words a surface draws ==');
+{
+    const c = (ts, id, how) => ({ ts, id, how: how || 'full', tool: 'Grep', reason: 'r', sessionId: 's1' });
+    eq('nothing refused draws nothing — a "0" on every card is noise', B.bridgeGuardView([]), undefined);
+    eq('…and no list is the same', B.bridgeGuardView(undefined), undefined);
+    const one = B.bridgeGuardView([c(1000, FULL)], () => '2m');
+    eq('SHORTHAND on the strip', one.chip, 'guard 1');
+    ok('the panel opens with the long form, singular', one.head === 'Bridge guard — 1 search for a session id stopped');
+    ok('a refusal is a Label: value line — when, tool, id', one.lines.some(l => l === `2m ago: Grep · ${FULL}`));
+    ok('the panel names the call that answers and the way out',
+        one.lines.join('\n').includes(B.BRIDGE_FIND_HINT) && one.lines.join('\n').includes(B.BRIDGE_GUARD_ESCAPE));
+    const many = B.bridgeGuardView([1, 2, 3, 4, 5, 6, 7].map(i => c(i * 1000, 'id' + i, i === 7 ? 'known' : 'full')), ts => String(ts));
+    eq('the count is all of them', many.count, 7);
+    ok('newest first', many.lines[1].startsWith('7000 ago') && /short id this machine knows/.test(many.lines[1]));
+    ok('‼️ a long list is capped and says how many it left out',
+        many.lines.some(l => /…and 2 earlier/.test(l)) && !many.lines.some(l => /id1\b/.test(l)));
+}
+
+console.log('\n== the log — refusals survive a reload ==');
+{
+    const os = require('os');
+    const L = require(path.join(ROOT, 'out', 'core', 'bridgeGuardLog.js'));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-bguard-'));
+    try {
+        const file = path.join(dir, 'bridge-guard.json');
+        const a = new L.BridgeGuardLog(file);
+        a.add({ ts: 1, id: FULL, how: 'full', tool: 'Grep', reason: 'r', sessionId: 's1' });
+        a.add({ ts: 2, id: SHORT, how: 'known', tool: 'Bash', reason: 'r', sessionId: 's2' });
+        a.flush();
+        const b = new L.BridgeGuardLog(file);
+        eq('a new host reads what the old one stopped', b.total, 2);
+        eq('newest first', b.all().map(x => x.ts), [2, 1]);
+        eq('one session\'s refusals', b.forSession('s1').map(x => x.id), [FULL]);
+        eq('no id is no session', b.forSession(''), []);
+        for (let i = 0; i < L.BRIDGE_GUARD_LOG_CAP + 10; i++) {
+            b.add({ ts: 10 + i, id: 'x', how: 'full', tool: 'Grep', reason: 'r', sessionId: 's3' });
+        }
+        eq('the log is capped', b.total, L.BRIDGE_GUARD_LOG_CAP);
+        eq('…by dropping the oldest', b.all(1)[0].ts, 10 + L.BRIDGE_GUARD_LOG_CAP + 9);
+        b.flush();
+        fs.writeFileSync(file, '{ torn', 'utf8');
+        eq('a torn file is an empty log, not a crash', new L.BridgeGuardLog(file).total, 0);
+        eq('no file at all is an empty log', new L.BridgeGuardLog(path.join(dir, 'none.json')).total, 0);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+}
+
+console.log('\n== the Console strip draws it ==');
+{
+    const js = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
+    ok('the chip is drawn from the host\'s view and nothing else', /const guardChip = \(s\) => \{\s*const v = s\.bridgeGuardView;/.test(js));
+    ok('…on the session strip, beside the window figure', /\$\{guardChip\(s\)\}<span title="\$\{C\.esc\(spTip\)\}">/.test(js));
+    ok('…in an AFTip opening with the long form', /cardTip\(`<span class="bgsig">\$\{C\.esc\(v\.chip\)\}<\/span>`, v\.head,/.test(js));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

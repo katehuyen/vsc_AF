@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.542.0 - the bridge guard is seen, not trusted, and says which engines it holds on (B-23, closes) (2026-09-17)
+
+- **The card shows what the guard stopped.** A Console session whose search for
+  a session id was refused carries `guard N` on its status strip, beside the
+  window figure; its AFTip opens with the long form ("Bridge guard — N searches
+  for a session id stopped"), lists the newest five as `when: tool · id`, says
+  how many it left out, and names the call that answers and the way out. Nothing
+  is drawn while there were none — on a guarded engine that silence is the
+  honest answer, and a `0` on every card would be noise. The words are the
+  host's (`bridgeGuardView`), never re-derived on the page.
+- **‼️ The refusals survive a reload.** They lived in memory, so a window reload
+  set the count back to zero and the card would have said "held" about a run
+  that was stopped an hour earlier. `core/bridgeGuardLog.ts` keeps them in
+  `bridge-guard.json` (capped at 500, oldest dropped, a torn file read as empty).
+- **‼️ Which engines the rule is held on, per engine.** A guard that silently
+  covers two engines out of five reads as covering all of them.
+  `bridgeGuardCoverage` answers for each: **Claude** — its PreToolUse hook;
+  **Codex** — the PreToolUse hook in the `hooks.json` the fleet writes. Codex is
+  there on measurement, not analogy: codex-cli 0.149.0 parses
+  `permissionDecision` on PreToolUse, refuses only `ask` and `allow`, prints
+  "Command blocked by PreToolUse hook: <reason>", and names its shell tool
+  `Bash` — the name the guard already reads — so the same listener answer
+  already stops it, while that wire is installed and trusted. **Gemini,
+  Antigravity, OpenCode** — no hook Agent Farm wires; each says so, with the
+  reason, and that there the rule is only written.
+- An argv-shaped command (`["rg", "-l", <id>]`) is read as the command it is.
+- **`sessions.bridgeGuard`** now returns `engines` (the coverage above) and takes
+  `session=<id>` for one session's refusals; the setting's description names the
+  engines it holds on.
+- Console fixture: two scenes (one refusal, seven refusals), drawn and looked at
+  in both themes.
+
 ## 3.541.0 - a session id is not hunted for on disk: the bridge rule is held by the hook (B-23, 1/n) (2026-09-17)
 
 - **‼️ MEASURED: a written rule with nothing watching it is not a rule.** Agent

@@ -85,6 +85,8 @@ function textOf(input: Record<string, unknown> | undefined): string {
     for (const k of TEXT_KEYS) {
         const v = input[k];
         if (typeof v === 'string' && v) { parts.push(v); }
+        // An argv-shaped command is the same command.
+        else if (Array.isArray(v)) { parts.push(v.filter(x => typeof x === 'string').join(' ')); }
     }
     return parts.join('\n');
 }
@@ -166,4 +168,92 @@ export function denyResponseBody(eventName: string | undefined, verdict: BridgeG
             permissionDecisionReason: verdict.reason
         }
     });
+}
+
+/** A refusal as it is kept: the verdict, when, and whose call it was. */
+export interface BridgeGuardCatch extends BridgeGuardVerdict {
+    ts: number;
+    sessionId: string;
+}
+
+export type BridgeGuardChannel = 'claude-hook' | 'codex-hook' | 'none';
+
+/** Whether an engine's tool calls have this guard in front of them, and why. */
+export interface BridgeGuardCoverage {
+    engine: string;
+    guarded: boolean;
+    channel: BridgeGuardChannel;
+    why: string;
+}
+
+const UNGUARDED = ' — nothing stands in front of its tool calls, so on this engine the rule is written and not held.';
+
+/**
+ * ‼️ WHICH ENGINES THE RULE IS HELD ON — said per engine, because a guard that
+ * silently covers two engines out of five reads as covering all of them.
+ * Codex is here on measurement, not by analogy: codex-cli 0.149.0 parses
+ * `permissionDecision` on PreToolUse, refuses only `ask` and `allow`, and
+ * prints "Command blocked by PreToolUse hook: <reason>"; its shell tool
+ * reaches the hook as `Bash`, which is the name this guard already reads.
+ */
+export function bridgeGuardCoverage(engine: string): BridgeGuardCoverage {
+    const e = String(engine ?? '').trim().toLowerCase();
+    switch (e) {
+        case 'claude':
+            return { engine: e, guarded: true, channel: 'claude-hook',
+                why: 'Claude Code\'s PreToolUse hook: the listener answers it with a deny and the CLI never runs the call (Grep, Glob, Bash, PowerShell).' };
+        case 'codex':
+            return { engine: e, guarded: true, channel: 'codex-hook',
+                why: 'Codex\'s PreToolUse hook from the hooks.json the fleet writes: a deny blocks the command (measured on codex-cli 0.149.0). Codex searches through its shell tool, which the hook names Bash. Held only while that wire is installed and trusted.' };
+        case 'gemini':
+            return { engine: e, guarded: false, channel: 'none', why: 'Agent Farm installs no hook for Gemini CLI' + UNGUARDED };
+        case 'agy':
+            return { engine: e, guarded: false, channel: 'none', why: 'Antigravity gives Agent Farm no hook before a tool call' + UNGUARDED };
+        case 'opencode':
+            return { engine: e, guarded: false, channel: 'none', why: 'OpenCode runs tool hooks only as plugins, and Agent Farm installs none' + UNGUARDED };
+        default:
+            return { engine: e, guarded: false, channel: 'none', why: `No hook of ${e || 'this engine'} reaches Agent Farm${UNGUARDED}` };
+    }
+}
+
+/** What a surface says about one session's refusals — the words, derived once. */
+export interface BridgeGuardView {
+    count: number;
+    /** SHORTHAND for a dense strip */
+    chip: string;
+    /** the long form, the panel's first line */
+    head: string;
+    lines: string[];
+}
+
+/** How many refusals a panel lists before it says how many more there were. */
+const VIEW_LIST_CAP = 5;
+
+/**
+ * Undefined while nothing was refused — on a guarded engine that silence is
+ * the honest answer, and a chip saying "0" on every card would be noise.
+ */
+export function bridgeGuardView(
+    catches: readonly BridgeGuardCatch[] | undefined,
+    ago?: (ts: number) => string
+): BridgeGuardView | undefined {
+    if (!catches || !catches.length) { return undefined; }
+    const newest = [...catches].sort((a, b) => b.ts - a.ts);
+    const n = newest.length;
+    const lines = [`Stopped: ${n} search${n === 1 ? '' : 'es'} for a session id`];
+    for (const c of newest.slice(0, VIEW_LIST_CAP)) {
+        lines.push(`${ago ? ago(c.ts) + ' ago' : new Date(c.ts).toISOString()}: ${c.tool} · ${c.id}`
+            + (c.how === 'known' ? ' (a short id this machine knows)' : ''));
+    }
+    if (n > VIEW_LIST_CAP) { lines.push(`…and ${n - VIEW_LIST_CAP} earlier (sessions.bridgeGuard lists them all).`); }
+    lines.push(
+        `Each time the agent was handed ${BRIDGE_FIND_HINT} instead of the search — Agent Farm data is asked of the bridge.`,
+        `Way out: ${BRIDGE_GUARD_ESCAPE} in the command · switch: agentFarm.bridgeGuard`
+    );
+    return {
+        count: n,
+        chip: `guard ${n}`,
+        head: `Bridge guard — ${n} search${n === 1 ? '' : 'es'} for a session id stopped`,
+        lines
+    };
 }
