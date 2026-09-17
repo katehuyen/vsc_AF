@@ -1437,6 +1437,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         storeFile: path.join(context.globalStorageUri.fsPath, 'context-guard.json')
     });
     context.subscriptions.push({ dispose: () => contextGuard.flush() });
+    /**
+     * ‼️ S-64 — WAS THIS SESSION TOLD TO HAND OVER, OR CLOSED BY A NOTE? One
+     * answer for every place that would otherwise resume it: a retry's smart
+     * continue, a task's next round, a mission lane, the lead's own planning.
+     */
+    const handoverEvidenceOf = (sessionId: string): { pct?: number; note?: string } | undefined => {
+        const rec = contextGuard.record(sessionId);
+        if (!rec?.handover && !rec?.handedOver) { return undefined; }
+        return {
+            ...(rec.handover ? { pct: rec.handover.pct } : {}),
+            ...(rec.handedOver ? { note: rec.handedOver.note } : {})
+        };
+    };
     const live = new LiveMonitor(
         () => ({
             enabled: cfg().get<boolean>('liveMonitor', true),
@@ -3373,13 +3386,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // ‼️ S-64 — the guard is the only thing that knows this run was told
             // to hand over: it read the window and it sent the sentence.
             handoverOf: (sessionId) => {
-                const rec = contextGuard.record(sessionId);
-                if (!rec?.handover && !rec?.handedOver) { return undefined; }
-                return {
-                    told: true,
-                    ...(rec.handover ? { pct: rec.handover.pct } : {}),
-                    ...(rec.handedOver ? { note: rec.handedOver.note } : {})
-                };
+                const h = handoverEvidenceOf(sessionId);
+                return h ? { told: true, ...h } : undefined;
             },
             // ‼️ X-226 — AND WHO ELSE COULD HAVE RUN IT. The line above answers
             // "when does this plan reopen"; on its own that is a run sleeping
@@ -6386,6 +6394,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             });
             return headlessResumeRefusal(dims.engine) === '';
         },
+        // ‼️ S-64 — a lane (or the lead's own conversation) that was handed
+        // over is re-told in a fresh session, never resumed.
+        sessionHandedOver: (sessionId) => handoverEvidenceOf(sessionId),
         // ‼️ M-18 — read at the moment the lead is briefed, like the workflow
         // list: a project renamed mid-run is a name the lead would otherwise
         // keep repeating back at a user who no longer uses it.

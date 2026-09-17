@@ -449,7 +449,7 @@ const BROKE = 'Error: ENOENT: no such file or directory';
      * superpowers, and its list looked complete enough that nobody read it
      * against `RunDimensions`. Which is the argument for reading it here.
      */
-    const rAnchor = 'const row = this.addTask(agent, `${baseTitle} · R${next.round}`, next.prompt, task.mode, {';
+    const rAnchor = 'const row = this.addTask(agent, `${baseTitle} · R${next.round}`, prompt, task.mode, {';
     const ri = tasksTs.indexOf(rAnchor);
     let round = '';
     if (ri >= 0) {

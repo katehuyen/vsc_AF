@@ -225,6 +225,45 @@ export function planNextRound(task: RoundedTask, now: number): NextRound | undef
     };
 }
 
+/** What closed the conversation a round would have replied into. */
+export interface RoundHandover {
+    /** the context reading that fired CONTEXT HANDOVER, when that was the trigger */
+    pct?: number;
+    /** the handover note that closed it, when one has been found */
+    note?: string;
+}
+
+/**
+ * ‼️ S-64 — A ROUND IS NEVER SENT INTO A CONVERSATION THAT WAS HANDED OVER.
+ *
+ * A round is a reply, so it resumes the conversation that was answered — except
+ * this one: the law sends the next run into a FRESH session that starts from
+ * the note, and a round resumed into a window at the handover line walks
+ * straight back into the wall. The round still runs; it starts fresh, and it is
+ * told where the work it replies to now lives, because on its own the round's
+ * prompt ("now do the second half") means nothing to a session that never saw
+ * the first.
+ */
+export function handedOverRoundPrompt(prompt: string, sessionId: string, h: RoundHandover): string {
+    const closed = typeof h.pct === 'number'
+        ? `reached the context handover line at ${h.pct}% and was closed`
+        : 'was handed over and closed';
+    const from = h.note
+        ? `Its handover note is ${h.note} — read it first and continue from it.`
+        : `No handover note has been found for it — read what it did with \`af.js sessions.read id=${sessionId}\` before you start.`;
+    return `The conversation this task ran in so far (session ${sessionId}) ${closed}, `
+        + 'so this round starts in a fresh session instead of continuing it.\n'
+        + `${from}\n\nThis round's instruction:\n\n${prompt}`;
+}
+
+/** The record's sentence for the same decision. */
+export function handedOverRoundWhy(round: number, sessionId: string, h: RoundHandover): string {
+    return `round ${round} starts a fresh session — ${sessionId} was told to hand over`
+        + (typeof h.pct === 'number' ? ` at ${h.pct}%` : '')
+        + (h.note ? ` and ${h.note} closed it` : '')
+        + ', and a saturated conversation is never resumed';
+}
+
 /**
  * ‼️ WHAT A CHAIN IS, IN ONE LINE, for the anatomy of a schedule, a trigger
  * or a template — the list of what the run it makes was SET UP with.

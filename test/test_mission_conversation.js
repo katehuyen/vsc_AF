@@ -472,6 +472,78 @@ async function noResumeTest() {
         run2.messages[2].carried, 'handoff');
 }
 
+async function handedOverLaneTest() {
+    console.log('\n-- S-64: a lane whose session was handed over is re-told, and the lead is told why');
+    const run = newRun();
+    const replies = [
+        say(),
+        say({ conversation: 'c1', objective: undefined, participants: undefined, from: 'Rev', intent: 'challenge', refs: ['m1'] }),
+        say({ conversation: 'c1', objective: undefined, participants: undefined, from: 'Ada', intent: 'response', refs: ['m2'] }),
+        FINISH
+    ];
+    const closed = new Map();
+    const { d } = deps(replies, { Ada: 'A says a thing.', Rev: 'B disagrees.' }, {
+        canResumeLane: () => true,
+        sessionHandedOver: (sid) => closed.get(sid)
+    });
+    const origDelegate = d.delegateWave;
+    d.delegateWave = async (r, steps) => {
+        await origDelegate(r, steps);
+        // Ada's first session is told to hand over at 43% the moment it ends.
+        for (const s of steps) { if (s.agentName === 'Ada' && !closed.size) { closed.set(s.runSessionId, { pct: 43, note: 'n06.md' }); } }
+    };
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    const response = run.rounds[2].steps[0];
+    eq('‼️ the engine could resume, and the lane is a handoff anyway', run.messages[2].carried, 'handoff');
+    ok('…with no session claimed', !response.message.resumeSessionId);
+    eq('…and the reason on the record', JSON.stringify(run.messages[2].handedOver), JSON.stringify({ pct: 43, note: 'n06.md' }));
+    ok('the speaker is told its last session was handed over, at what reading, and where its note is',
+        /last session in it was HANDED OVER — it reached the context handover line at 43%/.test(response.prompt)
+        && /Your handover note is n06\.md/.test(response.prompt));
+    ok('…and gets the whole exchange, its own first turn included',
+        response.prompt.includes('A says a thing.') && response.prompt.includes('B disagrees.'));
+    ok('‼️ the lead reads the handoff as a handover, not as an engine that cannot resume',
+        run.ledger.some(l => /Ada\(done,handoff after handover at 43%\)/.test(l)));
+}
+
+async function handedOverLeadTest() {
+    console.log('\n-- S-64: the lead\'s own planning session is not resumed past the handover line');
+    const run = newRun();
+    const replies = [say(), FINISH];
+    const calls = [];
+    let n = 0;
+    const { d } = deps(replies, { Ada: 'A says a thing.' }, {
+        sessionHandedOver: (sid) => (sid === 'lead-1' ? { pct: 44 } : undefined)
+    });
+    d.runPlanner = async (prompt, resume) => {
+        calls.push({ prompt, resume });
+        const r = replies[Math.min(n, replies.length - 1)];
+        n++;
+        return { ok: true, costUSD: 0, tokens: 0, sessionId: 'lead-' + n, raw: typeof r === 'string' ? r : JSON.stringify(r) };
+    };
+    await new M.MissionEngine(spec(), run, [], d).execute();
+    ok('the first call opened lead-1', calls.length >= 2 && calls[0].resume === undefined);
+    eq('‼️ the second call does NOT resume the handed-over lead session', calls[1].resume, undefined);
+    ok('…it is told why, with the reading',
+        /previous planning session \(lead-1\) was handed over — its context reached the handover line at 44%/.test(calls[1].prompt));
+    ok('…and seeded from the briefing, the ledger and the round that just came back',
+        /History so far \(you are mid-mission\)/.test(calls[1].prompt) && /R1 message c1/.test(calls[1].prompt));
+    ok('the ledger records the handover', run.ledger.some(l => /lead session lead-1 handed over at 44%/.test(l)));
+
+    const run2 = newRun('r2');
+    const calls2 = [];
+    let n2 = 0;
+    const { d: d2 } = deps(replies, { Ada: 'A says a thing.' });
+    d2.runPlanner = async (prompt, resume) => {
+        calls2.push({ prompt, resume });
+        const r = replies[Math.min(n2, replies.length - 1)];
+        n2++;
+        return { ok: true, costUSD: 0, tokens: 0, sessionId: 'lead-' + n2, raw: typeof r === 'string' ? r : JSON.stringify(r) };
+    };
+    await new M.MissionEngine(spec(), run2, [], d2).execute();
+    eq('an ordinary lead session is still resumed', calls2[1] && calls2[1].resume, 'lead-1');
+}
+
 async function emptyAndFailedTest() {
     console.log('\n-- a turn that said nothing did not answer anything');
     const run = newRun();
@@ -763,6 +835,9 @@ async function repeatedTurnTest() {
     // …and the extension asks exactly this question for a speaking lane.
     {
         const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('‼️ S-64 — the host answers sessionHandedOver from the same evidence a retry and a round read',
+            /sessionHandedOver: \(sessionId\) => handoverEvidenceOf\(sessionId\)/.test(ext)
+            && /handoverOf: \(sessionId\) => \{\s*const h = handoverEvidenceOf\(sessionId\);/.test(ext));
         ok('canResumeLane resolves the delegate\'s engine the same way a delegation does',
             /canResumeLane: \(agentId\) => \{[\s\S]{0,900}resolveDelegateRun\(member, spec/.test(ext));
         ok('‼️ …and then asks the one function that has measured each CLI',
@@ -1045,6 +1120,8 @@ async function visibilityTest() {
     await reloadTest();
     await secondSpeakerTest();
     await noResumeTest();
+    await handedOverLaneTest();
+    await handedOverLeadTest();
     await emptyAndFailedTest();
     await refusalAndDigestTest();
     await oneToManyTest();

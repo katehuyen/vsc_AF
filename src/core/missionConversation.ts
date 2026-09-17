@@ -203,6 +203,19 @@ export function intentKind(intent: string): MessageIntentKind | undefined {
  */
 export type LaneCarry = 'new' | 'resumed' | 'handoff';
 
+/** ‼️ S-64 — why a lane that could have resumed was re-told instead. */
+export interface LaneHandover {
+    /** the context reading that fired CONTEXT HANDOVER, when that was the trigger */
+    pct?: number;
+    /** the handover note that closed the session, when one has been found */
+    note?: string;
+}
+
+/** ` at 41%` when the reading is known, '' otherwise. */
+export function laneHandoverPct(h: LaneHandover | undefined): string {
+    return typeof h?.pct === 'number' ? ` at ${h.pct}%` : '';
+}
+
 export type MessageState = 'pending' | 'delivered' | 'failed' | 'cancelled';
 
 export interface MissionMessage {
@@ -245,6 +258,8 @@ export interface MissionMessage {
     taskId?: string;
     sessionId?: string;
     carried?: LaneCarry;
+    /** ‼️ S-64 — set when `carried` is a handoff because the lane's last session was handed over */
+    handedOver?: LaneHandover;
     /** what the lead asked this speaker for, in the lead's own words */
     ask?: string;
     orderedAt: number;
@@ -507,6 +522,8 @@ export function buildSpeakerPrompt(opts: {
     to?: readonly string[];
     goal?: string;
     carried: LaneCarry;
+    /** ‼️ S-64 — the lane is re-told because its last session was handed over */
+    handedOver?: LaneHandover;
     /**
      * ‼️ Somebody else is answering the same thing at the same moment, and
      * neither will see the other's answer before writing. The speaker is TOLD
@@ -582,6 +599,15 @@ export function buildSpeakerPrompt(opts: {
         parts.push('\n## Where you are\n'
             + 'This is the same conversation you were in a moment ago — you already hold what you '
             + 'said and what you were shown. What follows is only what is new since your last turn.');
+    } else if (opts.carried === 'handoff' && opts.handedOver) {
+        parts.push('\n## Where you are\n'
+            + 'You have spoken in this conversation before, and your last session in it was HANDED OVER'
+            + (typeof opts.handedOver.pct === 'number'
+                ? ` — it reached the context handover line at ${opts.handedOver.pct}%` : '')
+            + '. A saturated session is never continued, so this is a fresh one: the exchange is '
+            + 'reproduced below in full, so read it as the record it is.'
+            + (opts.handedOver.note
+                ? ` Your handover note is ${opts.handedOver.note} — read it before you answer.` : ''));
     } else if (opts.carried === 'handoff') {
         parts.push('\n## Where you are\n'
             + 'You have spoken in this conversation before, but not in this session — the exchange '

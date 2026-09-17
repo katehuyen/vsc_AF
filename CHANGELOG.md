@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.543.0 - a handed-over conversation is not resumed by a task's next round, a mission lane, or the lead (S-64, 4/n) (2026-09-17)
+
+- **‼️ A round is never sent into a conversation that was handed over.** A
+  round is a reply, so it resumes the conversation that was answered — except
+  the one the context guard told to hand over (or a note closed): the law sends
+  the next run into a FRESH session. The round still runs; it starts fresh, and
+  its prompt says why (the session, the reading that fired), where the work now
+  lives (the handover note, or `af.js sessions.read id=<sid>` when none has been
+  found) and then carries the round's own instruction whole. Both places a round
+  resumes are covered: `openNextRound` for a run already bound, and
+  `releaseRounds` for a held round whose conversation binds afterwards. The
+  record says it: "round N starts a fresh session — <sid> was told to hand over
+  at 41% …".
+- **‼️ A mission lane whose last session was handed over is a `handoff`,
+  whatever the engine could do.** The message records `handedOver {pct, note}`,
+  the speaker is told its last session was handed over (with the reading and the
+  note to read), and the lead's round line reads `Ada(done,handoff after
+  handover at 43%)` — so a re-told lane is not mistaken for an engine that
+  cannot resume.
+- **‼️ The lead's own planning conversation is not resumed past the line.** The
+  planner has no write tools, so it cannot write the note the sentence asks
+  for; its note is the ledger. A handed-over lead session is dropped and the
+  next call is seeded the way the resume-fallback seeds one — briefing, ledger,
+  guidance, the round that just came back — under a "Why this is a fresh
+  session" heading, and the ledger records the handover.
+- One answer for all of them: `handoverEvidenceOf` in the host (the guard's
+  record — told HANDOVER, or closed by a note), read by the retry, the rounds
+  and the missions alike.
+
 ## 3.542.0 - the bridge guard is seen, not trusted, and says which engines it holds on (B-23, closes) (2026-09-17)
 
 - **The card shows what the guard stopped.** A Console session whose search for

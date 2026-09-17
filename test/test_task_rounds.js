@@ -380,5 +380,105 @@ const done = (over) => Object.assign({ status: 'done', runSessionId: 'sess-1' },
         /Every firing sends this one prompt and stops\./.test(page));
 }
 
+// ---------------------------------------------------------------------------
+// S-64 — a round is never sent into a conversation that was handed over
+// ---------------------------------------------------------------------------
+{
+    const SID = '6af1b927-8eb7-4118-aac0-1aabadc45630';
+    const told = R.handedOverRoundPrompt('now do the second half', SID, { pct: 41 });
+    ok('the fresh round says WHY it is fresh, with the reading that fired',
+        told.includes(`session ${SID}`) && /context handover line at 41%/.test(told));
+    ok('‼️ with no note it is pointed at the bridge, never at the disk',
+        told.includes(`af.js sessions.read id=${SID}`));
+    ok('…and the round\'s own instruction is still there, last and whole',
+        told.endsWith('now do the second half'));
+    const noted = R.handedOverRoundPrompt('go on', SID, { note: '2026-09-17_devir_06_6af1b927_x.md' });
+    ok('a found note is the place to continue from',
+        /Its handover note is 2026-09-17_devir_06_6af1b927_x\.md — read it first/.test(noted)
+        && !/sessions\.read/.test(noted));
+    ok('a quota handover (no reading) is not described as a context one',
+        /was handed over and closed/.test(noted) && !/context handover line/.test(noted));
+    const why = R.handedOverRoundWhy(3, SID, { pct: 41, note: 'n.md' });
+    ok('the record names the round, the session, the reading and the note',
+        why === `round 3 starts a fresh session — ${SID} was told to hand over at 41% and n.md closed it, and a saturated conversation is never resumed`);
+
+    const fs3 = require('fs');
+    const src = fs3.readFileSync(path.join(__dirname, '..', 'src', 'core', 'tasks.ts'), 'utf8');
+    const open = src.slice(src.indexOf('private openNextRound'), src.indexOf('private releaseRounds'));
+    ok('‼️ a bound round asks the guard before it resumes',
+        /const closed = !next\.awaitBinding && next\.resumeSessionId\s*\?\s*this\.opts\.handoverOf\?\.\(next\.resumeSessionId\)/.test(open));
+    ok('…and a handed-over one carries no resume id at all',
+        /: closed \? \{\} : \{\s*resumeSessionId: next\.resumeSessionId/.test(open));
+    ok('…and runs the fresh prompt, saying why on the answered run\'s record',
+        /handedOverRoundPrompt\(next\.prompt, next\.resumeSessionId, closed\)/.test(open)
+        && /handedOverRoundWhy\(next\.round, next\.resumeSessionId, closed\)/.test(open));
+    const rel = src.slice(src.indexOf('private releaseRounds'), src.indexOf('private maybeScheduleRetry'));
+    ok('‼️ a held round whose conversation lands HANDED OVER is released fresh, not resumed',
+        /const closed = this\.opts\.handoverOf\?\.\(sid\);/.test(rel)
+        && rel.indexOf('handoverOf') < rel.indexOf('t.resumeSessionId = sid')
+        && /t\.prompt = handedOverRoundPrompt\(t\.prompt, sid, closed\)/.test(rel)
+        && /continue;\s*\}\s*t\.resumeSessionId = sid/.test(rel));
+}
+
+// …and the same, through a REAL TaskManager (quota held, so nothing spawns).
+{
+    const fs4 = require('fs');
+    const os = require('os');
+    const Module = require('module');
+    class Em { constructor() { this.c = []; } get event() { return (cb) => { this.c.push(cb); return { dispose() { } }; }; } fire(v) { for (const cb of this.c) { cb(v); } } dispose() { } }
+    const fake = {
+        EventEmitter: Em, Disposable: { from: () => ({ dispose() { } }) },
+        window: {
+            showInformationMessage: () => Promise.resolve(undefined),
+            showWarningMessage: () => Promise.resolve(undefined),
+            createTerminal: () => ({ show() { }, sendText() { }, dispose() { } }),
+            onDidCloseTerminal: () => ({ dispose() { } })
+        }
+    };
+    const load = Module._load;
+    Module._load = function (req, parent, isMain) { return req === 'vscode' ? fake : load.call(this, req, parent, isMain); };
+    const { TaskManager } = require(path.join(__dirname, '..', 'out', 'core', 'tasks.js'));
+    const tmp = fs4.mkdtempSync(path.join(os.tmpdir(), 'af-rounds-'));
+    try {
+        const dir = path.join(tmp, 'agent'); fs4.mkdirSync(dir);
+        const agent = { id: 'a1', name: 'yazar', dir };
+        const closedIds = new Set(['sess-closed']);
+        const mgr = new TaskManager(path.join(tmp, 'farm-tasks.json'), () => [agent], () => false, () => '', {
+            quotaCheck: () => 'test hold',
+            handoverOf: (sid) => closedIds.has(sid) ? { told: true, pct: 42 } : undefined
+        });
+        const chain = (sid) => {
+            const t = mgr.addTask(agent, 'Zincir', 'ilk soru', 'headless',
+                { rounds: [{ prompt: 'ikinci yarı' }], roundsTotal: 2 });
+            t.status = 'done'; t.endedAt = Date.now(); t.runSessionId = sid;
+            mgr.openNextRound(t);
+            return mgr.tasks.find(x => x.roundOf === t.id);
+        };
+        const fresh = chain('sess-closed');
+        ok('‼️ a round after a HANDOVER is a row with no resume id',
+            !!fresh && !fresh.resumeSessionId && !fresh.roundAwaits);
+        ok('…whose prompt says why and still ends with the round',
+            /sess-closed\) reached the context handover line at 42%/.test(fresh.prompt)
+            && fresh.prompt.endsWith('ikinci yarı'));
+        const normal = chain('sess-open');
+        ok('a round after an ordinary answer still resumes it, prompt untouched',
+            normal.resumeSessionId === 'sess-open' && normal.prompt === 'ikinci yarı');
+
+        const held = chain('');
+        ok('an unbound run still makes a held row', !!held.roundAwaits && !held.resumeSessionId);
+        const parent = mgr.tasks.find(x => x.id === held.roundAwaits);
+        parent.runSessionId = 'sess-closed';
+        mgr.releaseRounds();
+        ok('‼️ …and when it binds to a handed-over conversation it is released FRESH',
+            !held.roundAwaits && !held.resumeSessionId
+            && /sess-closed\) reached the context handover line/.test(held.prompt));
+        ok('…saying so on its own record',
+            (held.events || []).some(e => /starts a fresh session — sess-closed was told to hand over at 42%/.test(e.detail || e.text || JSON.stringify(e))));
+    } finally {
+        Module._load = load;
+        fs4.rmSync(tmp, { recursive: true, force: true });
+    }
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

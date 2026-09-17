@@ -45,6 +45,7 @@ import { SENTRY_DEFAULT_STALL_MIN, SlotHealth, slotHealth, stalledRound } from '
 import { carryOnAccount, CARRY_ON_FLOOR_MS, SlotUsage } from './accountUsage';
 import { SENTRY_DEFAULT_CEILING } from './sentryRun';
 import {
+    handedOverRoundPrompt, handedOverRoundWhy,
     normalizeRounds, planNextRound, refuseNextRound, ROUND_BINDING_CODE, roundBindingReason,
     TaskRound, totalRounds
 } from './taskRounds';
@@ -4333,13 +4334,21 @@ export class TaskManager implements vscode.Disposable {
         // reads as one piece of work going deeper and not as N unrelated tasks.
         const baseTitle = task.title.replace(/\s*\((?:limit-)?(?:retry|continue) \d+\)\s*$/, '')
             .replace(/\s*·\s*R\d+$/, '');
+        // ‼️ S-64 — the conversation it would reply into was handed over: the
+        // round runs fresh, pointed at the note, and never resumes it.
+        const closed = !next.awaitBinding && next.resumeSessionId
+            ? this.opts.handoverOf?.(next.resumeSessionId) : undefined;
         try {
             const wrote = this.inOneWrite(() => {
                 noteTaskEvent(task, 'finished',
                     `round ${next.round} of ${task.roundsTotal ?? '?'} queued`
                     + (next.delayMin > 0 ? `, starting in ${next.delayMin} min` : '')
-                    + (next.awaitBinding ? ', held until this run is matched to its transcript' : ''));
-                const row = this.addTask(agent, `${baseTitle} · R${next.round}`, next.prompt, task.mode, {
+                    + (next.awaitBinding ? ', held until this run is matched to its transcript' : '')
+                    + (closed ? ` — ${handedOverRoundWhy(next.round, next.resumeSessionId, closed)}` : ''));
+                const prompt = closed
+                    ? handedOverRoundPrompt(next.prompt, next.resumeSessionId, closed)
+                    : next.prompt;
+                const row = this.addTask(agent, `${baseTitle} · R${next.round}`, prompt, task.mode, {
                     projectId: task.projectId,
                     /**
                      * ‼️ X-229 — THE ROUND RUNS THE WAY THE ROUND BEFORE IT RAN,
@@ -4372,7 +4381,7 @@ export class TaskManager implements vscode.Disposable {
                     // instead, and is parked below until it is.
                     ...(next.awaitBinding
                         ? { roundAwaits: task.id }
-                        : {
+                        : closed ? {} : {
                             resumeSessionId: next.resumeSessionId,
                             resumedFrom: task.title,
                             ...(task.engine ? { resumedEngine: task.engine } : {})
@@ -4462,6 +4471,17 @@ export class TaskManager implements vscode.Disposable {
             }
             const sid = String(prev.runSessionId ?? '').trim();
             if (!sid) { continue; }
+            // ‼️ S-64 — bound now, and handed over: released FRESH, never resumed.
+            const closed = this.opts.handoverOf?.(sid);
+            if (closed) {
+                t.prompt = handedOverRoundPrompt(t.prompt, sid, closed);
+                t.roundAwaits = undefined;
+                this.clearPark(t);
+                noteTaskEvent(t, 'parked',
+                    `released — ${handedOverRoundWhy(t.round ?? 2, sid, closed)}`);
+                wrote = true;
+                continue;
+            }
             t.resumeSessionId = sid;
             if (prev.engine) { t.resumedEngine = prev.engine; }
             t.resumedFrom = prev.title;

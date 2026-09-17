@@ -22,7 +22,7 @@ import { describeFailure, failure, StepFailure } from './missionFailure';
 import { OneShotEnvelope, oneShotEnvelope } from './oneShot';
 import {
     buildSpeakerPrompt, conversationDigest, conversationMessages, intentFlags, intentKind, LaneCarry,
-    MessageIntent, messageIntentMenu, MESSAGE_VISIBILITY, MessageVisibility, MissionConversation,
+    LaneHandover, laneHandoverPct, MessageIntent, messageIntentMenu, MESSAGE_VISIBILITY, MessageVisibility, MissionConversation,
     MissionMessage, newConversationId, newMessageId, refuseMessage
 } from './missionConversation';
 import {
@@ -77,7 +77,7 @@ export {
     newMessageId, openThreads, participantBusy, refuseMessage
 } from './missionConversation';
 export type {
-    ConversationDigest, LaneCarry, MessageIntent, MessageIntentKind, MessageRequest, MessageState,
+    ConversationDigest, LaneCarry, LaneHandover, MessageIntent, MessageIntentKind, MessageRequest, MessageState,
     MessageVisibility, MissionConversation, MissionMessage
 } from './missionConversation';
 
@@ -649,6 +649,9 @@ export interface MissionStep {
         carried: LaneCarry;
         /** the session this turn continues; absent on a new or re-told lane */
         resumeSessionId?: string;
+        /** ‼️ S-64 — the lane's last session was handed over, so this turn is
+         *  a `handoff` by the law and not by the engine */
+        handedOver?: LaneHandover;
         /** ‼️ M-19 — this turn ends the conversation, with this stated reason.
          *  Applied when the turn settles, so the record shows the last thing
          *  said and then the closing — never a conversation shut before the
@@ -1255,6 +1258,7 @@ export interface PlannerTaskReq {
         messageId: string;
         carried: LaneCarry;
         resumeSessionId?: string;
+        handedOver?: LaneHandover;
         close?: string;
     };
 }
@@ -2864,7 +2868,11 @@ export function ledgerLine(round: MissionRound): string {
         const conv = round.steps[0]?.message?.conversationId ?? '?';
         const turns = round.steps.map(s => {
             const link = s.message;
-            const carried = link && link.carried !== 'new' ? `,${link.carried}` : '';
+            // ‼️ S-64 — a lane re-told because its session was handed over says
+            // so: the lead must not read it as an engine that cannot resume.
+            const carried = link && link.carried !== 'new'
+                ? `,${link.carried}${link.handedOver ? ` after handover${laneHandoverPct(link.handedOver)}` : ''}`
+                : '';
             return `${link?.messageId ?? '?'}:${s.agentName}(${s.status}${carried})`;
         }).join(' · ');
         // ‼️ Several turns on one line means they were ordered TOGETHER, which
@@ -3312,6 +3320,14 @@ export interface MissionEngineDeps {
      * continued, which is a true statement about a harness that cannot check.
      */
     canResumeLane?(agentId: string): boolean;
+    /**
+     * ‼️ S-64 — WAS THIS SESSION HANDED OVER? Asked of the context guard, the
+     * only thing that knows: it read the window and sent the sentence, and it
+     * records the note that closed it. A session that was is never resumed —
+     * not a speaker's lane and not the lead's own planning conversation; the
+     * law sends the next run into a fresh session.
+     */
+    sessionHandedOver?(sessionId: string): LaneHandover | undefined;
     now(): number;
 }
 
@@ -4034,7 +4050,11 @@ export class MissionEngine {
             // reading a record rather than carrying on. Calling the third case
             // "resumed" is the failure this distinction exists to prevent.
             const resumeSessionId = last?.sessionId;
-            const canResume = !!resumeSessionId && (this.deps.canResumeLane?.(from) ?? false);
+            // ‼️ S-64 — …and a lane whose session was handed over is a handoff
+            // whatever the engine could do: a saturated conversation is never
+            // resumed.
+            const handedOver = resumeSessionId ? this.deps.sessionHandedOver?.(resumeSessionId) : undefined;
+            const canResume = !!resumeSessionId && !handedOver && (this.deps.canResumeLane?.(from) ?? false);
             const carried: LaneCarry = !last ? 'new' : (canResume ? 'resumed' : 'handoff');
             // ‼️ X-77 — WHAT THIS SPEAKER IS SHOWN, from a stated policy.
             //
@@ -4067,7 +4087,8 @@ export class MissionEngine {
                 ...(d.ask ? { ask: d.ask } : {}),
                 orderedAt: now,
                 state: 'pending',
-                carried
+                carried,
+                ...(handedOver ? { handedOver } : {})
             });
             tasks.push({
                 agent: nameOf(from),
@@ -4077,6 +4098,7 @@ export class MissionEngine {
                     conversation: conv!, intent: d.intent, speakerName: nameOf(from),
                     referenced, context, ...(d.ask ? { ask: d.ask } : {}),
                     to: d.to, goal: spec.goal, carried, nameOf, visibility,
+                    ...(handedOver ? { handedOver } : {}),
                     independent: d.from.length > 1,
                     // ‼️ M-20 — a council speaker is told it is in one, what the
                     // council is deciding and who chairs it. A vote turn is also
@@ -4101,6 +4123,7 @@ export class MissionEngine {
                 message: {
                     conversationId: conv!.id, messageId, carried,
                     ...(canResume ? { resumeSessionId: resumeSessionId! } : {}),
+                    ...(handedOver ? { handedOver } : {}),
                     ...(d.close ? { close: d.close } : {})
                 }
             });
@@ -4435,9 +4458,10 @@ export class MissionEngine {
 
             const rem = remainingBudget(spec, run, deps.now());
             const guard = guardReason(rem);
-            let prompt = run.rounds.length === 0 && !roundMsg
+            const roundText = run.rounds.length === 0 && !roundMsg
                 ? this.briefingText(rem)
                 : (roundMsg ?? 'Decide the next round. Reply with ONLY the JSON decision object.');
+            let prompt = roundText;
             if (guard) { prompt += finishOnlyNote(guard); }
             // ‼️ M-16 — THE PLANNER BOUNDARY IS HERE and nowhere else: the
             // prompt is complete, the previous wave has settled, and nothing is
@@ -4446,6 +4470,29 @@ export class MissionEngine {
             const steer = this.takeGuidance();
             if (steer) { prompt += steer; }
             roundMsg = undefined;
+
+            /**
+             * ‼️ S-64 — THE LEAD'S OWN CONVERSATION IS NOT RESUMED PAST THE
+             * HANDOVER LINE. The planner has no write tools, so it cannot write
+             * the note the sentence asks for; its note is the ledger, and this
+             * is where it is handed over: a fresh session, seeded the way the
+             * resume-fallback below seeds one, told why.
+             */
+            const leadClosed = run.plannerSessionId ? deps.sessionHandedOver?.(run.plannerSessionId) : undefined;
+            if (leadClosed) {
+                const was = run.plannerSessionId!;
+                run.plannerSessionId = undefined;
+                prompt = `## Why this is a fresh session\nYour previous planning session (${was}) was handed over`
+                    + (typeof leadClosed.pct === 'number'
+                        ? ` — its context reached the handover line at ${leadClosed.pct}%` : '')
+                    + '. It is not continued; everything you need is below.\n\n'
+                    + this.briefingText(rem)
+                    + (run.ledger.length ? '\n\n## History so far (you are mid-mission)\n' + run.ledger.join('\n') : '')
+                    + this.guidanceHistory()
+                    + '\n\n' + roundText
+                    + (guard ? finishOnlyNote(guard) : '');
+                run.ledger.push(`lead session ${was} handed over${laneHandoverPct(leadClosed)} — planning continues in a fresh session`);
+            }
 
             run.status = 'running';
             this.setNow(`lead is planning round ${run.rounds.length + 1}`);
