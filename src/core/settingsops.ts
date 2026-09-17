@@ -191,7 +191,7 @@ const CATEGORY_OF: Record<string, string> = {
     permissionAnswerKeys: 'live',
     maxTranscriptMessages: 'live', contextWindowTokens: 'live',
     // S-64 — the two context discipline lines ride beside the window ceiling.
-    contextConvergePct: 'live', contextHandoverPct: 'live',
+    contextConvergePct: 'live', contextHandoverPct: 'live', bridgeGuard: 'live',
     // ‼️ S-52 — beside the other two settings that say how a session's figures
     // are READ rather than how they are drawn: this one decides when a pause
     // stops being someone thinking and becomes someone away.

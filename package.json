@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.540.0",
+  "version": "3.541.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8593,6 +8593,11 @@
           "minimum": 0,
           "maximum": 100,
           "description": "Context discipline (S-64): when a running session's window is this full, it is told once — CONTEXT HANDOVER — to stop, commit, write the handover note and end the run. A converge line above this one is folded down onto it. 0 = off."
+        },
+        "agentFarm.bridgeGuard": {
+          "type": "boolean",
+          "default": true,
+          "description": "Bridge discipline (B-23): refuse a search tool (Grep, Glob, or a shell find/grep/rg/ls/dir) that is hunting the disk for a session id, and point the agent at `af.js sessions.find q=<id>` instead — the file layout belongs to the engine and it changes. Only a full session id, or a short id this machine knows, ever triggers it; a call already using the bridge never does, and `af:allow-id` in the command always runs. Turn off to stop refusing."
         },
         "agentFarm.liveMonitor": {
           "type": "boolean",

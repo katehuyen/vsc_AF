@@ -267,6 +267,7 @@ import { VaultResolution, obsidianRegistryPath, resolveVault } from './core/vaul
 import {
     DEFAULT_HANDOVER_THRESHOLD, HANDOVER_SOURCES, HandoverListing, HandoverSource, discoverHandover
 } from './core/handoverDiscovery';
+import { BRIDGE_GUARD_ESCAPE, BridgeGuardVerdict, bridgeGuardVerdict, denyResponseBody } from './core/bridgeGuard';
 import { EngineRunner, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
@@ -1397,6 +1398,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         return undefined;
     };
+    /**
+     * ‼️ B-23 — THE SHORT IDS THIS MACHINE KNOWS, cached, because this is read
+     * on EVERY tool call of every agent running here. A farm with thousands of
+     * transcripts cannot rebuild the set per call, and the set moves slowly:
+     * a session born in the last half minute is one the guard misses once.
+     */
+    let knownIdCache: { at: number; ids: Set<string> } | undefined;
+    const knownSessionIds = (): Set<string> => {
+        const now = Date.now();
+        if (knownIdCache && now - knownIdCache.at < 30_000) { return knownIdCache.ids; }
+        const ids = new Set<string>();
+        try {
+            for (const s of index.allWithExternal()) {
+                const id = String(s.sessionId ?? '').trim().toLowerCase().replace(/-/g, '');
+                if (id.length >= 8) { ids.add(id.slice(0, 8)); }
+            }
+        } catch { /* the index is not ready — nothing is known, nothing is refused */ }
+        knownIdCache = { at: now, ids };
+        return ids;
+    };
+    /** Every refusal, so the rule's own health can be read (`sessions.bridgeGuard`). */
+    const bridgeGuardCatches: (BridgeGuardVerdict & { ts: number; sessionId: string })[] = [];
     const contextGuard = new ContextGuard({
         thresholds: () => ({
             convergePct: cfg().get<number>('contextConvergePct', DEFAULT_CONTEXT_THRESHOLDS.convergePct),
@@ -1424,6 +1447,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 transcriptPath: p.transcript_path,
                 cwd: p.cwd
             }),
+            // ‼️ B-23 — the bridge rule, held by the code. Narrow on purpose:
+            // only a search tool, only a real session id, never a call already
+            // going through the bridge, and `af:allow-id` always wins. The known
+            // ids are the SHORT forms the index holds, because an 8-character
+            // hex string is also every abbreviated git hash there is.
+            toolGuard: (p) => {
+                if (!cfg().get<boolean>('bridgeGuard', true)) { return undefined; }
+                if (p.hook_event_name !== 'PreToolUse') { return undefined; }
+                const v = bridgeGuardVerdict({
+                    tool: p.tool_name,
+                    input: p.tool_input,
+                    known: knownSessionIds()
+                });
+                if (v) { bridgeGuardCatches.push({ ts: Date.now(), sessionId: String(p.session_id ?? ''), ...v }); }
+                return denyResponseBody(p.hook_event_name, v);
+            },
             stuckThresholdMs: cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
             notifyPermission: cfg().get<boolean>('notifyPermission', true),
             notifyStuck: cfg().get<boolean>('notifyStuck', true),
@@ -10291,6 +10330,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     await cfg().update('contextHandoverPct', next.handoverPct, vscode.ConfigurationTarget.Global);
                 }
                 return { thresholds: contextGuard.thresholds(), changed: next.convergePct !== cur.convergePct || next.handoverPct !== cur.handoverPct };
+            }
+        },
+        {
+            op: 'sessions.bridgeGuard',
+            describe: '‼️ B-23 — THE BRIDGE RULE HELD BY CODE, and its own health. Agent Farm data (sessions, transcripts, turns, tasks, missions, projects) is asked of the bridge; measured 2026-09-17, two runs went hunting for a session id through the file system instead, one for over ten minutes, while `sessions.find q=<id>` answers in one call. So a `PreToolUse` on a SEARCH tool (Grep, Glob, or a shell find/grep/rg/ls/dir) that carries a full session id — or a short id this machine knows — is refused at the hook with a line saying what to run instead. Narrow on purpose: a call already using the bridge is never refused, `'
+                + BRIDGE_GUARD_ESCAPE + '` in the command always runs, and a short hex string nobody knows is left alone (it is also every abbreviated git hash). `on` is the setting (agentFarm.bridgeGuard). `catches` is what it stopped — newest first — so the rule is visible rather than trusted. args: limit? (default 50)',
+            handler: (args) => {
+                const limit = Math.max(1, Math.min(500, optNum(args, 'limit', 50)));
+                return {
+                    on: cfg().get<boolean>('bridgeGuard', true),
+                    escape: BRIDGE_GUARD_ESCAPE,
+                    knownIds: knownSessionIds().size,
+                    total: bridgeGuardCatches.length,
+                    catches: [...bridgeGuardCatches].reverse().slice(0, limit)
+                };
             }
         },
         {

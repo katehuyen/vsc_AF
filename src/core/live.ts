@@ -230,6 +230,22 @@ export interface LiveConfig {
         session_id?: string; hook_event_name?: string; transcript_path?: string; cwd?: string; engine?: string;
     }) => { level: 'converge' | 'handover'; pct: number; text: string } | undefined;
     /**
+     * ‼️ B-23 — THE OTHER SHAPE THIS LISTENER CAN ANSWER WITH: a refusal.
+     *
+     * `contextSignal` above ADDS to the model's context; this STOPS the call.
+     * A `PreToolUse` answered with `permissionDecision: "deny"` never runs, and
+     * the agent reads `permissionDecisionReason` instead — which is how a rule
+     * written in prose ("Agent Farm data is asked of the bridge") becomes a rule
+     * the code holds. Returns the whole response body, or `undefined` to let the
+     * ordinary answer stand; it outranks the signal on the one event it speaks
+     * on, because a call that is not going to run has no next step to be told
+     * anything before.
+     */
+    toolGuard?: (payload: {
+        session_id?: string; hook_event_name?: string; tool_name?: string;
+        tool_input?: Record<string, unknown>; cwd?: string; engine?: string;
+    }) => string | undefined;
+    /**
      * ‼️ S-43 — what the CLI's own session registry says about an id: `true` a
      * daemon spare / background worker, `false` somebody's session, `undefined`
      * it has not written the file yet.
@@ -831,7 +847,12 @@ export class LiveMonitor implements vscode.Disposable {
                 let answer = '{}';
                 if (payload && !payload.engine) {
                     try {
-                        answer = hookResponseBody(payload.hook_event_name, cfg.contextSignal?.(payload));
+                        // ‼️ B-23 — and a PreToolUse the bridge guard refuses is
+                        // answered with the DENY shape instead. Same listener,
+                        // second shape: one adds to the model's context, this
+                        // one stops the call before it runs.
+                        answer = cfg.toolGuard?.(payload)
+                            ?? hookResponseBody(payload.hook_event_name, cfg.contextSignal?.(payload));
                     } catch { answer = '{}'; }
                 }
                 res.end(answer);

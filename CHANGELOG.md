@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.541.0 - a session id is not hunted for on disk: the bridge rule is held by the hook (B-23, 1/n) (2026-09-17)
+
+- **‼️ MEASURED: a written rule with nothing watching it is not a rule.** Agent
+  Farm data — sessions, transcripts, turns, tasks, missions, projects — is asked
+  of the bridge first. On 2026-09-17 two runs went hunting for a session id
+  through the file system and guessing the engine's layout, one of them for over
+  ten minutes, while `af.js sessions.find q=<id>` answers in one call.
+- **`core/bridgeGuard.ts`** refuses that call at the hook. A `PreToolUse` on a
+  SEARCH tool (Grep, Glob, or a shell `find`/`grep`/`rg`/`ls`/`dir`/
+  `Get-ChildItem`/`Select-String`) carrying a full session id — or a short id
+  this machine knows — is answered with the CLI's deny shape, and the agent
+  reads one line instead: what the string is, that the layout belongs to the
+  engine and changes, `sessions.find q=<id>` for the file and `sessions.read
+  id=<id>` for the conversation, and the way out.
+- **‼️ NARROW ON PURPOSE, because this sits in front of every tool call every
+  agent here makes.** An Edit, a Write, a Read of a named path is never touched;
+  a shell command is only a search when its VERB is one; a call already using
+  the bridge is never refused; and the SHORT form is refused only when the index
+  knows it — an 8-character hex string is also every abbreviated git hash there
+  is, and `git log <sha>` must not be collateral. `af:allow-id` anywhere in the
+  command always runs, because a legitimate file operation on a transcript
+  exists and a refusal with no escape teaches an agent to fight the guard.
+- **The channel is the same listener, in a second shape.** `contextSignal`
+  (S-64) ADDS to the model's context; this STOPS the call, and it outranks the
+  signal on `PreToolUse` — a call that is not going to run has no next step to
+  be told anything before. A guard that throws still leaves the hook intact.
+- **`agentFarm.bridgeGuard`** (default on) switches it off; `sessions.bridgeGuard`
+  reports the setting, the escape token, how many ids are known and every
+  refusal it has made, so the rule's own health is read rather than trusted.
+
 ## 3.540.0 - a conversation that was told to stop is never the one a retry resumes (S-64, 3/n) (2026-09-17)
 
 - **‼️ MEASURED: smart continue would have resumed the one run it must not.**
