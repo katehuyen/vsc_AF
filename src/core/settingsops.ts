@@ -198,7 +198,7 @@ const CATEGORY_OF: Record<string, string> = {
     pricing: 'cost', budgets: 'cost', budgetsUnlimited: 'cost', windowTokenLimit: 'cost',
     windowWeightedTokenLimit: 'cost', quotaWeightMode: 'cost', quotaWeights: 'cost',
     quotaBrakeBasis: 'cost',
-    planUsageRefreshMinutes: 'cost', planUsageActiveRefreshSeconds: 'cost',
+    planUsageRefreshMinutes: 'cost', planUsageActiveRefreshSeconds: 'cost', accountsAutoRefresh: 'cost',
     planUsageStatusBar: 'cost', planUsageWarnPercent: 'cost', planUsageDangerPercent: 'cost',
     planUsageEngine: 'cost',
     mediaBudgetMonthUSD: 'cost', mediaPricing: 'cost', trendAlertFactor: 'cost',

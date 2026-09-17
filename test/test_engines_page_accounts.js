@@ -722,5 +722,49 @@ const sec = () => {
         s.includes('This is SPEND') && s.includes('not the same measure'));
 }
 
+// ---------- ‼️ X-241 — THE AUTO-REFRESH SWITCH, ON THE SECTION HEAD ----------
+//
+// Lit while the background beat (X-239) is on, grey while it is off; its panel
+// is MIRROR first and then every sign-in's OWN beat (X-240) — the one fact a
+// reader could otherwise only infer card by card. Pressing it posts the state
+// it wants; the host writes the one setting the bridge op also writes.
+{
+    const s = sec();
+    const head = s.slice(0, s.indexOf('class="englede"'));
+    ok('the switch sits on the Accounts head, before "all engines", lit, and names its state',
+        /<button class="secondary small acauto a-on" data-acauto="0">⚡ Auto-refresh: ON<\/button>/.test(head)
+        && head.indexOf('data-acauto') < head.indexOf('data-acrefreshall'));
+    ok('…it is an AFTip (the reason is text), MIRROR first: "Now: on — 1 of 5 on the fast beat"',
+        /Now: on — 1 of 5 on the fast beat/.test(head));
+    ok('‼️ …and the panel lists EVERY sign-in\'s own beat: the working one every 60 s, the idle ones every 5 min',
+        /Claude Code · work@studio: every 60 s — a turn is running on it/.test(head)
+        && /Claude Code · personal@gmail: every 5 min — idle/.test(head) && /Codex · spare@chatgpt: every 5 min — idle/.test(head)
+        && /Codex · work@studio: every 5 min — idle/.test(head));
+    ok('…and says how the beat is paced and where the switch is kept',
+        /never all at once: one request per five seconds/.test(head) && /agentFarm\.accountsAutoRefresh/.test(head) && /accounts\.autoRefresh bridge op/.test(head));
+    r.query('[data-acauto]')[0].click();
+    ok('pressing it posts accountsAutoRefresh with the state it WANTS (off), nothing else',
+        JSON.stringify(r.last()) === JSON.stringify({ type: 'accountsAutoRefresh', on: false }));
+
+    // the OFF scene: grey, and the panel says what still works
+    const off = fixture.variants().find(v => v.id === 'enginesautooff');
+    const r2 = runPage('engines.js', off.data);
+    const h2 = r2.html();
+    const head2 = h2.slice(h2.indexOf('>Accounts<'), h2.indexOf('class="englede"', h2.indexOf('>Accounts<')));
+    ok('OFF: the button is grey and says OFF, and the press would switch it back on',
+        /class="secondary small acauto a-off" data-acauto="1">⚡ Auto-refresh: OFF</.test(head2));
+    ok('…MIRROR says off, and the panel names what still reads: the ⟳, "all engines", the turn boundary',
+        /Now: off</.test(head2) && /Nothing is read on its own/.test(head2) && /turn boundary still work/.test(head2));
+    ok('…and every slot reads "off" rather than an interval', /Claude Code · work@studio: off — idle/.test(head2) && !/every 60 s/.test(head2));
+    r2.query('[data-acauto]')[0].click();
+    ok('…pressing it posts on: true', JSON.stringify(r2.last()) === JSON.stringify({ type: 'accountsAutoRefresh', on: true }));
+
+    // the panel half: the message calls the SAME function the bridge op calls
+    const src = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'enginesPanel.ts'), 'utf8');
+    ok('the panel hands the press to deps.setAutoRefresh and redraws',
+        /case 'accountsAutoRefresh':[\s\S]{0,200}await this\.deps\.setAutoRefresh\(msg\.on === true\);[\s\S]{0,60}this\.refresh\(\);/.test(src));
+    ok('…and the data the page is handed carries autoRefresh from deps.autoRefresh()', /autoRefresh: deps\.autoRefresh\(\)/.test(src));
+}
+
 console.log(`test_engines_page_accounts: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

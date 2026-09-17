@@ -263,6 +263,14 @@ export interface EnginesPanelDeps {
      *  the same one the single-account card is tuned to. Two refresh policies in
      *  one codebase is how one of them ends up wrong. */
     accountBeatMs(): number;
+    /**
+     * ‼️ X-241 — THE AUTO-REFRESH SWITCH, and what each sign-in's own beat is
+     * right now (X-240: seconds while it is working, minutes while it is not).
+     * `setAutoRefresh` is the SAME function the bridge's `accounts.autoRefresh`
+     * calls, so the button and the op flip one setting the same way.
+     */
+    autoRefresh(): { on: boolean; beat: { slotId: string; ms: number; active: boolean }[] };
+    setAutoRefresh(on: boolean): Promise<unknown>;
     /** who is the authority for which data — the item's first acceptance line,
      *  and it is only met if a person can SEE it */
     ownership(): OwnershipRow[];
@@ -299,6 +307,8 @@ function buildData(deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestRes
         // …and what each engine could do about one at all, which is what makes
         // the Capture picker offer only the engines it can really serve.
         accountEngines: deps.accountEngines(),
+        // X-241 — the switch and each slot's own beat, drawn on the section head
+        autoRefresh: deps.autoRefresh(),
         policies: deps.policies(),
         ownership: deps.ownership()
     };
@@ -456,6 +466,11 @@ export class EnginesPanel {
                 this.deps.queueAccountRefresh(
                     Array.isArray(msg.ids) ? msg.ids.map(String).filter(Boolean) : [],
                     msg.gesture === 'all' ? 'all' : 'toggle');
+                this.refresh();
+                break;
+            case 'accountsAutoRefresh':
+                // X-241 — the same function `accounts.autoRefresh` calls
+                await this.deps.setAutoRefresh(msg.on === true);
                 this.refresh();
                 break;
             case 'accountReauth': {

@@ -492,8 +492,21 @@ export function nextResetAt(list: SlotUsage[], ceiling = 100, now = Date.now()):
 export interface AccountUsageOptions {
     /** the slots to keep figures for; read fresh each time, so capture/forget lands */
     slots(): EngineAccountSlot[];
-    /** how long one slot's figures stay fresh */
-    ttlMs(): number;
+    /**
+     * How long one slot's figures stay fresh. ‼️ X-240 — PER SLOT when asked
+     * with one: a sign-in mid-turn is on the seconds beat, one nobody is
+     * running on is on the idle minutes, so five accounts of which two are
+     * working cost two fast readers and three slow ones rather than five fast.
+     * Asked with no slot it is the fleet-wide figure. 0 = automatic reads off.
+     */
+    ttlMs(slot?: EngineAccountSlot): number;
+    /**
+     * ‼️ X-241 — THE SWITCH. `false` and the timer's reads (`beat`) do nothing
+     * at all — no slot is chosen, no request is made — while a person's ⟳
+     * (`refresh` / `refreshSlot`) and the turn-boundary edge still work.
+     * Absent = on.
+     */
+    autoBeat?(): boolean;
     /** closest two AUTOMATIC reads may be — the user's own active interval */
     edgeFloorMs?(): number;
     cliVersion?(): string | undefined;
@@ -658,14 +671,20 @@ export class AccountUsageService {
             // asking for a named slot goes through `refreshSlot`, not here.
             && !(reason !== 'user' && this.rateLimitedFor(s.id)));
         if (!readable.length) { return undefined; }
-        const ttl = Math.max(0, this.opts.ttlMs());
         const due = readable.filter(s => {
-            const u = this.byId.get(s.id);
-            if (!u || !u.fetchedAt) { return true; }
             // ‼️ The TTL is per SLOT while the floor is per MACHINE. That pair is
             // what makes the round robin work: five slots on a 60 s TTL do not
-            // ask five times a minute, they take one turn each in order.
-            return reason !== 'beat' || now - u.fetchedAt >= ttl;
+            // ask five times a minute, they take one turn each in order. X-240 —
+            // and the TTL is each slot's OWN: a working sign-in's seconds, an
+            // idle one's minutes. A TTL of 0 is "automatic reads off" (the
+            // minutes setting at 0), so a beat then owes that slot nothing —
+            // measured before: 0 made every slot due on every tick.
+            if (reason !== 'beat') { return true; }
+            const ttl = Math.max(0, this.opts.ttlMs(s));
+            if (!ttl) { return false; }
+            const u = this.byId.get(s.id);
+            if (!u || !u.fetchedAt) { return true; }
+            return now - u.fetchedAt >= ttl;
         });
         if (!due.length) { return undefined; }
         // Oldest figures first; never read = oldest of all.
@@ -686,11 +705,12 @@ export class AccountUsageService {
      * apply is the per-slot TTL, because a walk of a sessions folder on every
      * paint is a cost of its own.
      */
-    private readTails(now: number, ttlMs: number): void {
+    private readTails(now: number): void {
         if (!this.opts.readSessionTail) { return; }
         for (const slot of this.opts.slots()) {
             const dir = slotSessionDir(slot);
             if (!dir) { continue; }
+            const ttlMs = Math.max(0, this.opts.ttlMs(slot));
             const had = this.byId.get(slot.id);
             if (had && had.fetchedAt && now - had.fetchedAt < ttlMs) { continue; }
             this.readTail(slot, ttlMs);
@@ -731,8 +751,11 @@ export class AccountUsageService {
 
     private read(reason: 'beat' | 'edge' | 'user'): Promise<SlotUsage[]> {
         const now = this.now();
+        // ‼️ X-241 — the switch is read before anything, file walks included:
+        // "off" means the timer costs nothing, not "costs no request".
+        if (reason === 'beat' && this.opts.autoBeat && !this.opts.autoBeat()) { return Promise.resolve(this.current()); }
         const slots = this.opts.slots();
-        this.readTails(now, Math.max(0, this.opts.ttlMs()));
+        this.readTails(now);
         const floor = reason === 'edge'
             ? Math.max(MIN_FETCH_INTERVAL_MS, this.opts.edgeFloorMs?.() ?? EDGE_READ_FLOOR_MS)
             : MIN_FETCH_INTERVAL_MS;

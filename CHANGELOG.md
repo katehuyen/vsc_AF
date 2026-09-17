@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.532.0 - every sign-in on its own quota beat, in the background, with a switch (X-239, X-240, X-241) (2026-09-17)
+
+- **‼️ THE USER'S RULE:** "five accounts, two of them working — those two on
+  the active interval (60 s), the other three on the idle one (5 min), smart,
+  and never all at once." Until this, the only timer calling the account
+  usage service's `beat()` was the Engines page's own — no page open, no
+  reading, and a rule such as `@emptiest` chose on figures nobody had read
+  since the last time somebody looked; and the TTL was one fleet-wide figure,
+  so one running turn put all five sign-ins on the fast beat.
+- **X-240 — the TTL is each slot's own.** `AccountUsageOptions.ttlMs(slot?)`
+  is asked with the slot in hand; the host answers `refreshMs(slotActive(id),
+  minutes, seconds)`. A slot is "working" when a live turn (`working`/`tool`,
+  never an idle open session) is placed on it by its LAUNCH MANIFEST
+  (`sessionAccountOf`, the one reader every surface uses); a live turn no
+  manifest places counts for the engine's standing sign-in. A TTL of 0 (the
+  minutes setting at 0) now makes a beat owe that slot nothing — measured
+  before: 0 made every slot due on every tick, so "automatic refresh off"
+  read the endpoint every five seconds while the Engines page was open.
+- **X-239 — the beat runs whether or not a page is open.** A background timer
+  at the request floor (5 s) asks the service; the service decides whether
+  any slot is due, whether the switch is on, whether the endpoint is backing
+  off, and reads at most one slot per tick — five accounts are never asked at
+  once, and a 429 still pauses the fleet. Off costs a timer and nothing else.
+- **X-241 — the switch.** `agentFarm.accountsAutoRefresh` (default on), read
+  by the service (`autoBeat`) before anything, file walks included; a
+  person's ⟳, "all engines" and the turn-boundary read still work. The
+  Engines page's Accounts head wears `⚡ Auto-refresh: ON/OFF` (lit / grey),
+  its AFTip MIRROR first ("Now: on — 1 of 5 on the fast beat") and then EVERY
+  sign-in's own beat with why (DENSITY: a fact a reader would otherwise infer
+  card by card). Bridge: `accounts.autoRefresh` (read, or `on` to write) —
+  the op and the button call ONE function; `accounts.list` carries the state.
+- Tests: `test_account_usage` (+12: two working slots read at 60 s while the
+  idle one waits its five minutes; the switch spends nothing and leaves ⟳
+  and the edge alone; TTL 0 owes nothing; the host wiring read from source),
+  `test_engines_page_accounts` (+11, ON and OFF scenes), `test_bridge` (+4),
+  parity manifest entry; fixture scene `enginesautooff`, photographed, the
+  button measured on the head row.
+
 ## 3.531.0 - a named rule may be the emptiest of the sign-ins it lists, and a task handed to the Console keeps its route, its sign-in and its discipline (X-324, X-106) (2026-09-17)
 
 - **‼️ X-106 step (2) — MEASURED: a task with `interactiveTarget: 'console'`

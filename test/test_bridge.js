@@ -5586,6 +5586,15 @@ const { opencodeStatus, syncToOpencode } =
         for (const op of ['policies.list', 'policies.save', 'policies.delete']) {
             ok('extension.ts registers ' + op, src.includes("op: '" + op + "'"));
         }
+        // ‼️ X-239/X-241 — the background quota beat's switch, read or flipped
+        ok('extension.ts registers accounts.autoRefresh', src.includes("op: 'accounts.autoRefresh'"));
+        const ar = cut("op: 'accounts.autoRefresh'", "op: 'accounts.reauth'");
+        ok('‼️ accounts.autoRefresh without `on` READS (the state function), with it WRITES through the function the Engines page\'s button calls',
+            /if \(want === undefined\) \{ return accountsAutoRefreshState\(\); \}/.test(ar)
+            && /return setAccountsAutoRefresh\(want === true\);/.test(ar) && /need\(typeof want === 'boolean'/.test(ar));
+        ok('…the describe says each sign-in has its own beat, that reads are never all at once, and what off still allows',
+            /each sign-in on ITS OWN beat \(X-240\)/.test(ar) && /Never all at /.test(ar) && /turn-boundary read still work/.test(ar));
+        ok('…and accounts.list carries the same state', /autoRefresh: accountsAutoRefreshState\(\)/.test(cut("op: 'accounts.list'", "op: 'accounts.autoRefresh'")));
         const pl = cut("op: 'policies.list'", "op: 'policies.save'");
         ok('‼️ policies.list answers from the ONE reader, never a list of its own',
             /policyRowsFor\(engine/.test(pl) && /BUILT_IN_POLICIES/.test(pl));

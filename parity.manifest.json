@@ -1165,6 +1165,15 @@
       ]
     },
     {
+      "capability": "consolePanel.ts#setIntent",
+      "ui": [
+        "page:consolePanel.ts#setIntent"
+      ],
+      "ops": [
+        "console.start"
+      ]
+    },
+    {
       "capability": "consolePanel.ts#setLiveAccount",
       "ui": [
         "page:consolePanel.ts#setLiveAccount"
@@ -1191,15 +1200,6 @@
         "kind": "visual",
         "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
       }
-    },
-    {
-      "capability": "consolePanel.ts#setIntent",
-      "ui": [
-        "page:consolePanel.ts#setIntent"
-      ],
-      "ops": [
-        "console.start"
-      ]
     },
     {
       "capability": "consolePanel.ts#setSessionColor",
@@ -1803,12 +1803,12 @@
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountReauth",
+      "capability": "enginesPanel.ts#accountComplete",
       "ui": [
-        "page:enginesPanel.ts#accountReauth"
+        "page:enginesPanel.ts#accountComplete"
       ],
       "ops": [
-        "accounts.reauth"
+        "accounts.complete"
       ]
     },
     {
@@ -1821,15 +1821,6 @@
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountComplete",
-      "ui": [
-        "page:enginesPanel.ts#accountComplete"
-      ],
-      "ops": [
-        "accounts.complete"
-      ]
-    },
-    {
       "capability": "enginesPanel.ts#accountForget",
       "ui": [
         "page:enginesPanel.ts#accountForget"
@@ -1839,12 +1830,30 @@
       ]
     },
     {
+      "capability": "enginesPanel.ts#accountReauth",
+      "ui": [
+        "page:enginesPanel.ts#accountReauth"
+      ],
+      "ops": [
+        "accounts.reauth"
+      ]
+    },
+    {
       "capability": "enginesPanel.ts#accountRefresh",
       "ui": [
         "page:enginesPanel.ts#accountRefresh"
       ],
       "ops": [
         "accounts.refresh"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#accountsAutoRefresh",
+      "ui": [
+        "page:enginesPanel.ts#accountsAutoRefresh"
+      ],
+      "ops": [
+        "accounts.autoRefresh"
       ]
     },
     {
@@ -1897,6 +1906,24 @@
       ]
     },
     {
+      "capability": "enginesPanel.ts#policyDelete",
+      "ui": [
+        "page:enginesPanel.ts#policyDelete"
+      ],
+      "ops": [
+        "policies.delete"
+      ]
+    },
+    {
+      "capability": "enginesPanel.ts#policySave",
+      "ui": [
+        "page:enginesPanel.ts#policySave"
+      ],
+      "ops": [
+        "policies.save"
+      ]
+    },
+    {
       "capability": "enginesPanel.ts#providerCopy",
       "ui": [
         "page:enginesPanel.ts#providerCopy"
@@ -1932,24 +1959,6 @@
       "ops": [
         "providers.add",
         "providers.set"
-      ]
-    },
-    {
-      "capability": "enginesPanel.ts#policyDelete",
-      "ui": [
-        "page:enginesPanel.ts#policyDelete"
-      ],
-      "ops": [
-        "policies.delete"
-      ]
-    },
-    {
-      "capability": "enginesPanel.ts#policySave",
-      "ui": [
-        "page:enginesPanel.ts#policySave"
-      ],
-      "ops": [
-        "policies.save"
       ]
     },
     {

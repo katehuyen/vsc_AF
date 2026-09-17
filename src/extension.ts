@@ -85,7 +85,7 @@ import {
 import { LiveMonitor, LiveSession, mirrorOwns } from './core/live';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
-import { PlanUsageService, refreshMs } from './core/planusage';
+import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
 import { EngineUsage, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
 import {
     AgentEngineDefaults, agentKey, agentSeedDefault, resolveDefault, storedAccount, storedDefault,
@@ -17990,11 +17990,40 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return taskManager.tasks.some(t => t.account === slotId
             && (t.status === 'running' || t.status === 'queued'));
     };
+    /**
+     * ‼️ X-240 — WHICH SIGN-IN IS MID-TURN RIGHT NOW. The user's rule: "five
+     * accounts, two of them working — those two on the active interval, the
+     * other three on the idle one, and never all at once." A session is placed
+     * on its account by its LAUNCH MANIFEST (`sessionAccountOf`, the one reader
+     * every surface uses); a live turn no manifest places runs on whatever the
+     * engine is standing on, so it counts for that slot. Only a turn that is
+     * actually running counts — an open session waiting for a prompt spends
+     * nothing, which is the distinction the whole beat switches on.
+     */
+    const slotActive = (slotId: string): boolean => {
+        const standing = activeAccounts();
+        return live.sessions().some(s => {
+            if (s.status !== 'working' && s.status !== 'tool') { return false; }
+            const own = sessionAccountOf(s.sessionId)?.id;
+            if (own) { return own === slotId; }
+            return standing[String(s.source || 'claude').trim().toLowerCase()] === slotId;
+        });
+    };
+    /** One slot's own beat: the user's seconds while it is working, their minutes otherwise. */
+    const slotBeatMs = (slot: EngineAccountSlot): number => refreshMs(
+        slotActive(slot.id),
+        Math.max(0, cfg().get<number>('planUsageRefreshMinutes', 5)),
+        Math.max(0, cfg().get<number>('planUsageActiveRefreshSeconds', 60)));
+    /** ‼️ X-241 — the switch every automatic account read obeys. */
+    const accountsAutoRefresh = (): boolean => cfg().get<boolean>('accountsAutoRefresh', true);
     const accountUsage = new AccountUsageService({
         slots: () => storedAccounts(),
-        // The same interval the single-account card is tuned to, deliberately:
-        // two refresh policies in one codebase is how one of them ends up wrong.
-        ttlMs: planBeatMs,
+        // The same two intervals the single-account card is tuned to,
+        // deliberately: two refresh policies in one codebase is how one of them
+        // ends up wrong. X-240 — but applied PER SLOT: asked about one, its own
+        // beat; asked about the fleet, the fleet's.
+        ttlMs: slot => slot ? slotBeatMs(slot) : planBeatMs(),
+        autoBeat: accountsAutoRefresh,
         edgeFloorMs: planEdgeFloorMs,
         cliVersion: installedCliVersion,
         busy: accountIsBusy,
@@ -18015,6 +18044,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         readSessionTail: (slot, dir) => (String(slot.engine || '').toLowerCase() === 'codex'
             ? readCodexUsage(usageProbe, p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } }, dir)
             : undefined)
+    });
+    /**
+     * ‼️ X-239 — THE BEAT RUNS WHETHER OR NOT A PAGE IS OPEN. Until this, the
+     * only timer calling `beat()` was the Engines page's own, so a machine with
+     * five sign-ins and no page open held figures nobody had read since the
+     * last time somebody looked — and a rule such as @emptiest chose on them.
+     * This ticks at the request floor and ASKS; the service decides whether any
+     * slot is due (each on its own beat, X-240), whether the switch is on
+     * (X-241), whether the endpoint is backing off, and reads at most one slot
+     * per tick — so five accounts are never asked at once. Off costs a timer
+     * and nothing else.
+     */
+    const accountBeat = setInterval(() => { void accountUsage.beat(); }, MIN_FETCH_INTERVAL_MS);
+    context.subscriptions.push({ dispose: () => clearInterval(accountBeat) });
+    /**
+     * ‼️ X-241 — ONE WRITER for the switch, so the Engines page's button and
+     * the bridge op flip the same setting the same way and read back the same
+     * answer. Global, because the sign-ins are this machine's.
+     */
+    const setAccountsAutoRefresh = async (on: boolean): Promise<{ on: boolean; beat: { slotId: string; ms: number; active: boolean }[] }> => {
+        await cfg().update('accountsAutoRefresh', on, vscode.ConfigurationTarget.Global);
+        EnginesPanel.refreshIfOpen();
+        if (on) { void accountUsage.beat(); }
+        return accountsAutoRefreshState();
+    };
+    const accountsAutoRefreshState = (): { on: boolean; beat: { slotId: string; ms: number; active: boolean }[] } => ({
+        on: accountsAutoRefresh(),
+        beat: storedAccounts().map(s => ({ slotId: s.id, ms: slotBeatMs(s), active: slotActive(s.id) }))
     });
     /**
      * ‼️ X-261 — THE FLEET'S OWN MEMORY OF WHICH SIGN-INS ARE DOWN.
@@ -20592,6 +20649,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // The SAME interval the single-account card is tuned to. One number,
         // one place, because two refresh policies is how one of them ends up wrong.
         accountBeatMs: planBeatMs,
+        // X-241 — the switch, and the one writer the bridge op also calls
+        autoRefresh: accountsAutoRefreshState,
+        setAutoRefresh: setAccountsAutoRefresh,
         /**
          * ‼️ X-172 — THE PAGE'S BUTTONS AND THE BRIDGE'S OPS ARE THE SAME THREE
          * FUNCTIONS. A page that reimplemented "seal this sign-in" would be a
@@ -36503,8 +36563,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     accounts: list.map(s => publicAccount(s, usage, active)),
                     active, root: accountRoot,
                     rateLimitedUntil: accountUsage.rateLimitedUntil() || null,
-                    engines: accountEngineNotes()
+                    engines: accountEngineNotes(),
+                    // X-241 — whether the background beat is on, and each slot's own beat
+                    autoRefresh: accountsAutoRefreshState()
                 };
+            }
+        },
+        {
+            op: 'accounts.autoRefresh',
+            describe: '‼️ X-239/X-241 — THE BACKGROUND QUOTA BEAT, read or switched. Agent Farm '
+                + 're-reads every captured sign-in\'s window figures on its own, page open or not, '
+                + 'each sign-in on ITS OWN beat (X-240): `planUsageActiveRefreshSeconds` (default 60 s) '
+                + 'while a turn is running on it, `planUsageRefreshMinutes` (default 5 min) while '
+                + 'nothing is — a session is placed on its sign-in by its launch manifest, and a live '
+                + 'turn no manifest places counts for the engine\'s standing sign-in. Never all at '
+                + 'once: at most one request per ' + String(MIN_FETCH_INTERVAL_MS / 1000) + ' s across '
+                + 'the machine, and a 429 puts the whole fleet into the shared backoff. With `on` the '
+                + 'switch is written to `agentFarm.accountsAutoRefresh` (user settings) and the answer '
+                + 'is the new state; without it, the current one. `off` costs a timer and nothing '
+                + 'else — a person\'s ⟳ on a card and the turn-boundary read still work, and so does '
+                + '`planUsageRefreshMinutes: 0`, which is the older way of saying the same. Answer: '
+                + '`on`, `beat` (per slot: `ms`, `active`). args: on? (boolean)',
+            handler: async (args) => {
+                const want = (args as Record<string, unknown>).on;
+                if (want === undefined) { return accountsAutoRefreshState(); }
+                need(typeof want === 'boolean', '`on` is true or false.');
+                return setAccountsAutoRefresh(want === true);
             }
         },
         {

@@ -744,6 +744,94 @@ async function main() {
             !ext.includes('for (const id of health?.newlyDown'));
     }
 
+    // ---------- ‼️ X-240: each slot on ITS OWN beat — the working ones fast, the idle ones slow ----------
+    {
+        // a and b are "working" (60 s), c is idle (5 min); the harness's ttlMs
+        // is replaced by a per-slot one, which is the whole item.
+        const working = new Set(['a', 'b']);
+        const slots = [slot('a'), slot('b'), slot('c')];
+        const calls = [];
+        let clock = NOW;
+        const service = new AccountUsageService({
+            slots: () => slots,
+            ttlMs: (s) => (s ? (working.has(s.id) ? 60_000 : 300_000) : 60_000),
+            now: () => clock,
+            readCreds: (file) => ({ token: 'tok-' + path.basename(path.dirname(file)), expiresAt: clock + 3600_000, plan: 'pro' }),
+            fetchImpl: async (token) => { calls.push(token); return { status: 200, body: payload(10, clock + 3600_000) }; },
+            refreshImpl: async () => ({ kind: 'rejected', reason: 'n/a' })
+        });
+        const tick = (ms) => { clock += ms; };
+        for (let i = 0; i < 3; i++) { await service.beat(); tick(10_000); }
+        ok('X-240: the first pass reads all three once, one per turn', calls.length === 3 && new Set(calls).size === 3);
+        tick(45_000); // 75 s after a's read
+        await service.beat(); tick(10_000); await service.beat(); tick(10_000); await service.beat();
+        ok('‼️ X-240: after 60 s the two WORKING slots are read again and the idle one is not',
+            calls.length === 5 && calls.slice(3).every(t => t !== 'tok-c'));
+        tick(300_000);
+        await service.beat();
+        ok('…and the idle slot takes its turn once its own five minutes are up', calls.length === 6 && calls[5] === 'tok-c');
+        const coreSrc = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'core', 'accountUsage.ts'), 'utf8');
+        ok('‼️ the service asks the TTL with the slot in hand (so the host can answer per sign-in)',
+            /this\.opts\.ttlMs\(s\)/.test(coreSrc) && /this\.opts\.ttlMs\(slot\)/.test(coreSrc));
+    }
+
+    // ---------- ‼️ X-241: the switch, and a TTL of 0 meaning "no automatic reads" ----------
+    {
+        let on = false;
+        const { service, calls, tick } = svc([slot('a'), slot('b')], {});
+        // the harness has no `autoBeat`; a second service with one, same fakes
+        const c2 = [];
+        let clock = NOW;
+        const s2 = new AccountUsageService({
+            slots: () => [slot('a'), slot('b')],
+            ttlMs: () => 60_000,
+            autoBeat: () => on,
+            now: () => clock,
+            readCreds: (file) => ({ token: 'tok-' + path.basename(path.dirname(file)), expiresAt: clock + 3600_000, plan: 'pro' }),
+            fetchImpl: async (token) => { c2.push(token); return { status: 200, body: payload(10, clock + 3600_000) }; },
+            refreshImpl: async () => ({ kind: 'rejected', reason: 'n/a' })
+        });
+        await s2.beat(); clock += 10_000; await s2.beat();
+        ok('‼️ X-241: with the switch off a beat spends NOTHING — no slot is chosen, no request is made', c2.length === 0);
+        await s2.refresh();
+        ok('…while a person\'s ⟳ still reads (the switch is about the timer, not the button)', c2.length === 1);
+        clock += 120_000; await s2.readOnEdge();
+        ok('…and the turn-boundary read still reads', c2.length === 2);
+        on = true; clock += 60_000; await s2.beat();
+        ok('switched on, the next beat reads again', c2.length === 3);
+        ok('a service given no `autoBeat` beats as before (absent = on)', (await service.beat(), calls.length === 1));
+
+        // planUsageRefreshMinutes: 0 → ttl 0 → "automatic refresh off", NOT "always due"
+        const c3 = [];
+        const s3 = new AccountUsageService({
+            slots: () => [slot('a')], ttlMs: () => 0, now: () => clock,
+            readCreds: (file) => ({ token: 'tok-' + path.basename(path.dirname(file)), expiresAt: clock + 3600_000, plan: 'pro' }),
+            fetchImpl: async (token) => { c3.push(token); return { status: 200, body: payload(10, clock + 3600_000) }; },
+            refreshImpl: async () => ({ kind: 'rejected', reason: 'n/a' })
+        });
+        await s3.beat(); clock += 10_000; await s3.beat();
+        ok('‼️ a TTL of 0 (the minutes setting at 0) makes a beat owe nothing — measured before: it made every slot due on every tick', c3.length === 0);
+        await s3.refresh();
+        ok('…and a person\'s ⟳ still reads at TTL 0', c3.length === 1);
+        tick(0);
+    }
+
+    // ---------- ‼️ X-239: the beat runs whether or not a page is open ----------
+    {
+        const ext = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+        ok('X-239: a background timer calls accountUsage.beat() at the request floor and is disposed with the extension',
+            /const accountBeat = setInterval\(\(\) => \{ void accountUsage\.beat\(\); \}, MIN_FETCH_INTERVAL_MS\);/.test(ext)
+            && /dispose: \(\) => clearInterval\(accountBeat\)/.test(ext));
+        ok('X-240: the host answers the TTL per slot — its own beat when asked with one, the fleet\'s otherwise',
+            /ttlMs: slot => slot \? slotBeatMs\(slot\) : planBeatMs\(\)/.test(ext));
+        ok('…a slot is "working" by the launch manifest (sessionAccountOf), else the engine\'s standing sign-in takes the unplaced turn',
+            /const slotActive = \(slotId: string\): boolean =>[\s\S]{0,700}sessionAccountOf\(s\.sessionId\)\?\.id[\s\S]{0,300}standing\[String\(s\.source \|\| 'claude'\)/.test(ext));
+        ok('…only a RUNNING turn counts, not an open idle session', /if \(s\.status !== 'working' && s\.status !== 'tool'\) \{ return false; \}/.test(ext.slice(ext.indexOf('const slotActive'), ext.indexOf('const slotActive') + 900)));
+        ok('X-241: the switch is one setting, read by the service (autoBeat), written by ONE function the page and the op share',
+            /autoBeat: accountsAutoRefresh,/.test(ext) && /const setAccountsAutoRefresh = async \(on: boolean\)/.test(ext)
+            && /setAutoRefresh: setAccountsAutoRefresh,/.test(ext) && /return setAccountsAutoRefresh\(want === true\);/.test(ext));
+    }
+
     console.log(`${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 }

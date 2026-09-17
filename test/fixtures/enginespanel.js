@@ -462,6 +462,18 @@ const data = () => {
     // ‼️ X-305 — the SMALLEST arity is the default scene: no rule of the
     // user's own, only the built-in four. The scenes with rules are below.
     d.policies = policiesFor(d.accounts, []);
+    // X-241 — the switch and each slot's own beat: work@studio has a turn
+    // running (the 60 s beat), the rest are idle (the 5 min one).
+    d.autoRefresh = {
+        on: true,
+        beat: d.accounts.map(a => ({ slotId: a.id, ms: a.id === 'work-1' ? 60_000 : 300_000, active: a.id === 'work-1' }))
+    };
+    return d;
+};
+/** X-241 — the switch OFF: grey button, the panel saying what still works. */
+const autoOffData = () => {
+    const d = data();
+    d.autoRefresh = { on: false, beat: d.autoRefresh.beat.map(b => ({ ...b, ms: 0, active: false })) };
     return d;
 };
 
@@ -620,6 +632,7 @@ module.exports = {
         { id: 'enginesincomplete', label: 'Engines panel — a slot missing three clauses of its contract', data: incompleteData() },
         { id: 'enginesoneslot', label: 'Engines panel — a single captured account', data: oneSlotData() },
         { id: 'enginessignin', label: 'Engines panel — a sign-in running out, and one dead while the machine is signed in as it', data: signinData() },
+        { id: 'enginesautooff', label: 'Engines panel — the background quota beat switched OFF (X-241)', data: autoOffData() },
         { id: 'enginesonerule', label: 'Engines panel — one account rule of the user\'s own', data: oneRuleData() },
         { id: 'enginesrules', label: 'Engines panel — four rules: a chain, a walled one, one stepping through another, an emptiest one over three slots', data: rulesData() },
         {

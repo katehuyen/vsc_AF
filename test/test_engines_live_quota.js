@@ -135,6 +135,8 @@ const deps = {
     copyProfile: async () => [],
     profileKey: () => { },
     accountBeatMs: () => 60000,
+    autoRefresh: () => ({ on: true, beat: [] }),
+    setAutoRefresh: async () => ({ on: true, beat: [] }),
     // ‼️ THE DEP THIS ITEM ADDS. One live reading, the service's own round
     // robin behind it; the panel never names an account and never counts.
     readAccounts: () => {

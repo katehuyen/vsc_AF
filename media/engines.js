@@ -1226,6 +1226,37 @@
     }
 
     /**
+     * ‼️ X-241 — THE AUTO-REFRESH SWITCH, on the section head. Lit while the
+     * background beat is on, grey while it is off; the AFTip is MIRROR first
+     * ("Now: on") and then the DENSITY half: every sign-in's own beat (X-240 —
+     * seconds while a turn is running on it, minutes otherwise), which a
+     * reader would otherwise have to infer card by card. Pressing it flips the
+     * one setting the bridge's `accounts.autoRefresh` flips.
+     */
+    function autoRefreshHtml(list) {
+        const T = window.AFTip;
+        const ar = DATA.autoRefresh || { on: true, beat: [] };
+        const on = ar.on !== false;
+        const many = new Set(list.map(a => a.engine)).size > 1;
+        const name = (id) => { const a = list.find(x => x.id === id); return a ? (many ? engineLabel(a.engine) + ' · ' : '') + a.label : id; };
+        const sec = (ms) => ms >= 120000 ? Math.round(ms / 60000) + ' min' : Math.round(ms / 1000) + ' s';
+        const rows = (ar.beat || []).map(b => name(b.slotId) + ': ' + (b.ms ? 'every ' + sec(b.ms) : 'off') + (b.active ? ' — a turn is running on it' : ' — idle'));
+        const working = (ar.beat || []).filter(b => b.active).length;
+        return T.wrap('<button class="secondary small acauto' + (on ? ' a-on' : ' a-off') + '" data-acauto="' + (on ? '0' : '1') + '">'
+            + '⚡ Auto-refresh: ' + (on ? 'ON' : 'OFF') + '</button>',
+            'Now: ' + (on ? 'on' : 'off') + (on ? ' — ' + working + ' of ' + (ar.beat || []).length + ' on the fast beat' : ''),
+            T.lines([
+                on
+                    ? 'Every sign-in\'s figures are re-read in the background, page open or not, each on its own beat — the seconds setting while a turn is running on it, the minutes setting while nothing is — and never all at once: one request per five seconds across the machine, and a 429 pauses the whole fleet.'
+                    : 'Nothing is read on its own. The ⟳ on a card, "all engines" and the read at a turn boundary still work. Press to switch the background beat back on.',
+                rows.length ? T.GAP : '',
+                rows.length ? rows.join('\n') : '',
+                T.GAP,
+                'Kept in agentFarm.accountsAutoRefresh; the accounts.autoRefresh bridge op flips the same switch.'
+            ]));
+    }
+
+    /**
      * ‼️ X-172 — THE SIGN-INS THIS MACHINE HOLDS, AND THE THREE GESTURES.
      *
      * The chip slice made the page SAY which account each engine is plugged
@@ -1274,6 +1305,7 @@
             + '<div class="posech">'
             + '<h3 class="potitle">Accounts</h3>'
             + '<span class="grow"></span>'
+            + autoRefreshHtml(list)
             + allEnginesRefreshHtml(list)
             + '</div>'
             + '<p class="englede">More than one sign-in of the same engine, without signing in and out. '
@@ -1783,6 +1815,10 @@
                 .engacct.a-on { border-style:solid; opacity:1;
                     border-color:var(--vscode-charts-blue,#4a9eff);
                     color:var(--vscode-charts-blue,#4a9eff); }
+                /* X-241 — the auto-refresh switch: lit while on, grey while off */
+                .acauto.a-on { border-color:var(--vscode-charts-blue,#4a9eff);
+                    color:var(--vscode-charts-blue,#4a9eff); }
+                .acauto.a-off { opacity:.55; }
                 .engbill { font-size:12px; opacity:.75; margin-top:6px; max-width:820px; }
                 .engnext { font-size:12px; margin-top:5px; max-width:820px; }
                 .engdetail { margin-top:2px; }
@@ -2076,6 +2112,9 @@
         document.querySelectorAll('[data-acmain]').forEach(b =>
             b.addEventListener('click', () => post({
                 type: 'accountActivate', id: '', engine: b.dataset.acmain })));
+        // X-241 — the switch posts the state it wants; the host writes the setting
+        document.querySelectorAll('[data-acauto]').forEach(b =>
+            b.addEventListener('click', () => post({ type: 'accountsAutoRefresh', on: b.dataset.acauto === '1' })));
         // X-206 — one id is a TOGGLE: press a waiting card again and it leaves
         // the line. The page names slots and never counts requests or intervals.
         document.querySelectorAll('[data-acrefresh]').forEach(b =>

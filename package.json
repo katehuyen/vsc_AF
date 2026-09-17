@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.531.0",
+  "version": "3.532.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8531,6 +8531,11 @@
           "type": "boolean",
           "default": true,
           "description": "Keep your plan's session countdown and usage percentages in the VS Code status bar — \"3h 49m - 86% / wk 41%\": time left in the current session window, how much of it is gone, and how much of the week. Visible while you work without opening anything. Hover for every limit with its reset time and the beat it is running on, click for the Dashboard card. Hidden automatically on a machine with no Claude subscription login (API key / Bedrock / Vertex)."
+        },
+        "agentFarm.accountsAutoRefresh": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-read every captured sign-in's window figures in the background, page open or not — each sign-in on its own beat: planUsageActiveRefreshSeconds while a turn is running on it, planUsageRefreshMinutes while nothing is, and never all at once (one request per five seconds across the machine; a 429 pauses the whole fleet). Off costs nothing: the ⟳ on a card, the \"Refresh all\" line and the turn-boundary read still work. The Engines page's Auto-refresh button and the accounts.autoRefresh bridge op flip this same setting."
         },
         "agentFarm.planUsageEngine": {
           "type": "string",
