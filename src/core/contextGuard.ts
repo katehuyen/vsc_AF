@@ -300,6 +300,105 @@ export class ContextGuard {
     }
 }
 
+export type ContextSignalState = 'quiet' | 'delivered' | 'undelivered';
+
+/** What a surface says about the signal — the words, derived once. */
+export interface ContextSignalView {
+    state: ContextSignalState;
+    level?: ContextLevel;
+    /** SHORTHAND for a dense strip; '' while no line has been crossed. */
+    chip: string;
+    /** The whole reading, one fact per line (AFTip). */
+    lines: string[];
+    /** A handover note has named this session. */
+    handedOver: boolean;
+}
+
+const CHANNEL_LABEL: Record<ContextChannel, string> = {
+    'claude-hook': 'Claude live hook',
+    none: 'no channel'
+};
+
+/**
+ * ‼️ S-64 (2/n) — THE SENTENCE A SURFACE SHOWS, BUILT IN ONE PLACE.
+ *
+ * The Console card and a session's own page answer the same question — "was
+ * this run told, and did it obey?" — and a second copy of the answer is a
+ * second version of it. The record is data; this is what a reader gets, so
+ * the host derives it and every page renders the same words.
+ *
+ * ‼️ AND AN ENGINE WITH NO CHANNEL SAYS SO IN THE SAME BREATH. A card that
+ * draws a percentage past the line and stays silent reads as "told and
+ * ignored"; `undelivered` is the one state that must never look like the
+ * quiet one.
+ *
+ * `ago` is the page's own relative-time formatter, passed in so a line carries
+ * the page's phrasing rather than a second time format; without it the lines
+ * simply carry no "when".
+ */
+export function contextSignalView(
+    rec: ContextSignalRecord | undefined,
+    thresholds: ContextThresholds,
+    ago?: (ts: number) => string
+): ContextSignalView {
+    const t = normalizeThresholds(thresholds);
+    const when = (ts: number): string => (ago ? ` — ${ago(ts)}` : '');
+    const law = `Lines: converge ${t.convergePct > 0 ? t.convergePct + '%' : 'off'} · hand over `
+        + `${t.handoverPct > 0 ? t.handoverPct + '%' : 'off'} (agentFarm.contextConvergePct / contextHandoverPct).`;
+    const word = (l: ContextLevel): string => (l === 'handover' ? CONTEXT_HANDOVER_WORD : CONTEXT_CONVERGE_WORD);
+    // SHORTHAND — the chip sits beside a figure already labelled `ctx`, so the
+    // word "CONTEXT" in front of it is a repeat; the panel opens with the law's
+    // full wording.
+    const chipWord = (l: ContextLevel): string => word(l).replace('CONTEXT ', '');
+    const handedOver = !!rec?.handedOver;
+    const handedLine = rec?.handedOver
+        ? `Handed over: yes${when(rec.handedOver.ts)} — ${rec.handedOver.note}`
+        : 'Handed over: not yet — the note that closes this run names it here.';
+
+    const delivery = rec?.handover ?? rec?.converge;
+    if (rec && delivery) {
+        const level: ContextLevel = rec.handover ? 'handover' : 'converge';
+        const lines = [
+            `Discipline signal: ${word(level)} ${delivery.pct}% delivered${when(delivery.ts)}, `
+                + `through the ${CHANNEL_LABEL[delivery.channel]}${delivery.via ? ` (${delivery.via})` : ''}.`
+        ];
+        if (level === 'handover' && rec.converge && rec.converge.ts !== rec.handover?.ts) {
+            lines.push(`${CONTEXT_CONVERGE_WORD} ${rec.converge.pct}% had gone out earlier${when(rec.converge.ts)}.`);
+        }
+        if (level === 'converge') {
+            lines.push(t.handoverPct > 0
+                ? `${CONTEXT_HANDOVER_WORD} ${t.handoverPct}%: not reached — the run may still work, but starts nothing new.`
+                : `${CONTEXT_HANDOVER_WORD}: switched off, so nothing will stop this run.`);
+        }
+        lines.push(handedLine, law);
+        return { state: 'delivered', level, chip: chipWord(level), lines, handedOver };
+    }
+
+    if (rec?.undelivered) {
+        const u = rec.undelivered;
+        return {
+            state: 'undelivered',
+            level: u.level,
+            chip: `${chipWord(u.level)} ✕`,
+            lines: [
+                `Discipline signal: ${word(u.level)} ${u.pct}% — ‼️ NEVER REACHED THIS RUN${when(u.ts)}.`,
+                u.why,
+                'The reading is here and the sentence is not: this run was not told, so its '
+                    + 'silence is not obedience. Watch it yourself, or hand it over by hand.',
+                law
+            ],
+            handedOver
+        };
+    }
+
+    return {
+        state: 'quiet',
+        chip: '',
+        lines: [`Discipline signal: nothing sent — no line crossed yet.`, law],
+        handedOver
+    };
+}
+
 /**
  * ‼️ THE FRESHEST READING A CLAUDE HOOK CAN GIVE: the transcript the payload
  * itself names. The last assistant line that really went to the model carries

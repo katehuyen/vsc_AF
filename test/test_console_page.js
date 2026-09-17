@@ -1205,6 +1205,37 @@ const intentOf = (o) => Object.assign({
     ok('‼️ no capacity means no percentage, not a guessed one',
         /ctx 220471t/.test(status()) && !/ · \d+%/.test(status()));
 
+    // ‼️ S-64 — WAS THE RUN TOLD? A figure past the line and nothing beside it
+    // reads as an agent ignoring the law. The words are the host's
+    // (`contextSignalView`), so the page only has to place them — and to place
+    // NOTHING while no line has been crossed.
+    const sigged = (view) => data(CONVO.slice(), {
+        contextTokens: 410000, contextWindowTokens: 1000000, contextSignalView: view
+    });
+    push(sigged(null));
+    ok('no crossing draws no chip — the strip is the reading alone',
+        /ctx 410000t \/ 1000000t/.test(status()) && !/CONVERGE|HANDOVER/.test(status()));
+    push(sigged({
+        state: 'delivered', level: 'handover', chip: 'HANDOVER', handedOver: false,
+        lines: ['Discipline signal: CONTEXT HANDOVER 41% delivered — 1m ago, through the Claude live hook (PostToolUse).']
+    }));
+    ok('a delivered handover puts the law\'s word on the strip, in the stop colour',
+        /· <span class="ctxsig stop">HANDOVER<\/span>/.test(status()));
+    ok('…and the whole delivery is one hover away',
+        /CONTEXT HANDOVER 41% delivered/.test(status()));
+    push(sigged({
+        state: 'undelivered', level: 'handover', chip: 'HANDOVER ✕', handedOver: false,
+        lines: ['Discipline signal: CONTEXT HANDOVER 44% — NEVER REACHED THIS RUN — 2m ago.']
+    }));
+    ok('‼️ a crossing the engine has no channel for is marked ✕, never left looking like silence',
+        /class="ctxsig bad">HANDOVER ✕</.test(status()));
+    push(sigged({
+        state: 'delivered', level: 'handover', chip: 'HANDOVER', handedOver: true,
+        lines: ['Handed over: yes — 30s ago — devir.md']
+    }));
+    ok('an order that was obeyed stops shouting and says so',
+        /class="ctxsig done">HANDOVER ✓</.test(status()));
+
     // A reading larger than the window is two moments, not a full bar.
     push(data(CONVO.slice(), { contextTokens: 300000, contextWindowTokens: 258400 }));
     ok('‼️ tokens > window draws no percentage and says why',

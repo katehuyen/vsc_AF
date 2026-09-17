@@ -83,7 +83,7 @@ import {
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
 import { cliSourceOf, LiveMonitor, LiveSession, mirrorOwns } from './core/live';
-import { ContextGuard, contextLevelFor, ContextReadHint, DEFAULT_CONTEXT_THRESHOLDS, lastCallFromTranscriptTail, normalizeThresholds } from './core/contextGuard';
+import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, DEFAULT_CONTEXT_THRESHOLDS, lastCallFromTranscriptTail, normalizeThresholds } from './core/contextGuard';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
@@ -10238,7 +10238,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.contextGuard',
-            describe: '‼️ S-64 — THE CONTEXT DISCIPLINE SIGNAL: the two thresholds (converge / handover, percent of the window, 0 = off) and what has been said to which session. The handover law (_REF/handover.md) binds a run to the window at 35% (start nothing new) and 40% (stop and hand over), and an agent cannot see its own fill — so Agent Farm reads it (the live stream, the transcript\'s last call, the index) and tells the session ONCE per line, as the answer to its next PostToolUse/UserPromptSubmit hook (Claude Code puts that answer into the model\'s context). `records`: per session — `converge`/`handover` {ts, pct, tokens, window, channel, via} when delivered, `undelivered` {level, pct, why} when the engine\'s hooks carry no channel, `lastPct`/`lastTs` the last reading seen, `handedOver` when a handover note named it. args: id? (one session: its record AND its window reading right now — tokens, window, pct, source — from whichever source has one), limit? (records, default 50)',
+            describe: '‼️ S-64 — THE CONTEXT DISCIPLINE SIGNAL: the two thresholds (converge / handover, percent of the window, 0 = off) and what has been said to which session. The handover law (_REF/handover.md) binds a run to the window at 35% (start nothing new) and 40% (stop and hand over), and an agent cannot see its own fill — so Agent Farm reads it (the live stream, the transcript\'s last call, the index) and tells the session ONCE per line, as the answer to its next PostToolUse/UserPromptSubmit hook (Claude Code puts that answer into the model\'s context). `records`: per session — `converge`/`handover` {ts, pct, tokens, window, channel, via} when delivered, `undelivered` {level, pct, why} when the engine\'s hooks carry no channel, `lastPct`/`lastTs` the last reading seen, `handedOver` when a handover note named it. With `id` it also answers `view` — the SENTENCES the Console card and the session\'s own page are showing for it (state: quiet | delivered | undelivered, a chip and one fact per line), so an agent reads exactly what a human watching the run reads. args: id? (one session: its record, its `view` AND its window reading right now — tokens, window, pct, source — from whichever source has one), limit? (records, default 50)',
             handler: (args) => {
                 const id = optStr(args, 'id');
                 const t = contextGuard.thresholds();
@@ -10252,7 +10252,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             ? { tokens: reading.tokens, window: reading.window ?? null, pct: contextPercent(reading) ?? null, source: reading.source ?? null, stale: !!reading.stale }
                             : null,
                         level: contextLevelFor(contextPercent(reading), t) ?? null,
-                        record: contextGuard.record(id) ?? null
+                        record: contextGuard.record(id) ?? null,
+                        // The same sentences the Console card and the session's
+                        // own page draw — an agent asking the bridge gets the
+                        // reading AND what a human watching it is being told.
+                        view: contextSignalView(contextGuard.record(id), t, relTime)
                     };
                 }
                 const limit = Math.max(1, Math.min(500, optNum(args, 'limit', 50)));
@@ -11663,6 +11667,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // on an engine whose hooks carry no channel. Null = no line
                     // crossed yet (sessions.contextGuard has the thresholds).
                     contextSignal: (s.sessionId && contextGuard.record(s.sessionId)) || null,
+                    // …and the WORDS for it, derived host-side so this card and a
+                    // session's own page can never word the same state differently.
+                    contextSignalView: contextSignalView(
+                        (s.sessionId && contextGuard.record(s.sessionId)) || undefined,
+                        contextGuard.thresholds(), relTime),
                     pendingPermission: s.pendingPermission?.detail ?? null,
                     // ‼️ The turn is OPEN and standing still until this is
                     // answered — `status` alone still says "working", which is
@@ -21234,6 +21243,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             const forced = cfg().get<number>('contextWindowTokens', 0);
             return forced > 0 ? forced : contextWindowFor(model);
         },
+        contextSignalFor: (sessionId: string) =>
+            contextSignalView(contextGuard.record(sessionId), contextGuard.thresholds(), relTime),
         titleFor: (sessionId: string) => sessionTitles()[sessionId],
         // The shelf, read straight from the marks store — the same one the
         // trees, the Dashboard rows and the right-click menu use, so the ★ on a

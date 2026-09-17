@@ -296,6 +296,17 @@
            "ctx" on one line and "132.0k" on the next is not a reading. */
         .srow .m.wrap { white-space:normal; }
         .srow .m .pair { white-space:nowrap; }
+        /* S-64: the discipline signal beside the window figure on the status
+           strip. Colour and weight carry it — the strip dims the whole row and
+           a child cannot climb back out of that, so the word is made to
+           stand out within the strip rather than against it. Three states:
+           told, told to stop, and a crossing that never reached the run (✕,
+           which the view puts on the chip). */
+        .ctxsig { font-weight:600; letter-spacing:.2px;
+            color:var(--vscode-editorWarning-foreground, #cca700); }
+        .ctxsig.stop, .ctxsig.bad { color:var(--vscode-errorForeground, #f14c4c); }
+        /* An order that was obeyed is not a warning any more. */
+        .ctxsig.done { color:var(--vscode-descriptionForeground); font-weight:500; }
         /* ---- whose turn is it (see phaseOf) --------------------------------
            A card carries its phase three ways at once — a coloured edge, a dot
            and a WORD — so it survives a light theme, a colourblind reader and a
@@ -1460,6 +1471,24 @@
         'transcript-last-call': 'the transcript, read when this session was resumed',
         'engine-reported': 'the engine\'s own reading'
     };
+    /**
+     * ‼️ S-64 — THE SIGNAL STATE ON THE STRIP. A percentage past the handover
+     * line and nothing else reads as "this run was told and ignored it", which
+     * on an engine with no channel is a lie about the agent. So the word the
+     * run was sent rides beside the figure, and a crossing that never reached
+     * it is marked ✕ rather than left looking like silence.
+     *
+     * The words themselves are the host's (`contextSignalView`), so this card
+     * and the session's own page cannot word the same state differently.
+     */
+    const ctxSigChip = (s) => {
+        const v = s.contextSignalView;
+        if (!v || !v.chip) { return ''; }
+        const cls = v.handedOver ? 'ctxsig done'
+            : v.state === 'undelivered' ? 'ctxsig bad'
+                : v.level === 'handover' ? 'ctxsig stop' : 'ctxsig';
+        return ` · <span class="${cls}">${C.esc(v.chip)}${v.handedOver ? ' ✓' : ''}</span>`;
+    };
     /** MIRROR — the current value first, then what it means. */
     const ctxTip = (s) => {
         const pct = ctxPct(s);
@@ -1489,7 +1518,9 @@
                 'This is what the window is HOLDING after the last model call. '
                     + 'What the conversation has SPENT is the figure beside it and can '
                     + 'exceed the window many times over — a turn that calls tools makes '
-                    + 'many model calls and pays for all of them, while sitting in one window.'
+                    + 'many model calls and pays for all of them, while sitting in one window.',
+                window.AFTip.GAP,
+                ...((s.contextSignalView && s.contextSignalView.lines) || [])
             ])
         };
     };
@@ -2997,7 +3028,7 @@
         // the whole scheme is there — every glyph, and what each one costs.
         return `${s.sessionId
             ? `<span class="sidlegend" title="${C.esc(C.stepKindLegendText())}">session ${C.esc(s.sessionId.slice(0, 8))}</span> · `
-            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
+            : ''}${s.contextTokens ? `${cardTip(`<span class="pair">${C.esc(ctxShort(s))}${ctxPct(s) ? ` · ${ctxPct(s)}%` : ''}${ctxSigChip(s)}</span>`, ctxTip(s).head, ctxTip(s).body)} · ` : ''}<span title="${C.esc(spTip)}">${s.reportsCost === false ? '' : (sp.est ? '~' : '')}${engineSpend(s, sp.cost, sp.tokens, sp.wTokens)}</span> this session · <span title="${C.esc(turnsTip)}">${s.turns} turn${s.turns === 1 ? '' : 's'}${running ? ' · 1 running' : ''}</span>
             <span class="grow"></span>
             ${attachBtnHtml()}
             ${s.sessionId ? '<button class="secondary" id="c-transcript">Open transcript</button>' : ''}

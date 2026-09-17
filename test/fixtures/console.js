@@ -1003,9 +1003,99 @@ module.exports = {
             // proof, photographed under the same eye as the two above.
             label: 'Console — nothing in the background: no chip, the plain Interrupt',
             data: backgroundData('working', 0)
+        },
+        /**
+         * ‼️ S-64 — THE DISCIPLINE SIGNAL ON THE STATUS STRIP, three states and
+         * three scenes, because the difference between them is the whole point:
+         * a run that was told, a run that was told to STOP, and a run the
+         * sentence could never reach. The third is the one that must not look
+         * like the first two and must not look like silence either — a Codex
+         * card sitting past the line with no mark reads as an agent ignoring
+         * the law it was never read.
+         *
+         * The strip only draws the window pair when `contextTokens` is set, so
+         * every scene here carries a reading; the words themselves come from
+         * the host (`contextSignalView`) exactly as `console.sessions` sends
+         * them, never re-derived on the page.
+         */
+        {
+            id: 'console-ctxsig-converge',
+            label: 'Console — CONTEXT CONVERGE delivered: the run was told to start nothing new',
+            data: ctxSignalData('converge')
+        },
+        {
+            id: 'console-ctxsig-handover',
+            label: 'Console — CONTEXT HANDOVER delivered and the note written: the run was told to stop',
+            data: ctxSignalData('handover')
+        },
+        {
+            id: 'console-ctxsig-undelivered',
+            label: 'Console — a Codex run past the line the sentence cannot reach: ✕, never silence',
+            data: ctxSignalData('undelivered')
         }
     ]
 };
+
+/**
+ * The three signal states, each on a card that really carries a window
+ * reading. `contextSignalView` is the host's; these are its outputs verbatim,
+ * so a change to the words shows up here rather than in a second copy.
+ */
+function ctxSignalData(state) {
+    const d = data();
+    d.selected = 'cs1';
+    const LAW = 'Lines: converge 35% · hand over 40% (agentFarm.contextConvergePct / contextHandoverPct).';
+    const view = state === 'converge'
+        ? {
+            state: 'delivered', level: 'converge', chip: 'CONVERGE', handedOver: false,
+            lines: [
+                'Discipline signal: CONTEXT CONVERGE 36% delivered — 4m ago, through the Claude live hook (PostToolUse).',
+                'CONTEXT HANDOVER 40%: not reached — the run may still work, but starts nothing new.',
+                'Handed over: not yet — the note that closes this run names it here.',
+                LAW
+            ]
+        }
+        : state === 'handover'
+            ? {
+                state: 'delivered', level: 'handover', chip: 'HANDOVER', handedOver: true,
+                lines: [
+                    'Discipline signal: CONTEXT HANDOVER 41% delivered — 1m ago, through the Claude live hook (UserPromptSubmit).',
+                    'CONTEXT CONVERGE 36% had gone out earlier — 9m ago.',
+                    'Handed over: yes — 30s ago — 2026-09-17_devir_05_116f35f0_s64.md',
+                    LAW
+                ]
+            }
+            : {
+                state: 'undelivered', level: 'handover', chip: 'HANDOVER ✕', handedOver: false,
+                lines: [
+                    'Discipline signal: CONTEXT HANDOVER 44% — ‼️ NEVER REACHED THIS RUN — 2m ago.',
+                    'codex hooks carry no additionalContext — the signal has no way into that session',
+                    'The reading is here and the sentence is not: this run was not told, so its '
+                        + 'silence is not obedience. Watch it yourself, or hand it over by hand.',
+                    LAW
+                ]
+            };
+    const codex = state === 'undelivered';
+    d.sessions = [session({
+        id: 'cs1', status: 'working', turns: 6,
+        engine: codex ? 'codex' : 'claude', engineLabel: codex ? 'Codex CLI' : 'Claude Code',
+        model: codex ? 'gpt-5-codex' : 'claude-opus-5', effort: 'high',
+        turnModel: codex ? 'gpt-5-codex' : 'claude-opus-5', turnEffort: 'high',
+        permissionMode: 'bypassPermissions',
+        turnStartedAt: NOW - 38000, turnTokens: 24100, turnApiCalls: 4,
+        tokens: 906000, wTokens: 720000, cost: 1.42,
+        // The figure and the word must agree: a card reading 40% beside a
+        // CONVERGE chip is the page contradicting itself in one line.
+        contextTokens: codex ? 113600 : (state === 'handover' ? 410000 : 360000),
+        contextWindowTokens: codex ? 258400 : 1000000,
+        contextSource: codex ? 'rollout-last-token-usage' : 'stream-last-call',
+        contextMeasuredAt: NOW - 30000,
+        contextSignalView: view,
+        account: 'aicozums', accountLabel: 'aicozums',
+        messages: msgs()
+    })];
+    return d;
+}
 
 /**
  * S-62 — the Claude card selected, working or just finished, with N commands

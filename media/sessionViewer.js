@@ -1029,6 +1029,20 @@
                 ? `${ctxPct}% of ${C.fmtTok(ctx.limit)}${ctxPct >= 70 ? ' — consider /compact or /clear' : ''}`
                 : 'last request (prompt+cache+output)')
             : 'no usage data';
+        // ‼️ S-64 — WHETHER THIS RUN WAS TOLD. The gauge above says how full the
+        // window got; on its own, a session that sat at 41% and kept working
+        // reads as a run that ignored the law. It may never have heard it: an
+        // engine whose hooks carry no channel is marked ✕ here, and that is a
+        // fact about the wiring, not about the agent. Nothing is drawn while no
+        // line has been crossed — silence is the honest state there.
+        const sig = DATA.contextSignal;
+        const sigHtml = sig && sig.chip
+            ? window.AFTip.wrap(
+                `<div class="sub ctxsigline ${sig.handedOver ? 'done' : sig.state === 'undelivered' ? 'bad' : sig.level === 'handover' ? 'stop' : ''}">`
+                    + `${C.esc(sig.chip)}${sig.handedOver ? ' ✓ handed over' : ''}</div>`,
+                `${sig.chip} — ${sig.state === 'undelivered' ? 'never reached this run' : 'delivered to this run'}`,
+                window.AFTip.lines(sig.lines), '', 'data-aftip-mute="#ctxcard"')
+            : '';
 
         document.getElementById('app').innerHTML = `
             <style>
@@ -1131,6 +1145,13 @@
                     font-size:13px; line-height:1; opacity:.45; pointer-events:none;
                     color:var(--vscode-foreground); }
                 .ctxcard:hover .ctxglyph { opacity:.9; }
+                /* S-64: the discipline signal, under the gauge it belongs to. */
+                .ctxsigline { font-weight:600; letter-spacing:.2px; margin-top:2px;
+                    color:var(--vscode-editorWarning-foreground, #cca700); }
+                .ctxsigline.stop, .ctxsigline.bad { color:var(--vscode-errorForeground, #f14c4c); }
+                /* An order that was obeyed is not a warning any more — the loud
+                   colours stay for the states somebody may still have to act on. */
+                .ctxsigline.done { color:var(--vscode-descriptionForeground); font-weight:500; }
                 .ctxglyph.on { opacity:1; color:var(--vscode-textLink-foreground); }
                 .ctxpop { position:absolute; top:100%; right:0; margin-top:6px; z-index:50;
                     width:300px; max-width:80vw; padding:10px 12px; text-align:left;
@@ -1229,6 +1250,7 @@
                 <div class="card ctxcard" id="ctxcard" title="Click for the /context breakdown by category"><div class="label">Context now</div>
                     <div class="kpi"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctx.tokens > 0 ? C.fmtTok(ctx.tokens) : '—'}</div>
                     <div class="sub"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctxSub}</div>
+                    ${sigHtml}
                     <span class="ctxglyph" id="ctxglyph">⛁</span>
                     ${contextPopHtml(DATA.contextReport)}</div>
                 <div class="card"><div class="label">Span</div><div class="kpi">${durMin}m</div><div class="sub">${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}</div></div>

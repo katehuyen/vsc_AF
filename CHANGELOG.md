@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.539.0 - the card says whether the run was TOLD, and whether the sentence ever reached it (S-64, 2/n) (2026-09-17)
+
+- **‼️ MEASURED GAP: the signal went out and nothing on screen said so.** A
+  card drew `ctx 410.0k / 1.0M · 41%` and stopped there, which reads as a run
+  that was told to hand over and carried on working. On an engine whose hooks
+  carry no `additionalContext` that reading is a charge against an agent
+  nobody ever spoke to: the guard had recorded `undelivered` since 3.538.0 and
+  no surface drew it.
+- **`contextSignalView` (`core/contextGuard.ts`) is the words, derived ONCE.**
+  Three states — `quiet` (no line crossed: nothing is drawn, because silence is
+  the honest answer there), `delivered`, and `undelivered` — each with a chip
+  for a dense strip and one fact per line for the panel: which word went out at
+  what percent, through which hook, whether the earlier converge had gone out
+  before it, whether a handover note has closed the loop, and the two lines in
+  force. The host builds it and every surface renders it, so two pages cannot
+  word the same state differently.
+- **The Console status strip** carries the chip beside the window figure —
+  `ctx 410.0k / 1.0M · 41% · HANDOVER` — in the warning colour at the converge
+  line, the error colour at the handover line, and `HANDOVER ✕` when the
+  crossing never reached the run. SHORTHAND: the chip drops the word `CONTEXT`
+  that the `ctx` figure already says, and the AFTip opens with the law's full
+  wording. An order that was obeyed (`✓ handed over`) stops shouting — the loud
+  colours are kept for the states somebody may still have to act on.
+- **A session's own page** says the same thing under its "Context now" gauge,
+  from the same view (`ViewerDeps.contextSignalFor`), so a finished run can be
+  read after the fact: told, or never reachable.
+- **`sessions.contextGuard id=<sid>`** now answers `view` alongside the record,
+  so an agent asking the bridge reads exactly what a human watching the run
+  reads.
+- **First fixture for the session viewer** (`test/fixtures/sessionviewer.js`,
+  4 scenes) — the page had never been photographed. Console gains three scenes
+  for the three signal states, because the whole point of the states is that
+  they must not look like each other.
+
 ## 3.538.0 - a running agent is told when its window reaches the converge and the handover line (S-64, 1/n) (2026-09-17)
 
 - **‼️ MEASURED: the handover law binds a run to the context window at 35%

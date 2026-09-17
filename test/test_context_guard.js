@@ -177,6 +177,60 @@ console.log('\n== the wiring — the host reads, the hook answers, the bridge re
     ok('the store lives in globalStorage and is flushed on dispose', /'context-guard\.json'/.test(ext) && /contextGuard\.flush\(\)/.test(ext));
 }
 
+// ‼️ 6. IT LOOKS THE SAME WHETHER THE RUN WAS TOLD OR NOT. A card drawing 41%
+//    and nothing else reads as "told and ignored" — on Codex, where the
+//    sentence can never arrive, that is a lie about the agent. The view is the
+//    words every surface shows, derived ONCE so two pages cannot disagree.
+console.log('\n== the view — what a surface says: told, told-and-unreachable, or nothing yet ==');
+{
+    const T = { convergePct: 35, handoverPct: 40 };
+    const ago = (ts) => `${ts}ms-ago`;
+
+    const quiet = G.contextSignalView(undefined, T);
+    eq('no record is the quiet state, with no chip to draw', [quiet.state, quiet.chip, quiet.handedOver], ['quiet', '', false]);
+    ok('…and it still names the two lines, so the reader knows the mechanism exists',
+        quiet.lines.some(l => /converge 35% .* hand over 40%/i.test(l)));
+
+    const conv = G.contextSignalView({
+        sessionId: 's', converge: { ts: 5, pct: 36, tokens: 1, window: 2, channel: 'claude-hook', via: 'PostToolUse' }
+    }, T, ago);
+    eq('a delivered converge is SHORTHAND on the strip — the chip drops the word the `ctx` figure already says',
+        [conv.state, conv.level, conv.chip], ['delivered', 'converge', 'CONVERGE']);
+    ok('…the first line carries the figure, the when and the channel',
+        /CONTEXT CONVERGE 36% delivered — 5ms-ago, through the Claude live hook \(PostToolUse\)/.test(conv.lines[0]));
+    ok('…and says the handover line is still ahead', conv.lines.some(l => /CONTEXT HANDOVER 40%: not reached/.test(l)));
+    ok('…and that nobody has handed over yet', conv.lines.some(l => /^Handed over: not yet/.test(l)));
+
+    const both = G.contextSignalView({
+        sessionId: 's',
+        converge: { ts: 5, pct: 36, tokens: 1, window: 2, channel: 'claude-hook', via: 'PostToolUse' },
+        handover: { ts: 9, pct: 41, tokens: 1, window: 2, channel: 'claude-hook', via: 'UserPromptSubmit' },
+        handedOver: { ts: 12, note: '2026-09-17_devir_05.md' }
+    }, T, ago);
+    eq('the stronger order is the one on the strip', both.chip, 'HANDOVER');
+    ok('…the earlier converge is remembered rather than overwritten',
+        both.lines.some(l => /CONTEXT CONVERGE 36% had gone out earlier/.test(l)));
+    ok('…and the loop is closed by the note that names the session',
+        both.handedOver && both.lines.some(l => /^Handed over: yes — 12ms-ago — 2026-09-17_devir_05\.md$/.test(l)));
+
+    const none = G.contextSignalView({
+        sessionId: 's', engine: 'codex',
+        undelivered: { level: 'handover', ts: 3, pct: 44, why: 'codex hooks carry no additionalContext' }
+    }, T, ago);
+    eq('a crossing with no channel is marked, never left looking like silence',
+        [none.state, none.chip], ['undelivered', 'HANDOVER ✕']);
+    ok('…and says plainly that the run never heard it',
+        /NEVER REACHED THIS RUN/.test(none.lines[0]) && none.lines.some(l => /not obedience/.test(l)));
+    ok('…carrying the engine\'s own reason', none.lines.some(l => /codex hooks carry no additionalContext/.test(l)));
+
+    const off = G.contextSignalView({
+        sessionId: 's', converge: { ts: 1, pct: 36, tokens: 1, window: 2, channel: 'claude-hook', via: 'PostToolUse' }
+    }, { convergePct: 35, handoverPct: 0 });
+    ok('a handover line switched off is SAID, not silently implied',
+        off.lines.some(l => /switched off, so nothing will stop this run/.test(l)));
+    ok('with no `ago` the lines carry no second time format', !/ — .*ago/.test(off.lines[0]));
+}
+
 console.log('\n== the listener — the hook is answered with the signal, and never broken ==');
 {
     class Emitter {

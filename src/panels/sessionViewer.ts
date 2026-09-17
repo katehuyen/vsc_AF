@@ -9,6 +9,7 @@ import { conversationTitle, SessionOrigin, sessionOrigin, sessionHeadless } from
 import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { parseCliViewer } from '../core/cliViewer';
+import { ContextSignalView } from '../core/contextGuard';
 import { oneShotEnv } from '../core/oneShot';
 import { revealPath } from '../core/reveal';
 import { askExportOptions, handleAfNav, htmlShell, wikiMarksOf, wikiMarkMessage } from './base';
@@ -21,6 +22,15 @@ export interface ViewerDeps {
      *  current model (agentFarm.contextWindowTokens > 0 overrides). 0 = unknown model —
      *  the gauge then shows the raw token count without a percent or color. */
     contextLimitFor(model: string): number;
+    /**
+     * ‼️ S-64 — WAS THIS RUN TOLD ITS WINDOW WAS FULL, and did it obey? The
+     * gauge above says how full the window got; without this, a page showing
+     * 41% and a run that kept working look like disobedience on every engine,
+     * including the ones the sentence can never reach. Undefined = the guard
+     * is not wired here (a panel that builds a viewer for a preview), which is
+     * silence, never "nothing was sent".
+     */
+    contextSignalFor?(sessionId: string): ContextSignalView | undefined;
     /** User-set session name (rename feature); wins over the transcript-derived title. */
     titleFor?(sessionId: string): string | undefined;
     /** On the user's shelf (sessionmarks.ts). A session is pinnable from six
@@ -413,6 +423,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
                 ...cli.context,
                 limit: cli.context.limit || deps.contextLimitFor(cli.context.model)
             },
+            contextSignal: deps.contextSignalFor?.(cli.sessionId) ?? null,
             contextReport: null,
             files: [],
             messageCount: cli.messages.length,
@@ -785,6 +796,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         errors,
         toolCalls,
         context: { tokens: ctxTokens, ts: ctxTs, limit: deps.contextLimitFor(ctxModel), model: ctxModel },
+        contextSignal: deps.contextSignalFor?.(sessionId) ?? null,
         contextReport,
         turnCount: turnNo,
         turnTotals,
