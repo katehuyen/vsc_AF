@@ -2,6 +2,53 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.533.0 - a queued run remembers what its route MEANT when somebody chose it (X-106) (2026-09-17)
+
+- **‼️ X-106 step (1) — MEASURED: a task could not tell a route that stayed
+  put from one that was edited underneath it.** A task states its route when
+  it is WRITTEN and runs hours later. The profile behind that route is a
+  setting: it can be edited, re-keyed or pointed at another endpoint while the
+  row waits in the queue. The spawn then resolved the same name to a different
+  answer and the manifest recorded THAT — correctly, which is the problem.
+  Both readings of "which endpoint served the nightly batch" were one sentence
+  written twice, and the change between them was nowhere at all.
+- **The seal, at the enqueue.** `FarmTask.routeSeal` holds what the named
+  route resolved to at the moment somebody chose it: the redacted
+  `ProviderIdentity` (profile id + revision, endpoint, base url, auth KIND —
+  never a credential) and the catalog revision. Written in `addTask`, where
+  the project is already stamped, because that is the one moment a dozen call
+  sites share. It is a RECORD, not a dimension: not in `RunDimensions`, not
+  carried by `runExtras`, and a seal handed in on the shape is dropped — a
+  retry is a new enqueue and seals itself.
+- **‼️ ONLY WHERE A ROUTE WAS NAMED.** With nothing chosen the agent's own
+  standing record decides at the spawn; sealing that would report drift the
+  first time the user changed their standing route, about a run that never
+  named one.
+- **And the spawn says when it moved.** `startTask` asks the SAME symbol
+  (`sealRoute` → `resolveLaunchRoute`, the resolver the terminal, the Console
+  and the manifest all go through) and writes a new kind of event on the run's
+  own record — `route-drift`, drawn as "route moved under it" — naming what
+  changed: profile, revision, endpoint, base url, auth kind, model, catalog.
+  It does NOT hold the run back: an edited profile is a changed answer to the
+  same question, not a different question. What came BACK (`reportedModels`,
+  the proof) is never drift, which a deep equality would have reported on
+  every run that answered.
+- **The manifest states its catalog revision too.** X-102 declared the field
+  and nothing ever filled it, so the other half of the comparison was blank
+  for six releases. `recordLaunch` now resolves it at the one point every
+  launch door passes through. Empty on a Claude route is correct: that catalog
+  is derived from the profiles, and each profile's revision is in the identity.
+- **The retry names its route at the enqueue** instead of writing it onto the
+  returned row — a route patched on afterwards is a route the seal never saw,
+  and the run's own history would start blank.
+- Read it with `tasks.get` → `routeSeal` (null = no route was named, which is
+  not the same as a route that did not move).
+- Tests: `test_task_route` (+16: the drift sentence field by field, the two
+  moments against a real `TaskManager`, one resolver asked exactly twice, the
+  seal kept out of the dimensions, both halves of the manifest comparison);
+  fixture scene on the scheduled run, its timeline measured in the laid-out
+  DOM.
+
 ## 3.532.0 - every sign-in on its own quota beat, in the background, with a switch (X-239, X-240, X-241) (2026-09-17)
 
 - **‼️ THE USER'S RULE:** "five accounts, two of them working — those two on

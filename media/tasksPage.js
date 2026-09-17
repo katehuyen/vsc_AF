@@ -3309,7 +3309,12 @@
         // ‼️ M-21 — "picked back up", never "started": nothing was spawned. A
         // window reload re-attaches a run whose surface outlived the extension
         // host, and the word has to say that it is the SAME run continuing.
-        resumed: 'picked back up'
+        resumed: 'picked back up',
+        // X-106 - the route the run NAMES did not change; what that name
+        // resolved to did, between the queue and the spawn. The words say which
+        // way round that is, because "route changed" would read as the task
+        // having been edited.
+        'route-drift': 'route moved under it'
     };
 
     /**

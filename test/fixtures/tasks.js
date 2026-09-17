@@ -70,6 +70,11 @@ const dress = r => Object.assign({
         ...(r.durMin !== undefined
             ? [{ ts: r.when - r.durMin * 60000, kind: 'started', note: `${r.engine || 'claude'} · ${r.mode}` }]
             : []),
+        // X-106 - the route moved between the queue and the spawn. It sits right
+        // after the start because that is where the runner writes it, and a
+        // scheduled run is the scene it exists for: nobody was at a window when
+        // the profile behind the route was edited.
+        ...(r.routeDrift ? [{ ts: r.when - (r.durMin || 1) * 60000 + 1, kind: 'route-drift', note: r.routeDrift }] : []),
         ...(r.status === 'done' || r.status === 'failed'
             ? [{ ts: r.when, kind: 'finished', note: `${r.status} after ${r.durMin} min` }]
             : [])
@@ -108,7 +113,8 @@ const runs = () => ([
         engine: 'claude', reportsCost: true, tokens: 512_000,
         hasOutput: true, outputFile: 'D:\\out\\r3.md',
         sessionFile: 'C:\\Users\\x\\.claude\\projects\\ajanlar\\9c22ab41.jsonl',
-        prompt: '00_INPUT klasöründeki her dosyayı dosyala'
+        prompt: '00_INPUT klasöründeki her dosyayı dosyala',
+        routeDrift: 'profile revision 3 → 4 · model claude-opus-5 → kimi-k2-thinking'
     },
     {
         // The engine whose conversations cannot be read back at all: no

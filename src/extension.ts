@@ -370,7 +370,7 @@ import {
     FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parkNoticeKey, parseSeedSchedules,
     InteractiveClose, InteractiveTarget,
-    previousOccurrenceKey, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
+    previousOccurrenceKey, RouteSeal, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
 import {
@@ -3372,6 +3372,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * environment it has always had, byte for byte.
              */
             engineRuntime: (agentId, engine, route) => engineRuntimeFor(agentId, engine, route),
+            // ‼️ X-106 — and what that route resolves to right now, from the same
+            // side and for the same reason: the profiles are a setting and the
+            // revision is theirs, so the answer comes from here and the task
+            // seals what it is handed (see TaskRunnerOpts.sealRoute).
+            sealRoute: (agentId, engine, route) => routeSealOf(agentId, engine, route),
             // ‼️ X-169 — and which sign-in it runs as, from the same side and for
             // the same reason (see TaskRunnerOpts.accountLayer).
             accountLayer: (engine, account, agentId) => launchAccountEnv({ engine, account, agentId }),
@@ -14110,7 +14115,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         {
             op: 'tasks.get',
             describe: 'One task in detail — every run dimension it was launched with (engine, model, effort, permission mode, CLI, working folder, priority, project)'
-                + DIMS_OUT_NOTE + ' Then what it cost in dollars AND tokens, its archived output, and `events`: WHAT HAPPENED TO IT, in order, each stamped. ‼️ Read `events` before concluding anything from `status`: a run held at a ceiling, released, held again and finally started leaves exactly the same three timestamps as one that simply sat there, and the reason it was held is only written down here. args: id, tail? (max output chars, default 4000)',
+                + DIMS_OUT_NOTE + ' Then what it cost in dollars AND tokens, its archived output, and `events`: WHAT HAPPENED TO IT, in order, each stamped. ‼️ Read `events` before concluding anything from `status`: a run held at a ceiling, released, held again and finally started leaves exactly the same three timestamps as one that simply sat there, and the reason it was held is only written down here. `routeSeal` is what the named route RESOLVED TO when the run was queued (null = no route named); a `route-drift` event means the spawn resolved it differently — the profile was edited while the row waited. args: id, tail? (max output chars, default 4000)',
             handler: (args) => {
                 const t = taskManager.tasks.find(x => x.id === argStr(args, 'id'));
                 need(t, 'Task not found — tasks.list shows current ids.');
@@ -14177,6 +14182,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // are two rows with two different accounts and nothing
                     // between them.
                     accountHandover: task.accountHandover ?? null,
+                    // ‼️ X-106 — AND WHAT THE ROUTE WAS WHEN THE RUN WAS QUEUED.
+                    // The dimensions above say which route it NAMES; only this
+                    // says what that name resolved to at the moment somebody
+                    // chose it, so an agent reading a finished run can tell a
+                    // route that stayed put from one that was edited while the
+                    // row waited. `null` = no route was named, which is not the
+                    // same as a route that did not move. A `route-drift` line in
+                    // `events` is the spawn's own reading disagreeing with this.
+                    routeSeal: task.routeSeal ?? null,
                     deferredReason: task.deferredReason ?? null,
                     // ‼️ M-11 — …AND WHICH CEILING THAT SENTENCE IS ABOUT. The
                     // reason quotes today's spend, so two readings of one budget
@@ -20330,6 +20344,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         };
     };
     /**
+     * ‼️ X-102 / X-106 — WHICH REVISION OF THE CATALOG a choice is being made
+     * against, asked of the adapter rather than of the engine name.
+     *
+     * Empty on a Claude route and that is correct, not a gap: the Claude catalog
+     * is derived from the stored profiles and each profile carries its own
+     * revision, which is already inside the identity. An engine whose catalog
+     * comes from one fetched source (OpenCode) states one for the whole list.
+     */
+    const catalogRevisionOf = (engine: string): string | undefined =>
+        adapterFor(engine, registryDeps()).catalog().revision || undefined;
+
+    /**
+     * ‼️ X-106 — THE ROUTE AS IT STANDS RIGHT NOW, in the shape a task seals.
+     *
+     * Asked at the enqueue and again at the spawn, by the same symbol both
+     * times, so a difference between the two readings is the route having moved
+     * and never the two callers disagreeing. Nothing chosen answers `undefined`:
+     * with no route named the agent's standing record decides at the spawn, and
+     * there was no choice to seal.
+     */
+    const routeSealOf = (
+        agentId: string, engine: string, route?: { providerId?: string; tier?: string }
+    ): RouteSeal | undefined => {
+        const resolved = resolveLaunchRoute(agentId, engine, route);
+        if (!resolved || !resolved.routed) { return undefined; }
+        const catalogRevision = catalogRevisionOf(engine);
+        return {
+            at: Date.now(),
+            identity: resolved.identity,
+            ...(catalogRevision ? { catalogRevision } : {})
+        };
+    };
+    /**
      * ‼️ X-103 — THE FORM A LAUNCH PICKER DRAWS, for one engine and the pick so
      * far. One reader, so a door that SHOWS the choices and the resolver that
      * RUNS them cannot offer different answers.
@@ -21974,8 +22021,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const slot = launchAccountSlot({
             engine: input.engine, agentId: input.agentId, ...input.options
         });
+        /**
+         * ‼️ X-106 — AND WHICH REVISION OF THE CATALOG the model came out of,
+         * resolved here for the same reason the slot is: every door reaches the
+         * spawn through this function, so one reading covers all of them.
+         *
+         * The field has existed since X-102 and nothing filled it, which made
+         * the manifest half of every "did this move since it was chosen"
+         * question unanswerable — the task's seal states a revision and the
+         * manifest stated none, so the two could not be compared at all.
+         */
+        const catalogRevision = catalogRevisionOf(input.engine);
         const m = manifestFor({
             ...input, launchId: newLaunchId(at), at,
+            ...(catalogRevision ? { catalogRevision } : {}),
             ...(slot?.id ? { account: slot.id } : {})
         });
         writeLaunchManifest(m);

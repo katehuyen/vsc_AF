@@ -26,6 +26,7 @@ import {
 import { InteractiveClose, InteractiveTarget, LaunchOptions, modelIdOk, normInteractiveClose, normInteractiveTarget } from './launch';
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { chosenPermission, permissionFlags } from './permissionmode';
+import { ProviderIdentity } from './providerIdentity';
 import {
     OPENCODE_RUN_OUTPUT_NOTE, opencodeRunSessionId, readOpencodeRun
 } from './opencoderun';
@@ -339,6 +340,16 @@ export interface FarmTask {
      * runs as, to the character.
      */
     account?: string;
+    /**
+     * ‼️ X-106 — WHAT THE ROUTE ABOVE WAS WHEN THIS TASK WAS QUEUED; see
+     * `RouteSeal` for why the enqueue is the moment that has to be written down.
+     *
+     * A record, never a dimension: nobody picks it, `runExtras` does not carry
+     * it and a retry does not inherit it — a retry is a new enqueue and seals
+     * itself, because a seal copied forward would be a true record of a moment
+     * that belonged to another row.
+     */
+    routeSeal?: RouteSeal;
     /** J5: named CLI profile (agentFarm.cliProfiles); empty = claude. */
     cli?: string;
     /** Launch priority; higher runs sooner. Unset = 0. Ages up while queued so nothing starves. */
@@ -609,7 +620,13 @@ export type TaskEventKind =
     // is re-attached after a reload without anything being spawned. Drawn as
     // `started` it would read as a second launch of the same work, which is the
     // one thing that did NOT happen.
-    | 'resumed';
+    | 'resumed'
+    // ‼️ X-106 — THE ROUTE MOVED WHILE THE RUN SAT IN THE QUEUE. Its own kind
+    // rather than a clause inside `started`, because it is the one line on a
+    // run's record that says the setup it ran with is NOT the setup that was
+    // chosen for it — and a person scanning a timeline for something unusual
+    // has to be able to see it without reading every note.
+    | 'route-drift';
 
 /** The most a task keeps. A run that ping-pongs against a ceiling for a day
  *  would otherwise grow without bound; the newest are the ones being read. */
@@ -822,6 +839,86 @@ export function routeOf(
     if (!providerId) { return undefined; }
     const tier = (t.tier ?? '').trim();
     return { providerId, ...(tier ? { tier } : {}) };
+}
+
+/**
+ * ‼️ X-106 — WHAT THE ROUTE WAS WHEN THE RUN WAS QUEUED.
+ *
+ * A task states its route when it is WRITTEN and runs hours later, so the
+ * profile behind that route can be edited, re-keyed or pointed at a different
+ * endpoint while the row sits in the queue. Nothing downstream can notice: the
+ * spawn resolves the route as it stands at 03:00 and the manifest records THAT,
+ * so both readings of "which endpoint served the nightly batch" are the same
+ * sentence written twice and the change between them leaves no trace at all.
+ *
+ * So the redacted answer is sealed at the ENQUEUE — the moment the person made
+ * the choice — and the spawn compares its own reading against it. Absent means
+ * no route was named, which is a different thing from a route that has not
+ * moved: with nothing chosen the agent's standing record decides at the spawn,
+ * and there was never a choice to seal.
+ *
+ * ‼️ IT HOLDS THE IDENTITY ITSELF, not a flattened copy of the fields that
+ * matter. A second shape here would need a mapping onto the manifest's identity
+ * before the two could be compared, and that mapping would be a third statement
+ * of one resolution — the exact shape of the defect X-101 exists to prevent.
+ *
+ * ‼️ REDACTED BY CONSTRUCTION, like the manifest: `ProviderIdentity` has no
+ * field a credential can sit in, and the seal arrives from the registry already
+ * in that shape rather than being assembled out of a stored profile here.
+ */
+export interface RouteSeal {
+    /** The enqueue moment, stamped on its own — `createdAt` belongs to the task
+     *  and a retry's task is a different row from the one that was sealed. */
+    at: number;
+    /** The redacted answer the route gave THEN (`core/providerRegistry.ts`). */
+    identity: ProviderIdentity;
+    /** Which revision of the catalog the choice was resolved against, where the
+     *  source states one — absent on a Claude route, whose revision is the
+     *  profile's and is already inside `identity`. */
+    catalogRevision?: string;
+}
+
+/**
+ * ‼️ X-106 — DID THE ROUTE MOVE WHILE THE TASK WAITED? The sentence a person
+ * reads, or nothing when the two readings agree.
+ *
+ * Compared field by field rather than by serialising both records: half of an
+ * identity is filled in from what came BACK (`reportedModels`, the proof), so a
+ * deep equality would report drift on every run that actually answered.
+ */
+export function sealDrift(
+    seal: RouteSeal | undefined,
+    now: { identity: ProviderIdentity; catalogRevision?: string } | undefined
+): string | undefined {
+    if (!seal || !now) { return undefined; }
+    const was = seal.identity;
+    const is = now.identity;
+    const parts: string[] = [];
+    // The profile it names first, then its revision — a run that landed on a
+    // DIFFERENT profile has not had its revision bumped, and reporting both
+    // would describe one change twice.
+    if ((was.providerProfileId ?? '') !== (is.providerProfileId ?? '')) {
+        parts.push(`profile ${was.providerProfileId || 'none'} → ${is.providerProfileId || 'none'}`);
+    } else if ((was.providerProfileRevision ?? -1) !== (is.providerProfileRevision ?? -1)) {
+        parts.push(`profile revision ${was.providerProfileRevision ?? '?'} → ${is.providerProfileRevision ?? '?'}`);
+    }
+    if (was.providerId !== is.providerId) {
+        parts.push(`endpoint ${was.providerId || 'none'} → ${is.providerId || 'none'}`);
+    }
+    if ((was.route?.baseUrl ?? '') !== (is.route?.baseUrl ?? '')) {
+        parts.push(`base url ${was.route?.baseUrl || 'none'} → ${is.route?.baseUrl || 'none'}`);
+    }
+    if ((was.route?.authKind ?? '') !== (is.route?.authKind ?? '')) {
+        parts.push(`auth ${was.route?.authKind || 'none'} → ${is.route?.authKind || 'none'}`);
+    }
+    if (was.requestedModelRef !== is.requestedModelRef) {
+        parts.push(`model ${was.requestedModelRef || 'none'} → ${is.requestedModelRef || 'none'}`);
+    }
+    if ((seal.catalogRevision ?? '') !== (now.catalogRevision ?? '')) {
+        parts.push(`catalog ${seal.catalogRevision || 'none'} → ${now.catalogRevision || 'none'}`);
+    }
+    if (!parts.length) { return undefined; }
+    return parts.join(' · ');
 }
 
 /** The run dimensions of an automation, in the shape `addTask` takes them —
@@ -1534,6 +1631,24 @@ export interface TaskManagerOptions {
          */
         route?: { providerId?: string; tier?: string }
     ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined;
+    /**
+     * ‼️ X-106 — WHAT THAT ROUTE RESOLVES TO RIGHT NOW, as a redacted answer.
+     *
+     * Same doctrine as `engineRuntime` above: it arrives as an ANSWER, from the
+     * side that owns the profiles and the keychain. Asked TWICE and by the same
+     * symbol — once when the task is queued (`addTask` seals it) and once at the
+     * spawn (`startTask` compares) — because the whole value of the seal is that
+     * both readings come out of one resolver. Two resolvers would report drift
+     * whenever they disagreed with each other rather than when the route moved.
+     *
+     * Absent (the headless service, a test harness) means nothing is sealed, and
+     * a task with no seal is a run whose route history is genuinely unknown —
+     * which is the honest answer and reads exactly as every task written before
+     * this item does.
+     */
+    sealRoute?: (
+        agentId: string, engine: string, route: { providerId?: string; tier?: string }
+    ) => RouteSeal | undefined;
     /**
      * ‼️ X-169 — WHICH SIGN-IN THIS RUN GETS, as the environment it takes.
      *
@@ -2793,6 +2908,11 @@ export class TaskManager implements vscode.Disposable {
         extra?: Partial<Pick<FarmTask,
             'fromSchedule' | 'fromTrigger' | 'workflowId' | 'workflowRunId' | 'stepIndex' | 'projectId'
             | 'engine' | 'model' | 'effort' | 'permissionMode' | 'cli' | 'priority' | 'workDir'
+            // ‼️ X-106 — THE ROUTE IS NAMED HERE, not patched on afterwards. It
+            // has to arrive with the task because the seal is taken at the
+            // enqueue: a route written onto the returned object is a route the
+            // seal never saw, and the run's own history then starts blank.
+            | 'providerId' | 'tier'
             | 'interactiveTarget' | 'interactiveClose' | 'finishSound' | 'superpowers'
             | 'missionId' | 'ignoreBudget' | 'retry' | 'retryOf' | 'retryAttempt' | 'notBefore'
             | 'notBeforeWhy' | 'resumeSessionId' | 'resumedEngine' | 'resumedFrom'
@@ -2832,6 +2952,27 @@ export class TaskManager implements vscode.Disposable {
         // denominator is stamped here because this is the only moment it is
         // knowable — by round 3 the list has been eaten down. A round the chain
         // itself opens states all of this explicitly and is left alone.
+        /**
+         * ‼️ X-106 — THE ROUTE IS SEALED HERE, at the enqueue, for the same
+         * reason the project is stamped here: a dozen call sites make tasks, and
+         * the one moment they all share is this one. A seal written at the spawn
+         * instead would be a record of the route the run already took, which
+         * answers nothing.
+         *
+         * ‼️ AND ONLY WHEN A ROUTE WAS NAMED. With nothing chosen the agent's own
+         * standing record decides at the spawn; sealing that here would record a
+         * decision nobody made and then report "drift" the first time the user
+         * changed their standing route, which is not what happened to this run.
+         *
+         * A seal arriving on `extra` (a clone, a hand-built row) is dropped: the
+         * seal belongs to the enqueue that is happening now.
+         */
+        delete task.routeSeal;
+        const route = routeOf(task);
+        if (route) {
+            const sealed = this.opts.sealRoute?.(agent.id, engineOf(task.engine).id, route);
+            if (sealed) { task.routeSeal = sealed; }
+        }
         const chain = normalizeRounds(task.rounds);
         if (chain.length) { task.rounds = chain; } else { delete task.rounds; }
         if (task.roundsTotal === undefined && chain.length) { task.roundsTotal = totalRounds(chain); }
@@ -3351,6 +3492,28 @@ export class TaskManager implements vscode.Disposable {
         noteTaskEvent(task, 'started', `${engineOf(task.engine).label} · ${task.mode}`
             + (task.model ? ` · ${task.model}` : '')
             + (task.resumeSessionId ? ` · resuming ${task.resumedFrom || task.resumeSessionId}` : ''));
+        /**
+         * ‼️ X-106 — AND WHETHER THE ROUTE IS STILL THE ONE THAT WAS CHOSEN.
+         *
+         * The seal was taken at the enqueue; this is the same resolver asked
+         * again at the spawn. A difference is written on the run's own record
+         * because nothing else can say it afterwards: the manifest states what
+         * this run resolved to and is right about that, and a reader comparing
+         * it against the profile as it stands TODAY learns nothing about the
+         * night the two disagreed.
+         *
+         * It does not hold the run back. The route named on the task is still
+         * the route the user asked for — an edited profile is a changed answer
+         * to the same question, not a different question — and parking a
+         * nightly batch over a revision bump would be a refusal nobody asked
+         * for, arriving through a record-keeping item.
+         */
+        const sealedRoute = task.routeSeal ? routeOf(task) : undefined;
+        if (sealedRoute) {
+            const drift = sealDrift(task.routeSeal, this.opts.sealRoute?.(
+                agent.id, engineOf(task.engine).id, sealedRoute));
+            if (drift) { noteTaskEvent(task, 'route-drift', drift); }
+        }
         /**
          * ‼️ X-102 — THE MANIFEST, AT THE ONE POINT EVERY SHAPE OF A RUN PASSES
          * THROUGH.
@@ -5165,6 +5328,20 @@ export class TaskManager implements vscode.Disposable {
         // carried, so a task launched on haiku at low effort came back as a
         // retry with no --model and no --effort at all: the same prompt on a
         // different, more expensive command line, silently.
+        // X-106 - AND THE RETRY RUNS ON THE ROUTE THE ORIGINAL RAN ON. The same
+        // rule the engine and the model already follow here, and the one where
+        // silence costs most: a retry that quietly moved to the agent-s standing
+        // endpoint is a different run wearing the same name, and nothing
+        // afterwards would say which one served it. The tier travels with the
+        // route it belongs to - carried separately it could survive onto a route
+        // that maps a different model for the same word.
+        //
+        // It is handed to addTask rather than written on the copy afterwards
+        // because the enqueue is where the route is SEALED: a retry is a new
+        // enqueue and gets its own seal, of the route as it stands now.
+        const retryRoute = routeOf(over && 'providerId' in over
+            ? { providerId: over.providerId, tier: over.tier }
+            : { providerId: task.providerId, tier: task.tier });
         const copy = this.addTask(agent,
             revive
                 ? `${baseTitle} (continued${attempt > 2 ? ' ' + (attempt - 1) : ''})`
@@ -5172,6 +5349,7 @@ export class TaskManager implements vscode.Disposable {
             newPrompt ?? task.prompt,
             over?.mode ?? task.mode,
             {
+                ...(retryRoute ?? {}),
                 // The retry belongs to the ORIGINAL's project, not to whatever the
                 // window moved on to in the meantime — a rerun of the same work is
                 // the same work.
@@ -5186,20 +5364,6 @@ export class TaskManager implements vscode.Disposable {
             });
         copy.attempt = attempt;
         copy.outputContract = task.outputContract;
-        // X-106 - AND THE RETRY RUNS ON THE ROUTE THE ORIGINAL RAN ON. The same
-        // rule the engine and the model already follow here, and the one where
-        // silence costs most: a retry that quietly moved to the agent-s standing
-        // endpoint is a different run wearing the same name, and nothing
-        // afterwards would say which one served it. The tier travels with the
-        // route it belongs to - carried separately it could survive onto a route
-        // that maps a different model for the same word.
-        if (over && 'providerId' in over) {
-            copy.providerId = over.providerId;
-            copy.tier = over.providerId ? over.tier : undefined;
-        } else {
-            copy.providerId = task.providerId;
-            copy.tier = task.tier;
-        }
         // X-169 - and on the account the original ran on. A retry that moved to
         // whichever account happens to be active now would bill a different
         // plan for the same work and say nothing about it.

@@ -42,9 +42,19 @@ const Module = require('module');
 const origLoad = Module._load;
 Module._load = function (request) {
     if (request === 'vscode') {
+        // ‼️ …AND THE MANAGER ITSELF IS BUILT HERE NOW (step (1) seals inside
+        // `addTask`), so the window needs the two subscriptions its constructor
+        // takes. A stub that answers `undefined` to those throws at `new`.
+        const off = () => ({ dispose() { } });
         return {
-            Uri: {}, window: {}, ViewColumn: {}, ConfigurationTarget: { Global: 1 }, env: {},
-            EventEmitter: class { constructor() { this.event = () => ({ dispose() { } }); } },
+            Uri: {},
+            window: { onDidCloseTerminal: off, onDidOpenTerminal: off, showWarningMessage: () => { } },
+            ViewColumn: {}, ConfigurationTarget: { Global: 1 }, env: {},
+            EventEmitter: class {
+                constructor() { this.event = () => ({ dispose() { } }); }
+                fire() { }
+                dispose() { }
+            },
             QuickPickItemKind: { Separator: -1 },
             commands: { executeCommand: () => { } },
             workspace: { getConfiguration: () => ({ get: (_k, d) => d, update: async () => { } }) }
@@ -89,11 +99,15 @@ console.log('\n== …and reaches the SPAWN, in the shape the resolver takes ==')
         calls === 2);
     ok('…and neither of them reads the fields by hand instead',
         !/engineRuntime\?\.\([^)]*\{\s*providerId:\s*task\./.test(src));
-    ok('‼️ a retry runs on the route the original ran on',
-        /copy\.providerId = task\.providerId;/.test(src)
-        && /copy\.tier = task\.tier;/.test(src));
-    ok('…and an override clears the tier rather than carrying it onto a new route',
-        /copy\.tier = over\.providerId \? over\.tier : undefined;/.test(src));
+    // ‼️ …AND THE RETRY'S ROUTE IS DECIDED BEFORE THE ROW EXISTS, not written
+    // onto it afterwards. X-106 step (1) moved it: the enqueue is where the
+    // route is SEALED, so a route patched onto the returned object is a route
+    // the seal never saw and a run whose own history starts blank.
+    ok('‼️ a retry runs on the route the original ran on, and names it at the enqueue',
+        /const retryRoute = routeOf\(over && 'providerId' in over\s*\n\s*\? \{ providerId: over\.providerId, tier: over\.tier \}\s*\n\s*: \{ providerId: task\.providerId, tier: task\.tier \}\);/.test(src)
+        && /\.\.\.\(retryRoute \?\? \{\}\),/.test(src));
+    ok('…and it goes through `routeOf`, which is what clears a tier left over from a cleared route',
+        !/copy\.providerId = /.test(src) && !/copy\.tier = /.test(src));
 }
 
 console.log('\n== the door refuses rather than drops ==');
@@ -277,6 +291,176 @@ console.log('\n== X-106 (2) — a task handed to the Console keeps every dimensi
         /superpowers: spec\.superpowers \?\? superpowersOnFor\(spec\.agentName\)/.test(door));
     ok('…the exemptions are really absent from the door, so the list above is measured and not decorative',
         EXEMPT.every(f => !new RegExp(`\\b${f}: spec\\.${f}\\b`).test(door)));
+}
+
+/**
+ * ‼️ X-106 step (1) — WHAT THE ROUTE WAS WHEN THE RUN WAS QUEUED.
+ *
+ * Everything above holds the route a stored automation NAMES. None of it says
+ * what that name MEANT: a profile can be edited, re-keyed or pointed at another
+ * endpoint while the row waits in the queue, and the spawn then resolves the
+ * same name to a different answer. Nothing downstream could notice, because the
+ * manifest records what the run resolved to and is right about that — so both
+ * readings of "which endpoint served the nightly batch" were one sentence
+ * written twice, with the change between them nowhere at all.
+ *
+ * Five ways to get the seal wrong, and each is held here:
+ *   1. SEALED AT THE SPAWN. A record of the route a run already took answers
+ *      nothing; the enqueue is the moment somebody made the choice.
+ *   2. SEALED WHEN NOTHING WAS CHOSEN. With no route named, the agent's own
+ *      standing record decides at the spawn — a seal there would report drift
+ *      the first time the user changed that record, about a run that never
+ *      named a route.
+ *   3. TWO RESOLVERS. The seal and the spawn's reading come out of ONE symbol,
+ *      or a difference between them is the two callers disagreeing with each
+ *      other rather than the route having moved.
+ *   4. DRIFT ON EVERY RUN. Half of an identity is filled in from what came
+ *      BACK (`reportedModels`, the proof), so a deep equality would report
+ *      drift on every run that actually answered.
+ *   5. HALF A COMPARISON. The task seals a catalog revision and the manifest
+ *      stated none for six releases (the field existed, nothing filled it),
+ *      which makes the other half of the question unanswerable.
+ */
+console.log('\n== X-106 (1) — the route is SEALED at the enqueue, and the spawn says when it moved ==');
+{
+    const os = require('os');
+    const ident = over => Object.assign({
+        engine: 'claude', providerId: 'anthropic', origin: 'agent-farm-profile', scope: 'session',
+        providerProfileId: 'work', providerProfileRevision: 3,
+        route: { baseUrl: 'https://api.anthropic.com', authKind: 'api-key' },
+        requestedModelRef: 'claude-opus-5', proof: 'launch-declared'
+    }, over || {});
+    const sealed = over => ({ at: 1000, identity: ident(over), catalogRevision: 'c1' });
+    const now = (over, catalogRevision) => ({
+        identity: ident(over), ...(catalogRevision === undefined ? { catalogRevision: 'c1' } : { catalogRevision })
+    });
+
+    eq('two readings that agree are not drift', T.sealDrift(sealed(), now()), undefined);
+    ok('‼️ a REVISION bump is drift, and it names both numbers',
+        /profile revision 3 → 4/.test(T.sealDrift(sealed(), now({ providerProfileRevision: 4 })) || ''));
+    const moved = T.sealDrift(sealed(), now({ providerProfileId: 'home', providerProfileRevision: 1 })) || '';
+    ok('‼️ a DIFFERENT profile is named once, not also as a revision change — one change, one clause',
+        /profile work → home/.test(moved) && !/revision/.test(moved));
+    ok('the endpoint behind the profile moving is drift',
+        /endpoint anthropic → kimi/.test(T.sealDrift(sealed(), now({ providerId: 'kimi' })) || ''));
+    ok('…so is the base url it points at',
+        /base url .* → https:\/\/api\.moonshot\.cn/.test(
+            T.sealDrift(sealed(), now({ route: { baseUrl: 'https://api.moonshot.cn', authKind: 'api-key' } })) || ''));
+    ok('…so is the KIND of credential it now uses',
+        /auth api-key → oauth/.test(
+            T.sealDrift(sealed(), now({ route: { baseUrl: 'https://api.anthropic.com', authKind: 'oauth' } })) || ''));
+    ok('‼️ …and so is the model the tier maps to, which is the substance of the choice',
+        /model claude-opus-5 → kimi-k2-thinking/.test(
+            T.sealDrift(sealed(), now({ requestedModelRef: 'kimi-k2-thinking' })) || ''));
+    ok('the catalog the choice was made against moving is drift too',
+        /catalog c1 → c2/.test(T.sealDrift(sealed(), now(undefined, 'c2')) || ''));
+    ok('‼️ WHAT CAME BACK IS NOT DRIFT — a deep equality would have reported it on every run that answered',
+        T.sealDrift(sealed(), now({
+            reportedModels: ['claude-opus-5'], reportedProviderIds: [], proof: 'engine-reported'
+        })) === undefined);
+    eq('an unsealed task cannot drift', T.sealDrift(undefined, now()), undefined);
+    eq('…and neither can one the resolver has no answer for now', T.sealDrift(sealed(), undefined), undefined);
+
+    // …and the real manager, at the two moments that matter.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-route-seal-'));
+    const agent = { id: 'a1', name: 'developer', dir };
+    const asked = [];
+    let reading = 0;
+    const tm = new T.TaskManager(path.join(dir, 'tasks.json'), () => [agent], () => false, () => '', {
+        sealRoute: (agentId, engine, route) => {
+            asked.push({ agentId, engine, route });
+            return { at: ++reading, identity: ident(), catalogRevision: 'c1' };
+        }
+    });
+    const routed = tm.addTask(agent, 'nightly', 'p', 'headless', { providerId: 'work', tier: 'opus' });
+    ok('‼️ a task that names a route is sealed AT THE ENQUEUE',
+        !!routed.routeSeal && routed.routeSeal.at === 1 && routed.routeSeal.catalogRevision === 'c1');
+    eq('…and the resolver was asked for the engine and the route the task itself named',
+        asked, [{ agentId: 'a1', engine: 'claude', route: { providerId: 'work', tier: 'opus' } }]);
+    const bare = tm.addTask(agent, 'plain', 'p', 'headless', {});
+    ok('‼️ a task that names NO route is not sealed, and the resolver is not even asked',
+        bare.routeSeal === undefined && asked.length === 1);
+    const handed = tm.addTask(agent, 'handed', 'p', 'headless', { routeSeal: { at: 1, identity: ident() } });
+    ok('‼️ a seal arriving on the shape is DROPPED — a seal is a fact about the enqueue happening now',
+        handed.routeSeal === undefined);
+    // `autoStart: false`, because the seal is taken at the ENQUEUE and letting
+    // the default fire would spawn a real engine out of a temp folder.
+    const copy = tm.retryTask(routed, undefined, { autoStart: false });
+    ok('‼️ a retry carries the route and seals ITSELF — its own enqueue, its own reading',
+        !!copy && copy.providerId === 'work' && copy.tier === 'opus'
+        && !!copy.routeSeal && copy.routeSeal.at === 2);
+    tm.dispose();
+    // The manager watches its own store, and Windows releases that handle a tick
+    // after `dispose` — measured here as an EPERM on the folder itself.
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+}
+
+console.log('\n== X-106 (1) — one resolver, asked twice, and the record that says so ==');
+{
+    const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+
+    // ‼️ THE SEAL IS NOT A DIMENSION. Nobody picks it, so it must not be inside
+    // `RunDimensions` — a record that travelled with `runExtras` would be
+    // inherited by every retry and clone as a true statement about another row.
+    const dims = tasksTs.slice(tasksTs.indexOf('export interface RunDimensions'));
+    ok('‼️ `routeSeal` is NOT a run dimension — a record is not a choice',
+        !/routeSeal/.test(dims.slice(0, dims.indexOf('\n}'))));
+    const extras = tasksTs.slice(tasksTs.indexOf('export function runExtras'));
+    ok('…and `runExtras` does not carry it, so no retry, clone or edit inherits another row\'s seal',
+        !/routeSeal/.test(extras.slice(0, extras.indexOf('\n}'))));
+
+    // ‼️ ONE SYMBOL, TWO MOMENTS. Exactly two calls: the enqueue seals, the
+    // spawn compares. A third would be a third opinion.
+    eq('‼️ the resolver is asked exactly twice in the whole module — the enqueue and the spawn',
+        (tasksTs.match(/this\.opts\.sealRoute\?\.\(/g) || []).length, 2);
+    ok('…the enqueue drops anything handed in before it seals what it is given',
+        /delete task\.routeSeal;[\s\S]{0,200}const route = routeOf\(task\);[\s\S]{0,200}this\.opts\.sealRoute\?\.\(/.test(tasksTs));
+    ok('‼️ …and the spawn writes the difference on the run\'s OWN record, as its own kind of event',
+        /const drift = sealDrift\(task\.routeSeal, this\.opts\.sealRoute\?\.\(/.test(tasksTs)
+        && /noteTaskEvent\(task, 'route-drift', drift\)/.test(tasksTs));
+    ok('…and it does not hold the run back — an edited profile is a changed answer, not a different question',
+        !/route-drift[\s\S]{0,400}(return|park|deferred)/.test(
+            tasksTs.slice(tasksTs.indexOf("noteTaskEvent(task, 'route-drift'"), tasksTs.indexOf("noteTaskEvent(task, 'route-drift'") + 260)));
+    ok('‼️ the retry hands the route to `addTask` instead of writing it on the copy — a route the seal never saw is a blank history',
+        /const retryRoute = routeOf\(over && 'providerId' in over/.test(tasksTs)
+        && /\.\.\.\(retryRoute \?\? \{\}\),/.test(tasksTs)
+        && !/copy\.providerId = task\.providerId/.test(tasksTs));
+
+    // the extension's half: the same resolver every launch door already uses
+    const sealOf = (() => {
+        const a = ext.indexOf('const routeSealOf = (');
+        return a < 0 ? '' : ext.slice(a, ext.indexOf('\n    };', a));
+    })();
+    ok('`routeSealOf` was found', sealOf.length > 100);
+    ok('‼️ it answers out of `resolveLaunchRoute` — the symbol the terminal, the Console and the manifest all resolve through',
+        /resolveLaunchRoute\(agentId, engine, route\)/.test(sealOf));
+    ok('‼️ …and it answers nothing when nothing was chosen, so an unrouted run is never sealed against a standing route',
+        /if \(!resolved \|\| !resolved\.routed\) \{ return undefined; \}/.test(sealOf));
+    ok('…it stamps its own moment and states the catalog revision only where the source has one',
+        /at: Date\.now\(\)/.test(sealOf) && /\.\.\.\(catalogRevision \? \{ catalogRevision \} : \{\}\)/.test(sealOf));
+    ok('the task manager is wired to it', /sealRoute: \(agentId, engine, route\) => routeSealOf\(agentId, engine, route\)/.test(ext));
+    ok('‼️ the catalog revision is asked of the ADAPTER, never of the engine name',
+        /const catalogRevisionOf = \(engine: string\): string \| undefined =>\s*\n\s*adapterFor\(engine, registryDeps\(\)\)\.catalog\(\)\.revision \|\| undefined;/.test(ext));
+
+    // ‼️ THE OTHER HALF OF THE COMPARISON. X-102 declared `catalogRevision` on
+    // the manifest and nothing ever wrote it, so a seal that states one had
+    // nothing to be compared against.
+    const record = (() => {
+        const a = ext.indexOf('const recordLaunch = (input:');
+        return a < 0 ? '' : ext.slice(a, ext.indexOf('return m.launchId;', a));
+    })();
+    ok('`recordLaunch` was found', record.length > 200);
+    ok('‼️ the manifest states the catalog revision too, resolved at the one point every door passes through',
+        /const catalogRevision = catalogRevisionOf\(input\.engine\);/.test(record)
+        && /\.\.\.\(catalogRevision \? \{ catalogRevision \} : \{\}\),/.test(record));
+
+    // and it is readable — a seal nobody can read is a record that fails silently
+    ok('‼️ `tasks.get` hands the seal over, and says what a `route-drift` event means',
+        /routeSeal: task\.routeSeal \?\? null,/.test(ext)
+        && /`routeSeal` is what the named route RESOLVED TO when the run was queued/.test(ext));
+    ok('…and the run\'s timeline has a word for the event rather than falling back to its raw name',
+        /'route-drift': 'route moved under it'/.test(fs.readFileSync(path.join(ROOT, 'media', 'tasksPage.js'), 'utf8')));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
