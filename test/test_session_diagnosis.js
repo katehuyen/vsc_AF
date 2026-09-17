@@ -113,6 +113,50 @@ const facts = (over) => Object.assign({
 
     ok('uncommitted work is a trace on its own',
         diagnoseSession(facts({ codes: [], answerFiles: [], repos: [{ path: 'D:/repo', dirty: 2 }] })).left === 'something');
+
+    // ---- ‼️ S-64 — THE THIRD WALL, WHICH USED TO READ AS THE SECOND --------
+    //
+    // The law binds a run to two triggers and only the quota was measured here.
+    // So a run whose CONTEXT window reached the handover line — told to stop,
+    // commit and write the note — and ended without one was diagnosed "the
+    // session ended on its own". That is the wrong fault: it did not end on its
+    // own, it was told to end and did not write the note. And on an engine with
+    // no channel it was never told at all, which must not be blamed on the
+    // agent.
+    const ctxWall = diagnoseSession(facts({
+        answerFiles: [], context: { level: 'handover', pct: 41, delivered: true }
+    }));
+    ok('‼️ a run told to hand over that wrote no note is its own wall, by name',
+        ctxWall.outcome === 'hit-the-wall' && ctxWall.rule === 'wall-context');
+    ok('...naming the reading, so the verdict can be argued with',
+        /told to hand over at 41%/.test(ctxWall.why));
+    ok('...and the fact is on the evidence beside the quota figure',
+        ctxWall.evidence.some(e => /told CONTEXT HANDOVER at 41%/.test(e)));
+
+    const blind = diagnoseSession(facts({
+        answerFiles: [], context: { level: 'handover', pct: 44, delivered: false }
+    }));
+    ok('‼️ a crossing the engine could not be told about blames the WIRING, not the agent',
+        blind.rule === 'wall-context-blind' && /the wiring, not the agent/.test(blind.why));
+
+    ok('...and a spent plan window on top of it is said as well, never swallowed',
+        /plan window was spent as well/.test(diagnoseSession(facts({
+            answerFiles: [], output: 'You have hit your session limit. Try again later.',
+            context: { level: 'handover', pct: 41, delivered: true }
+        })).why));
+
+    ok('‼️ CONVERGE is not a wall — it is an order to finish the step in flight',
+        diagnoseSession(facts({
+            answerFiles: [], context: { level: 'converge', pct: 36, delivered: true }
+        })).rule === 'wall-unfinished');
+
+    ok('‼️ and a note beats it: a run that was told AND obeyed is a clean handover',
+        diagnoseSession(facts({
+            answerFiles: [NOTE], context: { level: 'handover', pct: 41, delivered: true }
+        })).outcome === 'clean-handover');
+
+    ok('an unmeasured window says nothing about the window',
+        !diagnoseSession(facts({ answerFiles: [] })).evidence.some(e => /CONTEXT/.test(e)));
     ok('...and so is a note naming the session',
         diagnoseSession(facts({ codes: [], answerFiles: [NOTE], repos: [{ path: 'D:/repo', dirty: 0 }] })).left === 'something');
 

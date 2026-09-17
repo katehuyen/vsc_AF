@@ -78,6 +78,29 @@ export interface SessionFacts {
     output?: string;
     /** the five-hour figure at the end, if it was read at all */
     quotaPercent?: number;
+    /**
+     * ‼️ S-64 — THE OTHER TRIGGER. The law binds a run to two: the 5-hour quota
+     * and the context window. `quotaPercent` above is the first; this is the
+     * second, and without it a run that filled its window and stopped was
+     * diagnosed `wall-unfinished` — "the session ended on its own" — about a
+     * run that had been TOLD to stop. Those are different faults and they need
+     * different answers. `undefined` = the guard was not asked.
+     */
+    context?: ContextFacts;
+}
+
+/** What the context guard said to this session, as far as it was measured. */
+export interface ContextFacts {
+    /** the line the reading crossed */
+    level?: 'converge' | 'handover';
+    /** the reading that crossed it */
+    pct?: number;
+    /**
+     * ‼️ WHETHER THE SENTENCE ACTUALLY REACHED THE RUN. An engine whose hooks
+     * carry no channel crosses the line in silence, and blaming that run for
+     * not obeying an order nobody read is the one verdict this must not reach.
+     */
+    delivered?: boolean;
 }
 
 /**
@@ -348,6 +371,15 @@ export function diagnoseSession(
         evidence.push(`five-hour window at ${facts.quotaPercent}%`);
     }
 
+    // ---- the context window ------------------------------------------------
+    const ctx = facts.context;
+    const ctxPct = typeof ctx?.pct === 'number' ? `${ctx.pct}%` : 'the line';
+    if (ctx?.level) {
+        evidence.push(ctx.delivered === false
+            ? `the context window reached the ${ctx.level} line at ${ctxPct} and this engine could not be told`
+            : `the run was told CONTEXT ${ctx.level.toUpperCase()} at ${ctxPct}`);
+    }
+
     const out = (outcome: SessionOutcome, rule: string, why: string): SessionDiagnosis => ({
         sessionId: facts.sessionId, session: shortSessionId(facts.sessionId),
         outcome, rule, why, evidence, unknown, handover, limit, left, policy: p
@@ -378,6 +410,22 @@ export function diagnoseSession(
     // and the round that met it was doing fine; a session that ended on its own
     // with nothing written down did not. The sentry's brake reads the rule, so
     // the difference has to be on the verdict rather than in the sentence.
+    // ‼️ S-64 — AND A THIRD WALL, WHICH USED TO READ AS THE SECOND. A run whose
+    // CONTEXT window reached the handover line was told to stop, commit and
+    // write the note. Ending with no note is then a discipline failure with a
+    // name, not "the session ended on its own" — and the campaign can answer it
+    // differently, because the next round starts fresh either way but this one
+    // has evidence of where the work got to.
+    if (ctx?.level === 'handover') {
+        return ctx.delivered === false
+            ? out('hit-the-wall', 'wall-context-blind',
+                `The context window reached the handover line at ${ctxPct} and this engine has no channel to be told through — `
+                + 'the run was never asked to write a note, so its absence is the wiring, not the agent.'
+                + (limit ? ' The plan window was spent as well.' : ''))
+            : out('hit-the-wall', 'wall-context',
+                `The run was told to hand over at ${ctxPct} and no note was written — what was in flight is not written down anywhere.`
+                + (limit ? ' The plan window was spent as well.' : ''));
+    }
     if (limit) {
         return out('hit-the-wall', 'wall-limit',
             'The plan window was spent and no handover note was written — what was in flight is not written down anywhere.');

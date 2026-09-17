@@ -32,8 +32,8 @@ import {
 } from './opencoderun';
 import { expandDeep, PortableRoot, tokenizeDeep } from './portablePaths';
 import {
-    classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, isLimitFailure,
-    normalizeRetry, resolveRetry, RetryPolicy, retryDecision, RunProgress
+    classifyFailure, continuationPromptFor, describeRetry, FailurePhase, fillContinuation, HandoverEvidence,
+    isLimitFailure, normalizeRetry, resolveRetry, RetryPolicy, retryDecision, RunProgress
 } from './retry';
 import { opencodeSpawnEnv } from './opencodesync';
 import {
@@ -1526,6 +1526,15 @@ export interface TaskManagerOptions {
      * to the ordinary interval, saying which on the run's record.
      */
     limitResetAt?: (engine?: string) => number | undefined;
+    /**
+     * ‼️ S-64 — DID THIS RUN'S WINDOW REACH THE HANDOVER LINE? Asked of the
+     * context guard, which is the only thing that knows: it read the fill and
+     * it sent the sentence. Smart continue resumes an interrupted run's own
+     * conversation, and the one run it must never resume is the saturated one —
+     * the law sends the next run into a FRESH session that starts from the note.
+     * Undefined is "the guard said nothing", which is never "it had room".
+     */
+    handoverOf?: (sessionId: string) => HandoverEvidence | undefined;
     /**
      * ‼️ X-226 — THE ACCOUNTS THIS MACHINE HAS MEASURED, so a walled run can be
      * handed to one that still has room instead of sleeping until a reset.
@@ -4523,7 +4532,15 @@ export class TaskManager implements vscode.Disposable {
             engineResetAt: this.opts.limitResetAt?.(task.engine),
             // ‼️ M-12 — and what this run's own transcript says it managed, so
             // "nothing was attempted" is a finding rather than an assumption.
-            progress: task.progress
+            progress: task.progress,
+            // ‼️ S-64 — and whether its window had reached the handover line,
+            // because a conversation that was told to stop is never the one a
+            // continuation resumes.
+            ...((() => {
+                const sid = (task.runSessionId ?? '').trim();
+                const h = sid ? this.opts.handoverOf?.(sid) : undefined;
+                return h ? { handover: h } : {};
+            })())
         });
         if (d.phase) { task.failurePhase = d.phase; }
         if (!d.retry) {

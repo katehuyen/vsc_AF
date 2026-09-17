@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.540.0 - a conversation that was told to stop is never the one a retry resumes (S-64, 3/n) (2026-09-17)
+
+- **‼️ MEASURED: smart continue would have resumed the one run it must not.**
+  `behavior: "smart"` resumes an interrupted run's own conversation rather than
+  repeating its prompt — right for work that was cut off, and wrong for exactly
+  one run: the one whose context window had reached the handover line. The law
+  is explicit ("the next run is always a fresh session that starts from the
+  note, never a resume of the saturated one"), and resuming it puts the new turn
+  into a window that was already full — walking straight back into the wall the
+  retry was sent to escape.
+- **`retryDecision` takes the guard's evidence** (`handover: {told, pct, note}`)
+  and refuses the continuation on it: the retry still happens, with the original
+  prompt, and the row says which rule stopped the continuation and at what
+  reading. `simple` policies are untouched — they never continued anything.
+  The `unknown` branch is deliberately unchanged: knowing the window was full
+  says nothing about whether the work landed.
+- **The loop closes where the note is found.** The handover search that serves
+  both the sentry and the bridge now records its hit against the session it
+  closed (`markHandedOver`), so "handed over" is a measured fact on every
+  surface — and the retry above has something to read. A handover on the OTHER
+  trigger (the 5-hour quota) is recorded too, on a session that crossed no line
+  here: the fact kept is that the conversation is closed and its work continues
+  elsewhere, which is true however it ended.
+- **The sentry diagnosis gains a third wall.** A run told to hand over that
+  wrote no note is `wall-context` — a discipline failure with a name — instead
+  of `wall-unfinished`, "the session ended on its own", which it did not. And a
+  crossing on an engine whose hooks carry no channel is `wall-context-blind`:
+  the run was never asked, so the missing note is the wiring and not the agent.
+  `CONVERGE` is not a wall; a note still beats both.
+- **`sentry.prompt`** accepts `context: {level, pct, delivered}` — the law's
+  second trigger beside `quotaPercent`'s first, straight out of
+  `sessions.contextGuard`.
+
 ## 3.539.0 - the card says whether the run was TOLD, and whether the sentence ever reached it (S-64, 2/n) (2026-09-17)
 
 - **‼️ MEASURED GAP: the signal went out and nothing on screen said so.** A

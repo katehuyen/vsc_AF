@@ -1,6 +1,6 @@
 import { RunProgress } from './retry';
 import { TrackRecord } from './backlogTrack';
-import { SessionFacts, shortSessionId, TouchedCode } from './sessionDiagnosis';
+import { ContextFacts, SessionFacts, shortSessionId, TouchedCode } from './sessionDiagnosis';
 import type { HandoverDiscovery } from './handoverDiscovery';
 
 /**
@@ -47,6 +47,13 @@ export interface SentryMeasureIO {
      * a caller that only has one folder.
      */
     handover?: () => HandoverDiscovery | undefined;
+    /**
+     * ‼️ S-64 — WHAT THE CONTEXT GUARD SAID TO THIS RUN. The law's second
+     * trigger, beside `quotaPercent`'s first. Absent, or `undefined`, leaves
+     * the fact absent — the diagnosis then says nothing about the window
+     * rather than that it had room.
+     */
+    context?: () => ContextFacts | undefined;
 }
 
 export interface SentryMeasureAsk {
@@ -98,6 +105,7 @@ export function measureSession(ask: SentryMeasureAsk, io: SentryMeasureIO): Sess
     const output = io.output();
     const quota = io.quotaPercent ? io.quotaPercent() : undefined;
     const handoverSearch = io.handover ? io.handover() : undefined;
+    const context = io.context ? io.context() : undefined;
 
     // ‼️ ALL OR NOTHING. See the header: a partial answer here is a lie about a
     // repository nobody read, and the verdict it produces reads exactly like a
@@ -117,6 +125,7 @@ export function measureSession(ask: SentryMeasureAsk, io: SentryMeasureIO): Sess
         ...(tracks !== undefined ? { codes: codesTouchedIn(tracks, ask.sessionId) } : {}),
         ...(ask.progress !== undefined ? { progress: ask.progress } : {}),
         ...(output !== undefined ? { output } : {}),
-        ...(typeof quota === 'number' && Number.isFinite(quota) ? { quotaPercent: quota } : {})
+        ...(typeof quota === 'number' && Number.isFinite(quota) ? { quotaPercent: quota } : {}),
+        ...(context !== undefined ? { context } : {})
     };
 }

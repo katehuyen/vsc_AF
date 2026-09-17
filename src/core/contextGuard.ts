@@ -234,10 +234,21 @@ export class ContextGuard {
         return { level, pct, text: contextSignalText(level, pct) };
     }
 
-    /** A handover note that names this session — the loop closed. */
+    /**
+     * A handover note that names this session — the loop closed.
+     *
+     * ‼️ RECORDED EVEN FOR A SESSION THIS GUARD NEVER SPOKE TO. The law has two
+     * triggers and only one of them is the window: a run that handed over on
+     * the 5-hour quota crossed no line here and would otherwise have no record
+     * at all. The fact being kept is "this conversation is closed and its work
+     * continues elsewhere", and that is true however it ended — it is what
+     * stops a smart retry resuming the conversation the note replaced.
+     */
     markHandedOver(sessionId: string, note: string): boolean {
-        const rec = this.records.get(String(sessionId ?? '').trim());
-        if (!rec) { return false; }
+        const id = String(sessionId ?? '').trim();
+        if (!id) { return false; }
+        const rec = this.recordFor(id, undefined);
+        if (rec.handedOver?.note === note) { return true; }
         rec.handedOver = { ts: this.now(), note };
         this.save();
         return true;
@@ -394,7 +405,12 @@ export function contextSignalView(
     return {
         state: 'quiet',
         chip: '',
-        lines: [`Discipline signal: nothing sent — no line crossed yet.`, law],
+        // A run can hand over on the OTHER trigger — the 5-hour quota — without
+        // this line ever being crossed. Saying "nothing sent" and stopping there
+        // would read as a run that never handed over at all.
+        lines: handedOver
+            ? ['Discipline signal: nothing sent — this window never crossed a line.', handedLine, law]
+            : ['Discipline signal: nothing sent — no line crossed yet.', law],
         handedOver
     };
 }

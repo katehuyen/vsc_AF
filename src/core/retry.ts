@@ -955,6 +955,22 @@ export function planLimitReset(o: {
     };
 }
 
+/**
+ * ‼️ S-64 — THE RUN WAS TOLD TO HAND OVER. What the guard knows about the
+ * conversation smart continue is about to resume.
+ *
+ * `told` is the only field that decides anything; the rest is so the record
+ * can say WHY rather than "no continuation".
+ */
+export interface HandoverEvidence {
+    /** the run was sent `CONTEXT HANDOVER` — its window had reached the line */
+    told: boolean;
+    /** the reading that fired it */
+    pct?: number;
+    /** a handover note has already closed this session */
+    note?: string;
+}
+
 export interface RetryDecision {
     retry: boolean;
     /** How long the manager should wait, in ms. 0 when there is no retry. */
@@ -1014,6 +1030,9 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
     /** ‼️ M-12 — what the run's own transcript says it managed to do. Absent =
      *  not known, which is a THIRD answer and not a quiet "nothing". */
     progress?: RunProgress;
+    /** ‼️ S-64 — whether this run's window had reached the handover line.
+     *  Absent = the guard said nothing, which is not "it had room". */
+    handover?: HandoverEvidence;
 }): RetryDecision {
     const p = resolveRetry(policy, o.fallback);
     const attempt = Math.max(0, Math.round(o.attempt)) + 1;
@@ -1047,11 +1066,28 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
     let continueRun = false;
     let promptTemplate: string | undefined;
     let hold: 'park' | 'ask' | undefined;
+    /**
+     * ‼️ S-64 — AND A CONVERSATION THAT WAS TOLD TO STOP IS NOT RESUMED.
+     *
+     * Smart continue is right about interrupted work and wrong about exactly
+     * one run: the one whose window had reached the handover line. The law is
+     * explicit — "the next run is always a fresh session that starts from the
+     * note, never a resume of the saturated one" — and resuming it puts the
+     * new turn into a window that was already full, which is how a retry walks
+     * straight back into the wall it was sent to escape.
+     *
+     * The work is not lost: the ordinary retry carries the original prompt, and
+     * the handover note (when one was written) is what the fresh run reads.
+     */
+    const handedOver = o.handover?.told === true;
     if (smart) {
-        if (verdict.phase === 'interrupted') {
+        if (verdict.phase === 'interrupted' && !handedOver) {
             continueRun = true;
             promptTemplate = continuationPromptFor(p, attempt);
         } else if (verdict.phase === 'unknown') {
+            // Left exactly as it was: knowing the window was full says nothing
+            // about whether the work landed, and the original prompt going out
+            // blind is the thing this fallback exists to prevent.
             const fb = p.unknownProgressFallback ?? 'park';
             if (fb === 'stop') {
                 return no('smart continue is on and nothing can say whether this run had already done '
@@ -1061,6 +1097,14 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
             if (fb !== 'simple') { hold = fb; }
         }
     }
+    // The one case worth a sentence on the record: smart continue would have
+    // resumed, and the handover line is why it did not.
+    const handoverWhy = smart && handedOver && verdict.phase === 'interrupted'
+        ? ' — not continued: this run was told to hand over'
+            + (typeof o.handover?.pct === 'number' ? ` at ${o.handover.pct}%` : '')
+            + (o.handover?.note ? ` and ${o.handover.note} closed it` : '')
+            + ', and a saturated conversation is never resumed — the fresh run carries the original prompt'
+        : '';
     const held = (d: RetryDecision): RetryDecision => hold
         ? {
             ...d, hold,
@@ -1090,7 +1134,7 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
             phase: verdict.phase,
             continueRun, promptTemplate,
             why: `${verdict.why} — ${plan.why} — ${continueRun ? 'continue' : 'retry'} `
-                + `${attempt} of ${p.max}`
+                + `${attempt} of ${p.max}${handoverWhy}`
         });
     }
     return held({
@@ -1103,6 +1147,7 @@ export function retryDecision(policy: RetryPolicy | undefined, o: {
         // started. The phrase now comes from the evidence, and where there is
         // none it says THAT rather than assuming the flattering half.
         why: `${verdict.why} — ${continueRun ? 'continue' : 'retry'} ${attempt} of ${p.max} in ${wait} min`
+            + handoverWhy
     });
 }
 

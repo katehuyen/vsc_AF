@@ -3329,6 +3329,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!future.length) { return undefined; }
                 return future.sort((a, b) => (b.percent - a.percent) || (a.resetsAt - b.resetsAt))[0].resetsAt;
             },
+            // ‼️ S-64 — the guard is the only thing that knows this run was told
+            // to hand over: it read the window and it sent the sentence.
+            handoverOf: (sessionId) => {
+                const rec = contextGuard.record(sessionId);
+                if (!rec?.handover && !rec?.handedOver) { return undefined; }
+                return {
+                    told: true,
+                    ...(rec.handover ? { pct: rec.handover.pct } : {}),
+                    ...(rec.handedOver ? { note: rec.handedOver.note } : {})
+                };
+            },
             // ‼️ X-226 — AND WHO ELSE COULD HAVE RUN IT. The line above answers
             // "when does this plan reopen"; on its own that is a run sleeping
             // until 07:50 while two signed-in accounts sit at 4%. These are the
@@ -15855,9 +15866,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     /** The whole search, run and decided — the one entry point both the sentry
      *  and the bridge op use, so neither can drift from the other. */
-    const findHandover = (sid: string, projectFolder?: string) => discoverHandover(
-        handoverListings(sid, projectFolder),
-        { sessionId: sid, today: resolvePathVars('${today}').value, now: Date.now() });
+    const findHandover = (sid: string, projectFolder?: string) => {
+        const d = discoverHandover(
+            handoverListings(sid, projectFolder),
+            { sessionId: sid, today: resolvePathVars('${today}').value, now: Date.now() });
+        // ‼️ S-64 — THE LOOP CLOSES HERE. The guard told this session to hand
+        // over; the search just found the note it wrote. Recording it is what
+        // lets every surface say "handed over" instead of leaving a run that
+        // obeyed the law looking like one that ignored it — and it is what
+        // stops a smart retry resuming the conversation the note replaced.
+        if (d.hit?.file) { contextGuard.markHandedOver(sid, d.hit.file); }
+        return d;
+    };
 
     /** ‼️ X-191 — the OPENING of a note, not the whole of it. The leader gets
      *  one bounded turn; handing it a 400-line handover would spend that turn's
@@ -28840,7 +28860,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!finishedTask.outputFile) { return undefined; }
                 try { return fs.readFileSync(finishedTask.outputFile, 'utf8').slice(-4000); } catch { return undefined; }
             },
-            quotaPercent: () => windowPct()
+            quotaPercent: () => windowPct(),
+            // ‼️ S-64 — the law's OTHER trigger. Without it a run that filled
+            // its window and stopped was diagnosed "the session ended on its
+            // own", about a run that had been told to stop.
+            context: () => {
+                const rec = sid ? contextGuard.record(sid) : undefined;
+                if (!rec) { return undefined; }
+                const d = rec.handover ?? rec.converge;
+                if (d) { return { level: rec.handover ? 'handover' as const : 'converge' as const, pct: d.pct, delivered: true }; }
+                if (rec.undelivered) { return { level: rec.undelivered.level, pct: rec.undelivered.pct, delivered: false }; }
+                return undefined;
+            }
         }) : undefined;
 
         // ---- what to take next --------------------------------------------
@@ -37609,7 +37640,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'made such a call and its model, duration and price travel in the words the next '
                 + 'session reads. args: session, answerFiles? (the handover folder listing), repos? '
                 + '([{path,dirty,branch}]), codes? ([{code,closed}]), progress? ({assistantSteps,'
-                + 'toolCalls}), output?, quotaPercent?, policy? (the four decision keys), next? '
+                + 'toolCalls}), output?, quotaPercent? (the law\'s FIRST trigger), context? '
+                + '({level:converge|handover, pct, delivered} — its SECOND, straight out of '
+                + 'sessions.contextGuard: a run told to hand over that wrote no note is '
+                + '`wall-context`, and one whose engine had no channel to be told through is '
+                + '`wall-context-blind`, which blames the wiring rather than the agent), policy? '
+                + '(the four decision keys), next? '
                 + '({code,text,effort} — projects.backlog.next), handoverPath?, project?, assist? '
                 + '({model,ms,costUsd,at,ok}), file?',
             handler: (args) => {
@@ -37629,7 +37665,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     codes: listed<TouchedCode>(a.codes),
                     progress: a.progress || undefined,
                     output: said(a.output),
-                    quotaPercent: counted(a.quotaPercent)
+                    quotaPercent: counted(a.quotaPercent),
+                    context: a.context || undefined
                 }, a.policy || undefined);
                 const s = sentryPool(optStr(args, 'file'));
                 const built = buildNextPrompt({

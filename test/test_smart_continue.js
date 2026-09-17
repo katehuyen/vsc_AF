@@ -163,6 +163,55 @@ const PLAIN = 'error: ENOENT: no such file or directory';
         });
     ok('‼️ waiting for the window and continuing the conversation are independent',
         both.continueRun === true && both.notBefore === Date.UTC(2026, 7, 14, 4, 0) + 3 * 60_000);
+
+    // =======================================================================
+    // ‼️ S-64 — THE ONE INTERRUPTED RUN THAT IS NEVER RESUMED.
+    //
+    // Smart continue is right about interrupted work and wrong about exactly
+    // one run: the one whose window had reached the handover line. The law is
+    // explicit — the next run is a FRESH session that starts from the note,
+    // never a resume of the saturated one — and resuming it puts the new turn
+    // into a window that was already full, walking straight back into the wall
+    // the retry was sent to escape.
+    // =======================================================================
+    const told = R.retryDecision(
+        { max: 6, delayMin: 40, behavior: 'smart' },
+        {
+            attempt: 0, output: LIMIT, progress: { toolCalls: 269 },
+            handover: { told: true, pct: 41 }
+        });
+    ok('‼️ a run that was told to hand over is NOT continued, however much work it did',
+        told.retry === true && told.continueRun !== true && !told.promptTemplate);
+    ok('…the row still calls it a retry, so nobody reads it as a continuation',
+        /retry 1 of 6/.test(told.why) && !/continue 1 of 6/.test(told.why));
+    ok('…and the record says which rule stopped the continuation, with the reading',
+        /told to hand over at 41%/.test(told.why)
+        && /saturated conversation is never resumed/.test(told.why));
+    ok('…and names the note when one closed it',
+        /2026-09-17_devir_05\.md closed it/.test(R.retryDecision(
+            { max: 6, delayMin: 40, behavior: 'smart' },
+            {
+                attempt: 0, output: LIMIT, progress: { toolCalls: 269 },
+                handover: { told: true, note: '2026-09-17_devir_05.md' }
+            }).why));
+    ok('‼️ `told: false` is not a handover — the continuation stands',
+        R.retryDecision({ max: 6, delayMin: 40, behavior: 'smart' },
+            {
+                attempt: 0, output: LIMIT, progress: { toolCalls: 269 },
+                handover: { told: false }
+            }).continueRun === true);
+    ok('‼️ knowing the window was full says nothing about whether the work landed — unknown still HOLDS',
+        (() => {
+            const h = R.retryDecision({ max: 6, delayMin: 40, behavior: 'smart' },
+                { attempt: 0, output: LIMIT, handover: { told: true } });
+            return h.hold === 'park' && h.continueRun !== true;
+        })());
+    ok('‼️ a SIMPLE policy is untouched by it — it never continued anything to begin with',
+        (() => {
+            const s = R.retryDecision({ max: 6, delayMin: 40 },
+                { attempt: 0, output: LIMIT, progress: { toolCalls: 269 }, handover: { told: true, pct: 41 } });
+            return s.retry === true && !s.continueRun && !/told to hand over/.test(s.why);
+        })());
 }
 
 // ===========================================================================

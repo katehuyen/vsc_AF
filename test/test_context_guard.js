@@ -145,7 +145,21 @@ console.log('\n== the guard — once per level, re-armed by an emptied window, h
     thresholds.convergePct = 35; thresholds.handoverPct = 40;
     eq('13. a blank id is refused', post(''), undefined);
     ok('14. markHandedOver closes the loop on a known session', g.markHandedOver('s1', 'devir_01.md') && g.record('s1').handedOver.note === 'devir_01.md');
-    ok('…and answers false for a stranger', g.markHandedOver('nobody', 'x') === false);
+    // ‼️ S-64 — AND ON A SESSION THIS GUARD NEVER SPOKE TO. The law has two
+    // triggers and only one of them is the window: a run that handed over on
+    // the 5-hour quota crossed no line here. The fact kept is "this
+    // conversation is closed and its work continues elsewhere", which is true
+    // however it ended — and it is what stops a smart retry resuming it.
+    ok('‼️ a quota handover is recorded too, on a session that never crossed a line',
+        g.markHandedOver('quota-only', 'devir_02.md')
+        && g.record('quota-only').handedOver.note === 'devir_02.md'
+        && g.record('quota-only').converge === undefined);
+    ok('…and the view says the window never crossed, rather than "nothing sent" and nothing else',
+        (v => v.state === 'quiet' && v.handedOver
+            && v.lines.some(l => /never crossed a line/.test(l))
+            && v.lines.some(l => /Handed over: yes/.test(l)))(
+            G.contextSignalView(g.record('quota-only'), thresholds)));
+    ok('…a blank id is still refused', g.markHandedOver('', 'x') === false);
     g.flush();
     const g2 = mk();
     eq('15. the store survives a reload', (r => [r.handover.pct, r.handedOver.note])(g2.record('s1')), [41, 'devir_01.md']);
@@ -175,6 +189,19 @@ console.log('\n== the wiring — the host reads, the hook answers, the bridge re
         reader.indexOf('consoleHostRef?.list()') < reader.indexOf('lastCallFromTranscriptTail(') && reader.indexOf('lastCallFromTranscriptTail(') < reader.indexOf('index.byId('));
     ok('console.sessions rows carry the signal record', /contextSignal: \(s\.sessionId && contextGuard\.record\(s\.sessionId\)\) \|\| null/.test(ext));
     ok('the store lives in globalStorage and is flushed on dispose', /'context-guard\.json'/.test(ext) && /contextGuard\.flush\(\)/.test(ext));
+    ok('console.sessions rows carry the WORDS too, derived host-side', /contextSignalView\(/.test(ext) && /contextSignalFor: \(sessionId: string\)/.test(ext));
+
+    // ‼️ S-64 (3/n) — THE LOOP CLOSES WHERE THE NOTE IS FOUND. One search
+    // serves the sentry and the bridge; hooking the guard there is what makes
+    // "handed over" a measured fact rather than a hope.
+    const find = ext.slice(ext.indexOf('const findHandover = '), ext.indexOf('const headOf = '));
+    ok('the handover search records the note against the session it closed',
+        /contextGuard\.markHandedOver\(sid, d\.hit\.file\)/.test(find));
+    ok('‼️ and the task manager is told, so a smart retry never resumes a conversation that was told to stop',
+        /handoverOf: \(sessionId\) =>/.test(ext) && /told: true/.test(ext));
+    const tasks = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    ok('…asked of the run\'s OWN session id, at the one place the decision is made',
+        /handover: h/.test(tasks) && /this\.opts\.handoverOf\?\.\(sid\)/.test(tasks));
 }
 
 // ‼️ 6. IT LOOKS THE SAME WHETHER THE RUN WAS TOLD OR NOT. A card drawing 41%
