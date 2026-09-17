@@ -209,7 +209,7 @@ import {
 } from './core/providerProfiles';
 import {
     applyProfile, deleteProfile, describeProfile, editProfile, matchProfile,
-    profileAccountGone, profileFrom,
+    pressedSetupStarts, profileAccountGone, profileFrom,
     profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile
 } from './core/launchProfiles';
 import {
@@ -23114,14 +23114,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const saved = launchProfiles();
         if (!saved.length) { return {}; }
         type Row = vscode.QuickPickItem & { profile?: LaunchProfile };
-        // ‼️ X-180 — THE LIST COMES BEFORE ANY AGENT QUESTION, so when nobody
-        // is known yet each row says WHO it starts (the agent it was saved
-        // for), or that it will ask. A caller that already knows the agent
-        // (a row's menu) starts that one, and the row says only where.
+        // ‼️ X-180 — THE LIST COMES BEFORE ANY AGENT QUESTION, so each row
+        // says WHO it starts. ‼️ S-65 — ALWAYS, even when a caller named an
+        // agent: the profile's own agent is what a press starts, and the tree's
+        // selected row reaches this command as that "known" agent without
+        // anyone choosing it — a row that hid its agent because one was
+        // "known" was hiding the one fact that decides what happens. The
+        // caller's agent is the answer only for a setup that names nobody.
         const who = (p: LaunchProfile): string => {
-            if (agent) { return ''; }
             const a = p.agentId ? agents.find(x => x.id === p.agentId) : undefined;
-            return a ? a.name : p.agentId ? `"${p.agentId}" is gone — asks which agent` : 'asks which agent';
+            if (a) { return a.name; }
+            if (p.agentId) { return `"${p.agentId}" is gone — asks which agent`; }
+            return agent ? agent.name : 'asks which agent';
         };
         const where = (p: LaunchProfile): string => {
             const s = profileSurface(p);
@@ -34621,7 +34625,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     const setup = await pickSavedSetup(known);
                     if (!setup) { return; }
                     if (setup.profile) {
-                        const agent = known ?? await agentForSetup(setup.profile);
+                        /**
+                         * ‼️ S-65 — THE PROFILE'S OWN AGENT IS ABSOLUTE.
+                         *
+                         * `known ?? …` let the TreeView's selection outrank the
+                         * profile: click any agent's row in the Agents tree,
+                         * press the panel's Start Session… icon, and VS Code
+                         * hands that row to the command as its argument — so a
+                         * setup saved for `developer` started `psikolog`, and
+                         * with no way to deselect a tree row the trap was
+                         * permanent. A profile that names an agent starts THAT
+                         * agent, whoever the tree has under the pointer; the
+                         * row is the answer only for a setup that names nobody
+                         * (S-48), which otherwise asks, once, and keeps it.
+                         */
+                        const agent = pressedSetupStarts(setup.profile, !!known) === 'known'
+                            ? known
+                            : await agentForSetup(setup.profile);
                         if (!agent) { return; }
                         await startFromSavedSetup(agent, setup.profile);
                         return;

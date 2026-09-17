@@ -127,6 +127,27 @@ export function profileSurface(p: LaunchProfile): RunSurface | undefined {
 }
 
 /**
+ * ‼️ S-65 — WHO A PRESSED SETUP STARTS.
+ *
+ * A profile that names an agent starts THAT agent — absolutely, whoever the
+ * caller says it "knows". The known agent is not always a choice: the Agents
+ * tree keeps its last clicked row selected, VS Code hands that row to the
+ * panel's Start Session… command as its argument, and there is no way to
+ * deselect it — so `known ?? profile` started whichever agent had last been
+ * clicked, on a setup saved for another. The caller's agent is the answer only
+ * for a setup that names nobody (S-48: a row's own menu pressing a legacy
+ * profile starts that row); with neither, the setup asks, once, and keeps it.
+ *
+ * `'profile'` says the agent is the profile's own to resolve (present, or gone
+ * and asked for — `agentForSetup` does both); `'known'` says start the caller's;
+ * `'ask'` says nobody named one.
+ */
+export function pressedSetupStarts(p: Pick<LaunchProfile, 'agentId'>, known: boolean): 'profile' | 'known' | 'ask' {
+    if ((p.agentId ?? '').trim()) { return 'profile'; }
+    return known ? 'known' : 'ask';
+}
+
+/**
  * A profile applied to the launcher's options.
  *
  * ‼️ EVERY DIMENSION IT STORES, INCLUDING THE ENGINE — that was the bug. And

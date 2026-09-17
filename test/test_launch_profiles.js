@@ -19,7 +19,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const {
-    applyProfile, deleteProfile, describeProfile, editProfile, profileFrom,
+    applyProfile, deleteProfile, describeProfile, editProfile, pressedSetupStarts, profileFrom,
     profileNameClash, profileSurface, renameProfile, replaceProfile, saveProfile,
     PROFILE_KEYS
 } = require(path.join(__dirname, '..', 'out', 'core', 'launchProfiles.js'));
@@ -245,6 +245,23 @@ const names = list => list.map(p => p.name).join(',');
         replaceProfile(list, 'eski', { model: 'sonnet' })[1].agentId === undefined);
     ok('the agent is not one of the dimensions a load applies or a match compares',
         !PROFILE_KEYS.includes('agentId'));
+}
+
+// ---------- S-65: who a pressed setup starts ----------
+// The Agents tree keeps its last clicked row selected and VS Code hands that
+// row to Start Session… as its argument — a "known" agent nobody chose. A
+// profile that names an agent starts THAT agent whatever the tree holds; the
+// caller's agent is the answer only for a setup that names nobody.
+{
+    ok('‼️ a profile saved for developer starts developer even with psikolog selected in the tree',
+        pressedSetupStarts({ agentId: 'developer' }, true) === 'profile');
+    ok('…and with nothing selected, the same', pressedSetupStarts({ agentId: 'developer' }, false) === 'profile');
+    ok('‼️ a profile whose agent is GONE is still the profile\'s to resolve (asked once, kept) — not the tree\'s',
+        pressedSetupStarts({ agentId: 'ghost' }, true) === 'profile');
+    ok('a legacy profile naming nobody, pressed from a row\'s own menu, starts that row (S-48)',
+        pressedSetupStarts({}, true) === 'known');
+    ok('…and pressed from the panel icon with no row, asks', pressedSetupStarts({}, false) === 'ask');
+    ok('a blank agentId is "names nobody", not a profile agent', pressedSetupStarts({ agentId: '  ' }, true) === 'known');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

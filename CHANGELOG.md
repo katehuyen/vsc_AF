@@ -2,6 +2,22 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.545.0 - a saved setup starts its own agent, whatever row the Agents tree has selected (S-65) (2026-09-17)
+
+- **‼️ The profile's own agent is absolute.** `Start Session…` (the panel
+  icon) opens on the saved setups, and a setup saved for `developer` could
+  start `psikolog`: the Agents tree keeps its last clicked row selected, VS Code
+  hands that row to the command as its argument, and `known ?? profile` let it
+  outrank the profile — with no way to deselect a tree row, the trap was
+  permanent. A profile that names an agent now starts THAT agent (present, or
+  gone and asked for once, as before); the caller's agent is the answer only for
+  a setup that names nobody (S-48 — a row's own menu pressing a legacy profile
+  still starts that row), and with neither it asks. The decision is one pure
+  function (`pressedSetupStarts`), run in `test_launch_profiles`.
+- **The saved-setup list always says who each row starts** — it used to hide
+  the agent whenever one was "known", which was hiding the one fact that
+  decided what happened.
+
 ## 3.544.0 - continue from handover, one click from the card that stopped; the note is seen the moment it is written (S-64, closes) (2026-09-17)
 
 - **‼️ "Continue from handover" on the Console card.** A card that was told

@@ -181,11 +181,12 @@ const base = read('src/panels/base.ts');
      * the profile stores and this path forgot is a session quietly running as
      * something else (A-11, X-103).
      */
-    const launchBody = ext.slice(ext.indexOf("registerCommand('agentfarm.launchSession'"),
-        ext.indexOf("registerCommand('agentfarm.launchSession'") + 5000);
+    // bounded by the next command, never by a character count (cfc16829)
+    const launchAt = ext.indexOf("registerCommand('agentfarm.launchSession'");
+    const launchBody = ext.slice(launchAt, ext.indexOf('registerCommand(', launchAt + 1));
     ok('‼️ X-180: Start Session… offers the saved setups BEFORE the agent question and the launcher',
         /if \(!arg\?\.surface\) \{\s*\n\s*const known = resolveAgentArg\(arg, agents\)\.agent;\s*\n\s*const setup = await pickSavedSetup\(known\);/.test(launchBody)
-        && /const agent = known \?\? await agentForSetup\(setup\.profile\);\s*\n\s*if \(!agent\) \{ return; \}\s*\n\s*await startFromSavedSetup\(agent, setup\.profile\);/.test(launchBody)
+        && /const agent = pressedSetupStarts\(setup\.profile, !!known\) === 'known'\s*\n\s*\? known\s*\n\s*: await agentForSetup\(setup\.profile\);\s*\n\s*if \(!agent\) \{ return; \}\s*\n\s*await startFromSavedSetup\(agent, setup\.profile\);/.test(launchBody)
         && launchBody.indexOf('pickSavedSetup(') < launchBody.indexOf('const agent = await resolveAgent(arg);')
         && launchBody.indexOf('const agent = await resolveAgent(arg);') < launchBody.indexOf('await runLauncher(agent, seed,'));
     ok('‼️ X-180: …a setup starts the agent it was saved for, and asks only when it names none',
@@ -197,6 +198,18 @@ const base = read('src/panels/base.ts');
         && /act: 'agent'/.test(ext));
     ok('‼️ X-180: …and the inline ▶ (startSession) carries none of it — it asks where and starts',
         !/pickSavedSetup|startFromSavedSetup/.test(startBody));
+    // ‼️ S-65 — the tree's selected row reaches this command as `known` without
+    // anyone choosing it; a profile that names an agent must not be outranked
+    // by it. The decision is `pressedSetupStarts` (run in test_launch_profiles);
+    // here: the command never writes `known ??` in front of the profile again,
+    // and the picker's rows always say who a setup starts.
+    ok('‼️ S-65: the profile\'s own agent is never outranked by the "known" one (no `known ??` before agentForSetup)',
+        !/known \?\? await agentForSetup/.test(launchBody) && /pressedSetupStarts\(setup\.profile, !!known\)/.test(launchBody));
+    const pickBody = ext.slice(ext.indexOf('const pickSavedSetup = async'), ext.indexOf('const pickSavedSetup = async') + 1500);
+    ok('‼️ S-65: …and the saved-setup list names WHO each row starts even when the caller named an agent',
+        !/if \(agent\) \{ return ''; \}/.test(pickBody)
+        && /if \(a\) \{ return a\.name; \}/.test(pickBody)
+        && /return agent \? agent\.name : 'asks which agent';/.test(pickBody));
     ok('‼️ X-180: …and with nothing saved the layer does not exist at all',
         /const saved = launchProfiles\(\);\s*\n\s*if \(!saved\.length\) \{ return \{\}; \}/.test(ext));
     ok('‼️ X-180: …the full dialog is still a row, so the old flow loses nothing',
