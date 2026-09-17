@@ -1,0 +1,330 @@
+/**
+ * ‼️ S-64 — THE CONTEXT DISCIPLINE SIGNAL: telling a RUNNING agent that its
+ * window is at the converge line (35%) or the handover line (40%).
+ *
+ * WHY THIS EXISTS. The handover rule (`_REF/handover.md`) binds a run to two
+ * triggers, whichever fires first: the 5-hour quota at 90%, or the context
+ * window at 40% (converge at 35%). The agent can probe the quota itself — it is
+ * a file on disk. It CANNOT see its own context fill: nothing in a Claude Code
+ * session tells the model how full its window is, so the second trigger was a
+ * rule with no feedback, which by the constitution's first principle is not a
+ * rule. On an unlimited or enterprise plan it would be the ONLY brake.
+ *
+ * WHAT THIS IS NOT. The measurement is not rewritten here: the last model
+ * call's context (`contextAfter`) and the model's window are already read by
+ * the Console host (stream), the session index (transcript) and the Codex
+ * rollout. This module takes a `read` callback and decides only WHEN to say
+ * WHAT, ONCE.
+ *
+ * THE CHANNEL. Every account's Claude settings carry Agent Farm's live hook
+ * (`hooksInstaller.ts`): each tool call POSTs to the listener and prints the
+ * answer to stdout. Claude Code reads that stdout as the hook's own output —
+ * and a `PostToolUse` (or `UserPromptSubmit`) answer of
+ * `{ hookSpecificOutput: { hookEventName, additionalContext } }` puts that text
+ * INTO THE MODEL'S CONTEXT before its next step. So the listener that used to
+ * answer `{}` to everything can answer with the signal, to exactly the
+ * session whose window crossed the line, at the next tool call it makes. No
+ * new process, no new file, no polling.
+ *
+ * ‼️ AN ENGINE WITH NO SUCH CHANNEL IS SAID, NOT FAKED. Codex's hooks carry no
+ * `additionalContext`; a crossing on such a session is recorded as
+ * `undelivered` with the reason, and the card says the signal did not reach —
+ * which is what the rule asks for ("kanalı olmayan motorun kartı sinyalin
+ * ulaşmadığını açıkça söyler").
+ */
+import * as fs from 'fs';
+import * as path from 'path';
+import { ContextSample, contextPercent } from './consoleproto';
+
+/** The two words the law waits for — `_REF/handover.md` names exactly these. */
+export const CONTEXT_CONVERGE_WORD = 'CONTEXT CONVERGE';
+export const CONTEXT_HANDOVER_WORD = 'CONTEXT HANDOVER';
+
+export type ContextLevel = 'converge' | 'handover';
+
+export interface ContextThresholds {
+    /** start nothing new — 0 = off */
+    convergePct: number;
+    /** stop and hand over — 0 = off */
+    handoverPct: number;
+}
+
+/** The law's own figures (`_REF/handover.md`): converge ≥ 35%, hand over ≥ 40%. */
+export const DEFAULT_CONTEXT_THRESHOLDS: ContextThresholds = { convergePct: 35, handoverPct: 40 };
+
+/**
+ * Both figures clamped to 0..100 and read as integers; a converge line ABOVE
+ * the handover line is folded down onto it, because "start nothing new" after
+ * "stop" is an order that cannot be followed.
+ */
+export function normalizeThresholds(t: Partial<ContextThresholds> | undefined): ContextThresholds {
+    const n = (v: unknown, dflt: number): number => {
+        const x = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : dflt;
+        return Math.max(0, Math.min(100, x));
+    };
+    const handoverPct = n(t?.handoverPct, DEFAULT_CONTEXT_THRESHOLDS.handoverPct);
+    let convergePct = n(t?.convergePct, DEFAULT_CONTEXT_THRESHOLDS.convergePct);
+    if (handoverPct > 0 && convergePct > handoverPct) { convergePct = handoverPct; }
+    return { convergePct, handoverPct };
+}
+
+/** Which line a reading has crossed — the higher one wins. */
+export function contextLevelFor(pct: number | undefined, t: ContextThresholds): ContextLevel | undefined {
+    if (typeof pct !== 'number' || !Number.isFinite(pct)) { return undefined; }
+    if (t.handoverPct > 0 && pct >= t.handoverPct) { return 'handover'; }
+    if (t.convergePct > 0 && pct >= t.convergePct) { return 'converge'; }
+    return undefined;
+}
+
+/**
+ * The sentence, short and fixed. The first two words are the law's; the rest
+ * says what the reader owes and where the procedure is, because a bare
+ * `CONTEXT HANDOVER` would send an agent that never read the law nowhere.
+ */
+export function contextSignalText(level: ContextLevel, pct: number): string {
+    return level === 'handover'
+        ? `${CONTEXT_HANDOVER_WORD} ${pct}% — your context window is ${pct}% full (handover line reached). `
+            + 'Stop here: finish nothing further, commit the clean progress, write the handover note '
+            + 'and end the run — the next run continues from the note (_REF/handover.md).'
+        : `${CONTEXT_CONVERGE_WORD} ${pct}% — your context window is ${pct}% full (converge line reached). `
+            + 'Start nothing new — no new sub-task, no broad reads — finish the atomic step in flight, '
+            + 'then hand over (_REF/handover.md).';
+}
+
+/** Through what the signal reached the session. */
+export type ContextChannel = 'claude-hook' | 'none';
+
+export interface ContextDelivery {
+    ts: number;
+    pct: number;
+    tokens: number;
+    window: number;
+    channel: ContextChannel;
+    /** which hook carried it (`PostToolUse` / `UserPromptSubmit`) */
+    via?: string;
+}
+
+export interface ContextSignalRecord {
+    sessionId: string;
+    engine?: string;
+    converge?: ContextDelivery;
+    handover?: ContextDelivery;
+    /** the last reading the guard saw for this session */
+    lastPct?: number;
+    lastTs?: number;
+    lastSource?: string;
+    /** a crossing on a session with no channel — said, not delivered */
+    undelivered?: { level: ContextLevel; ts: number; pct: number; why: string };
+    /** the run handed over after the signal (a handover note names it) */
+    handedOver?: { ts: number; note: string };
+}
+
+/** What the hook is answered with, for a session that is due a signal. */
+export interface ContextSignal {
+    level: ContextLevel;
+    pct: number;
+    text: string;
+}
+
+/**
+ * Hooks whose stdout Claude Code reads as `additionalContext`. `PreToolUse`
+ * and the rest carry other fields; answering them with this shape would be
+ * ignored at best and refused at worst, so the guard speaks only on these.
+ */
+export const CONTEXT_SIGNAL_HOOKS = ['PostToolUse', 'UserPromptSubmit'] as const;
+
+/**
+ * The listener's answer to a hook POST. `{}` is what it always answered, and
+ * still is for every event and every session that is not due a signal — a
+ * body Claude Code parses as "nothing to add". The signal rides in the shape
+ * the CLI documents for the two hooks that accept it.
+ */
+export function hookResponseBody(eventName: string | undefined, signal: ContextSignal | undefined): string {
+    if (!signal || !eventName || !(CONTEXT_SIGNAL_HOOKS as readonly string[]).includes(eventName)) { return '{}'; }
+    return JSON.stringify({
+        hookSpecificOutput: { hookEventName: eventName, additionalContext: signal.text }
+    });
+}
+
+export interface ContextReadHint {
+    engine?: string;
+    transcriptPath?: string;
+    cwd?: string;
+}
+
+export interface ContextGuardDeps {
+    thresholds: () => ContextThresholds;
+    /** The session's window reading NOW, from whichever source has one (the
+     *  live stream, the transcript's last call, the index). Undefined = no
+     *  measurement — and no measurement is never a percentage. */
+    read: (sessionId: string, hint: ContextReadHint) => ContextSample | undefined;
+    /** Which channel this engine's hooks give the guard. Claude's carry
+     *  `additionalContext`; a name with none gets `none` and a reason. */
+    channelFor: (engine: string | undefined) => { channel: ContextChannel; why?: string };
+    /** Records survive a reload here (JSON). Optional so a test stays in memory. */
+    storeFile?: string;
+    now?: () => number;
+}
+
+/** The largest number of sessions the store keeps — a machine that has run
+ *  thousands does not need every one of them said again. */
+const STORE_CAP = 400;
+
+export class ContextGuard {
+    private records = new Map<string, ContextSignalRecord>();
+    private saveTimer: NodeJS.Timeout | undefined;
+
+    constructor(private readonly deps: ContextGuardDeps) {
+        this.load();
+    }
+
+    private now(): number { return this.deps.now ? this.deps.now() : Date.now(); }
+
+    /**
+     * ‼️ THE ONE DECISION: at a hook event of THIS session, is a signal due?
+     *
+     * Once per level per window: the converge sentence goes out the first time
+     * the reading is at or above the converge line, the handover sentence the
+     * first time it is at or above the handover line — and a reading that has
+     * crossed both at once gets the handover sentence alone (the stronger
+     * order contains the weaker). A reading that falls back UNDER the converge
+     * line afterwards — a compaction, a cleared window — re-arms both, because
+     * that is a new window and the rule starts again in it.
+     *
+     * A session with no channel is recorded (`undelivered`) and answered with
+     * nothing: faking a delivery is the one thing worse than none.
+     */
+    check(sessionId: string, opts: { event?: string; engine?: string; transcriptPath?: string; cwd?: string }): ContextSignal | undefined {
+        const id = String(sessionId ?? '').trim();
+        if (!id) { return undefined; }
+        const t = normalizeThresholds(this.deps.thresholds());
+        if (t.convergePct <= 0 && t.handoverPct <= 0) { return undefined; }
+        const sample = this.deps.read(id, { engine: opts.engine, transcriptPath: opts.transcriptPath, cwd: opts.cwd });
+        const pct = contextPercent(sample);
+        if (pct === undefined || !sample) { return undefined; }
+        const rec = this.recordFor(id, opts.engine);
+        const ts = this.now();
+        rec.lastPct = pct; rec.lastTs = ts; rec.lastSource = sample.source;
+        // Re-arm: the window emptied (compaction) — a new window, the rule again.
+        const floor = t.convergePct > 0 ? t.convergePct : t.handoverPct;
+        if ((rec.converge || rec.handover || rec.undelivered) && pct < floor) {
+            delete rec.converge; delete rec.handover; delete rec.undelivered; delete rec.handedOver;
+        }
+        const level = contextLevelFor(pct, t);
+        if (!level) { this.save(); return undefined; }
+        if (rec[level]) { this.save(); return undefined; }
+        const ch = this.deps.channelFor(opts.engine);
+        if (ch.channel === 'none') {
+            if (!rec.undelivered || rec.undelivered.level !== level) {
+                rec.undelivered = { level, ts, pct, why: ch.why ?? 'this engine’s hooks carry no additionalContext' };
+            }
+            this.save();
+            return undefined;
+        }
+        // The hook must be one the CLI reads additionalContext from; on any
+        // other event the crossing waits for the next tool call.
+        if (!opts.event || !(CONTEXT_SIGNAL_HOOKS as readonly string[]).includes(opts.event)) { this.save(); return undefined; }
+        const delivery: ContextDelivery = {
+            ts, pct, tokens: sample.tokens, window: sample.window ?? 0, channel: ch.channel, via: opts.event
+        };
+        rec[level] = delivery;
+        // handover contains converge: a run told to stop was told to start nothing.
+        if (level === 'handover' && !rec.converge) { rec.converge = { ...delivery }; }
+        this.save();
+        return { level, pct, text: contextSignalText(level, pct) };
+    }
+
+    /** A handover note that names this session — the loop closed. */
+    markHandedOver(sessionId: string, note: string): boolean {
+        const rec = this.records.get(String(sessionId ?? '').trim());
+        if (!rec) { return false; }
+        rec.handedOver = { ts: this.now(), note };
+        this.save();
+        return true;
+    }
+
+    record(sessionId: string): ContextSignalRecord | undefined {
+        return this.records.get(String(sessionId ?? '').trim());
+    }
+
+    all(): ContextSignalRecord[] {
+        return [...this.records.values()].sort((a, b) => (b.lastTs ?? 0) - (a.lastTs ?? 0));
+    }
+
+    /** The current thresholds, normalised — what the bridge reports. */
+    thresholds(): ContextThresholds { return normalizeThresholds(this.deps.thresholds()); }
+
+    private recordFor(id: string, engine: string | undefined): ContextSignalRecord {
+        let rec = this.records.get(id);
+        if (!rec) { rec = { sessionId: id }; this.records.set(id, rec); }
+        if (engine && !rec.engine) { rec.engine = engine; }
+        return rec;
+    }
+
+    private load(): void {
+        const f = this.deps.storeFile;
+        if (!f || !fs.existsSync(f)) { return; }
+        try {
+            const raw = JSON.parse(fs.readFileSync(f, 'utf8')) as { records?: ContextSignalRecord[] };
+            for (const r of raw.records ?? []) {
+                if (r && typeof r.sessionId === 'string' && r.sessionId) { this.records.set(r.sessionId, r); }
+            }
+        } catch { /* a torn store is an empty one */ }
+    }
+
+    private save(): void {
+        const f = this.deps.storeFile;
+        if (!f) { return; }
+        if (this.saveTimer) { return; }
+        this.saveTimer = setTimeout(() => {
+            this.saveTimer = undefined;
+            try {
+                const records = this.all().slice(0, STORE_CAP);
+                fs.mkdirSync(path.dirname(f), { recursive: true });
+                fs.writeFileSync(f, JSON.stringify({ records }, null, 1), 'utf8');
+            } catch { /* the next event writes again */ }
+        }, 250);
+        // A test that never yields must not hold the process open.
+        if (typeof this.saveTimer.unref === 'function') { this.saveTimer.unref(); }
+    }
+
+    /** Write now, for a host that is shutting down. */
+    flush(): void {
+        if (this.saveTimer) { clearTimeout(this.saveTimer); this.saveTimer = undefined; }
+        const f = this.deps.storeFile;
+        if (!f) { return; }
+        try {
+            fs.mkdirSync(path.dirname(f), { recursive: true });
+            fs.writeFileSync(f, JSON.stringify({ records: this.all().slice(0, STORE_CAP) }, null, 1), 'utf8');
+        } catch { /* nothing to do */ }
+    }
+}
+
+/**
+ * ‼️ THE FRESHEST READING A CLAUDE HOOK CAN GIVE: the transcript the payload
+ * itself names. The last assistant line that really went to the model carries
+ * the usage of the last call, and `contextAfter` is the one reader of it.
+ * Read from the tail — a transcript can be tens of megabytes and the answer
+ * is in its last few kilobytes. Returns tokens and the model; the window is
+ * the caller's to attach (it knows the model catalogue and the user's
+ * override).
+ */
+export function lastCallFromTranscriptTail(
+    tail: string | undefined,
+    contextAfter: (usage: unknown) => number
+): { tokens: number; model: string } | undefined {
+    if (!tail) { return undefined; }
+    const lines = tail.split('\n');
+    // The first line of a tail read from an offset is almost always torn.
+    for (let i = lines.length - 1; i >= 1; i--) {
+        const line = lines[i].trim();
+        if (!line) { continue; }
+        try {
+            const row = JSON.parse(line) as { type?: string; message?: { usage?: unknown; model?: string } };
+            if (row.type !== 'assistant' || !row.message) { continue; }
+            const tokens = contextAfter(row.message.usage);
+            if (tokens > 0) { return { tokens, model: String(row.message.model ?? '') }; }
+        } catch { /* torn or foreign line */ }
+    }
+    return undefined;
+}

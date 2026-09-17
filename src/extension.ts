@@ -82,7 +82,8 @@ import {
     hasOurHooks, hookCommand, hooksAreCurrent, installHooksInto, removeHooksFrom,
     syncHooksToAccounts, userSettingsPath
 } from './core/hooksInstaller';
-import { LiveMonitor, LiveSession, mirrorOwns } from './core/live';
+import { cliSourceOf, LiveMonitor, LiveSession, mirrorOwns } from './core/live';
+import { ContextGuard, contextLevelFor, ContextReadHint, DEFAULT_CONTEXT_THRESHOLDS, lastCallFromTranscriptTail, normalizeThresholds } from './core/contextGuard';
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
@@ -118,7 +119,7 @@ import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProductio
 import { buildEdl, buildFcpXml, detectSceneId, pickSequenceAssets } from './core/premiere';
 import { applyMergedContent } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
-import { contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, setQuotaConfig, totalTokens, Usage } from './core/pricing';
+import { contextAfter, contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, RawUsage, setQuotaConfig, totalTokens, Usage } from './core/pricing';
 import {
     BUILT_IN_PROMPT_FILE, parsePromptSnippets, PromptSnippetsSnapshot, resolvePromptFile
 } from './core/prompts';
@@ -437,7 +438,7 @@ import { CliViewMessage, parseCliViewer } from './core/cliViewer';
 import { TextSearchService, resolveRipgrep } from './core/textSearchCorpus';
 import { ConsoleHost, describeAttachment, killPid, nodeOpencodeIo } from './core/consolehost';
 import {
-    carriedTotals, ConsoleMessage, ConsoleSessionState, contextPercent, contextSample, ConsoleStatus,
+    carriedTotals, ConsoleMessage, ConsoleSessionState, contextPercent, ContextSample, contextSample, ConsoleStatus,
     OlderHistory, PERMISSION_MODES_LIVE, transcriptPos
 } from './core/consoleproto';
 // K-36 — the slash catalog this install has already proved it has (see below).
@@ -1301,7 +1302,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * writes); the host's map is keyed on the id it minted itself, and asking it
      * the wrong question would quietly always answer "no question pending".
      */
-    let consoleHostRef: { list(): { sessionId?: string; pendingAsk?: unknown }[] } | undefined;
+    let consoleHostRef: {
+        list(): {
+            sessionId?: string; pendingAsk?: unknown; engine?: string;
+            contextTokens?: number; contextWindowTokens?: number; contextMeasuredAt?: number;
+            contextSource?: string; contextStale?: boolean; model?: string; applied?: { model: string };
+        }[];
+    } | undefined;
     const pendingAskOf = (sessionId: string): boolean => {
         const id = String(sessionId || '').trim();
         if (!id || !consoleHostRef) { return false; }
@@ -1347,10 +1354,76 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // a claude that was born a millisecond ago has not written one yet.
         return rec ? isSpareCliSession(rec) : undefined;
     };
+    /**
+     * ‼️ S-64 — THE CONTEXT DISCIPLINE SIGNAL, wired to the live hook.
+     *
+     * The guard decides WHEN to say the law's two words to a running session;
+     * the reading it decides on comes from wherever one already exists, in
+     * this order: the Console host's live stream (freshest, and the only
+     * per-turn window on Codex), the transcript the hook payload itself names
+     * (its last real call — exact, no index lag), then the session index.
+     * The window is the session's own where it stated one, else the model's
+     * known window through the same override the viewer honours.
+     */
+    const contextLimitForModel = (model: string): number => {
+        const forced = cfg().get<number>('contextWindowTokens', 0);
+        return forced > 0 ? forced : contextWindowFor(model);
+    };
+    const contextReadingFor = (sessionId: string, hint: ContextReadHint): ContextSample | undefined => {
+        const hosted = consoleHostRef?.list().find(s => s.sessionId === sessionId);
+        if (hosted && hosted.contextTokens) {
+            const c = contextSample(hosted);
+            if (c) {
+                if (!c.window) {
+                    const w = contextLimitForModel(hosted.applied?.model || hosted.model || '');
+                    if (w > 0) { c.window = w; }
+                }
+                return c;
+            }
+        }
+        if (hint.transcriptPath) {
+            // `usageProbe` is declared further down and only ever called from
+            // here at hook time, long after activation has finished.
+            const last = lastCallFromTranscriptTail(usageProbe.readTail(hint.transcriptPath, 96 * 1024), u => contextAfter(u as RawUsage | undefined));
+            if (last) {
+                const w = contextLimitForModel(last.model);
+                return { tokens: last.tokens, ...(w > 0 ? { window: w } : {}), source: 'transcript-last-call', measuredAt: Date.now() };
+            }
+        }
+        const s = index.byId(sessionId);
+        if (s?.lastCtxTokens) {
+            const w = s.ctxWindow || contextLimitForModel(s.lastModel ?? '');
+            return { tokens: s.lastCtxTokens, ...(w > 0 ? { window: w } : {}), source: 'transcript-last-call', stale: true };
+        }
+        return undefined;
+    };
+    const contextGuard = new ContextGuard({
+        thresholds: () => ({
+            convergePct: cfg().get<number>('contextConvergePct', DEFAULT_CONTEXT_THRESHOLDS.convergePct),
+            handoverPct: cfg().get<number>('contextHandoverPct', DEFAULT_CONTEXT_THRESHOLDS.handoverPct)
+        }),
+        read: contextReadingFor,
+        // A real hook payload never names its engine (X-265); one that reaches
+        // this listener without a `cli:<engine>:` namespace is Claude Code's,
+        // and Claude's hooks are the ones whose stdout carries additionalContext.
+        channelFor: (engine) => (!engine || engine === 'claude')
+            ? { channel: 'claude-hook' }
+            : { channel: 'none', why: `${engine} hooks carry no additionalContext — the signal has no way into that session` },
+        storeFile: path.join(context.globalStorageUri.fsPath, 'context-guard.json')
+    });
+    context.subscriptions.push({ dispose: () => contextGuard.flush() });
     const live = new LiveMonitor(
         () => ({
             enabled: cfg().get<boolean>('liveMonitor', true),
             port: cfg().get<number>('livePort', 8377),
+            // ‼️ S-64 — the listener's answer to a hook, when the session that
+            // posted it is due the converge or the handover sentence.
+            contextSignal: (p) => contextGuard.check(String(p.session_id ?? ''), {
+                event: p.hook_event_name,
+                engine: cliSourceOf(String(p.session_id ?? '')) || undefined,
+                transcriptPath: p.transcript_path,
+                cwd: p.cwd
+            }),
             stuckThresholdMs: cfg().get<number>('stuckThresholdSeconds', 240) * 1000,
             notifyPermission: cfg().get<boolean>('notifyPermission', true),
             notifyStuck: cfg().get<boolean>('notifyStuck', true),
@@ -10164,6 +10237,48 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'sessions.contextGuard',
+            describe: '‼️ S-64 — THE CONTEXT DISCIPLINE SIGNAL: the two thresholds (converge / handover, percent of the window, 0 = off) and what has been said to which session. The handover law (_REF/handover.md) binds a run to the window at 35% (start nothing new) and 40% (stop and hand over), and an agent cannot see its own fill — so Agent Farm reads it (the live stream, the transcript\'s last call, the index) and tells the session ONCE per line, as the answer to its next PostToolUse/UserPromptSubmit hook (Claude Code puts that answer into the model\'s context). `records`: per session — `converge`/`handover` {ts, pct, tokens, window, channel, via} when delivered, `undelivered` {level, pct, why} when the engine\'s hooks carry no channel, `lastPct`/`lastTs` the last reading seen, `handedOver` when a handover note named it. args: id? (one session: its record AND its window reading right now — tokens, window, pct, source — from whichever source has one), limit? (records, default 50)',
+            handler: (args) => {
+                const id = optStr(args, 'id');
+                const t = contextGuard.thresholds();
+                if (id) {
+                    const s = index.byId(id);
+                    const reading = contextReadingFor(id, { transcriptPath: s?.file });
+                    return {
+                        thresholds: t,
+                        id,
+                        reading: reading
+                            ? { tokens: reading.tokens, window: reading.window ?? null, pct: contextPercent(reading) ?? null, source: reading.source ?? null, stale: !!reading.stale }
+                            : null,
+                        level: contextLevelFor(contextPercent(reading), t) ?? null,
+                        record: contextGuard.record(id) ?? null
+                    };
+                }
+                const limit = Math.max(1, Math.min(500, optNum(args, 'limit', 50)));
+                const all = contextGuard.all();
+                return { thresholds: t, total: all.length, records: all.slice(0, limit) };
+            }
+        },
+        {
+            op: 'sessions.contextGuard.set',
+            describe: 'S-64 — set the context discipline thresholds (agentFarm.contextConvergePct / agentFarm.contextHandoverPct, global settings). Percent of the window, integers 0..100; 0 switches that line off; a converge line above the handover line is folded down onto it. Answers the thresholds in force after the write. args: convergePct?, handoverPct?',
+            handler: async (args) => {
+                const cur = contextGuard.thresholds();
+                const next = normalizeThresholds({
+                    convergePct: optNum(args, 'convergePct', cur.convergePct),
+                    handoverPct: optNum(args, 'handoverPct', cur.handoverPct)
+                });
+                if (next.convergePct !== cur.convergePct) {
+                    await cfg().update('contextConvergePct', next.convergePct, vscode.ConfigurationTarget.Global);
+                }
+                if (next.handoverPct !== cur.handoverPct) {
+                    await cfg().update('contextHandoverPct', next.handoverPct, vscode.ConfigurationTarget.Global);
+                }
+                return { thresholds: contextGuard.thresholds(), changed: next.convergePct !== cur.convergePct || next.handoverPct !== cur.handoverPct };
+            }
+        },
+        {
             op: 'sessions.recent',
             describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (' + ENGINE_ENUM_SPACED + '), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
             handler: (args) => {
@@ -11543,6 +11658,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     contextStale: s.contextTokens
                         ? (s.contextStale ?? false) || isStale(s.contextMeasuredAt, Date.now())
                         : null,
+                    // ‼️ S-64 — whether the discipline signal reached this
+                    // session: `converge`/`handover` deliveries, or `undelivered`
+                    // on an engine whose hooks carry no channel. Null = no line
+                    // crossed yet (sessions.contextGuard has the thresholds).
+                    contextSignal: (s.sessionId && contextGuard.record(s.sessionId)) || null,
                     pendingPermission: s.pendingPermission?.detail ?? null,
                     // ‼️ The turn is OPEN and standing still until this is
                     // answered — `status` alone still says "working", which is

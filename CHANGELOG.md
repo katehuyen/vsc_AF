@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.538.0 - a running agent is told when its window reaches the converge and the handover line (S-64, 1/n) (2026-09-17)
+
+- **‼️ MEASURED: the handover law binds a run to the context window at 35%
+  (start nothing new) and 40% (stop and hand over), and an agent cannot see
+  its own fill** — the quota it can probe, the window it cannot. A rule with
+  no feedback is not a rule; on an unlimited plan it would be the only brake.
+- **`core/contextGuard.ts`** decides WHEN to say the law's two words, ONCE per
+  line per window: `CONTEXT CONVERGE <pct>% — …` at the converge line,
+  `CONTEXT HANDOVER <pct>% — …` at the handover line (the higher wins and
+  contains the lower). A window that empties again (compaction) re-arms both.
+  The measurement is not rewritten: the reading comes from the Console host's
+  live stream, else the transcript the hook payload itself names (its last
+  real call, read from the tail), else the session index; the window is the
+  session's own where stated, else the model's known window through the
+  same `agentFarm.contextWindowTokens` override the viewer honours. No
+  reading, no window, a reading over the window — no percentage, no sentence.
+- **The channel is the live hook's own answer.** Every account's Claude
+  settings already POST each tool call to the listener and print its answer;
+  the listener used to answer `{}` to everything. It now answers a due
+  session's `PostToolUse` / `UserPromptSubmit` with
+  `{ hookSpecificOutput: { additionalContext } }`, which Claude Code puts
+  into the model's context before its next step — no new process, no
+  polling, and never on a hook that does not read the field. A guard that
+  throws still answers `{}` and 200: a tool call is never broken by it.
+- **An engine with no channel is said, not faked.** A crossing on a Codex
+  session is recorded as `undelivered` with the reason; nothing is sent.
+- **Thresholds are settings** — `agentFarm.contextConvergePct` (35),
+  `agentFarm.contextHandoverPct` (40), 0 = off, a converge line above the
+  handover line folds down onto it — **read and written from the bridge:**
+  `sessions.contextGuard` (the thresholds, every session's record; with
+  `id` one session's record AND its window reading right now) and
+  `sessions.contextGuard.set`. `console.sessions` rows carry
+  `contextSignal`. Records survive a reload (`context-guard.json`).
+- Still open on the item (next steps): the session card and the viewer
+  showing whether the signal went and whether the run handed over after it;
+  the clean continuation — `retry.ts`'s smart path and `taskRounds.ts` not
+  resuming a conversation past the handover line but opening a new session
+  from the handover note; the sentry diagnosis carrying the fill; a mission
+  role's handover known to the lead; the interactive card's "continue from
+  handover" option.
+- Tests: `test_context_guard` (65) — thresholds, the sentence, the hook
+  answer shape, the transcript tail, the guard's once-per-level/re-arm/no-
+  channel rules, the host wiring, and the listener end to end over HTTP.
+
 ## 3.537.0 - the mission form can say which endpoint serves each member and the planner (X-107, closes) (2026-09-17)
 
 - **‼️ MEASURED: the spec had carried a route per member and per planner since

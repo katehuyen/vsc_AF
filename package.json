@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.537.0",
+  "version": "3.538.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8579,6 +8579,20 @@
           "type": "number",
           "default": 0,
           "description": "Context-window ceiling for every 'Context now' figure — the session viewer's gauge and the Ctx column's hover. 0 = ask the session: the window the engine itself stated (Codex reports one per turn), else the model's known window. A session whose window nobody states shows the raw token count without a percent rather than a percentage of Claude's. Set a value to force one ceiling everywhere."
+        },
+        "agentFarm.contextConvergePct": {
+          "type": "number",
+          "default": 35,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Context discipline (S-64): when a running session's window is this full, it is told once — CONTEXT CONVERGE — to start nothing new and finish the step in flight. Delivered through the live hook's answer (PostToolUse additionalContext) on Claude Code; an engine whose hooks carry no such channel records the crossing as undelivered. 0 = off. Read and set from the bridge: sessions.contextGuard / sessions.contextGuard.set."
+        },
+        "agentFarm.contextHandoverPct": {
+          "type": "number",
+          "default": 40,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Context discipline (S-64): when a running session's window is this full, it is told once — CONTEXT HANDOVER — to stop, commit, write the handover note and end the run. A converge line above this one is folded down onto it. 0 = off."
         },
         "agentFarm.liveMonitor": {
           "type": "boolean",

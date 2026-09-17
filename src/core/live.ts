@@ -3,6 +3,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { FIRST_PROMPT_MAX } from './sessions';
+import { hookResponseBody } from './contextGuard';
 import { truncate } from './util';
 import type { AlertEvent } from './alertVoices';
 
@@ -212,6 +213,22 @@ export interface LiveConfig {
      * behaviour precisely.
      */
     pendingAskOf?: (sessionId: string) => boolean;
+    /**
+     * ‼️ S-64 — WHAT TO SAY BACK TO THE SESSION THAT JUST POSTED A HOOK.
+     *
+     * The hook prints the listener's answer to stdout, and Claude Code reads a
+     * `PostToolUse` / `UserPromptSubmit` answer of `{ hookSpecificOutput:
+     * { additionalContext } }` INTO THE MODEL'S CONTEXT before its next step.
+     * That is the only channel through which a running agent can be told its
+     * own window is at the converge or handover line (`contextGuard.ts`) — it
+     * cannot see the figure itself. Absent = the listener answers `{}` as it
+     * always has. The answer is decided BEFORE the event is handled, on the
+     * payload alone, so a session that is due a signal gets it at the very
+     * tool call that asked.
+     */
+    contextSignal?: (payload: {
+        session_id?: string; hook_event_name?: string; transcript_path?: string; cwd?: string; engine?: string;
+    }) => { level: 'converge' | 'handover'; pct: number; text: string } | undefined;
     /**
      * ‼️ S-43 — what the CLI's own session registry says about an id: `true` a
      * daemon spare / background worker, `false` somebody's session, `undefined`
@@ -805,8 +822,20 @@ export class LiveMonitor implements vscode.Disposable {
                     return;
                 }
                 res.statusCode = 200;
-                res.end('{}');
-                try { this.handle(JSON.parse(body) as HookPayload); } catch { /* malformed hook payload */ }
+                let payload: HookPayload | undefined;
+                try { payload = JSON.parse(body) as HookPayload; } catch { payload = undefined; }
+                // ‼️ S-64 — the answer is the signal when one is due, `{}`
+                // otherwise (see LiveConfig.contextSignal). Decided on the
+                // payload before it is handled and never allowed to fail the
+                // hook: a guard that threw would turn a tool call into an error.
+                let answer = '{}';
+                if (payload && !payload.engine) {
+                    try {
+                        answer = hookResponseBody(payload.hook_event_name, cfg.contextSignal?.(payload));
+                    } catch { answer = '{}'; }
+                }
+                res.end(answer);
+                if (payload) { try { this.handle(payload); } catch { /* malformed hook payload */ } }
             });
         });
         server.on('error', (err: NodeJS.ErrnoException) => {

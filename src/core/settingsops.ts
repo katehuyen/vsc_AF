@@ -190,6 +190,8 @@ const CATEGORY_OF: Record<string, string> = {
     // with the live monitor because that is what notices the block.
     permissionAnswerKeys: 'live',
     maxTranscriptMessages: 'live', contextWindowTokens: 'live',
+    // S-64 — the two context discipline lines ride beside the window ceiling.
+    contextConvergePct: 'live', contextHandoverPct: 'live',
     // ‼️ S-52 — beside the other two settings that say how a session's figures
     // are READ rather than how they are drawn: this one decides when a pause
     // stops being someone thinking and becomes someone away.

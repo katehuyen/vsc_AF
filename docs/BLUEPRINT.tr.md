@@ -1146,6 +1146,9 @@ VS Code'un terminali gerçek bir terminal değildir — Chromium içinde çalı�
 
 ## Canlı Gözlem
 
+### Bağlam disiplini sinyali (3.538.0 — S-64)
+
+Devir yasası bir koşuyu bağlam penceresine bağlar — %35'te yeni işe girme, %40'ta dur ve devret — ama ajan kendi doluluğunu göremez. Agent Farm görebilir: Console host'un canlı akışı, transkriptin son gerçek çağrısı, oturum indeksi. Bu yüzden her hesabın Claude ayarlarındaki canlı hook bir iş daha yapar: bir oturumun penceresi çizgiyi geçince dinleyici o oturumun bir sonraki `PostToolUse` (ya da `UserPromptSubmit`) hook'una `CONTEXT CONVERGE 36% — …` / `CONTEXT HANDOVER 41% — …` cümlesini `additionalContext` olarak cevaplar; Claude Code bunu modelin bağlamına bir sonraki adımdan önce koyar. Her çizgi için pencere başına bir kez; boşalan pencere (compaction) baştan başlar. Hook'u böyle bir kanal taşımayan motorda (Codex) geçiş **iletilmedi olarak kaydedilir**, kimsenin okumadığı bir cümle gönderilmez. İki çizgi ayardır (`agentFarm.contextConvergePct` / `contextHandoverPct`, 0 = kapalı) ve köprü okur-yazar — `sessions.contextGuard`, `sessions.contextGuard.set`; `console.sessions` satırları `contextSignal` taşır.
 
 ### Sesli Bildirimler, Uyarı Tonları ve Canlı Diyalog Okuyucu (DialogueSpeaker) (3.299.0 — 3.314.0 — A-20 — A-26)
 

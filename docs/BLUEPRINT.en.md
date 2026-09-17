@@ -1104,6 +1104,9 @@ VS Code's terminal isn't a real terminal — it's the **xterm.js** emulator runn
 
 ## Live Observation
 
+### The context discipline signal (3.538.0 — S-64)
+
+The handover law binds a run to its context window — start nothing new at 35%, stop and hand over at 40% — and an agent cannot see its own fill. Agent Farm can: the Console host's live stream, the transcript's last real call, the session index. So the live hook that every account's Claude settings already carry does one more thing: when a session's window crosses a line, the listener answers that session's next `PostToolUse` (or `UserPromptSubmit`) with `CONTEXT CONVERGE 36% — …` / `CONTEXT HANDOVER 41% — …` as `additionalContext`, which Claude Code puts into the model's context before its next step. Once per line per window; a window that empties again (compaction) starts over. An engine whose hooks carry no such channel (Codex) gets the crossing **recorded as undelivered** rather than a sentence nobody read. The two lines are settings (`agentFarm.contextConvergePct` / `contextHandoverPct`, 0 = off) and the bridge reads and sets them — `sessions.contextGuard`, `sessions.contextGuard.set`; `console.sessions` rows carry `contextSignal`.
 
 ### Sound Alerts, Audio Tones and Live Dialogue Speaker (3.299.0 — 3.314.0 — A-20 — A-26)
 
