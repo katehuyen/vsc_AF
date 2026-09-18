@@ -2,6 +2,76 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.555.0 - which PROVIDER served a run is a mark of its own, and the last door with no launch record has one (X-110 part 1 · X-327) (2026-09-18)
+
+### X-110 (part 1) — the provider is a mark of its own
+
+- **The defect.** An engine is the program on this machine; a provider is the
+  endpoint that answered it, and they are two axes. Only one surface drew the
+  second one at all — the Console, with a route pill it had invented for
+  itself, in its own grey, on one page. Everywhere else the provider was buried
+  in a hover line or left to be guessed from a model name, which is the one
+  inference this family forbids: `claude-opus-5` served by Anthropic and by a
+  gateway read identically.
+- **`media/afProvider.js` — the mark, said once (the afEngine.js rule, one axis
+  across).** A provider chip is DASHED where an engine badge is SOLID, so the
+  colour can answer "which of the four" without a provider ever reading as a
+  sixth engine. The four shipped Claude routes are named and coloured; anything
+  else — an OpenCode native provider, a route added later — lands in one of
+  five derived slots by a hash of its own id, so it is the same colour on every
+  page rather than a colour that depends on where it sat in a list. Never red:
+  this extension signals a fault in red, and a provider that hashed onto it
+  would read as a broken route (U-49's lesson, one palette across).
+- **A run that changed provider between turns is COUNTED, never named.** Saying
+  "Kimi" over a run that was half Anthropic is the specific lie the component
+  exists to stop; the chip says `2 providers` and the panel names them in the
+  order they served.
+- **Four surfaces.** The Console card's own pill is the shared chip now, and it
+  is coloured by the COMPANY the profile routes to rather than by the profile,
+  so two profiles on Kimi are one colour in a table and not two (new
+  `ConsoleRoute.shape`, answered off the profile and never guessed from a
+  name). The Sessions table draws it beside the engine badge — `Engine · Route`
+  — so a machine with four routes can be SCANNED rather than hovered. The Turns
+  page draws the provider the engine named for THAT turn, which is the one
+  place a multi-provider run becomes legible, and the Export-MD line says
+  `via <provider>` beside the model.
+- The three-way "why is there nothing to show" wording (`legacy` · `external` ·
+  `unknown`) had been written in two files free to disagree; it is the
+  component's now, and the sessions table reads it from there.
+- Guards: `test/test_provider_mark.js` (the component and the palette — no two
+  shipped routes share a hue, nothing a provider can wear is the fault colour,
+  a legacy run borrows no route) and `test/test_provider_chip_width.js`, which
+  MEASURES the laid-out chip on both tables. That one exists because the first
+  draft drew `···` where `opencode` should have been: Turns declared its Engine
+  column at what a single badge needs, and every string test in the repo passed
+  on it.
+- Still to come in X-110: the session viewer, the Live timeline, and task and
+  mission rows.
+
+### X-327 — a task hosted in the Console has a launch record too
+
+- **The last door with no record, named in 3.554.0 and closed here.** The
+  runner skips the Console shape on purpose — "that branch hands the spawn to
+  the panel, and the Console door writes its own manifest" — and for four
+  releases that sentence described an intention nobody had implemented.
+  `consoleTaskStart` recorded nothing, so a task with
+  `interactiveTarget: console` had NO launch manifest at all and
+  `sessions.resumeRoute` read its conversation back as unknown.
+- **Written at the Console door, because that is where the account is a slot.**
+  A task may name a rule (`@round-robin`); the door resolves it at the pick,
+  and a record written on the runner's side would have named the RULE against
+  a run that went to exactly one sign-in. The runner passes what set the run
+  going (`launchMechanismOf`) and takes the `launchId` back, so a Console-hosted
+  task carries the same link to its record every other shape carries — and a
+  run a schedule started still reads as `schedule`, not as "a person opened a
+  card".
+- The options travel by the SHAPE (`runExtras` → `launchDimsOf`), not by a
+  hand-written field list, so a dimension added to `RunDimensions` reaches this
+  record without anybody remembering it here.
+- Guards in `test/test_launch_manifest.js`: the mechanism travelling in and the
+  id coming back, the record written after the sign-in is resolved and before
+  the process is asked for, and the record naming what set the run going.
+
 ## 3.554.0 - a card started from the composer or the bridge has a launch record, so a resume can pin its route (X-109 R2) (2026-09-18)
 
 - **Measured live, after X-109 shipped.** `sessions.resumeRoute` on two cards

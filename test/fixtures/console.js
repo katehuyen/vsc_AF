@@ -186,7 +186,7 @@ const data = () => ({
             title: 'Kimi rotasinda tur', status: 'idle', turns: 1, tokens: 12800,
             lastTs: NOW - 300000,
             route: {
-                id: 'kimi', label: 'Kimi', noun: 'Route', tier: 'sonnet',
+                id: 'kimi', shape: 'kimi', label: 'Kimi', noun: 'Route', tier: 'sonnet',
                 baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'apiKey',
                 scopeNote: 'fixed for the session - a different route is a different program, so a resume across one forks'
             }
@@ -203,7 +203,7 @@ const data = () => ({
             title: 'Saglayici tur sinirinda degisti', status: 'idle', turns: 4,
             tokens: 48200, lastTs: NOW - 200000,
             route: {
-                id: 'opencode', label: 'opencode', noun: 'Provider',
+                id: 'opencode', shape: 'opencode', label: 'opencode', noun: 'Provider',
                 now: { id: 'anthropic', label: 'anthropic' },
                 // X-105 - the REPORTED half. The change landed at the boundary
                 // and the next turn has not run yet, so the engine's own events

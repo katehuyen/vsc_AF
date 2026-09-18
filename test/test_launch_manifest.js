@@ -350,7 +350,7 @@ console.log('\n== the store is bounded before the first row is written ==');
         ok('‼️ one helper writes a Console card\'s manifest, off the same resolution',
             /const resolved = resolveLaunchRoute\(o\.agentId, engine, \{/.test(helper)
             && /return resolved \? recordLaunch\(\{/.test(helper)
-            && /mechanism: 'session',/.test(helper) && /surface: 'console',/.test(helper));
+            && /mechanism: o\.mechanism \?\? 'session',/.test(helper) && /surface: 'console',/.test(helper));
         const op = ext.slice(ext.indexOf("op: 'console.start'"), ext.indexOf("op: 'console.start'") + 30000);
         const rec = op.indexOf('const launchId = resume ? undefined : recordConsoleCard({');
         const start = op.indexOf('const id = consoleHost.start({');
@@ -412,6 +412,46 @@ console.log('\n== the store is bounded before the first row is written ==');
             /options: LaunchOptions;/.test(ext));
         ok('…and an unfilled hole records nothing rather than throwing at a spawn',
             /recordLaunch: \(run\) => recordTaskLaunch\?\.\(run\),/.test(ext));
+    }
+
+    /* ---------------------------------------------------------------------
+     * ‼️ X-327 — AND THE SKIP ABOVE IS ONLY HONEST IF THE OTHER DOOR WRITES IT.
+     *
+     * Measured 2026-09-18: the runner skipped the Console shape saying "the
+     * Console door writes its own manifest", and `consoleTaskStart` wrote
+     * nothing — so a task hosted in the Console had NO record at all and its
+     * resume read back as unknown. The door is the right side to write it on,
+     * because that is where a rule (`@round-robin`) has become one slot; what
+     * was missing is that it has to actually happen, with the mechanism the
+     * runner knows carried across.
+     * ------------------------------------------------------------------- */
+    {
+        const tasks = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+        ok('‼️ the mechanism travels INTO the Console door and the launch id comes back OUT',
+            /\}\) => \{ sessionId: string; launchId\?: string \} \| undefined;/.test(tasks)
+            && /mechanism: 'task' \| 'schedule' \| 'trigger' \| 'workflow' \| 'mission';/
+                .test(tasks.slice(tasks.indexOf('startConsoleTask?: \(spec: {'),
+                    tasks.indexOf('startConsoleTask?: (spec: {') + 400))
+            && /\.\.\.this\.launchMechanismOf\(task\)/
+                .test(tasks.slice(tasks.indexOf('this.opts.startConsoleTask({'),
+                    tasks.indexOf('this.opts.startConsoleTask({') + 300)));
+        ok('…and the task keeps the same link to its record every other shape keeps',
+            /task\.consoleSessionId = started\.sessionId;\s*\n\s*task\.launchId = started\.launchId;/.test(tasks));
+        const door = ext.slice(ext.indexOf('consoleTaskStart = spec => {'),
+            ext.indexOf('consoleTaskStart = spec => {') + 5200);
+        const acc = door.indexOf('account = launchAccountFor(');
+        const rec = door.indexOf('const launchId = recordConsoleCard({');
+        const start = door.indexOf('const id = consoleHost.start({');
+        ok('‼️ the Console door records AFTER the sign-in is a slot, and before the process is asked for',
+            acc > 0 && rec > acc && start > rec
+            && /\.\.\.\(launchId \? \{ launchId \} : \{\}\),/.test(door.slice(start, start + 400)));
+        ok('…on the SHAPE, so a dimension added to RunDimensions reaches this record too',
+            /\.\.\.launchDimsOf\(\{\s*\n\s*\.\.\.runExtras\(spec\), engine, model,/.test(door));
+        ok('‼️ …and the record says what SET THE RUN GOING, not "a person opened a card"',
+            /mechanism: spec\.mechanism,/.test(door)
+            && /mechanism: o\.mechanism \?\? 'session',/.test(ext));
+        ok('…and the hosted session is handed back with its record\'s id',
+            /return \{ sessionId: id, \.\.\.\(launchId \? \{ launchId \} : \{\}\) \};/.test(door));
     }
 
     /* ---------------------------------------------------------------------

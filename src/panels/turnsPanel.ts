@@ -150,6 +150,11 @@ export function buildTurnsMarkdown(
         // quieter answer to the same question.
         const meta = [
             r.models.map(m => m.replace(/^claude-/, '')).join(', '),
+            // ‼️ X-110 — AND WHO SERVED IT, which a model name does not say. An
+            // export naming only the model is the same burial the pages were
+            // doing: `claude-opus-5` was served by Anthropic or by a gateway and
+            // the file cannot be asked which, for ever.
+            r.providerIds.length ? `via ${r.providerIds.join(', ')}` : '',
             r.steps || r.apiCalls ? fmtStepPair(r.apiCalls, r.steps) : '',
             r.ms ? `took ${fmtDuration(r.ms)}` : '',
             r.tokens ? `${r.tokens} tok` : '',

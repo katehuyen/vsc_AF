@@ -91,6 +91,14 @@ export interface ConsoleRoute {
     id: string;
     /** its own name, which is what the reader sees */
     label: string;
+    /**
+     * ‼️ X-110 — THE PROVIDER THAT ROUTE TALKS TO, which is what the colour is
+     * keyed on. `id` above is a PROFILE on Claude ("Kimi (work)", "Kimi
+     * (personal)"), and colouring by it would give one company two colours in
+     * one table — the exact disagreement a shared chip exists to end. On
+     * OpenCode a provider is its own id and this is the same string.
+     */
+    shape?: string;
     /** the word THIS engine uses — `Route` on Claude, `Provider` on OpenCode */
     noun: string;
     /** Claude only: which tier of that route, when the launch named one */

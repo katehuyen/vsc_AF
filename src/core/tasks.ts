@@ -1746,10 +1746,17 @@ export interface TaskManagerOptions {
      * session's id, or undefined when the panel refused (an engine that is not
      * on this machine), which is a failed run with a reason and never a task
      * left standing.
+     *
+     * ‼️ X-327 — AND THE MANIFEST IT WROTE, because that door writes it. The
+     * mechanism travels IN (a run set going by a schedule is a schedule's run
+     * wherever it is hosted) and the `launchId` comes back OUT, so the task
+     * carries the same link to its record every other shape carries.
      */
     startConsoleTask?: (spec: {
         task: FarmTask; agentId: string; agentName: string; cwd: string; prompt: string;
-    }) => string | undefined;
+        mechanism: 'task' | 'schedule' | 'trigger' | 'workflow' | 'mission';
+        mechanismId?: string;
+    }) => { sessionId: string; launchId?: string } | undefined;
     /**
      * ‼️ M-26 — WHAT THAT HOSTED CONVERSATION IS DOING NOW. The panel's own
      * report, read back against the task. `answered` is the fact `auto-close`
@@ -3598,6 +3605,16 @@ export class TaskManager implements vscode.Disposable {
          * to the panel, and the Console door writes its own manifest with its
          * own surface. Recording here as well would put two rows under one run
          * and make "which setup did it have" depend on which was read first.
+         *
+         * ‼️ X-327 — AND "THE CONSOLE DOOR WRITES IT" IS NOW TRUE. For four
+         * releases this sentence described an intention nobody had implemented:
+         * the skip was here, `consoleTaskStart` recorded nothing, and a task
+         * hosted in the Console had no manifest at all — its resume read back
+         * as unknown. The door writes it because the ACCOUNT is resolved there:
+         * a rule (`@round-robin`) becomes a slot at the pick, and a record
+         * written on this side would name the rule against a run that went to
+         * one sign-in. The mechanism travels with the spec so the record still
+         * says what set the run going.
          */
         const target = normInteractiveTarget(task.interactiveTarget);
         const hostedHere = task.mode !== 'headless' && target === 'console'
@@ -3627,12 +3644,14 @@ export class TaskManager implements vscode.Disposable {
             // prompt) and the panel starts it. What comes back is the hosted
             // session's id, which is the ONE thing that lets this task be
             // followed afterwards — see `watchConsoleTasks`.
-            const id = this.opts.startConsoleTask({
+            const started = this.opts.startConsoleTask({
                 task, agentId: agent.id, agentName: agent.name,
-                cwd: task.workDir ?? agent.dir, prompt: task.prompt
+                cwd: task.workDir ?? agent.dir, prompt: task.prompt,
+                ...this.launchMechanismOf(task)
             });
-            if (id) {
-                task.consoleSessionId = id;
+            if (started) {
+                task.consoleSessionId = started.sessionId;
+                task.launchId = started.launchId;
                 noteTaskEvent(task, 'started', 'handed to the Console — the panel hosts the conversation');
                 this.startInteractiveWatch();
             } else {

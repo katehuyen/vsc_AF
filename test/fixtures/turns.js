@@ -116,6 +116,31 @@ const rows = () => ([
         apiCalls: 4, steps: 9, thinking: 2, endCtx: 31_004,
         tokens: 63_411, wTokens: 0, cost: 0.0184,
         tools: 3, errors: 0, models: ['opencode/big-pickle'],
+        // X-110 - the provider the ENGINE named for this turn. The chip is drawn
+        // from this and from nothing else: a turn's declared route is the
+        // session's, and reading a provider out of "opencode/big-pickle" is the
+        // one inference this family forbids.
+        providerIds: ['opencode'],
+        sidechain: false, origin: 'user', active: false,
+        engine: 'opencode'
+    },
+    {
+        // ‼️ X-110 - THE TURN THE ENGINE NAMED TWO PROVIDERS FOR. The chip must
+        // COUNT here rather than name one of them, and a page that only draws
+        // the single-provider turn photographs neither the count nor the fact
+        // that it wears no provider hue.
+        file: '',
+        sessionId: 'ses_9a41c7b2e05f3d',
+        cwd: 'D:\\zone\\agent\\ajanlar\\manager',
+        agent: 'manager', agentName: 'manager',
+        session: 'saglayici tur icinde degisti',
+        n: 5, of: 5,
+        label: 'bu turu bitir, sonra digerine gec',
+        ts: min(19), durationMs: 5 * 60000, ms: 3 * 60000,
+        apiCalls: 7, steps: 14, thinking: 3, endCtx: 44_210,
+        tokens: 88_120, wTokens: 0, cost: 0.0311,
+        tools: 5, errors: 0, models: ['anthropic/claude-opus-5', 'openai/gpt-5.6-sol'],
+        providerIds: ['anthropic', 'openai'],
         sidechain: false, origin: 'user', active: false,
         engine: 'opencode'
     }

@@ -566,28 +566,59 @@ span.af-tipw { display: inline-block; max-width: 100%; }
     border: 1px solid currentColor; opacity: .9;
     color: var(--af-engc, var(--vscode-descriptionForeground, #9d9d9d));
 }
-/* X-105 - WHICH ROUTE A CARD IS ON, beside the engine badge and never inside
-   it: the engine is the program, the route is what that program talks to, and
-   two cards on one engine can be served by two different companies (ONE
-   SUBJECT). Dashed, and deliberately NOT an engine colour - those five hues
-   mean "which engine" on every surface here, so a sixth pill wearing one would
-   read as a sixth engine. */
-.af-route {
+/* ‼️ X-110 - WHICH PROVIDER SERVED IT, beside the engine badge and never inside
+   it: the engine is the program, the provider is what that program talks to,
+   and two cards on one engine can be served by two different companies (ONE
+   SUBJECT).
+   AND IT CARRIES A COLOUR, which the first version of this mark refused. The
+   reason it gave was right for what it could see: five hues meant "which
+   engine", so a sixth pill wearing one would read as a sixth engine. What it
+   missed is that the SHAPE already answers that question - an engine badge is
+   SOLID, a provider chip is DASHED - and the question the colour has to answer
+   is a different one: in a table of sessions served by four different
+   companies, "which of the four" is unreadable when every chip is the same
+   grey. So the axis is carried by the border style and the identity by the
+   hue, and neither is copied into a page stylesheet.
+   The four named routes are the shipped shapes (CLAUDE_ROUTE_TEMPLATES); an id
+   this build has never heard of - an OpenCode native provider, a route added
+   later - lands in one of six derived slots by a hash of its own id, so it is
+   the same colour on every page rather than a colour that depends on where it
+   happened to sit in a list. */
+.af-provc.anthropic { --af-provc: var(--vscode-charts-green, #89d185); }
+.af-provc.anthropic-api { --af-provc: var(--vscode-charts-blue, #3794ff); }
+.af-provc.kimi { --af-provc: var(--vscode-charts-yellow, #cca700); }
+.af-provc.minimax { --af-provc: var(--vscode-charts-purple, #b180d7); }
+/* ‼️ AND NOT RED, ON ANY OF THEM. This extension signals a fault in red
+   everywhere, so a provider that happened to hash onto it would read as a broken
+   route rather than as a named one - the same lesson U-49 taught the engine
+   palette about green. Five slots rather than six is the price. */
+.af-provc.p0 { --af-provc: var(--vscode-charts-orange, #d18616); }
+.af-provc.p1 { --af-provc: var(--vscode-charts-blue, #3794ff); }
+.af-provc.p2 { --af-provc: var(--vscode-charts-purple, #b180d7); }
+.af-provc.p3 { --af-provc: var(--vscode-charts-yellow, #cca700); }
+.af-provc.p4 { --af-provc: var(--vscode-charts-green, #89d185); }
+.af-provc.none { --af-provc: var(--vscode-descriptionForeground, #9d9d9d); }
+.af-prov {
     flex: none; display: inline-block; font-size: 9px; line-height: 15px;
     padding: 0 5px; border-radius: 7px; white-space: nowrap;
-    border: 1px dashed currentColor; opacity: .85;
-    color: var(--vscode-descriptionForeground, #9d9d9d);
+    border: 1px dashed currentColor; opacity: .9;
+    color: var(--af-provc, var(--vscode-descriptionForeground, #9d9d9d));
+}
+/* ‼️ A RUN THAT CHANGED PROVIDER IS NOT ONE CHIP. Naming one of them over a run
+   that was half something else is the specific lie this component exists to
+   stop, so the chip counts instead - and it wears the plain foreground, because
+   no single hue is true of it. */
+.af-prov.af-prov-multi {
+    opacity: 1; color: var(--vscode-foreground, #ccc);
 }
 /* X-105 - THE SESSION IS NO LONGER ON THE ONE IT STARTED WITH. Only reachable
    on an engine whose provider may change at a turn boundary, and it is a fact
    worth seeing without a hover: the turns already in the transcript ran on a
-   different endpoint than the next one will. Same shape and same dashed border
-   - it is the SAME mark, not a second one - lifted to the full foreground so it
-   stops reading as background metadata. Deliberately not a colour: red would
-   read as an error and this is a legitimate feature of that engine, and every
-   hue in this extension already means something else. */
-.af-route.af-route-moved {
-    opacity: 1; color: var(--vscode-foreground, #ccc);
+   different endpoint than the next one will. Same mark, not a second one - the
+   provider's own hue stays, and only the weight changes, so the chip still says
+   WHICH provider while saying that it moved. */
+.af-prov.af-prov-moved {
+    opacity: 1; font-weight: 600;
 }
 /* ‼️ X-213 - WHOSE PLAN A CARD IS SPENDING, beside the engine and the route and
    for the same reason: the engine is the program, the route is what it talks

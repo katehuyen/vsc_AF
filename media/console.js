@@ -296,7 +296,7 @@
            the whole value — MIRROR), and the engine pill never does. */
         .srow .h > .hb { flex:0 100 auto; min-width:0; }
         .srow .h > .hb > .af-tipw.rtw { flex:0 1 auto; min-width:4ch; display:block; overflow:hidden; }
-        .srow .h > .hb .af-route { display:block; overflow:hidden; text-overflow:ellipsis; }
+        .srow .h > .hb .af-prov { display:block; overflow:hidden; text-overflow:ellipsis; }
         /* ‼️ K-13 — the identity line is two things, and only ONE of them may be
            cut. The name is the flexible half; the id is a fixed eight characters
            that mean nothing at all once an ellipsis reaches them.
@@ -3642,8 +3642,19 @@
          */
         const nowLabel = (r.now && r.now.label) ? r.now.label : r.label;
         const moved = !!(r.now && r.now.id && r.now.id !== r.id);
+        /**
+         * ‼️ X-110 — THE CHIP IS THE SHARED ONE NOW, colour and all. This page
+         * invented its own route pill, in its own grey, and it was the only
+         * surface in the extension that drew a provider at all — so "which of
+         * the four companies is serving this card" was a question no table could
+         * answer and this one answered in one colour. The panel below stays
+         * here: it carries the endpoint, the tier and the scope note, which are
+         * facts only a live card has.
+         */
+        const shape = moved ? r.now.id : (r.shape || r.id);
         return cardTip(
-            `<span class="af-route${moved ? ' af-route-moved' : ''}">${C.esc(nowLabel)}</span>`,
+            window.AFProvider.chip({ providerId: shape, providerLabel: nowLabel },
+                moved ? 'af-prov-moved' : ''),
             // SHORTHAND: the pill is the short form, and the panel opens with
             // the long one so a reader never has to already know what it meant.
             `${nowLabel} — the ${noun.toLowerCase()} this session is served by`,

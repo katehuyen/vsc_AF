@@ -34,15 +34,15 @@ const part = (id) => {
 const html = () => part('c-list') + part('c-controls');
 
 // ‼️ THE CLASS LIST IS MATCHED, NOT THE CLASS ATTRIBUTE. A card whose provider
-// moved wears a second class on the SAME mark (`af-route af-route-moved`), and
-// an anchored `class="af-route"` would silently stop counting it — which would
+// moved wears a second class on the SAME mark (`af-prov af-prov-moved`), and
+// an anchored `class="af-prov"` would silently stop counting it — which would
 // read as "the mark is not drawn" when the truth is the opposite.
-const ROUTED = /class="af-route([^"]*)"[^>]*>([^<]*)</g;
+const ROUTED = /class="af-prov([^"]*)"[^>]*>([^<]*)</g;
 const marks = () => {
     const out = [];
     const h = html();
     for (let m = ROUTED.exec(h); m; m = ROUTED.exec(h)) {
-        out.push({ label: m[2], moved: /af-route-moved/.test(m[1]) });
+        out.push({ label: m[2], moved: /af-prov-moved/.test(m[1]) });
     }
     ROUTED.lastIndex = 0;
     return out;
@@ -83,10 +83,10 @@ ok('‼️ the moved card wears the provider serving it NOW',
     const h = html();
     // The panel FOLLOWS its trigger in the markup, so the window looks forward:
     // head, then body, then the engine's own scope note at the end of it.
-    const at = h.indexOf('af-route');
+    const at = h.indexOf('af-prov');
     const around = h.slice(Math.max(0, at - 200), at + 1400);
     ok('the mark is an AFTip trigger, not a native tooltip',
-        /data-aftip/.test(around) && !/<span class="af-route[^"]*"[^>]*title=/.test(h));
+        /data-aftip/.test(around) && !/<span class="af-prov[^"]*"[^>]*title=/.test(h));
     ok('…opening with the long form', around.indexOf('the route this session is served by') >= 0);
     ok('…and carrying the endpoint, which is what makes it checkable',
         around.indexOf('api.moonshot.ai') >= 0);
@@ -98,7 +98,7 @@ ok('‼️ the moved card wears the provider serving it NOW',
 // ---- ‼️ X-105 — the panel of a card that MOVED carries both facts -----------
 {
     const h = html();
-    const at = h.indexOf('af-route-moved');
+    const at = h.indexOf('af-prov-moved');
     const around = h.slice(Math.max(0, at - 200), at + 1400);
     ok('‼️ the moved card names what it STARTED on, which is what the turns already '
         + 'in the transcript really ran on',
@@ -106,7 +106,7 @@ ok('‼️ the moved card wears the provider serving it NOW',
     ok('…and says those turns keep it, so the line is a fact and not a warning',
         /the turns before the change ran on that one/.test(around));
     ok('…and it is the SAME mark, so there is no second pill for one subject',
-        /class="af-route af-route-moved"/.test(h));
+        /class="af-prov af-provc [\w-]+ af-prov-moved"/.test(h));
     // MIRROR: a control narrow enough to cut its own text opens its panel with
     // the value it is showing — so the first line is the CURRENT provider.
     ok('…and the panel opens with the value the pill is showing',

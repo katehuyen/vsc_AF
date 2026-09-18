@@ -58,6 +58,12 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // afProject.js was the eleventh — which project a thing belongs to, drawn
     // one way, once four models grew a projectId (Faz 5)
     'afProject.js',
+    // afProvider.js was the twenty-first — WHICH PROVIDER served a run (X-110).
+    // A second axis from the engine badge, and shared for the strongest form of
+    // U-26's reason: the route pill had already been invented on the Console,
+    // in its own colour, on one page, while every other surface hid the
+    // provider in a hover line or inside the model text.
+    'afProvider.js',
     // afAccount.js was the twentieth — which sign-in pays, and how much of that
     // plan is left (X-263). Shared because it had ALREADY diverged: five
     // pickers hand-copied one option body and two of them had since grown the

@@ -241,7 +241,13 @@
         // ellipsis. Agent gives back a quarter (13.572 → 10.179) and every
         // point of it goes to Title (28.610 → 32.003), so the row is exactly
         // as wide as it was and only the boundary between those two moved.
-        agent: 10.179, engine: 6.200, project: 5.170, title: 32.003, when: 5.056,
+        //
+        // ‼️ X-110 — and Engine now holds TWO marks, because the provider is a
+        // second axis and not a second engine (6.200 → 10.400). The 4.2 points
+        // come from Title, which U-39 had just given 3.393 of them and which is
+        // still the widest column by a factor of two — so the row is exactly as
+        // wide as it was and only that one boundary moved.
+        agent: 10.179, engine: 10.400, project: 5.170, title: 27.803, when: 5.056,
         duration: 5.522, turns: 3.721, tools: 3.624, files: 3.244, errors: 2.387,
         tokens: 8.962, ctx: 5.241, cost: 3.906
     };
@@ -1017,18 +1023,16 @@
         };
         // X-108 — WHY A ROW HAS NO SETUP TO SHOW, which is three different facts
         // that used to share one blank space. None of them invents a value.
-        const BINDING = {
-            legacy: 'not recorded - this run is older than the launch manifest',
-            external: 'not ours - an imported or foreign-CLI transcript',
-            unknown: 'asked for, and nothing answered'
-        };
+        //
+        // ‼️ X-110 — AND THE WORDS ARE THE COMPONENT'S, not this page's. They
+        // were written here and again on the Console card, so the two were free
+        // to disagree about what `legacy` means — and a reader comparing a row
+        // with the card it opens is exactly who would notice.
+        const BINDING = window.AFProvider.binding;
         // Only the states where the ENGINE contributed evidence are worth a
         // line. "we wrote it down" is already what the Route line being there
         // means, and stating it on every row is a line the reader stops seeing.
-        const PROOF = {
-            matched: 'declared, and the engine named the same one',
-            'engine-reported': 'the engine named it; nothing was declared'
-        };
+        const PROOF = window.AFProvider.proof;
         const launchLines = r => {
             const L = r.launch;
             if (!L) { return []; }
@@ -1128,7 +1132,11 @@
             // So "not proven" is a prompt to look, never a verdict, and saying
             // that on every cell would put an explanation in a figures hover.
             engine: '<th title="Which CLI ran the session: ' + window.AFEngine.names()
-                + '.&#10;&#10;A cell also carries what the launch ASKED FOR, where Agent Farm '
+                + '.&#10;&#10;The dashed chip beside it is the ROUTE that served it — a second '
+                + 'axis, never a sixth engine: the same CLI pointed at Anthropic, Kimi or MiniMax '
+                + 'is still that CLI. Absent where the run took the engine\'s own default, and a '
+                + 'count instead of a name where the run changed provider between turns.'
+                + '&#10;&#10;A cell also carries what the launch ASKED FOR, where Agent Farm '
                 + 'recorded it: the route, the profile revision and the model requested — none of '
                 + 'which any transcript carries. &quot;Asked vs answered&quot; compares that with '
                 + 'the models that really served the turns. matched = one of them is a name the '
@@ -1139,7 +1147,7 @@
                 + 'A session with no recorded launch says WHICH kind of nothing it is rather than '
                 + 'guessing a value: older than the manifest, not ours (an imported or foreign-CLI '
                 + 'transcript), or asked for with no answer.'
-                + '">Engine</th>',
+                + '">Engine · Route</th>',
             project: '<th title="Project this session\'s work belongs to">Project</th>',
             files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',
             title: '<th title="Session name — the launch name (-n) or a rename, otherwise what the conversation suggests. unread = transcript above the scan limit, its figures were not read">Title</th>',
@@ -1175,7 +1183,16 @@
                 return `<td class="origcell ${o.id}${moon ? ' hless' : ''}" title="${tipOf(TIP.origin(r))}">${o.glyph}${moon}</td>`;
             },
             agent: r => `<td title="${tipOf(TIP.agent(r))}"><span class="cellline">${dot(r)}<span class="ctext">${C.esc(r.agent)}</span>${subBadge(r)}${termBtn(r)}${stopBtn(r)}</span></td>`,
-            engine: r => `<td title="${tipOf(TIP.engine(r))}">${window.AFEngine.badge(r.engine)}</td>`,
+            // ‼️ X-110 — TWO AXES, TWO MARKS, ONE CELL. The engine is the CLI
+            // that ran; the provider is who answered it, and a table where the
+            // second is only reachable by hovering is a table that cannot be
+            // scanned for "which of these ran through Kimi" — which is the
+            // question a machine with four routes is read with. Drawn only when
+            // there IS one: no route is the ordinary answer, and a grey
+            // placeholder on every row would cost the column for nothing.
+            engine: r => `<td title="${tipOf(TIP.engine(r))}"><span class="cellline">`
+                + `${window.AFEngine.badge(r.engine)}`
+                + `${window.AFProvider.chip((r.launch || {}).identity)}</span></td>`,
             // ‼️ The title cell hands its hover to the rich panel: the answer to
             // "what was this session actually asked to do" is the opening
             // PROMPT, whole, and a native tooltip cannot hold one.

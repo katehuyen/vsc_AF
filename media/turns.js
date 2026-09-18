@@ -56,6 +56,17 @@
     // `engine` is a Claude transcript — the field is an ABSENCE there, which is
     // exactly why the page could not print "Claude" until this line existed.
     const engineLabel = r => window.AFEngine.label(r.engine || 'claude');
+    /**
+     * ‼️ X-110 — the provider chip for ONE turn, off what the engine itself
+     * reported for it. Absent on every engine that publishes none (Claude, for
+     * ever), which is the ordinary answer and draws nothing; a turn the engine
+     * says two things about is counted rather than named, because naming one of
+     * them over a turn that used both is the lie the component exists to stop.
+     */
+    const providerMark = r => window.AFProvider.chip({
+        providerId: '', reportedProviderIds: r.providerIds || [],
+        multiProvider: (r.providerIds || []).length > 1
+    });
 
     // Content filter of an unfolded turn — the session viewer's chip set, same
     // semantics: empty selection = show everything; "Errors" matches the flag,
@@ -105,7 +116,12 @@
     /** Shares of the space the px columns leave behind, summing to 100 for the
      *  full set and re-normalised over any subset (see colgroupHtml). */
     const SHARE = {
-        agent: 9.0, engine: 6.0, label: 22.2, session: 8.5, n: 3.2, models: 8.0,
+        // ‼️ X-110 — Engine holds TWO marks now (the engine, and the provider the
+        // engine named for this turn), so it is declared at what both need:
+        // 6.0 → 10.2, and the 4.2 comes out of the prompt column, which is the
+        // widest here by a factor of two and the only one that ellipsises by
+        // design. Measured rather than guessed — at 6.0 the chip drew as `···`.
+        agent: 9.0, engine: 10.2, label: 18.0, session: 8.5, n: 3.2, models: 8.0,
         steps: 6.6, tokens: 8.2, ctx: 4.4, when: 4.4, took: 4.0, duration: 5.0,
         tools: 3.4, errors: 2.8, cost: 4.3
     };
@@ -452,8 +468,11 @@
         origin: th('origcell', 'By', 'Started by', 'Who started the session this turn belongs to: '
             + '🧑 you · 🤖 automation.'),
         agent: th('', 'Agent', 'Agent', 'The agent whose folder the session ran in.'),
-        engine: th('', 'Engine', 'Engine', 'Which engine ran this turn — ' + window.AFEngine.names(', ', 'or')
-            + '. A Claude transcript states no engine; the absence IS Claude.'),
+        engine: th('', 'Engine', 'Engine · Route', 'Which engine ran this turn — ' + window.AFEngine.names(', ', 'or')
+            + '. A Claude transcript states no engine; the absence IS Claude.'
+            + ' The dashed chip beside it is the provider the engine itself named for THIS turn —'
+            + ' a second axis, not a sixth engine. Absent on an engine that publishes none,'
+            + ' which is Claude for ever; a count where the engine named more than one.'),
         label: th('', 'Turn', 'Turn — the prompt', 'The prompt that opened the turn.'),
         session: th('', 'Session', 'Session', 'The session this turn belongs to.'),
         n: th('num', '#', 'Turn number', 'This turn\'s number, over the session\'s own turn count.'),
@@ -520,11 +539,24 @@
             line('When', stamp(r.ts))
         ]),
         // The shared badge and the shared palette — never a colour invented here.
-        engine: r => cell('', window.AFEngine.badge(r.engine || 'claude'), engineLabel(r), [
-            line('Model', (r.models || []).join(', ') || '—'),
-            line('Turn', `${r.n} of ${r.of}`),
-            line('Cost', r.cost ? C.fmtUSD(r.cost) : '')
-        ]),
+        //
+        // ‼️ X-110 — AND THE PROVIDER BESIDE IT, WHICH IS THE WHOLE POINT OF A
+        // PER-TURN ROW. A session summary can only say "2 providers"; this page
+        // is the one place that can say WHICH turn ran on WHICH, and until now
+        // it said neither — the fact sat in `providerIds`, unread, while the
+        // reader was left to infer it from a model name, which is the one
+        // inference this family forbids.
+        //
+        // The REPORTED half only: a turn's declared route is the session's, and
+        // what the engine named for THIS turn is the fact a turn row owns.
+        engine: r => cell('',
+            window.AFEngine.badge(r.engine || 'claude') + providerMark(r),
+            engineLabel(r), [
+                line('Model', (r.models || []).join(', ') || '—'),
+                line('Answered by', (r.providerIds || []).map(window.AFProvider.label).join(', ')),
+                line('Turn', `${r.n} of ${r.of}`),
+                line('Cost', r.cost ? C.fmtUSD(r.cost) : '')
+            ]),
         label: r => cell('turncol', C.esc(r.label || '—'), 'Turn', [
             r.label || '(no prompt recorded)',
             window.AFTip.GAP,

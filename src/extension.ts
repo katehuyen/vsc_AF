@@ -195,8 +195,8 @@ import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
 import { describeResumeRoute, ResumeAsk, ResumeRoute, resumeRoute } from './core/resumeGate';
 import {
-    LaunchManifest, ManifestInput, manifestFor, manifestIndex, manifestLeaks, manifestOf,
-    newLaunchId, rememberManifest
+    LaunchManifest, LaunchMechanism, ManifestInput, manifestFor, manifestIndex, manifestLeaks,
+    manifestOf, newLaunchId, rememberManifest
 } from './core/launchManifest';
 import {
     AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
@@ -373,7 +373,7 @@ import {
     archivedOutputBody, archivedReplyText, buildCliCommand, CliProfile, describeFailurePhase, FarmSchedule, FarmTask,
     FarmTemplate,
     FarmTrigger, FarmWorkflow, MissedPolicy, newId, parkNoticeKey, parseSeedSchedules,
-    InteractiveClose, InteractiveTarget,
+    InteractiveClose, InteractiveTarget, launchDimsOf,
     previousOccurrenceKey, RouteSeal, routeOf, RunDimensions, runExtras, sanitizePrompt, ScheduleKind,
     TaskManager, TaskMode, WorkflowStep
 } from './core/tasks';
@@ -3351,7 +3351,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     let consoleTaskStart:
         | ((spec: { agentId: string; agentName: string; cwd: string; prompt: string;
-            projectId?: string } & Partial<RunDimensions>) => string | undefined)
+            projectId?: string;
+            mechanism: LaunchMechanism; mechanismId?: string
+        } & Partial<RunDimensions>) => { sessionId: string; launchId?: string } | undefined)
         | undefined;
     let consoleTaskRead: ((id: string) => {
         state: ConsoleStatus; answered: boolean; failed?: boolean; reason?: string;
@@ -3424,7 +3426,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 agentId: spec.agentId, agentName: spec.agentName, cwd: spec.cwd,
                 prompt: spec.prompt,
                 ...runExtras(spec.task),
-                projectId: spec.task.projectId
+                projectId: spec.task.projectId,
+                // X-327 — what set the run going, so the manifest the Console
+                // door writes says `schedule` where a schedule started it.
+                mechanism: spec.mechanism,
+                ...(spec.mechanismId ? { mechanismId: spec.mechanismId } : {})
             }),
             consoleTaskState: id => consoleTaskRead?.(id),
             // ‼️ X-176 — the sentry's one step, and how often an idling
@@ -21234,13 +21240,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ? { lastTurn: { id: servedLast, label: labelOf(servedLast) } } : {};
         if (!id) {
             return {
-                id: servingNow, label: labelOf(servingNow), noun: form.noun,
+                // X-110 — on this engine a provider IS its own id, so the
+                // colour key and the route id are the same string.
+                id: servingNow, shape: servingNow,
+                label: labelOf(servingNow), noun: form.noun,
                 ...lastTurn, scopeNote: form.scopeNote
             };
         }
         const profile = providerProfiles().find(p => p.id === id);
         return {
             id,
+            // X-110 — the company behind the profile, which is what the chip is
+            // coloured by: two profiles on Kimi are one colour, not two.
+            shape: profile?.providerId || id,
             ...(servingNow && servingNow !== id
                 ? { now: { id: servingNow, label: labelOf(servingNow) } } : {}),
             ...lastTurn,
@@ -22724,7 +22736,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * Same resolution and same record as `startConsoleSession`'s own.
      */
     const recordConsoleCard = (o: {
-        agentId: string; agentName: string; cwd: string; options: LaunchOptions; projectId?: string
+        agentId: string; agentName: string; cwd: string; options: LaunchOptions; projectId?: string;
+        mechanism?: LaunchMechanism; mechanismId?: string
     }): string | undefined => {
         const engine = engineOf(o.options.engine).id;
         const resolved = resolveLaunchRoute(o.agentId, engine, {
@@ -22737,7 +22750,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             agentId: o.agentId,
             agentName: o.agentName,
             ...(o.projectId ? { projectId: o.projectId } : {}),
-            mechanism: 'session',
+            // X-327 — a person typing in the composer is a `session`; a task the
+            // queue handed to the Console keeps the mechanism that set it going.
+            mechanism: o.mechanism ?? 'session',
+            ...(o.mechanismId ? { mechanismId: o.mechanismId } : {}),
             cwd: o.cwd,
             surface: 'console',
             superpowers: o.options.superpowers === true
@@ -26449,9 +26465,38 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.window.showWarningMessage(`Agent Farm: ${(e as Error).message}`);
             return undefined;
         }
+        /**
+         * ‼️ X-327 — THE MANIFEST, WRITTEN HERE AND NOT IN THE RUNNER, because
+         * HERE is where the account is a slot. The runner skips the Console
+         * shape on purpose (see `hostedHere`); a record written on that side
+         * would carry `@round-robin` as the sign-in, against a run that went to
+         * exactly one. The mechanism came in with the spec, so a run a schedule
+         * set going is still a schedule's run in the record.
+         */
+        const launchOptions: LaunchOptions = {
+            // ‼️ BY THE SHAPE (`runExtras` → `launchDimsOf`), never a field list
+            // — the same pair the runner records every other shape through, so a
+            // dimension added to `RunDimensions` reaches this record too. Only
+            // the three the defaults fill and the RESOLVED account are stated.
+            ...launchDimsOf({
+                ...runExtras(spec), engine, model,
+                effort: spec.effort || d.effort,
+                permissionMode: spec.permissionMode || d.permissionMode,
+                account
+            } as FarmTask),
+            superpowers: spec.superpowers ?? superpowersOnFor(spec.agentName)
+        };
+        const launchId = recordConsoleCard({
+            agentId: spec.agentId, agentName: spec.agentName, cwd: spec.cwd,
+            options: launchOptions,
+            ...(spec.projectId ? { projectId: spec.projectId } : {}),
+            mechanism: spec.mechanism,
+            ...(spec.mechanismId ? { mechanismId: spec.mechanismId } : {})
+        });
         const id = consoleHost.start({
             agentId: spec.agentId, agentName: spec.agentName, cwd: spec.cwd,
             engine: engine as EngineId,
+            ...(launchId ? { launchId } : {}),
             model,
             effort: spec.effort || d.effort,
             permissionMode: spec.permissionMode || d.permissionMode,
@@ -26473,7 +26518,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Shown, because an interactive run is one a person is meant to watch —
         // that is the whole difference between this and a headless task.
         ConsolePanel.show(consoleDeps, { sessionId: id });
-        return id;
+        return { sessionId: id, ...(launchId ? { launchId } : {}) };
     };
 
 

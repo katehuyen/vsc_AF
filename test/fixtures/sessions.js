@@ -45,7 +45,15 @@ const data = () => ({
                 // X-251 — whose plan paid; the row below deliberately has none,
                 // because a run that injected no sign-in must stay silent.
                 account: 'claude-work',
-                surface: 'terminal', at: NOW - 400000, agreement: 'matched', note: ''
+                surface: 'terminal', at: NOW - 400000, agreement: 'matched', note: '',
+                // X-110 - and the identity behind that route, which is what the
+                // CHIP is drawn from. A row with a route and no identity would
+                // photograph the cell as it was before the chip existed.
+                identity: {
+                    providerId: 'kimi', providerLabel: 'Kimi (work)', binding: 'declared',
+                    proof: 'matched', reportedProviderIds: ['kimi'],
+                    providerProfileRevision: 3, requestedModelRef: 'kimi-k2-thinking'
+                }
             }
         }),
         // ...and one where the two halves disagree, which is the only case the
@@ -56,6 +64,24 @@ const data = () => ({
                 route: 'inherited route', revision: null, requested: 'gpt-5.6-thinking',
                 surface: 'console', at: NOW - 900000, agreement: 'unproven',
                 note: 'the model that answered is not one of the names the launch asked for'
+            }
+        }),
+        // ‼️ X-110 - THE RUN THAT CHANGED PROVIDER BETWEEN TURNS. The chip must
+        // COUNT here rather than name one of them, and a page that only ever
+        // draws the single-provider case photographs neither the count nor the
+        // fact that it wears no provider hue.
+        row(6, {
+            engine: 'opencode', models: ['claude-opus-5', 'gpt-5.6-sol'],
+            title: 'Oturum 6 - saglayici tur sinirinda degisti',
+            launch: {
+                route: 'anthropic', revision: null, requested: 'anthropic/claude-opus-5',
+                surface: 'console', at: NOW - 600000, agreement: 'matched', note: '',
+                identity: {
+                    providerId: 'anthropic', providerLabel: 'anthropic', binding: 'declared',
+                    proof: 'matched', multiProvider: true, turnScope: true,
+                    reportedProviderIds: ['anthropic', 'openai'],
+                    requestedModelRef: 'claude-opus-5'
+                }
             }
         }),
         row(3, { engine: 'agy', models: ['gemini-3.5-flash'] }),

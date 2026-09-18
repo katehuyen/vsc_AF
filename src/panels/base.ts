@@ -377,6 +377,12 @@ export function htmlShell(
     // Four models carry a project now (Faz 5), so a mark invented per page is a
     // mark that disagrees per page.
     const project = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afProject.js'));
+    // Which PROVIDER served it, drawn the same way and in the same colour on
+    // every surface (X-110). A second axis from the engine above, and shipped
+    // everywhere for a sharper version of U-26's reason: the Console had already
+    // invented its own route pill, in its own colour, on one page — while every
+    // other surface buried the provider in a hover line or in the model text.
+    const provider = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afProvider.js'));
     // Which sign-in a thing runs on, and how much of that plan is left (X-263).
     // Ships everywhere for the reason the two badges above do, with a sharper
     // one of its own: five pickers had hand-copied the same option body and two
@@ -440,6 +446,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${dims}"></script>
 <script nonce="${nonce}" src="${engine}"></script>
 <script nonce="${nonce}" src="${project}"></script>
+<script nonce="${nonce}" src="${provider}"></script>
 <script nonce="${nonce}" src="${account}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>

@@ -1119,9 +1119,10 @@ const mkRow = (i, extra) => Object.assign({
     // depends on who else is in the row, and that is the point of normalising.
     // …and U-39 gave a quarter of Agent BACK to it, so the declared figure is
     // that 28.610 plus what Agent handed over (13.572 − 10.179 = 3.393).
+    // …and X-110 took 4.200 of it back for the second mark in the Engine cell.
     ok('‼️ Title still declares a quarter less than the layout it replaced',
-        /title: 32\.003/.test(TABLE_SRC)
-        && Math.abs(32.003 - (28.610 + 3.393)) < 0.001);
+        /title: 27\.803/.test(TABLE_SRC)
+        && Math.abs(27.803 - (28.610 + 3.393 - 4.200)) < 0.001);
 
     // ‼️ U-26 — and the three changes the user asked for, checked as RATIOS
     // against that same measured baseline rather than as pixels, because the
@@ -1134,18 +1135,20 @@ const mkRow = (i, extra) => Object.assign({
         Math.abs(13.572 / 9.048 - 1.5) < 0.001
         && Math.abs(10.179 / 13.572 - 0.75) < 0.001 && /agent: 10\.179/.test(TABLE_SRC));
     ok('‼️ …and what Agent gave up, Title took — the row is exactly as wide',
-        Math.abs((10.179 + 32.003) - (13.572 + 28.610)) < 0.001);
+        Math.abs((10.179 + 27.803 + 10.400) - (13.572 + 28.610 + 6.200)) < 0.001);
     ok('‼️ Project keeps a quarter of what it was taking',
         Math.abs(5.170 / 20.679 - 0.25) < 0.001 && /project: 5\.170/.test(TABLE_SRC));
+    // ‼️ X-110 — and it holds TWO marks now, the engine and the route that
+    // served it, so it is declared at what both actually need.
     ok('‼️ …and Engine is a column now, in every embedding of the table',
-        /engine: 6\.200/.test(TABLE_SRC)
+        /engine: 10\.400/.test(TABLE_SRC)
         && DASH.indexOf('engine') >= 0
         && share(dash, 'engine', DASH) > 0);
     // Project shrank by more than Agent and Engine took, so the remainder goes
     // back to everyone in proportion — which is the rule this file already
     // states, applied rather than re-argued.
     ok('…so every other column is fractionally wider, none of them re-designed',
-        share(dash, 'title', DASH) > 32.003 && share(dash, 'when', DASH) > 5.056);
+        share(dash, 'title', DASH) > 27.803 && share(dash, 'when', DASH) > 5.056);
 
     // A glyph column is px, not a share: a share would make the checkbox column
     // grow with the monitor.
@@ -1374,9 +1377,9 @@ const mkRow = (i, extra) => Object.assign({
     // before the manifest, somebody else's transcript, and a route asked for
     // with no answer. Each now says which it is — and still names no provider.
     ok('‼️ a run older than the manifest says so, and guesses nothing',
-        html().includes('Route: not recorded - this run is older than the launch manifest'));
+        html().includes('Route: not recorded — this run is older than the launch manifest'));
     ok('‼️ …while a transcript that was never ours says THAT instead',
-        html().includes('Route: not ours - an imported or foreign-CLI transcript'));
+        html().includes('Route: not ours — an imported or foreign-CLI transcript'));
     ok('…and neither of them invents a requested model or an account',
         !/Route: not (recorded|ours)[^"]*Requested:/.test(html()));
     // The reported half stands on its own: an engine that named its provider has

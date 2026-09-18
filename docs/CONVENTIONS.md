@@ -1247,6 +1247,36 @@ The `title` follows the hover rule above: **figures, `Label: value`**. What an
 engine *changes about talking to it* is a separate affordance (the `?` beside
 the composer's engine box), never the badge.
 
+**‼️ AND THE PROVIDER IS A SECOND AXIS, NOT A SIXTH ENGINE — `media/afProvider.js`
+(X-110).** An engine is the program on this machine; a provider is the endpoint
+that answered it. `claude` pointed at Kimi is still the Claude CLI, so a surface
+that draws one mark for both either calls Kimi an engine or hides it entirely —
+and both shipped. The rules:
+
+- **The AXIS is the shape, the IDENTITY is the hue.** An engine badge is SOLID,
+  a provider chip is DASHED. That is what lets the chip carry a colour at all;
+  without it a coloured pill reads as a sixth engine.
+- **`window.AFProvider.chip(identity)`**, taking the `RunIdentity` shape X-108
+  publishes (or a bare id). Colours in `media/common.css`
+  (`.af-provc.anthropic|.anthropic-api|.kimi|.minimax|.p0…p4|.none`). An id this
+  build has never heard of lands in a derived slot **by a hash of its own id** —
+  never by a position in a list, which is what would make one provider change
+  colour between two tables.
+- **Never red.** This extension signals a fault in red on every surface, so a
+  provider that hashed onto it would read as a broken route rather than as a
+  named one. Same lesson U-49 taught the engine palette about green.
+- **A run that changed provider between turns is COUNTED, never named.** Saying
+  "Kimi" over a run that was half Anthropic is the specific lie the component
+  exists to stop.
+- **Colour by the COMPANY, not by the profile.** On Claude a route id is a
+  profile ("Kimi (work)", "Kimi (personal)"), and colouring by it would give one
+  company two colours in one table. The host answers the shape off the profile
+  (`ConsoleRoute.shape`) and never guesses it from a name.
+- **A second mark needs a second mark's worth of column.** Both tables that
+  carry the chip were declared at what a single badge needs, and the first draft
+  drew `···` where `opencode` should have been — a LAYOUT defect no string test
+  can see. `test/test_provider_chip_width.js` measures it.
+
 ### A percentage is named by whoever MEASURED it
 
 **‼️ NO SURFACE MAY NAME AN ACCOUNT'S QUOTA WINDOW.** The reading names its own
