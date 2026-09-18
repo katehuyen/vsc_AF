@@ -1454,11 +1454,13 @@
          *  be a permanent strip of chrome saying nothing. */
         function selBarHtml(chosen) {
             if (!chosen.length) { return ''; }
-            const cost = chosen.reduce((n, r) => n + (r.cost || 0), 0);
+            // X-112 — a selection across a plan run, a key's bill and a Kimi
+            // route is not one figure; the host's kind of dollar groups it.
+            const sum = C.dollarSum(chosen, r => r.cost, r => (identityOf(r) || {}).billing);
             const live = chosen.filter(r => r.active).length;
             return `<div class="af-selbar">
                 <b>${chosen.length}</b> selected
-                <span class="muted">${C.fmtUSD(cost)}${live ? ` · ${live} running` : ''}</span>
+                <span class="muted">${C.fmtUSDSum(sum.usd, sum.parts)}${live ? ` · ${live} running` : ''}</span>
                 <span class="muted">— right-click any selected row for the action menu:
                     pin, label, file to a project, interrupt, end.</span>
                 <button class="chip af-selclear">Clear</button>

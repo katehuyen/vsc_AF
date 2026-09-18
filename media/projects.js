@@ -792,7 +792,7 @@
             <div class="pj-card">
                 <div class="pj-card-h">Money</div>
                 <div class="pj-money">
-                    <span><b>${money(cost.total)}</b><small>total</small></span>
+                    <span><b>${cost.dollars ? C.fmtUSDSum(cost.total, cost.dollars) : money(cost.total)}</b><small>total</small></span>
                     <span><b>${money(cost.today)}</b><small>today${p.budgetUSD ? ` · ${burn.todayPct != null ? burn.todayPct : 0}% of budget` : ''}</small></span>
                     <span><b>${money(burn.perDay7 || 0)}</b><small>per day, last 7</small></span>
                     ${burn.projectedAtDue != null

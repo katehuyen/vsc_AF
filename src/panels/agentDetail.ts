@@ -7,6 +7,8 @@ import {
 } from '../core/duties';
 import { Insight } from '../core/health';
 import { LaunchManifest } from '../core/launchManifest';
+import { sumDollars } from '../core/billing';
+import { billingReader } from '../core/turnRuntime';
 import { mcpUsage, readAgentMcpServers, readDisabledServers } from '../core/mcp';
 import { indexedMemoryNames, memoryUsage } from '../core/memusage';
 import { readAgentSkills, skillUsage } from '../core/skills';
@@ -227,6 +229,9 @@ function buildData(agent: AgentInfo, deps: AgentDetailDeps, tableN = AGENT_SESSI
         nextLaunch: deps.nextLaunch ? deps.nextLaunch(agent.id) : null,
         totals: {
             cost: totalCost,
+            // X-112 — the kinds of dollar in `cost`, only when there is more than one.
+            costParts: (d => d.mixed ? d.parts : undefined)(
+                sumDollars(sessions, s => s.cost, billingReader(deps.launchManifests?.() ?? []))),
             sessions: sessions.length,
             toolCalls: totalToolCalls,
             errors: totalErrors,

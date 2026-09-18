@@ -37,6 +37,7 @@
  * file's mtime — a hundred plan items all landing at the moment somebody saved
  * the file is a timeline that looks precise and says nothing.
  */
+import { BillingIdentity, DollarPart, sumDollars } from './billing';
 
 // ---------------------------------------------------------------------------
 // the event
@@ -557,6 +558,9 @@ export interface ProjectCostInput {
     startedAt?: number;
     dueAt?: number;
     now?: number;
+    /** X-112 — what each session's dollar IS. The caller knows the launch
+     *  record; this module stays pure and only folds what it is handed. */
+    billing?: (s: FeedSession) => BillingIdentity | undefined;
 }
 
 export interface CostByModel {
@@ -567,6 +571,13 @@ export interface CostByModel {
 
 export interface ProjectCost {
     total: number;
+    /**
+     * ‼️ X-112 — the kinds of dollar inside `total`, present ONLY when there is
+     * more than one. A project run partly on the plan and partly through Kimi
+     * or an API key is not one figure, and a budget read against it has to be
+     * able to say so.
+     */
+    dollars?: DollarPart[];
     today: number;
     /** Oldest first — a burn curve is read left to right. */
     days: { day: string; cost: number }[];
@@ -685,6 +696,8 @@ export function buildProjectCost(o: ProjectCostInput): ProjectCost {
         total: Math.round(total * 1e6) / 1e6,
         today: Math.round(todayCost * 1e6) / 1e6,
         days,
+        ...((d => d && d.mixed ? { dollars: d.parts } : {})(
+            o.billing ? sumDollars(o.sessions, s => s.cost ?? 0, o.billing) : undefined)),
         byAgent: [...agentCost.entries()]
             .map(([agent, v]) => ({ agent, cost: Math.round(v.cost * 1e6) / 1e6, sessions: v.sessions }))
             .sort((a, b) => b.cost - a.cost),

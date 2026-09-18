@@ -146,6 +146,44 @@
     }
 
     /**
+     * ‼️ X-112 — A TOTAL OVER ROWS THE PAGE ALREADY HOLDS, grouped by the kind
+     * of dollar the HOST gave each run (`billing.dollar`, worded by `costIs`).
+     * The same fold as `sumDollars` in src/core/billing.ts, held to it by
+     * test/test_billing.js: a zero crosses no boundary, and a run with no
+     * billing is `unplaced`, never quietly the plan.
+     */
+    function dollarSum(items, cost, billing) {
+        const by = new Map();
+        let usd = 0;
+        for (const it of items || []) {
+            const c = Number(cost(it)) || 0;
+            if (!(c > 0)) { continue; }
+            const b = billing(it);
+            const key = (b && b.dollar) || 'unplaced';
+            const part = by.get(key) || { dollar: key, label: (b && b.costIs) || 'unplaced — no record says what this figure is', usd: 0, runs: 0 };
+            part.usd += c;
+            part.runs++;
+            by.set(key, part);
+            usd += c;
+        }
+        const parts = Array.from(by.values())
+            .map(p => Object.assign({}, p, { usd: Math.round(p.usd * 10000) / 10000 }))
+            .sort((a, b) => b.usd - a.usd);
+        return { usd: Math.round(usd * 10000) / 10000, parts, mixed: parts.length > 1 };
+    }
+
+    /** `$12.40` — or, when the total added more than one kind of dollar,
+     *  `$12.40 (mixed)` with the breakdown on hover. `parts` is the host's
+     *  (`sumDollars`) or `dollarSum`'s; fewer than two is an ordinary figure. */
+    function fmtUSDSum(usd, parts) {
+        if (!parts || parts.length < 2) { return fmtUSD(usd); }
+        const tip = 'Not one kind of dollar — this total adds figures that mean different things:\n'
+            + parts.map(p => fmtUSD(p.usd) + ' — ' + p.label
+                + ' (' + p.runs + ' run' + (p.runs === 1 ? '' : 's') + ')').join('\n');
+        return '<span class="usdmix" title="' + esc(tip) + '">' + fmtUSD(usd) + ' (mixed)</span>';
+    }
+
+    /**
      * ‼️ WHAT KIND OF STEP THIS IS — the webview's copy of `src/core/stepkind.ts`.
      *
      * A turn was a list of things that looked alike: a file read off this disk
@@ -466,5 +504,5 @@
         return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { optionTip, option, stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, weighMark, weighedLabel, WEIGHTED_TIP, OFF_PLAN_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
+    window.AFCharts = { optionTip, option, stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, weighMark, weighedLabel, dollarSum, fmtUSDSum, WEIGHTED_TIP, OFF_PLAN_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();

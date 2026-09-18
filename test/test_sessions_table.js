@@ -94,6 +94,8 @@ const C = {
             fmtTokWText(n, w, mark) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + (mark ? ', ' + mark : '') + ')' : ''); },
             weighMark: (...a) => realWeigh.weighMark(...a),
             weighedLabel: (...a) => realWeigh.weighedLabel(...a),
+            dollarSum: (...a) => realWeigh.dollarSum(...a),
+            fmtUSDSum: (...a) => realWeigh.fmtUSDSum(...a),
             WEIGHTED_TIP: 'weighted',
     // rounded like the real one (charts.js): a per-hour rate is a division, and
     // a stub that prints 24.000000000000004 tests the stub, not the page
@@ -1072,6 +1074,25 @@ const mkRow = (i, extra) => Object.assign({
     // the checkbox must not open the transcript underneath it
     ok('selecting posts nothing — it is not a navigation',
         !posted.some(p => p.type === 'openSession'));
+
+    // ‼️ X-112 — a selection over a plan run and a Kimi run is not one figure
+    const { billingOf } = require(path.resolve(__dirname, '../out/core/billing.js'));
+    const withBilling = (i, v) => mkRow(i, {
+        launch: { identity: { billing: billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v)) } }
+    });
+    containers.multi.querySelector('.af-selall')._fn({ stopPropagation() { } });
+    containers.multi.querySelector('.af-selall')._fn({ stopPropagation() { } });
+    t.setRows([withBilling(1, { providerId: '' }), withBilling(2, { providerId: '' }),
+        withBilling(3, { providerId: 'kimi', providerLabel: 'Kimi' })], 0);
+    pick('f1'); pick('f2');
+    const bar = () => (/<div class="af-selbar">[\s\S]*?<\/div>/.exec(html()) || [''])[0];
+    ok('two plan runs selected: one kind of dollar, an ordinary figure',
+        /<b>2<\/b> selected/.test(bar()) && /\$3\.00/.test(bar()) && !/\(mixed\)/.test(bar()));
+    pick('f3');
+    ok('…add a Kimi run and the bar says the total is mixed',
+        /class="usdmix"[^>]*>\$6\.00 \(mixed\)/.test(bar()));
+    ok('…and its hover names both kinds, from the rule\'s own words',
+        bar().includes('API-equivalent') && bar().includes('Anthropic-tariff arithmetic'));
 }
 
 // ---------- part: the declared column widths ----------

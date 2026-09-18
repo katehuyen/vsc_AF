@@ -13,7 +13,8 @@ import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 import { afConfig } from '../core/settingsDoor';
 import { LaunchManifest, manifestOf } from '../core/launchManifest';
-import { describeDrift, runDrift, runIdentity, turnRuntimes } from '../core/turnRuntime';
+import { billingReader, describeDrift, runDrift, runIdentity, turnRuntimes } from '../core/turnRuntime';
+import { DollarPart, sumDollars } from '../core/billing';
 import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
 
 export interface DashboardDeps {
@@ -81,6 +82,9 @@ interface AgentSummary {
     sessions: number;
     daily: Record<string, { cost: number; tokens: number; wTokens: number; msgs: number }>;
     totalCost: number;
+    /** X-112 - the kinds of dollar in `totalCost`, sent ONLY when there is more
+     *  than one: the row then says (mixed) and the breakdown is its hover. */
+    costParts?: DollarPart[];
     totalTokens: number;
     /** The same spend against the plan limit — see QUOTA_WEIGHTS. */
     totalWTokens: number;
@@ -485,6 +489,7 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
     const sessions = deps.index.all();
     const insights = deps.getInsights();
 
+    const billOf = billingReader(deps.launchManifests?.() ?? []);
     const agentSummaries: AgentSummary[] = agents.map(a => {
         const list = deps.index.forAgent(a.id);
         const daily: AgentSummary['daily'] = {};
@@ -523,6 +528,7 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
             sessions: list.length,
             daily,
             totalCost,
+            costParts: (d => d.mixed ? d.parts : undefined)(sumDollars(list, s => s.cost, billOf)),
             totalTokens: agentTokens,
             totalWTokens: Math.round(agentWTokens),
             errors,

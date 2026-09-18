@@ -201,8 +201,8 @@ import {
 import {
     AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
 } from './core/accountSpend';
-import { describeDrift, runDrift, runIdentity, RunIdentity, turnRuntimes } from './core/turnRuntime';
-import { billingOf } from './core/billing';
+import { billingReader, describeDrift, runDrift, runIdentity, RunIdentity, turnRuntimes } from './core/turnRuntime';
+import { BillingIdentity } from './core/billing';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -4335,7 +4335,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         try {
             const days = cfg().get<number>('autoReportDays', 7);
             let md = buildFleetReport(agents, index, insights, days,
-                id => qualityStore.avgSince(id, days * 24 * 3600 * 1000));
+                id => qualityStore.avgSince(id, days * 24 * 3600 * 1000), sessionBillingReader());
             if (cfg().get<boolean>('autoReportIncludeOutputs', true)) {
                 const sinceMs = days * 24 * 3600 * 1000;
                 const hasOutputs = taskManager.tasks.some(t =>
@@ -19269,8 +19269,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * reads every session on the machine. `manifestIndex` is what keeps that
      * from being a walk of the whole launch record per session.
      */
+    /**
+     * ‼️ X-112 — EVERY SESSION'S BILLING, for a total over many of them: the
+     * launch record indexed once, and the binding rule `runIdentity` itself
+     * uses (`runBilling`), so a total and the row it came from cannot place one
+     * run on two different bills.
+     */
+    const sessionBillingReader = (): ((s: SessionInfo) => BillingIdentity) =>
+        billingReader(launchManifests());
     const spendReport = (window: SpendWindow): AccountSpendReport => {
         const at = manifestIndex(launchManifests());
+        const billingOfSession = sessionBillingReader();
         return spendByAccount(
             index.allWithExternal(),
             s => {
@@ -19285,16 +19294,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // the account came from: a run the sign-in sealed onto Kimi is the
             // sign-in's run, but its tokens never filled the plan window and
             // Claude's dollar figure for it is not Kimi's bill.
-            s => {
-                const m = at(s as { launchId?: string });
-                if (!m) { return undefined; }
-                return billingOf({
-                    engine: m.identity.engine || s.source || 'claude',
-                    providerId: m.identity.providerId, providerLabel: m.identity.providerLabel,
-                    origin: m.identity.origin, binding: 'declared',
-                    route: m.identity.route
-                });
-            });
+            s => billingOfSession(s as SessionInfo));
     };
     let spendMemo: { at: number; rows: Map<string, AccountSpendRow> } | undefined;
     const accountSpendToday = (): Map<string, AccountSpendRow> => {
@@ -24644,7 +24644,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerReportOps(bridge, {
         getAgents: () => agents,
         fleetReport: (days) => buildFleetReport(agents, index, insights, days,
-            id => qualityStore.avgSince(id, days * 24 * 3600 * 1000)),
+            id => qualityStore.avgSince(id, days * 24 * 3600 * 1000), sessionBillingReader()),
         outputsDigest: (windowMs) => buildOutputsDigest((taskManagerRef as TaskManager).tasks, windowMs),
         costReport: () => costReportText(),
         triggerReport: () => triggerReportText(),
@@ -28789,8 +28789,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** One project's money, broken down as far as the data honestly allows. */
     const projectCostFor = (id: string): ProjectCost => {
         const p = projectStore.get(id);
+        const read = sessionBillingReader();
+        const billingBySid = new Map(sessionsOfProject(id).map(s => [s.sessionId, read(s)]));
         return buildProjectCost({
             sessions: feedSessionsOf(id),
+            billing: s => billingBySid.get(s.sessionId),
             budgetUSD: p?.budgetUSD,
             budgetTotalUSD: p?.budgetTotalUSD,
             startedAt: p?.startedAt,
@@ -36049,7 +36052,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             );
             if (!period) { return; }
             const md = buildFleetReport(agents, index, insights, period.days,
-                id => qualityStore.avgSince(id, period.days * 24 * 3600 * 1000));
+                id => qualityStore.avgSince(id, period.days * 24 * 3600 * 1000), sessionBillingReader());
             const roots = cfg().get<string[]>('agentRoots', []);
             const defaultDir = roots.find(r => fs.existsSync(r)) ?? os.homedir();
             const defaultName = `AgentFarm-Report-${new Date().toISOString().slice(0, 10)}.md`;

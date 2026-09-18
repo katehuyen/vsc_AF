@@ -72,6 +72,15 @@ export interface BillingIdentity {
     mark: string;
     /** What a dollar figure beside this run IS, in a few words. '' when none. */
     costIs: string;
+    /**
+     * ‼️ THE KIND OF DOLLAR, as a key a sum groups by — the boundary a total
+     * may not cross blindly. Two runs share it only when their figures mean the
+     * same thing: `equivalent` (the plan), `bill` (an API key), `arithmetic`
+     * (a third-party route under the Claude CLI), `rules` (your pricing rules),
+     * `reported:<engine>` (one engine's own figure — two engines' own figures
+     * are two vendors' claims, not one), `unplaced`. '' when there is no figure.
+     */
+    dollar: string;
 }
 
 export interface BillingSubject {
@@ -131,7 +140,8 @@ export function billingOf(v: BillingSubject): BillingIdentity {
                         : 'This engine states neither a price nor tokens, so there is no figure.'),
             weighed: OFF_PLAN_WEIGHED, mark: '',
             costIs: src === 'cli' ? 'reported by ' + label + ' itself'
-                : src === 'tokens' ? 'your pricing rules, not an invoice' : ''
+                : src === 'tokens' ? 'your pricing rules, not an invoice' : '',
+            dollar: src === 'cli' ? 'reported:' + engine : src === 'tokens' ? 'rules' : ''
         };
     }
 
@@ -142,7 +152,7 @@ export function billingOf(v: BillingSubject): BillingIdentity {
                 ? 'not ours — which sign-in or route served this transcript was never recorded, so neither its tokens nor its dollars are placed anywhere.'
                 : 'asked, and nothing answered — this run is on no window and no invoice until somebody looks.',
             weighed: 'Weighted — but nothing says which window, if any, it filled',
-            mark: 'unplaced', costIs: ''
+            mark: 'unplaced', costIs: '', dollar: 'unplaced'
         };
     }
 
@@ -155,7 +165,7 @@ export function billingOf(v: BillingSubject): BillingIdentity {
             mode: 'api', planWindow: false, cost: 'engine-reported', currency: 'USD',
             why: 'Anthropic API key — the dollar figure is the bill at the API tariff. Not on any plan window: a key is metered, not rationed.',
             weighed: 'Weighted — but a key fills no plan window',
-            mark: 'off-plan', costIs: 'the bill, at the API tariff'
+            mark: 'off-plan', costIs: 'the bill, at the API tariff', dollar: 'bill'
         };
     }
 
@@ -164,7 +174,7 @@ export function billingOf(v: BillingSubject): BillingIdentity {
             mode: 'plan', planWindow: true, cost: 'estimate', currency: 'USD',
             why: 'the Claude plan — ⚖ weighted tokens fill this sign-in’s five-hour window. The dollar figure is what the same work would cost at API rates; a plan pays nothing per token.',
             weighed: 'Against the 5h limit', mark: '',
-            costIs: 'API-equivalent — a plan pays no per-token bill'
+            costIs: 'API-equivalent — a plan pays no per-token bill', dollar: 'equivalent'
         };
     }
 
@@ -174,6 +184,85 @@ export function billingOf(v: BillingSubject): BillingIdentity {
         why: name + ' — a third-party endpoint behind the Claude CLI. ⚖ NOT on the Claude plan window: these tokens never touched the sign-in’s five-hour limit. '
             + 'Any dollar figure beside this run is Claude’s own arithmetic at the ANTHROPIC tariff, not this route’s bill — no tariff is known for it, so none is stated.',
         weighed: OFF_PLAN_WEIGHED, mark: 'off-plan',
-        costIs: 'Anthropic-tariff arithmetic, not this route’s bill'
+        costIs: 'Anthropic-tariff arithmetic, not this route’s bill', dollar: 'arithmetic'
     };
+}
+
+/** One kind of dollar inside a total: what it is, how much, over how many runs. */
+export interface DollarPart {
+    dollar: string;
+    /** The run's own `costIs`, so a breakdown is worded by the rule, not a page. */
+    label: string;
+    usd: number;
+    runs: number;
+}
+
+export interface DollarSum {
+    usd: number;
+    /** Largest first. Empty when nothing had a figure. */
+    parts: DollarPart[];
+    /** More than one kind of dollar went into `usd` — the total is not one thing. */
+    mixed: boolean;
+}
+
+const UNPLACED_LABEL = 'unplaced — no record says what this figure is';
+
+/**
+ * ‼️ A TOTAL THAT SAYS WHAT IT ADDED.
+ *
+ * An API-equivalent a plan never pays, a key's real bill, Claude's arithmetic
+ * for a Kimi run and an engine's own statement are four different claims, and
+ * one `$` over their sum reads as an exact figure it is not. The sum is still
+ * given — hiding it would be the opposite lie — but it carries its parts, and
+ * `mixed` is what a page marks. A zero figure crosses no boundary: a free run
+ * does not turn a clean total into a mixed one. A run with no billing at all is
+ * `unplaced`, never quietly counted as the plan.
+ */
+export function sumDollars<T>(
+    items: Iterable<T>,
+    cost: (t: T) => number,
+    billing: (t: T) => BillingIdentity | undefined
+): DollarSum {
+    const by = new Map<string, DollarPart>();
+    let usd = 0;
+    for (const it of items) {
+        const c = Number(cost(it)) || 0;
+        if (!(c > 0)) { continue; }
+        const b = billing(it);
+        const key = (b && b.dollar) || 'unplaced';
+        const part = by.get(key) ?? { dollar: key, label: (b && b.costIs) || UNPLACED_LABEL, usd: 0, runs: 0 };
+        part.usd += c;
+        part.runs++;
+        by.set(key, part);
+        usd += c;
+    }
+    const parts = [...by.values()]
+        .map(p => ({ ...p, usd: Math.round(p.usd * 10000) / 10000 }))
+        .sort((a, b) => b.usd - a.usd);
+    return { usd: Math.round(usd * 10000) / 10000, parts, mixed: parts.length > 1 };
+}
+
+/** The breakdown as lines — one per kind, `fmt` formatting the money. */
+export function describeDollars(sum: DollarSum, fmt: (usd: number) => string): string[] {
+    return sum.parts.map(p => fmt(p.usd) + ' — ' + p.label
+        + ' (' + p.runs + ' run' + (p.runs === 1 ? '' : 's') + ')');
+}
+
+/**
+ * ⚖ weighted tokens split by whether they filled the plan window. A run with no
+ * billing is counted OFF the window: "against the limit" is the claim that has
+ * to be earned.
+ */
+export function splitWeighed<T>(
+    items: Iterable<T>,
+    weighed: (t: T) => number,
+    billing: (t: T) => BillingIdentity | undefined
+): { plan: number; off: number } {
+    let plan = 0, off = 0;
+    for (const it of items) {
+        const w = Number(weighed(it)) || 0;
+        if (!(w > 0)) { continue; }
+        if (billing(it)?.planWindow) { plan += w; } else { off += w; }
+    }
+    return { plan: Math.round(plan), off: Math.round(off) };
 }

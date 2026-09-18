@@ -29,7 +29,7 @@
  * Pure — no vscode, no I/O, no clock.
  */
 
-import { LaunchManifest } from './launchManifest';
+import { LaunchManifest, manifestIndex } from './launchManifest';
 import { BillingIdentity, billingOf } from './billing';
 import {
     hasProviderConflict, ProviderIdentity, proofOf, scopeAllowsTurnChange, TurnRuntimeIdentity,
@@ -363,6 +363,15 @@ export interface RunIdentity {
     billing: BillingIdentity;
 }
 
+/** Which kind of record, or which kind of absence, a run's identity rests on. */
+function bindingOf(
+    manifest: LaunchManifest | undefined, id: ProviderIdentity, opts?: { external?: boolean }
+): RunIdentity['binding'] {
+    return manifest ? 'declared'
+        : opts?.external ? 'external'
+            : id.origin === 'unknown' ? 'unknown' : 'legacy';
+}
+
 export function runIdentity(
     manifest: LaunchManifest | undefined,
     engine: string,
@@ -374,9 +383,7 @@ export function runIdentity(
     const rows = turnRuntimes(manifest, engine, turns);
     const drift = runDrift(rows);
     const id = declaredOf(manifest, str(engine) || 'claude');
-    const binding: RunIdentity['binding'] = manifest ? 'declared'
-        : opts?.external ? 'external'
-            : id.origin === 'unknown' ? 'unknown' : 'legacy';
+    const binding = bindingOf(manifest, id, opts);
     return {
         engine: id.engine || str(engine) || 'claude',
         providerId: str(id.providerId),
@@ -399,11 +406,46 @@ export function runIdentity(
         turnScope: drift.turnScope,
         agreement: drift.agreement,
         binding,
-        billing: billingOf({
-            engine: id.engine || str(engine) || 'claude',
-            providerId: str(id.providerId), providerLabel: str(id.providerLabel),
-            origin: binding === 'external' ? 'external' : id.origin, binding,
-            route: id.route
-        })
+        billing: runBilling(manifest, engine, opts)
+    };
+}
+
+/**
+ * ‼️ X-112 — A RUN'S BILLING WITHOUT ITS TURNS, by the same binding rule
+ * `runIdentity` uses — which is why `runIdentity` asks it rather than
+ * restating it. A total over every session on the machine needs the billing of
+ * each one and nothing else; folding every turn of every session to get it was
+ * the cost that would have kept totals blind.
+ */
+export function runBilling(
+    manifest: LaunchManifest | undefined,
+    engine: string,
+    opts?: { external?: boolean }
+): BillingIdentity {
+    const id = declaredOf(manifest, str(engine) || 'claude');
+    const binding = bindingOf(manifest, id, opts);
+    return billingOf({
+        engine: id.engine || str(engine) || 'claude',
+        providerId: str(id.providerId), providerLabel: str(id.providerLabel),
+        origin: binding === 'external' ? 'external' : id.origin, binding,
+        route: id.route
+    });
+}
+
+/**
+ * Every session's billing, for a total over many of them: the launch record
+ * indexed ONCE (`manifestIndex`), and the same `external` test the session
+ * identity reader applies — an import, or another engine's transcript this farm
+ * did not start.
+ */
+export function billingReader(
+    manifests: readonly LaunchManifest[]
+): (s: { launchId?: string; source?: string; provenance?: string }) => BillingIdentity {
+    const at = manifestIndex(manifests);
+    return s => {
+        const m = at(s);
+        const engine = str(s.source) || 'claude';
+        return runBilling(m, engine,
+            { external: s.provenance === 'imported' || (engine !== 'claude' && !m) });
     };
 }

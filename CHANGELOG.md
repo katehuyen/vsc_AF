@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.561.0 - a total that adds a plan's API-equivalent, a key's bill and a Kimi route's arithmetic says it is mixed (X-112, part 2b) (2026-09-18)
+
+- **One kind of dollar per run, named by the rule.** `BillingIdentity.dollar`
+  is the key a sum may not cross blindly: `equivalent` (the plan), `bill` (an
+  API key), `arithmetic` (a third-party route under the Claude CLI — Kimi and
+  MiniMax are the same kind), `rules` (your pricing rules),
+  `reported:<engine>` (one engine's own figure — two engines' own figures are
+  two vendors' claims), `unplaced`.
+- **`sumDollars` — a total that says what it added.** The sum is still given
+  (hiding it would be the opposite lie) but it carries its parts, and `mixed`
+  is what a page marks. A zero crosses no boundary; a run with no billing is
+  `unplaced`, never quietly the plan. `splitWeighed` does the same for ⚖:
+  "against the limit" counts only what the plan served.
+- **One reader for every total.** `runBilling` is `runIdentity`'s own rule
+  (the binding test is shared, not restated) without folding a single turn,
+  and `billingReader` indexes the launch record once — the dashboard, the agent
+  page, the project page, the fleet report and the account spend all ask it.
+- **Where it shows:** the dashboard's agent comparison (`$128 (mixed)`, the
+  breakdown on hover), the agent page's all-time figure, the project page's
+  Money total, and the Sessions table's selection bar. The dashboard's footnote
+  no longer says every cost is an API-equivalent.
+- **The fleet report stopped saying "costs are API-equivalent values"** over
+  Kimi runs and a key's bill. Its header says what the costs are (or that they
+  are not one kind), a mixed fleet total is broken down one line per kind, the
+  agent rows are marked, and ⚖ reads "N against the plan limit · M off-plan".
+- Tests: `test_billing.js` (+24 — the fold, the reader, `runBilling ===
+  runIdentity(...).billing`, `charts.js dollarSum === billing.ts sumDollars`,
+  and the fleet report, which had no test at all), `test_sessions_table.js`
+  (+3, the selection bar), `test_project_feed.js` (+3). Looked at:
+  `dashboard.s1` — `$128 (mixed)` in the comparison table, row height 27px,
+  table 1352 of 1384.
+- Not yet: a mission run's total (its steps can run on different engines and
+  its $ budget reads that total) — X-112 part 3.
+
 ## 3.560.0 - the ⚖ figure says which window it filled, and the route decides that — not a list of names (X-112, part 2a) (2026-09-18)
 
 - **‼️ The rule was written down twice, and the two disagreed in both

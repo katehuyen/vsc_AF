@@ -204,5 +204,102 @@ const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail
             ? billingOf({ engine: 'gemini' }).costIs === '' : true);
 }
 
+// ------------------------------------------------------------ X-112 (2b): a total says what it added
+{
+    const { sumDollars, describeDollars, splitWeighed } = require(path.join(__dirname, '..', 'out', 'core', 'billing.js'));
+    const { runBilling, billingReader } = require(path.join(__dirname, '..', 'out', 'core', 'turnRuntime.js'));
+    const plan = billingOf({ engine: 'claude', providerId: '', binding: 'declared' });
+    const api = billingOf({ engine: 'claude', providerId: 'anthropic-api', binding: 'declared' });
+    const kimi = billingOf({ engine: 'claude', providerId: 'kimi', providerLabel: 'Kimi', binding: 'declared' });
+    const mini = billingOf({ engine: 'claude', providerId: 'minimax', providerLabel: 'MiniMax', binding: 'declared' });
+    const codex = billingOf({ engine: 'codex' });
+    const oc = billingOf({ engine: 'opencode' });
+
+    ok('every billing with a figure names its kind of dollar',
+        plan.dollar === 'equivalent' && api.dollar === 'bill' && kimi.dollar === 'arithmetic');
+    ok('…two third-party routes are the SAME kind (both are Anthropic-tariff arithmetic)',
+        kimi.dollar === mini.dollar);
+    ok('…but two engines\' own figures are two vendors\' claims, never one kind',
+        codex.dollar !== oc.dollar || codex.dollar === '' || oc.dollar === '');
+
+    const B = new Map([['p1', plan], ['p2', plan], ['k', api], ['km', kimi], ['free', kimi]]);
+    const runs = [{ id: 'p1', c: 10 }, { id: 'p2', c: 2.5 }, { id: 'k', c: 3 }, { id: 'km', c: 1.25 }, { id: 'free', c: 0 }, { id: 'nobody', c: 0.5 }];
+    const s = sumDollars(runs, r => r.c, r => B.get(r.id));
+    ok('the sum is still given — hiding it would be the opposite lie', s.usd === 17.25);
+    ok('…and it carries its parts, largest first', s.mixed === true && s.parts.map(p => p.dollar).join(',') === 'equivalent,bill,arithmetic,unplaced');
+    ok('…each part worded by the rule\'s own costIs, counted in runs',
+        s.parts[0].label === plan.costIs && s.parts[0].runs === 2 && s.parts[0].usd === 12.5);
+    ok('a run with no billing is "unplaced", never quietly counted as the plan',
+        s.parts.find(p => p.dollar === 'unplaced').usd === 0.5);
+    ok('a free run crosses no boundary: a zero does not make a clean total mixed',
+        sumDollars([{ id: 'p1', c: 1 }, { id: 'free', c: 0 }], r => r.c, r => B.get(r.id)).mixed === false);
+    ok('an all-plan total is one kind, and says which',
+        (x => !x.mixed && x.parts.length === 1 && x.parts[0].dollar === 'equivalent')(
+            sumDollars([{ id: 'p1', c: 1 }, { id: 'p2', c: 2 }], r => r.c, r => B.get(r.id))));
+    const lines = describeDollars(s, n => '$' + n.toFixed(2));
+    ok('the breakdown is one line per kind, money first',
+        lines.length === 4 && lines[0].startsWith('$12.50 — ') && /\(2 runs\)$/.test(lines[0]) && /\(1 run\)$/.test(lines[1]));
+
+    const w = splitWeighed([{ b: plan, w: 100 }, { b: kimi, w: 40 }, { b: api, w: 5 }, { b: undefined, w: 7 }], r => r.w, r => r.b);
+    ok('⚖ against the limit counts only what the plan served; an unplaced run is OFF the window',
+        w.plan === 100 && w.off === 52);
+
+    // runBilling is runIdentity's own rule, not a second copy of it
+    const manifest = (providerId, providerLabel) => ({
+        launchId: 'L-' + (providerId || 'plan'),
+        identity: {
+            engine: 'claude', providerId, providerLabel, origin: providerId ? 'agent-farm-profile' : 'legacy-inherit',
+            scope: 'session', requestedModelRef: 'opus', proof: 'launch-declared'
+        },
+        requested: { model: '', tier: 'opus' }
+    });
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    ok('‼️ runBilling answers exactly what runIdentity carries — declared, legacy, external, another engine',
+        [[manifest('kimi', 'Kimi'), 'claude', undefined], [manifest('', ''), 'claude', undefined],
+            [undefined, 'claude', undefined], [undefined, 'claude', { external: true }], [undefined, 'codex', { external: true }]]
+            .every(([m, e, o]) => same(runBilling(m, e, o), runIdentity(m, e, [], o).billing)));
+
+    const read = billingReader([manifest('kimi', 'Kimi'), manifest('anthropic-api', 'API key')]);
+    ok('the reader finds a run\'s launch record by its launchId', read({ launchId: 'L-kimi', source: 'claude' }).mode === 'third-party');
+    ok('…a Claude run with no record is the legacy plan, as its own page says',
+        read({ source: 'claude' }).mode === 'plan');
+    ok('…an imported transcript is unplaced, not the plan', read({ source: 'claude', provenance: 'imported' }).mode === 'unknown');
+    ok('…and another engine is its own billing', read({ source: 'codex' }).mode === 'engine');
+
+    // ‼️ the page folds rows with the SAME rule — charts.js held to billing.ts
+    const vm = require('vm'), fs = require('fs');
+    const box = vm.createContext({ window: {} });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'media', 'charts.js'), 'utf8'), box);
+    const C = box.window.AFCharts;
+    const page = C.dollarSum(runs, r => r.c, r => B.get(r.id));
+    ok('‼️ charts.js dollarSum === billing.ts sumDollars on the same rows', same(JSON.parse(JSON.stringify(page)), s));
+    const cell = C.fmtUSDSum(s.usd, s.parts);
+    ok('a mixed total says (mixed) on the cell and carries its breakdown on hover',
+        /\(mixed\)<\/span>$/.test(cell) && /class="usdmix"/.test(cell) && cell.includes('Not one kind of dollar'));
+    ok('…an ordinary total is just the figure', C.fmtUSDSum(3, [s.parts[0]]) === C.fmtUSD(3) && C.fmtUSDSum(3) === C.fmtUSD(3));
+
+    // the fleet report states what its totals are
+    const { buildFleetReport } = require(path.join(__dirname, '..', 'out', 'core', 'report.js'));
+    const now = Date.now();
+    const sess = (id, cost, wTokens, launchId) => ({
+        sessionId: id, launchId, agentId: 'a1', agentName: 'dev', title: id, source: 'claude', lastTs: now, cost, wTokens,
+        usage: { input: 10, output: 10, cacheRead: 0, cacheWrite: 0 }, toolCalls: 1, errors: 0, models: []
+    });
+    const list = [sess('s1', 10, 1000, undefined), sess('s2', 2, 400, 'L-kimi'), sess('s3', 3, 50, 'L-anthropic-api')];
+    const idx = { all: () => list, external: () => [], forAgent: () => list };
+    const agents = [{ id: 'a1', name: 'dev', contextLoad: { total: 0 }, memoryFiles: [] }];
+    const md = buildFleetReport(agents, idx, [], 7, undefined, read);
+    ok('the report no longer calls a Kimi run and a key\'s bill "API-equivalent values"',
+        !md.includes('costs are API-equivalent values') && md.includes('costs are NOT one kind of dollar'));
+    ok('…its fleet cost is marked (mixed) and broken down one line per kind',
+        /Cost: \*\*\$15\.00\*\* \(mixed\)/.test(md) && md.includes('  - $10.00 — ' + plan.costIs));
+    ok('…⚖ against the plan limit counts the plan run alone, the rest is named off-plan',
+        /⚖ \*\*1\.0k\*\* against the plan limit · \*\*450\*\* off-plan/.test(md));
+    ok('…and the agent row\'s cost is marked too', /\| dev \| 3 \| \$15\.00 \(mixed\) \|/.test(md));
+    const clean = buildFleetReport(agents, { all: () => [list[0]], external: () => [], forAgent: () => [list[0]] }, [], 7, undefined, read);
+    ok('an all-plan fleet says what its costs ARE, from the rule\'s own words',
+        clean.includes('costs are ' + plan.costIs + '.') && !clean.includes('(mixed)'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

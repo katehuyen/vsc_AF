@@ -287,5 +287,22 @@ const session = {
         !rows.some(r => r.hash === 'bad' || r.hash === 'two'));
 }
 
+// ---------- X-112: a project's money says what it added ----------
+{
+    const { billingOf } = require(out('core', 'billing.js'));
+    const b = v => billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v));
+    const now = Date.now();
+    const s = (id, cost) => ({ sessionId: id, agentName: 'dev', firstTs: now, lastTs: now, cost });
+    const B = { p: b({ providerId: '' }), k: b({ providerId: 'kimi', providerLabel: 'Kimi' }) };
+    const mixed = buildProjectCost({ sessions: [s('p', 4), s('k', 1)], billing: x => B[x.sessionId], now });
+    ok('X-112: a project run on the plan AND through Kimi carries its kinds of dollar',
+        mixed.total === 5 && Array.isArray(mixed.dollars) && mixed.dollars.length === 2
+        && mixed.dollars[0].dollar === 'equivalent' && mixed.dollars[1].dollar === 'arithmetic');
+    const plain = buildProjectCost({ sessions: [s('p', 4)], billing: x => B[x.sessionId], now });
+    ok('X-112: …a one-kind project carries none — the figure is ordinary', plain.dollars === undefined);
+    ok('X-112: …and without a reader the module states nothing it was not told',
+        buildProjectCost({ sessions: [s('p', 4), s('k', 1)], now }).dollars === undefined);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

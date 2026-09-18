@@ -17,6 +17,20 @@
 const NOW = Date.now();
 const DAY = 86400000;
 
+// X-112 — the developer row's cost is MIXED: 31 plan runs, 4 on an API key,
+// 6 through Kimi. The breakdown is asked of the product's own fold, so the
+// scene cannot draw a total the host would never send.
+const { billingOf, sumDollars } = require(require('path').join(__dirname, '..', '..', 'out', 'core', 'billing.js'));
+const MIXED = (() => {
+    const b = v => billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v));
+    const runs = [
+        ...Array.from({ length: 31 }, () => ({ c: 3.4, b: b({ providerId: '' }) })),
+        ...Array.from({ length: 4 }, () => ({ c: 4.5, b: b({ providerId: 'anthropic-api' }) })),
+        ...Array.from({ length: 6 }, () => ({ c: 5 / 6, b: b({ providerId: 'kimi', providerLabel: 'Kimi (work)' }) }))
+    ];
+    return sumDollars(runs, r => r.c, r => r.b);
+})();
+
 /** Fourteen days of spend, so the chart has a shape rather than one spike. */
 function daily(scale) {
     const out = {};
@@ -48,7 +62,7 @@ const agents = () => ([
         // 41 Claude sessions, 6 elsewhere — the ordinary case: the gap is small
         // and the figures beside it are almost the whole story.
         sessions: 41, sessionsAll: 47,
-        daily: daily(3.1), totalCost: 128.4, totalTokens: 41_200_000, totalWTokens: 8_900_000,
+        daily: daily(3.1), totalCost: MIXED.usd, costParts: MIXED.parts, totalTokens: 41_200_000, totalWTokens: 8_900_000,
         errors: 12, toolCalls: 1840,
         usage: { input: 1_900_000, output: 420_000, cacheWrite: 2_100_000, cacheRead: 36_800_000 },
         insightCounts: { error: 1, warning: 2, info: 3 },

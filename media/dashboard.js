@@ -353,7 +353,7 @@
                     ${window.AFCtx.agent(a)} title="${C.esc(window.AFCtx.AGENT_HINT)}">
                     <td><strong>${C.esc(a.name)}</strong></td>
                     <td class="num">${sessCell}</td>
-                    <td class="num">${C.fmtUSD(a.totalCost)}</td>
+                    <td class="num">${C.fmtUSDSum(a.totalCost, a.costParts)}</td>
                     <td class="num">${C.fmtTokW(a.totalTokens, a.totalWTokens)}</td>
                     <td class="num">${a.toolCalls}</td>
                     <td class="num">${errPct}</td>
@@ -885,7 +885,7 @@
             <div id="sessblock"></div>
             ${unknown}
             ${externalNote}
-            <p class="footnote">Costs are API-equivalent values computed from token usage — on a subscription plan this is not your bill, it is the value you extracted. Sessions are matched to agents by their working directory under your agent roots.</p>
+            <p class="footnote">A cost is what the run's own route makes it: on the Claude plan an API-equivalent (not your bill — the value you extracted), on an API key the bill, through a third-party route such as Kimi Anthropic-tariff arithmetic that is not that route's bill. A total marked (mixed) adds more than one of these — hover it for the breakdown. Sessions are matched to agents by their working directory under your agent roots.</p>
         `;
 
         window.AFHeader.wire(vscode);
