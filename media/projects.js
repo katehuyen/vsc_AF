@@ -572,7 +572,7 @@
         ${warningsHtml(p)}
         <div class="pj-stats">
             <span><b>${p.sessions}</b> sessions</span>
-            <span><b>${money(p.cost)}</b> total</span>
+            <span><b>${p.costParts ? C.fmtUSDSum(p.cost, p.costParts) : money(p.cost)}</b> total</span>
             <span><b>${money(p.todayCost)}</b> today</span>
             ${p.parts ? `<span title="${C.esc(PARTS_TIP)}"><b>+${money(p.parts.cost)}</b> in ${p.parts.n} part${p.parts.n === 1 ? '' : 's'}</span>` : ''}
             <span>${p.lastTs ? 'last ' + new Date(p.lastTs).toLocaleDateString() : 'no activity yet'}</span>

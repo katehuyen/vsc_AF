@@ -299,10 +299,18 @@ const ADAPTIVE_SPEC = {
     limits: LIMITS, approvalMode: 'auto', createdAt: 1755300000000
 };
 
+// X-112 — the lead plans on the Claude plan, the delegates run on OpenCode:
+// the run's $ is two kinds of dollar, and the breakdown is the product's own.
+const { billingOf, partsOfTotal } = require(require('path').join(__dirname, '..', '..', 'out', 'core', 'billing.js'));
+const ADAPTIVE_COST_PARTS = partsOfTotal(2.14, [
+    { usd: 0.84, billing: billingOf({ engine: 'claude', providerId: '', binding: 'declared' }) },
+    { usd: 1.30, billing: billingOf({ engine: 'opencode' }) }
+]);
+
 const ADAPTIVE_RUN = {
     id: 'run2', specId: 'spec2', status: 'running', plannerSessionId: 'S2',
     startedAt: Date.now() - 62 * 60000,
-    totalCostUSD: 2.14, totalTokens: 812000, ledger: [],
+    totalCostUSD: 2.14, costParts: ADAPTIVE_COST_PARTS, totalTokens: 812000, ledger: [],
     strategy: {
         version: 3, phase: 'verifying', at: Date.now() - 11 * 60000,
         text: 'Prove the three reachable paths one at a time against a real CLI, then have a second agent '

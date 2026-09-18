@@ -242,6 +242,22 @@ export function sumDollars<T>(
     return { usd: Math.round(usd * 10000) / 10000, parts, mixed: parts.length > 1 };
 }
 
+/**
+ * The parts of a total that was BOOKED elsewhere (a mission run's ledger),
+ * from the items it is made of. What the items do not account for is
+ * `unplaced`, so the parts add up to the figure the page prints. `undefined`
+ * when the total is one kind — an ordinary figure carries no breakdown.
+ */
+export function partsOfTotal(
+    total: number, items: readonly { usd: number; billing?: BillingIdentity }[]
+): DollarPart[] | undefined {
+    const all: { usd: number; billing?: BillingIdentity }[] = [...items];
+    const rest = Math.round(((Number(total) || 0) - all.reduce((n, i) => n + (Number(i.usd) || 0), 0)) * 10000) / 10000;
+    if (rest > 0) { all.push({ usd: rest }); }
+    const d = sumDollars(all, i => i.usd, i => i.billing);
+    return d.mixed ? d.parts : undefined;
+}
+
 /** The breakdown as lines — one per kind, `fmt` formatting the money. */
 export function describeDollars(sum: DollarSum, fmt: (usd: number) => string): string[] {
     return sum.parts.map(p => fmt(p.usd) + ' — ' + p.label

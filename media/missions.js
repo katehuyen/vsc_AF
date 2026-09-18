@@ -737,6 +737,9 @@
     };
     const fmtTime = (ts) => (ts ? window.AFTime.full(ts) : '—');
     const usd = (n) => '$' + (n || 0).toFixed(2);
+    // X-112 — a run's total over steps on different engines or routes is not
+    // one kind of dollar; the host sends the parts only when it is mixed.
+    const runUsd = (r) => r.costParts ? C.fmtUSDSum(r.totalCostUSD, r.costParts) : usd(r.totalCostUSD);
     // ‼️ A LIMIT OF 0 IS NO LIMIT, AND IT IS DRAWN THAT WAY. Every ceiling on
     // a mission is the user's to set and any of them may be left off; a bare
     // "0 rounds" on the row would read as a run with nothing left.
@@ -3209,7 +3212,7 @@
             ${liveSection(run, sp)}
             <div class="budget" title="Spent ${usd(run.totalCostUSD)} of ${sp.limits.maxCostUSD > 0 ? 'the ' + usd(sp.limits.maxCostUSD) + ' budget' : 'an unlimited budget'}">
                 <div class="budgetbar"><div class="budgetfill${pctRaw >= 90 ? ' hot' : ''}" style="width:${pct}%"></div></div>
-                <span class="muted small">${usd(run.totalCostUSD)} / ${capUsd(sp.limits.maxCostUSD)}${runTokens(run)
+                <span class="muted small">${runUsd(run)} / ${capUsd(sp.limits.maxCostUSD)}${runTokens(run)
                     ? ` · ${C.fmtTok(runTokens(run))}${sp.limits.maxTokens ? ` / ${C.fmtTok(sp.limits.maxTokens)}` : ''} tok`
                     : ''} · ${run.rounds.length}/${capN(sp.limits.maxRounds)} rounds · ${tasksUsed}/${capN(sp.limits.maxTasks)} tasks · ${wallMin}/${capN(sp.limits.maxMinutes)} min · started ${fmtTime(run.startedAt)}</span>
             </div>
@@ -3248,11 +3251,11 @@
                     ${run.result.unmet.map(u => `<span class="mchip bad"
                         title="${C.esc(u.id + ' — ' + u.text + '\nverdict: ' + u.verdict)}">${C.esc(u.id)} ${C.esc(u.verdict)}</span>`).join(' ')}
                 </div>` : ''}
-                <div class="muted small">total ${usd(run.totalCostUSD)} · ended ${fmtTime(run.endedAt)}${
+                <div class="muted small">total ${runUsd(run)} · ended ${fmtTime(run.endedAt)}${
                     run.result.stopReason ? ` · stopped: ${C.esc(run.result.stopReason)}` : ''}</div></div>` : ''}
             ${run.status === 'failed' && !run.result && run.note ? `<div class="resultbox failed">
                 <b>FAILED</b> — ${C.esc(run.note)}
-                <div class="muted small">ended ${fmtTime(run.endedAt)} · tracked cost ${usd(run.totalCostUSD)} (a killed planner call's spend is not in this number)</div></div>` : ''}
+                <div class="muted small">ended ${fmtTime(run.endedAt)} · tracked cost ${runUsd(run)} (a killed planner call's spend is not in this number)</div></div>` : ''}
             ${run.note && !(run.status === 'failed' && !run.result) ? `<p class="muted small">note: ${C.esc(run.note)}</p>` : ''}
         </div>`;
     }
@@ -3463,7 +3466,7 @@
                 <td>R${r.rounds.length}/${capN(sp.limits.maxRounds)}</td>
                 <td>${st.total ? `${st.total}${st.failed ? ` <span class="mchip bad">${st.failed}✕</span>` : ''}` : '—'}</td>
                 <td class="num">${tok ? C.fmtTok(tok) : '—'}</td>
-                <td class="num">${usd(r.totalCostUSD)}</td>
+                <td class="num">${runUsd(r)}</td>
                 <td class="muted small">${fmtTime(r.startedAt)}</td>
             </tr>` + (open ? `<tr class="rundetail"><td colspan="9">${detailHtml(r)}</td></tr>` : '');
         }).join('');

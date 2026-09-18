@@ -787,7 +787,7 @@
                         <td class="muted small">${C.esc((p.agents || []).join(', ')) || '—'}</td>
                         <td class="num">${p.sessions}</td>
                         <td class="num">${C.fmtUSD(p.todayCost)}${budget}</td>
-                        <td class="num"><strong>${C.fmtUSD(p.cost)}</strong></td>
+                        <td class="num"><strong>${C.fmtUSDSum(p.cost, p.costParts)}</strong></td>
                         <td class="num">${C.fmtTok(p.tokens)}</td>
                         <td class="num">${p.lastTs ? new Date(p.lastTs).toLocaleDateString() : '—'}</td>
                     </tr>`;

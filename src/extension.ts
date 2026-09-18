@@ -202,7 +202,7 @@ import {
     AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
 } from './core/accountSpend';
 import { billingReader, describeDrift, runDrift, runIdentity, RunIdentity, turnRuntimes } from './core/turnRuntime';
-import { BillingIdentity } from './core/billing';
+import { BillingIdentity, DollarPart, partsOfTotal } from './core/billing';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -17121,6 +17121,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const plannerWindow = (r: MissionRun): AppliedWindow =>
         ({ from: r.startedAt, ...(r.endedAt ? { to: r.endedAt } : {}) });
 
+    /**
+     * ‼️ X-112 — A MISSION RUN'S TOTAL SAYS WHAT IT ADDED. Its delegations can
+     * run on different engines and routes and the planner on another again.
+     * `totalCostUSD` stays what the $ ceiling reads — a ceiling that skipped
+     * some kinds of dollar would be the appearance of one — but the figure the
+     * page prints carries its parts when there is more than one kind. What the
+     * rounds cannot attribute (a child objective, a killed planner call) is
+     * `unplaced`, so the parts add up to the total.
+     */
+    const missionCostParts = (
+        run: { totalCostUSD: number; rounds: { plannerCostUSD?: number; steps: { costUSD?: number; identity?: RunIdentity }[] }[] },
+        plannerBilling: BillingIdentity | undefined
+    ): DollarPart[] | undefined => {
+        const items: { usd: number; billing?: BillingIdentity }[] = [];
+        for (const r of run.rounds) {
+            items.push({ usd: r.plannerCostUSD ?? 0, billing: plannerBilling });
+            for (const s of r.steps) { items.push({ usd: s.costUSD ?? 0, billing: s.identity?.billing }); }
+        }
+        return partsOfTotal(run.totalCostUSD, items);
+    };
     const missionRunsForPanel = () => {
         const byTask = new Map(taskManager.tasks.map(t => [t.id, t]));
         const sessions = index.all();
@@ -17128,7 +17148,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const bySessionId = new Map(sessions.map(s => [s.sessionId, s]));
         return [...missionStore.runs].sort((a, b) => b.startedAt - a.startedAt).map(run => {
             const ps = run.plannerSessionId ? bySessionId.get(run.plannerSessionId) : undefined;
-            return {
+            const out = {
                 ...run,
                 /** whole-planner-session total — the run-level fallback when
                  *  rounds carry no per-round planner tokens (pre-2.68 runs). */
@@ -17223,6 +17243,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     })
                 }))
             };
+            const costParts = missionCostParts(out,
+                run.plannerSessionId ? sessionIdentityOf(run.plannerSessionId)?.billing : undefined);
+            return costParts ? { ...out, costParts } : out;
         });
     };
 
@@ -27585,6 +27608,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const projectRollup = () => {
         const today = dayKey(Date.now());
         const projects = projectStore.all();
+        const readBilling = sessionBillingReader();
         const rolled = rollupProjectSessions(
             projects,
             // ‼️ EVERY ENGINE'S RECORD, ONE POOL OF MEASUREMENTS (X-35). Built
@@ -27604,13 +27628,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // must not join a budget total; a row whose engine QUOTED them
                 // must. That was one question with two answers and this test only
                 // ever asked the first (see engineQuotesPrice).
-                measured: engineQuotesPrice(s.source)
+                measured: engineQuotesPrice(s.source),
+                billing: readBilling(s)
             })),
             projectStore.links());
         return rolled.map(r => ({
             name: r.id === UNASSIGNED_ID ? UNASSIGNED : r.name,
             agents: r.agents, sessions: r.sessions, measuredSessions: r.measuredSessions,
             cost: r.cost, tokens: r.tokens,
+            ...(r.costParts ? { costParts: r.costParts } : {}),
             todayCost: r.todayCost, lastTs: r.lastTs,
             ...(r.budgetUSD ? { budgetUSD: r.budgetUSD } : {}),
             ...(projects.find(p => p.id === r.id)?.summary
@@ -27726,6 +27752,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             sessions: roll?.sessions ?? 0,
             measuredSessions: roll?.measuredSessions ?? 0,
             cost: roll?.cost ?? 0,
+            ...(roll?.costParts ? { costParts: roll.costParts } : {}),
             todayCost: roll?.todayCost ?? 0, tokens: roll?.tokens ?? 0,
             lastTs: roll?.lastTs ?? 0,
             archived: !!p.folder && !!projectArchiveRoot() && isInsideArchive(p.folder, projectArchiveRoot()),

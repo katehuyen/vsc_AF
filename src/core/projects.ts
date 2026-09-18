@@ -38,6 +38,8 @@
 // the entity
 // ---------------------------------------------------------------------------
 
+import { BillingIdentity, DollarPart, sumDollars } from './billing';
+
 /** Where a project is in its life. A list without this becomes a graveyard:
  *  finished work stays at the top forever and nobody dares delete it. */
 export type ProjectStatus = 'planned' | 'active' | 'paused' | 'done' | 'archived';
@@ -478,6 +480,9 @@ export function pruneLinks(links: ProjectLinks, projects: Project[]): ProjectLin
 
 export interface ProjectRollupSession extends ProjectSessionRef {
     cost: number;
+    /** X-112 — what this session's dollar IS; a bucket that adds more than one
+     *  kind says so (`costParts`) rather than printing one exact-looking sum. */
+    billing?: BillingIdentity;
     tokens: number;
     /** cost inside the caller's "today" window — budget comparisons use this */
     todayCost: number;
@@ -522,6 +527,8 @@ export interface ProjectRollup {
      */
     measuredSessions: number;
     cost: number;
+    /** X-112 — the kinds of dollar in `cost`, ONLY when there is more than one. */
+    costParts?: DollarPart[];
     tokens: number;
     todayCost: number;
     /** agents seen working on it — evidence, not membership */
@@ -567,6 +574,7 @@ export function rollupProjectSessions(
     // sessions yet is a project, not an absence
     for (const p of projects) { bucket(p.id); }
 
+    const measuredOf = new Map<string, ProjectRollupSession[]>();
     for (const s of sessions) {
         const b = bucket(resolveSessionProject(s, projects, links).projectId ?? UNASSIGNED_ID);
         // ‼️ THE RECORD SIDE COUNTS EVERYTHING. How many conversations, by whom,
@@ -581,6 +589,7 @@ export function rollupProjectSessions(
         if (s.measured === false) { continue; }
         b.measuredSessions++;
         b.cost += s.cost;
+        measuredOf.set(b.id, [...(measuredOf.get(b.id) ?? []), s]);
         b.tokens += s.tokens;
         b.todayCost += s.todayCost;
     }
@@ -589,6 +598,11 @@ export function rollupProjectSessions(
     for (const b of out) {
         b.cost = Math.round(b.cost * 10000) / 10000;
         b.todayCost = Math.round(b.todayCost * 10000) / 10000;
+        const mine = measuredOf.get(b.id) ?? [];
+        if (mine.some(s => s.billing)) {
+            const d = sumDollars(mine, s => s.cost, s => s.billing);
+            if (d.mixed) { b.costParts = d.parts; }
+        }
     }
     // declaration order; the leftover bucket is never allowed to head the list
     return out.sort((a, b) => {
@@ -728,6 +742,8 @@ export interface ProjectCostRow {
     agents: string[];
     sessions: number;
     cost: number;
+    /** X-112 — the kinds of dollar in `cost`, only when there is more than one. */
+    costParts?: DollarPart[];
     tokens: number;
     /** cost inside the caller's "today" window — budget comparisons use this */
     todayCost: number;

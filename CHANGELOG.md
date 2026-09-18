@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.562.0 - a mission run's total and a project's rollup say when they add more than one kind of dollar (X-112, part 3 — closes) (2026-09-18)
+
+- **A mission run's $ is its planner's and its delegates', and they need not
+  be one kind.** A lead planning on the Claude plan over OpenCode delegates
+  added an API-equivalent to an engine's own figure and printed one exact
+  total. The host now sends `costParts` per run (planner rounds with the
+  planner session's billing, each step with its own identity), and the page
+  prints `$2.14 (mixed)` with the breakdown on hover — in the runs table, the
+  budget line, and the finished/stopped summaries. `partsOfTotal` makes the
+  parts add up to the BOOKED total: what the rounds cannot attribute (a child
+  objective, a killed planner call) is `unplaced`, and a ledger that has not
+  caught up invents no negative part.
+- **The $ ceiling still reads the whole total, deliberately.** A mission cap
+  that skipped some kinds of dollar would be the appearance of a cap; the mark
+  says what the figure is, the ceiling keeps its teeth.
+- **The project rollup — the project list, the dashboard's project table and
+  the project row — carries `costParts`** the same way, from the same reader
+  (`billingReader`), on the measured sessions it already restricted itself to.
+- **Left as they are, on purpose:** the portfolio's and the phone snapshot's
+  per-agent 30-day figures (glance summaries whose rows are agents, not runs),
+  and the cost-anomaly report, which compares an agent's day with its own
+  history and is a trend detector, not a statement of a bill.
+- Tests: `test_billing.js` 62 (+4, `partsOfTotal`), `test_projects.js` 205
+  (+3). Looked at: `missions.s19` — `$2.14 (mixed)` in the runs table and on
+  the budget line, `$2.14 (mixed) / $5.00`.
+
 ## 3.561.0 - a total that adds a plan's API-equivalent, a key's bill and a Kimi route's arithmetic says it is mixed (X-112, part 2b) (2026-09-18)
 
 - **One kind of dollar per run, named by the rule.** `BillingIdentity.dollar`

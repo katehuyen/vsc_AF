@@ -296,6 +296,17 @@ const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail
     ok('…⚖ against the plan limit counts the plan run alone, the rest is named off-plan',
         /⚖ \*\*1\.0k\*\* against the plan limit · \*\*450\*\* off-plan/.test(md));
     ok('…and the agent row\'s cost is marked too', /\| dev \| 3 \| \$15\.00 \(mixed\) \|/.test(md));
+    // X-112 (3) — a total booked elsewhere: the parts always add up to it
+    const { partsOfTotal } = require(path.join(__dirname, '..', 'out', 'core', 'billing.js'));
+    const mp = partsOfTotal(5, [{ usd: 1, billing: plan }, { usd: 2.5, billing: codex }, { usd: 0.5, billing: plan }]);
+    ok('a mission run over a plan planner and a Codex delegate carries its parts',
+        Array.isArray(mp) && mp.length === 3);
+    ok('…and what the rounds did not account for is unplaced, so the parts add up to the booked total',
+        Math.round(mp.reduce((n, p) => n + p.usd, 0) * 100) === 500 && mp.find(p => p.dollar === 'unplaced').usd === 1);
+    ok('…a run booked in one kind carries no breakdown',
+        partsOfTotal(1.5, [{ usd: 1, billing: plan }, { usd: 0.5, billing: plan }]) === undefined);
+    ok('…and a ledger that has not caught up (items above the total) invents no negative part',
+        (x => x === undefined)(partsOfTotal(1, [{ usd: 1, billing: plan }, { usd: 0.5, billing: plan }])));
     const clean = buildFleetReport(agents, { all: () => [list[0]], external: () => [], forAgent: () => [list[0]] }, [], 7, undefined, read);
     ok('an all-plan fleet says what its costs ARE, from the rule\'s own words',
         clean.includes('costs are ' + plan.costIs + '.') && !clean.includes('(mixed)'));

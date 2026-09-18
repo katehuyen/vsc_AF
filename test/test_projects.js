@@ -550,5 +550,28 @@ const P = (id, extra) => Object.assign(
         Object.keys(partsTotals([zen], rolls)).length === 0);
 }
 
+// ---------- X-112: a project total that adds different kinds of dollar says so ----------
+{
+    const { billingOf } = require(path.join(__dirname, '..', 'out', 'core', 'billing.js'));
+    const b = v => billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v));
+    const projects = [P('prj_a', { name: 'A', repos: ['D:\\a'] }), P('prj_b', { name: 'B', repos: ['D:\\b'] })];
+    const S = (sessionId, cwd, cost, billing) =>
+        ({ sessionId, cwd, agentName: 'dev', cost, tokens: 1, todayCost: 0, lastTs: T0, billing });
+    const roll = rollupProjectSessions(projects, [
+        S('a1', 'D:\\a', 3, b({ providerId: '' })),
+        S('a2', 'D:\\a', 1, b({ providerId: 'kimi', providerLabel: 'Kimi' })),
+        S('b1', 'D:\\b', 2, b({ providerId: '' })),
+        S('b2', 'D:\\b', 2, b({ providerId: '' }))
+    ]);
+    const by = Object.fromEntries(roll.map(r => [r.id, r]));
+    ok('X-112: a project on the plan AND through Kimi carries its kinds of dollar',
+        by.prj_a.cost === 4 && by.prj_a.costParts && by.prj_a.costParts.length === 2);
+    ok('X-112: …a one-kind project carries none, and the arithmetic is unchanged',
+        by.prj_b.cost === 4 && by.prj_b.costParts === undefined);
+    ok('X-112: …and without billing the rollup states nothing it was not told',
+        rollupProjectSessions(projects, [S('a1', 'D:\\a', 3), S('a2', 'D:\\a', 1)])
+            .every(r => r.costParts === undefined));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
