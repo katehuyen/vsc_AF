@@ -83,6 +83,18 @@ const data = (o) => {
         sessionId: '019fe7bc-545c-70d2-9a11-0b1c2d3e4f50',
         account: 'aicozums',
         accountId: 'claude-aicozums',
+        // X-110 - which provider served the run. A fixture with none would
+        // photograph the header exactly as it was before the chip existed.
+        identity: {
+            engine: codex ? 'codex' : 'claude',
+            providerId: 'kimi', providerLabel: 'Kimi (work)',
+            origin: 'agent-farm-profile', scope: 'session',
+            providerProfileId: 'kimi-work', providerProfileRevision: 3,
+            requestedModelRef: 'kimi-k2-thinking',
+            reportedProviderIds: ['kimi'], reportedModels: ['kimi-k2-thinking'],
+            proof: 'matched', multiProvider: false, turnScope: false,
+            agreement: 'matched', binding: 'declared'
+        },
         title: 'S-64 — baglam disiplini sinyali',
         pinned: false,
         tags: [],

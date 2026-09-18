@@ -1004,6 +1004,25 @@
         return bits.filter(Boolean).join(' · ');
     }
 
+    /**
+     * ‼️ X-110 — WHICH PROVIDER SERVED THIS RUN, in the shared mark.
+     *
+     * Drawn only when there is one to name: a run that took the engine's own
+     * default has no route, and a grey placeholder saying so on every page
+     * would be a control with no referent. The panel is the component's, so a
+     * session's page and the row it was opened from cannot word the same fact
+     * two ways — which is what happened to the three "why is there nothing to
+     * show" sentences before they had one owner.
+     */
+    function providerChipHtml() {
+        const I = DATA.identity;
+        if (!I) { return ''; }
+        const chip = window.AFProvider.chip(I);
+        if (!chip) { return ''; }
+        return window.AFTip.wrap(chip, window.AFProvider.title(I),
+            window.AFTip.lines(window.AFProvider.tipLines(I)));
+    }
+
     /** The labels this session carries, beside its name. Read-only here — they
      *  are set from a row's right-click menu, and one owner is the point. */
     function tagChipsHtml() {
@@ -1197,6 +1216,13 @@
                 // was opened from says so at a glance; the page it opens then
                 // dropped the fact entirely, so the one screen with room for it
                 // was the one screen that did not answer "what ran this".
+                // ‼️ X-110 — AND WHICH PROVIDER SERVED IT, beside the engine and
+                // never inside it. The engine is the program; the provider is
+                // what answered it, and this page — the one screen with room for
+                // the whole story of a run — was reading a model name and
+                // leaving the reader to guess the rest. Its own panel (ONE
+                // SUBJECT): the declared route, who answered, how we know, and
+                // which kind of nothing a blank is.
                 title: pinStarHtml() + C.esc(DATA.title) + tagChipsHtml()
                     + window.AFEngine.badge(DATA.engine, window.AFTip.lines([
                         'Engine: ' + window.AFEngine.label(DATA.engine),
@@ -1209,7 +1235,8 @@
                         DATA.account ? 'Account: ' + DATA.account : '',
                         DATA.models && DATA.models.length ? 'Models: ' + DATA.models.join(', ') : '',
                         'Transcript: ' + (DATA.file ? 'on disk' : 'none this build can open')
-                    ])),
+                    ]))
+                    + providerChipHtml(),
                 sub: subLineHtml(),
                 // The whole session action set, on the heading — the same menu
                 // every table row carries (afSessionCtx.js).

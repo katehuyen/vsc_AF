@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.556.0 - a session's own page says which provider served it, from the record the resume gate reads (X-110, part 2) (2026-09-18)
+
+- **The one screen with room for the whole story of a run** drew the engine
+  badge, the account and a model name, and left the provider to be inferred
+  from the model — the inference this family forbids. It carries the shared
+  chip now, beside the engine badge and never inside it, with the component's
+  own panel: the declared route and its profile revision, who ANSWERED when
+  that differs, how we know, and which kind of nothing a blank is.
+- **One reader, so a page and a gate cannot describe one run two ways.** The
+  `runIdentity` join lived inline inside `resumeRouteFor` and nothing else
+  could ask for it; it is `sessionIdentityOf` now and the gate reads it too.
+  Without that, a page could say "Kimi" over a session the gate then refuses
+  to resume onto Kimi — two true-looking answers about one run.
+- `test/test_provider_chip_width.js` measures the viewer's chip as well, and
+  pins that both sides ask the same reader.
+- Still to come in X-110: the Live timeline, and task and mission rows.
+
 ## 3.555.0 - which PROVIDER served a run is a mark of its own, and the last door with no launch record has one (X-110 part 1 · X-327) (2026-09-18)
 
 ### X-110 (part 1) — the provider is a mark of its own

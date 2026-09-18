@@ -10,6 +10,7 @@ import { StepKind, stepKindForTool } from '../core/stepkind';
 import { collectEdits, fileStats, groupByFile } from '../core/codeedits';
 import { parseCliViewer } from '../core/cliViewer';
 import { ContextSignalView } from '../core/contextGuard';
+import { RunIdentity } from '../core/turnRuntime';
 import { oneShotEnv } from '../core/oneShot';
 import { revealPath } from '../core/reveal';
 import { askExportOptions, handleAfNav, htmlShell, wikiMarksOf, wikiMarkMessage } from './base';
@@ -58,6 +59,14 @@ export interface ViewerDeps {
      * `undefined` = nothing recorded. That is silence, never "this machine".
      */
     accountFor?(sessionId: string): { id: string; label: string } | undefined;
+    /**
+     * ‼️ X-110 — AND WHICH PROVIDER SERVED IT, the same way and for the same
+     * reason as the account above: it is a fact about the LAUNCH plus what the
+     * engine reported, and this page cannot derive either. It ALWAYS answers
+     * (X-108) — `binding` says which kind of nothing a blank is, so an old run,
+     * a foreign transcript and one nobody recorded stop sharing a blank space.
+     */
+    identityFor?(sessionId: string): RunIdentity | undefined;
     /** Export MD remembers the last folder saved to; falls back to session cwd / home. */
     lastExportDir?(): string | undefined;
     setLastExportDir?(dir: string): void;
@@ -403,6 +412,8 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             tags: deps.tagsFor?.(cli.sessionId) ?? [],
             account: acct?.label ?? '',
             accountId: acct?.id ?? '',
+            // X-110 - which provider served it, on the foreign-CLI path too.
+            identity: deps.identityFor?.(cli.sessionId) ?? null,
             // S-41 — every fact the rule reads, written out even where the
             // answer is "this page cannot know": a foreign-CLI transcript
             // states no entrypoint, and the two facts only the index holds
@@ -758,6 +769,9 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
         sessionId,
         account: acct?.label ?? '',
         accountId: acct?.id ?? '',
+        // X-110 - which provider served it. Always answers; `binding` says which
+        // kind of nothing a blank is, so the page never guesses a route.
+        identity: deps.identityFor?.(sessionId) ?? null,
         title: deps.titleFor?.(sessionId) || title || '(untitled session)',
         // The shelf mark, so the page can show it and change it — the same fact
         // the Dashboard row's ★ shows, read from the same store.

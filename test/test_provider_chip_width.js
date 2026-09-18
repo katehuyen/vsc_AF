@@ -47,8 +47,20 @@ const CANDIDATES = [
     ok('‼️ the sessions Engine cell lays its two marks out as a row',
         /engine: r => `<td title="\$\{tipOf\(TIP\.engine\(r\)\)\}"><span class="cellline">/.test(sess)
         && /\.cellline \{[^}]*display:flex/.test(sess));
-    ok('…and both tables ask the component rather than drawing a provider themselves',
-        /window\.AFProvider\.chip\(/.test(sess) && /window\.AFProvider\.chip\(/.test(turns));
+    const viewer = fs.readFileSync(path.join(ROOT, 'media', 'sessionViewer.js'), 'utf8');
+    ok('…and every surface asks the component rather than drawing a provider itself',
+        /window\.AFProvider\.chip\(/.test(sess) && /window\.AFProvider\.chip\(/.test(turns)
+        && /window\.AFProvider\.chip\(I\)/.test(viewer));
+    // ‼️ THE PAGE AND THE RESUME GATE READ ONE RECORD. A page with its own
+    // reader could say "Kimi" over a run the gate then refuses to resume onto
+    // Kimi — two true-looking answers about one session.
+    {
+        const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+        ok('‼️ the viewer and the resume gate ask the SAME reader',
+            /const sessionIdentityOf = \(sessionId: string, engine\?: string\)/.test(ext)
+            && /identityFor: \(sessionId: string\) => sessionIdentityOf\(sessionId\)/.test(ext)
+            && /const ident = sessionIdentityOf\(sessionId, engine\)/.test(ext));
+    }
     // ‼️ THE FIXTURES HAVE TO CONTAIN THE CASE. A page whose rows carry no
     // provider measures a column that was never asked to hold a chip, and every
     // assertion below would pass on a picture of the old layout.
@@ -72,7 +84,7 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         + "out.push({t:(e.textContent||'').trim(),w:Math.round(r.width),sw:e.scrollWidth,"
         + "cut:e.scrollWidth>Math.ceil(r.width)+1});});return out;})()";
 
-    for (const page of ['sessions', 'turns']) {
+    for (const page of ['sessions', 'turns', 'sessionviewer']) {
         node([path.join('test', 'render_page.js'), page]);
         let chips;
         try { chips = JSON.parse(node([path.join('test', 'measure_page.js'), page, EXPR])); }
@@ -86,10 +98,14 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
             + (cut.length ? ' — ' + cut.map(c => `${c.t} ${c.w}/${c.sw}`).join(' · ') : ''),
             cut.length === 0);
         // …and the count chip, which is the widest text the mark ever carries,
-        // is the one that fails first when a column is trimmed later.
-        const many = (chips || []).find(c => /providers$/.test(c.t));
-        ok(`${page}: the "N providers" chip is whole — it is the widest case`,
-            !!many && !many.cut);
+        // is the one that fails first when a column is trimmed later. The
+        // viewer draws ONE session and so has one chip: there is no count case
+        // to hold there, and asserting one would be asserting a fixture.
+        if (page !== 'sessionviewer') {
+            const many = (chips || []).find(c => /providers$/.test(c.t));
+            ok(`${page}: the "N providers" chip is whole — it is the widest case`,
+                !!many && !many.cut);
+        }
     }
 }
 

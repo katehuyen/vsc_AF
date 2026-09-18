@@ -201,7 +201,7 @@ import {
 import {
     AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
 } from './core/accountSpend';
-import { describeDrift, runDrift, runIdentity, turnRuntimes } from './core/turnRuntime';
+import { describeDrift, runDrift, runIdentity, RunIdentity, turnRuntimes } from './core/turnRuntime';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -21032,9 +21032,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const agent = agents.find(a => a.id === agentId);
         const s = index.byId(sessionId) ?? index.allWithExternal().find(x => x.sessionId === sessionId);
         const manifest = manifestOf(launchManifests(), s);
-        const ident = runIdentity(manifest, engine,
-            (s?.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })),
-            { external: !!s && (s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !manifest)) });
+        // X-110 — the same reader every surface that DRAWS a provider asks, so
+        // a card and this gate can never describe one run two ways.
+        const ident = sessionIdentityOf(sessionId, engine)
+            ?? runIdentity(undefined, engine, [], {});
         const standing = agent
             ? storedRoute(cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {}, agent.dir, engine as EngineId)
             : { providerId: '', tier: '' };
@@ -21558,6 +21559,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * Both parts travel: the LABEL is a thing to read, the ID is a slot, and
      * the viewer's `/context` capture spawns on the id.
      */
+    /**
+     * ‼️ X-110 — THE WHOLE IDENTITY OF A RUN, ASKED IN ONE PLACE.
+     *
+     * `resumeRouteFor` had this expression inline and it is the only place that
+     * knew how to build it, so every surface that wanted to DRAW a provider had
+     * no way to ask. It is here now and the gate reads it too: the record a page
+     * shows and the record a resume is decided from must be the same one, or a
+     * card can say "Kimi" while the gate refuses a resume onto Kimi.
+     *
+     * It always answers (X-108): `binding` says which kind of nothing a blank
+     * is, so a legacy run, a foreign transcript and one nobody recorded stop
+     * sharing a blank space.
+     */
+    const sessionIdentityOf = (sessionId: string, engine?: string): RunIdentity | undefined => {
+        const s = index.byId(sessionId) ?? index.allWithExternal().find(x => x.sessionId === sessionId);
+        const manifest = manifestOf(launchManifests(), s);
+        if (!s && !engine) { return undefined; }
+        return runIdentity(manifest, engine || s?.source || 'claude',
+            (s?.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })),
+            { external: !!s && (s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !manifest)) });
+    };
     const sessionAccountOf = (sessionId: string): { id: string; label: string } | undefined => {
         const s = index.byId(sessionId);
         const id = String(manifestOf(launchManifests(), s)?.account ?? '').trim();
@@ -21567,6 +21589,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const viewerDeps = {
         extensionUri: context.extensionUri,
         accountFor: sessionAccountOf,
+        // X-110 — and which provider served it, from the same reader the resume
+        // gate uses, so the page and the gate cannot describe one run two ways.
+        identityFor: (sessionId: string) => sessionIdentityOf(sessionId),
         getPricing: () => pricing,
         maxMessages: () => cfg().get<number>('maxTranscriptMessages', 1500),
         contextLimitFor: (model: string) => {
