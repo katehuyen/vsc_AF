@@ -288,6 +288,11 @@ export interface HostedSessionInit {
      */
     providerId?: string;
     tier?: string;
+    /** ‼️ X-109 — the route above is the RESUME GATE's answer: taken as it is,
+     *  an empty providerId included, never falling through to the agent's
+     *  standing route (see resolveLaunchRoute). Kept on the state so every
+     *  re-spawn of the card stays pinned. */
+    routePinned?: boolean;
     /**
      * ‼️ X-169 — WHICH SIGN-IN THIS CARD RUNS AS. Absent means the engine's
      * active account decides and, failing that, the main one — which is what
@@ -559,7 +564,7 @@ export class ConsoleHost {
             /** X-103 — the route this CARD was started on; absent asks the
              *  agent's stored record, which is what every caller written before
              *  a picker existed meant. */
-            route?: { providerId?: string; tier?: string }
+            route?: { providerId?: string; tier?: string; pinned?: boolean }
         ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined,
         /**
          * ‼️ X-169 — THE ACCOUNT'S ENVIRONMENT, resolved by the side that owns
@@ -909,13 +914,13 @@ export class ConsoleHost {
                 // eventually be wrong.
                 process.env, [this.accountLayer?.(engine.id, init.account)],
                 this.engineRuntime?.(init.agentId, engine.id, {
-                    providerId: init.providerId, tier: init.tier
+                    providerId: init.providerId, tier: init.tier, pinned: init.routePinned
                 }))
         });
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-            providerId: init.providerId, tier: init.tier, launchId: init.launchId,
+            providerId: init.providerId, tier: init.tier, routePinned: init.routePinned, launchId: init.launchId,
             // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
             // starts a card. Only the ACP one recorded it, so on Claude — the
             // engine this whole family exists for — the card ran as an account
@@ -1017,7 +1022,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-            providerId: init.providerId, tier: init.tier, launchId: init.launchId,
+            providerId: init.providerId, tier: init.tier, routePinned: init.routePinned, launchId: init.launchId,
             // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
             // starts a card. Only the ACP one recorded it, so on Claude — the
             // engine this whole family exists for — the card ran as an account
@@ -1117,7 +1122,7 @@ export class ConsoleHost {
         const base = newSessionState({
             id, agentId: init.agentId, agentName: init.agentName, cwd: init.cwd,
             model: init.model, effort: init.effort, permissionMode: init.permissionMode,
-            providerId: init.providerId, tier: init.tier, launchId: init.launchId,
+            providerId: init.providerId, tier: init.tier, routePinned: init.routePinned, launchId: init.launchId,
             // ‼️ X-213 — AND THE SIGN-IN, ON THE STATE, on every path that
             // starts a card. Only the ACP one recorded it, so on Claude — the
             // engine this whole family exists for — the card ran as an account
@@ -1698,7 +1703,7 @@ export class ConsoleHost {
                     // it — a route change is a different program (X-101), and a
                     // card that quietly moved would be the transcript lying.
                     this.engineRuntime?.(h.state.agentId, h.engine.id, {
-                        providerId: h.state.providerId, tier: h.state.tier
+                        providerId: h.state.providerId, tier: h.state.tier, pinned: h.state.routePinned
                     }))
             });
         } catch (e) {
@@ -2675,7 +2680,7 @@ export class ConsoleHost {
             agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
             engine: h.engine.id as EngineId,
             model: s.model, effort: s.effort, permissionMode: s.permissionMode,
-            providerId: s.providerId, tier: s.tier,
+            providerId: s.providerId, tier: s.tier, routePinned: s.routePinned,
             // the whole point of the exercise
             account: want,
             // ‼️ the SAME conversation, by id — this is `--resume`, which is the

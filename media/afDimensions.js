@@ -133,6 +133,10 @@
             why: 'continue the most recent session instead of naming one.'
         },
         {
+            id: 'routePinned', owner: 'farm', remembered: false, perEngine: false, redraws: false,
+            why: 'X-109 - providerId/tier are the resume gate\'s answer, taken as they are (an empty providerId included) and never filled from the agent\'s record: a resumed session runs on the route it ran on. Per-launch like resume itself.'
+        },
+        {
             id: 'projectContextFile', owner: 'farm', remembered: false, perEngine: false, redraws: false,
             why: 'which project this session belongs to, told to the agent before the user types. A FILE and not inline text, measured: multi-line text does not survive a shell on any platform.'
         },

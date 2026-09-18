@@ -2,6 +2,62 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.551.0 - a resumed session runs on the route it ran on, and every door asks the same gate (X-109) (2026-09-18)
+
+- **‼️ The corruption, and which door it came through.** X-101 gave every
+  adapter a `resumePolicy`; X-105 refused a route change on a live card. For
+  six releases NOTHING called either on a resume: the Console, the terminal,
+  the bridge and a task continuing a conversation all resolved the route the
+  way a fresh launch does — what was named, else the agent's STANDING route.
+  A session that ran on Kimi came back on whatever the agent stood on that
+  day, and no transcript could say which turns ran where (measured in August,
+  the reason X-105 exists; it had only closed the live-card door).
+- **`resumeRoute(adapter, binding, prior, asked, standing)` — one pure gate
+  (`src/core/resumeGate.ts`).** The route a session ran on is read off its
+  LAUNCH MANIFEST through the binding and re-resolved at the spawn (the
+  profile at its CURRENT revision, the key from the store — nothing is copied
+  out of the record). Five answers: **`pinned`** (nothing asked → the route it
+  ran on, the standing route never consulted — and "ran with none" is pinned
+  to NONE, which every resolver used to read as "ask the agent"), **`switch`**
+  (a different route asked and the ENGINE allows it — recorded as a new run
+  identity beside the earlier turns' one), **`unbound`** (nothing recorded —
+  `legacy` / `external` / `unknown` binding, the same four words as
+  `runIdentity` — so what was asked, else the standing route, applies and
+  `why` says so), **`none`** (no provider axis), **`refuse`** with `remedy`
+  (fork | new). The verdict is `adapter.resumePolicy`'s, never this file's.
+- **‼️ On OpenCode the model carries the provider, and a bare id is resolved,
+  never guessed.** `qualifyModelRef` reads the engine's own catalog: one
+  provider serving `claude-opus-5` qualifies it, two serving `big-pickle`
+  REFUSE it by name with the qualified form to use. A model naming one
+  provider beside a `providerId` naming another is refused too.
+- **`pinned` is a new word the resolver understands.** `resolveLaunchRoute`,
+  `engineRuntimeFor`, the terminal, the ConsoleHost (`routePinned` on the init
+  AND the state, so every re-spawn and the account swap stay pinned), the
+  revive and the task runner (`FarmTask.routePinned`, `spawnRouteOf`) all take
+  a pinned route AS IT IS, an empty providerId included. `LaunchOptions.
+  routePinned` is per-launch like `resume` itself — never remembered.
+- **Seven doors, one function (`resumeRouteFor`).** `console.start` (its
+  `providerId=` is a DELIBERATE ask and is policed; the reply carries
+  `resumeRoute`), the row's "Continue in Console", the ended card's own
+  Resume (it passed NO route at all — the card said Kimi, the process talked
+  to the setting), the row's terminal Resume (now handed the engine and the
+  route; before, the environment was resolved for Claude off the standing
+  record), `startClaudeSession` for `--resume` and `--continue` (the latter
+  gated against the latest session in the folder), `sessions.start` (gated
+  with its own argument, arrives `routePinned`), and a task with
+  `resumeSessionId` (a refusal is a finished run with the reason; the
+  verdict is a `route` event on its record). A seeded box is not an ask —
+  S-45's rule applied to the route — so UI doors ask nothing and pin.
+- **`sessions.resumeRoute`** — the gate, readable without spawning: the same
+  function the doors use, so what it says is what they will do.
+- **Out of scope, said here so it is not mistaken for done:** the mission
+  planner's `--resume` runs on the spec's own route by construction (one
+  route per run) and is not gated; a Console-shaped task never resumes.
+- **75 tests** (`test_resume_gate.js`): the five acts per engine, the
+  revision move, the bare-id ambiguity, and the WIRE — every
+  `consoleHost.start` that resumes is walked by balanced braces and must
+  carry `routePinned`, so a door added later is caught by shape.
+
 ## 3.550.0 - a smart account rule is a rule, not a deleted sign-in: no more "not on this machine: @emptiest" (K-41) (2026-09-18)
 
 - **‼️ The false alarm, and where it came from.** Picking a smart policy

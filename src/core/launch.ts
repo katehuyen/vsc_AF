@@ -150,6 +150,14 @@ export interface LaunchOptions {
     /** --continue (mutually exclusive with resume) */
     continueLast?: boolean;
     /**
+     * ‼️ X-109 — `providerId`/`tier` ARE THE RESUME GATE'S ANSWER: take them as
+     * they are, an empty providerId included, and neither fill them from the
+     * agent's record nor ask the gate again. Per-launch like `resume` itself —
+     * never remembered, never inherited — because it is a fact about ONE
+     * conversation's route, not a setup anybody chose.
+     */
+    routePinned?: boolean;
+    /**
      * --append-system-prompt-file <path>: the project this session belongs to,
      * told to the agent before the user types anything (see projectContext.ts).
      *

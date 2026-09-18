@@ -193,6 +193,7 @@ import {
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
 import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
+import { describeResumeRoute, ResumeAsk, ResumeRoute, resumeRoute } from './core/resumeGate';
 import {
     LaunchManifest, ManifestInput, manifestFor, manifestIndex, manifestLeaks, manifestOf,
     newLaunchId, rememberManifest
@@ -3322,6 +3323,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (twin) { return `the task "${twin.title}" is already writing to it`; }
         return undefined;
     };
+    /** Is the Console still holding a LIVE card for this session? A resume of
+     *  one is handed the card back (S-29) and spawns nothing. */
+    const consoleHolds = (sessionId: string): boolean => !!sessionId && consoleHost.list()
+        .some(s => s.sessionId === sessionId && s.status !== 'ended' && s.status !== 'error');
 
     /**
      * ‼️ M-26 — THE CONSOLE IS BUILT LATER THAN THE QUEUE, so the two ops that
@@ -3523,6 +3528,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // revision is theirs, so the answer comes from here and the task
             // seals what it is handed (see TaskRunnerOpts.sealRoute).
             sealRoute: (agentId, engine, route) => routeSealOf(agentId, engine, route),
+            // ‼️ X-109 — the same gate every Console and terminal resume goes
+            // through, so a task continuing a conversation cannot come to a
+            // different answer about its route than a person would. A headless
+            // run is a `-p` spawn, which is the `run` transport.
+            resumeRoute: (agentId, engine, sessionId, route) => resumeRouteFor(
+                sessionId, engine, agentId,
+                { providerId: route?.providerId, tier: route?.tier }, 'run'),
             // ‼️ X-169 — and which sign-in it runs as, from the same side and for
             // the same reason (see TaskRunnerOpts.accountLayer).
             accountLayer: (engine, account, agentId) => launchAccountEnv({ engine, account, agentId }),
@@ -10518,6 +10530,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (!o.permissionMode && inherit.permissionMode) {
                     o.permissionMode = inherit.permissionMode;
                 }
+                /**
+                 * ‼️ X-109 — AND THE ROUTE IS THE GATE'S, on the same S-45
+                 * order: `provider=` typed here is a DELIBERATE ask and is
+                 * policed by the adapter (refused on Claude with fork/new, a
+                 * new run identity on OpenCode); left out, the route the
+                 * session ran on is pinned from its launch record, and the
+                 * agent's standing route is never consulted. The verdict rides
+                 * out on the answer, and the launch arrives `routePinned` so the
+                 * terminal door does not ask again.
+                 */
+                const gate = resumed && (optStr(args, 'surface') || 'terminal') === 'terminal'
+                    ? resumeRouteFor(resumed.sessionId, engineOf(o.engine ?? launchDefaults().engine).id, agent.id,
+                        { providerId: o.providerId, tier: o.tier, model: o.model }, 'tui')
+                    : undefined;
+                need(gate?.act !== 'refuse', gate ? describeResumeRoute(gate) : '');
+                const gated = gatedRoute(gate);
+                if (gated) { o.providerId = gated.providerId; o.tier = gated.tier; o.routePinned = gated.pinned; }
+                if (gate?.model) { o.model = gate.model; }
                 const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
                 const errors = validateLaunch(merged);
                 need(!errors.length, errors.join(' · '));
@@ -10572,7 +10602,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const command = startClaudeSession(agent, o, undefined, undefined, project);
                 need(command, 'launch rejected — see the warning in the window');
                 void rememberLaunch(agent.id, o, 'terminal');
-                return { agent: agent.name, cwd: agent.dir, surface, command, ...shape };
+                return {
+                    agent: agent.name, cwd: agent.dir, surface, command, ...shape,
+                    resumeRoute: gate ? { act: gate.act, binding: gate.binding, why: gate.why } : null
+                };
             }
         },
         {
@@ -11534,15 +11567,32 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         need(!busy, `${resume} is open elsewhere — ${busy}; a second process on one transcript is refused`);
                     }
                 }
+                /**
+                 * ‼️ X-109 — WHICH ROUTE A RESUME RUNS ON IS THE GATE'S ANSWER,
+                 * not this argument's and not the agent's standing record. A
+                 * card the panel still holds live is handed back untouched
+                 * (S-29) and is not gated: nothing spawns. An argument that
+                 * names a route is a DELIBERATE ask and is policed by the
+                 * adapter — on Claude a different route is refused with fork
+                 * or new, on OpenCode it lands as a new run identity.
+                 */
+                const gate = resume && !consoleHolds(resume)
+                    ? resumeRouteFor(resume, engine, agent.id,
+                        { providerId: wantRoute, tier: wantTier, model: optStr(args, 'model') }, 'acp')
+                    : undefined;
+                need(gate?.act !== 'refuse', gate ? describeResumeRoute(gate) : '');
+                const routeUsed: { providerId?: string; tier?: string; pinned?: boolean } =
+                    gatedRoute(gate) ?? { providerId: route.providerId, tier: route.tier };
                 const id = consoleHost.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     engine: engine as EngineId,
                     ...(account ? { account } : {}),
-                    model: optStr(args, 'model') || d.model,
+                    model: gate?.model || optStr(args, 'model') || d.model,
                     effort: optStr(args, 'effort') || d.effort,
                     permissionMode: optStr(args, 'permissionMode') || d.permissionMode,
-                    ...(route.providerId ? { providerId: route.providerId } : {}),
-                    ...(route.tier ? { tier: route.tier } : {}),
+                    ...(routeUsed.providerId ? { providerId: routeUsed.providerId } : {}),
+                    ...(routeUsed.tier ? { tier: routeUsed.tier } : {}),
+                    ...(routeUsed.pinned ? { routePinned: true } : {}),
                     resume,
                     carried: past ? carriedTotals(past) : undefined,
                     ...(projectId !== undefined ? { projectId } : {}),
@@ -11576,7 +11626,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                      * to see the answer without a second call, and `null` here
                      * is the honest word for "this window's own environment".
                      */
-                    route: consoleRouteOf(engine, route.providerId, route.tier) ?? null,
+                    route: consoleRouteOf(engine, routeUsed.providerId, routeUsed.tier) ?? null,
+                    /** ‼️ X-109 — what the resume gate decided about the route,
+                     *  so a caller can see a pin or a switch without a second
+                     *  call; null on a fresh start and on a live card handed back. */
+                    resumeRoute: gate ? { act: gate.act, binding: gate.binding, why: gate.why } : null,
                     /** X-133 — whether the engineering discipline really went in.
                      *  Stated on the way out because a folder that cannot supply
                      *  the hook adds nothing at all, and a caller believing it
@@ -20789,7 +20843,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * Absent (or naming no provider) still means "ask the agent's record",
          * which is what every caller written before this said.
          */
-        route?: { providerId?: string; tier?: string }
+        route?: { providerId?: string; tier?: string; pinned?: boolean }
     ): { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined => {
         const r = resolveLaunchRoute(agentId, engine, route);
         /**
@@ -20824,18 +20878,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * looks like as a fact rather than as a null check — see `engineRuntimeFor`.
      */
     const resolveLaunchRoute = (
-        agentId: string, engine: string, route?: { providerId?: string; tier?: string }
+        agentId: string, engine: string,
+        /**
+         * ‼️ X-109 — `pinned` MEANS TAKE THIS ROUTE AS IT IS, AN EMPTY ONE
+         * INCLUDED. Every reader of this argument took an empty id as "ask the
+         * agent's record", and that is the right default for a fresh launch —
+         * but a RESUME of a session that ran with no route was walked onto
+         * whatever the agent stood on that day by exactly that fall-through.
+         * The resume gate answers with `pinned: true`, and here the agent's
+         * record is then not consulted at all.
+         */
+        route?: { providerId?: string; tier?: string; pinned?: boolean }
     ): {
         identity: ProviderIdentity; routed: boolean;
         spawnEnv?: Record<string, string>; clearEnv?: string[];
     } | undefined => {
         const agent = agents.find(a => a.id === agentId);
         if (!agent) { return undefined; }
-        const chosen = (route?.providerId ?? '').trim()
+        const chosen = route?.pinned || (route?.providerId ?? '').trim()
             // The tier travels with the route that was named: a stored tier read
             // against a launch's different route maps the word through the wrong
             // endpoint.
-            ? { providerId: route!.providerId!.trim(), tier: (route!.tier ?? '').trim() }
+            ? { providerId: (route!.providerId ?? '').trim(), tier: (route!.tier ?? '').trim() }
             : storedRoute(
                 cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {},
                 agent.dir, engine as EngineId);
@@ -20913,6 +20977,61 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...(catalogRevision ? { catalogRevision } : {})
         };
     };
+    /**
+     * ‼️ X-109 — THE RESUME GATE, ASKED BY EVERY DOOR THAT TAKES A SESSION UP
+     * AGAIN: the Console (`console.start`, the row's "Continue in Console"),
+     * the terminal (`sessions.start`, the row's "Resume", `--continue`) and a
+     * task continuing a conversation. Until this item each of them resolved
+     * the route the way a fresh launch does — what was named, else the
+     * agent's STANDING route — so a session that ran on one route came back
+     * on whatever the agent stood on that day, and no transcript could say
+     * which turns ran where (the August measurement X-105 refuses on a live
+     * card, arriving through the other door).
+     *
+     * The session's route is read off its LAUNCH MANIFEST through the binding
+     * (X-102/X-108) and re-resolved at the spawn — the profile at its current
+     * revision, the key from the secret store; nothing is copied out of the
+     * record. The verdict is the adapter's (`resumePolicy`), never this
+     * function's. `asked` is what the caller DELIBERATELY named: a bridge
+     * argument, a task's sealed route — never a seeded box, which is not a
+     * choice and loses to the transcript (S-45's rule, applied to the route).
+     */
+    const resumeRouteFor = (
+        sessionId: string, engine: string, agentId: string, asked: ResumeAsk,
+        transport: ProviderTransport
+    ): ResumeRoute => {
+        const agent = agents.find(a => a.id === agentId);
+        const s = index.byId(sessionId) ?? index.allWithExternal().find(x => x.sessionId === sessionId);
+        const manifest = manifestOf(launchManifests(), s);
+        const ident = runIdentity(manifest, engine,
+            (s?.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })),
+            { external: !!s && (s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !manifest)) });
+        const standing = agent
+            ? storedRoute(cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {}, agent.dir, engine as EngineId)
+            : { providerId: '', tier: '' };
+        const deps = registryDeps();
+        return resumeRoute(
+            adapterFor(engine, deps),
+            s ? ident.binding : 'unknown',
+            {
+                identity: manifest?.identity, tier: manifest?.requested.tier,
+                reportedProviderIds: ident.reportedProviderIds
+            },
+            asked, standing, transport,
+            { profileRevision: id => (deps.profiles || []).find(p => p && p.id === id)?.revision }
+        );
+    };
+    /** The newest session in a folder for an engine — the row `--continue` takes up. */
+    const latestSessionIn = (dir: string, engine: string): SessionInfo | undefined =>
+        index.allWithExternal()
+            .filter(s => !s.isSidechain && !s.machine && s.sessionId && (s.source || 'claude') === engine
+                && normPath(s.cwd ?? '') === normPath(dir))
+            .sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))[0];
+    /** The gate's route in the shape a spawn takes — absent fields stay absent. */
+    const gatedRoute = (g: ResumeRoute | undefined): { providerId?: string; tier?: string; pinned?: boolean } | undefined =>
+        g && g.act !== 'none' && g.act !== 'refuse'
+            ? { ...(g.providerId ? { providerId: g.providerId } : {}), ...(g.tier ? { tier: g.tier } : {}), pinned: g.pinned }
+            : undefined;
     /**
      * ‼️ X-103 — THE FORM A LAUNCH PICKER DRAWS, for one engine and the pick so
      * far. One reader, so a door that SHOWS the choices and the resolver that
@@ -22186,7 +22305,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * actually picked, and a terminal that re-derived it from settings would
          * open on a different route from the one the row said.
          */
-        route?: { providerId?: string; tier?: string },
+        route?: { providerId?: string; tier?: string; pinned?: boolean },
         /** ‼️ X-102 — the spawn this window IS, so the manifest can be joined to
          *  the session id that turns up later. See TermBinding.launchId. */
         launchId?: string
@@ -22404,13 +22523,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * lost to it would be a picker that cannot pick.
          */
         const route = storedRoute(store, agent.dir, engine);
+        // ‼️ X-109 — A PINNED ROUTE IS NOT FILLED FROM THE RECORD, empty
+        // included: the resume gate has already said which route this
+        // conversation ran on, and "none" is one of its answers.
+        const pinned = !!o.routePinned;
         return {
             ...o,
-            providerId: (o.providerId ?? '').trim() || route.providerId || '',
+            providerId: (o.providerId ?? '').trim() || (pinned ? '' : route.providerId) || '',
             // The tier travels WITH the route it belongs to. Taking a stored
             // tier while this launch names a different route would map a word
             // through the wrong endpoint — `opus` is a different model on each.
-            tier: (o.providerId ?? '').trim()
+            tier: (o.providerId ?? '').trim() || pinned
                 ? (o.tier ?? '').trim()
                 : (o.tier ?? '').trim() || route.tier || '',
             /**
@@ -22615,6 +22738,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agent: AgentInfo, o: LaunchOptions = {}, sessionId?: string, cwd?: string,
         project?: string
     ): string | undefined => {
+        /**
+         * ‼️ X-109 — A RESUME'S ROUTE IS THE GATE'S ANSWER, on this door too.
+         * `withAgentEngineDefaults` below fills an unset route from the agent's
+         * standing record, which is right for a fresh launch and was how a
+         * resumed terminal session was walked onto a route it never ran on.
+         * Nothing on a UI door is a deliberate ask (a seeded row is not a
+         * choice — S-45), so nothing is asked here; the bridge, which IS
+         * deliberate, gates with its argument and arrives `routePinned`.
+         * `--continue` is gated against the latest session in the folder, the
+         * same row the palette door names; with no such row there is nothing
+         * to pin and the launch is what it always was.
+         */
+        if (!o.routePinned && (o.resume || o.continueLast)) {
+            const engine = engineOf(o.engine ?? launchDefaults().engine).id;
+            const sid = o.resume || latestSessionIn(agent.dir, engine)?.sessionId;
+            if (sid) {
+                const gate = resumeRouteFor(sid, engine, agent.id, {}, 'tui');
+                if (gate.act === 'refuse') {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${describeResumeRoute(gate)}`);
+                    return undefined;
+                }
+                const routeUsed = gatedRoute(gate);
+                if (routeUsed) {
+                    o = { ...o, providerId: routeUsed.providerId, tier: routeUsed.tier, routePinned: routeUsed.pinned };
+                }
+            }
+        }
         const merged = withDefaults(withAgentEngineDefaults(agent, o), launchDefaults());
         // ‼️ K-22 — WHAT THE PERMISSION MODE REALLY MEANS, resolved against this
         // session's own folder (two of the four settings layers are the
@@ -22705,7 +22855,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * apart later — an external window is exactly where Agent Farm cannot
          * apply the route at all (X-104).
          */
-        const route = { providerId: merged.providerId, tier: merged.tier };
+        const route = { providerId: merged.providerId, tier: merged.tier, pinned: merged.routePinned };
         const resolved = resolveLaunchRoute(agent.id, spec.id, route);
         const launchId = resolved && recordLaunch({
             engine: spec.id,
@@ -32264,6 +32414,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                  */
                 const account = await pickResumeAccount(engine, s.title || s.sessionId.slice(0, 8));
                 if (account === undefined) { return; }
+                // ‼️ X-109 — THE ROUTE IS THE CONVERSATION'S OWN. This door
+                // passed none, so the terminal resolved the agent's standing
+                // route for a session that may have run on another; the gate
+                // reads the launch record and pins it (or refuses, with the
+                // remedy). Nothing on this door names a route, so nothing is
+                // asked.
+                const gate = resumeRouteFor(s.sessionId, engine, ownerAgent?.id ?? '', {}, 'tui');
+                if (gate.act === 'refuse') {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${describeResumeRoute(gate)}`);
+                    return;
+                }
                 const own = sessionOwnProject(s);
                 launchClaudeTerminal(`${spec.exe}: ${s.agentName ?? s.sessionId.slice(0, 8)}`, cwd,
                     buildLaunchCommand(spec.exe, {
@@ -32281,7 +32442,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     launchAccountEnv({ engine, account }),
                     // '' = do not stamp. A resume does not decide where a session
                     // belongs; it already belongs somewhere, or deliberately nowhere.
-                    s.sessionId, '');
+                    s.sessionId, '',
+                    // ‼️ X-109 — the engine the route is resolved FOR, and the
+                    // gate's route: the terminal's environment is built from
+                    // this pair, and before this item it got neither, so the
+                    // route was resolved for Claude off the standing record.
+                    engine, gatedRoute(gate));
             }),
 
         // ---------- A2: the shelf (pin + tags) ----------
@@ -33663,10 +33829,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return;
             }
             const past = index.byId(s.sessionId);
+            // ‼️ X-109 — THE ROUTE IS THE CONVERSATION'S OWN, through the same
+            // gate as every other door. This init passed none, so an ended
+            // card that ran on a route came back on the agent's standing one
+            // — the card's own state said Kimi, the process talked to
+            // whatever the setting held that day.
+            const gate = resumeRouteFor(s.sessionId, (s.engine || 'claude'), s.agentId, {}, 'acp');
+            if (gate.act === 'refuse') {
+                void vscode.window.showWarningMessage(`Agent Farm: ${describeResumeRoute(gate)}`);
+                return;
+            }
+            const routeUsed = gatedRoute(gate);
             const back = consoleHost.start({
                 agentId: s.agentId, agentName: s.agentName, cwd: s.cwd,
                 engine: (s.engine || 'claude') as EngineId,
                 model: s.model, effort: s.effort, permissionMode: s.permissionMode,
+                ...(routeUsed?.providerId ? { providerId: routeUsed.providerId } : {}),
+                ...(routeUsed?.tier ? { tier: routeUsed.tier } : {}),
+                ...(routeUsed?.pinned ? { routePinned: true } : {}),
                 // its OWN project, never the window's — the context does not
                 // survive a resume, so this spawn is the one that re-tells it
                 projectId: s.projectId,
@@ -33815,9 +33995,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const want = narrowLaunch(engineModelMatrix()[engine],
                     inherit.model || (sameEngine ? d.model : undefined),
                     inherit.effort || (sameEngine ? d.effort : undefined));
+                // ‼️ X-109 — THE ROUTE IS THE CONVERSATION'S OWN, read off its
+                // launch record through the gate; nothing on this door names
+                // one, so nothing is asked and the standing route is never
+                // consulted. A card the panel still holds live is handed back
+                // (S-29) and is not gated.
+                const gate = consoleHolds(s.sessionId)
+                    ? undefined : resumeRouteFor(s.sessionId, engine, agent?.id ?? '', {}, 'acp');
+                if (gate?.act === 'refuse') {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${describeResumeRoute(gate)}`);
+                    return;
+                }
+                const routeUsed = gatedRoute(gate);
                 const id = consoleHost.start({
                     agentId: agent?.id ?? '', agentName: s.agentName ?? 'session',
                     cwd: s.cwd, resume: s.sessionId,
+                    ...(routeUsed?.providerId ? { providerId: routeUsed.providerId } : {}),
+                    ...(routeUsed?.tier ? { tier: routeUsed.tier } : {}),
+                    ...(routeUsed?.pinned ? { routePinned: true } : {}),
                     // A resume belongs to its transcript's engine and model.
                     // Launch defaults are used only when they were configured
                     // for that same engine; a Claude alias must never be handed
@@ -38387,6 +38582,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         reportedChanged: r.reportedChanged,
                         agreement: r.agreement
                     }))
+                };
+            }
+        },
+        {
+            /**
+             * ‼️ X-109 — THE RESUME GATE, READABLE WITHOUT SPAWNING. The same
+             * function `console.start`, `sessions.start`, the row's Resume and
+             * a task's continuation all pass through, so what this says is what
+             * they will do — and a refusal can be seen before anything starts.
+             */
+            op: 'sessions.resumeRoute',
+            describe: 'WHICH ROUTE A RESUME OF THIS SESSION WOULD RUN ON, decided the way every resume door decides it (X-109) — read only, nothing is started. The route a session ran on is read off its LAUNCH MANIFEST (launch.runtime shows it) and re-resolved now: `act` is "pinned" (resumed on the route it ran on — an empty providerId there means it ran with none and is resumed with none; the agent\'s standing route is NEVER consulted), "switch" (a different route was asked for and this engine allows it — recorded as a NEW run identity beside the earlier turns\' one), "unbound" (nothing was recorded for this session — legacy, external or unknown `binding` — so what was asked, else the standing route, applies and `why` says so), "none" (the engine has no provider axis), or "refuse" with `remedy` (fork | new): on Claude a different route is a different program, so asking for one is refused rather than corrupting a transcript that cannot say which route served which turn; a route the session ran on that is no longer set up refuses the same way. `revision` says whether the profile it ran on has been edited since (it is re-resolved at the current one either way). ‼️ ON OPENCODE THE MODEL MAY CARRY THE PROVIDER — a bare model id is resolved against the engine\'s own list and REFUSED when more than one provider serves it, never guessed. args: sessionId, engine? (default: the session\'s own, else claude), agent? (name|id — whose standing route counts when nothing is pinned; default the session\'s agent), provider? (the route/provider id you would ask for — omit to see the pin), tier? (Claude only), model? (the model you would ask for; where it names a provider that counts as asking for it), transport? (acp | tui | run — which door: Console, terminal, headless; default acp)',
+            handler: (args) => {
+                const sessionId = argStr(args, 'sessionId');
+                const s = index.byId(sessionId) ?? index.allWithExternal().find(x => x.sessionId === sessionId);
+                const engine = (optStr(args, 'engine') || s?.source || 'claude').trim().toLowerCase();
+                need(engine in ENGINES, `unknown engine "${engine}" — ${Object.keys(ENGINES).join(', ')}`);
+                const who = optStr(args, 'agent');
+                const agent = who ? findAgent(who) : (s?.agentId ? agents.find(a => a.id === s.agentId) : undefined);
+                const transport = (optStr(args, 'transport') || 'acp').trim() as ProviderTransport;
+                need(transport === 'acp' || transport === 'tui' || transport === 'run',
+                    `transport must be acp, tui or run, not "${transport}"`);
+                const r = resumeRouteFor(sessionId, engine, agent?.id ?? '', {
+                    providerId: optStr(args, 'provider'), tier: optStr(args, 'tier'), model: optStr(args, 'model')
+                }, transport);
+                return {
+                    sessionId, engine, agent: agent?.name ?? null, found: !!s,
+                    act: r.act, binding: r.binding, why: r.why,
+                    route: r.providerId ? { providerId: r.providerId, ...(r.tier ? { tier: r.tier } : {}) } : null,
+                    pinned: r.pinned, model: r.model ?? null,
+                    previous: r.previous, revision: r.revision ?? null, remedy: r.remedy ?? null
                 };
             }
         },

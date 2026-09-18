@@ -48,8 +48,8 @@ function fieldsOf(name) {
 {
     const declared = fieldsOf('LaunchOptions');
     const listed = D.ids();
-    ok('LaunchOptions still declares 17 dimensions (got ' + declared.length + ')',
-        declared.length === 17);
+    ok('LaunchOptions still declares 18 dimensions (got ' + declared.length + ')',
+        declared.length === 18);
     eq('‼️ every dimension LaunchOptions declares has a row, in the same order',
         listed, declared);
     const orphan = listed.filter(id => declared.indexOf(id) < 0);

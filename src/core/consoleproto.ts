@@ -446,6 +446,10 @@ export interface ConsoleSessionState {
     /** Claude only — which tier of that route. Travels WITH `providerId`: a tier
      *  read against a different route maps the word through the wrong endpoint. */
     tier?: string;
+    /** ‼️ X-109 — the route is the resume gate's answer and is taken as it is on
+     *  every re-spawn, an ABSENT providerId included: the agent's record is not
+     *  consulted for this card. Absent = the old rule (record decides). */
+    routePinned?: boolean;
     /**
      * ‼️ X-169 — WHICH SIGN-IN THIS CARD IS RUNNING AS, on the state for exactly
      * the reason the route is: a persistent engine re-spawns, and a window
@@ -1965,6 +1969,8 @@ export function newSessionState(o: {
     /** X-103 — the route this card runs on; kept on the state so a window reload
      *  cannot quietly move a live conversation to a different endpoint. */
     providerId?: string; tier?: string;
+    /** X-109 — see ConsoleSessionState.routePinned */
+    routePinned?: boolean;
     /** X-169 — the sign-in this card runs as; kept on the state so a re-spawn
      *  cannot follow the "use this next" button into another account. */
     account?: string;
@@ -1996,6 +2002,7 @@ export function newSessionState(o: {
         // "nothing" for a card that outlives the setting.
         ...(o.providerId?.trim() ? { providerId: o.providerId.trim() } : {}),
         ...(o.tier?.trim() ? { tier: o.tier.trim() } : {}),
+        ...(o.routePinned ? { routePinned: true } : {}),
         // Absent rather than '' for the same reason: an unset account is the
         // main sign-in, and a stored empty string would look like an answer.
         ...(o.account?.trim() ? { account: o.account.trim() } : {}),

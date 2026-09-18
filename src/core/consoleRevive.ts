@@ -39,6 +39,10 @@ export interface ReviveSource {
     permissionMode?: string;
     providerId?: string;
     tier?: string;
+    /** X-109 — the route is the resume gate's answer and is taken as it is,
+     *  an absent providerId included; carried so a revived card does not
+     *  fall through to the agent's standing route. */
+    routePinned?: boolean;
     account?: string;
     projectId?: string;
     superpowers?: boolean;
@@ -69,6 +73,10 @@ export interface ReviveInit {
     permissionMode?: string;
     providerId?: string;
     tier?: string;
+    /** X-109 — the route is the resume gate's answer and is taken as it is,
+     *  an absent providerId included; carried so a revived card does not
+     *  fall through to the agent's standing route. */
+    routePinned?: boolean;
     account?: string;
     projectId?: string;
     superpowers?: boolean;
@@ -126,6 +134,7 @@ export function reviveInit(row: ReviveSource & { sessionId?: string }): ReviveIn
         out.providerId = row.providerId;
         if (row.tier) { out.tier = row.tier; }
     }
+    if (row.routePinned) { out.routePinned = true; }
     if (row.account) { out.account = row.account; }
     // Not dimensions, but facts about THIS session: the project it was started
     // under (its own, never the window's — the context does not survive a

@@ -94,7 +94,11 @@ console.log('\n== …and reaches the SPAWN, in the shape the resolver takes ==')
     // being given the route and the other left inheriting — and the two live
     // 400 lines apart in the same file.
     const src = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
-    const calls = (src.match(/engineRuntime\?\.\([^)]*routeOf\(task\)\)/g) || []).length;
+    // ‼️ X-109 — through `spawnRouteOf`, which is `routeOf(task)` plus the resume
+    // gate's pin; a spawn reading `routeOf` directly would drop the pin.
+    const calls = (src.match(/engineRuntime\?\.\([^)]*this\.spawnRouteOf\(task\)\)/g) || []).length;
+    ok('…and the reader they share is routeOf(task) plus the pin',
+        /private spawnRouteOf\(task: FarmTask\)[\s\S]{0,300}const route = routeOf\(task\);/.test(src));
     ok('‼️ the interactive spawn AND the headless spawn both pass the task\'s own route',
         calls === 2);
     ok('…and neither of them reads the fields by hand instead',

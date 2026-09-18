@@ -2888,7 +2888,7 @@ const { opencodeStatus, syncToOpencode } =
         // the end when X-105 added the route paragraph — the failure looked like
         // a missing return field and was a short slice.
         // 15000: the S-59 held-id gate sits between the engine refusal and the reply
-        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.start'") + 15000);
+        const consoleStart = src.slice(src.indexOf("op: 'console.start'"), src.indexOf("op: 'console.continueFromHandover'"));
         ok('console.start takes it too, in the same words',
             /project\? \(id or name/.test(consoleStart)
             && /resolveLaunchProject\(args\.project\)/.test(consoleStart));
@@ -2918,7 +2918,14 @@ const { opencodeStatus, syncToOpencode } =
         // …and the answer says what it really got, through the SAME resolver the
         // card and console.sessions use — one statement, three readers.
         ok('…and what it was actually pointed at comes back on the reply',
-            /route: consoleRouteOf\(engine, route\.providerId, route\.tier\) \?\? null/.test(consoleStart));
+            /route: consoleRouteOf\(engine, routeUsed\.providerId, routeUsed\.tier\) \?\? null/.test(consoleStart));
+        // ‼️ X-109 — AND WHICH ROUTE A RESUME REALLY RUNS ON IS THE GATE'S, said
+        // on the reply: `routeUsed` is the gate's pin or switch, else the
+        // argument, and `resumeRoute` carries the verdict so a caller can see a
+        // pin without a second call.
+        ok('…and a resume\'s route is the gate\'s answer, reported on the reply',
+            /const routeUsed[^=]*=\s*gatedRoute\(gate\)/.test(consoleStart)
+            && /resumeRoute: gate \? \{ act: gate\.act, binding: gate\.binding, why: gate\.why \} : null/.test(consoleStart));
         // ‼️ B-12 — AND IT SAYS IT PER ENGINE, DERIVED. The sentence used to be
         // one per SHAPE, written when there were two: "Claude is one long-lived
         // process; every other engine here is ONE PROCESS PER TURN." A

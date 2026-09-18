@@ -118,7 +118,11 @@ export const FARM_RESOLVED: Record<string, string> = {
         + '(projectContext.ts) out of the projectId the door did collect. Multi-line text '
         + 'does not survive a shell, which is why it is a path and not an answer.',
     cwd: 'owner:farm - only Antigravity needs told (measured: it reports the cwd back and '
-        + 'then works in its own scratch dir), and the spawner is what knows the folder.'
+        + 'then works in its own scratch dir), and the spawner is what knows the folder.',
+    routePinned: 'owner:farm - X-109: the resume gate decides at the spawn, off the session\'s '
+        + 'launch record, that a resumed session runs on the route it ran on (an empty one '
+        + 'included). No door asks a person whether to pin it; a door that named a route '
+        + 'is answered by the gate, not by this flag.'
 };
 
 /**

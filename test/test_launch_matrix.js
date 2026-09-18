@@ -90,9 +90,9 @@ if (FIX) {
 const M = JSON.parse(fs.readFileSync(MANIFEST, 'utf8'));
 
 /* ---------------- the shape ---------------- */
-ok('the matrix is 17 dimensions wide', DIMS.length === 17);
+ok('the matrix is 18 dimensions wide', DIMS.length === 18);
 ok('…and 13 doors deep', DOORS.length === 13);
-ok('‼️ …so there are 221 obligations', DIMS.length * DOORS.length === 221);
+ok('‼️ …so there are 234 obligations', DIMS.length * DOORS.length === 234);
 ok('every door states which surface it produces',
     LAUNCH_DOORS.every(d => ['console', 'terminal', 'either', 'task', 'headless'].indexOf(d.surface) >= 0));
 ok('‼️ …and why it is a door — a row with no reason is a row nobody can judge',

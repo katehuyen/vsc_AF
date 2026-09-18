@@ -3314,7 +3314,10 @@
         // resolved to did, between the queue and the spawn. The words say which
         // way round that is, because "route changed" would read as the task
         // having been edited.
-        'route-drift': 'route moved under it'
+        'route-drift': 'route moved under it',
+        // X-109 - a resumed run's route was decided by the gate, not copied
+        // off the task; the note says which of pinned/switch/unbound it was.
+        route: 'route decided'
     };
 
     /**

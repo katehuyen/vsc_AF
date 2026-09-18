@@ -363,7 +363,10 @@ console.log('\n== and the doors really offer it ==');
     // standing route rather than on nothing at all.
     ok('the agent\'s stored route is a layer under the launch, like the model is',
         /const route = storedRoute\(store, agent\.dir, engine\);/.test(ext)
-        && /providerId: \(o\.providerId \?\? ''\)\.trim\(\) \|\| route\.providerId \|\| '',/.test(ext));
+        // ‼️ X-109 — …except under a PINNED route, which the record must not fill:
+        // the gate has already said which route the conversation ran on, and
+        // "none" is one of its answers.
+        && /providerId: \(o\.providerId \?\? ''\)\.trim\(\) \|\| \(pinned \? '' : route\.providerId\) \|\| '',/.test(ext));
     // ‼️ THE ONE ARG NAME THAT DIFFERS FROM ITS FIELD, and it differs on purpose.
     ok('the bridge takes `provider` and stores `providerId`, translated once',
         /providerId: optStr\(args, 'provider'\)/.test(ext));

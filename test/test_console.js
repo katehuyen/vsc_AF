@@ -978,7 +978,7 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…and it is the first thing offered on a card that has ended',
         web.some(m => m.command === 'agentfarm.consoleResumeSession' && m.group === '2_run@0'));
     ok('…and it resumes rather than starting something new',
-        /registerCommand\('agentfarm\.consoleResumeSession'[\s\S]{0,1600}resume: s\.sessionId/.test(ext));
+        /registerCommand\('agentfarm\.consoleResumeSession'[\s\S]{0,2800}resume: s\.sessionId/.test(ext));
     // ‼️ End and Remove are separate on purpose — ending leaves the card
     // readable — but the ordinary case is both, and it used to cost two
     // right-clicks with a repaint between them that moves the card you are

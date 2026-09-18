@@ -27,6 +27,7 @@ import { InteractiveClose, InteractiveTarget, LaunchOptions, modelIdOk, normInte
 import { pollReplicateResult, pollWebhookResult, providerFor, WebhookPollConfig } from './mediaProviders';
 import { chosenPermission, permissionFlags } from './permissionmode';
 import { ProviderIdentity } from './providerIdentity';
+import { ResumeRoute } from './resumeGate';
 import {
     OPENCODE_RUN_OUTPUT_NOTE, opencodeRunSessionId, readOpencodeRun
 } from './opencoderun';
@@ -494,6 +495,14 @@ export interface FarmTask {
      *  session index when the task was made. Kept so the launch cannot quietly
      *  send a Codex thread to Claude if the task's engine is edited later. */
     resumedEngine?: string;
+    /**
+     * ‼️ X-109 — `providerId`/`tier` ARE THE RESUME GATE'S ANSWER for the
+     * conversation this task continues: taken as they are at the spawn, an
+     * empty providerId included, never falling through to the agent's
+     * standing route. Written by the launch, so the next round and the
+     * record both see the route the run really took.
+     */
+    routePinned?: boolean;
     /** A short human handle for the source session — its name and short id — so
      *  the row, the archive header and `tasks.get` can say which conversation
      *  this continued without a second lookup months later. */
@@ -627,7 +636,13 @@ export type TaskEventKind =
     // run's record that says the setup it ran with is NOT the setup that was
     // chosen for it — and a person scanning a timeline for something unusual
     // has to be able to see it without reading every note.
-    | 'route-drift';
+    | 'route-drift'
+    // ‼️ X-109 — WHICH ROUTE A RESUMED RUN WAS PUT ON, and why: the gate's
+    // verdict (pinned to the conversation's own, switched where the engine
+    // allows it, unbound where nothing was recorded). Its own kind because
+    // it is the one line that says the run's route was DECIDED rather than
+    // copied from the task, and a refusal is on `finished` beside it.
+    | 'route';
 
 /** The most a task keeps. A run that ping-pongs against a ceiling for a day
  *  would otherwise grow without bound; the newest are the ones being read. */
@@ -1639,8 +1654,20 @@ export interface TaskManagerOptions {
          * item lands there is one resolver rather than a second one built beside
          * this signature.
          */
-        route?: { providerId?: string; tier?: string }
+        route?: { providerId?: string; tier?: string; pinned?: boolean }
     ) => { spawnEnv?: Record<string, string>; clearEnv?: string[] } | undefined;
+    /**
+     * ‼️ X-109 — WHICH ROUTE A TASK THAT CONTINUES A CONVERSATION RUNS ON,
+     * as an ANSWER from the side that holds the launch manifests and the
+     * adapters: the conversation's own route pinned, a different sealed
+     * route refused or allowed by the adapter, and nothing pinned where
+     * nothing was recorded. `route` is the task's own (sealed) route — a
+     * deliberate ask; absent means none was named.
+     */
+    resumeRoute?: (
+        agentId: string, engine: string, sessionId: string,
+        route: { providerId?: string; tier?: string } | undefined
+    ) => ResumeRoute;
     /**
      * ‼️ X-106 — WHAT THAT ROUTE RESOLVES TO RIGHT NOW, as a redacted answer.
      *
@@ -3525,6 +3552,38 @@ export class TaskManager implements vscode.Disposable {
             if (drift) { noteTaskEvent(task, 'route-drift', drift); }
         }
         /**
+         * ‼️ X-109 — A TASK CONTINUING A CONVERSATION RUNS ON THAT
+         * CONVERSATION'S ROUTE. `routeOf(task)` is what the run named
+         * (sealed at enqueue) and absent is "none named" — until this item
+         * absent then meant the agent's standing route at the spawn, which
+         * is how a resumed nightly run was walked onto a route the
+         * conversation never ran on. The gate reads the launch record: a
+         * pin or an allowed switch is written onto the task so both spawn
+         * shapes and the record read one answer; a refusal is a finished
+         * run with the reason, never a task standing in `running`.
+         */
+        if (task.resumeSessionId && this.opts.resumeRoute) {
+            const gate = this.opts.resumeRoute(
+                agent.id, engineOf(task.engine).id, task.resumeSessionId, routeOf(task));
+            if (gate.act === 'refuse') {
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: "${task.title}" did not start — not resumed: ${gate.why}`);
+                task.status = 'failed';
+                task.endedAt = Date.now();
+                task.deferredReason = gate.why;
+                task.deferredCode = undefined;
+                noteTaskEvent(task, 'finished', `failed before it started — not resumed: ${gate.why}`);
+                this.save();
+                return false;
+            }
+            if (gate.act !== 'none') {
+                task.providerId = gate.providerId || undefined;
+                task.tier = gate.tier || undefined;
+                task.routePinned = gate.pinned;
+                noteTaskEvent(task, 'route', `${gate.act}: ${gate.why}`);
+            }
+        }
+        /**
          * ‼️ X-102 — THE MANIFEST, AT THE ONE POINT EVERY SHAPE OF A RUN PASSES
          * THROUGH.
          *
@@ -3653,6 +3712,13 @@ export class TaskManager implements vscode.Disposable {
         return true;
     }
 
+    /** ‼️ X-109 — the route a spawn resolves: the task's own, and PINNED
+     *  (empty included) once the resume gate has answered for it. */
+    private spawnRouteOf(task: FarmTask): { providerId?: string; tier?: string; pinned?: boolean } | undefined {
+        const route = routeOf(task);
+        return task.routePinned ? { providerId: '', ...(route ?? {}), pinned: true } : route;
+    }
+
     /**
      * ‼️ M-26 — PUT THE RUN WHERE THE TASK ASKED FOR IT.
      *
@@ -3687,7 +3753,7 @@ export class TaskManager implements vscode.Disposable {
             // nightly job pointed at one endpoint by hand ran on whichever one
             // the agent was set to when it fired. `undefined` is unchanged
             // behaviour for every task written before the dimension existed.
-            this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude', routeOf(task)));
+            this.opts.engineRuntime?.(agent.id, task.engine ?? 'claude', this.spawnRouteOf(task)));
         if (target === 'external') {
             fs.mkdirSync(this.outputsDir, { recursive: true });
             const exitFile = path.join(this.outputsDir, `${task.id}.exit`);
@@ -4129,7 +4195,7 @@ export class TaskManager implements vscode.Disposable {
             // spawn shapes read it from the same helper, because the way this
             // regresses is one of the two being given the route and the other
             // being left inheriting (see `openInteractive`).
-            this.opts.engineRuntime?.(agent.id, engine.id, routeOf(task))
+            this.opts.engineRuntime?.(agent.id, engine.id, this.spawnRouteOf(task))
         );
         const child = argv
             ? cp.spawn(engine.exe, argv, {

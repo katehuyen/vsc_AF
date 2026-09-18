@@ -138,7 +138,9 @@ const treeTs = read('src', 'views', 'projectsTree.ts');
         // ‼️ X-102 added the launch id to the end of it, for the same reason
         // again: the manifest is written here and only this call can hand the
         // id to the record that will learn the session id.
-        && /const route = \{ providerId: merged\.providerId, tier: merged\.tier \};/.test(startClaude)
+        // ‼️ X-109 — and the pin rides with it, so a resumed terminal session's
+        // empty route is an instruction and not a fall-through.
+        && /const route = \{ providerId: merged\.providerId, tier: merged\.tier, pinned: merged\.routePinned \};/.test(startClaude)
         && /sessionId, projectId, spec\.id, route, launchId \|\| undefined\);/.test(startClaude)
         // …and only ONE read of the window: the context file and the stamp both
         // come off `projectId`, so a second `activeProjectId()` CALL here would
