@@ -2,6 +2,55 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.552.0 - a rule picked in a Console box is resolved on the spot, and never starts a session above 90% (X-305 R2) (2026-09-18)
+
+- **‼️ The live failure.** A person opened a fresh Console card, picked
+  `@round-robin` in the composer's account box and pressed Send: the card
+  started on the agent's STANDING sign-in, which stood at 100%, and its first
+  turn hit the limit. Picking `@round-robin` again in the live card's box
+  moved it to a sign-in at 91% — under the 95% wall — and that turn hit the
+  limit too, while a third sign-in sat at 21%. Every smart rule
+  (`@emptiest`, `@round-robin`, `@standing`, `@pool`, `@<name>`) was
+  affected, not only round-robin.
+- **Root cause 1 — the composer pruned every rule.** `prunedAccount` checked
+  the box's value against the engine's SLOT list only, so a rule came back as
+  "nothing picked" and `accountShown` fell through to the standing slot. The
+  box offered the rules (X-305) and then silently threw the choice away. A
+  rule is now kept when this engine offers it (`policiesFor`), and the
+  last-launch seed keeps it too.
+- **Root cause 2 — the live box kept the RULE on the card.** `setAccount`
+  stored `@round-robin` itself as `accountNext`; the rule was then resolved
+  by the spawn seam at every re-spawn, so one conversation could be walked
+  between plans, and the card could not say which sign-in it had landed on.
+- **One resolver, at the moment of choice.** `ConsoleHost` takes an
+  `accountPick` hook (the extension's `launchAccountPick`, the same resolver
+  every other door uses) and exposes `pickAccount`: a slot or `@machine`
+  passes untouched; a rule becomes ONE slot against the figures of this
+  moment and commits the round-robin cursor once; a rule answering "the main
+  sign-in" is stated as `@machine`; a rule that can choose nothing is a
+  refusal with its reason and nothing starts. The composer resolves before
+  `host.start` (a refusal is a warning, like an absent engine); the live box
+  and `console.setAccount` resolve inside `setAccount`, after every other
+  refusal, so a move that cannot happen never advances the rotation. The card
+  keeps the SLOT and says `next message runs on <slot> (<the rule's own
+  sentence>)`. The composer still REMEMBERS the rule, so the next session of
+  that agent opens on the rule, not on last time's slot.
+- **‼️ The default wall is 90, not 95.** 90% of the five-hour window is where
+  the fleet's own agents hand over; a session started above it spends its
+  first turn on a handover note or dies mid-turn. `POLICY_DEFAULT_CEILING`
+  and the Engines page's fallback say 90; a rule, a step or a pool that names
+  its own number keeps it. The sentry's own ceiling is unchanged.
+- **`console.setAccount` knows the user's own rules** (`accountPolicies()` is
+  passed to `accountRefusal`), so `@gelistirme` is no longer refused as a
+  typo; its contract now says a rule is resolved into one slot on the call.
+- 19 tests in `test/test_console_account.js` against the real host (a rule
+  becomes one slot, commits once, `@machine` for the main sign-in, refusal
+  with no slot, no resolver = refusal, the live box keeps the slot and says
+  why, an impossible move does not advance the cursor, the re-spawn really
+  lands on the chosen slot's directory) plus source guards on the composer,
+  the constructor wiring and the bridge. `test_wiring` counts the new
+  constructor argument.
+
 ## 3.551.0 - a resumed session runs on the route it ran on, and every door asks the same gate (X-109) (2026-09-18)
 
 - **‼️ The corruption, and which door it came through.** X-101 gave every

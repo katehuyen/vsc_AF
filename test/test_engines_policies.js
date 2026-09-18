@@ -112,7 +112,7 @@ const secOf = (h) => {
         && /polnow a-no">nothing right now</.test(walled) && /class="poid">Claude Code</.test(walled));
     ok('…and a step\'s own wall is drawn on the step', /1\. work@studio \(≤ 40%\)/.test(walled));
     ok('a rule with no ceiling shows the default wall and says so on hover',
-        /class="poid">≤ 95%<\/span><span class="af-tip"><span class="af-tiph">Wall: 95% \(the default\)/.test(many));
+        /class="poid">≤ 90%<\/span><span class="af-tip"><span class="af-tiph">Wall: 90% \(the default\)/.test(many));
     ok('a rule stepping through another names it as a step',
         /1\. @Gece_Nobeti<\/span> → <span class="polstep">2\. @round-robin/.test(many));
 }
@@ -145,7 +145,7 @@ const formOf = (s) => {
         && /<option value="codex"/.test(s) && !/<option value="gemini"/.test(s));
     ok('…and it is a REDRAW field, because it changes which accounts a step can name',
         /data-af="engine" data-aft="s" data-afr="1"/.test(s));
-    ok('the wall box says what empty means', /Empty = 95%/.test(s));
+    ok('the wall box says what empty means', /Empty = 90%/.test(s));
     ok('an empty chain is said out loud, as the refusal it would earn',
         /No steps yet\. A rule with no steps could never choose, and is refused\./.test(s));
     ok('+ Add a step is offered and no step editor is open', /data-afact="step-new"/.test(s) && !/polstepbox/.test(s));

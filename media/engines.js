@@ -1333,7 +1333,7 @@
 
     /* ---- X-305 — the rules that choose a sign-in at launch ------------------ */
 
-    const POL = () => DATA.policies || { engines: [], builtIn: [], rules: [], ceiling: 95 };
+    const POL = () => DATA.policies || { engines: [], builtIn: [], rules: [], ceiling: 90 };
     /** A slot's label off the accounts the page already has; the id when unknown. */
     const slotName = (id) => {
         const a = (DATA.accounts || []).find(x => x.id === id);

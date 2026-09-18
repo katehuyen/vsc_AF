@@ -27,10 +27,13 @@ import {
  * pool that is walled end to end answers with a sentence naming the first
  * reset, and the door that asked decides whether to wait or to say so.
  *
- * ‼️ A WALL IS 95 HERE, NOT 100. The runner's own ceiling is where a session
- * IS refused; a policy is choosing where to START one, and starting on a slot
- * that has five per cent of its window left is choosing the one that ends the
- * session ten minutes in. A rule, a step or a pool may say its own number.
+ * ‼️ A WALL IS 90 HERE, NOT 100. The runner's own ceiling is where a session
+ * IS refused; a policy is choosing where to START one, and 90% of the
+ * five-hour window is the line at which the fleet's own agents hand over — a
+ * session started above it spends its first turn writing a handover note, or
+ * hits the wall mid-turn (measured 2026-09-18: @round-robin started a card on
+ * a slot at 91% and the turn died on the limit). A rule, a step or a pool may
+ * say its own number.
  *
  * ‼️ THE RULES ARE NOT REIMPLEMENTED HERE. "Most room, measured beats unread,
  * walled is out" is `roomOrder`; "walk the pool in the user's order, tiered or
@@ -47,7 +50,7 @@ export const ROUND_ROBIN = '@round-robin';
 export const MACHINE_ACCOUNT_ID = '@machine';
 
 /** Where a policy starts refusing a slot, unless the rule, step or pool says otherwise. */
-export const POLICY_DEFAULT_CEILING = 95;
+export const POLICY_DEFAULT_CEILING = 90;
 
 /** How deep a rule may point at another rule before it is a loop. */
 const MAX_CHAIN_DEPTH = 4;

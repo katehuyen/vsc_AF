@@ -12070,7 +12070,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'nothing to resume it by — say something in it first), on an ended card (resume it '
                 + 'instead), and on an engine whose connection is shared. args: id (the console card), '
                 + 'account (a slot id from accounts.list, or "@machine" for the identity this machine '
-                + 'itself is signed in as — ‼️ an EMPTY string is refused rather than guessed at, '
+                + 'itself is signed in as, or — X-305 R2 — a RULE (@emptiest, @round-robin, @standing, @pool, @<name>) '
+                + 'that is resolved into ONE slot the moment you call this, against the figures of that '
+                + 'moment; the card keeps the slot, never the rule, and a rule that can choose nothing is '
+                + 'refused with its reason — ‼️ an EMPTY string is refused rather than guessed at, '
                 + 'because blank used to mean "whatever the Engines page says next" and that ambiguity '
                 + 'is the bug this item removed)',
             handler: (args) => {
@@ -12078,9 +12081,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const account = argStr(args, 'account');
                 const row = consoleHost.list().find(s => s.id === id);
                 need(!!row, 'no such live console session');
-                need(!account || account === MACHINE_ACCOUNT
-                    || !accountRefusal(account, storedAccounts(), engineOf(row?.engine).id),
-                    accountRefusal(account, storedAccounts(), engineOf(row?.engine).id));
+                // X-305 R2 — the user's own rules too, or `@Night` reads as a typo
+                const accountNo = account && account !== MACHINE_ACCOUNT
+                    ? accountRefusal(account, storedAccounts(), engineOf(row?.engine).id, accountPolicies())
+                    : '';
+                need(!accountNo, accountNo);
                 const done = consoleHost.setAccount(id, account);
                 need(done.ok, done.note);
                 ConsolePanel.refreshIfOpen();
@@ -24782,7 +24787,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // Measured: with the argument missing the `pinned/` folder was never
         // created at all, and every revive re-composed the brief it was meant
         // to reuse. `test_wiring.js` now reads this call and counts it.
-        pinProjectContext);
+        pinProjectContext,
+        // ‼️ X-305 R2 — a RULE picked in either Console box becomes ONE slot at
+        // the moment it is picked, through the same resolver every other door
+        // uses, and the round-robin cursor moves because the pick is real.
+        (engine, stated, agentId, model) => {
+            const r = launchAccountPick({ engine, account: stated, agentId, model });
+            if (!r.refusal && r.cursor) {
+                void context.workspaceState.update(roundRobinKey(engine), r.cursor);
+            }
+            return { id: r.id, note: r.note, ...(r.refusal ? { refusal: r.refusal } : {}) };
+        });
     // ‼️ A-18 — the live monitor's "is this lane parked on a question?" is
     // answered from here, and could not be until now (see `pendingAskOf`).
     consoleHostRef = consoleHost;

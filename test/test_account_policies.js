@@ -26,7 +26,7 @@ ok('‼️ @machine is NOT a policy — it is X-211\'s "the machine\'s own sign-
 ok('a slot id, an empty string and a bare @ are not policies', !P.isPolicyId('claude-main') && !P.isPolicyId('') && !P.isPolicyId('@'));
 ok('a named rule is a policy by its @name, case-insensitively', P.isPolicyId('@Night') && !!P.findPolicy('@night', [{ name: 'Night', chain: [] }]));
 ok('the built-in list has four entries with a label and a detail each', P.BUILT_IN_POLICIES.length === 4 && P.BUILT_IN_POLICIES.every(p => p.id && p.label && p.detail));
-ok('the default wall is 95, not 100 — a policy chooses where to START', P.POLICY_DEFAULT_CEILING === 95);
+ok('‼️ X-305 R2 — the default wall is 90, not 95 or 100: a policy chooses where to START, and 90% is where the fleet hands over', P.POLICY_DEFAULT_CEILING === 90);
 
 // ---- a non-policy passes through untouched -------------------------------
 {
@@ -41,7 +41,7 @@ ok('the default wall is 95, not 100 — a policy chooses where to START', P.POLI
     ok('‼️ @emptiest picks the measured claude slot with the most room (b at 12%)', r.id === 'b' && r.policy === '@emptiest');
     ok('…and never a slot of another engine, however empty (codex x at 5% is not in the running)', r.id !== 'x');
     ok('the note names the slot, the rule, the figure and who is next', /b — @emptiest/.test(r.note) && /12%/.test(r.note) && /next would be a/.test(r.note));
-    ok('a slot at 97% is out even though 97 < 100 — the wall is 95 here',
+    ok('a slot at 97% is out even though 97 < 100 — the wall is 90 here',
         P.resolvePolicy('@emptiest', world({ usage: [u('c', 97), unread('d')] })).id === 'd');
     const walled = P.resolvePolicy('@emptiest', world({ usage: [u('a', 96), u('c', 99)] }));
     ok('‼️ EVERY SLOT WALLED = A REFUSAL, NEVER THE MAIN SIGN-IN', walled.id === '' && !!walled.refusal);
@@ -185,7 +185,7 @@ ok('the default wall is 95, not 100 — a policy chooses where to START', P.POLI
     ok('‼️ …and the SAME steps as a chain pick the FIRST listed (a) — the strategy is the whole difference',
         P.resolvePolicy('@order', world({ policies })).id === 'a');
     ok('‼️ only the LISTED sign-ins compete: d (unread, engine-wide @emptiest\'s runner-up) is not listed and never chosen',
-        P.resolvePolicy('@trio', world({ policies, usage: [u('a', 90), u('c', 97), unread('d')] })).id === 'a');
+        P.resolvePolicy('@trio', world({ policies, usage: [u('a', 85), u('c', 97), unread('d')] })).id === 'a');
     ok('an unlisted slot at 1% does not enter the pool either', P.resolvePolicy('@trio', world({ policies, usage: [u('a', 60), u('b', 70), u('zz', 1)] })).id === 'a');
     const walled = P.resolvePolicy('@walled', world({ policies, usage: [u('a', 25), u('b', 5)] }));
     ok('‼️ a step\'s own wall holds in emptiest mode: b at 5% clears its 10% wall and has more room than a', walled.id === 'b');

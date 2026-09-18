@@ -1522,6 +1522,12 @@ export class ConsolePanel {
         // an unstated one, which is the ghost the sentinel exists to prevent.
         if (want === MACHINE_ACCOUNT) { return MACHINE_ACCOUNT; }
         const engine = engineOf(this.chosenEngine()).id;
+        // ‼️ X-305 R2 — a RULE is kept when this engine offers it. Checked
+        // against the slot list only, `@round-robin` was pruned to nothing and
+        // the box fell back to the standing slot — a walled one, measured.
+        if (isPolicyId(want)) {
+            return (this.deps.policiesFor?.(engine) ?? []).some(p => p.id === want) ? want : undefined;
+        }
         const mine = this.deps.accountsFor?.(engine) ?? [];
         return mine.some(a => a.id === want) ? want : undefined;
     }
@@ -2034,6 +2040,17 @@ export class ConsolePanel {
                     // standing account (see accountShown).
                     ...(this.accountShown() ? { account: this.accountShown() } : {})
                 };
+                // ‼️ X-305 R2 — a rule in the box is turned into ONE slot here,
+                // against the figures of this moment, and the card is started
+                // on that slot. `started` keeps the rule, so the next composer
+                // for this agent is seeded with the rule rather than the slot.
+                const pick: { id: string; note: string; refusal?: string } = isPolicyId(started.account)
+                    ? host.pickAccount(engine, started.account, agent.id, started.model)
+                    : { id: started.account ?? '', note: '' };
+                if (pick.refusal) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${pick.refusal}`);
+                    return;
+                }
                 this.selected = host.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     engine: engine as EngineId,
@@ -2047,7 +2064,7 @@ export class ConsolePanel {
                     // ‼️ X-169 — and ON the account, kept on the card's state so
                     // a re-spawn cannot follow the "use this next" button into
                     // somebody else's plan mid-conversation.
-                    account: started.account,
+                    account: pick.id || undefined,
                     // ‼️ ALWAYS EXPLICIT, including the empty string. Leaving it
                     // out means "inherit the window's active project" one layer
                     // down (ConsoleHost.start), which is the inheritance the box

@@ -343,6 +343,113 @@ async function main() {
             has("op: 'console.setAccount'"));
     }
 
+    // ---------- ‼️ X-305 R2 — a RULE picked in a Console box is ONE slot ----------
+    // Measured 2026-09-18: the composer pruned `@round-robin` to nothing and the
+    // card started on the standing slot (at 100%); the live box kept the RULE
+    // on the card, so every re-spawn could land somewhere else. A rule is now
+    // turned into one slot at the moment it is picked, and the cursor moves once.
+    {
+        const commits = [];
+        const ring = ['claude-a', 'claude-b'];
+        let cursor = '';
+        const pick = (engine, stated, agentId, model) => {
+            if (stated === '@none') {
+                return { id: '', note: '', refusal: '@none: every claude sign-in is at or past 90%.' };
+            }
+            if (stated === '@standing') { return { id: '', note: 'the main sign-in — @standing' }; }
+            const at = ring.indexOf(cursor);
+            const id = ring[(at + 1) % ring.length];
+            cursor = id;
+            commits.push({ engine, stated, agentId, model, id });
+            return { id, note: `${id} — @round-robin: after ${at >= 0 ? ring[at] : 'nobody'}` };
+        };
+        const ruled = () => new ConsoleHost(
+            () => 'claude', () => undefined,
+            () => undefined, () => undefined, () => undefined,
+            undefined, undefined, layer, undefined, pick);
+
+        const host = ruled();
+        const passed = host.pickAccount('claude', 'claude-work', 'dev');
+        ok('a stated slot passes through pickAccount untouched, and nothing is committed',
+            passed.id === 'claude-work' && !passed.refusal && commits.length === 0);
+        const mach = host.pickAccount('claude', MACHINE_ACCOUNT, 'dev');
+        ok('…and so does the machine\'s own sign-in — it is not a rule',
+            mach.id === MACHINE_ACCOUNT && commits.length === 0);
+        const first = host.pickAccount('claude', '@round-robin', 'dev', 'opus');
+        ok('‼️ a rule becomes ONE slot, with the resolver\'s own sentence',
+            first.id === 'claude-a' && /@round-robin/.test(first.note) && commits.length === 1);
+        ok('…and the resolver is told the engine, the agent and the model it decides for',
+            commits[0].engine === 'claude' && commits[0].agentId === 'dev' && commits[0].model === 'opus');
+        const main = host.pickAccount('claude', '@standing', 'dev');
+        ok('‼️ a rule answering "the main sign-in" is STATED as @machine, never a blank that falls through',
+            main.id === MACHINE_ACCOUNT);
+        const walled = host.pickAccount('claude', '@none', 'dev');
+        ok('a rule that can choose nothing is a refusal with its reason, and no slot',
+            walled.id === '' && /at or past 90%/.test(walled.refusal));
+
+        const bare = newHost();
+        const noHook = bare.pickAccount('claude', '@round-robin', 'dev');
+        ok('a host given no resolver REFUSES a rule rather than guessing one',
+            noHook.id === '' && /rule/.test(noHook.refusal));
+
+        // the live box
+        const live = host.start(init({ resume: 'S-R2', account: 'claude-a' }));
+        const before = commits.length;
+        const moved = host.setAccount(live, '@round-robin');
+        ok('‼️ the live box accepts a rule…', moved.ok === true && commits.length === before + 1);
+        ok('‼️ …and the card keeps the SLOT it chose, never the rule',
+            host.get(live).accountNext === 'claude-b' && host.get(live).account === 'claude-a');
+        ok('…and says which slot and why, on the card',
+            host.get(live).messages.some(m => m.role === 'system'
+                && /next message runs on claude-b \(claude-b — @round-robin/.test(m.text)));
+        const refused = host.setAccount(live, '@none');
+        ok('a rule that can choose nothing is refused on the live box, with its reason',
+            refused.ok === false && /at or past 90%/.test(refused.note)
+            && host.get(live).accountNext === 'claude-b');
+
+        const unborn = host.start(init({}));
+        const beforeUnborn = commits.length;
+        const early = host.setAccount(unborn, '@round-robin');
+        ok('‼️ a move that cannot happen does NOT advance the rotation',
+            early.ok === false && /has not reported its id/.test(early.note) && commits.length === beforeUnborn);
+
+        // the promise is kept on the slot, and the process is really sealed on it
+        const r = host.send(live, 'carry on');
+        ok('the message waits for the new process', r.queued === true);
+        await new Promise(res => setTimeout(res, 700));
+        const s = host.get(live);
+        ok('‼️ the conversation came back up on the SLOT the rule chose',
+            s.account === 'claude-b' && !s.accountNext
+            && spawnEnvs[spawnEnvs.length - 1].CLAUDE_CONFIG_DIR === 'D:/slots/claude-b');
+        ok('…and nothing re-resolved the rule on the way (one pick per choice)',
+            commits.length === beforeUnborn);
+    }
+
+    // ---------- ‼️ X-305 R2 — the panel and the bridge use the same pick ----------
+    {
+        const blank = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        const panel = blank(fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'consolePanel.ts'), 'utf8'));
+        const ext = blank(fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8'));
+        const pruned = panel.slice(panel.indexOf('private prunedAccount('), panel.indexOf('private accountShown('));
+        ok('‼️ the composer KEEPS a rule this engine offers instead of pruning it to the standing slot',
+            /if \(isPolicyId\(want\)\) \{\s*return \(this\.deps\.policiesFor\?\.\(engine\) \?\? \[\]\)\.some\(p => p\.id === want\) \? want : undefined;/.test(pruned));
+        const startAt = panel.indexOf('const pick: { id: string; note: string; refusal?: string } = isPolicyId(started.account)');
+        const hostStart = panel.indexOf('this.selected = host.start({', startAt);
+        ok('‼️ the composer resolves the rule through the host before it starts the card',
+            startAt > 0 && hostStart > startAt
+            && /host\.pickAccount\(engine, started\.account, agent\.id, started\.model\)/.test(panel.slice(startAt, hostStart))
+            && /if \(pick\.refusal\) \{\s*void vscode\.window\.showWarningMessage/.test(panel.slice(startAt, hostStart)));
+        ok('…and starts it on the SLOT, not on what the box said',
+            /account: pick\.id \|\| undefined,/.test(panel.slice(hostStart, hostStart + 1500)));
+        const ctor = ext.slice(ext.indexOf('new ConsoleHost('), ext.indexOf('new ConsoleHost(') + 6000);
+        ok('‼️ the host is handed the extension\'s one resolver, and it commits the round-robin cursor',
+            /const r = launchAccountPick\(\{ engine, account: stated, agentId, model \}\);/.test(ctor)
+            && /roundRobinKey\(engine\), r\.cursor/.test(ctor));
+        const op = ext.slice(ext.indexOf("op: 'console.setAccount'"), ext.indexOf("op: 'console.answer'"));
+        ok('‼️ the bridge\'s live switch knows the user\'s own rules, so @Night is not read as a typo',
+            /accountRefusal\(account, storedAccounts\(\), engineOf\(row\?\.engine\)\.id, accountPolicies\(\)\)/.test(op));
+    }
+
     await tick();
 }
 

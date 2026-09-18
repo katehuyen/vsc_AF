@@ -196,7 +196,9 @@ walk(path.join(ROOT, 'src'));
     ok('‼️ it is handed every parameter the class declares',
         !!host && args.length === host.params.length);
     ok('‼️ …including the pin, which is what was missing (X-267)',
-        /pinProjectContext/.test(args[args.length - 1] || ''));
+        /^\s*pinProjectContext\s*$/.test(args[args.length - 2] || ''));
+    ok('‼️ …and the rule resolver after it, or a rule picked in a Console box is refused (X-305 R2)',
+        /launchAccountPick\(/.test(args[args.length - 1] || ''));
 }
 
 // ------------- 4. …and the same mistake one slot over, on every page there is

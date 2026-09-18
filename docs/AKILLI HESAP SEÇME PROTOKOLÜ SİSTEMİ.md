@@ -40,7 +40,7 @@ Yönetim arayüzü **Motorlar (`Engines`)** sayfasındadır:
 Protokoller tüm eklenti genelinde **ortak hesap seçici (`AFAccount`)** standardına bağlandı. Bir hesabı nerede seçebiliyorsanız, bu protokolleri de orada seçebilirsiniz:
 
 1. **Tek Seferlik Görevler & Adımlar (`Tasks`):** Görev oluşturma formunda ve adım kartlarında.
-2. **Konsol & Canlı Sohbet (`Console`):** Besteci (composer) çubuğundaki ve canlı oturum kartındaki hesap kutusunda.
+2. **Konsol & Canlı Sohbet (`Console`):** Besteci (composer) çubuğundaki ve canlı oturum kartındaki hesap kutusunda. Kural **seçildiği anda** (composer'da Send'e basınca, canlı kartta kutudan seçince) o anki gerçek kotaya göre **tek bir hesaba** çözülür; kart o hesabı taşır, kuralı değil — bu yüzden kart hangi hesaba gittiğini gösterir ve yeniden başlatmalarda hesaptan hesaba kaymaz. Hiçbir hesap uygun değilse oturum başlamaz, nedeni ve ilk açılış saati uyarı olarak çıkar.
 3. **Misyonlar (`Missions`):** Delegasyon ve misyon adımlarında.
 4. **İş Kuyruğu (`Queue`):** Kuyruktaki görevlerin hesap boyutunda.
 5. **Zamanlanmış Görevler (`Schedules` / `Triggers`):** Tetikleyici tanımlarında.
@@ -134,8 +134,8 @@ Bütün alanları, ne anlama geldiklerini, ne yazmanız gerektiğini ve sistemin
   * Bir hesabın 5 saatlik kullanım kotasındaki **"dolu sayılma"** sınırıdır.
   * Örneğin buraya **`80`** yazarsanız: Bir hesabın kotası %80 veya üzerine ulaştığında, sistem o hesabı *"duvara çarpmış (kullanım sınırında)"* kabul eder. Oturumu o hesapla başlatmaz veya o hesaptayken dolduysa hemen zincirdeki bir sonraki hesaba geçer.
 * **Boş bırakırsanız ne olur?**
-  * Boş bırakabilirsiniz. Boş bırakırsanız sistemin varsayılan değeri olan **`95`** (%95) geçerli olur. 
-  *(Neden 100 değil de 95? Çünkü %99 dolu bir hesapla yeni bir iş başlatırsanız 2 dakika sonra oturumun ortasında tıkanır).*
+  * Boş bırakabilirsiniz. Boş bırakırsanız sistemin varsayılan değeri olan **`90`** (%90) geçerli olur. 
+  *(Neden 100 değil de 90? %90, ajanların 5 saatlik kotada devir protokolünü başlattığı çizgidir: %90'ın üstündeki bir hesapla başlatılan oturum ya ilk turunu devir notu yazarak geçirir ya da turun ortasında limite çarpar — 2026-09-18'de %91'deki bir hesapla ölçüldü).*
 
 ---
 
@@ -345,7 +345,7 @@ Evet, **Wall (Duvar / Kota Tavanı)** ayarını 2 farklı şekilde kolayca yapab
 
 ### 2. `@emptiest` (En Boş Olan) Kuralına Özel Bir Wall Koymak
 
-Hazır gelen `@emptiest` kuralının varsayılan duvarı **%95**'tir.  
+Hazır gelen `@emptiest` kuralının varsayılan duvarı **%90**'dır.  
 Eğer siz *"En boş hesabı seçsin ama hesaplar %70'e ulaştığında artık onları dolu saysın, %70'in üstündekini seçmesin"* derseniz:
 
 1. **`+ New rule`** butonuna basın.
@@ -514,7 +514,7 @@ Hazır olan **4 yerleşik kuralın** ne yaptığı ve ne zaman tercih edileceği
 ### 1. `@emptiest` (En Boş Olanı Seç)
 * **Ne yapar?** Görevin başladığı saniye, o motorun tüm hesaplarına bakar ve 5 saatlik kotasında **en çok boş yeri olan hesabı** otomatik olarak seçer.
 * **Ne zaman kullanılır?** *"Hangi hesap olduğu fark etmez, o an kotası en ferah olan hangisiyse işi onunla başlat."* dediğiniz durumlarda.
-* **Detay:** Eğer tüm hesaplar %95'in üzerindeyse işi başlatmaz, ilk hesabın ne zaman açılacağını (reset saatini) söyleyerek durur.
+* **Detay:** Eğer tüm hesaplar %90'ın üzerindeyse işi başlatmaz, ilk hesabın ne zaman açılacağını (reset saatini) söyleyerek durur.
 
 ---
 
@@ -525,7 +525,7 @@ Hazır olan **4 yerleşik kuralın** ne yaptığı ve ne zaman tercih edileceği
   * 3. Görev → `Hesap C`
   * 4. Görev → Tekrar başa döner (`Hesap A`).
 * **Ne zaman kullanılır?** Bütün iş yükünü tek bir hesaba bindirip onu hemen bitirmek yerine, kotayı tüm hesaplarınıza **eşit şekilde paylaştırmak** istediğinizde.
-* **Detay:** Sırası gelen hesap o an doluysa, onu atlayıp hemen bir sonraki boş hesaba geçer.
+* **Detay:** Sırası gelen hesap o an doluysa (%90 ve üstü), onu atlayıp hemen bir sonraki boş hesaba geçer.
 
 ---
 

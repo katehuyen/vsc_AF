@@ -47,6 +47,7 @@ import {
 import {
     BYPASS, EffectivePermission, permissionLayerPaths, resolveEffectivePermission
 } from './permissionmode';
+import { isPolicyId, MACHINE_ACCOUNT_ID } from './accountPolicy';
 
 /**
  * What a path IS, as far as attaching goes.
@@ -594,8 +595,41 @@ export class ConsoleHost {
          */
         private pinProjectContext: (
             sessionId: string, file: string
-        ) => void = () => {}
+        ) => void = () => {},
+        /**
+         * ‼️ X-305 R2 — TURN A RULE (`@round-robin`, `@emptiest`, `@Night`) INTO
+         * ONE SLOT, against the figures of this moment, and COMMIT it (the
+         * round-robin cursor moves). Called only where a choice becomes real:
+         * a card is started on it, or a live card is moved to it. The card then
+         * keeps the SLOT, never the rule — a rule left on the state was
+         * re-resolved at every re-spawn and walked the conversation between
+         * plans. Absent = rules are refused here rather than guessed at.
+         */
+        private accountPick?: (
+            engine: string, stated: string, agentId?: string, model?: string
+        ) => { id: string; note: string; refusal?: string }
     ) {}
+
+    /**
+     * ‼️ X-305 R2 — THE SLOT A STATED ACCOUNT RUNS ON, for a door about to
+     * start a card: a slot id or `@machine` passes through untouched, a rule is
+     * resolved (and committed) through `accountPick`. `refusal` set = start
+     * nothing and show it — `id` is then '' and must not be spawned on.
+     */
+    pickAccount(
+        engine: string, stated: string | undefined, agentId?: string, model?: string
+    ): { id: string; note: string; refusal?: string } {
+        const want = String(stated ?? '').trim();
+        if (!isPolicyId(want)) { return { id: want, note: '' }; }
+        if (!this.accountPick) {
+            return { id: '', note: '', refusal: `${want} is a rule, and this window was given no way to resolve one.` };
+        }
+        const r = this.accountPick(engine, want, agentId, model);
+        if (r.refusal) { return { id: '', note: '', refusal: r.refusal }; }
+        // '' from a rule is "the main sign-in" (only @standing says it) — stated
+        // outright, so the card cannot fall through to "use this next" later.
+        return { id: r.id || MACHINE_ACCOUNT_ID, note: r.note };
+    }
 
     /** The shared OpenCode runtime, made on demand. `undefined` when this build
      *  was given no way to spawn one (see the constructor). */
@@ -2577,7 +2611,8 @@ export class ConsoleHost {
      *
      * `account` is the STATED answer — a slot id, or `MACHINE_ACCOUNT` for the
      * machine's own — never the resolved one, or a card would follow the
-     * "use this next" button the next time it re-spawned.
+     * "use this next" button the next time it re-spawned. A RULE is the one
+     * exception: it is turned into its slot here (see `accountPick`).
      */
     setAccount(id: string, account: string): { ok: boolean; note: string } {
         const h = this.sessions.get(id);
@@ -2585,7 +2620,7 @@ export class ConsoleHost {
         if (h.state.status === 'ended' || h.state.status === 'error') {
             return { ok: false, note: 'This session has ended — resume it to put it on another account.' };
         }
-        const want = String(account || '').trim();
+        let want = String(account || '').trim();
         if (!want) {
             return {
                 ok: false,
@@ -2600,6 +2635,23 @@ export class ConsoleHost {
                     + 'moved to another sign-in on its own.'
             };
         }
+        const noId = {
+            ok: false,
+            note: 'This session has not reported its id yet, so there is nothing to resume it by — '
+                + 'say something in it first, then change the account.'
+        };
+        // ‼️ X-305 R2 — a rule is resolved NOW, into the slot the card will keep,
+        // and only once every other refusal has been said: a move that is not
+        // going to happen must not advance the round-robin cursor.
+        let why = '';
+        if (isPolicyId(want)) {
+            if (h.engine.shape !== 'perTurn' && !h.state.sessionId) { return noId; }
+            const r = this.pickAccount(h.engine.id, want, h.state.agentId, h.state.model);
+            if (r.refusal) { return { ok: false, note: r.refusal }; }
+            want = r.id;
+            why = r.note;
+        }
+        const said = why ? `${want} (${why})` : want;
         const now = (h.state.accountNext ?? h.state.account ?? '');
         if (now === want) { return { ok: true, note: '' }; }
         // A per-turn engine has no process to re-seal: the flags and the
@@ -2609,7 +2661,7 @@ export class ConsoleHost {
                 ...s, account: want, accountNext: undefined, lastTs: Date.now(),
                 messages: [...s.messages, {
                     id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
-                    text: `the next turn runs on ${want} — ${h.engine.label} starts a new process per turn, `
+                    text: `the next turn runs on ${said} — ${h.engine.label} starts a new process per turn, `
                         + 'so nothing had to be interrupted'
                 }]
             }));
@@ -2618,18 +2670,12 @@ export class ConsoleHost {
         // ‼️ …and a persistent one cannot move until its process does. A session
         // that has not reported an id yet has nothing to resume BY, and saying
         // so now beats discovering it when the prompt is already typed.
-        if (!h.state.sessionId) {
-            return {
-                ok: false,
-                note: 'This session has not reported its id yet, so there is nothing to resume it by — '
-                    + 'say something in it first, then change the account.'
-            };
-        }
+        if (!h.state.sessionId) { return noId; }
         this.mutate(id, s => ({
             ...s, accountNext: want, lastTs: Date.now(),
             messages: [...s.messages, {
                 id: `sys-${Date.now().toString(36)}`, ts: Date.now(), role: 'system',
-                text: `next message runs on ${want} — ${h.engine.label} seals an account into the process, `
+                text: `next message runs on ${said} — ${h.engine.label} seals an account into the process, `
                     + 'so this one is ended and the same conversation is resumed on it'
             }]
         }));
