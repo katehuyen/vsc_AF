@@ -29,6 +29,10 @@ const row = (n, extra) => Object.assign({
     durationMin: 17 + n, activeMin: 17 + n, busyMin: 8 + n,
     turns: 4 + n, toolCalls: 11 + n, errors: 0,
     tokens: 12000 + n * 900, wTokens: 8000 + n * 700, ctx: 64000 + n * 1000,
+    // ‼️ X-113 — the ceiling that reading is a fraction of, and which of the
+    // three answers it was. The rows here are Claude's, where the engine
+    // states none and the model table is the real answer.
+    ctxWindow: 1_000_000, ctxWindowSource: 'model',
     cost: 1.2 + n / 10, sidechain: false, origin: 'user', pinned: false,
     tags: [], project: 'PRS.MuratVural_DEV_VSC.AgentFarm — çok uzun proje adı',
     projectIcon: '◧', projectColor: '#8b5cf6', files: 3, active: n === 1,

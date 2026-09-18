@@ -621,9 +621,22 @@
             line('Waiting on you', waited(r)),
             line('Steps', r.steps || '')
         ]),
-        ctx: r => cell('num', r.endCtx ? C.fmtTok(r.endCtx) : '—',
+        ctx: r => cell('num ctxcell', r.endCtx ? C.fmtTok(r.endCtx) : '—',
             r.endCtx ? C.fmtTok(r.endCtx) : '—', [
-            line('Of a 200k window', r.endCtx ? pctOf(r.endCtx, 200000) : ''),
+            // ‼️ X-113 — THE CEILING IS THE ROW'S, NOT CLAUDE'S. This line
+            // divided every turn of every engine by 200 000: wrong by a third
+            // on a measured Codex thread (258 400) and by five on a
+            // million-token model, and exact-looking in both. The host
+            // resolves it per row against the turn's own last model
+            // (core/turns.ts), and 0 means nobody stated one — then there is
+            // no fraction to print rather than a confident wrong one.
+            // ‼️ ONE FACT, ONE LINE. With no ceiling there is no fraction, and
+            // the reason IS the answer — a second line repeating it was two
+            // lines of the panel saying the same thing.
+            line(r.ctxWindow ? `Of its ${C.fmtTok(r.ctxWindow)} window` : 'Window',
+                r.endCtx && r.ctxWindow ? pctOf(r.endCtx, r.ctxWindow)
+                    : r.endCtx ? C.ctxWindowIs(r.ctxWindowSource) : ''),
+            line('Window is', r.endCtx && r.ctxWindow ? C.ctxWindowIs(r.ctxWindowSource) : ''),
             line('Turn tokens', r.tokens ? C.fmtTok(r.tokens) : ''),
             line('Turn', `${r.n} of ${r.of}`)
         ]),

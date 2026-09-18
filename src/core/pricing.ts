@@ -395,3 +395,35 @@ export function contextWindowFor(model: string): number {
     const hit = CONTEXT_WINDOWS.find(c => c.re.test(model));
     return hit ? hit.tokens : 0;
 }
+
+/** Which of the three answers a context ceiling was. '' means nobody stated
+ *  one, and that is a real answer: there is then no fraction to take. */
+export type CtxWindowSource = 'forced' | 'engine' | 'model' | '';
+
+export interface CtxWindow {
+    /** 0 when nobody stated one — never a stand-in default. */
+    tokens: number;
+    source: CtxWindowSource;
+}
+
+/**
+ * ‼️ X-113 — THE ONE RULE FOR "A FRACTION OF WHAT", and it was written out by
+ * hand in four places with three different precedence orders: the dashboard put
+ * the reader's override first, extension.ts put the session's own window first
+ * on one branch and the live host's on another, and the Turns page divided every
+ * engine by 200 000. So one session answered three different percentages
+ * depending on which surface asked, each of them looking exact.
+ *
+ * The order here is the defensible one. The override is an INSTRUCTION and
+ * outranks every measurement; what the engine published for this very session
+ * beats a table (Codex states it per turn, and a 258 400 thread is not 200 000);
+ * the model's published window is the last real answer; and zero is where it
+ * stops, because a confident percentage against a guessed ceiling is worse than
+ * no percentage at all.
+ */
+export function contextWindowOf(stated: number, model: string, forced = 0): CtxWindow {
+    if (forced > 0) { return { tokens: forced, source: 'forced' }; }
+    if (stated > 0) { return { tokens: stated, source: 'engine' }; }
+    const tokens = contextWindowFor(model);
+    return tokens > 0 ? { tokens, source: 'model' } : { tokens: 0, source: '' };
+}

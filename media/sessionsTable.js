@@ -968,9 +968,16 @@
                 // The host resolves the ceiling per row (see windowOf); zero
                 // means nobody stated one, and then there is no fraction to
                 // print rather than a wrong one.
+                // ‼️ X-113 — and WHERE that ceiling came from. The row showed a
+                // percentage without ever saying whether the denominator was
+                // measured, tabulated or the reader's own override, which are
+                // three different claims wearing one number. With no ceiling
+                // the reason IS the answer, so it takes the first line and the
+                // second one drops rather than repeating it.
                 line(r.ctxWindow ? `Of its ${C.fmtTok(r.ctxWindow)} window` : 'Window',
                     r.ctx && r.ctxWindow ? `${pct(r.ctx, r.ctxWindow)}%`
-                        : r.ctx ? 'this engine does not state one' : ''),
+                        : r.ctx ? C.ctxWindowIs(r.ctxWindowSource) : ''),
+                line('Window is', r.ctx && r.ctxWindow ? C.ctxWindowIs(r.ctxWindowSource) : ''),
                 line('Session raw total', C.fmtTok(r.tokens || 0)),
                 line('Share of the total', r.ctx && r.tokens ? `${pct(r.ctx, r.tokens)}%` : ''),
                 line('Per turn', per(r.tokens, r.turns, n => C.fmtTok(Math.round(n)))),

@@ -6,6 +6,14 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 const { charts } = require('./lib_charts_stub.js');
+// ‼️ X-113 — the ceiling rule comes from the HOST's own copy, never a stub
+// constant. `contextLimitFor` is the viewer's door onto core/pricing's
+// contextWindowOf, and a test that hand-writes `() => 0` beside it proves the
+// stub instead of the rule (this is how the Codex window assertion came to
+// depend on a `||` in the caller rather than on the precedence).
+const ctxLimitStub = (model, stated = 0) =>
+    require(path.join(__dirname, '..', 'out', 'core', 'pricing.js'))
+        .contextWindowOf(stated, model, 0).tokens;
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
@@ -196,7 +204,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     fs.writeFileSync(tmp, lines);
     const data = viewer.buildData(tmp, {
         extensionUri: {}, getPricing: () => ({ costFor: () => 0.5 }),
-        maxMessages: () => 1, contextLimitFor: () => 0
+        maxMessages: () => 1, contextLimitFor: ctxLimitStub
     });
     fs.unlinkSync(tmp);
 
@@ -225,7 +233,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ].map(l => JSON.stringify(l)).join('\n'));
     const codexData = viewer.buildData(codexTmp, {
         extensionUri: {}, getPricing: () => ({ costFor: () => 0.25 }),
-        maxMessages: () => 50, contextLimitFor: () => 0,
+        maxMessages: () => 50, contextLimitFor: ctxLimitStub,
         engineFor: id => id === 'codex-thread-1' ? 'codex' : undefined
     });
     fs.unlinkSync(codexTmp);
@@ -272,7 +280,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     ].map(l => JSON.stringify(l)).join('\n'));
     const codex149Data = viewer.buildData(codex149Tmp, {
         extensionUri: {}, getPricing: () => ({ costFor: () => 0 }),
-        maxMessages: () => 50, contextLimitFor: () => 0
+        maxMessages: () => 50, contextLimitFor: ctxLimitStub
     });
     fs.unlinkSync(codex149Tmp);
     ok('‼️ Codex 0.149 viewer restores the title and every real turn',
@@ -304,7 +312,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     }), 'utf8');
     const agyData = viewer.buildData(agyTmp, {
         extensionUri: {}, getPricing: () => ({ costFor: () => 0 }),
-        maxMessages: () => 50, contextLimitFor: () => 0
+        maxMessages: () => 50, contextLimitFor: ctxLimitStub
     });
     fs.unlinkSync(agyTmp);
     ok('Antigravity viewer opens with its real id, engine, model and effort',
@@ -334,7 +342,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         { type: 'assistant', timestamp: t3, message: { id: 'm3', model: 'claude-x', content: [{ type: 'text', text: 'yo' }], usage: { input_tokens: 20, output_tokens: 1 } } }
     ].map(l => JSON.stringify(l)).join('\n'));
     const metaData = viewer.buildData(metaTmp, {
-        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 50, contextLimitFor: () => 0
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 50, contextLimitFor: ctxLimitStub
     });
     fs.unlinkSync(metaTmp);
     ok('a meta line in array form opens no turn', metaData.turns.length === 2);
@@ -349,7 +357,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         type: 'user', timestamp: t1, entrypoint: 'sdk-cli', message: { content: 'scheduled sweep' }
     }));
     const autoData = viewer.buildData(autoTmp, {
-        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: () => 0
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: ctxLimitStub
     });
     fs.unlinkSync(autoTmp);
     ok('an sdk-cli transcript opens as an automation run', autoData.origin === 'auto');
@@ -397,7 +405,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     fs.writeFileSync(tmp2, ctxLines);
     const cdata = viewer.buildData(tmp2, {
         extensionUri: {}, getPricing: () => ({ costFor: () => 0 }),
-        maxMessages: () => 50, contextLimitFor: () => 0
+        maxMessages: () => 50, contextLimitFor: ctxLimitStub
     });
     fs.unlinkSync(tmp2);
 
@@ -422,7 +430,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     const tmp3 = path.join(require('os').tmpdir(), `af-noctx-${Date.now()}.jsonl`);
     fs.writeFileSync(tmp3, JSON.stringify({ type: 'user', timestamp: cx1, message: { content: 'hi' } }));
     const ndata = viewer.buildData(tmp3, {
-        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: () => 0
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: ctxLimitStub
     });
     fs.unlinkSync(tmp3);
     ok('no /context run → contextReport is null', ndata.contextReport === null);
@@ -469,7 +477,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         content: '<local-command-stdout>' + mdOut + '</local-command-stdout>'
     }));
     const mdata = viewer.buildData(tmp4, {
-        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: () => 0
+        extensionUri: {}, getPricing: () => ({ costFor: () => 0 }), maxMessages: () => 5, contextLimitFor: ctxLimitStub
     });
     fs.unlinkSync(tmp4);
     ok('buildData captures a print-mode transcript line',

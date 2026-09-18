@@ -1,5 +1,6 @@
 import { BridgeRegistry, optNum, optStr } from './bridge';
 import { ENGINE_ENUM } from './consoleEngine';
+import { CtxWindowSource, contextWindowOf } from './pricing';
 import { SessionInfo, SessionOrigin, sessionOrigin } from './sessions';
 
 /**
@@ -41,6 +42,20 @@ export interface TurnRow {
     thinking: number;
     /** What the window held when the turn ended. */
     endCtx: number;
+    /**
+     * ‼️ X-113 — AND THE CEILING THAT READING IS A FRACTION OF. The page had
+     * none, so it divided every turn of every engine by 200 000 and printed a
+     * percentage: wrong by a third on a Codex thread and by five on a
+     * million-token model, and exact-looking in both. 0 means nobody stated
+     * one — then the page prints no fraction.
+     *
+     * Resolved against the turn's OWN last model, not the session's: a session
+     * that switched models mid-way has turns with different ceilings, and the
+     * session-level figure is the wrong one for all but the last of them.
+     */
+    ctxWindow: number;
+    /** Which of the three answers that was — see contextWindowOf. */
+    ctxWindowSource: CtxWindowSource;
     tokens: number;
     /** The same turn against the plan limit — see SessionTurn.wTokens. */
     wTokens: number;
@@ -66,11 +81,15 @@ export interface TurnRow {
 }
 
 /** All turn rows of one session, newest data included. */
-export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
+export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0): TurnRow[] {
     const origin = sessionOrigin(s);
     return s.turns.map((t, i) => {
         const next = s.turns[i + 1];
         const endTs = next?.ts || s.lastTs || t.ts;
+        const win = contextWindowOf(
+            s.ctxWindow ?? 0,
+            t.models?.length ? t.models[t.models.length - 1] : '',
+            forced);
         return {
             file: s.file,
             sessionId: s.sessionId,
@@ -88,6 +107,8 @@ export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
             steps: t.steps,
             thinking: t.thinking,
             endCtx: t.endCtx,
+            ctxWindow: win.tokens,
+            ctxWindowSource: win.source,
             tokens: t.tokens,
             wTokens: t.wTokens,
             cost: t.cost,
@@ -106,11 +127,14 @@ export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
 /** Every turn across the farm, newest first. */
 export function buildTurnRows(
     sessions: SessionInfo[],
-    isActive: (s: SessionInfo) => boolean
+    isActive: (s: SessionInfo) => boolean,
+    /** The reader's own ceiling override, when the caller has the settings
+     *  door; core has none of its own. */
+    forced = 0
 ): TurnRow[] {
     const rows: TurnRow[] = [];
     for (const s of sessions) {
-        rows.push(...turnRowsFor(s, isActive(s)));
+        rows.push(...turnRowsFor(s, isActive(s), forced));
     }
     return rows.sort((a, b) => b.ts - a.ts);
 }
@@ -118,11 +142,17 @@ export function buildTurnRows(
 /** Bridge access (constitution §19.C): the Turns page's data as an op. */
 export function registerTurnsOps(
     bridge: BridgeRegistry,
-    deps: { sessions(): SessionInfo[]; isActive(s: SessionInfo): boolean }
+    deps: {
+        sessions(): SessionInfo[];
+        isActive(s: SessionInfo): boolean;
+        /** The reader's ceiling override, so the op answers the same
+         *  percentage the page draws. */
+        forcedWindow?(): number;
+    }
 ): void {
     bridge.register({
         op: 'turns.list',
-        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), limit? (default 20)',
+        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), limit? (default 20). Each row carries ctx (what the window held when the turn ended), ctxWindow (the ceiling it is a fraction of, 0 = nobody stated one) and ctxWindowSource (forced | engine | model | "").',
         handler: (args) => {
             const agent = optStr(args, 'agent').toLowerCase();
             const engine = optStr(args, 'engine').toLowerCase();
@@ -132,7 +162,7 @@ export function registerTurnsOps(
             // and a type test drops them for the default without saying so —
             // the same silence that queued four items at the bottom.
             const limit = Math.max(1, Math.floor(optNum(args, 'limit', 20)) || 20);
-            return buildTurnRows(deps.sessions(), deps.isActive)
+            return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0)
                 .filter(r => !agent || r.agentName.toLowerCase() === agent)
                 // ‼️ The same axis the page filters on — an agent calling this op
                 // to ask "what has Codex been doing" had no way to say so.
@@ -143,6 +173,12 @@ export function registerTurnsOps(
                     agent: r.agentName, engine: r.engine,
                     session: r.session, turn: `${r.n}/${r.of}`,
                     label: r.label, ts: r.ts, origin: r.origin, tokens: r.tokens,
+                    // ‼️ X-113 — the context reading AND its ceiling, because
+                    // the figure alone cannot be read: an agent asking how
+                    // full a turn left the window was previously given the
+                    // number and left to assume 200 000.
+                    ctx: r.endCtx, ctxWindow: r.ctxWindow,
+                    ctxWindowSource: r.ctxWindowSource,
                     wTokens: Math.round(r.wTokens),
                     cost: Math.round(r.cost * 10000) / 10000,
                     tools: r.tools, errors: r.errors, models: r.models, providerIds: r.providerIds

@@ -22,7 +22,10 @@ export interface ViewerDeps {
     /** Context-window size for the "Context now" gauge, resolved from the session's
      *  current model (agentFarm.contextWindowTokens > 0 overrides). 0 = unknown model —
      *  the gauge then shows the raw token count without a percent or color. */
-    contextLimitFor(model: string): number;
+    /** The ceiling a context reading is a fraction of. `stated` is what the
+     *  engine itself published for this session, when there is one; the host
+     *  decides the precedence once (core/pricing.ts contextWindowOf). */
+    contextLimitFor(model: string, stated?: number): number;
     /**
      * ‼️ S-64 — WAS THIS RUN TOLD ITS WINDOW WAS FULL, and did it obey? The
      * gauge above says how full the window got; without this, a page showing
@@ -432,7 +435,7 @@ export function buildData(file: string, deps: ViewerDeps): Record<string, unknow
             engine: deps.engineFor?.(cli.sessionId) || cli.engine,
             context: {
                 ...cli.context,
-                limit: cli.context.limit || deps.contextLimitFor(cli.context.model)
+                limit: deps.contextLimitFor(cli.context.model, cli.context.limit || 0)
             },
             contextSignal: deps.contextSignalFor?.(cli.sessionId) ?? null,
             contextReport: null,

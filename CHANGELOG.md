@@ -2,6 +2,45 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.563.0 - one rule for "a context reading is a fraction of WHAT", and the Turns page stops dividing every engine by 200k (X-113, part 1) (2026-09-18)
+
+- **The Turns page measured every turn of every engine against 200 000.** A
+  measured Codex thread runs against 258 400 and a million-token model against
+  five times that, so the hover's percentage was wrong by a third in one
+  direction and by five in the other — and read as exact in both. The cell now
+  takes the fraction against the ROW'S own ceiling, resolved against the turn's
+  own last model rather than the session's (a session that switched models has
+  turns with different ceilings).
+- **When nobody stated a window there is no percentage.** 0 is a real answer
+  and the panel says so — "Window: nobody stated one — no fraction to take" —
+  instead of borrowing Claude's number.
+- **And the ceiling now says where it came from.** `Window is:` names it:
+  your own `contextWindowTokens` setting, the engine's own statement on this
+  session, or the model's published window. A percentage taken against an
+  override is not the same claim as one taken against a measurement, and the
+  row could not tell them apart.
+- **The rule itself lived in six places, in three different orders**
+  (`contextWindowOf` in `core/pricing.ts` now owns it): the dashboard put the
+  override first, `extension.ts` put the live host's window first on one
+  branch and the session's own on another, and the session viewer let the
+  CLI's printed limit beat the override. So the same session answered
+  different percentages depending on which surface was asked. Precedence:
+  override → what the engine stated for this session → the model's table → 0.
+- **The Console's resume list showed a bare numerator on every Claude row**,
+  because it asked only the session (which Claude never answers) and never the
+  model table. It now gets the same ceiling every other surface gets.
+- `turns.list` on the bridge carries `ctx`, `ctxWindow` and
+  `ctxWindowSource`, so an agent asking how full a turn left the window is no
+  longer left to assume 200 000.
+- Tests: new `test_ctx_window.js` 33 — the precedence, the model table
+  (including that `opus-5` is still in it), the row's two halves, and a guard
+  that the hand-written `forced > 0 ? forced :` shape does not come back.
+  `test_sessions_table.js` now uses `lib_charts_stub` instead of its own
+  hand-written `AFCharts` (U-130's drift, caught by this change), and
+  `test_dashboard_sessions.js` stubs the ceiling with the host's real rule
+  instead of `() => 0`. Looked at: `turns.s2` / `turns.s3` — the panel with a
+  known ceiling and the one without.
+
 ## 3.562.0 - a mission run's total and a project's rollup say when they add more than one kind of dollar (X-112, part 3 — closes) (2026-09-18)
 
 - **A mission run's $ is its planner's and its delegates', and they need not

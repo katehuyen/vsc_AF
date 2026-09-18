@@ -25,7 +25,7 @@ import {
 } from '../core/launch';
 import { LaunchIntent } from '../core/launchDimensions';
 import { catalog as launchCatalog, narrow as narrowIntent } from '../core/aflaunch';
-import { totalTokens, Usage } from '../core/pricing';
+import { contextWindowOf, totalTokens, Usage } from '../core/pricing';
 import { RunIdentity } from '../core/turnRuntime';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
@@ -1760,7 +1760,13 @@ export class ConsolePanel {
             // the model catalogue's published ceiling; a row that showed only
             // the numerator left the reader to guess which of the two it was a
             // fifth or a whole of.
-            contextWindowTokens: s.ctxWindow ?? 0,
+            // ‼️ X-113 — …and when the engine states none, which is Claude for
+            // ever, the model's own published window is still a real answer.
+            // This row asked only the session and so showed a bare numerator on
+            // every Claude conversation in the list — the exact ambiguity the
+            // paragraph above exists to close.
+            contextWindowTokens: contextWindowOf(s.ctxWindow ?? 0, s.lastModel ?? '',
+                afConfig().get<number>('contextWindowTokens', 0)).tokens,
             // …and where that reading came from: the index read it off the
             // conversation's own last call, which is the only thing it may mean.
             contextSource: s.lastCtxTokens ? 'transcript-last-call' : '',

@@ -504,5 +504,17 @@
         return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { optionTip, option, stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, weighMark, weighedLabel, dollarSum, fmtUSDSum, WEIGHTED_TIP, OFF_PLAN_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
+    /** ‼️ X-113 — where a context ceiling came from, worded once for every
+     *  page that shows one. The host sends the short source (see
+     *  core/pricing.ts contextWindowOf); the sentence is the same everywhere. */
+    const CTX_WINDOW_IS = {
+        forced: 'your own contextWindowTokens setting, not a measurement',
+        engine: 'stated by the engine itself, on this session',
+        model: "the model's own published window"
+    };
+    function ctxWindowIs(source) {
+        return CTX_WINDOW_IS[source] || 'nobody stated one — no fraction to take';
+    }
+
+    window.AFCharts = { ctxWindowIs, optionTip, option, stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, weighMark, weighedLabel, dollarSum, fmtUSDSum, WEIGHTED_TIP, OFF_PLAN_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();

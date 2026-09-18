@@ -119,7 +119,7 @@ import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProductio
 import { buildEdl, buildFcpXml, detectSceneId, pickSequenceAssets } from './core/premiere';
 import { applyMergedContent } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
-import { contextAfter, contextWindowFor, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, RawUsage, setQuotaConfig, totalTokens, Usage } from './core/pricing';
+import { contextAfter, contextWindowOf, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, RawUsage, setQuotaConfig, totalTokens, Usage } from './core/pricing';
 import {
     BUILT_IN_PROMPT_FILE, parsePromptSnippets, PromptSnippetsSnapshot, resolvePromptFile
 } from './core/prompts';
@@ -1369,19 +1369,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * The window is the session's own where it stated one, else the model's
      * known window through the same override the viewer honours.
      */
-    const contextLimitForModel = (model: string): number => {
-        const forced = cfg().get<number>('contextWindowTokens', 0);
-        return forced > 0 ? forced : contextWindowFor(model);
-    };
+    // ‼️ X-113 — one rule, from core/pricing. Both call sites below used to
+    // put the stated window ahead of the reader's override (`c.window ||`,
+    // `s.ctxWindow ||`) while the dashboard put the override first, so the
+    // guard and the table could disagree about the same session.
+    const contextLimitForModel = (model: string, stated = 0): number =>
+        contextWindowOf(stated, model, cfg().get<number>('contextWindowTokens', 0)).tokens;
     const contextReadingFor = (sessionId: string, hint: ContextReadHint): ContextSample | undefined => {
         const hosted = consoleHostRef?.list().find(s => s.sessionId === sessionId);
         if (hosted && hosted.contextTokens) {
             const c = contextSample(hosted);
             if (c) {
-                if (!c.window) {
-                    const w = contextLimitForModel(hosted.applied?.model || hosted.model || '');
-                    if (w > 0) { c.window = w; }
-                }
+                const w = contextLimitForModel(
+                    hosted.applied?.model || hosted.model || '', c.window || 0);
+                if (w > 0) { c.window = w; }
                 return c;
             }
         }
@@ -1396,7 +1397,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }
         const s = index.byId(sessionId);
         if (s?.lastCtxTokens) {
-            const w = s.ctxWindow || contextLimitForModel(s.lastModel ?? '');
+            const w = contextLimitForModel(s.lastModel ?? '', s.ctxWindow ?? 0);
             return { tokens: s.lastCtxTokens, ...(w > 0 ? { window: w } : {}), source: 'transcript-last-call', stale: true };
         }
         return undefined;
@@ -15429,7 +15430,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // returned an empty array that read as "Codex did nothing".
     registerTurnsOps(bridge, {
         sessions: () => index.allWithExternal(),
-        isActive: s => index.isSessionActive(s, Date.now())
+        isActive: s => index.isSessionActive(s, Date.now()),
+        forcedWindow: () => cfg().get<number>('contextWindowTokens', 0)
     });
 
     // ‼️ B-14 (X-50) — THE WIKI CANDIDATE POOL. Marking a turn is cheap and
@@ -21643,10 +21645,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         identityFor: (sessionId: string) => sessionIdentityOf(sessionId),
         getPricing: () => pricing,
         maxMessages: () => cfg().get<number>('maxTranscriptMessages', 1500),
-        contextLimitFor: (model: string) => {
-            const forced = cfg().get<number>('contextWindowTokens', 0);
-            return forced > 0 ? forced : contextWindowFor(model);
-        },
+        // ‼️ X-113 — `stated` is what the CLI itself printed for this session,
+        // and it used to win over the reader's override because the caller
+        // wrote `cli.context.limit || …`. One rule now decides, in core.
+        contextLimitFor: (model: string, stated = 0) =>
+            contextWindowOf(stated, model, cfg().get<number>('contextWindowTokens', 0)).tokens,
         contextSignalFor: (sessionId: string) =>
             contextSignalView(contextGuard.record(sessionId), contextGuard.thresholds(), relTime),
         titleFor: (sessionId: string) => sessionTitles()[sessionId],

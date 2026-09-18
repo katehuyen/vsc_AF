@@ -29,6 +29,7 @@ const rows = () => ([
         label: 'Live Timeline\'a motor filtresi ekle ve lane satırlarına rozet koy',
         ts: min(6), durationMs: 6 * 60000, ms: 5 * 60000,
         apiCalls: 31, steps: 84, thinking: 19, endCtx: 186_400,
+        ctxWindow: 1_000_000, ctxWindowSource: 'model',
         tokens: 412_900, wTokens: 168_300, cost: 0.61,
         tools: 22, errors: 1, models: ['claude-opus-5'],
         sidechain: false, origin: 'user', active: true,
@@ -47,6 +48,7 @@ const rows = () => ([
         label: 'now run the whole suite and report only the failures',
         ts: min(11), durationMs: 11 * 60000, ms: 9 * 60000,
         apiCalls: 1, steps: 14, thinking: 4, endCtx: 93_625,
+        ctxWindow: 258_400, ctxWindowSource: 'engine',
         tokens: 93_625, wTokens: 0, cost: 0,
         tools: 9, errors: 0, models: ['gpt-5.6-sol'],
         sidechain: false, origin: 'user', active: true,
@@ -62,6 +64,7 @@ const rows = () => ([
         label: 'summarise the backlog block I pasted',
         ts: min(24), durationMs: 4 * 60000, ms: 2 * 60000,
         apiCalls: 1, steps: 5, thinking: 0, endCtx: 25_595,
+        ctxWindow: 0, ctxWindowSource: '',
         tokens: 25_595, wTokens: 0, cost: 0,
         tools: 2, errors: 0, models: ['gemini-3.1-pro'],
         sidechain: false, origin: 'user', active: false,
@@ -77,6 +80,7 @@ const rows = () => ([
         label: 'bugünün notlarını topla',
         ts: min(51), durationMs: 9 * 60000, ms: 3 * 60000,
         apiCalls: 1, steps: 3, thinking: 0, endCtx: 18_204,
+        ctxWindow: 0, ctxWindowSource: '',
         tokens: 18_204, wTokens: 0, cost: 0.02,
         tools: 0, errors: 0, models: ['gemini-2.5-pro'],
         sidechain: false, origin: 'user', active: false,
@@ -93,6 +97,7 @@ const rows = () => ([
         label: '/report — fleet, 7 days',
         ts: min(240), durationMs: 3 * 60000, ms: 2.4 * 60000,
         apiCalls: 6, steps: 11, thinking: 3, endCtx: 42_800,
+        ctxWindow: 200_000, ctxWindowSource: 'model',
         tokens: 88_120, wTokens: 31_400, cost: 0.14,
         tools: 4, errors: 0, models: ['claude-haiku-4-5'],
         sidechain: false, origin: 'auto', active: false,
@@ -114,6 +119,7 @@ const rows = () => ([
         label: 'now write the three that are blocked into the queue',
         ts: min(14), durationMs: 4 * 60000, ms: 2 * 60000,
         apiCalls: 4, steps: 9, thinking: 2, endCtx: 31_004,
+        ctxWindow: 0, ctxWindowSource: '',
         tokens: 63_411, wTokens: 0, cost: 0.0184,
         tools: 3, errors: 0, models: ['opencode/big-pickle'],
         // X-110 - the provider the ENGINE named for this turn. The chip is drawn
@@ -138,6 +144,7 @@ const rows = () => ([
         label: 'bu turu bitir, sonra digerine gec',
         ts: min(19), durationMs: 5 * 60000, ms: 3 * 60000,
         apiCalls: 7, steps: 14, thinking: 3, endCtx: 44_210,
+        ctxWindow: 0, ctxWindowSource: '',
         tokens: 88_120, wTokens: 0, cost: 0.0311,
         tools: 5, errors: 0, models: ['anthropic/claude-opus-5', 'openai/gpt-5.6-sol'],
         providerIds: ['anthropic', 'openai'],
@@ -151,9 +158,27 @@ const base = () => ({ generatedAt: NOW, rows: rows(), tableN: 200 });
 const data = base;
 
 /** One picture with the filter panel closed (the Engine column beside Agent) and
- *  one with it open (the new Engines picker beside Agents). */
+ *  one with it open (the new Engines picker beside Agents).
+ *
+ *  ‼️ X-113 — AND THE CTX PANEL, IN BOTH OF ITS ARITIES. The cell used to
+ *  divide every row by 200 000 and print a percentage; now it takes the
+ *  fraction against the ROW'S own ceiling and, where nobody stated one, prints
+ *  no fraction at all. Those are two different panels and only the second one
+ *  is new, so both are photographed — the emptier one first. */
 const variants = () => ([
-    { id: 'turns', label: 'Turns — every engine, one row per turn', data: base() }
+    { id: 'turns', label: 'Turns — every engine, one row per turn', data: base() },
+    {
+        id: 'turns-ctx-unknown',
+        label: 'Turns — ctx panel, engine states no window and the model is unknown: NO fraction, and it says why',
+        tip: 'ctxcell:3',
+        data: base()
+    },
+    {
+        id: 'turns-ctx-known',
+        label: 'Turns — ctx panel on a Codex turn: the fraction is of ITS 258.4k window, not 200k',
+        tip: 'ctxcell:2',
+        data: base()
+    }
 ]);
 
 module.exports = { script: 'turns.js', data, variants, rows };

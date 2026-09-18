@@ -16,12 +16,13 @@ let pass = 0, fail = 0;
 // ‼️ X-112 — THE OFF-PLAN MARK AND ITS LABEL COME FROM THE REAL charts.js.
 // They read the run's own `identity.billing`, and a hand-written twin here is
 // exactly how a page and its test come to disagree about what a figure means.
-const realWeigh = (() => {
-    const box = require('vm').createContext({ window: {} });
-    require('vm').runInContext(require('fs').readFileSync(
-        require('path').resolve(__dirname, '../media/charts.js'), 'utf8'), box);
-    return box.window.AFCharts;
-})();
+// ‼️ X-113 — …AND SO DOES EVERYTHING ELSE THE PAGE CALLS NOW. This file kept a
+// hand-written AFCharts beside that, which is precisely the drift U-130's
+// lib_charts_stub was written to end: the day `ctxWindowIs` was added to
+// charts.js the page was fine and this test died. The overrides below are the
+// ones the assertions actually read; the rest is the real implementation.
+const { charts, realCharts } = require(path.join(__dirname, 'lib_charts_stub.js'));
+const realWeigh = realCharts();
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 // ---------- fake DOM: one container per id, selector queries via regex ----------
@@ -87,7 +88,7 @@ const vscodeStub = {
     getState: () => state,
     setState: s => { state = s; }
 };
-const C = {
+const C = charts({
     esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
     fmtTok: v => v + 't',
             fmtTokW(n, w, mark) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + (mark ? ' ' + mark : '') + ']' : ''); },
@@ -103,7 +104,7 @@ const C = {
     fmtDur: ms => Math.round(ms / 1000) + 's',
     fmtSteps: (calls, steps) => (calls ? calls + 'api·' : '') + steps + 'steps',
     STEPS_TIP: 'two measurements of the SAME turn'
-};
+});
 const ev = () => ({ stopPropagation() { } });
 const click = el => el._fn(ev());
 
@@ -279,10 +280,18 @@ const mkRow = (i, extra) => Object.assign({
     ok('‼️ the ctx percentage is measured against the ENGINE\'s window',
         html().includes('Of its 258400t window: 36%'));
     // …and an engine that states none gets no fraction rather than a wrong one.
-    t.setRows([mkRow(1, { ctx: 5000, ctxWindow: 0, engine: 'gemini' })], 10);
+    // ‼️ X-113 — and the REASON takes that line, in the host's own words
+    // (charts.js ctxWindowIs), because "no window" and "why" were two lines of
+    // the same four-line panel saying one thing. "This engine does not state
+    // one" was also only half true: an unknown MODEL lands here too.
+    t.setRows([mkRow(1, { ctx: 5000, ctxWindow: 0, ctxWindowSource: '', engine: 'gemini' })], 10);
     ok('…and an engine that states none says so instead of borrowing Claude\'s',
-        html().includes('Window: this engine does not state one')
+        html().includes('Window: ' + realCharts().ctxWindowIs(''))
         && !/window: \d/.test(html()));
+    // …and where there IS a ceiling, the panel names which of the three it was.
+    t.setRows([mkRow(1, { ctx: 5000, ctxWindow: 200000, ctxWindowSource: 'forced', engine: 'claude' })], 10);
+    ok('a percentage taken against YOUR override says that is what it is',
+        html().includes('Window is: ' + realCharts().ctxWindowIs('forced')));
 }
 
 // ---------- S-17: the text columns hover into the RICH PANEL ----------

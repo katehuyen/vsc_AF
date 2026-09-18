@@ -4,7 +4,7 @@ import { FleetWait } from '../core/waits';
 import { watchStatus } from '../core/duties';
 import { Insight } from '../core/health';
 import { SessionIndex, SessionInfo, sessionMission, sessionOrigin, sessionHeadless } from '../core/sessions';
-import { PricingEngine, contextWindowFor, totalTokens } from '../core/pricing';
+import { CtxWindow, PricingEngine, contextWindowOf, totalTokens } from '../core/pricing';
 import { SubsystemStatus } from '../core/farmstatus';
 import { PlanUsageSnapshot } from '../core/planusage';
 import { ProjectCostRow as ProjectRollup } from '../core/projects';
@@ -254,11 +254,26 @@ export function sessionRowPool(
         };
     };
     const forced = afConfig().get<number>('contextWindowTokens', 0);
-    const windowOf = (s: SessionInfo): number => {
-        if (forced > 0) { return forced; }
-        if (s.ctxWindow && s.ctxWindow > 0) { return s.ctxWindow; }
-        const model = s.models?.length ? s.models[s.models.length - 1] : '';
-        return contextWindowFor(model);
+    // ‼️ X-113 — the three answers now live in core/pricing (contextWindowOf),
+    // because this was one of four hand-written copies of them and no two
+    // agreed on the order.
+    const windowOf = (s: SessionInfo): CtxWindow => contextWindowOf(
+        s.ctxWindow ?? 0,
+        s.models?.length ? s.models[s.models.length - 1] : '',
+        forced);
+    const ctxWindowFields = (s: SessionInfo) => {
+        const w = windowOf(s);
+        return {
+            // …and what it is a fraction OF, on this engine — see windowOf. 0
+            // means nobody stated one, and the hover says so instead of
+            // assuming Claude's.
+            ctxWindow: w.tokens,
+            // …and WHICH answer that was: a percentage taken against the
+            // reader's own override is not the same claim as one taken against
+            // a window the engine published, and the row could not tell them
+            // apart.
+            ctxWindowSource: w.source
+        };
     };
     // ‼️ S-52 — HOW LONG A SESSION WAS LEFT, and therefore how long it ran. A
     // conversation resumed the next morning has always read as a day and a half
@@ -314,9 +329,7 @@ export function sessionRowPool(
         wTokens: Math.round(s.wTokens),
         // "Ctx now" — approximate context after the session's last reply
         ctx: s.lastCtxTokens ?? 0,
-        // …and what it is a fraction OF, on this engine — see windowOf. 0 means
-        // nobody stated one, and the hover says so instead of assuming Claude's.
-        ctxWindow: windowOf(s),
+        ...ctxWindowFields(s),
         cost: s.cost,
         sidechain: s.isSidechain,
         // ‼️ S-32 — the row exists BECAUSE the transcript could not be read, and

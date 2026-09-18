@@ -47,7 +47,8 @@ function buildData(deps: TurnsDeps): Record<string, unknown> {
         // claude-only list, so no Codex turn had ever appeared on it; now that
         // the Codex parse builds real turn rollups (cliTranscripts.ts) there is
         // something on the other side of the widening.
-        rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now)),
+        rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
+            afConfig().get<number>('contextWindowTokens', 0)),
         tableN: TURNS_TABLE_N
     };
 }
@@ -119,7 +120,8 @@ export function buildTurnsMarkdown(
     // downstream step here still looked it up in the claude-only list, where it
     // is not. The export silently dropped those rows and the header lookup below
     // fell through to a bare "turn N". A LOG surface reads the log list, once.
-    for (const r of buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now))) {
+    for (const r of buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
+        afConfig().get<number>('contextWindowTokens', 0))) {
         rowByKey.set(r.file + '#' + r.n, r);
     }
     const sc = afConfig();
