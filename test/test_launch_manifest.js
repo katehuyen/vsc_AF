@@ -342,6 +342,31 @@ console.log('\n== the store is bounded before the first row is written ==');
         card.indexOf('const launchId = resolved && recordLaunch({')
         < card.indexOf('const id = consoleHost.start({'));
 
+    // ---- ‼️ X-109 R2 — the composer's Send and the bridge's fresh console.start ----
+    // Measured 2026-09-18: two cards started from the composer read `legacy` to
+    // the resume gate — neither door wrote a manifest, only startConsoleSession did.
+    {
+        const helper = ext.slice(ext.indexOf('const recordConsoleCard = ('), ext.indexOf('const recordConsoleCard = (') + 1500);
+        ok('‼️ one helper writes a Console card\'s manifest, off the same resolution',
+            /const resolved = resolveLaunchRoute\(o\.agentId, engine, \{/.test(helper)
+            && /return resolved \? recordLaunch\(\{/.test(helper)
+            && /mechanism: 'session',/.test(helper) && /surface: 'console',/.test(helper));
+        const op = ext.slice(ext.indexOf("op: 'console.start'"), ext.indexOf("op: 'console.start'") + 30000);
+        const rec = op.indexOf('const launchId = resume ? undefined : recordConsoleCard({');
+        const start = op.indexOf('const id = consoleHost.start({');
+        ok('‼️ the bridge writes it for a FRESH card, before the process is asked for, and not for a resume',
+            rec > 0 && start > rec
+            && /\.\.\.\(launchId \? \{ launchId \} : \{\}\),/.test(op.slice(start, start + 400)));
+        ok('…and the composer is handed the same helper', /recordConsoleLaunch: recordConsoleCard,/.test(ext));
+        const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'consolePanel.ts'), 'utf8');
+        const prec = panel.indexOf('const launchId = this.deps.recordConsoleLaunch?.({');
+        const pstart = panel.indexOf('this.selected = host.start({', prec);
+        ok('‼️ the composer\'s Send writes the manifest on the SLOT that runs, then starts the card with its id',
+            prec > 0 && pstart > prec
+            && /options: \{ \.\.\.started, account: pick\.id \|\| undefined \},/.test(panel.slice(prec, pstart))
+            && /\.\.\.\(launchId \? \{ launchId \} : \{\}\),/.test(panel.slice(pstart, pstart + 300)));
+    }
+
     // ---- and the join, on both surfaces ----
     ok('‼️ the launch id lands on the record that will learn the session id',
         /launchId\?: string;/.test(ext)

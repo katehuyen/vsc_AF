@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.554.0 - a card started from the composer or the bridge has a launch record, so a resume can pin its route (X-109 R2) (2026-09-18)
+
+- **Measured live, after X-109 shipped.** `sessions.resumeRoute` on two cards
+  started from the Console composer today answered `binding: legacy`,
+  `act: unbound` — "started before launches were recorded". They were not:
+  only `startConsoleSession` (launcher, tree, profiles) wrote a launch
+  manifest. The composer's own Send — the door people use most — and the
+  bridge's fresh `console.start` started the card with no record, so the
+  X-109 gate could never pin those conversations to the route they ran on.
+- **`recordConsoleCard` — one helper, the same resolution and record as
+  `startConsoleSession`** (`resolveLaunchRoute` → `recordLaunch`, mechanism
+  `session`, surface `console`). The composer's Send writes it (new panel dep
+  `recordConsoleLaunch`) on the SLOT that really runs — after the X-305 R2
+  pick — and starts the card with its `launchId`; the bridge writes it for a
+  fresh card and not for a resume, which keeps the manifest its conversation
+  was started with.
+- Still without a record: a task hosted in the Console (`consoleTaskStart`) —
+  the runner skips the console shape so one run does not get two records, and
+  nothing writes the one it should have. Left open, named in the project log.
+- Guards in `test/test_launch_manifest.js`: the helper's shape, the bridge
+  writing before `consoleHost.start` and only for a fresh card, the composer
+  writing on the picked slot and handing the id to the card.
+
 ## 3.553.0 - Console session cards are fixed lines, and nothing jumps as a session grows (K-42) (2026-09-18)
 
 - **The defect.** A live card's header held the name, the engine, the route,

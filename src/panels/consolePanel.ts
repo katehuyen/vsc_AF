@@ -332,6 +332,10 @@ export interface ConsoleDeps {
      *  for the machine's own, '' for nothing stated. One translation, host-side,
      *  so the sentinel never reaches a page and no surface invents a name. */
     accountLabel?(stated: string | undefined): string;
+    /** ‼️ X-109 R2 — write this card's launch manifest; the id goes on the card. */
+    recordConsoleLaunch?(o: {
+        agentId: string; agentName: string; cwd: string; options: LaunchOptions; projectId?: string
+    }): string | undefined;
     /**
      * ‼️ WHICH SIGN-IN A RECORDED SESSION ACTUALLY RAN UNDER.
      *
@@ -2051,9 +2055,17 @@ export class ConsolePanel {
                     void vscode.window.showWarningMessage(`Agent Farm: ${pick.refusal}`);
                     return;
                 }
+                // ‼️ X-109 R2 — the manifest, written before the process starts and
+                // on the SLOT that really runs, so a resume can pin this card.
+                const launchId = this.deps.recordConsoleLaunch?.({
+                    agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+                    options: { ...started, account: pick.id || undefined },
+                    ...(this.composerProject ? { projectId: this.composerProject } : {})
+                });
                 this.selected = host.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     engine: engine as EngineId,
+                    ...(launchId ? { launchId } : {}),
                     model: started.model,
                     effort: started.effort,
                     permissionMode: started.permissionMode,

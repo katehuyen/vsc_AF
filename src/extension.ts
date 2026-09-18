@@ -11583,9 +11583,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 need(gate?.act !== 'refuse', gate ? describeResumeRoute(gate) : '');
                 const routeUsed: { providerId?: string; tier?: string; pinned?: boolean } =
                     gatedRoute(gate) ?? { providerId: route.providerId, tier: route.tier };
+                const superpowers = args.superpowers === undefined
+                    ? (resume ? undefined : superpowersOnFor(agent.name))
+                    : args.superpowers === true;
+                // X-109 R2 — a FRESH card gets its manifest here; a resume keeps the
+                // one its conversation was started with (the gate reads that).
+                const launchId = resume ? undefined : recordConsoleCard({
+                    agentId: agent.id, agentName: agent.name, cwd: agent.dir,
+                    options: {
+                        engine: engine as EngineId,
+                        model: optStr(args, 'model') || d.model,
+                        effort: optStr(args, 'effort') || d.effort,
+                        permissionMode: optStr(args, 'permissionMode') || d.permissionMode,
+                        ...(routeUsed.providerId ? { providerId: routeUsed.providerId } : {}),
+                        ...(routeUsed.tier ? { tier: routeUsed.tier } : {}),
+                        ...(account ? { account } : {}),
+                        superpowers: superpowers === true
+                    },
+                    ...(projectId ? { projectId } : {})
+                });
                 const id = consoleHost.start({
                     agentId: agent.id, agentName: agent.name, cwd: agent.dir,
                     engine: engine as EngineId,
+                    ...(launchId ? { launchId } : {}),
                     ...(account ? { account } : {}),
                     model: gate?.model || optStr(args, 'model') || d.model,
                     effort: optStr(args, 'effort') || d.effort,
@@ -11600,9 +11620,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // fresh session takes the agent's own default and a resume
                     // takes whatever the card it is retaking was started with;
                     // `false` is a decision and turns it off either way.
-                    superpowers: args.superpowers === undefined
-                        ? (resume ? undefined : superpowersOnFor(agent.name))
-                        : args.superpowers === true,
+                    superpowers,
                     firstPrompt: optStr(args, 'prompt') || undefined
                 });
                 ConsolePanel.refreshIfOpen();
@@ -22698,6 +22716,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
 
     /**
+     * ‼️ X-109 R2 — THE MANIFEST FOR A CARD STARTED BY A DOOR OTHER THAN
+     * `startConsoleSession`: the composer's own Send and the bridge's fresh
+     * `console.start`. Neither wrote one, so every card they started read as
+     * `legacy` to the resume gate and could never be pinned to the route it
+     * ran on (measured 2026-09-18 on two cards started from the composer).
+     * Same resolution and same record as `startConsoleSession`'s own.
+     */
+    const recordConsoleCard = (o: {
+        agentId: string; agentName: string; cwd: string; options: LaunchOptions; projectId?: string
+    }): string | undefined => {
+        const engine = engineOf(o.options.engine).id;
+        const resolved = resolveLaunchRoute(o.agentId, engine, {
+            providerId: o.options.providerId, tier: o.options.tier
+        });
+        return resolved ? recordLaunch({
+            engine,
+            identity: resolved.identity,
+            options: o.options,
+            agentId: o.agentId,
+            agentName: o.agentName,
+            ...(o.projectId ? { projectId: o.projectId } : {}),
+            mechanism: 'session',
+            cwd: o.cwd,
+            surface: 'console',
+            superpowers: o.options.superpowers === true
+        }) : undefined;
+    };
+
+    /**
      * ‼️ X-102 — AND THE RUNNER'S HALF OF IT, filled in here because this is
      * where the store and the resolver both exist (see the dep, far above).
      *
@@ -26277,6 +26324,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         accountAxis: (engine: string) => canIsolateAccounts(engine),
         // …and its name, resolved once here so `@machine` never reaches a page.
         accountLabel: (stated: string | undefined) => statedAccountLabel(stated, storedAccounts()),
+        // X-109 R2 — the composer's Send writes the same manifest the other doors do
+        recordConsoleLaunch: recordConsoleCard,
         // ‼️ the ONE reader (`sessionAccountOf`), reaching the shelf's
         // resume door. Called lazily on purpose: it is declared further down this
         // activation and only ever runs after a click.
