@@ -71,6 +71,14 @@ export interface AccountSpendRow {
     unpriced: number;
     /** Sessions that could not be placed in the window by day (see the header). */
     unsplit: number;
+    /**
+     * X-112 — sessions that went through a route OTHER than this sign-in's
+     * plan (Kimi, MiniMax, an API key…). They are counted on the sign-in
+     * because its manifest sealed them, but their ⚖ tokens never touched its
+     * five-hour window and their dollar figure is not that route's bill — so
+     * neither is added to the figures above. A count, never a silence.
+     */
+    offPlan: number;
     lastTs: number;
 }
 
@@ -93,7 +101,7 @@ const UNATTRIBUTED = '';
 function blank(account: string, label: string): AccountSpendRow {
     return {
         account, label, engines: [],
-        cost: 0, wTokens: 0, sessions: 0, unpriced: 0, unsplit: 0, lastTs: 0
+        cost: 0, wTokens: 0, sessions: 0, unpriced: 0, unsplit: 0, offPlan: 0, lastTs: 0
     };
 }
 
@@ -112,7 +120,18 @@ export function spendByAccount(
     sessions: readonly SpendSession[],
     accountOf: (s: SpendSession) => SpendAccount | undefined,
     window: SpendWindow = {},
-    pricedEngine: (engine: string) => boolean = () => true
+    pricedEngine: (engine: string) => boolean = () => true,
+    /**
+     * X-112 — what this session's figures MEAN, from the same manifest the
+     * account came from (`billingOf` over the declared route). Absent = every
+     * session is on its sign-in's plan, which is what a test wants and what
+     * every run was assumed to be before routes existed.
+     */
+    billingOf: (s: SpendSession) => {
+        mode: 'plan' | 'api' | 'third-party' | 'engine' | 'unknown';
+        planWindow: boolean;
+        cost: 'engine-reported' | 'estimate' | 'none';
+    } | undefined = () => undefined
 ): AccountSpendReport {
     const byAccount = new Map<string, AccountSpendRow>();
     const unattributed = blank(UNATTRIBUTED, 'not attributed');
@@ -157,6 +176,20 @@ export function spendByAccount(
         if (!row.engines.includes(engine)) { row.engines.push(engine); }
         row.lastTs = Math.max(row.lastTs, s.lastTs);
         if (unsplit) { row.unsplit++; continue; }
+        // ‼️ X-112 — A ROUTE THAT IS NOT THE PLAN FILLS NO WINDOW AND STATES NO
+        // BILL. The session is still THIS sign-in's (its manifest sealed it
+        // there), so it is counted; what is refused is adding tokens the plan
+        // never saw to the plan's figure, and adding Claude's Anthropic-tariff
+        // arithmetic to a column that reads as an invoice. Only a Claude ROUTE
+        // is off-plan here: another engine on its own sign-in keeps its own
+        // weighting, as it always has — that row's ⚖ is that engine's.
+        const billing = billingOf(s);
+        if (billing && !billing.planWindow && (billing.mode === 'third-party' || billing.mode === 'api')) {
+            row.offPlan++;
+            row.sessions++;
+            if (billing.cost !== 'none') { row.cost += cost; }
+            continue;
+        }
         row.cost += cost;
         row.wTokens += wTokens;
         row.sessions++;

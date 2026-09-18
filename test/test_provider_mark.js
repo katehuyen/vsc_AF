@@ -184,6 +184,26 @@ const P = sandbox.window.AFProvider;
         /shape: profile\?\.providerId \|\| id,/.test(ext));
 }
 
+// ---------- X-112: who is billed, in the host's own words ----------
+{
+    // The rule lives in src/core/billing.ts and travels on the identity; the
+    // panel PRINTS it and never derives it, so the spend card and the row
+    // cannot disagree about one run.
+    const kimi = {
+        providerId: 'kimi', providerLabel: 'Kimi (work)', binding: 'declared', proof: 'matched',
+        reportedProviderIds: ['kimi'],
+        billing: { mode: 'third-party', planWindow: false, cost: 'none', currency: '',
+            why: 'Kimi (work) — NOT on the Claude plan window.' }
+    };
+    ok('‼️ the panel ends with the billing line the host worded',
+        P.tipLines(kimi).filter(Boolean).pop() === 'Billing: Kimi (work) — NOT on the Claude plan window.');
+    const legacy = { providerId: '', binding: 'legacy', billing: { mode: 'plan', planWindow: true, cost: 'estimate', currency: 'USD', why: 'the Claude plan.' } };
+    ok('…on a run with no route too — a legacy run is on the plan and says so',
+        P.tipLines(legacy).some(l => l === 'Billing: the Claude plan.'));
+    ok('…and an identity from an older host, with no billing, draws no empty line',
+        !P.tipLines({ providerId: 'kimi', binding: 'declared' }).some(l => /^Billing:/.test(l)));
+}
+
 // ---------- and it ships on every page ----------
 {
     const { SHARED, matchesShell } = require('./lib_shared_media');

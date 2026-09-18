@@ -93,7 +93,13 @@ const data = (o) => {
             requestedModelRef: 'kimi-k2-thinking',
             reportedProviderIds: ['kimi'], reportedModels: ['kimi-k2-thinking'],
             proof: 'matched', multiProvider: false, turnScope: false,
-            agreement: 'matched', binding: 'declared'
+            agreement: 'matched', binding: 'declared',
+            // X-112 — and who is billed, as the host words it (src/core/billing.ts):
+            // the panel prints this line and never derives it.
+            billing: {
+                mode: 'third-party', planWindow: false, cost: 'none', currency: '',
+                why: 'Kimi (work) — a third-party endpoint behind the Claude CLI. ⚖ NOT on the Claude plan window: these tokens never touched the sign-in’s five-hour limit. Any dollar figure beside this run is Claude’s own arithmetic at the ANTHROPIC tariff, not this route’s bill — no tariff is known for it, so none is stated.'
+            }
         },
         title: 'S-64 — baglam disiplini sinyali',
         pinned: false,

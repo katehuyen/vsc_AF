@@ -133,6 +133,16 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
             ok(`${page}: the "N providers" chip is whole — it is the widest case`,
                 !!many && !many.cut);
         }
+        // X-112 — the viewer's chip panel ends with the billing line the host
+        // worded: the one sentence that says whether ⚖ is on the plan window.
+        if (page === 'sessionviewer') {
+            const BILL = "(()=>{const w=document.querySelector('.af-prov');const tip=w&&w.closest('.af-tipw');"
+                + "const t=tip?tip.textContent:'';return {has:/Billing: Kimi \\(work\\)/.test(t),window:/NOT on the Claude plan window/.test(t)};})()";
+            let bill;
+            try { bill = JSON.parse(node([path.join('test', 'measure_page.js'), page, BILL])); } catch { bill = null; }
+            ok('‼️ sessionviewer: the chip\'s panel says who is billed and that ⚖ is NOT on the plan window',
+                !!bill && bill.has && bill.window);
+        }
     }
 }
 

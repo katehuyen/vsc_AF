@@ -202,6 +202,7 @@ import {
     AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
 } from './core/accountSpend';
 import { describeDrift, runDrift, runIdentity, RunIdentity, turnRuntimes } from './core/turnRuntime';
+import { billingOf } from './core/billing';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -19279,7 +19280,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             window,
             // X-19 — an engine that publishes neither price nor tokens has no
             // dollars to state, and its 0 must not read as a free run.
-            (engine) => engineOf(engine).costSource !== 'none');
+            (engine) => engineOf(engine).costSource !== 'none',
+            // X-112 — and what each run's figures MEAN, from the same manifest
+            // the account came from: a run the sign-in sealed onto Kimi is the
+            // sign-in's run, but its tokens never filled the plan window and
+            // Claude's dollar figure for it is not Kimi's bill.
+            s => {
+                const m = at(s as { launchId?: string });
+                if (!m) { return undefined; }
+                return billingOf({
+                    engine: m.identity.engine || s.source || 'claude',
+                    providerId: m.identity.providerId, providerLabel: m.identity.providerLabel,
+                    origin: m.identity.origin, binding: 'declared'
+                });
+            });
     };
     let spendMemo: { at: number; rows: Map<string, AccountSpendRow> } | undefined;
     const accountSpendToday = (): Map<string, AccountSpendRow> => {

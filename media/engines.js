@@ -570,6 +570,18 @@
                         + 'an engine that writes no per-day figures, so ' + (sp.unsplit === 1 ? 'it is' : 'they are')
                         + ' left out of today rather than cut by a ratio nobody measured.'
                         : '',
+                    // X-112 — a run this sign-in sealed onto Kimi, MiniMax or an
+                    // API key is its run, but its tokens never touched the plan
+                    // window and Claude's dollar figure for it is not that
+                    // route's bill: both stay out of the figures, and the count
+                    // says so rather than the line quietly reading small.
+                    sp.offPlan
+                        ? sp.offPlan + ' run' + (sp.offPlan === 1 ? '' : 's') + ' went through a route other '
+                        + 'than this plan (Kimi, MiniMax, an API key) — ' + (sp.offPlan === 1 ? 'its' : 'their')
+                        + ' ⚖ tokens never touched this window and the dollar figure Claude wrote for '
+                        + (sp.offPlan === 1 ? 'it' : 'them') + ' is at the Anthropic tariff, not that route’s bill, '
+                        + 'so neither is in the figures above.'
+                        : '',
                     T.GAP,
                     'This is SPEND. The bar above is the PLAN WINDOW. They move together and they '
                     + 'are not the same measure: a plan can be most of the way gone on work that '

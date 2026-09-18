@@ -67,9 +67,11 @@ function data() {
             from: dayKey(NOW - 29 * DAY), to: dayKey(NOW),
             rows: [
                 // The heavy one, fully priced — the row every other one is read against.
+                // X-112 — four of its runs went through Kimi: still its runs,
+                // off its window and its bill, and the Notes column says so.
                 spendRow({
                     account: 'work-1', label: 'work@studio', engines: ['claude'],
-                    cost: 41.882, wTokens: 18_400_000, sessions: 63
+                    cost: 41.882, wTokens: 18_400_000, sessions: 63, offPlan: 4
                 }),
                 // Light, and one of its runs was on an engine with no price: the
                 // money figure is real AND short, which the Notes column says.

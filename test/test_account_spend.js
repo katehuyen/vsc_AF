@@ -122,5 +122,43 @@ const from = (map) => (s) => map[s.sessionId]
     ok('the heaviest sign-in is first', r.rows.map(x => x.account).join() === 'big,small');
 }
 
+// ------------------------------------------ X-112: a route that is not the plan
+{
+    // Three runs the same sign-in sealed: one on its plan, one through Kimi,
+    // one on an Anthropic API key. Kimi's tokens never touched the plan window
+    // and Claude's dollar figure for it is at the Anthropic tariff — not a
+    // bill; the key's tokens are on no window either, but its dollars ARE the
+    // bill. Every one of them is still this sign-in's run.
+    const rows = [
+        session({ sessionId: 'plan', cost: 2, wTokens: 200, daily: { [TODAY]: { cost: 2, wTokens: 200 } } }),
+        session({ sessionId: 'kimi', cost: 5, wTokens: 500, daily: { [TODAY]: { cost: 5, wTokens: 500 } } }),
+        session({ sessionId: 'key', cost: 3, wTokens: 300, daily: { [TODAY]: { cost: 3, wTokens: 300 } } })
+    ];
+    const billing = {
+        plan: { mode: 'plan', planWindow: true, cost: 'estimate' },
+        kimi: { mode: 'third-party', planWindow: false, cost: 'none' },
+        key: { mode: 'api', planWindow: false, cost: 'engine-reported' }
+    };
+    const r = spendByAccount(rows, from({ plan: 'work', kimi: 'work', key: 'work' }), todayWindow(NOW),
+        () => true, s => billing[s.sessionId]);
+    const w = r.rows[0];
+    ok('‼️ a Kimi run\'s ⚖ tokens are NOT on the plan window, and neither are a key\'s',
+        w.wTokens === 200);
+    ok('‼️ Claude\'s Anthropic-tariff figure for the Kimi run is not added as a bill; the key\'s bill is',
+        w.cost === 5);
+    ok('…all three are still the sign-in\'s runs, and the two off-plan ones are counted as such',
+        w.sessions === 3 && w.offPlan === 2);
+    ok('…and a Codex run on its own sign-in keeps its own weighting — it is not "off-plan"',
+        (() => {
+            const c = spendByAccount([session({ sessionId: 'cx', source: 'codex', cost: 1, wTokens: 90, daily: { [TODAY]: { cost: 1, wTokens: 90 } } })],
+                from({ cx: 'gpt' }), todayWindow(NOW), () => true,
+                () => ({ mode: 'engine', planWindow: false, cost: 'estimate' }));
+            return c.rows[0].wTokens === 90 && c.rows[0].offPlan === 0;
+        })());
+    const plain = spendByAccount(rows, from({ plan: 'work', kimi: 'work', key: 'work' }), todayWindow(NOW));
+    ok('without a billing reader every run is on its plan, as before routes existed',
+        plain.rows[0].wTokens === 1000 && plain.rows[0].offPlan === 0);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) { process.exitCode = 1; }

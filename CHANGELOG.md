@@ -2,6 +2,37 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.559.0 - a run through Kimi or MiniMax fills no Claude plan window, and its dollar figure is not that route's bill (X-112, part 1) (2026-09-18)
+
+- **The rule, stated once.** `src/core/billing.ts` — `billingOf(route, engine)`
+  answers who is billed and what the figures mean: the Claude plan (⚖ on the
+  sign-in's five-hour window, $ an estimate at API rates), an Anthropic API key
+  ($ is the bill, no window), a third-party endpoint behind the Claude CLI —
+  Kimi, MiniMax, a custom route — (⚖ NOT on the window; Claude's `total_cost_usd`
+  is arithmetic at the Anthropic tariff, not that route's invoice, and no
+  tariff is known, so no figure is stated), another engine (its own contract),
+  or unknown. Derived from the declared route, never from a model name.
+- **It travels on the identity.** `RunIdentity.billing` is filled by
+  `runIdentity`, so every surface that carries a provider chip carries the
+  same answer, and the chip's panel ends with `Billing: …` in the host's own
+  words — Console, Sessions, Turns, viewer, Live, Tasks, Missions at once.
+- **The spend-by-sign-in figures refuse the wrong tokens.** `spendByAccount`
+  takes a billing reader off the same manifest the account came from: a run
+  the sign-in sealed onto Kimi is still its run and is counted, but its ⚖
+  tokens are not added to the plan figure and Claude's dollar figure for it
+  is not added as a bill; an API-key run adds its bill and no tokens. The
+  account card and the analytics table carry an `off-plan` count that says
+  so rather than reading quietly small. Another engine on its own sign-in
+  keeps its own weighting — that row's ⚖ is that engine's.
+- Tests: `test/test_billing.js` (the rule, and that a reported model name
+  alone never moves a run off the plan), `test_account_spend.js` (the off-plan
+  case), `test_provider_mark.js` (the panel prints the host's line, never
+  derives one), the viewer measured for the line.
+- Still to come in X-112: suppressing/marking the ⚖ figure itself on off-plan
+  rows, OpenCode engine-reported cost kept with its provider, a guard against
+  summing figures of different currencies, and the cost tooltips naming their
+  source on every page.
+
 ## 3.558.0 - the Live card, the run row and the delegation row say which provider served them (X-110, part 3 — closes) (2026-09-18)
 
 - **The last three surfaces.** A Live Timeline card, a run on the Tasks board

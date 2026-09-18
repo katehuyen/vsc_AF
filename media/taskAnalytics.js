@@ -183,6 +183,11 @@
             if (r.unsplit) {
                 notes.push(`<span title="These crossed midnight on an engine that writes no per-day figures, so they are left out of the window rather than sliced by a ratio nobody measured.">${r.unsplit} not placed</span>`);
             }
+            // X-112 — sealed on this sign-in, served by another route: not on
+            // its plan window, and Claude's dollar figure is not that route's bill.
+            if (r.offPlan) {
+                notes.push(`<span title="These went through a route other than this plan (Kimi, MiniMax, an API key). Their ⚖ tokens never touched the sign-in's five-hour window, and the dollar figure Claude wrote for them is at the Anthropic tariff rather than that route's bill — so neither is in the columns.">${r.offPlan} off-plan</span>`);
+            }
             return `<tr${none ? ' class="muted"' : ''}>
                 <td><b>${C.esc(r.label || r.account || 'not attributed')}</b>${none
                     ? '<div class="muted small" title="These runs carry no launch manifest, so no sign-in can be named for them without inventing one. Sessions started outside Agent Farm are the ordinary case.">no manifest — this farm did not start them</div>'

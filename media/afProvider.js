@@ -168,6 +168,19 @@
      * `AFTip.lines`, which is how a line that would restate the one above it
      * simply is not there.
      */
+    /**
+     * X-112 — WHO IS BILLED, in one line the host already worded. The rule
+     * lives in `src/core/billing.ts` and travels on the identity as
+     * `billing`; this page prints it and never derives it — the sentence that
+     * says "these tokens never touched the plan window" must be the same one
+     * on every surface, or the spend card and the row will contradict each
+     * other about one run.
+     */
+    function billingLine(I) {
+        const b = I && I.billing;
+        return b && b.why ? 'Billing: ' + b.why : '';
+    }
+
     function tipLines(v) {
         const I = normalize(v);
         const rep = (I.reportedProviderIds || []).filter(Boolean);
@@ -175,7 +188,8 @@
             return [
                 'Route: ' + (BINDING[I.binding] || I.binding),
                 rep.length ? 'Answered by: ' + rep.map(label).join(', ') : '',
-                I.requestedModelRef ? 'Requested: ' + I.requestedModelRef : ''
+                I.requestedModelRef ? 'Requested: ' + I.requestedModelRef : '',
+                billingLine(I)
             ];
         }
         const declared = label(I);
@@ -197,7 +211,8 @@
                 + ' — the turns each ran on the one reported for them' : '',
             PROOF[I.proof] ? 'How we know: ' + PROOF[I.proof] : '',
             I.requestedModelRef ? 'Requested: ' + I.requestedModelRef : '',
-            (I.reportedModels || []).length ? 'Answered with: ' + I.reportedModels.join(', ') : ''
+            (I.reportedModels || []).length ? 'Answered with: ' + I.reportedModels.join(', ') : '',
+            billingLine(I)
         ];
     }
 

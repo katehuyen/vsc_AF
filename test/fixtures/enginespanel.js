@@ -197,7 +197,10 @@ const data = () => {
                 // and a mixed day (codex-spare). The line's wording differs in
                 // every one of them, and the smallest is the one the user
                 // usually gets.
-                spentToday: { cost: 4.312, wTokens: 1842000, sessions: 7, unpriced: 0, unsplit: 0 },
+                // X-112 — two of the seven went through Kimi: sealed on this
+                // sign-in, but their ⚖ never touched its window and Claude's
+                // dollar figure for them is not Kimi's bill. The panel says so.
+                spentToday: { cost: 4.312, wTokens: 1842000, sessions: 7, unpriced: 0, unsplit: 0, offPlan: 2 },
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/work-1'
             },
             {

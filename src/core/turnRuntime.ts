@@ -30,6 +30,7 @@
  */
 
 import { LaunchManifest } from './launchManifest';
+import { BillingIdentity, billingOf } from './billing';
 import {
     hasProviderConflict, ProviderIdentity, proofOf, scopeAllowsTurnChange, TurnRuntimeIdentity,
     turnIdentity, unknownIdentity
@@ -353,6 +354,13 @@ export interface RunIdentity {
      *                means somebody should go and look.
      */
     binding: 'declared' | 'legacy' | 'external' | 'unknown';
+    /**
+     * X-112 — WHO IS BILLED, AND WHAT THE FIGURES MEAN. Derived here, once,
+     * from the declared route and the engine (`billingOf`), so every surface
+     * that carries the identity carries the same answer to "is ⚖ on the plan
+     * window" and "is $ a bill" — and none derives it from a model name.
+     */
+    billing: BillingIdentity;
 }
 
 export function runIdentity(
@@ -390,6 +398,11 @@ export function runIdentity(
         multiProvider: drift.multiProvider,
         turnScope: drift.turnScope,
         agreement: drift.agreement,
-        binding
+        binding,
+        billing: billingOf({
+            engine: id.engine || str(engine) || 'claude',
+            providerId: str(id.providerId), providerLabel: str(id.providerLabel),
+            origin: binding === 'external' ? 'external' : id.origin, binding
+        })
     };
 }
