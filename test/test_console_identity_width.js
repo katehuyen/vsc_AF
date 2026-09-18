@@ -101,13 +101,20 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
 
     // …and the instance this was written for, named: every session card shows
     // its whole agent name and its whole id.
-    const CARDS = "(()=>{const out=[];document.querySelectorAll('.srow .n').forEach(e=>{"
-        + "const nm=e.querySelector('.nm'),sid=e.querySelector('.sid');if(!nm)return;"
-        + "const cut=[];const w=(x)=>Math.round(x.getBoundingClientRect().width);"
+    // ‼️ K-42 (round 2) — a resume card's header `.n` is its TITLE, and the
+    // title is the half that ellipsizes by design; its identity (who + id) is
+    // on the line under it. So the header check reads live cards, and the
+    // resume cards are held to the same rule on the line their identity is on.
+    const CARDS = "(()=>{const out=[];let rows=0;const w=(x)=>Math.round(x.getBoundingClientRect().width);"
+        + "const judge=(nm,sid)=>{const cut=[];"
         + "if(w(nm)<nm.scrollWidth-1){cut.push('name '+w(nm)+'/'+nm.scrollWidth);}"
         + "if(sid&&w(sid)<sid.scrollWidth-1){cut.push('id '+w(sid)+'/'+sid.scrollWidth);}"
-        + "if(cut.length){out.push((nm.textContent||'').trim()+': '+cut.join(' · '));}});"
-        + "return {rows:document.querySelectorAll('.srow .n').length,cut:out};})()";
+        + "if(cut.length){out.push((nm.textContent||'').trim()+': '+cut.join(' · '));}};"
+        + "document.querySelectorAll('.srow:not([data-resume]) .n').forEach(e=>{"
+        + "const nm=e.querySelector('.nm'),sid=e.querySelector('.sid');if(!nm)return;rows++;judge(nm,sid);});"
+        + "document.querySelectorAll('.srow[data-resume] .m').forEach(e=>{"
+        + "const nm=e.querySelector('.nm'),sid=e.querySelector('.sid');if(!nm)return;rows++;judge(nm,sid);});"
+        + "return {rows,cut:out};})()";
     let cards;
     try { cards = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', CARDS])); } catch { cards = null; }
     ok('there are session cards to measure', cards && cards.rows > 3);
@@ -147,19 +154,40 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     // ‼️ K-42 — measured: every header is ONE line, its badge group sits on that
     // line and inside its card. A string test cannot see a pill that fell to a
     // second line or ran past the card's edge.
-    const HEAD = "(()=>{const out=[];let n=0;document.querySelectorAll('.srow').forEach(row=>{"
+    // ‼️ K-42 (round 2) — AND THE SHELF IS NOT A ZERO-WIDTH BOX WITH THE PILL
+    // OUTSIDE IT. On every resume card with a long title the shelf measured
+    // 0px: its own right edge sat inside the card, so the check above passed,
+    // while the engine pill it holds drew past the card's edge. The pill is
+    // measured too, and a shelf narrower than one character is a shelf that
+    // has stopped holding anything.
+    const HEAD = "(()=>{const out=[];let n=0,rs=0;document.querySelectorAll('.srow').forEach(row=>{"
         + "const h=row.querySelector(':scope > .h'),hb=h&&h.querySelector(':scope > .hb');if(!h||!hb)return;n++;"
+        + "if(row.hasAttribute('data-resume'))rs++;"
         + "const rh=h.getBoundingClientRect(),rb=hb.getBoundingClientRect(),rr=row.getBoundingClientRect();"
-        + "if(rh.height>22||rb.top<rh.top-1||rb.bottom>rh.bottom+1||rb.right>rr.right+1){"
-        + "out.push((h.textContent||'').trim().slice(0,30)+' h='+Math.round(rh.height)+' right='+Math.round(rr.right-rb.right));}});"
-        + "return {n,bad:out};})()";
+        + "const pill=hb.querySelector('.af-eng'),rp=pill?pill.getBoundingClientRect():rb;"
+        + "if(rh.height>22||rb.top<rh.top-1||rb.bottom>rh.bottom+1||rb.right>rr.right+1||rb.width<8||rp.right>rr.right+1||rp.left<rb.left-1){"
+        + "out.push((h.textContent||'').trim().slice(0,30)+' h='+Math.round(rh.height)+' shelf='+Math.round(rb.width)+' right='+Math.round(rr.right-rb.right)+' pillRight='+Math.round(rr.right-rp.right));}});"
+        + "return {n,rs,bad:out};})()";
     let hd;
     try { hd = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', HEAD])); } catch { hd = null; }
     ok('there are card headers with a badge group to measure', hd && hd.n > 3);
-    ok('‼️ K-42 — EVERY CARD HEADER IS ONE LINE, ITS BADGES ON IT AND INSIDE THE CARD'
+    ok('…and resume cards are among them, with a title longer than the card'
+        + (hd ? ` (${hd.rs} resume rows)` : ''), hd && hd.rs >= 3);
+    ok('‼️ K-42 — EVERY CARD HEADER IS ONE LINE, ITS BADGES ON IT AND INSIDE THE CARD, THE SHELF NEVER SQUEEZED TO NOTHING'
         + (hd && hd.bad.length ? ' — ' + hd.bad.slice(0, 4).join(' · ') : '')
         + (hd ? ` (${hd.n} headers)` : ''),
         hd && hd.bad.length === 0);
+    // …and the pills line up: one right edge for every resume card, whatever
+    // its title's length — "hepsi aynı hizada" is a number, not an impression.
+    const EDGE = "(()=>{const s=new Set();document.querySelectorAll('.srow[data-resume]').forEach(row=>{"
+        + "const p=row.querySelector(':scope > .h > .hb .af-eng');if(!p)return;"
+        + "s.add(Math.round(row.getBoundingClientRect().right-p.getBoundingClientRect().right));});"
+        + "return [...s];})()";
+    let edge;
+    try { edge = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', EDGE])); } catch { edge = null; }
+    ok('‼️ K-42 — EVERY RESUME CARD PINS ITS ENGINE PILL TO THE SAME RIGHT EDGE'
+        + (edge ? ' (' + edge.join('/') + 'px from the card edge)' : ''),
+        Array.isArray(edge) && edge.length === 1 && edge[0] >= 0 && edge[0] <= 12);
     ok('‼️ THE ✕ IS INSIDE ITS CARD, AT THE RIGHT EDGE'
         + (x ? ' (' + JSON.stringify(x[0]) + ')' : ''),
         x && x.length > 0 && x.every(r => r.inside && r.gap >= 0 && r.gap <= 12));

@@ -48,10 +48,23 @@ function browser() {
 function main() {
     const args = process.argv.slice(2);
     const name = args[0];
-    const expr = args[1];
+    let expr = args[1];
     if (!name || !expr) {
-        console.log('usage: node test/measure_page.js <fixture> "<js expression>" [--width N] [--light]');
+        console.log('usage: node test/measure_page.js <fixture> "<js expression>|@file.js" [--width N] [--light]');
         return;
+    }
+    // ‼️ THE SHELL EATS THE EXPRESSION BEFORE THIS FILE SEES IT. A measurement
+    // is quotes, backticks and `>` by nature, and every shell on this machine
+    // rewrites some of them — so the expression may be NAMED instead of typed:
+    // `@path` reads it off the disk as UTF-8, byte for byte.
+    if (expr.startsWith('@')) {
+        const f = path.resolve(ROOT, expr.slice(1));
+        if (!fs.existsSync(f)) {
+            console.error(`no expression file at ${f}`);
+            process.exitCode = 1;
+            return;
+        }
+        expr = fs.readFileSync(f, 'utf8');
     }
     const wIdx = args.indexOf('--width');
     const width = wIdx >= 0 ? Number(args[wIdx + 1]) : 1400;

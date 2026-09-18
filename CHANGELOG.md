@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.557.0 - a resume card's engine pill is pinned to the card's edge, whatever its title's length (K-42, round 2) (2026-09-18)
+
+- **The defect, measured.** On every resume card with a long title the badge
+  shelf was squeezed to **0px** and the engine pill drew outside it, past the
+  card's right edge — the title had `min-width:0` on its shelf's account, so
+  the shelf, not the title, was the half that yielded. Round 1's guard could
+  not see it: the shelf's own right edge sat inside the card while the pill it
+  held did not, and no scene had ever drawn a resume card at all.
+- **The shelf's floor is its content, said as a grid.** A flex shelf cannot
+  state "the engine pill, plus four characters of the route": an
+  `overflow:hidden` child still hands its whole text to the parent's
+  min-content, so with a real minimum the route pill never yielded (measured
+  51px, the name cut to "goz…"). The shelf is a grid now — the engine column
+  is its content, every column after it is `minmax(4ch, max-content)` — so on
+  the busiest live card the route yields first and the name stays whole, and a
+  shelf with one pill has one column and sits on the card's edge.
+- The Console fixture has a resume scene (three titles: one that fits, one
+  that does not, a pinned one with no break in it beside the widest engine
+  pill). `test/test_console_identity_width.js` measures the pill as well as
+  the shelf, and that every resume card pins its pill to the SAME right edge.
+- `test/measure_page.js` takes its expression from a file (`@path`), so a
+  measurement is never typed through the shell's quoting.
+
 ## 3.556.0 - a session's own page says which provider served it, from the record the resume gate reads (X-110, part 2) (2026-09-18)
 
 - **The one screen with room for the whole story of a run** drew the engine

@@ -363,6 +363,48 @@ const data = () => ({
     resumeDefaultN: 15, resumeFiltered: false
 });
 
+/**
+ * ‼️ K-42 (round 2) — THE RESUME LIST HAD NEVER BEEN DRAWN IN ANY SCENE.
+ * `resumable` was `[]` everywhere, so the measured guard that holds "a card's
+ * badge sits on its header line and inside its card" was reading live cards
+ * only — and the defect the user reported is on the PASSIVE ones: a long title
+ * pushed the engine pill out through the right edge of the 250px column.
+ *
+ * The variable on these rows is the TITLE, so the scene carries its arities:
+ * one that fits, one that does not, and the worst case — a pinned title with
+ * no space in it to break at, beside the widest engine pill.
+ */
+const resumeRow = (o) => Object.assign({
+    sessionId: '019fe000-0000-0000-0000-000000000000', title: '', agentName: 'developer',
+    engine: 'claude', cwd: 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm', pinned: false,
+    ts: NOW - 3600000, cost: 0.12, color: '', tokens: 184000, wTokens: 151000,
+    contextTokens: 96000, contextWindowTokens: 1000000, contextSource: 'transcript-last-call',
+    firstPrompt: 'devir notunu okuyup kaldığın yerden devam et', startedAt: NOW - 5 * 3600000,
+    turns: 14, tools: 63, errors: 0, models: ['claude-opus-5'], tags: []
+}, o);
+
+const RESUME_ROWS = [
+    resumeRow({ sessionId: '019fe511-aa01-70f1-9c02-1a2b3c4d5e6f', title: 'kota raporu', turns: 3 }),
+    resumeRow({
+        sessionId: '019fe512-bb02-70f1-9c02-1a2b3c4d5e6f',
+        title: 'K-42 konsol sol panel oturum kartları sabit satır mimarisi ve rozet yerleşimi',
+        agentName: 'developer', engine: 'codex', color: '#3d8bfd'
+    }),
+    resumeRow({
+        sessionId: '019fe513-cc03-70f1-9c02-1a2b3c4d5e6f',
+        title: 'Sağlayıcı-kimliği-omurgası-çok-motorlu-rota-ve-hesap-çözünürlüğü-tek-parça-başlık',
+        agentName: 'gozcu', engine: 'opencode', pinned: true, tokens: 912000, wTokens: 740000,
+        contextTokens: 412000, turns: 41, tools: 210, errors: 2
+    })
+];
+
+/** The resume list open, with rows on it — the passive half of the card list. */
+const resumeData = () => Object.assign(data(), {
+    resumable: RESUME_ROWS, resumeTotal: 128,
+    resumeAgents: ['developer', 'gozcu', 'manager'],
+    owned: ['019fe511-aa01-70f1-9c02-1a2b3c4d5e6f']
+});
+
 /** The composer, with no session selected — the one place the engine PICKER is
  *  drawn, including the row that cannot be chosen. */
 const composerData = () => Object.assign(data(), {
@@ -720,6 +762,18 @@ module.exports = {
     data,
     variants: () => [
         { id: 'console', label: 'Console — two engines at once', data: data() },
+        /**
+         * ‼️ K-42 (round 2) — the passive cards, which no scene had ever drawn.
+         * The list is opened by the page's own state rather than by a press,
+         * because the press asks the HOST to compute the rows and this harness
+         * has no host to answer it.
+         */
+        {
+            id: 'console-resume',
+            label: 'Console — the resume list open: the longest title still leaves its engine pill pinned right',
+            data: resumeData(),
+            state: { afConsole: { showResume: true } }
+        },
         /**
          * ‼️ K-35 — THE COLOUR LABEL. Three cards, and the picture has to answer
          * all three states at once: a session with a colour, another with a

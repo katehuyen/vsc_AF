@@ -293,8 +293,20 @@
         .srow .h2 > .af-tipw.acw { flex:0 1 auto; min-width:0; display:block; overflow:hidden; }
         /* …and on line 1 the ROUTE yields before the name does: the shelf may
            shrink, only the route pill inside it gives way (its panel opens with
-           the whole value — MIRROR), and the engine pill never does. */
-        .srow .h > .hb { flex:0 100 auto; min-width:0; }
+           the whole value — MIRROR), and the engine pill never does.
+           ‼️ K-42 (round 2) — THE SHELF'S FLOOR IS ITS OWN CONTENT, never zero.
+           With min-width:0 a shelf that holds only the engine pill (every
+           resume card) was squeezed to 0px and the pill drew OUTSIDE it, past
+           the card's right edge — measured: badge 0px on every long title.
+           And a flex shelf cannot state the floor the comment above promises:
+           an overflow:hidden child still hands its WHOLE text to the parent's
+           min-content, so with min-width:auto the route pill never yielded at
+           all (51px, name cut to "goz…"). A grid track can say min and max
+           apart: the engine column is its content, every column after it is
+           minmax(4ch, its content) — and a shelf with one pill has one column,
+           so the pill sits on the card's edge with no empty track beside it. */
+        .srow .h > .hb { flex:0 100 auto; display:grid; grid-auto-flow:column;
+            grid-template-columns:auto; grid-auto-columns:minmax(4ch, max-content); }
         .srow .h > .hb > .af-tipw.rtw { flex:0 1 auto; min-width:4ch; display:block; overflow:hidden; }
         .srow .h > .hb .af-prov { display:block; overflow:hidden; text-overflow:ellipsis; }
         /* ‼️ K-13 — the identity line is two things, and only ONE of them may be
