@@ -1,4 +1,4 @@
-import { BridgeRegistry, optStr } from './bridge';
+import { BridgeRegistry, optNum, optStr } from './bridge';
 import { ENGINE_ENUM } from './consoleEngine';
 import { SessionInfo, SessionOrigin, sessionOrigin } from './sessions';
 
@@ -48,6 +48,9 @@ export interface TurnRow {
     tools: number;
     errors: number;
     models: string[];
+    /** ‼️ X-108 — provider(s) the engine itself named for this turn. Empty on
+     *  every engine that publishes none, which is Claude for ever. */
+    providerIds: string[];
     sidechain: boolean;
     /** Who started the session this turn belongs to — 'user' dialog or 'auto' run. */
     origin: SessionOrigin;
@@ -91,6 +94,7 @@ export function turnRowsFor(s: SessionInfo, active: boolean): TurnRow[] {
             tools: t.tools,
             errors: t.errors,
             models: t.models,
+            providerIds: t.providerIds ?? [],
             sidechain: s.isSidechain,
             origin,
             active,
@@ -123,7 +127,11 @@ export function registerTurnsOps(
             const agent = optStr(args, 'agent').toLowerCase();
             const engine = optStr(args, 'engine').toLowerCase();
             const origin = optStr(args, 'origin').toLowerCase();
-            const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 20;
+            // ‼️ B-25 — `optNum`, not a `typeof === 'number'` test. The CLI's
+            // `limit=50` shorthand and a hand-written arg both arrive as TEXT,
+            // and a type test drops them for the default without saying so —
+            // the same silence that queued four items at the bottom.
+            const limit = Math.max(1, Math.floor(optNum(args, 'limit', 20)) || 20);
             return buildTurnRows(deps.sessions(), deps.isActive)
                 .filter(r => !agent || r.agentName.toLowerCase() === agent)
                 // ‼️ The same axis the page filters on — an agent calling this op
@@ -137,7 +145,7 @@ export function registerTurnsOps(
                     label: r.label, ts: r.ts, origin: r.origin, tokens: r.tokens,
                     wTokens: Math.round(r.wTokens),
                     cost: Math.round(r.cost * 10000) / 10000,
-                    tools: r.tools, errors: r.errors, models: r.models
+                    tools: r.tools, errors: r.errors, models: r.models, providerIds: r.providerIds
                 }));
         }
     });

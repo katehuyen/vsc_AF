@@ -199,7 +199,7 @@ export function sessionRowPool(
         const m = manifests ? manifestOf(manifests, s) : undefined;
         if (!m) { return null; }
         const drift = runDrift(turnRuntimes(m, s.source ?? 'claude',
-            (s.turns ?? []).map(t => ({ n: t.n, models: t.models }))));
+            (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds }))));
         return {
             // The route, named the way `describeManifest` names it: a label when
             // one was injected, and "inherited route" when nothing was — which

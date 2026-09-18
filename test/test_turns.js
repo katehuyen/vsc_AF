@@ -242,6 +242,21 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
         all.result[1].label === 'fix the login bug please' && all.result[1].tokens === 170 && all.result[1].models[0] === 'claude-opus-4-8');
     const limited = await reg.dispatch('turns.list', { limit: 1 });
     ok('limit honored', limited.ok && limited.result.length === 1);
+    // ‼️ B-25 — AND HONOURED WHEN IT ARRIVES AS TEXT, which is how the CLI's
+    // `limit=1` shorthand and every hand-written arg get here. The op tested
+    // `typeof args.limit === 'number'` and silently fell back to 20 otherwise —
+    // the same shape that queued four items at the bottom under an ok response.
+    const limitedText = await reg.dispatch('turns.list', { limit: '1' });
+    ok('‼️ …and a limit written as text counts exactly the same',
+        limitedText.ok && limitedText.result.length === 1);
+    const junkLimit = await reg.dispatch('turns.list', { limit: 'lots' });
+    ok('…while a limit that is not a number falls back rather than returning none',
+        junkLimit.ok && junkLimit.result.length === 2);
+    // ‼️ X-108 — the reported provider rides the row. Empty here because this
+    // fixture is Claude, which publishes none and never will.
+    ok('‼️ X-108 — every row carries the provider the engine named',
+        all.result.every(r => Array.isArray(r.providerIds))
+        && all.result.every(r => r.providerIds.length === 0));
     const filtered = await reg.dispatch('turns.list', { agent: 'nobody' });
     ok('agent filter honored', filtered.ok && filtered.result.length === 0);
     ok('origin rides along on the op rows', all.result.every(r => r.origin === 'user'));

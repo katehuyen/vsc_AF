@@ -410,7 +410,15 @@ function turnBuilder(info: SessionInfo) {
     const model = (t: SessionTurn | undefined, m: string): void => {
         if (t && m && !t.models.includes(m)) { t.models.push(m); }
     };
-    return { open, now, touch, model };
+    // X-108 — the reported PROVIDER, recorded the same way the reported model
+    // is. Only an engine that publishes one ever calls this, so the field stays
+    // absent (not empty) on every engine that does not.
+    const provider = (t: SessionTurn | undefined, p: string | undefined): void => {
+        if (!t || !p) { return; }
+        if (!t.providerIds) { t.providerIds = []; }
+        if (!t.providerIds.includes(p)) { t.providerIds.push(p); }
+    };
+    return { open, now, touch, model, provider };
 }
 
 function parseCodexFile(file: string, resolveAgent: (cwd?: string) => { agentId?: string; agentName?: string },
@@ -1712,6 +1720,12 @@ function parseOpencodeFile(
         const open = turn.now();
         turn.touch(m.endTs || m.ts);
         turn.model(open, m.model || doc.model);
+        // ‼️ X-108 — the message's OWN provider first, the session's only as the
+        // fallback: a turn that switched provider is the one case this field
+        // exists for, and reading the session value over it would erase exactly
+        // that. The two are the halves of one name (`opencode/big-pickle`), so
+        // they are recorded off the same message or the pair means nothing.
+        turn.provider(open, m.providerId || doc.providerId);
         if (m.parts.some(p => p.kind === 'text' && p.text?.trim())) { info.assistantMsgs++; }
         for (const p of m.parts) {
             if (p.kind === 'text' && p.text?.trim()) { if (open) { open.steps++; } continue; }

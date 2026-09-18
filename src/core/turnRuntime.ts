@@ -31,7 +31,8 @@
 
 import { LaunchManifest } from './launchManifest';
 import {
-    hasProviderConflict, ProviderIdentity, TurnRuntimeIdentity, turnIdentity, unknownIdentity
+    hasProviderConflict, ProviderIdentity, scopeAllowsTurnChange, TurnRuntimeIdentity, turnIdentity,
+    unknownIdentity
 } from './providerIdentity';
 
 /**
@@ -208,6 +209,21 @@ export interface RunDrift {
     reportedModels: string[];
     /** Every provider the engine named. Empty on Claude for ever. */
     reportedProviderIds: string[];
+    /**
+     * ‼️ X-108 — MORE THAN ONE PROVIDER SERVED THIS RUN. A FACT, AND ON A
+     * TURN-SCOPED ENGINE NOT A FAULT.
+     *
+     * OpenCode documents changing provider at a turn boundary
+     * (`session/set_config_option`), so a run that names two is an ordinary
+     * multi-provider timeline there and a thing to go and look at on an engine
+     * whose scope is `session`. Which of the two it is, is `turnScope` below —
+     * asked of the SCOPE and never of the engine's name, so a sixth engine needs
+     * nothing added here.
+     */
+    multiProvider: boolean;
+    /** The declared scope permits the provider to differ from one turn to the
+     *  next. False on every legacy record, which is the safe answer. */
+    turnScope: boolean;
     /** Turn numbers where the reported half changed. Empty on a steady run. */
     changedAt: number[];
     /** ‼️ A provider was named that the launch did not declare. A real
@@ -250,6 +266,10 @@ export function runDrift(runtimes: readonly TurnRuntime[]): RunDrift {
         turns: rows.length,
         reportedModels: models,
         reportedProviderIds: providers,
+        multiProvider: providers.length > 1,
+        // Read off the run's own declared scope — the first row carries it, and
+        // every row of one run shares one manifest. No rows means no claim.
+        turnScope: scopeAllowsTurnChange(rows[0]?.identity.scope),
         changedAt,
         providerConflict: conflict,
         // A run with no turns has nothing to report — which is `nothing-reported`
@@ -270,6 +290,15 @@ export function describeDrift(d: RunDrift): string {
     const bits: string[] = [];
     if (d.providerConflict) {
         bits.push(`served by ${d.reportedProviderIds.join(', ')}, which the launch did not declare`);
+    }
+    // ‼️ X-108 — AND SAYING IT IS NOT THE SAME AS COMPLAINING ABOUT IT. On a
+    // turn-scoped engine several providers inside one run is the feature
+    // working; the line names the shape so a reader can see the timeline, and
+    // withholds the alarm that belongs only to a session-scoped run.
+    if (d.multiProvider) {
+        bits.push(d.turnScope
+            ? `${d.reportedProviderIds.length} providers across ${d.turns} turns — a turn-scoped run may change provider`
+            : `${d.reportedProviderIds.length} providers inside one session-scoped run`);
     }
     if (d.reportedModels.length > 1) {
         bits.push(`${d.reportedModels.length} models across ${d.turns} turns`

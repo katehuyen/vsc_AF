@@ -158,6 +158,17 @@ const EXPORT = {
     ok('the conversation\'s folder and project come with it',
         doc.directory === DIR && doc.projectId === '52088de5024b6df70ef5d4580dceb7ae22e324e3');
     ok('the model is the flat id, not the {id,providerID} object', doc.model === 'big-pickle');
+    // ‼️ X-108 — AND THE OTHER HALF OF THAT OBJECT IS NO LONGER THROWN AWAY.
+    // `id` alone forced every later reader to complete `big-pickle` back to
+    // `opencode/big-pickle` by guessing against the engine's published list
+    // (K-28) — and a model two providers both offer cannot be completed at all.
+    // The export states the provider; reading it is not a derivation.
+    ok('‼️ …and the provider half of that object is carried, not dropped',
+        doc.providerId === 'opencode');
+    ok('…on the user message, where the export nests it under `model`',
+        doc.messages[0].providerId === 'opencode');
+    ok('…and on the assistant message, where it is flat beside `modelID`',
+        doc.messages[1].providerId === 'opencode');
     ok('both turns and both answers are there', doc.messages.length === 4);
     ok('‼️ `info.tokens` is the CONVERSATION\'s cumulative spend — 6196 + 36 = 6232',
         doc.tokens.input === 6232 && doc.tokens.cacheRead === 10112);

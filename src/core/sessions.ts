@@ -104,6 +104,23 @@ export interface SessionTurn {
     /** Model(s) that served this turn — can change mid-session. */
     models: string[];
     /**
+     * ‼️ X-108 — PROVIDER(S) THE ENGINE ITSELF NAMED FOR THIS TURN.
+     *
+     * The REPORTED half of the run's identity, beside `models`, which is the
+     * reported half of the model question. It exists per turn because on
+     * OpenCode the provider legitimately changes at a turn boundary
+     * (`session/set_config_option`), so a session-level "the provider was X" is
+     * false the moment anybody uses that feature — and `turnRuntimes` cannot
+     * tell a multi-provider timeline from a conflict without it.
+     *
+     * ‼️ EMPTY ON CLAUDE FOR EVER, and that is a measured fact rather than a
+     * gap to fill in later (23 Aug 2026: two processes on two routes under one
+     * model name, and the transcript preserved neither). An engine that does not
+     * publish its provider says nothing here; the model name is never evidence
+     * of a route. Absent, never defaulted.
+     */
+    providerIds?: string[];
+    /**
      * ‼️ X-124 — THE PERMISSION MODE IN FORCE DURING THIS TURN.
      *
      * The session-level field is the LAST mode the whole transcript mentions,

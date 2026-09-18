@@ -38312,10 +38312,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'Returns {sessionId, engine, launchId (null when the session predates the manifest '
                 + 'or was started by hand outside a bound mechanism — an absence, not a default), '
                 + 'manifest (the whole record, or null), drift{turns, reportedModels, '
-                + 'reportedProviderIds, changedAt (turn numbers where what came back changed), '
-                + 'providerConflict, agreement}, note (one line, EMPTY on an ordinary run), '
-                + 'turns[{n, providerId, origin, reportedModels, reportedProviderIds, proof, '
-                + 'providerConflict, reportedChanged, agreement}]}. '
+                + 'reportedProviderIds, multiProvider, turnScope, changedAt (turn numbers where '
+                + 'what came back changed), providerConflict, agreement}, note (one line, EMPTY on '
+                + 'an ordinary run), turns[{n, providerId, origin, reportedModels, '
+                + 'reportedProviderIds, proof, providerConflict, reportedChanged, agreement}]}. '
+                + '‼️ `multiProvider` WITH `turnScope` IS NOT A FAULT — it is the shape of a '
+                + 'legitimate multi-provider timeline. OpenCode documents changing provider at a '
+                + 'turn boundary (session/set_config_option), so several providers across one '
+                + 'turn-scoped run is the feature working; the same two providers inside a '
+                + 'SESSION-scoped run is the thing to go and look at. Read the scope, never the '
+                + 'engine\'s name. '
                 + '‼️ READ `agreement` CAREFULLY — it has four states and only one of them is a '
                 + 'complaint. "matched" = something that served the turn is a name the launch asked '
                 + 'for (a second internal model — a compaction, a sub-agent — is normal and does not '
@@ -38338,8 +38344,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // onto the session; nothing here reads a route off the
                 // transcript, because no transcript carries one.
                 const manifest = manifestOf(launchManifests(), s);
+                // ‼️ X-108 — BOTH REPORTED HALVES TRAVEL, or `providerConflict`
+                // and `isMultiProvider` are structurally unable to fire: they
+                // read `reportedProviderIds`, and the index is the only place
+                // that could ever have supplied one.
                 const rows = turnRuntimes(manifest, engine,
-                    (s.turns ?? []).map(t => ({ n: t.n, models: t.models })));
+                    (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })));
                 const drift = runDrift(rows);
                 return {
                     sessionId,

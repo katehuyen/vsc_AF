@@ -223,6 +223,30 @@ const A = require(path.join(ROOT, 'out', 'core', 'providerAdapter.js'));
     const GUESS_FIELD = /provider\w*\s*(?:=(?!=)|:)[^;,\n&|]*\bmodel/i;
     // A model string split on a slash — `provider/model` taken apart by hand.
     const GUESS_SPLIT = /\bmodel\w*\s*\.\s*split\s*\(\s*['"`]\//;
+    /**
+     * ‼️ X-108 — READING THE PROVIDER THE ENGINE PUBLISHED IS THE OPPOSITE OF
+     * GUESSING IT, even though the two read alike on one line.
+     *
+     * OpenCode's export states the pair as `info.model = { id, providerID }`, so
+     * the honest read is `providerId: str(model.providerID)` — and `GUESS_FIELD`
+     * fires on it, because a `provider…:` is followed by the word `model`. The
+     * exemption is deliberately the narrowest shape that can be true: the
+     * right-hand side must BE the engine's own `providerID` field taken off a
+     * `model` object. A name split, a lookup table keyed by model, or anything
+     * else on that object is still caught — as the planted-violation checks
+     * below prove.
+     *
+     * ‼️ AND IT IS A STRIP, NOT A SKIP. Ignoring the whole LINE would let
+     * `providerId: model.providerID ? '' : model.id.split('/')[0]` through on
+     * the strength of its honest half — a hole the size of the rule. Only the
+     * published read is blanked out; whatever else the line does is still put in
+     * front of both expressions.
+     */
+    const PUBLISHED_FIELD = /\bmodel\w*\s*\.\s*providerI[Dd]\b/g;
+    const guesses = (l) => {
+        const rest = l.replace(PUBLISHED_FIELD, 'PUBLISHED');
+        return GUESS_FIELD.test(rest) || GUESS_SPLIT.test(rest);
+    };
 
     // ‼️ EVERY EXEMPTION IS A SENTENCE SOMEBODY HAD TO WRITE.
     const EXEMPT = [
@@ -245,7 +269,7 @@ const A = require(path.join(ROOT, 'out', 'core', 'providerAdapter.js'));
         if (rel === 'src/core/providerIdentity.ts' || rel === 'src/core/providerAdapter.ts') { continue; }
         fs.readFileSync(p, 'utf8').split(/\r?\n/).forEach((l, i) => {
             if (/^\s*(\/\/|\*|\/\*)/.test(l)) { return; } // prose is not behaviour
-            if (GUESS_FIELD.test(l) || GUESS_SPLIT.test(l)) { found.push({ rel, line: i + 1, text: l.trim() }); }
+            if (guesses(l)) { found.push({ rel, line: i + 1, text: l.trim() }); }
         });
     }
     const unexempt = found.filter(f => !exemptAt.has(f.rel));
@@ -258,6 +282,18 @@ const A = require(path.join(ROOT, 'out', 'core', 'providerAdapter.js'));
         found.some(f => f.rel === e.at)));
     ok('every exemption carries a reason somebody wrote',
         EXEMPT.every(e => typeof e.why === 'string' && e.why.length > 80));
+
+    // ‼️ X-108 — AND THE NARROWING IS MEASURED, or "the detector got relaxed"
+    // reads exactly like "the detector got correct". These lines never go near
+    // the tree; they go through the same expression the walk uses.
+    ok('‼️ the published-field strip lets the honest read through',
+        !guesses('            providerId: str(model.providerID),'));
+    ok('…and still catches a provider taken off the model NAME',
+        guesses("        const providerId = model.name.split('/')[0];"));
+    ok('…and a table keyed by the model',
+        guesses('    providerId: PROVIDER_BY_MODEL[model],'));
+    ok('‼️ …and a guess standing NEXT TO the honest read on one line',
+        guesses("    providerId: model.providerID ? '' : model.id.split('/')[0],"));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

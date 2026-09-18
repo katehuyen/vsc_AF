@@ -156,6 +156,38 @@ const CLAUDE_ROUTE = {
     ok('and the line says which one the launch did not declare',
         /did not declare/.test(T.describeDrift(d)));
 
+    // ‼️ X-108 — SEVERAL PROVIDERS IN ONE RUN IS A SHAPE, AND ON A TURN-SCOPED
+    // ENGINE IT IS THE FEATURE WORKING. OpenCode documents changing provider at
+    // a turn boundary (`session/set_config_option`), so the run is a legitimate
+    // multi-provider timeline; the alarm belongs only to a run whose scope says
+    // the provider was fixed for its whole length.
+    ok('the run says more than one provider served it', d.multiProvider === true);
+    ok('…and that this run was allowed to change one', d.turnScope === true);
+    ok('…so the line describes the timeline rather than accusing it',
+        /a turn-scoped run may change provider/.test(T.describeDrift(d)));
+
+    // The same two providers under a manifest that says the provider was fixed
+    // for the session. Same facts, different meaning — and the meaning is read
+    // off the SCOPE, never off the engine's name.
+    const fixed = T.runDrift(T.turnRuntimes(manifest({
+        engine: 'opencode', providerId: 'opencode', origin: 'engine-native', scope: 'session',
+        requestedModelRef: 'big-pickle', proof: 'launch-declared'
+    }, { model: 'big-pickle' }), 'opencode', [
+        { n: 1, models: ['big-pickle'], providerIds: ['opencode'] },
+        { n: 2, models: ['claude-opus-5'], providerIds: ['anthropic'] }
+    ]));
+    ok('‼️ a session-scoped run with two providers is NOT called a timeline',
+        fixed.multiProvider === true && fixed.turnScope === false
+        && /two|2 providers inside one session-scoped run/.test(T.describeDrift(fixed)));
+
+    // And one provider, on a turn-scoped run, is not a timeline either — the
+    // field says "more than one", not "the engine could have".
+    const single = T.runDrift(T.turnRuntimes(m, 'opencode',
+        [{ n: 1, models: ['big-pickle'], providerIds: ['opencode'] }]));
+    ok('…while one provider is no timeline at all, however wide the scope',
+        single.multiProvider === false && single.turnScope === true
+        && !/providers across/.test(T.describeDrift(single)));
+
     // ‼️ ON CLAUDE THIS CANNOT FIRE, because the transcript names no route at
     // all — measured. An empty reported list is not a disagreement.
     const claude = T.turnRuntimes(manifest(CLAUDE_ROUTE, { model: 'opus' }), 'claude',
@@ -258,14 +290,27 @@ const CLAUDE_ROUTE = {
     // here may read a route off a transcript, because no transcript has one.
     ok('…reached through the id the binding put on the session',
         /const manifest = manifestOf\(launchManifests\(\), s\);/.test(ext));
-    ok('…and joined to the models the transcript really reports',
+    // ‼️ X-108 — BOTH REPORTED HALVES, or the provider half is structurally
+    // unreachable: `providerConflict` and `multiProvider` read
+    // `reportedProviderIds`, and this call site is the only thing that can ever
+    // supply one. It used to pass `models` alone, so every OpenCode run reported
+    // no provider at all and the pin certified that as correct.
+    ok('…and joined to the models AND the providers the transcript really reports',
         /turnRuntimes\(manifest, engine,/.test(ext)
-        && /\(s\.turns \?\? \[\]\)\.map\(t => \(\{ n: t\.n, models: t\.models \}\)\)/.test(ext));
+        && /\(s\.turns \?\? \[\]\)\.map\(t => \(\{ n: t\.n, models: t\.models, providerIds: t\.providerIds \}\)\)/
+            .test(ext));
     // ‼️ THE DESCRIBE IS PART OF THE FEATURE. An agent reading `farm.ops` decides
     // what an answer MEANS from this text, and `unproven` read as "wrong" would
     // turn an alias into a bug report.
     ok('…and the describe says out loud that "unproven" is not an accusation',
         /is NOT proof of a fault/.test(ext) && /never "this ran on the wrong thing"/.test(ext));
+    // ‼️ X-108 — AND THE SAME DUTY FOR THE SECOND SIGNAL. An agent reading
+    // `multiProvider: true` with no word about scope would file the feature
+    // working as an incident, which is the accusation this family keeps
+    // refusing to make.
+    ok('…and that several providers on a turn-scoped run is the feature, not a fault',
+        /multiProvider` WITH `turnScope` IS NOT A FAULT/.test(ext)
+        && /Read the scope, never the/.test(ext));
     ok('…and that a Claude route can never be reported',
         /`reportedProviderIds` is EMPTY on Claude for ever/.test(ext));
 

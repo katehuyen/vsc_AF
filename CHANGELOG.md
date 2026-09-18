@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.548.0 - the provider the engine named reaches the turn index, so a multi-provider run can be told from a conflict (X-108, part 1) (2026-09-18)
+
+- **‼️ The drop, named.** OpenCode's export states the pair — `info.model =
+  { id: "big-pickle", providerID: "opencode" }` on a session, `providerID`
+  beside `modelID` on every message — and only the model half was ever read. So
+  the index recorded no provider at all, every later reader had to complete
+  `big-pickle` back to `opencode/big-pickle` by guessing against the engine's
+  published list (K-28), and a model two providers both offer could not be
+  completed at all.
+- **`SessionTurn.providerIds`** — the reported PROVIDER, beside `models`, which
+  is the reported model. Per turn because on OpenCode the provider legitimately
+  changes at a turn boundary (`session/set_config_option`), so a session-level
+  answer is false the moment anybody uses that feature. **Empty on Claude for
+  ever** (measured 23 Aug 2026), which is an absence and never a default.
+- **‼️ And the join was structurally unable to fire.** `turnRuntimes` was called
+  with `{ n, models }` at both of its call sites, so `providerConflict` and the
+  multi-provider check — which read `reportedProviderIds` — could never see one
+  on the only engine that publishes them. Both call sites now pass both halves,
+  and the pin that certified the old shape says so.
+- **‼️ `multiProvider` with `turnScope` is the feature working, not an
+  incident.** `RunDrift` gains both. Several providers across a turn-scoped run
+  is a legitimate multi-provider timeline and the line describes it
+  (`2 providers across 4 turns — a turn-scoped run may change provider`); the
+  same two inside a **session**-scoped run is the thing to go and look at. Read
+  off the SCOPE, never the engine's name, so a sixth engine needs nothing added.
+- **The Turns page and `turns.list` carry it** — `TurnRow.providerIds`, and the
+  op returns it on every row.
+- **The provider-guess guard got sharper rather than relaxed.** Reading
+  `model.providerID` is the opposite of deriving a provider from a model name,
+  but it reads alike on one line. The guard now STRIPS the published read and
+  puts whatever is left in front of both expressions — so
+  `providerId: model.providerID ? '' : model.id.split('/')[0]` is still caught,
+  and four planted lines hold the narrowing honest.
+- **B-25 follow-through:** `turns.list` read its `limit` with
+  `typeof args.limit === 'number'`, the same silence in a different spelling —
+  the CLI's `limit=50` arrives as text and was dropped for the default. It reads
+  `optNum` now.
+
 ## 3.547.0 - a number sent to the bridge counts as a number: `at=1` really does put the item first (B-25) (2026-09-18)
 
 - **‼️ The trap, named.** `optStr` answers `''` for anything that is not a

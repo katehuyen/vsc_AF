@@ -286,6 +286,14 @@ function agree(engine, info) {
     ok('opencode: the price is the engine\'s own figure', Math.abs(info.turns[0].cost - 0.05) < 1e-9);
     ok('opencode: the turn wears the model that served it',
         info.turns[0].models.join() === 'big-pickle');
+    // ‼️ X-108 — AND THE PROVIDER, WHICH IS THE OTHER HALF OF ONE NAME. The
+    // export states `providerID` beside `modelID` and only the model half was
+    // recorded, so every OpenCode run reported NO provider at all — which made
+    // `providerConflict` and the multi-provider timeline structurally unable to
+    // fire on the one engine where they mean something.
+    ok('‼️ opencode: the turn wears the provider that served it too',
+        (info.turns[0].providerIds || []).join() === 'opencode'
+        && (info.turns[1].providerIds || []).join() === 'opencode');
     agree('opencode', info);
 }
 

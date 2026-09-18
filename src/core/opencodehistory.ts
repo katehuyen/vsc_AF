@@ -182,6 +182,20 @@ export interface OpencodeExportMessage {
     ts: number;
     endTs?: number;
     model?: string;
+    /**
+     * ‼️ X-108 — THE PROVIDER THE ENGINE ITSELF NAMED FOR THIS MESSAGE.
+     *
+     * The export states the two halves side by side (`{ providerID, modelID }`
+     * on a user message, flat `providerID` / `modelID` on an assistant one) and
+     * only the model half was read. Dropping the provider is not a cosmetic
+     * loss: OpenCode publishes its models as `provider/model`, so a bare
+     * `big-pickle` has to be completed by guessing against the engine's option
+     * list later (K-28) — and a model two providers both offer cannot be
+     * completed at all. It is also the only evidence that a run changed
+     * provider at a turn boundary, which on this engine is legitimate
+     * (`session/set_config_option`) rather than a fault.
+     */
+    providerId?: string;
     agent?: string;
     /** assistant only — the TURN's spend, on the message that produced it */
     tokens?: OpencodeSpend;
@@ -197,6 +211,9 @@ export interface OpencodeExport {
     directory: string;
     projectId: string;
     model: string;
+    /** X-108 — the session's own `info.model.providerID`, kept beside the id it
+     *  belongs to. '' when the export names none. */
+    providerId: string;
     agent: string;
     /** the opencode build that wrote it — a drift signal, never a gate */
     version: string;
@@ -345,6 +362,9 @@ export function opencodeExport(stdout: string): OpencodeExport | undefined {
             // assistant one carries the two as flat `providerID`/`modelID`
             ...(str(mm.modelID) || str(mi.modelID)
                 ? { model: str(mm.modelID) || str(mi.modelID) } : {}),
+            // X-108 — read from the same two spellings, and dropped no longer.
+            ...(str(mm.providerID) || str(mi.providerID)
+                ? { providerId: str(mm.providerID) || str(mi.providerID) } : {}),
             ...(str(mi.agent) ? { agent: str(mi.agent) } : {}),
             ...(tokens ? { tokens } : {}),
             ...(typeof mi.cost === 'number' ? { cost: num(mi.cost) } : {}),
@@ -358,6 +378,7 @@ export function opencodeExport(stdout: string): OpencodeExport | undefined {
         directory: str(info.directory),
         projectId: str(info.projectID) || str(info.projectId),
         model: str(model.id) || str(model.modelID),
+        providerId: str(model.providerID),
         agent: str(info.agent),
         version: str(info.version),
         created: num(time.created),
