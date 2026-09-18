@@ -13132,7 +13132,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 let code: string | undefined;
                 // The add and the placement are ONE guarded write — see the
                 // panel's backlogAdd for why they must not be two.
-                const at = Math.floor(Number(optStr(args, 'at') ?? 0)) || 0;
+                // ‼️ B-25 — A NUMBER ARRIVES AS A NUMBER, and `optStr` answers
+                // '' for one. Read through `Number(optStr(…))`, both `{"at": 1}`
+                // and the CLI's `at=1` (which coerces) came out 0, so four items
+                // asked for the top queued at the BOTTOM under an ok response.
+                // Numeric args are read with `optNum`, which takes either form.
+                const atGiven = args.at !== undefined && args.at !== null
+                    && String(args.at).trim() !== '';
+                const at = Math.floor(optNum(args, 'at', 0)) || 0;
                 let placed: string | undefined;
                 const out = editProjectDoc(folder, file, src => {
                     const res = addBacklogItem(src, {
@@ -13165,7 +13172,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         blockedBy: listArg(args, 'blockedBy', 'blocks')
                     });
                     if (res.code) { code = res.code; }
-                    if (!res.ok || !at) { return res; }
+                    if (!res.ok) { return res; }
+                    // ‼️ …and a position that cannot be honoured SAYS SO. The
+                    // silence is what let the original bug live: the caller read
+                    // ok:true and believed the item was sitting at the top.
+                    if (!at) {
+                        return atGiven
+                            ? { ...res, note: `at="${String(args.at)}" is not a queue position (1 is the top), so the item queued where a new one normally would` }
+                            : res;
+                    }
                     if (!res.code) {
                         return { ...res, note: 'it went to the inbox without a code, so it could not be queued' };
                     }

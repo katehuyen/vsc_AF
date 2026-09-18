@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { AgentInfo } from './agents';
-import { argStr, BridgeRegistry, need, optStr } from './bridge';
+import { argStr, BridgeRegistry, need, optNum, optStr } from './bridge';
 import {
     addMcpServer, copyMcpServerTo, McpServerDef, readAgentMcpServers, readServerRawDef,
     removeMcpServer, setServerDisabled, updateMcpServer
@@ -312,7 +312,7 @@ export function registerToolboxOps(bridge: BridgeRegistry, deps: ToolboxBridgeDe
                 const state = optStr(args, 'state').toLowerCase();
                 need(!state || state === 'enabled' || state === 'disabled',
                     `state is "enabled" or "disabled", not "${state}"`);
-                const limit = Math.max(1, Number(optStr(args, 'limit') || 500));
+                const limit = Math.max(1, optNum(args, 'limit', 500));
                 // Each of these names one `detail` field, compared case-blind
                 // because the values are somebody else's JSON, not ours.
                 const DETAIL_FILTERS: [string, string][] = [

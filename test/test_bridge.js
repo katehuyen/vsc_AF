@@ -9,7 +9,7 @@ const os = require('os');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { BridgeRefusal, BridgeRegistry, parseBridgeRequest, need, argStr, optStr, argSessionIds, stageBridgeCli, stagedBridgeCliPath } =
+const { BridgeRefusal, BridgeRegistry, parseBridgeRequest, need, argStr, optStr, optNum, argSessionIds, stageBridgeCli, stagedBridgeCliPath } =
     require(path.join(__dirname, '..', 'out', 'core', 'bridge.js'));
 const { antigravityStatus, syncToAntigravity } =
     require(path.join(__dirname, '..', 'out', 'core', 'antigravity.js'));
@@ -3834,14 +3834,27 @@ const { opencodeStatus, syncToOpencode } =
                         // same chaining the real handler does, for the same
                         // reason (a failure between two writes would leave an
                         // item the user asked to put first sitting last).
-                        const at = Math.floor(Number(a.at ?? 0)) || 0;
+                        // ‼️ B-25 — THE STAND-IN READS THE ARG THE WAY THE REAL
+                        // HANDLER DOES, or it certifies a bug it cannot have.
+                        // This one read `a.at` straight, so it was green on a
+                        // number while the shipped op — reading it through
+                        // `Number(optStr(…))` — threw every number away.
+                        const atGiven = a.at !== undefined && a.at !== null && String(a.at).trim() !== '';
+                        const at = Math.floor(optNum(a, 'at', 0)) || 0;
                         let note = null;
                         const r = editBacklog(t => {
                             const res = addBacklogItem(t, {
                                 text: body,
                                 ...(optStr(a, 'area') ? { area: optStr(a, 'area') } : {})
                             });
-                            if (!res.ok || !at) { return res; }
+                            if (!res.ok) { return res; }
+                            if (!at) {
+                                if (atGiven) {
+                                    note = `at="${String(a.at)}" is not a queue position (1 is the top),`
+                                        + ' so the item queued where a new one normally would';
+                                }
+                                return res;
+                            }
                             if (!res.code) {
                                 note = 'it went to the inbox without a code, so it could not be queued';
                                 return res;
@@ -3992,6 +4005,29 @@ const { opencodeStatus, syncToOpencode } =
             ok('‼️ a position asked for on an uncoded capture is REPORTED, not swallowed',
                 unplaceable.ok && unplaceable.result.code === null
                 && /could not be queued/.test(unplaceable.result.note));
+
+            // ---- B-25: `at` counts whether it arrives as 1 or as "1" ----
+            // Both forms are real: a JSON request carries the number, the CLI's
+            // `at=1` shorthand coerces to one too, and a hand-written arg is
+            // text. The op read it through `Number(optStr(…))`, which answers ''
+            // for anything that is not a string — so the number, the commonest
+            // form, was thrown away under an ok response and four items the user
+            // asked for the top of the queue landed at the bottom.
+            const asText = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'typed at the CLI', area: 'P', at: '1' });
+            ok('‼️ B-25 — `at` given as TEXT queues at the top, same as the number',
+                asText.ok && asText.result.code === 'P-5' && /queued at 1/.test(asText.result.note));
+            const headText = await reg.dispatch('projects.backlog.next',
+                { project: 'Agent Farm', limit: 5, maxEffort: 'XL' });
+            ok('…and it really is the next thing up', headText.ok && headText.result.items[0] === 'P-5');
+            const junk = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'a position nobody can use', area: 'P', at: 'top' });
+            ok('‼️ …and an `at` that is not a position is SAID, not swallowed',
+                junk.ok && junk.result.code === 'P-6' && /not a queue position/.test(junk.result.note));
+            const quiet = await reg.dispatch('projects.backlog.add',
+                { project: 'Agent Farm', text: 'no position asked for', area: 'P' });
+            ok('…while asking for none says nothing — the note answers a request that missed',
+                quiet.ok && quiet.result.code === 'P-7' && !quiet.result.note);
 
             // ‼️ The queue is the ONE order, and it crosses areas. The file is
             // grouped by heading, so line order can never put a K item ahead of
@@ -4396,6 +4432,40 @@ const { opencodeStatus, syncToOpencode } =
             /at\? \(1-based queue position/.test(addBlock) && /uncoded capture has none/.test(addBlock));
         ok('…and it places inside the SAME guarded write, not a second one',
             /placeInQueue\(res\.text as string, res\.code, at\)/.test(addBlock));
+
+        // ---- B-25: a numeric arg is read with `optNum`, and the shape that
+        // silently ate one is banned from the source so it cannot come back.
+        //
+        // `optStr` answers '' for anything that is not a string, so
+        // `Number(optStr(args, 'at'))` is 0 for every number a caller sends —
+        // and 0 means "no position asked for". The op answered ok and queued
+        // the item at the bottom. Nothing errored; there was nothing to read.
+        // Five sites carried the shape (`at`, two `limit`s, `fps`,
+        // `clipSeconds`), which is why this is a pattern rather than a fix.
+        ok('‼️ backlog.add reads `at` with optNum — a number and its text both count',
+            /optNum\(args, 'at', 0\)/.test(addBlock) && !/Number\(optStr\(args, 'at'/.test(addBlock));
+        ok('…and an `at` it cannot honour comes back said out loud, not dropped',
+            /atGiven/.test(addBlock) && /is not a queue position/.test(addBlock));
+        const srcFiles = (function walk(dir) {
+            return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => {
+                const p = path.join(dir, e.name);
+                return e.isDirectory() ? walk(p) : (e.name.endsWith('.ts') ? [p] : []);
+            });
+        })(path.join(__dirname, '..', 'src'));
+        const launders = [];
+        for (const f of srcFiles) {
+            fs.readFileSync(f, 'utf8').split(/\r?\n/).forEach((ln, i) => {
+                const t = ln.trim();
+                // Comments are prose about the trap — the guard is about code.
+                if (t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) { return; }
+                if (/(Number|parseInt|parseFloat)\s*\(\s*(opt|arg)Str\s*\(/.test(ln)) {
+                    launders.push(path.basename(f) + ':' + (i + 1));
+                }
+            });
+        }
+        ok('‼️ …and NO source line launders a number through optStr — it would eat every one'
+            + (launders.length ? ' (' + launders.join(', ') + ')' : ''),
+            launders.length === 0);
 
         // ---- K-8: an item an agent wrote says so, and says whose idea it was --
         //

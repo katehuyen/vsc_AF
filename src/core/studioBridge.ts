@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { AgentInfo } from './agents';
-import { argStr, BridgeRegistry, need, optStr } from './bridge';
+import { argStr, BridgeRegistry, need, optNum, optStr } from './bridge';
 import {
     assetKind, injectMediaFeedback, MEDIA_EXTS, MediaMeta, readMediaMetas, registerExternalAsset,
     registeredAssetPaths, updateMediaMeta
@@ -98,7 +98,7 @@ export function registerStudioOps(bridge: BridgeRegistry, deps: StudioBridgeDeps
                 const state = optStr(args, 'state').toLowerCase();
                 need(!state || ['kept', 'rejected', 'undecided'].includes(state),
                     `state is kept, rejected or undecided — not "${state}"`);
-                const limit = Math.max(1, Number(optStr(args, 'limit') || 100));
+                const limit = Math.max(1, optNum(args, 'limit', 100));
                 const rows = metasOf(deps).filter(m => {
                     if (project && m.projectId !== project) { return false; }
                     if (scene && m.sceneId !== scene) { return false; }
@@ -320,8 +320,8 @@ export function registerStudioOps(bridge: BridgeRegistry, deps: StudioBridgeDeps
                 need(clips.length,
                     `"${found.production.title}" has no scene assets to place — assign assets to scenes first (studio.assign).`);
                 const opts = {
-                    fps: Number(optStr(args, 'fps')) || 30,
-                    clipSeconds: Number(optStr(args, 'clipSeconds')) || 5,
+                    fps: optNum(args, 'fps', 30) || 30,
+                    clipSeconds: optNum(args, 'clipSeconds', 5) || 5,
                     title: found.production.title
                 };
                 const safe = found.production.id.replace(/[^\w.-]+/g, '-');

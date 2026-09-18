@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.547.0 - a number sent to the bridge counts as a number: `at=1` really does put the item first (B-25) (2026-09-18)
+
+- **‼️ The trap, named.** `optStr` answers `''` for anything that is not a
+  string, so `Number(optStr(args, 'at'))` was `0` for every number a caller
+  sent — and `0` means "no position asked for". Four items opened with
+  `at:1…4` on 2026-09-17 all landed at the BOTTOM of the queue under an
+  `ok: true` response, and had to be moved by hand. Nothing errored; there was
+  nothing to read.
+- **Numbers are read with `optNum`, which takes either form.** A JSON request
+  carries `1`, the CLI's `at=1` shorthand coerces to `1`, a hand-written arg is
+  `"1"` — all three now count. Five sites carried the broken shape:
+  `projects.backlog.add`'s `at`, `studio.assets`' and `toolbox.servers`' `limit`,
+  and `studio.render`'s `fps` / `clipSeconds`.
+- **‼️ And the shape is banned from the source, so it cannot come back.**
+  `test_bridge.js` scans every `src/**/*.ts` line (comments excluded — they are
+  prose about the trap) for `Number|parseInt|parseFloat(optStr|argStr(` and
+  fails by file and line number. It reports 5 hits against the previous commit.
+- **An `at` that cannot be honoured is said out loud.** `at: "top"` no longer
+  disappears: the response's `note` reads `at="top" is not a queue position
+  (1 is the top), so the item queued where a new one normally would`. Silence is
+  what let the original bug live.
+- **The stand-in that certified the bug reads the arg the way the op does.**
+  The dispatch test's mirror handler read `a.at` straight, so it was green on a
+  number the shipped op threw away. It goes through the real `optNum` now, and
+  the number form, the text form and the unusable form each have a test.
+
 ## 3.546.0 - the Console account box is live: 5h and weekly figures apart, refreshed in place, never under an open menu (X-326) (2026-09-17)
 
 - **‼️ Option A — the two windows, named.** An account row reads
