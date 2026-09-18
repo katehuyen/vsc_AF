@@ -916,6 +916,7 @@
            a gap holds no information. (No backticks in this block: the whole
            stylesheet is a template literal, and one would end it.) */
         .crow .axisw { min-width:28px; flex:0 1 auto; display:flex; align-items:center; gap:3px; }
+        .crow .af-tipw > .af-tip { min-width:220px; max-width:320px; }
         /* U-135 — THE SELECT SHARES THE BOX WHEN SOMETHING STANDS BESIDE IT.
            The 100% is a share of the WRAPPER, and it was a demand rather than a
            ceiling: a mark drawn in front of the value (the pending-swap arrow
