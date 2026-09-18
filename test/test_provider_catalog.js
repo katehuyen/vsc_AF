@@ -126,6 +126,21 @@ opencode/ling-3.0-flash-fin-free
     // nothing, and `cost: 0` said as "unknown" would make an honest catalog
     // unreadable. An absent limit is the other half of the same rule: `ling`
     // states no input limit, and reporting 0 would be inventing a ceiling.
+    // ‼️ X-113 - AND THE SAME RULE FOR THE CAPABILITIES, WHICH THE PARSE USED
+    // TO KEEP ONLY HALF OF. The engine publishes `attachment: false` and an
+    // `input` modality map on every row this machine reaches; three booleans
+    // were read and the map was dropped, so "this model takes no images" was a
+    // fact Agent Farm was told and threw away.
+    eq('a published attachment refusal survives the read', big.capabilities.attachment, false);
+    eq('…and so does the modality map under it', big.capabilities.input.image, false);
+    eq('…including the ones beside it', big.capabilities.input.pdf, false);
+    // ‼️ AND THE OTHER HALF: an engine that publishes NO map states nothing,
+    // which must not become a row of nos. (This machine's own rows state all
+    // four modalities, so the absent case has to be forged off the real text.)
+    const noMap = C.readOpenCodeCatalog(REAL_VERBOSE.replace(/"input": \{[^}]*\},\n/, ''));
+    eq('‼️ a model with no modality map stays silent rather than becoming a '
+        + 'row of nos', noMap.rows[0].capabilities.input, undefined);
+
     eq('a real zero cost is a known zero', big.cost, { input: 0, output: 0 });
     eq('a stated context limit is carried', big.limit.context, 200000);
     eq('…and an unstated input limit stays absent', ling.limit.input, undefined);
@@ -208,6 +223,12 @@ opencode/ling-3.0-flash-fin-free
     const oc = C.readOpenCodeCatalog(REAL_VERBOSE);
     eq('a model the engine still offers passes',
         C.catalogRefusal(oc, { engine: 'opencode', providerId: 'opencode', modelId: 'big-pickle' }), []);
+    // ‼️ AND THE SPELLING A LAUNCH ACTUALLY CARRIES. `-m` takes the wire ref,
+    // so a refusal that only knew the bare `id` refused every model there is.
+    eq('the engine\'s own qualified ref passes, which is what a launch sends',
+        C.catalogRefusal(oc, {
+            engine: 'opencode', providerId: 'opencode', modelId: 'opencode/big-pickle'
+        }), []);
     ok('a model the engine no longer offers is named, before anything starts',
         C.catalogRefusal(oc, { engine: 'opencode', providerId: 'opencode', modelId: 'gone-away' })
             .join(' ').includes('gone-away'));
@@ -222,6 +243,31 @@ opencode/ling-3.0-flash-fin-free
         C.catalogRefusal(oc, {
             engine: 'opencode', providerId: 'opencode',
             modelId: 'ling-3.0-flash-fin-free', variant: 'high'
+        }), []);
+
+    /* ‼️ X-113 - AND A MODEL THAT CANNOT DO WHAT THE PICK ASKS OF IT.
+     * Everything above refuses something that does not EXIST. A model that
+     * exists and publishes `toolcall: false` used to spawn and then be quiet
+     * about it, which is the worse failure of the two. Forged off the real
+     * text rather than written fresh, the same way the provider-field trap
+     * above is forged. */
+    const noTools = C.readOpenCodeCatalog(REAL_VERBOSE.replace('"toolcall": true', '"toolcall": false'));
+    ok('a model that publishes no tool calling is refused before the spawn',
+        C.catalogRefusal(noTools, { engine: 'opencode', providerId: 'opencode', modelId: 'big-pickle' })
+            .join(' ').includes('tool calling'));
+
+    const noReasoning = C.readOpenCodeCatalog(REAL_VERBOSE.replace('"reasoning": true', '"reasoning": false'));
+    ok('an effort asked of a model that publishes no reasoning is refused, by name',
+        C.catalogRefusal(noReasoning, {
+            engine: 'opencode', providerId: 'opencode', modelId: 'big-pickle', effort: 'high'
+        }).join(' ').includes('Big Pickle'));
+    eq('‼️ …and with no effort asked there is nothing to refuse',
+        C.catalogRefusal(noReasoning, {
+            engine: 'opencode', providerId: 'opencode', modelId: 'big-pickle'
+        }), []);
+    eq('‼️ …while the model that DOES publish reasoning takes the same effort',
+        C.catalogRefusal(oc, {
+            engine: 'opencode', providerId: 'opencode', modelId: 'big-pickle', effort: 'high'
         }), []);
 
     const cl = C.readClaudeRouteCatalog([{

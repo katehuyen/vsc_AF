@@ -880,13 +880,28 @@ const intentOf = (o) => Object.assign({
     ok('…with the axis as the list\'s heading and the whole box left to the value',
         !/class="rtlbl"/.test(composer()) && !/class="permlbl"/.test(composer())
         && !/>route<\/span>/.test(composer())
-        && /<span class="af-tipw axisw" data-axis-name="Route"/.test(composer()));
+        // The claim is that no box wears a separate LABEL, not that the class
+        // list never grows: a scene opens this panel for a picture by naming a
+        // class on it (X-113, `tip-route`).
+        && /<span class="af-tipw axisw[^"]*" data-axis-name="Route"/.test(composer()));
     ok('…with no tier box, because a tier is a question about a route and none is picked',
         !/id="c-tier"/.test(composer()));
     ok('‼️ …and the hover carries what makes the box auditable: the scope, and WHY '
         + 'there is no variant control rather than silence about it',
         composer().includes('fixed for the whole session on this engine')
         && composer().includes('ACP declares only model and mode'));
+
+    // ‼️ X-113 - AND WHAT THIS PICK WOULD BE REFUSED FOR, IN THE SAME PANEL.
+    // The adapter has answered this since X-99 and no surface drew it, so the
+    // sentence reached a person as an engine error after the choosing was over.
+    push(base('claude', Object.assign(claudeForm('kimi'), {
+        refusals: ['"Kimi (work)" has no stored key, so a run on it would reach a stranger unauthenticated.']
+    }), null));
+    ok('the composer panel says what the pick would be refused for',
+        composer().includes('has no stored key'));
+    push(base('claude', claudeForm(null), null));
+    ok('‼️ …and a pick with nothing wrong with it draws no warning line at all',
+        !/has no stored key/.test(composer()));
 
     // The hand is on the picker, as it is after every native select choice.
     els['c-route'].tagName = 'SELECT';

@@ -4224,20 +4224,29 @@
             const pick = routePick();
             const cur = pick.providerId || '';
             // One fact per line rather than one paragraph joined by `·`: these
-            // are four separate answers (what the axis is, how far the pick
-            // reaches, why the variants, why the list is empty) and a panel is
-            // tall, not wide.
+            // are separate answers (what the axis is, how far the pick reaches,
+            // why the variants, why the list is empty, and what the pick would be
+            // refused for) and a panel is tall, not wide.
             const routeTip = window.AFTip.lines([
                 'Which ' + f.noun.toLowerCase() + ' serves the new session — the endpoint the '
                 + 'process really talks to, which the engine badge does not say. Default leaves '
                 + 'this window\'s own environment alone.',
                 f.scopeNote || '',
                 f.variantsWhy || '',
-                f.empty || ''
+                f.empty || '',
+                // ‼️ X-113 - the adapter\'s own refusal, where the pick is made.
+                // A warning and not a gate: Send stays live, because the catalog
+                // can be stale and the engine decides its own run.
+                ...(f.refusals || []).map(function (r) { return '‼️ ' + r; })
             ]);
             const rows = withCurrent(f.providers || [], cur);
             const route = axisBox({
-                axis: f.noun, id: 'c-route', list: rows, cur: cur, standard: routeTip
+                // ‼️ The class is how a SCENE opens this panel for a picture
+                // (`tip:` in the fixture). Until X-113 the route panel had never
+                // been photographed, so the sentences in it were shipped read but
+                // never looked at.
+                axis: f.noun, id: 'c-route', list: rows, cur: cur, standard: routeTip,
+                cls: 'tip-route'
             });
             if (!tierAxisOn()) { return route; }
             const tcur = pick.tier || '';

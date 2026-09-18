@@ -2,6 +2,46 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.565.0 - a model that cannot do what the pick asks says so while it is being picked (X-113, part 3) (2026-09-18)
+
+- **The catalog was told what a model cannot do and threw half of it away.**
+  `opencode models --verbose` publishes `attachment`, `toolcall`, `reasoning`
+  and an `input` modality map on every row; the parse kept three booleans and
+  dropped the map, so "this model takes no images" was a fact the engine
+  stated and Agent Farm forgot. Measured on OpenCode 1.18.19: every model this
+  machine reaches states `attachment: false` and `input.image: false`.
+  Absent still means absent - a field the engine never mentioned does not
+  become a no.
+- **And the picker line stopped being an advertisement.** It listed what a
+  model CAN do (`200K context`, `free`, `reasoning`) and nothing it cannot, so
+  a model that takes no attachments read exactly like one that does. It now
+  says `no tools` / `no attachments` / `no images` where the engine published
+  the refusal, and stays silent where it published nothing.
+- **‼️ The refusal reached a surface for the first time.** The adapter has
+  answered "would this pick run?" since X-99 - a model the engine stopped
+  offering, a tier the route does not map, a third-party endpoint with no
+  stored key - and the only caller was a bridge op. So the sentence arrived as
+  an engine error in a terminal after the choosing was over. The form carries
+  it (`refusals`), the launcher draws it as its own row, and the Console
+  composer puts it in the route panel where the pick is made. It is a WARNING,
+  not a gate: the catalog can be stale and the engine is the authority on its
+  own run.
+- **‼️ And wiring it found the defect that proves the point: the refusal was
+  refusing every OpenCode model there is.** It matched the catalog's bare
+  `id` (`big-pickle`) while a launch carries the engine's wire ref
+  (`opencode/big-pickle`) - the spelling that goes to `-m`. Unread for a whole
+  item family, so nothing ever noticed. Both spellings now resolve to the same
+  row.
+- The refusal also knows the capability axis: a model that publishes no tool
+  calling is refused (a session here is tool calls from its first turn), and an
+  effort asked of a model that publishes no reasoning is named. Only a
+  published `false` refuses; silence refuses nothing, exactly as an unread
+  catalog does.
+- Tests: `test_provider_catalog.js` 40 (+9), `test_launch_provider.js` 79 (+6,
+  including the two doors read out of their own source). The route panel had
+  never been photographed - the scene names it now (`tip: tip-route`) and its
+  label says what it is for. Looked at: `console-route`.
+
 ## 3.564.0 - the live Console card gets a ceiling for the first time (X-113, part 2) (2026-09-18)
 
 - **Measured on a running Claude session: `ctx 234.9k`, window null.** The

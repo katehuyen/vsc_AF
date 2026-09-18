@@ -106,6 +106,22 @@ export interface ProviderForm {
      *  but this transport cannot carry them. Silence here is how a person comes
      *  to believe the engine has no variants at all. */
     variantsWhy?: string;
+    /**
+     * ‼️ X-113 - WHAT THIS PICK WOULD BE REFUSED FOR, WHERE THE PICK IS MADE.
+     *
+     * The adapter has answered this since X-99 and nothing but a bridge op
+     * ever asked: a model the engine stopped offering, a tier the route does
+     * not map, a third-party endpoint with no stored key, a model that
+     * publishes no tool calling. The comment on `pruneProviderPick` below says
+     * a refusal is something "a person reads in a terminal" - which was the
+     * whole defect, because by then the choosing is over.
+     *
+     * ‼️ IT IS A WARNING, NOT A GATE. Nothing here stops a launch: the
+     * catalog can be stale, the engine is the authority on its own run, and a
+     * form that refused on a reading would be worse than one that stayed
+     * quiet. Absent when there is nothing to say.
+     */
+    refusals?: string[];
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
@@ -129,7 +145,17 @@ function modelDetail(row: CatalogModelRow): string {
     // ‼️ A STATED ZERO IS A STATED ZERO — `free` is a fact the engine published,
     // and an absent cost is a different fact that gets no word at all.
     if (row.cost && !row.cost.input && !row.cost.output) { bits.push('free'); }
-    if (row.capabilities.reasoning) { bits.push('reasoning'); }
+    const caps = row.capabilities;
+    if (caps.reasoning) { bits.push('reasoning'); }
+    // ‼️ X-113 - AND THE NOS, WHICH THIS LINE USED TO LEAVE OUT ENTIRELY.
+    // Measured on OpenCode 1.18.19: every model this machine reaches publishes
+    // `attachment: false` and `input.image: false`, and the row said nothing -
+    // so a line that listed only what a model CAN do read as a full
+    // description while being half of one. A published `false` gets a word; a
+    // field the engine never stated still gets none.
+    if (caps.toolcall === false) { bits.push('no tools'); }
+    if (caps.attachment === false) { bits.push('no attachments'); }
+    else if (caps.input?.image === false) { bits.push('no images'); }
     if (row.variants.length) { bits.push(`variants: ${row.variants.join(', ')}`); }
     if (row.status && row.status !== 'active') { bits.push(row.status); }
     return bits.join(' · ') || row.ref;
@@ -268,8 +294,16 @@ export function launchProviderForm(
         ],
         ...(providers.length ? {} : { empty: emptyWhy(adapter, cat) }),
         sub,
-        ...variantRow(cat, claude, str(pick.model), transport)
+        ...variantRow(cat, claude, str(pick.model), transport),
+        ...refusalRow(adapter, pick)
     };
+}
+
+/** The adapter's own refusal for the pick so far, left out when empty so a
+ *  surface cannot draw an empty warning box. */
+function refusalRow(adapter: ProviderAdapter, pick: ProviderPick): { refusals?: string[] } {
+    const refusals = adapter.preflight(providerSelectionOf(adapter.engine, pick));
+    return refusals.length ? { refusals } : {};
 }
 
 /**

@@ -46,7 +46,20 @@ export interface CatalogModelRow {
     /** Absent when the engine stated none; `{input: 0, output: 0}` when it
      *  stated free, which is a different fact. */
     cost?: { input: number; output: number };
-    capabilities: { reasoning?: boolean; toolcall?: boolean; attachment?: boolean };
+    /** ‼️ WHAT THE ENGINE PUBLISHED, INCLUDING THE NOS. Absent is absent and a
+     *  stated false is a stated false, the same rule the cost and limit fields
+     *  above keep. It matters most here: "nobody said" and "it cannot" lead to
+     *  opposite words in a picker, and a capability set that only carries the
+     *  yeses can only ever advertise. */
+    capabilities: {
+        reasoning?: boolean;
+        toolcall?: boolean;
+        attachment?: boolean;
+        /** The modality map the engine publishes under `capabilities.input`.
+         *  Measured on OpenCode 1.18.19: every model on this machine states
+         *  `image: false`, and the parse used to drop the whole map. */
+        input?: { image?: boolean; pdf?: boolean; audio?: boolean; video?: boolean };
+    };
     status?: string;
 }
 
@@ -74,6 +87,10 @@ export interface CatalogSelection {
     variant?: string;
     /** Claude only: the tier a person picked, resolved through the route. */
     tier?: string;
+    /** The reasoning level asked for, where the engine takes one. Carried
+     *  here so a model that publishes no reasoning can say so BEFORE the
+     *  spawn rather than ignoring the flag afterwards. */
+    effort?: string;
 }
 
 export interface ProviderCatalogRead extends ProviderCatalog {
@@ -152,6 +169,14 @@ function rowFromOpenCode(o: Record<string, unknown>): CatalogModelRow | undefine
     const limitIn = obj(o.limit);
     const costIn = o.cost === undefined ? undefined : obj(o.cost);
     const caps = obj(o.capabilities);
+    // ‼️ THE MAP WAS BEING READ AND THROWN AWAY. `capabilities.input` is where
+    // the engine says what it will ACCEPT, and it is the half a person needs
+    // before attaching a file rather than after the model ignores it.
+    const inputIn = obj(caps.input);
+    const inputCaps: NonNullable<CatalogModelRow['capabilities']['input']> = {};
+    for (const k of ['image', 'pdf', 'audio', 'video'] as const) {
+        if (typeof inputIn[k] === 'boolean') { inputCaps[k] = inputIn[k] as boolean; }
+    }
     const limit: CatalogModelRow['limit'] = {};
     if (num(limitIn.context) !== undefined) { limit.context = num(limitIn.context); }
     if (num(limitIn.input) !== undefined) { limit.input = num(limitIn.input); }
@@ -173,7 +198,8 @@ function rowFromOpenCode(o: Record<string, unknown>): CatalogModelRow | undefine
         capabilities: {
             ...(typeof caps.reasoning === 'boolean' ? { reasoning: caps.reasoning } : {}),
             ...(typeof caps.toolcall === 'boolean' ? { toolcall: caps.toolcall } : {}),
-            ...(typeof caps.attachment === 'boolean' ? { attachment: caps.attachment } : {})
+            ...(typeof caps.attachment === 'boolean' ? { attachment: caps.attachment } : {}),
+            ...(Object.keys(inputCaps).length ? { input: inputCaps } : {})
         },
         ...(str(o.status) ? { status: str(o.status) } : {})
     };
@@ -347,7 +373,15 @@ export function catalogRefusal(
     }
     const modelId = str(sel.modelId);
     if (!modelId) { return errors; }
-    const row = cat.rows.find(r => r.providerId === providerId && r.modelId === modelId);
+    // ‼️ TWO SPELLINGS OF ONE MODEL, AND THE CALLER USES THE OTHER ONE.
+    // `ref` is the engine's wire spelling (`opencode/big-pickle`) and `modelId`
+    // is the `id` field under it (`big-pickle`); measured, `ref` is exactly
+    // providerId + "/" + id on every row. A launch carries the REF - that is
+    // what goes to `-m` - so matching the bare id alone refused every model
+    // there is. Found the day the refusal first reached a surface (X-113),
+    // which is the whole argument for putting it on one.
+    const row = cat.rows.find(r => r.providerId === providerId
+        && (r.ref === modelId || r.modelId === modelId));
     if (!row) {
         errors.push(`model "${modelId}" is no longer offered by ${providerId}`);
         return errors;
@@ -357,6 +391,30 @@ export function catalogRefusal(
         errors.push(row.variants.length
             ? `${row.label} has no "${variant}" variant (it publishes: ${row.variants.join(', ')})`
             : `${row.label} publishes no variant to choose from, so "${variant}" cannot be applied`);
+    }
+
+    // ‼️ X-113 - AND WHAT THE MODEL CANNOT DO, WHILE SOMEBODY IS STILL
+    // CHOOSING IT. Until here the refusal only knew about things that do not
+    // EXIST (a gone provider, a gone model, an unpublished variant). A model
+    // that exists and cannot do what the pick asks of it used to spawn and
+    // then be quiet about it, which is the worse of the two failures: the
+    // effort flag is accepted and ignored, and the run reads as normal.
+    //
+    // ‼️ ONLY A PUBLISHED `false`. `undefined` is an engine that said
+    // nothing, and refusing on silence would refuse every catalog that does
+    // not carry this field at all.
+    const caps = row.capabilities;
+    if (caps.toolcall === false) {
+        errors.push(`${row.label} publishes no tool calling, and a session here is tool calls`
+            + ' from its first turn');
+    }
+    // The variant is deliberately NOT repeated here: a model with no
+    // reasoning publishes no variants either, so the line above has already
+    // said it and a second sentence would be the same fact twice.
+    const effort = str(sel.effort);
+    if (effort && caps.reasoning === false) {
+        errors.push(`${row.label} publishes no reasoning, so the "${effort}" effort has`
+            + ' nothing to reach');
     }
     return errors;
 }

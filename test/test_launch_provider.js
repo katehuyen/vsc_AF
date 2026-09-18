@@ -55,7 +55,16 @@ const OC_VERBOSE = [
     JSON.stringify({
         id: 'big-pickle', providerID: 'opencode', name: 'Big Pickle',
         cost: { input: 0, output: 0 }, limit: { context: 200000, output: 32000 },
-        capabilities: { reasoning: true }, variants: {}, status: 'active'
+        // ‼️ X-113 - the capability block as the engine really prints it
+        // (OpenCode 1.18.19, this machine): the yeses AND the nos, and an
+        // `input` map under them. The other two rows below keep the bare
+        // `{ reasoning: true }` on purpose, so the test can tell a published
+        // `false` apart from a field nobody stated.
+        capabilities: {
+            reasoning: true, toolcall: true, attachment: false,
+            input: { text: true, image: false, pdf: false }
+        },
+        variants: {}, status: 'active'
     }, null, 2),
     'opencode/nemotron-3.5-lightning-free',
     JSON.stringify({
@@ -129,6 +138,17 @@ console.log('\n== the other engine means something else by the same rows ==');
     ok('…and the row carries the figures the engine published',
         oc.sub.choices.some(c => c.id === 'opencode/big-pickle'
             && /200K context/.test(c.detail) && /free/.test(c.detail)));
+    // ‼️ X-113 - AND WHAT IT CANNOT DO, WHERE THE ENGINE SAID SO. The line
+    // used to list only the yeses, so a model that takes no attachments read
+    // exactly like one that takes them.
+    const bigPickle = oc.sub.choices.find(c => c.id === 'opencode/big-pickle');
+    ok('a published `attachment: false` reaches the person choosing the model',
+        /no attachments/.test(bigPickle.detail));
+    ok('…and a capability it HAS is not turned into a no',
+        !/no tools/.test(bigPickle.detail) && /reasoning/.test(bigPickle.detail));
+    ok('‼️ …while a model whose engine stated nothing gets no word at all - '
+        + 'silence is not a refusal',
+        !/no /.test(oc.sub.choices.find(c => c.id === 'opencode/nemotron-3.5-lightning-free').detail));
     eq('a different provider publishes different models',
         ids(F.launchProviderForm(opencode(), { providerId: 'anthropic' }).sub.choices),
         ['', 'anthropic/claude-opus-5']);
@@ -306,6 +326,30 @@ console.log('\n== and the writer stops eating the route ==');
     eq('…and the last field going takes the whole row with it', gone, {});
 }
 
+console.log('\n== ‼️ X-113: what the pick would be refused for, where it is made ==');
+{
+    // The adapter has answered this since X-99 and only a bridge op ever asked,
+    // so the sentence reached a person as an engine error in a terminal after
+    // the choosing was over. It is a WARNING: nothing here stops a launch.
+    const gone = F.launchProviderForm(opencode(), {
+        providerId: 'opencode', model: 'opencode/retired-last-week'
+    });
+    ok('a model the engine no longer offers is named on the form itself',
+        (gone.refusals || []).join(' ').includes('retired-last-week'));
+    eq('‼️ …and a pick with nothing wrong with it carries no field at all, so no '
+        + 'surface can draw an empty warning',
+        F.launchProviderForm(opencode(), {
+            providerId: 'opencode', model: 'opencode/big-pickle'
+        }).refusals, undefined);
+    ok('a Claude route whose key is not stored says so before the endpoint is reached',
+        (F.launchProviderForm(
+            G.adapterFor('claude', deps({ secretFor: () => '' })), { providerId: 'kimi-work' }
+        ).refusals || []).join(' ').includes('no stored key'));
+    ok('‼️ …and a tier that route does not map is refused with the ones it does',
+        (F.launchProviderForm(claude(), { providerId: 'minimax-lab', tier: 'haiku' })
+            .refusals || []).join(' ').includes('opus'));
+}
+
 console.log('\n== and the doors really offer it ==');
 {
     // ‼️ SOURCE-SCANNED, like the rest of this family. The form above is pure
@@ -326,6 +370,16 @@ console.log('\n== and the doors really offer it ==');
         + 'reason shown when it cannot',
         /\.\.\.\(form\.variants\.length \? \[\{/.test(ext)
         && /\.\.\.\(form\.variantsWhy \? \[\{/.test(ext));
+    // ‼️ X-113 - AND THE REFUSAL REACHES BOTH DOORS. The form answering is
+    // half a rule; a field nothing draws is the other half missing.
+    ok('the launcher draws the refusal as a row of its own, and repeats it when pressed',
+        /\.\.\.\(form\.refusals \? \[\{/.test(ext)
+        && /pick\.act === 'refusal-why'/.test(ext)
+        && /showWarningMessage\(/.test(ext));
+    const consolePage = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
+    ok('‼️ …and the Console composer puts it in the panel where the pick is made',
+        /\.\.\.\(f\.refusals \|\| \[\]\)\.map\(/.test(consolePage));
+
     ok('‼️ the transport is WHERE the session opens, not the engine — a terminal is '
         + 'a TUI and the Console is ACP, and neither takes --variant',
         /const transport: ProviderTransport = where === 'console' \? 'acp' : 'tui';/.test(ext));

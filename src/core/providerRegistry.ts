@@ -327,7 +327,10 @@ function openCodeAdapter(deps: RegistryDeps): ProviderAdapter {
             // where it has not been read there is nothing to refuse anyway.
             providerId: str(sel.providerId) || catalogProviderFor(str(sel.modelId)),
             modelId: str(sel.modelId),
-            ...(sel.variant ? { variant: sel.variant } : {})
+            ...(sel.variant ? { variant: sel.variant } : {}),
+            // X-113 - the reasoning level is part of the pick, so it is part of
+            // what can be refused; a model that publishes none says so here.
+            ...(sel.effort ? { effort: str(sel.effort) } : {})
         }),
         // ‼️ THE OPPOSITE OF CLAUDE, AND FOR A MEASURED REASON: this engine DOES
         // name its provider — `providerID` on an export's assistant rows, and

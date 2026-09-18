@@ -24197,6 +24197,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     label: '$(symbol-enum) Variant', description: 'not here',
                     detail: form.variantsWhy, act: 'variant-why'
                 } as Row] : []),
+                // ‼️ X-113 - WHAT THIS PICK WOULD BE REFUSED FOR, ON THE LIST
+                // WHERE IT IS STILL BEING MADE. The adapter has answered this
+                // since X-99 - a model the engine stopped offering, a tier the
+                // route does not map, a third-party endpoint with no stored key,
+                // a model that publishes no tool calling - and nothing but a
+                // bridge op ever asked it, so the sentence arrived as an engine
+                // error in a terminal after the choosing was over.
+                //
+                // ‼️ A WARNING, NOT A GATE. Launch stays pressable: the catalog
+                // can be stale and the engine is the authority on its own run.
+                ...(form.refusals ? [{
+                    label: '$(warning) Would be refused',
+                    description: form.refusals.length === 1 ? '1 reason' : `${form.refusals.length} reasons`,
+                    detail: form.refusals.join(' · '), act: 'refusal-why'
+                } as Row] : []),
                 {
                     label: '$(zap) Effort', description: show(merged.effort) + inherited(o.effort, d.effort),
                     detail: 'how much reasoning per turn — --effort', act: 'effort'
@@ -24389,6 +24404,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // A row that exists to be READ. Pressing it repeats the sentence
                 // where a truncated detail line cannot hide it.
                 void vscode.window.showInformationMessage(`Agent Farm: ${form.variantsWhy}`);
+                continue;
+            }
+            if (pick.act === 'refusal-why') {
+                // Same kind of row, and a warning rather than a question: it
+                // repeats what the adapter said and changes nothing about the pick.
+                void vscode.window.showWarningMessage(
+                    `Agent Farm: ${(form.refusals || []).join(' · ')}`);
                 continue;
             }
             if (pick.act === 'where') {

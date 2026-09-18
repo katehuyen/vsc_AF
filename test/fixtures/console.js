@@ -524,7 +524,17 @@ const routedComposerData = () => Object.assign(composerData(), {
             ]
         },
         variants: [],
-        variantsWhy: 'a hosted card is spoken to over ACP, which declares only model and mode'
+        variantsWhy: 'a hosted card is spoken to over ACP, which declares only model and mode',
+        // ‼️ X-113 - THE REFUSAL, ON THE SCENE WHERE THE ROUTE IS PICKED. The
+        // adapter has answered this since X-99 and no picture had ever drawn it,
+        // because no surface asked. A key that is not stored is the refusal that
+        // matters most here: the run reaches a stranger's endpoint and the error
+        // a person then reads is about authentication rather than about the
+        // profile with nothing in it.
+        refusals: [
+            '"Kimi (work)" has no stored key, so a run on it would reach '
+                + 'https://api.moonshot.ai/anthropic unauthenticated.'
+        ]
     }
 });
 
@@ -902,7 +912,10 @@ module.exports = {
         },
         {
             id: 'console-route',
-            label: 'Console — the composer picks the route the session is served by (X-105)',
+            // ‼️ X-113 - the panel is the point of this scene now: it carries the
+            // refusal, and a closed panel photographs none of it.
+            tip: 'tip-route',
+            label: 'Console — the composer picks the route, and says what the pick would be refused for (X-105/X-113)',
             data: routedComposerData()
         },
         {
