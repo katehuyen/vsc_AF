@@ -120,7 +120,26 @@ for (const [page, num] of [['media/turns.js', 'r.endCtx'], ['media/sessionsTable
         new RegExp(`line\\('Window is', ${num.replace('.', '\\.')} && r\\.ctxWindow \\?`).test(read(page)));
 }
 
-// ---------- 5) the wording lives once, in charts.js ----------
+// ---------- 5) the LIVE Console card, which had no ceiling at all ----------
+// ‼️ Measured on a running Claude session before this: `ctx 234.9k`, window
+// null. The card asks the engine; Claude states none; so the one surface a
+// person watches while the turn runs drew a raw token count with no ceiling,
+// no percentage and no bar. The other pages had known the answer since X-35.
+const consolePanel = read('src/panels/consolePanel.ts');
+ok('the card resolves its ceiling through the one rule, not off the engine alone',
+    /liveWindow\(s, afConfig\(\)\.get<number>\('contextWindowTokens', 0\)\)/.test(consolePanel)
+    && !/contextWindowTokens: s\.contextWindowTokens \?\? 0/.test(consolePanel));
+ok('…and asks the APPLIED model, which is the one really running',
+    /s\.applied\?\.model \|\| s\.model \|\| ''/.test(consolePanel));
+ok('…and sends where the ceiling came from beside it',
+    /contextWindowSource: w\.source/.test(consolePanel));
+const consolePage = read('media/console.js');
+ok('the card tip names which of the three the ceiling was',
+    /C\.ctxWindowIs\(s\.contextWindowSource\)/.test(consolePage));
+ok('…and no longer claims every ceiling is one the session reported',
+    !/the capacity this session reports/.test(consolePage));
+
+// ---------- 6) the wording lives once, in charts.js ----------
 const vm = require('vm');
 const C = (() => {
     const box = vm.createContext({ window: {} });
@@ -134,7 +153,7 @@ ok('the override is described as the reader\'s own, not as a measurement',
 ok('an unknown source still gets a sentence rather than "undefined"',
     typeof C.ctxWindowIs(undefined) === 'string' && C.ctxWindowIs(undefined).length > 0);
 
-// ---------- 6) nobody keeps a private copy of the rule ----------
+// ---------- 7) nobody keeps a private copy of the rule ----------
 // ‼️ The defect this file exists for is DUPLICATION, so the guard is that the
 // hand-written forms do not come back. `contextWindowFor` may still be called
 // (it is the table), but the `forced > 0 ? forced : …` shape is the rule being

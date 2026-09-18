@@ -1555,10 +1555,13 @@
             head: ctxShort(s) || 'ctx — not measured',
             body: window.AFTip.lines([
                 'Context now: ' + (s.contextTokens ? C.fmtTok(s.contextTokens) : '—'),
+                // ‼️ X-113 - the ceiling is no longer always "what this session
+                // reports": Claude reports none and the model's published
+                // window answers for it, and your own override outranks both.
+                // Those are three different claims and the line names which.
                 'Window: ' + (s.contextWindowTokens
-                    ? C.fmtTok(s.contextWindowTokens) + ' — the capacity this session reports, '
-                        + 'which is not always the model\'s published ceiling'
-                    : 'this engine states none'),
+                    ? C.fmtTok(s.contextWindowTokens) + ' — ' + C.ctxWindowIs(s.contextWindowSource)
+                    : C.ctxWindowIs('')),
                 pct ? 'Full: ' + pct + '%' : '',
                 over
                     ? '‼️ The reading is larger than the window, so the two came from '

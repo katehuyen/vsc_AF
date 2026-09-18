@@ -37,6 +37,25 @@ import { handleAfNav, htmlShell, promptSnippetMessage, wikiMarksOf, wikiMarkMess
 import { afConfig } from '../core/settingsDoor';
 
 /**
+ * ‼️ X-113 - WHAT A LIVE CARD'S CONTEXT READING IS A FRACTION OF.
+ *
+ * Measured on a running Claude session: `ctx 234.9k`, window null. The card
+ * asks the engine, and Claude states no window - so the surface a person
+ * actually watches while a turn runs drew a raw token count with no ceiling,
+ * no percentage and no bar, while every table on the other pages had known the
+ * answer since X-35. The rule is core/pricing's (contextWindowOf); the model
+ * asked is the APPLIED one, which on a card that switched mid-session is not
+ * the one it was launched with.
+ */
+function liveWindow(
+    s: { contextWindowTokens?: number; applied?: { model: string }; model?: string },
+    forced: number
+): { contextWindowTokens: number; contextWindowSource: string } {
+    const w = contextWindowOf(s.contextWindowTokens ?? 0, s.applied?.model || s.model || '', forced);
+    return { contextWindowTokens: w.tokens, contextWindowSource: w.source };
+}
+
+/**
  * The composer's chip list, back as attachments.
  *
  * Only the PATH is trusted from the webview — everything else is re-derived
@@ -1152,7 +1171,7 @@ export class ConsolePanel {
                 // reading came from and how old it is — the strip draws the
                 // first two and the AFTip carries all four.
                 contextTokens: s.contextTokens ?? 0,
-                contextWindowTokens: s.contextWindowTokens ?? 0,
+                ...liveWindow(s, afConfig().get<number>('contextWindowTokens', 0)),
                 contextSource: s.contextSource ?? '',
                 contextMeasuredAt: s.contextMeasuredAt ?? 0,
                 contextStale: !!s.contextStale,

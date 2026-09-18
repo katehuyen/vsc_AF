@@ -170,7 +170,7 @@ const data = () => ({
             // capacity that session reports (its OWN 258 400, not the model's
             // published ceiling) and where the figure was read. `tokens` above
             // is the spend and is deliberately a different number.
-            contextTokens: 28874, contextWindowTokens: 258400,
+            contextTokens: 28874, contextWindowTokens: 258400, contextWindowSource: 'engine',
             contextSource: 'rollout-last-token-usage', contextMeasuredAt: NOW - 4000,
             turnStartedAt: NOW - 34000,
             turnTokens: 14310, turnWTokens: 14310, turnApiCalls: 3, turnSteps: 7,
@@ -186,6 +186,11 @@ const data = () => ({
         }),
         session({
             id: 'cs1', tokens: 812000, wTokens: 640000, cost: 0.31, contextTokens: 92000,
+            // ‼️ X-113 - a Claude card with a bare `ctx 92.0k` and no ceiling
+            // is a state the host can no longer produce: Claude states no
+            // window, and the model table answers for it. The picture kept
+            // certifying the defect.
+            contextWindowTokens: 1000000, contextWindowSource: 'model',
             color: '#e05252',
             lastTurn: {
                 outcome: 'done', ms: 41200, cost: 0.084, tokens: 51200, wTokens: 42100,
@@ -400,7 +405,8 @@ const resumeRow = (o) => Object.assign({
     sessionId: '019fe000-0000-0000-0000-000000000000', title: '', agentName: 'developer',
     engine: 'claude', cwd: 'D:\\zone\\dev\\git\\miropharm\\vsc_AgentFarm', pinned: false,
     ts: NOW - 3600000, cost: 0.12, color: '', tokens: 184000, wTokens: 151000,
-    contextTokens: 96000, contextWindowTokens: 1000000, contextSource: 'transcript-last-call',
+    contextTokens: 96000, contextWindowTokens: 1000000, contextWindowSource: 'model',
+    contextSource: 'transcript-last-call',
     firstPrompt: 'devir notunu okuyup kaldığın yerden devam et', startedAt: NOW - 5 * 3600000,
     turns: 14, tools: 63, errors: 0, models: ['claude-opus-5'], tags: [],
     identity: null
@@ -1192,7 +1198,7 @@ function guardData(n) {
         permissionMode: 'bypassPermissions',
         turnStartedAt: NOW - 38000, turnTokens: 24100, turnApiCalls: 4,
         tokens: 406000, wTokens: 320000, cost: 0.82,
-        contextTokens: 182000, contextWindowTokens: 1000000,
+        contextTokens: 182000, contextWindowTokens: 1000000, contextWindowSource: 'model',
         contextSource: 'stream-last-call', contextMeasuredAt: NOW - 30000,
         bridgeGuardView: G.bridgeGuardView(catches, ts => Math.round((NOW - ts) / 60000) + 'm'),
         account: 'aicozums', accountLabel: 'aicozums',
@@ -1253,6 +1259,10 @@ function ctxSignalData(state) {
         // CONVERGE chip is the page contradicting itself in one line.
         contextTokens: codex ? 113600 : (state === 'handover' ? 410000 : 360000),
         contextWindowTokens: codex ? 258400 : 1000000,
+        // ‼️ X-113 - Codex states its own operational window every turn;
+        // Claude never states one, so its million is the model table's answer
+        // and the card's panel says which.
+        contextWindowSource: codex ? 'engine' : 'model',
         contextSource: codex ? 'rollout-last-token-usage' : 'stream-last-call',
         contextMeasuredAt: NOW - 30000,
         contextSignalView: view,

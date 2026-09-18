@@ -2,6 +2,27 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.564.0 - the live Console card gets a ceiling for the first time (X-113, part 2) (2026-09-18)
+
+- **Measured on a running Claude session: `ctx 234.9k`, window null.** The
+  card asks the engine for its window and Claude states none, so the ONE
+  surface a person watches while a turn is running drew a raw token count with
+  no ceiling, no percentage and no bar — while every table on the other pages
+  had known the answer since X-35. The card now resolves it through the same
+  rule as everything else (`contextWindowOf`), against the APPLIED model,
+  which on a card that switched mid-session is not the one it was launched
+  with. A Claude card reads `ctx 92.0k / 1.0M` instead of `ctx 92.0k`.
+- **And the panel says which of the three the ceiling was.** Its Window line
+  claimed "the capacity this session reports" for every ceiling; that is now
+  only true of one of them, so it uses the shared wording (`ctxWindowIs`) —
+  your override, the engine's own statement, or the model's published window.
+- Tests: `test_ctx_window.js` 38 (+5, the card's resolution and its wording).
+  `test_console_page.js` moves onto `lib_charts_stub` — it was the third
+  hand-written `AFCharts` found by this change, and the same U-130 drift.
+  The console fixture's cards carry `contextWindowSource`, and the Claude card
+  that showed a bare `ctx 92.0k` was photographing a state the host can no
+  longer produce. Looked at: `console.s1` — the card strip and the status line.
+
 ## 3.563.0 - one rule for "a context reading is a fraction of WHAT", and the Turns page stops dividing every engine by 200k (X-113, part 1) (2026-09-18)
 
 - **The Turns page measured every turn of every engine against 200 000.** A

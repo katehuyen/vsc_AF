@@ -20,11 +20,13 @@ const code = require(path.join(__dirname, 'lib_shared_media.js')).sharedMedia()
 // model ids, writes durations and writes the api/steps pair the way every other
 // surface does, and a hand-written stub here would let the two drift while the
 // test kept passing.
-const realCharts = (() => {
-    const box = vm.createContext({ window: {} });
-    vm.runInContext(fs.readFileSync(path.resolve(__dirname, '../media/charts.js'), 'utf8'), box);
-    return box.window.AFCharts;
-})();
+// ‼️ X-113 - and the stub is the real object with overrides ON TOP
+// (U-130's lib_charts_stub). The list below is what the assertions read in a
+// plainer form; everything this file did not think about was a HOLE, and the
+// day `ctxWindowIs` was added to charts.js the page was fine and this test
+// died with "is not a function".
+const { charts, realCharts: realChartsOf } = require(path.join(__dirname, 'lib_charts_stub.js'));
+const realCharts = realChartsOf();
 const realParseModel = realCharts.parseModel;
 
 // ---------- fake DOM ----------
@@ -110,7 +112,7 @@ const sandbox = {
         setState: s => { state = s; }
     }),
     window: {
-        AFCharts: {
+        AFCharts: charts({
             esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
             fmtUSD: v => '$' + (v || 0),
             fmtTok: v => v + 't',
@@ -131,7 +133,7 @@ const sandbox = {
             fmtSteps: realCharts.fmtSteps,
             STEPS_TIP: realCharts.STEPS_TIP,
             parseModel: realParseModel
-        },
+        }),
         AFHeader: { html: () => '<header>', wire: () => { } },
         addEventListener: (ev, fn) => { if (ev === 'message') { msgHandler = fn; } }
     },
