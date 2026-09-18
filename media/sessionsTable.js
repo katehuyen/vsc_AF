@@ -1015,11 +1015,38 @@
             'nothing-requested': 'no model requested',
             'nothing-reported': 'no model recorded'
         };
+        // X-108 — WHY A ROW HAS NO SETUP TO SHOW, which is three different facts
+        // that used to share one blank space. None of them invents a value.
+        const BINDING = {
+            legacy: 'not recorded - this run is older than the launch manifest',
+            external: 'not ours - an imported or foreign-CLI transcript',
+            unknown: 'asked for, and nothing answered'
+        };
+        // Only the states where the ENGINE contributed evidence are worth a
+        // line. "we wrote it down" is already what the Route line being there
+        // means, and stating it on every row is a line the reader stops seeing.
+        const PROOF = {
+            matched: 'declared, and the engine named the same one',
+            'engine-reported': 'the engine named it; nothing was declared'
+        };
         const launchLines = r => {
             const L = r.launch;
             if (!L) { return []; }
+            const I = L.identity || {};
+            if (I.binding && I.binding !== 'declared') {
+                return [
+                    line('Route', BINDING[I.binding] || ''),
+                    // The reported half stands on its own: an engine that named
+                    // its provider has proved one even with nothing declared.
+                    line('Answered by', (I.reportedProviderIds || []).join(', ')),
+                    line('Asked vs answered', AGREEMENT[L.agreement] || L.agreement),
+                    line('Note', L.note)
+                ];
+            }
             return [
                 line('Route', L.route + (L.revision ? ` · profile revision ${L.revision}` : '')),
+                line('Answered by', (I.reportedProviderIds || []).join(', ')),
+                line('How we know', PROOF[I.proof] || ''),
                 line('Requested', L.requested),
                 // ‼️ X-251 — WHOSE PLAN PAID. Empty on a run that injected no
                 // sign-in, and `line` drops it: "this machine's own account" is
@@ -1109,7 +1136,9 @@
                 + 'normal). not proven = neither side matches the other, which is a reason to look '
                 + 'and NOT proof of a fault: &quot;opus&quot; against &quot;claude-opus-5&quot; is '
                 + 'an alias. no model requested = the launch named none and took the default. '
-                + 'Sessions with no recorded launch show none of these lines rather than a guess.'
+                + 'A session with no recorded launch says WHICH kind of nothing it is rather than '
+                + 'guessing a value: older than the manifest, not ours (an imported or foreign-CLI '
+                + 'transcript), or asked for with no answer.'
                 + '">Engine</th>',
             project: '<th title="Project this session\'s work belongs to">Project</th>',
             files: '<th class="num" title="Distinct files written to (Edit / Write / MultiEdit / NotebookEdit)">Files</th>',

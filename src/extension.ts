@@ -200,7 +200,7 @@ import {
 import {
     AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
 } from './core/accountSpend';
-import { describeDrift, runDrift, turnRuntimes } from './core/turnRuntime';
+import { describeDrift, runDrift, runIdentity, turnRuntimes } from './core/turnRuntime';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
@@ -38311,7 +38311,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'what it asked for". args: sessionId (required). '
                 + 'Returns {sessionId, engine, launchId (null when the session predates the manifest '
                 + 'or was started by hand outside a bound mechanism — an absence, not a default), '
-                + 'manifest (the whole record, or null), drift{turns, reportedModels, '
+                + 'manifest (the whole record, or null), identity{...the whole run on one object: '
+                + 'providerId, providerLabel, origin, scope, providerProfileId, '
+                + 'providerProfileRevision, requestedModelRef, reportedProviderIds, reportedModels, '
+                + 'proof, multiProvider, turnScope, agreement, and ‼️ `binding` — READ THIS FIRST: '
+                + '"declared" = a manifest describes the run and every field is real; "legacy" = '
+                + 'OUR run from before the manifest existed (nobody was asked, so it is '
+                + 'backfillable from evidence later); "external" = not our run at all, an imported '
+                + 'or foreign-CLI transcript with nothing to record; "unknown" = asked for and '
+                + 'nothing answered, the only one that means go and look. The VALUES stay empty on '
+                + 'the last three — naming an absence is the opposite of filling it in}, '
+                + 'drift{turns, reportedModels, '
                 + 'reportedProviderIds, multiProvider, turnScope, changedAt (turn numbers where '
                 + 'what came back changed), providerConflict, agreement}, note (one line, EMPTY on '
                 + 'an ordinary run), turns[{n, providerId, origin, reportedModels, '
@@ -38356,6 +38366,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     engine,
                     launchId: s.launchId ?? null,
                     manifest: manifest ?? null,
+                    // ‼️ X-108 — THE WHOLE RUN ON ONE OBJECT, so a caller that
+                    // wants "what ran this" does not have to fold fifty turns
+                    // itself. `binding` is the field to read first: it says
+                    // whether the rest is a record or an absence, and which
+                    // kind of absence.
+                    identity: runIdentity(manifest, engine,
+                        (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })),
+                        { external: s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !manifest) }),
                     drift,
                     note: describeDrift(drift),
                     turns: rows.map(r => ({

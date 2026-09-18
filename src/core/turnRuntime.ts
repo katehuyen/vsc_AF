@@ -31,8 +31,8 @@
 
 import { LaunchManifest } from './launchManifest';
 import {
-    hasProviderConflict, ProviderIdentity, scopeAllowsTurnChange, TurnRuntimeIdentity, turnIdentity,
-    unknownIdentity
+    hasProviderConflict, ProviderIdentity, proofOf, scopeAllowsTurnChange, TurnRuntimeIdentity,
+    turnIdentity, unknownIdentity
 } from './providerIdentity';
 
 /**
@@ -308,4 +308,88 @@ export function describeDrift(d: RunDrift): string {
         bits.push('the model that answered is not one of the names the launch asked for');
     }
     return bits.join(' · ');
+}
+
+/**
+ * ‼️ X-108 — THE WHOLE IDENTITY OF A RUN, ON ONE OBJECT, FOR A SESSION ROW.
+ *
+ * `turnRuntimes` answers per turn, which is the right shape for a viewer and the
+ * wrong one for a table: a row cannot carry fifty turns. This is the same join
+ * summarised — both declared fields and both reported ones, with the proof.
+ *
+ * ‼️ AND IT ALWAYS ANSWERS. The previous shape returned NOTHING when there was
+ * no manifest, so an old session and a foreign one were drawn identically to a
+ * run whose route was recorded and fine: three different facts sharing one blank
+ * space. `binding` below is the field that separates them, and it is the point
+ * of the whole function — the values themselves stay empty, because filling them
+ * in is the guess this family refuses.
+ */
+export interface RunIdentity {
+    engine: string;
+    /** '' whenever nothing declared one — never derived from the model name. */
+    providerId: string;
+    providerLabel: string;
+    origin: ProviderIdentity['origin'];
+    scope: ProviderIdentity['scope'];
+    /** Only an Agent Farm route profile has these; '' / null otherwise. */
+    providerProfileId: string;
+    providerProfileRevision: number | null;
+    requestedModelRef: string;
+    reportedProviderIds: string[];
+    reportedModels: string[];
+    proof: ProviderIdentity['proof'];
+    multiProvider: boolean;
+    turnScope: boolean;
+    agreement: ModelAgreement;
+    /**
+     * ‼️ WHY THE ROW HAS NOTHING TO SHOW — three answers, never one blank.
+     *
+     * · `declared` — a manifest describes this run; every field above is real.
+     * · `legacy`   — OUR run, from before the manifest existed. Nobody was
+     *                asked, so this is backfillable from evidence later (X-116).
+     * · `external` — not our run at all: an imported or foreign-CLI transcript.
+     *                There was never anything to record and never will be.
+     * · `unknown`  — asked, and no answer. The rarest, and the only one that
+     *                means somebody should go and look.
+     */
+    binding: 'declared' | 'legacy' | 'external' | 'unknown';
+}
+
+export function runIdentity(
+    manifest: LaunchManifest | undefined,
+    engine: string,
+    turns: readonly TurnReport[],
+    /** The transcript is not from a run Agent Farm started — an import, or a
+     *  CLI whose sessions it merely reads. The caller knows; this file cannot. */
+    opts?: { external?: boolean }
+): RunIdentity {
+    const rows = turnRuntimes(manifest, engine, turns);
+    const drift = runDrift(rows);
+    const id = declaredOf(manifest, str(engine) || 'claude');
+    const binding: RunIdentity['binding'] = manifest ? 'declared'
+        : opts?.external ? 'external'
+            : id.origin === 'unknown' ? 'unknown' : 'legacy';
+    return {
+        engine: id.engine || str(engine) || 'claude',
+        providerId: str(id.providerId),
+        providerLabel: str(id.providerLabel),
+        // ‼️ An EXTERNAL run's origin is `external` and says so, rather than
+        // borrowing `legacy-inherit` — "nobody was asked" is a statement about
+        // our own records and is simply untrue of somebody else's transcript.
+        origin: binding === 'external' ? 'external' : id.origin,
+        scope: id.scope,
+        providerProfileId: str(id.providerProfileId),
+        providerProfileRevision: id.providerProfileRevision ?? null,
+        requestedModelRef: str(id.requestedModelRef),
+        reportedProviderIds: drift.reportedProviderIds,
+        reportedModels: drift.reportedModels,
+        // The reported half stands on its own: an engine that named its provider
+        // has PROVED one even when nothing was declared, and saying `unknown`
+        // there would throw away the only evidence there is.
+        proof: proofOf(str(id.providerId), drift.reportedProviderIds),
+        multiProvider: drift.multiProvider,
+        turnScope: drift.turnScope,
+        agreement: drift.agreement,
+        binding
+    };
 }

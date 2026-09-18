@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.549.0 - a session row says which run really produced it — and when it cannot, which kind of nothing that is (X-108) (2026-09-18)
+
+- **‼️ `null` was three different facts sharing one blank space.** A session row
+  with no launch manifest showed no setup lines at all, and that silence covered
+  our own run from before the manifest existed, somebody else's transcript, and
+  a route asked for with no answer. They are not the same thing and only one of
+  them is worth looking at.
+- **`runIdentity(manifest, engine, turns, {external})`** — the whole run on one
+  object, for a row that cannot carry fifty turns: `providerId`,
+  `providerLabel`, `origin`, `scope`, `providerProfileId`,
+  `providerProfileRevision`, `requestedModelRef`, `reportedProviderIds`,
+  `reportedModels`, `proof`, `multiProvider`, `turnScope`, `agreement` — and
+  **`binding`**, which is the field to read first: `declared` · `legacy` (ours,
+  older than the manifest — backfillable from evidence later, X-116) ·
+  `external` (never ours; there was nothing to record) · `unknown` (asked, and
+  nothing answered).
+- **‼️ And NO VALUE IS INVENTED to go with it.** On the last three the route,
+  the requested model and the account stay empty. Naming an absence is the
+  opposite of filling it in, and filling it in from the model name is the one
+  move this whole family exists to refuse.
+- **An external run's origin is `external`, not `legacy-inherit`.** "Nobody was
+  asked" is a statement about *our* records and is simply untrue of a run Agent
+  Farm never started — it would also make the row look backfillable when there
+  is nothing anywhere to backfill it from.
+- **The reported half stands on its own.** An engine that named its provider has
+  PROVED one even when nothing was declared (`proof: 'engine-reported'`), so the
+  Sessions hover shows `Answered by: opencode` on a run with no manifest at all.
+  The proof line appears only where the engine contributed evidence — "we wrote
+  it down" is already what the Route line being there means.
+- **All three Sessions tables** (Dashboard, agent page, Sessions page) read the
+  one shared `sessionRowPool`, so the fact lands on every one of them, and the
+  Engine column's `<th>` explains the states once rather than in each cell.
+- **`launch.runtime` returns `identity` too**, with a describe that tells the
+  caller to read `binding` first — an agent asking "what ran this" no longer has
+  to fold the turn list itself.
+
 ## 3.548.0 - the provider the engine named reaches the turn index, so a multi-provider run can be told from a conflict (X-108, part 1) (2026-09-18)
 
 - **‼️ The drop, named.** OpenCode's export states the pair — `info.model =

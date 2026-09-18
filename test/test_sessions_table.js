@@ -1296,8 +1296,40 @@ const mkRow = (i, extra) => Object.assign({
                 note: 'the model that answered is not one of the names the launch asked for'
             }
         }),
-        // The common case for a while: a session whose launch was never recorded.
-        mkRow(3, { engine: 'gemini', models: ['gemini-2.5-pro'] })
+        // The page must still survive a row built before the manifest store
+        // exists — `launch` absent altogether, not merely unbound.
+        mkRow(3, { engine: 'gemini', models: ['gemini-2.5-pro'] }),
+        // ‼️ X-108 — THE THREE KINDS OF NOTHING. The host sends a `launch` for
+        // every row now; what separates these from row 1 is `binding`, and the
+        // values stay empty because naming an absence is the opposite of
+        // filling it in.
+        mkRow(4, {
+            engine: '', models: ['claude-opus-4-8'],
+            launch: {
+                route: '', revision: null, requested: '', surface: '', account: '', at: 0,
+                agreement: 'nothing-requested', note: '',
+                identity: { binding: 'legacy', origin: 'legacy-inherit', reportedProviderIds: [] }
+            }
+        }),
+        mkRow(5, {
+            engine: 'codex', models: ['gpt-5.6-sol'],
+            launch: {
+                route: '', revision: null, requested: '', surface: '', account: '', at: 0,
+                agreement: 'nothing-requested', note: '',
+                identity: { binding: 'external', origin: 'external', reportedProviderIds: [] }
+            }
+        }),
+        mkRow(6, {
+            engine: 'opencode', models: ['big-pickle'],
+            launch: {
+                route: '', revision: null, requested: '', surface: '', account: '', at: 0,
+                agreement: 'nothing-requested', note: '',
+                identity: {
+                    binding: 'legacy', origin: 'legacy-inherit',
+                    reportedProviderIds: ['opencode'], proof: 'engine-reported'
+                }
+            }
+        })
     ], 10);
     const html = () => containers.x102.innerHTML;
 
@@ -1336,6 +1368,27 @@ const mkRow = (i, extra) => Object.assign({
     ok('!! a run with no recorded launch shows no launch lines at all',
         geminiCell.length > 0 && geminiCell.indexOf('Route:') < 0
         && geminiCell.indexOf('Asked vs answered:') < 0);
+
+    // ‼️ X-108 — …BUT WHERE THE HOST DOES SEND ONE, THE BLANK SPACE IS NAMED.
+    // Three different facts used to be drawn identically: our own run from
+    // before the manifest, somebody else's transcript, and a route asked for
+    // with no answer. Each now says which it is — and still names no provider.
+    ok('‼️ a run older than the manifest says so, and guesses nothing',
+        html().includes('Route: not recorded - this run is older than the launch manifest'));
+    ok('‼️ …while a transcript that was never ours says THAT instead',
+        html().includes('Route: not ours - an imported or foreign-CLI transcript'));
+    ok('…and neither of them invents a requested model or an account',
+        !/Route: not (recorded|ours)[^"]*Requested:/.test(html()));
+    // The reported half stands on its own: an engine that named its provider has
+    // proved one even when nothing was declared, and dropping it because the
+    // manifest is missing would throw away the only evidence there is.
+    ok('‼️ …and a provider the ENGINE named survives a missing manifest',
+        html().includes('Answered by: opencode'));
+    // "We wrote it down" is what the Route line being there already means, so
+    // only the states where the engine contributed evidence get a line.
+    ok('…the proof line appears only where the engine contributed evidence',
+        html().includes('How we know:') === false
+        || !/How we know: declared, and/.test(html()));
 
     // The column is defined ONCE, on its own <th> - which is where the four
     // states are explained, so no cell has to carry the explanation.

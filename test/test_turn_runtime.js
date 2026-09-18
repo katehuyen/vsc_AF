@@ -197,6 +197,67 @@ const CLAUDE_ROUTE = {
 }
 
 /* =========================================================================
+ * 4b — ‼️ X-108 — THE WHOLE RUN ON ONE OBJECT, AND IT ALWAYS ANSWERS
+ *
+ * `turnRuntimes` is the right shape for a viewer and the wrong one for a table:
+ * a row cannot carry fifty turns. `runIdentity` is the same join summarised —
+ * and unlike the shape it replaces it answers when there is no manifest, which
+ * is where three different facts used to share one blank space.
+ * ========================================================================= */
+{
+    const m = manifest({
+        engine: 'opencode', providerId: 'opencode', providerLabel: 'OpenCode',
+        origin: 'engine-native', scope: 'turn', requestedModelRef: 'opencode/big-pickle',
+        proof: 'launch-declared'
+    }, { model: 'big-pickle' });
+    const declared = T.runIdentity(m, 'opencode', [
+        { n: 1, models: ['big-pickle'], providerIds: ['opencode'] },
+        { n: 2, models: ['big-pickle'], providerIds: ['anthropic'] }
+    ]);
+    eq('a run with a manifest is bound to it', declared.binding, 'declared');
+    eq('…and carries the declared half whole',
+        [declared.providerId, declared.providerLabel, declared.origin, declared.scope],
+        ['opencode', 'OpenCode', 'engine-native', 'turn']);
+    eq('…and the requested model reference the launch really named',
+        declared.requestedModelRef, 'opencode/big-pickle');
+    eq('…and both reported halves, which only the turns could supply',
+        [declared.reportedProviderIds, declared.reportedModels],
+        [['opencode', 'anthropic'], ['big-pickle']]);
+    ok('…and the timeline facts ride with them',
+        declared.multiProvider === true && declared.turnScope === true);
+    // ‼️ THE ENGINE NAMED THE SAME PROVIDER THAT WAS DECLARED, so the proof is
+    // stronger than "we wrote it down" — and that is the only reason a surface
+    // shows a proof line at all.
+    eq('…and the proof says both sides agreed', declared.proof, 'matched');
+
+    // ‼️ THE THREE KINDS OF NOTHING, WHICH IS THE POINT OF THE FUNCTION.
+    const legacy = T.runIdentity(undefined, 'claude', [{ n: 1, models: ['claude-opus-5'] }]);
+    eq('OUR run from before the manifest is `legacy`, not `unknown`', legacy.binding, 'legacy');
+    eq('…and says nobody was asked rather than naming a provider', legacy.origin, 'legacy-inherit');
+    eq('…and invents no provider to go with it', legacy.providerId, '');
+    eq('…while the model that really served it is still kept',
+        legacy.reportedModels, ['claude-opus-5']);
+
+    const foreign = T.runIdentity(undefined, 'codex', [{ n: 1, models: ['gpt-5'] }],
+        { external: true });
+    eq('somebody else\'s transcript is `external`', foreign.binding, 'external');
+    // ‼️ AND ITS ORIGIN IS `external`, NOT `legacy-inherit`. "Nobody was asked"
+    // is a statement about OUR records and is simply untrue of a run we never
+    // started — it would also make the row look backfillable (X-116) when there
+    // is nothing anywhere to backfill it from.
+    eq('…and it does not borrow "nobody was asked"', foreign.origin, 'external');
+
+    // An engine that named its provider has PROVED one even with nothing
+    // declared — saying `unknown` there would throw away the only evidence.
+    const reportedOnly = T.runIdentity(undefined, 'opencode',
+        [{ n: 1, models: ['big-pickle'], providerIds: ['opencode'] }]);
+    eq('…and a provider the engine named is proof even with no manifest',
+        reportedOnly.proof, 'engine-reported');
+    eq('…named on the summary, where a row can read it',
+        reportedOnly.reportedProviderIds, ['opencode']);
+}
+
+/* =========================================================================
  * 5 — ‼️ A RUN WITH NO MANIFEST IS `legacy-inherit`, NOT `unknown`
  * ========================================================================= */
 {
@@ -302,6 +363,14 @@ const CLAUDE_ROUTE = {
     // ‼️ THE DESCRIBE IS PART OF THE FEATURE. An agent reading `farm.ops` decides
     // what an answer MEANS from this text, and `unproven` read as "wrong" would
     // turn an alias into a bug report.
+    // ‼️ X-108 — AND THE SUMMARY IS ON THE OP TOO, so a caller asking "what ran
+    // this" does not have to fold fifty turns itself — and so that an absence
+    // arrives NAMED rather than as a missing field.
+    ok('‼️ the op answers with the whole run on one object',
+        /identity: runIdentity\(manifest, engine,/.test(ext));
+    ok('…and its describe tells the caller to read `binding` first',
+        /`binding` — READ THIS FIRST/.test(ext)
+        && /naming an absence is the opposite of filling it in/.test(ext));
     ok('…and the describe says out loud that "unproven" is not an accusation',
         /is NOT proof of a fault/.test(ext) && /never "this ran on the wrong thing"/.test(ext));
     // ‼️ X-108 — AND THE SAME DUTY FOR THE SECOND SIGNAL. An agent reading
@@ -329,8 +398,17 @@ const CLAUDE_ROUTE = {
     const dash = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'dashboard.ts'), 'utf8');
     ok('the row carries what the run was set up to be',
         /const launchFacts = \(s: SessionInfo\) =>/.test(dash) && /launch: launchFacts\(s\)/.test(dash));
-    ok('‼️ …and NULL rather than a default when no manifest was recorded',
-        /if \(!m\) \{ return null; \}/.test(dash));
+    // ‼️ X-108 — AND WHERE THAT USED TO BE `null`, IT NOW SAYS WHICH KIND OF
+    // NOTHING. `null` made three different facts share one blank space: our own
+    // run from before the manifest (`legacy`, backfillable later — X-116),
+    // somebody else's transcript (`external`, never anything to record), and
+    // asked-with-no-answer (`unknown`, the only one worth looking at). The
+    // VALUES stay empty — naming the absence is the opposite of filling it in.
+    ok('‼️ …and a run with no manifest says which kind of nothing it is',
+        /const identity = runIdentity\(m, engine, reports, \{ external \}\);/.test(dash)
+        && /route: '', revision: null, requested: '', surface: '', account: ''/.test(dash));
+    ok('…with no value invented to go beside it',
+        !/if \(!m\) \{ return null; \}/.test(dash));
     // ‼️ ALL THREE TABLES, NOT ONE. The same table component is embedded on the
     // Dashboard, the agent page and the Sessions page; a fact visible on one and
     // missing from the next is the gap a reader notices first.

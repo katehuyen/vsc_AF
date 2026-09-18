@@ -13,7 +13,7 @@ import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 import { afConfig } from '../core/settingsDoor';
 import { LaunchManifest, manifestOf } from '../core/launchManifest';
-import { describeDrift, runDrift, turnRuntimes } from '../core/turnRuntime';
+import { describeDrift, runDrift, runIdentity, turnRuntimes } from '../core/turnRuntime';
 import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
 
 export interface DashboardDeps {
@@ -190,17 +190,35 @@ export function sessionRowPool(
      * question a person asks of a row, and until now the only honest answer the
      * table could give was silence.
      *
-     * ‼️ NULL RATHER THAN A DEFAULT when there is no manifest. A session that
-     * ran before v11.183, or one a person started by hand outside a bound
-     * mechanism, genuinely has no recorded setup — and a row that filled that in
-     * would be inventing exactly the certainty this whole family refuses.
+     * ‼️ X-108 — NO MANIFEST IS STILL AN ANSWER, AND IT USED TO BE SILENCE.
+     * Returning null made three different facts share one blank space: our own
+     * run from before the manifest existed (`legacy` — backfillable from
+     * evidence later, X-116), somebody else's transcript we merely read
+     * (`external` — there was never anything to record), and asked-with-no-answer
+     * (`unknown` — the only one worth going to look at). `binding` names which,
+     * and NO VALUE IS INVENTED to go with it: the route, the requested model and
+     * the account stay empty, because filling those in from the model name is
+     * the certainty this whole family refuses.
      */
     const launchFacts = (s: SessionInfo) => {
         const m = manifests ? manifestOf(manifests, s) : undefined;
-        if (!m) { return null; }
-        const drift = runDrift(turnRuntimes(m, s.source ?? 'claude',
-            (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds }))));
+        const engine = s.source ?? 'claude';
+        const reports = (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds }));
+        // ‼️ NOT OUR RUN: an import states its provenance, and a foreign CLI is
+        // named by `source`. Either way Agent Farm never spawned it, so "nobody
+        // was asked" would be a claim about records that were never ours.
+        const external = s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !m);
+        const identity = runIdentity(m, engine, reports, { external });
+        if (!m) {
+            return {
+                route: '', revision: null, requested: '', surface: '', account: '', at: 0,
+                agreement: identity.agreement, note: describeDrift(runDrift(turnRuntimes(m, engine, reports))),
+                identity
+            };
+        }
+        const drift = runDrift(turnRuntimes(m, engine, reports));
         return {
+            identity,
             // The route, named the way `describeManifest` names it: a label when
             // one was injected, and "inherited route" when nothing was — which
             // is NOT "Anthropic". Nothing was injected and nothing was cleared,
