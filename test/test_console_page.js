@@ -122,8 +122,10 @@ const sandbox = {
 
             stepKindLegendText: () => 'legend',
 
-            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
-            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            fmtTokW(n, w, mark) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + (mark ? ' ' + mark : '') + ']' : ''); },
+            fmtTokWText(n, w, mark) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + (mark ? ', ' + mark : '') + ')' : ''); },
+            weighMark: (...a) => realCharts.weighMark(...a),
+            weighedLabel: (...a) => realCharts.weighedLabel(...a),
             WEIGHTED_TIP: 'weighted',
             fmtDur: realCharts.fmtDur,
             fmtSteps: realCharts.fmtSteps,

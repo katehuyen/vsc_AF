@@ -15,6 +15,13 @@
 const NOW = Date.UTC(2026, 8, 17, 14, 30, 0);
 const LAW = 'Lines: converge 35% · hand over 40% (agentFarm.contextConvergePct / contextHandoverPct).';
 
+// ‼️ X-112 — THE FIXTURE ASKS THE PRODUCT, IT DOES NOT RETELL IT. A hand-written
+// billing block is a second wording of the one rule, and the scene then
+// photographs a page nobody ships — this one was already a copy going stale.
+const { billingOf } = require(require('path').join(__dirname, '..', '..', 'out', 'core', 'billing.js'));
+const KIMI_ROUTE = { baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key' };
+const billing = v => billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v));
+
 const msgs = () => [
     { role: 'user', ts: NOW - 900000, text: 'S-64 icin kartin baglam gostergesini ac.', turn: 1, turnStart: true },
     {
@@ -96,10 +103,10 @@ const data = (o) => {
             agreement: 'matched', binding: 'declared',
             // X-112 — and who is billed, as the host words it (src/core/billing.ts):
             // the panel prints this line and never derives it.
-            billing: {
-                mode: 'third-party', planWindow: false, cost: 'none', currency: '',
-                why: 'Kimi (work) — a third-party endpoint behind the Claude CLI. ⚖ NOT on the Claude plan window: these tokens never touched the sign-in’s five-hour limit. Any dollar figure beside this run is Claude’s own arithmetic at the ANTHROPIC tariff, not this route’s bill — no tariff is known for it, so none is stated.'
-            }
+            billing: billing({
+                engine: codex ? 'codex' : 'claude',
+                providerId: 'kimi', providerLabel: 'Kimi (work)', route: KIMI_ROUTE
+            })
         },
         title: 'S-64 — baglam disiplini sinyali',
         pinned: false,

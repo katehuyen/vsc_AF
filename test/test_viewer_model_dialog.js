@@ -7,6 +7,16 @@ const os = require('os');
 const vm = require('vm');
 
 let pass = 0, fail = 0;
+
+// ‼️ X-112 — THE OFF-PLAN MARK AND ITS LABEL COME FROM THE REAL charts.js.
+// They read the run's own `identity.billing`, and a hand-written twin here is
+// exactly how a page and its test come to disagree about what a figure means.
+const realWeigh = (() => {
+    const box = require('vm').createContext({ window: {} });
+    require('vm').runInContext(require('fs').readFileSync(
+        require('path').resolve(__dirname, '../media/charts.js'), 'utf8'), box);
+    return box.window.AFCharts;
+})();
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 // ---------- part 1: buildData collects models/attrs per turn, verbatim ----------
@@ -103,6 +113,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
         }
         return els[id];
     }
+
     const sandbox = {
         acquireVsCodeApi: () => ({ postMessage() { }, getState() { }, setState() { } }),
         window: {
@@ -116,8 +127,10 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
             stepKindLegendText: () => 'legend',
 
-            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
-            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            fmtTokW(n, w, mark) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + (mark ? ' ' + mark : '') + ']' : ''); },
+            fmtTokWText(n, w, mark) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + (mark ? ', ' + mark : '') + ')' : ''); },
+            weighMark: (...a) => realWeigh.weighMark(...a),
+            weighedLabel: (...a) => realWeigh.weighedLabel(...a),
             WEIGHTED_TIP: 'weighted', fmtUSD: (n) => '$' + (n || 0),
                 aiLabel: (m, u) => { const n = /^claude/i.test(m || '') ? 'claude' : /^gemini/i.test(m || '') ? 'gemini' : /^gpt|codex/i.test(m || '') ? 'codex' : 'agent'; return u ? n.toUpperCase() : n; }
             },

@@ -24,6 +24,12 @@
  * fixture, not the page.
  */
 const NOW = Date.now();
+
+// ‼️ X-112 — THE FIXTURE ASKS THE PRODUCT, IT DOES NOT RETELL IT. A hand-written
+// billing block is a second wording of the one rule, and the scene then
+// photographs a page nobody ships.
+const { billingOf } = require(require('path').join(__dirname, '..', '..', 'out', 'core', 'billing.js'));
+const billing = v => billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v));
 const min = n => NOW - n * 60000;
 
 const sessions = () => ([
@@ -47,7 +53,13 @@ const sessions = () => ([
             requestedModelRef: 'kimi-k2-thinking',
             reportedProviderIds: ['kimi'], reportedModels: ['kimi-k2-thinking'],
             proof: 'matched', multiProvider: false, turnScope: false,
-            agreement: 'matched', binding: 'declared'
+            agreement: 'matched', binding: 'declared',
+            // X-112 — and therefore whose window and whose bill. Asked of the
+            // product so the scene cannot photograph a wording nobody ships.
+            billing: billing({
+                providerId: 'kimi', providerLabel: 'Kimi (work)',
+                route: { baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key' }
+            })
         },
         status: 'tool', currentTool: 'Edit',
         lastPrompt: 'X-35 multi motor adaptasyonu — Live Timeline',
@@ -172,7 +184,8 @@ const sessions = () => ([
             requestedModelRef: 'anthropic/claude-sonnet-5',
             reportedProviderIds: ['anthropic', 'openai'], reportedModels: ['claude-sonnet-5', 'gpt-5.6'],
             proof: 'matched', multiProvider: true, turnScope: true,
-            agreement: 'matched', binding: 'declared'
+            agreement: 'matched', binding: 'declared',
+            billing: billing({ engine: 'opencode', providerId: 'anthropic' })
         },
         status: 'working',
         lastPrompt: 'go through the queue and tell me what is blocked',

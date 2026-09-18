@@ -118,6 +118,16 @@ const intentOf = (o) => Object.assign({
     providerId: '', tier: '', account: '', superpowers: null
 }, o || {});
 
+// ‼️ X-112 — THE FIXTURE ASKS THE PRODUCT, IT DOES NOT RETELL IT. A hand-written
+// billing block is a second wording of the one rule; a scene built on one
+// photographs a page nobody ships.
+const { billingOf } = require(require('path').join(__dirname, '..', '..', 'out', 'core', 'billing.js'));
+const identity = (v) => Object.assign({
+    binding: 'declared', proof: 'launch-declared', scope: 'session',
+    reportedProviderIds: [], reportedModels: [], multiProvider: false, turnScope: false,
+    billing: billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v))
+}, v);
+
 /** A session shaped exactly as ConsolePanel.data() builds one. */
 const session = (o) => Object.assign({
     id: 'cs1', agentId: 'a-dev', agentName: 'developer', sessionId: '019fe7bc-545c-70d2',
@@ -132,12 +142,16 @@ const session = (o) => Object.assign({
     projectId: '', projectName: '', projectIcon: '', messages: [],
     // X-105 - most cards have no route, and that is the ordinary answer.
     route: null,
+    // X-112 - the panel gives every card one; the engine alone already
+    // decides the billing when no route was declared.
+    identity: null,
     // ‼️ X-213 — and whose sign-in is paying for it. The default is the state
     // the picture has to make ordinary: the machine's own, NAMED, on an engine
     // that could hold another. `accountNext` empty = nothing pending.
     account: '@machine', accountLabel: 'Machine Global',
     accountNext: '', accountNextLabel: '', accountAxis: true, accountRows: []
-}, o);
+}, o, o && o.identity === undefined
+    ? { identity: identity({ engine: (o && o.engine) || 'claude', providerId: '' }) } : {});
 
 const data = () => ({
     generatedAt: NOW,
@@ -184,7 +198,11 @@ const data = () => ({
         session({
             id: 'cs4', agentName: 'developer', sessionId: '019fe860-11aa-4c02',
             title: 'Kimi rotasinda tur', status: 'idle', turns: 1, tokens: 12800,
-            lastTs: NOW - 300000,
+            wTokens: 9400, cost: 0.42, lastTs: NOW - 300000,
+            identity: identity({
+                providerId: 'kimi', providerLabel: 'Kimi', origin: 'agent-farm-profile',
+                route: { baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key' }
+            }),
             route: {
                 id: 'kimi', shape: 'kimi', label: 'Kimi', noun: 'Route', tier: 'sonnet',
                 baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'apiKey',
@@ -201,7 +219,11 @@ const data = () => ({
             engine: 'opencode', engineLabel: 'OpenCode', turnShape: 'sharedAcp',
             reportsCost: false, model: 'anthropic/claude-opus-5',
             title: 'Saglayici tur sinirinda degisti', status: 'idle', turns: 4,
-            tokens: 48200, lastTs: NOW - 200000,
+            tokens: 48200, wTokens: 31700, lastTs: NOW - 200000,
+            identity: identity({
+                engine: 'opencode', providerId: 'anthropic', providerLabel: 'anthropic',
+                origin: 'engine-native', scope: 'turn'
+            }),
             route: {
                 id: 'opencode', shape: 'opencode', label: 'opencode', noun: 'Provider',
                 now: { id: 'anthropic', label: 'anthropic' },
@@ -380,8 +402,10 @@ const resumeRow = (o) => Object.assign({
     ts: NOW - 3600000, cost: 0.12, color: '', tokens: 184000, wTokens: 151000,
     contextTokens: 96000, contextWindowTokens: 1000000, contextSource: 'transcript-last-call',
     firstPrompt: 'devir notunu okuyup kaldığın yerden devam et', startedAt: NOW - 5 * 3600000,
-    turns: 14, tools: 63, errors: 0, models: ['claude-opus-5'], tags: []
-}, o);
+    turns: 14, tools: 63, errors: 0, models: ['claude-opus-5'], tags: [],
+    identity: null
+}, o, o && o.identity === undefined
+    ? { identity: identity({ engine: (o && o.engine) || 'claude', providerId: '' }) } : {});
 
 const RESUME_ROWS = [
     resumeRow({ sessionId: '019fe511-aa01-70f1-9c02-1a2b3c4d5e6f', title: 'kota raporu', turns: 3 }),
@@ -394,7 +418,11 @@ const RESUME_ROWS = [
         sessionId: '019fe513-cc03-70f1-9c02-1a2b3c4d5e6f',
         title: 'Sağlayıcı-kimliği-omurgası-çok-motorlu-rota-ve-hesap-çözünürlüğü-tek-parça-başlık',
         agentName: 'gozcu', engine: 'opencode', pinned: true, tokens: 912000, wTokens: 740000,
-        contextTokens: 412000, turns: 41, tools: 210, errors: 2
+        contextTokens: 412000, turns: 41, tools: 210, errors: 2,
+        identity: identity({
+            engine: 'opencode', providerId: 'anthropic', providerLabel: 'anthropic',
+            origin: 'engine-native', scope: 'turn'
+        })
     })
 ];
 
@@ -870,6 +898,16 @@ module.exports = {
             id: 'console-route',
             label: 'Console — the composer picks the route the session is served by (X-105)',
             data: routedComposerData()
+        },
+        {
+            // ‼️ X-112 — THE ROUTED CARD, SELECTED. Every other scene has a card
+            // on the Claude plan or on another engine selected, so the one state
+            // this item exists for — the Claude CLI answered by somebody else's
+            // endpoint — was drawn by no picture at all. The strip under the
+            // conversation is where its ⚖ and its $ are written.
+            id: 'console-offplan',
+            label: 'Console — the routed card selected: its ⚖ fills NO plan window (X-112)',
+            data: Object.assign(data(), { selected: 'cs4' })
         },
         {
             id: 'console-account',

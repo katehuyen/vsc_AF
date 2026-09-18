@@ -402,7 +402,8 @@ export function runIdentity(
         billing: billingOf({
             engine: id.engine || str(engine) || 'claude',
             providerId: str(id.providerId), providerLabel: str(id.providerLabel),
-            origin: binding === 'external' ? 'external' : id.origin, binding
+            origin: binding === 'external' ? 'external' : id.origin, binding,
+            route: id.route
         })
     };
 }

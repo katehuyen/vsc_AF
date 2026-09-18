@@ -26,6 +26,7 @@ import {
 import { LaunchIntent } from '../core/launchDimensions';
 import { catalog as launchCatalog, narrow as narrowIntent } from '../core/aflaunch';
 import { totalTokens, Usage } from '../core/pricing';
+import { RunIdentity } from '../core/turnRuntime';
 import { PromptSnippetsSnapshot } from '../core/prompts';
 import { conversationTitle, SessionInfo, SessionIndex, sessionOrigin, lastRunDimensions } from '../core/sessions';
 import { SESSION_COLORS } from '../core/sessionmarks';
@@ -259,6 +260,15 @@ export interface ConsoleDeps {
          *  ran. See `ConsoleRoute.lastTurn`. */
         reportedModelRef?: string
     ): ConsoleRoute | undefined;
+    /**
+     * ‼️ X-112 — WHAT THIS CONVERSATION'S FIGURES MEAN, from the run's own
+     * launch record. `routeOf` above answers "which endpoint", which is the
+     * name; this answers "and therefore whose window and whose bill", which is
+     * what the ⚖ and the $ on every card were asserting without being asked.
+     * The same reader the Sessions table, the Timeline and the viewer use, so
+     * one run cannot be off-plan on one page and on the plan on another.
+     */
+    identityFor?(sessionId: string, engine?: string): RunIdentity | undefined;
     /**
      * ‼️ X-105 — WHAT THE COMPOSER MAY PICK, ASKED OF THE ENGINE'S OWN ADAPTER.
      *
@@ -1063,6 +1073,15 @@ export class ConsolePanel {
                 // on every row.
                 route: this.deps.routeOf?.(
                     s.engine ?? 'claude', s.providerId, s.tier, s.model, s.lastTurn?.model) ?? null,
+                // ‼️ X-112 — …AND WHOSE WINDOW AND WHOSE BILL THAT MAKES IT. The
+                // card prints ⚖ and $ on every row; without this both were
+                // claiming the Claude plan whatever route answered.
+                // ‼️ THE ENGINE TRAVELS WITH THE ASK. A card whose first turn has
+                // not landed is not in the index yet, and without the engine the
+                // reader would fall back to Claude — putting a brand-new Codex
+                // conversation's ⚖ on the Claude plan, which is the exact claim
+                // this item exists to stop.
+                identity: this.deps.identityFor?.(s.sessionId ?? '', s.engine ?? 'claude') ?? null,
                 // the session's own title — the same one the side panel and the
                 // viewer show, so a rename anywhere is a rename everywhere
                 title: this.titleFor(s),
@@ -1754,7 +1773,10 @@ export class ConsolePanel {
             firstPrompt: s.firstPrompt ?? '',
             startedAt: s.firstTs,
             turns: s.userTurns, tools: s.toolCalls, errors: s.errors,
-            models: s.models ?? [], tags: s.tags ?? []
+            models: s.models ?? [], tags: s.tags ?? [],
+            // X-112 — the shelf row carries ⚖ and $ in its panel too, and it is
+            // the surface a reader picks a conversation from.
+            identity: this.deps.identityFor?.(s.sessionId, s.source || 'claude') ?? null
         };
     }
 

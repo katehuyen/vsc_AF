@@ -1120,6 +1120,22 @@
     const sel = () => (DATA.sessions || []).find(s => s.id === DATA.selected);
 
     /**
+     * X-112 — DOES THIS CONVERSATION'S ⚖ FIGURE FILL A PLAN WINDOW?
+     *
+     * Asked of the run's own launch record (`identity.billing`), never of
+     * the engine name or the model: a Claude card pointed at Kimi runs the
+     * same engine and the same models as one on the plan, and it was the
+     * only surface where the two drew an identical number under an
+     * identical label. `false` for a card with no record, which is the
+     * ordinary case — an unmarked figure, not a guessed mark.
+     */
+    const markOf = s => C.weighMark(s && s.identity);
+    /** …and the label that figure is printed under, worded by the host. */
+    const weighedOf = s => C.weighedLabel(s && s.identity);
+    /** What a dollar figure beside this card IS ('' when nothing says). */
+    const costIsOf = s => (((s || {}).identity || {}).billing || {}).costIs || '';
+
+    /**
      * Money and what it bought, in the ONE order this page uses everywhere: the
      * cost first, the tokens that paid for it in parentheses.
      *
@@ -1129,8 +1145,8 @@
      * shape, so the live estimate and the CLI's own final figure can be read
      * against each other without translating between two layouts.
      */
-    const spend = (cost, tokens, wTokens) =>
-        `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTokW(tokens, wTokens)} tokens)` : ''}`;
+    const spend = (cost, tokens, wTokens, off) =>
+        `${C.fmtUSD(cost || 0)}${tokens ? ` (${C.fmtTokW(tokens, wTokens, off)} tokens)` : ''}`;
 
     /**
      * ‼️ X-19 — AN ENGINE THAT STATES NO PRICE IS NOT AN ENGINE THAT COST ZERO.
@@ -1160,8 +1176,8 @@
         + 'Engines page reads that from its own credentials.';
 
     function engineSpend(s, cost, tokens, wTokens) {
-        if (!s || s.reportsCost !== false) { return spend(cost, tokens, wTokens); }
-        const tok = tokens ? `${C.fmtTokW(tokens, wTokens)} tokens` : 'no tokens yet';
+        if (!s || s.reportsCost !== false) { return spend(cost, tokens, wTokens, markOf(s)); }
+        const tok = tokens ? `${C.fmtTokW(tokens, wTokens, markOf(s))} tokens` : 'no tokens yet';
         return `<span title="${C.esc(NO_PRICE_TIP)}">${tok} <span class="noprice">· no price stated</span></span>`;
     }
     /**
@@ -1187,7 +1203,7 @@
     // ‼️ It takes the SESSION, not three numbers, because whether the money half
     // of this line may be written at all is a fact about the session's engine.
     const tokTip = (s, cost) => ((s && s.tokens) ? `${C.fmtTok(s.tokens)} raw tokens` : 'nothing spent yet')
-        + ((s && s.wTokens) ? ` · ⚖ ${C.fmtTok(Math.round(s.wTokens))} against the 5h limit` : '')
+        + ((s && s.wTokens) ? ` · ⚖ ${C.fmtTok(Math.round(s.wTokens))} — ${weighedOf(s)}` : '')
         + (s && s.reportsCost === false
             ? ` · ${s.engineLabel} states no per-turn price`
             : (cost ? ` · ${C.fmtUSD(cost)} spent` : ''));
@@ -1620,11 +1636,12 @@
             head: `${s.agentName || 'session'} · ${s.tokens ? C.fmtTok(s.tokens) + ' tokens' : 'nothing spent yet'}`,
             body: window.AFTip.lines([
                 'Raw tokens: ' + (s.tokens ? C.fmtTok(s.tokens) : '0'),
-                s.wTokens ? '⚖ Against the 5h limit: ' + C.fmtTok(Math.round(s.wTokens)) : '',
+                s.wTokens ? weighedOf(s) + ': ' + C.fmtTok(Math.round(s.wTokens)) : '',
                 s.reportsCost === false
                     ? 'Cost: ' + (s.engineLabel || 'this engine') + ' states no per-turn price'
                     : 'Cost: ' + (sp.est ? '~' : '') + C.fmtUSD(sp.cost || 0)
                         + (sp.est ? ' — the running turn is an estimate until it closes' : ''),
+                costIsOf(s) ? '…which is: ' + costIsOf(s) : '',
                 ptk ? 'Per turn: ' + C.fmtTok(Math.round(ptk)) + ' tokens'
                     + (pc ? ' · ' + C.fmtUSD(pc) : '') : '',
                 // ‼️ ONE SUBJECT — the window has its own panel (ctxTip), so this
@@ -1821,7 +1838,7 @@
         // scans, and nothing sits in front of the words any more.
         const step = m => C.stepChip(m.kind, m.stepTokens, m.stepWTokens)
             + (m.stepTokens > 0
-                ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>`
+                ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens, markOf(sel()))}</span>`
                 : '');
         if (m.role === 'agent') {
             return `<div class="msg"${mid}><span class="who">agent</span><div class="body">${C.esc(m.text || '')}${step(m)}</div></div>`;
@@ -1832,7 +1849,7 @@
                     ? `<span class="filechip" data-open="${C.esc(m.tool.file)}" title="Open this file">✎ open</span>
                        <span class="filechip" data-diff="${C.esc(m.tool.file)}" title="Diff it against git HEAD">vs HEAD</span>`
                     : '';
-                return `<div class="msg tool"${mid}><span class="who">${C.stepChip(m.kind, m.stepTokens, m.stepWTokens)}</span><div class="body"><strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}${m.stepTokens > 0 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens)}</span>` : ''}</div></div>`;
+                return `<div class="msg tool"${mid}><span class="who">${C.stepChip(m.kind, m.stepTokens, m.stepWTokens)}</span><div class="body"><strong>${C.esc(m.tool.name)}</strong> ${C.esc(m.tool.detail)}${chip}${m.stepTokens > 0 ? `<span class="steptok" title="What this API call spent — one call carries several steps and the figure is written once.">${C.fmtTokW(m.stepTokens, m.stepWTokens, markOf(sel()))}</span>` : ''}</div></div>`;
             }
             // An error keeps ⚠ in the gutter rather than the kind chip: `↩ tool
             // result` is true of every result row and says nothing about this
@@ -2636,8 +2653,9 @@
                         `${C.fmtTok(r.tokens)} tokens`,
                         window.AFTip.lines([
                             'Raw tokens: ' + C.fmtTok(r.tokens),
-                            r.wTokens ? '⚖ Against the 5h limit: ' + C.fmtTok(Math.round(r.wTokens)) : '',
+                            r.wTokens ? weighedOf(r) + ': ' + C.fmtTok(Math.round(r.wTokens)) : '',
                             r.cost ? 'Cost: ' + C.fmtUSD(r.cost) : '',
+                            r.cost && costIsOf(r) ? '…which is: ' + costIsOf(r) : '',
                             ptk ? 'Per turn: ' + C.fmtTok(Math.round(ptk)) + ' tokens' : '',
                             r.contextTokens
                                 ? 'Context after its last reply: ' + ctxShort(r).replace(/^ctx /, '')
@@ -2887,8 +2905,8 @@
         // and no "~" to print: the tokens are exact, the money does not exist.
         const cost = s.turnTokens || s.turnCost
             ? (s.reportsCost === false
-                ? ` · <span title="${C.esc(NO_PRICE_TIP)}">${C.fmtTokW(s.turnTokens, s.turnWTokens)} tokens this turn</span>`
-                : ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens, s.turnWTokens)} this turn</span>`)
+                ? ` · <span title="${C.esc(NO_PRICE_TIP)}">${C.fmtTokW(s.turnTokens, s.turnWTokens, markOf(s))} tokens this turn</span>`
+                : ` · <span title="What THIS TURN has spent so far — the line under the box is the whole session. The money is an estimate at the usual rates; the turn's closing line carries the CLI's own figure.">~${spend(s.turnCost, s.turnTokens, s.turnWTokens, markOf(s))} this turn</span>`)
             : '';
         // ‼️ "⎋ Interrupt stops it" used to close this line and is gone on
         // purpose: it is a permanent instruction about a button that is on

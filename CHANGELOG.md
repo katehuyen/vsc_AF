@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.560.0 - the ⚖ figure says which window it filled, and the route decides that — not a list of names (X-112, part 2a) (2026-09-18)
+
+- **‼️ The rule was written down twice, and the two disagreed in both
+  directions.** `billingOf` decided "is this the plan" from a list of provider
+  NAMES this build ships; `ProviderAdapter.billingPolicy` decided the same
+  thing from the profile's `baseUrl`. A name list cannot see a user's own
+  profile, so a route of your own pointed at Anthropic was called third-party
+  and the shipped name `anthropic` pointed at a proxy was called the plan —
+  exactly backwards. `billingOf` now reads the sealed route (`identity.route`)
+  and falls back to the names only for records written before the route was
+  kept. `test_billing.js` holds the two readers to one answer for every
+  profile, and that guard immediately caught a second defect: `billingPolicy`
+  counted an **Anthropic API key** against the plan quota. Both endpoints are
+  Anthropic's, but a subscription is rationed by a window and a key is metered
+  per token — fixed at the source.
+- **The ⚖ figure carries its own meaning.** Every surface printed "Against the
+  5h limit" over every weighted count, including runs no plan served. The
+  label is now the run's own (`billing.weighed`), and the cell carries a short
+  mark — `⚖ 8.7k (off-plan)` — on the routes the Claude CLI did not take to
+  the plan. Sessions table (row and turn table), Live Timeline, the session
+  viewer, and the Console's cards, shelf rows, turn strip and step figures.
+- **Another ENGINE is deliberately left unmarked.** "off-plan" said over a
+  Codex run would be a new falsehood — that run is on a ChatGPT plan, just not
+  on this one's window — and it wears its own badge on the same row. The panel
+  still says so in full; the cell does not shout it on every row of a machine
+  running two engines.
+- **A dollar figure says what it is, per run.** "API-equivalent" was written
+  over all four billings. The Sessions cost panel, the Timeline money panel,
+  the viewer's Cost card and the Console's spend panels now print the run's own
+  `…which is:` — the bill at the API tariff, an API-equivalent a plan pays
+  nothing for, Anthropic-tariff arithmetic that is not that route's bill, or
+  the engine's own reported figure.
+- **The Console knows which run it is drawing.** `ConsoleDeps.identityFor`
+  (the same reader the viewer, Timeline and Tasks use) reaches live cards and
+  shelf rows, and takes the ENGINE with the ask — so a card whose first turn
+  has not landed yet is not read as Claude.
+- Fixtures ask the product for their billing instead of restating it, and the
+  Console gained the scene the item exists for: the routed card SELECTED.
+- Tests: `test_billing.js` (+16, including the two-reader guard and the mark
+  rule), `test_sessions_table.js` (+6, the marked row beside the unmarked one),
+  the four page tests' chart stubs now take the mark from the real `charts.js`.
+  Looked at: `sessions.s1` (dark + light), `console.s1`, `console.s11`,
+  `timeline.s2`; the Tokens column measured for wrap and overflow (117px, row
+  height unchanged, table 1352 of 1384).
+
 ## 3.559.0 - a run through Kimi or MiniMax fills no Claude plan window, and its dollar figure is not that route's bill (X-112, part 1) (2026-09-18)
 
 - **The rule, stated once.** `src/core/billing.ts` — `billingOf(route, engine)`

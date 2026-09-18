@@ -265,7 +265,7 @@
         if (!m.turnStart || !m.turn) { return ''; }
         const t = (DATA.turnTotals || {})[m.turn];
         const total = t && (t.tokens || t.cost)
-            ? `${C.fmtTokW(t.tokens, t.wTokens)} tok · ${C.fmtUSD(t.cost)}`
+            ? `${C.fmtTokW(t.tokens, t.wTokens, C.weighMark(DATA.identity))} tok · ${C.fmtUSD(t.cost)}`
             : '';
         const info = turnInfo(m.turn);
         // ‼️ WHAT THE BAND SAID AND WHAT THE READER ASKS WERE TWO LISTS.
@@ -514,7 +514,7 @@
             C.stepChip(m.kind, m.tokens, m.wTokens) + roleLabel + (m.tool ? ` · ${C.esc(m.tool)}` : ''),
             m.ts ? `<span title="${C.esc(window.AFTime.tip(m.ts, 'This step'))}">${window.AFTime.clock(m.ts)}</span>` : '',
             m.model ? C.esc(m.model.replace(/^claude-/, '')) : '',
-            m.tokens ? C.fmtTokW(m.tokens, m.wTokens) + ' tok' : '',
+            m.tokens ? C.fmtTokW(m.tokens, m.wTokens, C.weighMark(DATA.identity)) + ' tok' : '',
             m.cost ? C.fmtUSD(m.cost) : '',
             m.sidechain ? 'subagent' : '',
             m.isError ? 'ERROR' : ''
@@ -646,7 +646,7 @@
         lines.push(`- Session: \`${DATA.sessionId}\``);
         if (DATA.cwd) { lines.push(`- Folder: \`${DATA.cwd}\``); }
         lines.push(`- Span: ${fmtTime(DATA.firstTs)} → ${fmtTime(DATA.lastTs)}`);
-        lines.push(`- Total: ${C.fmtTokWText(DATA.totalTokens, DATA.totalWTokens)} tok · ${C.fmtUSD(DATA.cost)} · ${DATA.turnCount || 0} turns · ${DATA.toolCalls} tool calls`);
+        lines.push(`- Total: ${C.fmtTokWText(DATA.totalTokens, DATA.totalWTokens, C.weighMark(DATA.identity))} tok · ${C.fmtUSD(DATA.cost)} · ${DATA.turnCount || 0} turns · ${DATA.toolCalls} tool calls`);
         if (!view) {
             lines.push(`- Export: everything — the full transcript (${DATA.messages.length} messages), ignoring the on-screen filters and folding`);
         } else {
@@ -668,7 +668,7 @@
                 const info = turnInfo(m.turn);
                 const tags = turnTags(info);
                 const stats = (tags.length ? ` · ${tags.join(' · ')}` : '') +
-                    (t && (t.tokens || t.cost) ? ` · ${C.fmtTokWText(t.tokens, t.wTokens)} tok · ${C.fmtUSD(t.cost)}` : '');
+                    (t && (t.tokens || t.cost) ? ` · ${C.fmtTokWText(t.tokens, t.wTokens, C.weighMark(DATA.identity))} tok · ${C.fmtUSD(t.cost)}` : '');
                 lines.push('', `## Turn ${m.turn}/${DATA.turnCount || '?'}${info && info.label ? ' — ' + info.label : ''}${stats}`);
             }
             if (row.headerOnly) { continue; } // folded turn: title only, skip body
@@ -681,7 +681,7 @@
                 kindBit,
                 m.ts ? window.AFTime.clockUtc(m.ts) : '',
                 m.model ? m.model.replace(/^claude-/, '') : '',
-                m.tokens ? C.fmtTokWText(m.tokens, m.wTokens) + ' tok' : '',
+                m.tokens ? C.fmtTokWText(m.tokens, m.wTokens, C.weighMark(DATA.identity)) + ' tok' : '',
                 m.cost ? C.fmtUSD(m.cost) : '',
                 m.sidechain ? 'subagent' : '',
                 m.isError ? '⚠ ERROR' : ''
@@ -753,7 +753,7 @@
                     <td class="selcell"><input type="checkbox" data-turnsel="${t.n}"${exportOff.has(t.n) ? '' : ' checked'} title="Include in Export MD"><button class="only" data-only="${t.n}" title="Export only this turn">only</button></td>
                     <td>${t.n}</td><td>${C.esc(t.label || '—')}</td>
                     <td>${turnTags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
-                    <td class="num">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens) : '—'}</td>
+                    <td class="num">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens, C.weighMark(DATA.identity)) : '—'}</td>
                     <td class="num">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
                 </tr>`).join('')}</tbody>
             </table></div>
@@ -1271,8 +1271,8 @@
                 guide: 'oturum-goruntuleyici'
             })}
             <div class="row">
-                <div class="card"><div class="label">Cost</div><div class="kpi">${C.fmtUSD(DATA.cost)}</div><div class="sub">API-equivalent</div></div>
-                <div class="card"><div class="label">Tokens</div><div class="kpi">${C.fmtTokW(DATA.totalTokens, DATA.totalWTokens)}</div>
+                <div class="card"><div class="label">Cost</div><div class="kpi">${C.fmtUSD(DATA.cost)}</div><div class="sub">${C.esc(((DATA.identity || {}).billing || {}).costIs || 'API-equivalent')}</div></div>
+                <div class="card"><div class="label">Tokens</div><div class="kpi">${C.fmtTokW(DATA.totalTokens, DATA.totalWTokens, C.weighMark(DATA.identity))}</div>
                     <div class="sub">in ${C.fmtTok(DATA.usage.input)} · out ${C.fmtTok(DATA.usage.output)} · cacheR ${C.fmtTok(DATA.usage.cacheRead)} · cacheW ${C.fmtTok(DATA.usage.cacheWrite)}</div></div>
                 <div class="card ctxcard" id="ctxcard" title="Click for the /context breakdown by category"><div class="label">Context now</div>
                     <div class="kpi"${ctxColor ? ` style="color:${ctxColor}"` : ''}>${ctx.tokens > 0 ? C.fmtTok(ctx.tokens) : '—'}</div>

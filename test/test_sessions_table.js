@@ -12,6 +12,16 @@ const code = shared.sharedMedia()
     + fs.readFileSync(path.resolve(__dirname, '../media/sessionsTable.js'), 'utf8');
 const createAfmsDom = require(path.join(__dirname, 'lib_afms_dom.js'));
 let pass = 0, fail = 0;
+
+// ‼️ X-112 — THE OFF-PLAN MARK AND ITS LABEL COME FROM THE REAL charts.js.
+// They read the run's own `identity.billing`, and a hand-written twin here is
+// exactly how a page and its test come to disagree about what a figure means.
+const realWeigh = (() => {
+    const box = require('vm').createContext({ window: {} });
+    require('vm').runInContext(require('fs').readFileSync(
+        require('path').resolve(__dirname, '../media/charts.js'), 'utf8'), box);
+    return box.window.AFCharts;
+})();
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 // ---------- fake DOM: one container per id, selector queries via regex ----------
@@ -61,6 +71,7 @@ function makeContainer() {
 const containers = {};
 let posted = [];
 let state = {};
+
 const sandbox = {
     window: {},
     document: { getElementById: id => containers[id] || (containers[id] = makeContainer()) },
@@ -79,8 +90,10 @@ const vscodeStub = {
 const C = {
     esc: s => String(s === undefined || s === null ? '' : s).replace(/</g, '&lt;'),
     fmtTok: v => v + 't',
-            fmtTokW(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + ']' : ''); },
-            fmtTokWText(n, w) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + ')' : ''); },
+            fmtTokW(n, w, mark) { return this.fmtTok(n || 0) + (w > 0 ? ' [w' + this.fmtTok(Math.round(w)) + (mark ? ' ' + mark : '') + ']' : ''); },
+            fmtTokWText(n, w, mark) { return this.fmtTok(n || 0) + (w > 0 ? ' (w' + this.fmtTok(Math.round(w)) + (mark ? ', ' + mark : '') + ')' : ''); },
+            weighMark: (...a) => realWeigh.weighMark(...a),
+            weighedLabel: (...a) => realWeigh.weighedLabel(...a),
             WEIGHTED_TIP: 'weighted',
     // rounded like the real one (charts.js): a per-hour rate is a division, and
     // a stub that prints 24.000000000000004 tests the stub, not the page
@@ -193,8 +206,11 @@ const mkRow = (i, extra) => Object.assign({
         html().includes('Tokens per turn: 100t') && html().includes('Cost per turn: $2'));
     ok('Turns separates the prompts you sent from the round trips they took',
         html().includes('API calls: 8') && html().includes('Calls per turn: 2'));
+    // ‼️ X-112 — THE LABEL IS THE RUN'S, NOT THE TABLE'S. A row with no launch
+    // record makes no claim about a route, so it keeps the plan's own wording;
+    // the marked case is measured further down, on a row that HAS one.
     ok('Tokens separates the raw total from the weighted one',
-        /title="Raw total: 400t[^"]*Weighted \(plan\): 900t/.test(html()));
+        /title="Raw total: 400t[^"]*Against the 5h limit: 900t/.test(html()));
     // ‼️ Two sessions with the same total differ by an order of magnitude in
     // money when one is cache reads and the other is output.
     ok('Tokens splits the total the way it is billed',
@@ -1402,6 +1418,72 @@ const mkRow = (i, extra) => Object.assign({
         cells.indexOf('is a reason to look') < 0 && cells.indexOf('an alias') < 0);
     ok('...and the engine cell is still well under the paragraph ceiling',
         (html().match(/<td[^>]*title="([^"]*)"/g) || []).every(s => s.length < 800));
+}
+
+// ---------- X-112: a ⚖ figure that fills no plan window says so ON THE ROW ----------
+//
+// ‼️ WHY A STRING TEST IS ENOUGH HERE AND A PICTURE IS NOT THE POINT. The defect
+// was not a layout one: the number was right, the label over it was a claim
+// nobody had checked. Every row of this table said "Weighted (plan)" — including
+// the ones a third-party endpoint served, whose tokens never touched a plan's
+// five-hour window. So what is measured is the WORDING, per row, from the run's
+// own billing; the photograph (dist/render/sessions.s1.png) is what proves the
+// mark still fits the column.
+{
+    const { billingOf } = require(path.join(__dirname, '..', 'out', 'core', 'billing.js'));
+    const identity = (v) => Object.assign({
+        binding: 'declared', proof: 'launch-declared', reportedProviderIds: [],
+        billing: billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v))
+    }, v);
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'x112',
+        columns: ['agent', 'engine', 'tokens', 'cost'], stateKey: 'x112'
+    });
+    t.setRows([
+        mkRow(1, {
+            engine: '', models: ['kimi-k2-thinking'], tokens: 400, wTokens: 900, cost: 4,
+            launch: {
+                route: 'Kimi (work)', revision: 3, requested: 'tier opus', surface: 'console',
+                at: NOW - 1000, agreement: 'matched', note: '',
+                identity: identity({
+                    providerId: 'kimi', providerLabel: 'Kimi (work)',
+                    route: { baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key' }
+                })
+            }
+        }),
+        mkRow(2, {
+            engine: '', models: ['claude-opus-5'], tokens: 400, wTokens: 900, cost: 4,
+            launch: {
+                route: 'Anthropic', revision: null, requested: '', surface: 'console',
+                at: NOW - 2000, agreement: 'matched', note: '',
+                identity: identity({ providerId: 'anthropic', providerLabel: 'Anthropic', route: {} })
+            }
+        })
+    ], 10);
+    const html = () => containers.x112.innerHTML;
+    // The <th> defines the column and names the mark ONCE; these assertions are
+    // about the CELLS, so they read the cells and never the heading.
+    const cells = () => (html().match(/<td[\s\S]*?<\/td>/g) || []).join(' ');
+
+    ok('‼️ the row a third-party route served carries the mark, on the figure itself',
+        /\[w[^\]]*off-plan\]/.test(cells()));
+    ok('‼️ …and the row the plan served carries none — the mark is not decoration',
+        (cells().match(/\[w[^\]]*off-plan\]/g) || []).length === 1
+        && (cells().match(/\[w/g) || []).length === 2);
+    ok('the panel says which window it was weighed against, per row',
+        html().includes('Weighted at the plan formula — but on NO plan window')
+        && html().includes('Against the 5h limit'));
+    ok('…and the $ figure says what it is rather than being called API-equivalent everywhere',
+        html().includes('…which is: Anthropic-tariff arithmetic, not this route’s bill')
+        && html().includes('…which is: API-equivalent — a plan pays no per-token bill'));
+    // ‼️ AND THE ROW NEVER COMPOSES THE SENTENCE. If a page could word this, the
+    // spend card and the row would drift the first time a route was added.
+    ok('‼️ every word of it came from src/core/billing.ts, not from this page',
+        billingOf({
+            engine: 'claude', binding: 'declared', providerId: 'kimi',
+            route: { baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key' }
+        }).mark === 'off-plan');
 }
 
 // ---------- S-52: the session that was slept on ----------

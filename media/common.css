@@ -24,6 +24,10 @@ blockquote { border-left: 3px solid var(--vscode-textLink-foreground); margin: 8
    Dimmed and a size down so it reads as an annotation on the number it
    follows, never as a competing headline — see charts.js fmtTokW. */
 .wtok { opacity: .62; font-size: .88em; white-space: nowrap; margin-left: .35em; cursor: help; }
+/* X-112 — the same figure over a run that filled NO plan window. It is still
+   the plan formula, so it keeps the glyph and the number; what it loses is the
+   claim to a limit, and the reader must be able to see that without hovering. */
+.wtok.offplan { opacity: .78; color: var(--vscode-charts-orange, #d18616); border-bottom: 1px dotted currentColor; }
 /* Step kind (see charts.js STEP_KIND): one glyph, colour-coded by where the
    cost comes from — model time is warm, free local work is cool, and the row
    that merely brings a result back is dimmed. A chip, never a headline. */

@@ -86,16 +86,63 @@
         'It approximates the plan formula, which is not published; the exact ' +
         'answer stays the Plan usage card.';
 
-    /** `4.6M ⚖ 0.6M` — both figures, one string. `w` of 0/undefined shows raw only. */
-    function fmtTokW(n, w) {
+    /**
+     * ‼️ X-112 — THE SAME ⚖ OVER A RUN THAT NEVER TOUCHED A PLAN WINDOW.
+     *
+     * `WEIGHTED_TIP` says this figure is "the way the plan limit charges it",
+     * and over a run through Kimi, an API key or another engine entirely that
+     * sentence is simply false — the tokens filled nobody's five-hour window.
+     * The figure still means something (it is the one formula all these runs
+     * are comparable under), so it is marked rather than dropped: the reader
+     * sees a different mark without hovering, and the panel says which.
+     *
+     * The wording is the host's (`src/core/billing.ts` → `billing.weighed`);
+     * this file only carries the general sentence for the mark itself, because
+     * a page that composed its own would be the same defect one route later.
+     */
+    const OFF_PLAN_TIP =
+        'This run was NOT served by the Claude plan — a third-party route, an API key, or another '
+        + 'engine answered it, so these weighted tokens filled no five-hour window.\n'
+        + 'The figure is still the plan formula (output x5, cache-write x1.25, cache-read x0.1, '
+        + 'Opus x5 over Sonnet), which is what makes runs comparable with each other — it is not a '
+        + 'reading of anybody\'s limit.\n'
+        + 'Which route, and what its dollar figure means, is on the run\'s own provider panel.';
+
+    /** `4.6M ⚖ 0.6M` — both figures, one string. `w` of 0/undefined shows raw
+     *  only. `mark` is the run's own shorthand for "this filled no plan window"
+     *  ('' on the ordinary run) — see `weighMark`. */
+    function fmtTokW(n, w, mark) {
         const raw = fmtTok(n || 0);
-        return w > 0 ? raw + ' <span class="wtok" title="' + esc(WEIGHTED_TIP) + '">⚖ ' + fmtTok(Math.round(w)) + '</span>' : raw;
+        if (!(w > 0)) { return raw; }
+        return raw + ' <span class="wtok' + (mark ? ' offplan' : '') + '" title="'
+            + esc(mark ? OFF_PLAN_TIP : WEIGHTED_TIP) + '">⚖ ' + fmtTok(Math.round(w))
+            // ‼️ PARENTHESISED, because almost every caller writes a UNIT after
+            // this string ("… tokens", "… tok"). Bare, the mark landed between
+            // the number and its unit and the line read "9.4k off-plan tokens".
+            + (mark ? ' (' + esc(mark) + ')' : '') + '</span>';
     }
 
     /** Plain-text twin of fmtTokW, for tooltips and title attributes. */
-    function fmtTokWText(n, w) {
+    function fmtTokWText(n, w, mark) {
         const raw = fmtTok(n || 0);
-        return w > 0 ? raw + ' (⚖ ' + fmtTok(Math.round(w)) + ')' : raw;
+        if (!(w > 0)) { return raw; }
+        return raw + ' (⚖ ' + fmtTok(Math.round(w)) + (mark ? ', ' + mark : '') + ')';
+    }
+
+    /** ‼️ ASKED OF THE RUN'S OWN BILLING, NEVER OF THE ENGINE NAME OR THE MODEL.
+     *  Returns the few characters the cell carries, '' for the ordinary run —
+     *  including a run nobody recorded, because a mark that cannot be justified
+     *  is worse than none. */
+    function weighMark(identity) {
+        const b = identity && identity.billing;
+        return (b && b.mark) || '';
+    }
+
+    /** The label the ⚖ figure is printed under in a panel — the host's sentence
+     *  when there is one, the plan's own when the run was never placed. */
+    function weighedLabel(identity) {
+        const b = identity && identity.billing;
+        return (b && b.weighed) || 'Against the 5h limit';
     }
 
     /**
@@ -419,5 +466,5 @@
         return renderSpeaker(rawModel, pageUpper, (window.__AFUI__ || {}).speaker);
     }
 
-    window.AFCharts = { optionTip, option, stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, WEIGHTED_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
+    window.AFCharts = { optionTip, option, stackedBars, donut, hbars, heatmap, sparkline, esc, fmtUSD, fmtTok, fmtTokW, fmtTokWText, weighMark, weighedLabel, WEIGHTED_TIP, OFF_PLAN_TIP, STEP_KIND, stepChip, stepKindLegend, stepKindLegendText, fmtDur, fmtSteps, STEPS_TIP, aiName, parseModel, renderSpeaker, aiLabel, PALETTE };
 })();

@@ -90,5 +90,119 @@ const ok = (n, c) => { if (c) { pass++; console.log('  ok  ' + n); } else { fail
     ok('a reported model name alone never moves a run off the plan window', modelOnly.billing.mode === 'plan');
 }
 
+
+// ------------------------------------------------- the ROUTE decides, and only once
+//
+// ‼️ THE RULE WAS WRITTEN DOWN TWICE. `ProviderAdapter.billingPolicy` answers
+// "does this count against the plan quota" off the profile's `baseUrl`;
+// `billingOf` answered the same question off a list of provider NAMES this
+// build happens to ship. A name list cannot see a user's own profile, so the
+// two disagreed in both directions — and a rule stated twice is a rule about to
+// be stated two ways. These assertions hold them to one answer.
+{
+    const G = require(path.join(__dirname, '..', 'out', 'core', 'providerRegistry.js'));
+    const PROFILES = [
+        { id: 'anthropic', label: 'Anthropic', engine: 'claude', providerId: 'anthropic', tiers: {}, revision: 1 },
+        {
+            id: 'kimi-work', label: 'Kimi (work)', engine: 'claude', providerId: 'kimi',
+            baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key', tiers: {}, revision: 3
+        },
+        {
+            id: 'key', label: 'Anthropic (API key)', engine: 'claude', providerId: 'anthropic-api',
+            authKind: 'api-key', tiers: {}, revision: 1
+        },
+        // ‼️ THE TWO CASES A NAME LIST GETS BACKWARDS. `house` is the user's own
+        // profile on Anthropic's own endpoint — the plan, under a name this
+        // build never shipped. `anthropic` here is the shipped NAME pointed at
+        // somebody else's endpoint, which is exactly the lie X-112 exists for.
+        { id: 'house', label: 'House', engine: 'claude', providerId: 'house', tiers: {}, revision: 1 },
+        {
+            id: 'proxy', label: 'Proxy', engine: 'claude', providerId: 'anthropic',
+            baseUrl: 'https://proxy.example/anthropic', authKind: 'api-key', tiers: {}, revision: 1
+        }
+    ];
+    const deps = () => ({ profiles: PROFILES, secretFor: () => 'k', inheritedEnv: {} });
+    const claude = G.adapterFor('claude', deps());
+    const identityOf = id => G.resolveRuntime('claude', { engine: 'claude', providerId: id }, deps()).identity;
+    const billingFor = id => {
+        const I = identityOf(id);
+        return billingOf({
+            engine: 'claude', providerId: I.providerId, providerLabel: I.providerLabel,
+            origin: I.origin, binding: 'declared', route: I.route
+        });
+    };
+
+    ok('‼️ a profile of the user\'s own on Anthropic\'s endpoint IS the plan — the name list called it third-party',
+        billingFor('house').mode === 'plan' && billingFor('house').planWindow === true);
+    ok('‼️ …and the shipped NAME pointed at somebody else\'s endpoint is NOT — the name list called it the plan',
+        billingFor('proxy').mode === 'third-party' && billingFor('proxy').planWindow === false);
+    ok('a key with no endpoint of its own is metered, not rationed',
+        billingFor('key').mode === 'api' && billingFor('key').planWindow === false);
+    ok('the shipped first-party route is still the plan', billingFor('anthropic').mode === 'plan');
+    ok('a third-party endpoint is still third-party', billingFor('kimi-work').mode === 'third-party');
+
+    // THE GUARD ITSELF: one question, two readers, and they may never diverge.
+    let agreed = 0, disagreed = [];
+    for (const prof of PROFILES) {
+        const mine = billingFor(prof.id).planWindow;
+        const theirs = claude.billingPolicy({ engine: 'claude', providerId: prof.id }).countsAgainstPlanQuota;
+        if (mine === theirs) { agreed++; } else { disagreed.push(prof.id + ': billingOf=' + mine + ' policy=' + theirs); }
+    }
+    ok('‼️ billingOf and the adapter\'s billingPolicy answer "is this on the plan window" identically, for every profile ('
+        + agreed + '/' + PROFILES.length + ')' + (disagreed.length ? ' — ' + disagreed.join(' · ') : ''),
+        disagreed.length === 0 && agreed === PROFILES.length);
+
+    // A record written before the route was sealed into the manifest has no
+    // `route` at all, and must keep answering the way it always did.
+    ok('no route recorded falls back to the shipped names, unchanged',
+        billingOf({ engine: 'claude', providerId: 'kimi', binding: 'declared' }).mode === 'third-party'
+        && billingOf({ engine: 'claude', providerId: '', binding: 'declared' }).mode === 'plan');
+}
+
+// ------------------------------------------------- the two labels a page prints
+//
+// ‼️ EVERY SURFACE WAS WRITING "Against the 5h limit" OVER EVERY ⚖ FIGURE. The
+// figure is real on all of them (it is one formula, which is what makes runs
+// comparable); the CLAIM is true of exactly one billing. The words belong here
+// so a page cannot compose its own the next time a route is added.
+{
+    const plan = billingOf({ engine: 'claude', providerId: '', binding: 'declared' });
+    const kimi = billingOf({ engine: 'claude', providerId: 'kimi', providerLabel: 'Kimi', binding: 'declared' });
+    const api = billingOf({ engine: 'claude', providerId: 'anthropic-api', binding: 'declared' });
+    const codex = billingOf({ engine: 'codex' });
+    const foreign = billingOf({ engine: 'claude', binding: 'external' });
+
+    ok('the plan run is the only one whose ⚖ label claims the five-hour window',
+        plan.weighed === 'Against the 5h limit'
+        && [kimi, api, codex, foreign].every(b => !/5h limit/.test(b.weighed)));
+    ok('…and every off-plan label says so in words, not by being blank',
+        [kimi, api, codex, foreign].every(b => b.weighed.length > 10 && /window/i.test(b.weighed)));
+    ok('‼️ planWindow and the label never disagree — the flag and the sentence are one fact',
+        [plan, kimi, api, codex, foreign].every(b => b.planWindow === (b.weighed === 'Against the 5h limit')));
+
+    // ‼️ THE CELL MARK IS NARROWER THAN THE FLAG ON PURPOSE, and this is the
+    // assertion that keeps somebody from "fixing" it into planWindow. Saying
+    // "off-plan" over a Codex run would be a NEW falsehood — that run IS on a
+    // plan, a ChatGPT one; what it is not on is this window. The engine badge
+    // on the same row already says which contract it is under, and marking
+    // every row of a two-engine machine is noise, not density.
+    ok('the mark is carried by the Claude CLI\'s own off-plan routes, and by nothing else',
+        kimi.mark === 'off-plan' && api.mark === 'off-plan'
+        && plan.mark === '' && codex.mark === '');
+    ok('…and a run nobody could place says THAT, rather than borrowing "off-plan"',
+        foreign.mark === 'unplaced');
+    ok('‼️ the mark never contradicts the flag: a marked run is always off the window',
+        [plan, kimi, api, codex, foreign].every(b => !b.mark || b.planWindow === false));
+
+    ok('a dollar figure says what it is on every billing that has one',
+        plan.costIs && api.costIs && kimi.costIs && codex.costIs);
+    ok('…the plan\'s is an equivalence, the key\'s is a bill, the route\'s is neither',
+        /API-equivalent/.test(plan.costIs) && /bill, at the API tariff/.test(api.costIs)
+        && /not this route/.test(kimi.costIs));
+    ok('an engine that states no price states no meaning either, rather than inventing one',
+        billingOf({ engine: 'gemini' }).cost === 'none'
+            ? billingOf({ engine: 'gemini' }).costIs === '' : true);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -8,6 +8,14 @@
  */
 const NOW = Date.parse('2026-08-11T13:00:00Z');
 
+// ‼️ X-112 — THE FIXTURE ASKS THE PRODUCT, IT DOES NOT RETELL IT. A hand-written
+// billing block is a second wording of the one rule, and a scene built on one
+// photographs a page nobody ships. `route` is what decides (a baseUrl means
+// somebody else's endpoint), exactly as the launch manifest seals it.
+const { billingOf } = require(require('path').join(__dirname, '..', '..', 'out', 'core', 'billing.js'));
+const KIMI_ROUTE = { baseUrl: 'https://api.moonshot.ai/anthropic', authKind: 'api-key' };
+const billing = v => billingOf(Object.assign({ engine: 'claude', binding: 'declared' }, v));
+
 const row = (n, extra) => Object.assign({
     file: `session-${n}.jsonl`, sessionId: `session-${n}`, agent: 'developer',
     agentName: 'developer', cwd: 'D:/zone/agent/ajanlar/developer',
@@ -52,7 +60,9 @@ const data = () => ({
                 identity: {
                     providerId: 'kimi', providerLabel: 'Kimi (work)', binding: 'declared',
                     proof: 'matched', reportedProviderIds: ['kimi'],
-                    providerProfileRevision: 3, requestedModelRef: 'kimi-k2-thinking'
+                    providerProfileRevision: 3, requestedModelRef: 'kimi-k2-thinking',
+                    // X-112 — this row's ⚖ fills NO plan window, and the cell says so.
+                    billing: billing({ providerId: 'kimi', providerLabel: 'Kimi (work)', route: KIMI_ROUTE })
                 }
             }
         }),
@@ -80,7 +90,9 @@ const data = () => ({
                     providerId: 'anthropic', providerLabel: 'anthropic', binding: 'declared',
                     proof: 'matched', multiProvider: true, turnScope: true,
                     reportedProviderIds: ['anthropic', 'openai'],
-                    requestedModelRef: 'claude-opus-5'
+                    requestedModelRef: 'claude-opus-5',
+                    // Another engine entirely: its own contract, never this plan.
+                    billing: billing({ engine: 'opencode', providerId: 'anthropic', providerLabel: 'anthropic' })
                 }
             }
         }),

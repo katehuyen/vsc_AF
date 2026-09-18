@@ -533,7 +533,8 @@
     function statLines(s, plain) {
         const money = [
             s.cost ? C.fmtUSD(s.cost) : '',
-            s.tokens ? (plain ? C.fmtTokWText(s.tokens, s.wTokens) : C.fmtTokW(s.tokens, s.wTokens)) + ' tok' : '',
+            s.tokens ? (plain ? C.fmtTokWText(s.tokens, s.wTokens, C.weighMark(s.identity))
+                : C.fmtTokW(s.tokens, s.wTokens, C.weighMark(s.identity))) + ' tok' : '',
             s.ctxTokens ? 'ctx ' + C.fmtTok(s.ctxTokens) : '',
             s.turns ? s.turns + ' turns' : '',
             s.model ? String(s.model).replace(/^claude-/, '') : ''
@@ -700,8 +701,10 @@
             head: 'What this conversation has cost so far',
             body: panelBody([
                 [
-                    tline('API-equivalent', s.cost ? C.fmtUSD(s.cost)
+                    tline('Cost', s.cost ? C.fmtUSD(s.cost)
                         : 'not published — this engine bills a plan'),
+                    // X-112 — and what that figure IS on this run's own route.
+                    tline('…which is', ((s.identity || {}).billing || {}).costIs || ''),
                     tline('Cost per turn', per(s.cost, s.turns, C.fmtUSD)),
                     tline('Cost per hour', hours >= 1 ? C.fmtUSD((s.cost || 0) / hours) : ''),
                     tline('Per 1M tokens', s.cost && s.tokens
@@ -709,7 +712,7 @@
                 ],
                 [
                     tline('Tokens (raw)', s.tokens ? C.fmtTok(s.tokens) : ''),
-                    tline('Weighted against the plan', s.wTokens ? C.fmtTok(s.wTokens) : ''),
+                    tline(C.weighedLabel(s.identity), s.wTokens ? C.fmtTok(s.wTokens) : ''),
                     tline('Weight ratio', s.tokens && s.wTokens ? round1(s.wTokens / s.tokens) + '×' : ''),
                     tline('Tokens per turn', per(s.tokens, s.turns, n => C.fmtTok(Math.round(n))))
                 ],

@@ -630,7 +630,7 @@
             const flag = (cls, label, on, head, body) => ftip(
                 `<button class="chip ${cls}${on ? ' on' : ''}">${label}</button>`, head, body);
             const RANGE_TIP = {
-                tokens: 'Every token the session moved — input, output and cache alike. The ⚖ column beside it is the same session measured against the plan limit.',
+                tokens: 'Every token the session moved — input, output and cache alike. The ⚖ figure beside it is the same session at the plan formula; where the plan was not what served the run it is marked off-plan.',
                 cost: 'What the session cost in dollars, from the pricing rules. A subscription engine reports no dollar figure and is honestly 0.',
                 ctx: 'How much context was in the window after the last reply — "how full was it when this stopped".',
                 duration: 'Minutes the session actually RAN — the turns\' own durations added up. A gap between turns is not run time, whether it is somebody thinking for a minute or gone for the night (agentFarm.sessionBreakMin names the second kind). A session resumed the next day filters on the work in it; the whole breakdown is on the cell hover.',
@@ -797,6 +797,9 @@
          */
         const line = (label, value) => (value === '' || value === undefined || value === null
             ? '' : `${label}: ${value}`);
+        /** X-112 — the run's own identity, which is where its billing lives. The
+         *  launch record is the only thing that knows which route served it. */
+        const identityOf = r => (r.launch || {}).identity || null;
         /** A whole timestamp, in the user's own locale — the column shows "2h
          *  ago" and the question a hover asks is "yes, but when". */
         const stamp = ts => (ts ? window.AFTime.full(ts) : '');
@@ -940,7 +943,10 @@
                 // the reader takes the rest of the panel for figures.
                 line('Not read', unreadLine(r)),
                 line('Raw total', C.fmtTok(r.tokens || 0)),
-                line('Weighted (plan)', C.fmtTok(r.wTokens || 0)),
+                // ‼️ X-112 — THE LABEL IS THE RUN'S, NOT THE TABLE'S. "Weighted
+                // (plan)" was written over every row, including the ones that
+                // went through Kimi or an API key and filled nobody's window.
+                line(C.weighedLabel(identityOf(r)), C.fmtTok(r.wTokens || 0)),
                 line('Weight ratio', r.tokens ? `${round1((r.wTokens || 0) / r.tokens)}×` : ''),
                 // ‼️ THE SPLIT IS THE ANSWER TO "WHY DID THIS ONE COST THAT".
                 // Two sessions with the same total differ by an order of
@@ -974,7 +980,11 @@
             ],
             cost: r => [
                 line('Not read', unreadLine(r)),
-                line('API-equivalent', C.fmtUSD(r.cost || 0)),
+                line('Figure', C.fmtUSD(r.cost || 0)),
+                // ‼️ X-112 — WHAT THAT FIGURE IS, per run. "API-equivalent" is
+                // true of a plan run and false of the three other billings; the
+                // host words it once (src/core/billing.ts → costIs).
+                line('…which is', ((identityOf(r) || {}).billing || {}).costIs || ''),
                 line('Per turn', per(r.cost, r.turns, n => C.fmtUSD(n))),
                 line('Per API call', per(r.cost, r.apiCalls, n => C.fmtUSD(n))),
                 line('Per hour', perHour(r)),
@@ -1156,7 +1166,7 @@
             turns: '<th class="num" title="Prompts sent. One turn = one thing asked for; it takes many API calls">Turns</th>',
             tools: '<th class="num" title="Tool calls across the session (Read, Edit, Bash, MCP…)">Tools</th>',
             errors: '<th class="num" title="Tool results that came back as errors">Err</th>',
-            tokens: '<th class="num" title="Raw tokens (input + cache + output); after ⚖ the same session weighted against the plan limit">Tokens</th>',
+            tokens: '<th class="num" title="Raw tokens (input + cache + output); after ⚖ the same session at the plan formula. A ⚖ marked off-plan is a run the Claude plan did not serve — the weighting still compares it with the others, but it filled no five-hour window.">Tokens</th>',
             ctx: '<th class="num" title="Context in the model window after the last reply">Ctx now</th>',
             cost: '<th class="num" title="What these tokens would have cost on the API — the comparable figure, not an invoice">Cost</th>'
         };
@@ -1242,7 +1252,7 @@
             turns: r => `<td class="num" title="${tipOf(TIP.turns(r))}">${r.turns || 0}</td>`,
             tools: r => `<td class="num" title="${tipOf(TIP.tools(r))}">${r.toolCalls || 0}</td>`,
             errors: r => `<td class="num" title="${tipOf(TIP.errors(r))}">${r.errors || ''}</td>`,
-            tokens: r => `<td class="num" title="${tipOf(TIP.tokens(r))}">${C.fmtTokW(r.tokens, r.wTokens)}</td>`,
+            tokens: r => `<td class="num" title="${tipOf(TIP.tokens(r))}">${C.fmtTokW(r.tokens, r.wTokens, C.weighMark(identityOf(r)))}</td>`,
             ctx: r => `<td class="num" title="${tipOf(TIP.ctx(r))}">${r.ctx ? '~' + C.fmtTok(r.ctx) : '—'}</td>`,
             cost: r => `<td class="num" title="${tipOf(TIP.cost(r))}"><strong>${C.fmtUSD(r.cost)}</strong></td>`
         };
@@ -1287,7 +1297,7 @@
                 line('Top tools', (t.topTools || []).map(x => `${x.name} ${x.n}`).join(' · ')),
                 line('Errors', t.errors || ''),
                 line('Tokens', t.tokens ? C.fmtTok(t.tokens) : ''),
-                line('Weighted', t.wTokens ? C.fmtTok(t.wTokens) : ''),
+                line(C.weighedLabel(identityOf(r)), t.wTokens ? C.fmtTok(t.wTokens) : ''),
                 line('Share of session tokens', t.tokens && total.tokens ? `${pct(t.tokens, total.tokens)}%` : ''),
                 line('Cost', t.cost ? C.fmtUSD(t.cost) : ''),
                 line('Share of session cost', t.cost && total.cost ? `${pct(t.cost, total.cost)}%` : ''),
@@ -1313,7 +1323,7 @@
                     <td title="${tip}">${tags(t).map(x => `<span class="tag">${C.esc(x)}</span>`).join('') || '—'}</td>
                     <td class="num" title="${tip}">${t.steps || t.apiCalls ? C.esc(C.fmtSteps(t.apiCalls, t.steps)) : '—'}</td>
                     <td class="num" title="${tip}">${t.ms ? C.esc(C.fmtDur(t.ms)) : '—'}</td>
-                    <td class="num" title="${tip}">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens) : '—'}</td>
+                    <td class="num" title="${tip}">${t.tokens ? C.fmtTokW(t.tokens, t.wTokens, C.weighMark(identityOf(r))) : '—'}</td>
                     <td class="num" title="${tip}">${t.cost ? C.fmtUSD(t.cost) : '—'}</td>
                     <td class="num" title="${tip}">${t.endCtx ? C.fmtTok(t.endCtx) : '—'}</td>
                 </tr>`;

@@ -221,7 +221,18 @@ function claudeAdapter(deps: RegistryDeps): ProviderAdapter {
             // `total_cost_usd` — measured. That is not the vendor's bill, and it
             // is not the user's plan being spent either.
             const firstParty = !profile || !profile.baseUrl;
-            return { engineCostIsAuthoritative: firstParty, countsAgainstPlanQuota: firstParty };
+            // ‼️ AND A KEY IS NOT A PLAN — the two questions have different
+            // answers on the same endpoint. Both routes reach Anthropic, so
+            // both state a real tariff; but a subscription is RATIONED by a
+            // five-hour window and a key is METERED per token. Answering the
+            // second question with the first one's answer wrote every API-key
+            // run onto somebody's plan window. Held against `billingOf` by
+            // test/test_billing.js — the rule has one answer, in two readers.
+            const metered = String(profile?.authKind ?? '').trim() === 'api-key';
+            return {
+                engineCostIsAuthoritative: firstParty,
+                countsAgainstPlanQuota: firstParty && !metered
+            };
         },
         identity: () => ({ ...unknownIdentity('claude'), scope: 'session' })
     };

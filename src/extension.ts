@@ -19291,7 +19291,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return billingOf({
                     engine: m.identity.engine || s.source || 'claude',
                     providerId: m.identity.providerId, providerLabel: m.identity.providerLabel,
-                    origin: m.identity.origin, binding: 'declared'
+                    origin: m.identity.origin, binding: 'declared',
+                    route: m.identity.route
                 });
             });
     };
@@ -26428,6 +26429,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          * public; the credential is not read here and has nowhere to go.
          */
         routeOf: consoleRouteOf,
+        identityFor: (sessionId: string, engine?: string) => sessionIdentityOf(sessionId, engine),
         /**
          * ‼️ X-105 — THE COMPOSER'S ROUTE BOX, FROM THE LAUNCHER'S OWN READER.
          *
