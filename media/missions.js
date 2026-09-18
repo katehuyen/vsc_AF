@@ -2088,6 +2088,24 @@
             !s.ran && s.runNote ? '\nRecorded at the time as: ' + s.runNote : '');
     }
 
+    /**
+     * X-110 — WHICH PROVIDER SERVED THIS DELEGATION, in the shared mark beside
+     * the name. The provenance panel keeps the route the step was ASKED for
+     * (a dimension of the request); this is the one that ANSWERED, read off
+     * the session the step ran in by the same reader the resume gate asks.
+     * Two facts, two marks — the chip has its own panel, so the two are never
+     * worded in one place. Nothing until a session is bound, nothing on a run
+     * that took the engine's own default.
+     */
+    function stepProvider(s) {
+        const I = s.identity;
+        if (!I || !window.AFProvider) { return ''; }
+        const chip = window.AFProvider.chip(I);
+        if (!chip) { return ''; }
+        return ' ' + window.AFTip.wrap(chip, window.AFProvider.title(I),
+            window.AFTip.lines(window.AFProvider.tipLines(I)));
+    }
+
     function stepRow(s, run) {
         const open = expandedStep === s.id;
         const ctx = window.AFCtx.row('afMissionStep', {
@@ -2099,7 +2117,7 @@
         return `<tr class="steprow" data-step="${C.esc(s.id)}" ${ctx}
             title="Click to open this delegation: full prompt + live output — ${window.AFCtx.HINT}">
             <td class="stoggle">${open ? '▾' : '▸'}</td>
-            <td>${stepProv(s)}${stepLive(s)}</td>
+            <td>${stepProv(s)}${stepProvider(s)}${stepLive(s)}</td>
             <td>${C.esc(s.title)}${s.readonly ? ' <span class="mchip ro">read-only</span>' : ''}${s.note ? ` <span class="muted small">(${C.esc(s.note)})</span>` : ''}</td>
             <td>${chip(s.status)}${failChip(s.failure)}</td>
             <td class="num">${s.tokens ? C.fmtTok(s.tokens) : '—'}</td>

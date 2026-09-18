@@ -187,6 +187,20 @@ const RUN = {
                     applied: {
                         models: ['claude-haiku-4-5'], permissionMode: 'plan',
                         permissionModes: ['plan'], effort: null, scope: 'turn', turns: 2
+                    },
+                    // X-110 — and WHICH PROVIDER ANSWERED, as the host's one
+                    // reader says it: the step ASKED for kimi-work (the route
+                    // line in the panel above) and Kimi served it. The chip
+                    // beside the name is this; s2 below has no route and wears
+                    // none.
+                    identity: {
+                        engine: 'opencode', providerId: 'kimi', providerLabel: 'Kimi (work)',
+                        origin: 'agent-farm-profile', scope: 'session',
+                        providerProfileId: 'kimi-work', providerProfileRevision: 3,
+                        requestedModelRef: 'kimi/kimi-k2-thinking',
+                        reportedProviderIds: ['kimi'], reportedModels: ['kimi-k2-thinking'],
+                        proof: 'matched', multiProvider: false, turnScope: false,
+                        agreement: 'matched', binding: 'declared'
                     }
                 },
                 {

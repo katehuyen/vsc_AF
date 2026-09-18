@@ -489,6 +489,23 @@
     }
 
     /**
+     * X-110 — WHICH PROVIDER SERVED THIS CARD, in the shared mark, beside the
+     * engine badge and never inside it: the engine is the program, the
+     * provider is the endpoint that answered it, and they are two axes. Drawn
+     * only when there is one to name (a run on the engine's own default has no
+     * route); the panel is the component's, so this card and the session's
+     * own page cannot word the same fact two ways.
+     */
+    function providerChip(s) {
+        const I = s.identity;
+        if (!I || !window.AFProvider) { return ''; }
+        const chip = window.AFProvider.chip(I);
+        if (!chip) { return ''; }
+        return ' ' + window.AFTip.wrap(chip, window.AFProvider.title(I),
+            window.AFTip.lines(window.AFProvider.tipLines(I)));
+    }
+
+    /**
      * Does this session report the whole hook stream, or only its lifecycle?
      *
      * ‼️ NOT THE SAME QUESTION AS "IS IT CLAUDE" ANY MORE. A conversation Agent
@@ -1566,7 +1583,7 @@
                      sessionId: s.sessionId, title: s.title || '', agentName: s.agentName || '', cwd: s.cwd || ''
                  })}>
                 <div class="spread">
-                    <h3 style="margin:0">${tip(`<span${open}>${C.esc(s.label || s.agentName)}</span>`, nameTip(s))} ${tip(`<span class="sid">(${C.esc(shortId(s.sessionId))})</span>`, idTip(s))} ${engineBadge(s)}</h3>
+                    <h3 style="margin:0">${tip(`<span${open}>${C.esc(s.label || s.agentName)}</span>`, nameTip(s))} ${tip(`<span class="sid">(${C.esc(shortId(s.sessionId))})</span>`, idTip(s))} ${engineBadge(s)}${providerChip(s)}</h3>
                     ${tip(`<span class="badge" style="color:${meta.color};border-color:${meta.color}">${meta.label}${s.currentTool ? ' · ' + C.esc(s.currentTool) : ''}</span>`, statusTip(s, meta, gone))}
                 </div>
                 ${s.title ? `<div class="sub tip-host card-open" style="margin-top:3px">${tip(`<span${open}>${C.esc(s.title)}</span>`, titleTip(s))}</div>` : ''}

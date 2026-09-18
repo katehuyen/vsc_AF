@@ -1648,6 +1648,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // had not. Declared later in activate() and reached through this
             // closure, which only runs when the page is opened.
             accountFor: sessionAccountOf,
+            // X-110 — and which provider served it, from the reader the resume
+            // gate asks; same closure, same reason.
+            identityFor: (sessionId: string) => sessionIdentityOf(sessionId),
             // A live card may only claim "no process" when the CLI's own
             // registry is there to be read — otherwise silence proves nothing.
             liveOwners: () => liveCliSessions(),
@@ -17195,9 +17198,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         // task occupied. A resumed lane serves several of them,
                         // and the lane's aggregate was being shown as each one's.
                         const applied = appliedDimensions(byIdSess ?? sess, stepWindow(t));
+                        // X-110 — WHICH PROVIDER SERVED THIS DELEGATION, from the
+                        // one reader the resume gate asks. The row wears the
+                        // shared chip; the provenance panel keeps the route it
+                        // was ASKED for, which is a different fact.
+                        const stepSess = byIdSess ?? sess;
+                        const identity = stepSess ? sessionIdentityOf(stepSess.sessionId) : undefined;
                         if (!t) {
-                            return transcript || applied
-                                ? { ...step, ...(transcript ? { transcript } : {}), ...(applied ? { applied } : {}) }
+                            return transcript || applied || identity
+                                ? { ...step, ...(transcript ? { transcript } : {}), ...(applied ? { applied } : {}),
+                                    ...(identity ? { identity } : {}) }
                                 : step;
                         }
                         return {
@@ -17206,7 +17216,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                             tokens: step.tokens ?? t.tokens ?? (sess ? totalTokens(sess.usage) : undefined),
                             outputFile: step.outputFile ?? t.outputFile,
                             ...(transcript ? { transcript } : {}),
-                            ...(applied ? { applied } : {})
+                            ...(applied ? { applied } : {}),
+                            ...(identity ? { identity } : {})
                         };
                     })
                 }))
@@ -21977,6 +21988,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         launchDefaults: () => launchDefaults(),
         // X-18 — the same matrix the Console, the ▶ picker and the bridge use.
         engines: () => engineOptions(engineMatrix()),
+        // X-110 — which provider served a run, from the reader the resume gate
+        // asks (declared above; a row never derives it from a model name).
+        identityFor: (sessionId: string) => sessionIdentityOf(sessionId),
         cliProfiles: () => cfg().get<CliProfile[]>('cliProfiles', []),
         // ‼️ A-24 — the tones the "Sound on finish" row may offer, read from the
         // same list every other alert surface reads, the user's own sounds

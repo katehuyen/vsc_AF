@@ -36,6 +36,19 @@ const sessions = () => ([
         // recorded and when nothing was, and the second case is the ordinary
         // one for every session started before the manifest carried it.
         account: 'wmmuratvural@gmail.com',
+        // X-110 — and WHICH PROVIDER served it, as the host's one reader
+        // answers it: a declared Kimi route the engine confirmed. Drawn on the
+        // card beside the engine badge; the codex card below has no route and
+        // wears no chip, which is the other case worth picturing.
+        identity: {
+            engine: 'claude', providerId: 'kimi', providerLabel: 'Kimi (work)',
+            origin: 'agent-farm-profile', scope: 'session',
+            providerProfileId: 'kimi-work', providerProfileRevision: 3,
+            requestedModelRef: 'kimi-k2-thinking',
+            reportedProviderIds: ['kimi'], reportedModels: ['kimi-k2-thinking'],
+            proof: 'matched', multiProvider: false, turnScope: false,
+            agreement: 'matched', binding: 'declared'
+        },
         status: 'tool', currentTool: 'Edit',
         lastPrompt: 'X-35 multi motor adaptasyonu — Live Timeline',
         // ‼️ U-81 — AND THE LAST PROMPT HAS TWO LENGTHS TOO. `lastPrompt` is the
@@ -149,6 +162,18 @@ const sessions = () => ([
         sessionId: 'ses_7f2c1a90d4e8b6',
         agentName: 'manager', resolved: true, label: 'manager',
         source: 'opencode',
+        // X-110 — an OpenCode run that changed provider at a turn boundary: the
+        // chip COUNTS ("2 providers"), it does not name — and that is the widest
+        // text the mark ever carries, so it is the one to measure.
+        identity: {
+            engine: 'opencode', providerId: 'anthropic', providerLabel: '',
+            origin: 'engine-native', scope: 'turn',
+            providerProfileId: '', providerProfileRevision: null,
+            requestedModelRef: 'anthropic/claude-sonnet-5',
+            reportedProviderIds: ['anthropic', 'openai'], reportedModels: ['claude-sonnet-5', 'gpt-5.6'],
+            proof: 'matched', multiProvider: true, turnScope: true,
+            agreement: 'matched', binding: 'declared'
+        },
         status: 'working',
         lastPrompt: 'go through the queue and tell me what is blocked',
         startedAt: min(11), lastEventTs: min(1),

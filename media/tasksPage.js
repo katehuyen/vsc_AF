@@ -3278,6 +3278,24 @@
     /** `Label: value` lines out of a setup list — one shape for every kind. */
     const setupLines = list => (list || []).map(x => x.label + ': ' + x.value);
 
+    /**
+     * X-110 — WHICH PROVIDER SERVED THIS RUN, in the shared mark beside the
+     * engine badge. The engine is the program the run was queued on; the
+     * provider is the endpoint that answered it, read off the session the run
+     * bound to by the same reader the resume gate asks. Nothing until a
+     * session is bound (a queued run has served nobody yet) and nothing on a
+     * run that took the engine's own default — a grey "no route" on every row
+     * would be a control with no referent.
+     */
+    function runProviderChip(r) {
+        const I = r.identity;
+        if (!I || !window.AFProvider) { return ''; }
+        const chip = window.AFProvider.chip(I);
+        if (!chip) { return ''; }
+        return ' ' + tipw(chip, window.AFProvider.title(I),
+            window.AFTip.lines(window.AFProvider.tipLines(I)));
+    }
+
     /** The full stamp of a run's first (or `last`) event of these kinds, or ''
      *  when it has none — the caller decides what an absence prints. */
     function eventStamp(r, kinds, last) {
@@ -3424,7 +3442,7 @@
                 window.AFTip.lines(setupLines(r.setup)))}</td>
             <td class="eng">${window.AFEngine.badge(r.engine || 'claude',
                 'Engine: ' + engineLabel(r) + '\nPrice per run: '
-                + (r.reportsCost === false ? 'not reported — plan or account billing' : 'reported'))}</td>
+                + (r.reportsCost === false ? 'not reported — plan or account billing' : 'reported'))}${runProviderChip(r)}</td>
             ${/* ‼️ M-8 — WHICH CONVERSATION. A run that ran opened a session and
                   the page KNEW which one (that is where the price comes from) —
                   it just never said. Click it and the transcript opens. */''}

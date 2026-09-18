@@ -51,6 +51,29 @@ const CANDIDATES = [
     ok('…and every surface asks the component rather than drawing a provider itself',
         /window\.AFProvider\.chip\(/.test(sess) && /window\.AFProvider\.chip\(/.test(turns)
         && /window\.AFProvider\.chip\(I\)/.test(viewer));
+    // X-110 (part 3) — the last three surfaces: a live card, a run row, a
+    // delegation row. Each asks the component and each is fed by the host's
+    // ONE reader, never by a field of its own.
+    {
+        const live = fs.readFileSync(path.join(ROOT, 'media', 'timeline.js'), 'utf8');
+        const tasks = fs.readFileSync(path.join(ROOT, 'media', 'tasksPage.js'), 'utf8');
+        const missions = fs.readFileSync(path.join(ROOT, 'media', 'missions.js'), 'utf8');
+        ok('‼️ the Live card, the run row and the delegation row draw the shared chip beside the engine',
+            /\$\{engineBadge\(s\)\}\$\{providerChip\(s\)\}<\/h3>/.test(live)
+            && /reported'\)\)\}\$\{runProviderChip\(r\)\}<\/td>/.test(tasks)
+            && /\$\{stepProv\(s\)\}\$\{stepProvider\(s\)\}/.test(missions)
+            && /window\.AFProvider\.chip\(I\)/.test(live) && /window\.AFProvider\.chip\(I\)/.test(tasks)
+            && /window\.AFProvider\.chip\(I\)/.test(missions));
+        const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+        const tl = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'timeline.ts'), 'utf8');
+        const tp = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8');
+        ok('…and all three are fed by sessionIdentityOf, the reader the resume gate asks',
+            /identityFor: \(sessionId: string\) => sessionIdentityOf\(sessionId\),\s*\n\s*\/\/ A live card may only claim/.test(ext)
+            && /identityFor: \(sessionId: string\) => sessionIdentityOf\(sessionId\),\s*\n\s*cliProfiles:/.test(ext)
+            && /const identity = stepSess \? sessionIdentityOf\(stepSess\.sessionId\) : undefined;/.test(ext)
+            && /identity: deps\.identityFor\?\.\(s\.sessionId\) \?\? null,/.test(tl)
+            && /return sid \? deps\.identityFor\?\.\(sid\) \?\? null : null;/.test(tp));
+    }
     // ‼️ THE PAGE AND THE RESUME GATE READ ONE RECORD. A page with its own
     // reader could say "Kimi" over a run the gate then refuses to resume onto
     // Kimi — two true-looking answers about one session.
@@ -84,14 +107,18 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         + "out.push({t:(e.textContent||'').trim(),w:Math.round(r.width),sw:e.scrollWidth,"
         + "cut:e.scrollWidth>Math.ceil(r.width)+1});});return out;})()";
 
-    for (const page of ['sessions', 'turns', 'sessionviewer']) {
+    // X-110 (part 3) — the live card, the run row and the delegation row join
+    // the sweep. The mission fixture has ONE routed delegation, so the count
+    // case is not asserted there — asserting it would be asserting a fixture.
+    const ONE_CHIP = ['sessionviewer', 'missions'];
+    for (const page of ['sessions', 'turns', 'sessionviewer', 'timeline', 'tasks', 'missions']) {
         node([path.join('test', 'render_page.js'), page]);
         let chips;
         try { chips = JSON.parse(node([path.join('test', 'measure_page.js'), page, EXPR])); }
         catch { chips = null; }
         ok(`${page}: the page was measured and answered`, Array.isArray(chips));
         ok(`${page}: there are provider chips on it — a table with none proves nothing`,
-            Array.isArray(chips) && chips.length >= 2);
+            Array.isArray(chips) && chips.length >= (ONE_CHIP.includes(page) ? 1 : 2));
         const cut = (chips || []).filter(c => c.cut);
         ok(`‼️ ${page}: NO PROVIDER CHIP IS CUT — a chip that says there is a route `
             + 'without saying which is worse than no chip at all'
@@ -101,7 +128,7 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
         // is the one that fails first when a column is trimmed later. The
         // viewer draws ONE session and so has one chip: there is no count case
         // to hold there, and asserting one would be asserting a fixture.
-        if (page !== 'sessionviewer') {
+        if (!ONE_CHIP.includes(page)) {
             const many = (chips || []).find(c => /providers$/.test(c.t));
             ok(`${page}: the "N providers" chip is whole — it is the widest case`,
                 !!many && !many.cut);

@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.558.0 - the Live card, the run row and the delegation row say which provider served them (X-110, part 3 — closes) (2026-09-18)
+
+- **The last three surfaces.** A Live Timeline card, a run on the Tasks board
+  and a delegation row inside a mission all named their engine and left the
+  provider to be inferred from a model name — the inference this family
+  forbids. Each carries the shared chip now, beside the engine badge and
+  never inside it, with the component's own panel (the declared route, who
+  answered when that differs, how we know, which kind of nothing a blank is).
+- **One reader, three more doors.** All three are fed by `sessionIdentityOf`,
+  the reader the resume gate asks: the Live card through a `identityFor` dep
+  on the timeline panel, the run row through the same dep on the tasks panel
+  (read off the session the run bound to — a queued run has served nobody
+  yet), the delegation through the mission payload the host already resolves
+  the step's session for. A row never derives it.
+- **A delegation's chip is the route that ANSWERED; its provenance panel keeps
+  the route it was ASKED for.** Two facts, two marks, each with its own panel —
+  never worded in one place.
+- Fixtures: a Kimi-routed card and a "2 providers" card on the timeline, the
+  same pair on the runs board, a Kimi-served delegation beside the ≠ mark.
+  `test/test_provider_chip_width.js` measures all six surfaces now and pins
+  that the three new doors ask the one reader. Dark and light photographed.
+- X-110 is complete: `media/afProvider.js` is the one place a provider is
+  named and coloured, and every surface that names an engine names the
+  provider beside it — Console, Sessions, Turns, viewer, Live, Tasks, Missions.
+
 ## 3.557.0 - a resume card's engine pill is pinned to the card's edge, whatever its title's length (K-42, round 2) (2026-09-18)
 
 - **The defect, measured.** On every resume card with a long title the badge

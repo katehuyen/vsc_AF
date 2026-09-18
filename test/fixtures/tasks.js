@@ -92,7 +92,19 @@ const runs = () => ([
         when: min(4), durMin: 4, detail: '', costUSD: 2.14,
         engine: 'claude', reportsCost: true, tokens: 1_840_000,
         hasOutput: false, sessionFile: 'C:\\Users\\x\\.claude\\projects\\vsc_AgentFarm\\407c78cb.jsonl',
-        prompt: 'devir notundaki kalan maddeleri sırayla kapat ve testleri çalıştır'
+        prompt: 'devir notundaki kalan maddeleri sırayla kapat ve testleri çalıştır',
+        // X-110 — WHICH PROVIDER served the session this run bound to, as the
+        // host's one reader answers it. Drawn beside the engine badge; the
+        // rows below with no route wear no chip.
+        identity: {
+            engine: 'claude', providerId: 'kimi', providerLabel: 'Kimi (work)',
+            origin: 'agent-farm-profile', scope: 'session',
+            providerProfileId: 'kimi-work', providerProfileRevision: 3,
+            requestedModelRef: 'kimi-k2-thinking',
+            reportedProviderIds: ['kimi'], reportedModels: ['kimi-k2-thinking'],
+            proof: 'matched', multiProvider: false, turnScope: false,
+            agreement: 'matched', binding: 'declared'
+        }
     },
     {
         // ‼️ A CODEX RUN. Its transcript IS matched now (the matcher used to
@@ -104,7 +116,20 @@ const runs = () => ([
         engine: 'codex', reportsCost: false, tokens: 93_625,
         hasOutput: true, outputFile: 'D:\\out\\r2.md',
         sessionFile: 'C:\\Users\\x\\.codex\\sessions\\2026\\08\\12\\rollout-019ff43f.jsonl',
-        prompt: 'codex rollout dosyasındaki last_token_usage alanını oku ve tur satırlarını kur'
+        prompt: 'codex rollout dosyasındaki last_token_usage alanını oku ve tur satırlarını kur',
+        // X-110 — a run that changed provider between turns: the chip COUNTS
+        // ("2 providers"), the widest text the mark carries, beside the widest
+        // engine badge but one — the cell that fails first if the column is
+        // ever trimmed.
+        identity: {
+            engine: 'codex', providerId: 'openai', providerLabel: '',
+            origin: 'engine-native', scope: 'turn',
+            providerProfileId: '', providerProfileRevision: null,
+            requestedModelRef: 'gpt-5-codex',
+            reportedProviderIds: ['openai', 'anthropic'], reportedModels: ['gpt-5-codex', 'claude-sonnet-5'],
+            proof: 'matched', multiProvider: true, turnScope: true,
+            agreement: 'matched', binding: 'declared'
+        }
     },
     {
         id: 'r3', title: 'AGENT_AREA dosyalama turu', agentName: 'manager',

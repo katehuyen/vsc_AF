@@ -20,6 +20,7 @@ import {
     RunDimensions, ScheduleKind, scheduleDue, settledKeyAfterEdit,
     TaskManager, TaskMode, WorkflowStep
 } from '../core/tasks';
+import { RunIdentity } from '../core/turnRuntime';
 import { describeRetry, normalizeRetry, RetryPolicy } from '../core/retry';
 import { describeRounds, normalizeRounds } from '../core/taskRounds';
 import { PromptSnippetsSnapshot } from '../core/prompts';
@@ -117,6 +118,9 @@ export interface TasksDeps {
      *  Optional so a caller written before engines existed still type-checks;
      *  absent means the form offers no engine box and every task is claude's. */
     engines?(): { id: string; label: string; ready: boolean; next: string; billing: string }[];
+    /** X-110 — which provider served a run's session, from the ONE reader the
+     *  resume gate asks (`sessionIdentityOf`); a row must not derive it. */
+    identityFor?(sessionId: string): RunIdentity | undefined;
     cliProfiles(): { name: string; headless?: string }[];
     /**
      * ‼️ A-24 — THE TONES THIS MACHINE CAN ACTUALLY PLAY, for the form's
@@ -305,6 +309,9 @@ interface RunRow {
      * as an unlabelled "open session" button. The id is drawn, and it opens.
      */
     sessionId: string;
+    /** X-110 — which provider served that session, from the one reader the
+     *  resume gate asks. `null` = no session bound yet, or no reader wired. */
+    identity: RunIdentity | null;
     /**
      * ‼️ M-12 — "45 min of work · 269 tool call(s) · the run was CUT OFF, not
      * untouched", or empty. Empty is not "it did nothing": it is "this is not a
@@ -760,6 +767,10 @@ function buildRuns(deps: TasksDeps, now: number, archiveMonths?: string[]): RunR
             // reader gets the one string they can match against a Console card,
             // a swim lane or a log line.
             sessionId: sessionIdOf(t.costSessionFile) || (t.runSessionId ?? ''),
+            identity: (() => {
+                const sid = sessionIdOf(t.costSessionFile) || (t.runSessionId ?? '');
+                return sid ? deps.identityFor?.(sid) ?? null : null;
+            })(),
             // ‼️ M-12 — WHAT A FAILED RUN MANAGED BEFORE IT FAILED. Only stated
             // when it is a FINDING: `interrupted` is the case the board was
             // actively wrong about, and it is the one that changes what a reader

@@ -3,6 +3,7 @@ import { LiveMonitor } from '../core/live';
 import { totalTokens } from '../core/pricing';
 import { SessionIndex } from '../core/sessions';
 import { TaskManager } from '../core/tasks';
+import { RunIdentity } from '../core/turnRuntime';
 import {
     SessionAlertPrefs, SESSION_ALERT_EVENTS, TurnAlertAction, TurnAlertBranch, TURN_ALERT_ACTIONS
 } from '../core/turnAlerts';
@@ -28,6 +29,10 @@ export interface TimelineDeps {
      * with five slots under one engine.
      */
     accountFor?: (sessionId: string) => { id: string; label: string } | undefined;
+    /** X-110 — which provider served it, from the ONE reader the resume gate
+     *  asks (`sessionIdentityOf`), so a card and the gate cannot describe one
+     *  run two ways. */
+    identityFor?: (sessionId: string) => RunIdentity | undefined;
     /** Sessions a live CLI process owns right now (the CLI's own registry). */
     liveOwners: () => { sessionId: string; pid: number; entrypoint?: string; status?: string }[];
     /** Is that registry readable at all? Without it, "no process" means nothing. */
@@ -173,6 +178,7 @@ function buildData(deps: TimelineDeps): Record<string, unknown> {
                 // ‼️ X-251 — the LABEL only. A card is something to read; the
                 // slot id is what a spawn needs, and this page spawns nothing.
                 account: deps.accountFor?.(s.sessionId)?.label ?? '',
+                identity: deps.identityFor?.(s.sessionId) ?? null,
                 // From the transcript (absent until the session's first turn lands).
                 title: row?.title ?? '',
                 firstPrompt: s.firstPrompt || row?.firstPrompt || '',
