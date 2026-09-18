@@ -204,6 +204,20 @@ function main() {
         process.exitCode = 1;
         return;
     }
+    // …and the same for the PAGE ITSELF: a script or stylesheet edited after the
+    // render is a change the photograph cannot contain (measured K-42: a layout
+    // change "did nothing" because the old render was shot).
+    const media = path.join(ROOT, 'media');
+    const renderedAt = fs.statSync(html).mtimeMs;
+    const newerMedia = fs.readdirSync(media).filter(n => /\.(js|css)$/.test(n))
+        .find(n => fs.statSync(path.join(media, n)).mtimeMs > renderedAt);
+    if (newerMedia) {
+        console.error(`‼️ ${path.basename(html)} is OLDER than media/${newerMedia} — `
+            + 'it would photograph the page as it was before that change. '
+            + `Run: ${renderCmd}`);
+        process.exitCode = 1;
+        return;
+    }
     const png = html.replace(/\.html$/, `${scene > 0 ? `.s${scene}` : ''}.png`);
     const tmp = path.join(RENDER, `.shoot-${name}${light ? '.light' : ''}.html`);
     fs.writeFileSync(tmp, instrument(fs.readFileSync(html, 'utf8'), scene), 'utf8');

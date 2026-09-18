@@ -2,6 +2,36 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.553.0 - Console session cards are fixed lines, and nothing jumps as a session grows (K-42) (2026-09-18)
+
+- **The defect.** A live card's header held the name, the engine, the route,
+  the token figure and the 🔖 in one wrapping line: while the figure was small
+  the badges fitted beside the name, and the moment it grew the whole shelf
+  fell to a second line — cards changed height mid-session and their badges
+  sat top-right on one card and a line lower on the next. The sign-in pill
+  was squeezed into the status line with the phase, held count, turns and
+  context, and wrapped there. Resume cards put the engine pill after a long
+  title on a wrapping line, so it landed bottom-LEFT on most of them.
+- **A live card is four fixed lines.** (1) who + engine/route, `nowrap`, the
+  name is the half that ellipsizes and the engine pill is pinned to the end;
+  on a crowded line the ROUTE pill gives way first (its panel opens with the
+  whole value — MIRROR) and the engine pill never does. (2) new `.h2`: the
+  sign-in on the left, the token figure and the 🔖 on the right, always
+  drawn, so the card's height does not depend on how far it has run.
+  (3) the title. (4) the status line — phase, wait, held, turns, context,
+  project — without the sign-in.
+- **A resume card's engine pill is pinned to the end of its title line**
+  (inside the same `.hb` group), so every card in the list wears it in the
+  same corner.
+- `test_console_identity_width.js` now pins the new shape (header `nowrap`,
+  the `.h2` line, the sign-in off the status line, the resume pill in `.hb`)
+  and MEASURES it: every one of the 68 headers in the fixture is one line
+  with its badge group on that line and inside its card, and every card still
+  shows its whole agent name and id.
+- **`shoot_page.js` refuses a render older than the page's own media**, not
+  only older than its fixture: a script or stylesheet edited after the render
+  was photographed as the page before the change (measured on this item).
+
 ## 3.552.0 - a rule picked in a Console box is resolved on the spot, and never starts a session above 90% (X-305 R2) (2026-09-18)
 
 - **‼️ The live failure.** A person opened a fresh Console card, picked

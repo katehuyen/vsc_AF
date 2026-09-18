@@ -277,12 +277,26 @@
            row it fell to 29px and the id was clipped too, so the card read
            "(#:". A row that cannot fit its badges puts them on a second line,
            which costs 14px; a row that cannot fit its name says nothing. */
+        /* K-42 — THE CARD IS FOUR FIXED LINES, so nothing moves as a session
+           grows. Line 1 is who + engine/route and NEVER wraps: the name is the
+           half that ellipsizes, the engine pill is pinned to the right. The
+           figures that grow (tokens, the wiki mark) and the sign-in live on
+           line 2, so a card no longer jumps from one line to two the moment
+           its token figure widens. */
         .srow .h { display:flex; align-items:center; gap:6px; justify-content:space-between;
-            flex-wrap:wrap; row-gap:3px; }
-        /* the badge shelf: one unit, kept together, and pushed to the end of
-           whichever line it lands on */
+            flex-wrap:nowrap; }
+        /* the badge shelf: one unit, kept together, pinned to the line end */
         .srow .hb { display:flex; align-items:center; gap:6px; flex:0 0 auto;
             margin-left:auto; }
+        .srow .h2 { display:flex; align-items:center; justify-content:space-between; gap:6px;
+            min-height:16px; margin-top:2px; font-size:10px; }
+        .srow .h2 > .af-tipw.acw { flex:0 1 auto; min-width:0; display:block; overflow:hidden; }
+        /* …and on line 1 the ROUTE yields before the name does: the shelf may
+           shrink, only the route pill inside it gives way (its panel opens with
+           the whole value — MIRROR), and the engine pill never does. */
+        .srow .h > .hb { flex:0 100 auto; min-width:0; }
+        .srow .h > .hb > .af-tipw.rtw { flex:0 1 auto; min-width:4ch; display:block; overflow:hidden; }
+        .srow .h > .hb .af-route { display:block; overflow:hidden; text-overflow:ellipsis; }
         /* ‼️ K-13 — the identity line is two things, and only ONE of them may be
            cut. The name is the flexible half; the id is a fixed eight characters
            that mean nothing at all once an ellipsis reaches them.
@@ -2299,12 +2313,10 @@
             // U-50 — four subjects, four panels, no fact in two of them.
             const twho = cardWhoTip(s), tname = cardNameTip(s);
             const tcost = cardCostTip(s), tstate = cardStateTip(s);
-            // ‼️ X-213 — the account mark goes on the SECOND line, beside the
-            // project badge, not up beside the name. It is the same kind of
-            // fact as the project (who this run belongs to rather than what it
-            // is), and the header line is already the name competing with the
-            // engine, the route and the token figure — measured: an address
-            // pill up there took the agent's own name down to "(#019".
+            // ‼️ X-213 / K-42 — the account mark is never up beside the name
+            // (measured: an address pill there took the agent's own name down
+            // to "(#019"). It opens line 2, across from the spend figures, so
+            // the crowded status line below no longer has to carry it.
             const acct = accountBadge(s);
             return `
             <div class="srow ${p.cls}${s.id === DATA.selected ? ' sel' : ''}" data-sel="${C.esc(s.id)}"
@@ -2336,14 +2348,16 @@
                 <div class="h">
                     ${cardTip(`<span class="n"><span class="dot"></span>${who(s.agentName, s.sessionId)}</span>`,
                         twho.head, twho.body, 'nw')}
-                    ${/* ‼️ B-03.1 — THE BADGES ARE ONE THING, so the line breaks
-                          BETWEEN the identity and them rather than through them.
-                          Four badges beside a name do not fit a 250px column,
-                          and until this they took the space by force: the name
-                          shrank to nothing. Grouped, the row keeps the name
-                          whole and moves the whole shelf of badges down a line
-                          when it has to — one break, not four orphans. */''}
-                    <span class="hb">${engineBadge(s)}${routeBadge(s)}${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}${/* ‼️ U-94 — the card's own 🔖 keeps the WHOLE conversation.
+                    ${/* ‼️ B-03.1 / K-42 — only the engine and the route sit
+                          beside the name, as one pinned group: four badges there
+                          took the name down to nothing, and a shelf that fell to
+                          a second line when the token figure grew made every
+                          card change height mid-session. */''}
+                    <span class="hb">${engineBadge(s)}${routeBadge(s)}</span>
+                </div>
+                <div class="h2">
+                    ${acct || '<span></span>'}
+                    <span class="hb">${cardTip(`<span class="m">${tokBadge(s.tokens)}</span>`, tcost.head, tcost.body, 'mw')}${/* ‼️ U-94 — the card's own 🔖 keeps the WHOLE conversation.
                           The rows below carry one each, but only for the card
                           being read; from a card in the list the whole thing is
                           the only unit there is, and it was reachable only from
@@ -2356,7 +2370,7 @@
                 ${colorDot(s.sessionId, s.color, 'live')}
                 ${cardTip(`<span class="t2">${C.esc(s.title || '(no name yet)')}</span>`, tname.head, tname.body, 't2w')}
                 <div class="m">${cardTip(`<span class="phase">${C.esc(p.label)}${waited ? ` · ${waited}` : ''}</span>`,
-                    tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(s))}</span>`, ctxTip(s).head, ctxTip(s).body)}` : ''}${acct ? ` · ${acct}` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
+                    tstate.head, tstate.body)}${(s.queued || []).length ? ` · ${s.queued.length} held` : ''}${s.turns ? ` · ${s.turns} turns` : ''}${s.contextTokens ? ` · ${cardTip(`<span class="pair">${C.esc(ctxShort(s))}</span>`, ctxTip(s).head, ctxTip(s).body)}` : ''}${s.projectName ? ` · <span class="pbadge" title="Started under this project — it was told about it, and the session is filed under it">${s.projectIcon ? C.esc(s.projectIcon) : '◧'} ${C.esc(s.projectName)}</span>` : ''}</div>
             </div>`;
         }).join('');
         // One line above the cards, only when something is actually waiting:
@@ -2596,7 +2610,7 @@
                                 ? '\nCannot be resumed: a live process owns this transcript right now — a terminal, or another window. Joining it would put two processes on one conversation.'
                                 : '\nClicking resumes it here, in the panel, with everything that was said. Right-click for the session\'s own actions.'
                         ]), 'nw')}
-                    ${resumeEngineBadge(r)}
+                    <span class="hb">${resumeEngineBadge(r)}</span>
                 </div>
                 ${colorDot(r.sessionId, r.color, 'resume')}
                 <div class="m wrap">${cardTip(who(r.agentName, r.sessionId),

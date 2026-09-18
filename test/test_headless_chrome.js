@@ -69,6 +69,9 @@ const hc = require('./headless_chrome');
         ok('‼️ shoot_page refuses a render older than its fixture rather than shooting it',
             /fs\.statSync\(fixture\)\.mtimeMs > fs\.statSync\(html\)\.mtimeMs/.test(src)
             && /is OLDER than test\/fixtures\//.test(src));
+        ok('‼️ …and a render older than the page\'s own media (script or stylesheet) is refused too',
+            /\.find\(n => fs\.statSync\(path\.join\(media, n\)\)\.mtimeMs > renderedAt\)/.test(src)
+            && /is OLDER than media\//.test(src));
         ok('…and the command it names re-renders the SAME theme it was asked for',
             /const renderCmd = `node test\/render_page\.js \$\{name\}\$\{light \? ' --light' : ''\}`/.test(src)
             && !/run: node test\/render_page\.js \$\{name\}`/.test(src));

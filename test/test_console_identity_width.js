@@ -44,11 +44,19 @@ const CANDIDATES = [
     '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'
 ];
 
-// The structural half runs everywhere: the badges are ONE group, so the line
-// breaks between the identity and them rather than through them.
+// The structural half runs everywhere. K-42: the header line NEVER wraps — the
+// name ellipsizes and the engine/route group is pinned to its end — and the
+// figures that grow (tokens, the wiki mark) and the sign-in have a fixed line 2.
 {
     const src = fs.readFileSync(path.join(ROOT, 'media', 'console.js'), 'utf8');
-    ok('the card header can wrap at all', /\.srow \.h \{[^}]*flex-wrap:wrap/.test(src));
+    ok('‼️ K-42 — the card header never wraps', /\.srow \.h \{[^}]*flex-wrap:nowrap/.test(src));
+    ok('‼️ K-42 — a live card has a fixed second line for the sign-in and the spend',
+        /\.srow \.h2 \{[^}]*justify-content:space-between/.test(src)
+        && /<div class="h2">\s*\$\{acct \|\| '<span><\/span>'\}/.test(src));
+    ok('…and the sign-in is no longer on the crowded status line',
+        !/\$\{acct \? ` · \$\{acct\}` : ''\}/.test(src));
+    ok('…and a resume card pins its engine to the end of its title line',
+        /<span class="hb">\$\{resumeEngineBadge\(r\)\}<\/span>/.test(src));
     ok('…and the badges beside the name are one group, not four loose children',
         /<span class="hb">/.test(src) && /\.srow \.hb \{/.test(src));
     ok('…and the identity has a floor, so the half that may be cut is not cut to nothing',
@@ -135,6 +143,23 @@ if (!CANDIDATES.some(p => p && fs.existsSync(p))) {
     let x;
     try { x = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', CROSS])); } catch { x = null; }
     ok('there are cards with an End & remove button to measure', x && x.length > 3);
+
+    // ‼️ K-42 — measured: every header is ONE line, its badge group sits on that
+    // line and inside its card. A string test cannot see a pill that fell to a
+    // second line or ran past the card's edge.
+    const HEAD = "(()=>{const out=[];let n=0;document.querySelectorAll('.srow').forEach(row=>{"
+        + "const h=row.querySelector(':scope > .h'),hb=h&&h.querySelector(':scope > .hb');if(!h||!hb)return;n++;"
+        + "const rh=h.getBoundingClientRect(),rb=hb.getBoundingClientRect(),rr=row.getBoundingClientRect();"
+        + "if(rh.height>22||rb.top<rh.top-1||rb.bottom>rh.bottom+1||rb.right>rr.right+1){"
+        + "out.push((h.textContent||'').trim().slice(0,30)+' h='+Math.round(rh.height)+' right='+Math.round(rr.right-rb.right));}});"
+        + "return {n,bad:out};})()";
+    let hd;
+    try { hd = JSON.parse(node([path.join('test', 'measure_page.js'), 'console', HEAD])); } catch { hd = null; }
+    ok('there are card headers with a badge group to measure', hd && hd.n > 3);
+    ok('‼️ K-42 — EVERY CARD HEADER IS ONE LINE, ITS BADGES ON IT AND INSIDE THE CARD'
+        + (hd && hd.bad.length ? ' — ' + hd.bad.slice(0, 4).join(' · ') : '')
+        + (hd ? ` (${hd.n} headers)` : ''),
+        hd && hd.bad.length === 0);
     ok('‼️ THE ✕ IS INSIDE ITS CARD, AT THE RIGHT EDGE'
         + (x ? ' (' + JSON.stringify(x[0]) + ')' : ''),
         x && x.length > 0 && x.every(r => r.inside && r.gap >= 0 && r.gap <= 12));
