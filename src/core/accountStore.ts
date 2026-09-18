@@ -670,6 +670,18 @@ export function statedAccountLabel(
     const id = String(stated || '').trim();
     if (!id) { return ''; }
     if (id === MACHINE_ACCOUNT) { return MACHINE_GLOBAL; }
+    // ‼️ K-41 — A POLICY IS A RULE, NOT A SLOT, AND LOOKING FOR IT AMONG THE
+    // SLOTS CAN ONLY EVER FAIL. `@emptiest` went into `findSlot`, found nothing,
+    // and came back through the X-282 branch as `⚠ not on this machine:
+    // @emptiest` — a warning that the account was DELETED, drawn over a session
+    // that was running perfectly on a rule the user had just picked. The rule's
+    // own name is what a reader recognises, so it is what they get.
+    //
+    // A policy that names no stored rule is NOT caught here: this function has
+    // no rule list and inventing one would be the second half of the same
+    // mistake. A typo is refused at the door it was typed into
+    // (`policyRefusal`), which is where the user can still fix it.
+    if (isPolicyId(id)) { return id; }
     const slot = findSlot(list, id);
     // ‼️ X-282 — A DEAD ID SAYS SO. A task, a schedule or a session pinned to
     // an account that has since been forgotten used to show the bare id, which

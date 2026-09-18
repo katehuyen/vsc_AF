@@ -15,6 +15,7 @@ import {
     EngineId, engineFlagFor, engineNote, engineOf, ENGINES, engineTakesEffort, noTranscriptNote
 } from '../core/consoleEngine';
 import { MACHINE_ACCOUNT, MACHINE_GLOBAL_ROW } from '../core/accountStore';
+import { isPolicyId } from '../core/accountPolicy';
 import { EngineOption, engineRefusal } from '../core/engines';
 import { ProviderForm, ProviderPick, ProviderTransport } from '../core/launchProvider';
 import { EngineModels, narrowLaunch } from '../core/models';
@@ -1075,8 +1076,18 @@ export class ConsolePanel {
                  */
                 account: s.account ?? '',
                 accountLabel: this.deps.accountLabel?.(s.account) ?? '',
+                // ‼️ K-41 — WHETHER THAT NAME IS A RULE OR A SIGN-IN, decided
+                // by the one function that owns the question. The card needs it
+                // because the two read the same on the pill and mean different
+                // things in the panel: a sign-in IS what the conversation is
+                // spending, a rule is what CHOSE what it is spending. The page
+                // must not test for the '@' itself — that is the rule living in
+                // two places, and the first half of this bug was exactly that
+                // kind of second opinion.
+                accountIsPolicy: isPolicyId(s.account),
                 accountNext: s.accountNext ?? '',
                 accountNextLabel: this.deps.accountLabel?.(s.accountNext) ?? '',
+                accountNextIsPolicy: isPolicyId(s.accountNext),
                 // …and whether this engine can be moved at all, which is the
                 // same fact the composer's box is drawn from.
                 accountAxis: this.deps.accountAxis?.(engineOf(s.engine).id) === true,

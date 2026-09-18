@@ -173,8 +173,34 @@ function main() {
         return;
     }
     const html = path.join(RENDER, `${name}${light ? '.light' : ''}.html`);
+    const renderCmd = `node test/render_page.js ${name}${light ? ' --light' : ''}`;
     if (!fs.existsSync(html)) {
-        console.error(`no render at ${html} — run: node test/render_page.js ${name}`);
+        // ‼️ NAME THE --light TOO. The two themes are two files, and a message
+        // that always said "render <name>" sent people to re-render the dark one
+        // while the light one stayed missing or stale.
+        console.error(`no render at ${html} — run: ${renderCmd}`);
+        process.exitCode = 1;
+        return;
+    }
+    /**
+     * ‼️ A STALE RENDER PHOTOGRAPHS THE WRONG SCENE, AND SAYS NOTHING.
+     *
+     * This tool shoots whatever `dist/render/<name>.html` already holds. Edit a
+     * fixture, forget to re-render, and the picture is of the page as it was —
+     * which looks like the change not working. Worse with `--scene N`: adding a
+     * scene shifts every number after it, so the stale file answers with a
+     * DIFFERENT scene under the right number and the label in the banner is the
+     * only clue. Measured twice in this repo — a new button that "did not
+     * appear", and a `--light` run that had never been re-rendered at all and
+     * quietly photographed its neighbour (29 scenes against the dark 30).
+     *
+     * The fixture is what decides the scene list, so its mtime is the test.
+     */
+    const fixture = path.join(__dirname, 'fixtures', `${name}.js`);
+    if (fs.existsSync(fixture) && fs.statSync(fixture).mtimeMs > fs.statSync(html).mtimeMs) {
+        console.error(`‼️ ${path.basename(html)} is OLDER than test/fixtures/${name}.js — `
+            + 'it would photograph the page as it was, and with --scene the numbers have moved. '
+            + `Run: ${renderCmd}`);
         process.exitCode = 1;
         return;
     }

@@ -118,6 +118,31 @@ async function main() {
         ok('‼️ an id that names no stored slot is marked, not shown as a bare id or a blank',
             /not on this machine/.test(statedAccountLabel('claude-gone', list))
             && /claude-gone/.test(statedAccountLabel('claude-gone', list)));
+        // ‼️ K-41 — …AND A POLICY IS NOT AN ID THAT NAMES NO SLOT. It names no
+        // slot BY DESIGN: it is the rule that picks one. Sent into `findSlot` it
+        // came back through the X-282 branch as `⚠ not on this machine:
+        // @emptiest` — a deleted-account warning drawn over a session running
+        // perfectly on a rule the user had just chosen (measured on a live card,
+        // e45a1888). Every built-in and every named rule reads as itself.
+        ok('‼️ K-41 — a smart policy is its own name, never a missing account',
+            statedAccountLabel('@emptiest', list) === '@emptiest'
+            && statedAccountLabel('@round-robin', list) === '@round-robin'
+            && statedAccountLabel('@pool', list) === '@pool');
+        ok('…and so is a rule the user named themselves',
+            statedAccountLabel('@Gece', list) === '@Gece');
+        ok('‼️ …and NO policy picks up the missing-account mark',
+            !/not on this machine/.test(
+                ['@emptiest', '@round-robin', '@pool', '@Gece']
+                    .map(p => statedAccountLabel(p, list)).join(' ')));
+        // The sentinel is an '@' too and is NOT a policy — it has its own words,
+        // and a fix that swept every '@' into "a rule" would have lost them.
+        ok('…while the machine\'s own sign-in keeps its own words',
+            statedAccountLabel(MACHINE_ACCOUNT, list) === MACHINE_GLOBAL);
+        // A policy that names no stored rule is NOT judged here: this function
+        // has no rule list, and inventing one would be the second half of the
+        // same mistake. The typo is refused at the door it was typed into.
+        ok('…and a rule nobody has defined is still shown, not accused',
+            statedAccountLabel('@nosuchrule', list) === '@nosuchrule');
     }
 
     // ---------- the card REMEMBERS what it ran as ----------

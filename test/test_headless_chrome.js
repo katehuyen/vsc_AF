@@ -53,6 +53,26 @@ const hc = require('./headless_chrome');
             && src.indexOf('sweepAndReport()') > src.lastIndexOf('finally'));
     }
     ok('the suite runner sweeps once more at the end', /headless_chrome.*sweepAndReport/.test(fs.readFileSync(path.join(ROOT, 'test', 'run-all.js'), 'utf8')));
+
+    // ‼️ K-41 — A STALE RENDER PHOTOGRAPHS THE WRONG SCENE AND SAYS NOTHING.
+    // `shoot_page.js` shoots whatever `dist/render/<name>.html` already holds,
+    // so a fixture edited without a re-render answers with the page as it was —
+    // and with `--scene N`, adding a scene shifts every number after it, so the
+    // stale file hands back a DIFFERENT scene under the right number. Measured
+    // twice here: a new button that "did not appear", and a `--light` run that
+    // had never been re-rendered and photographed its neighbour (29 scenes
+    // against the dark 30). The fixture decides the scene list, so its mtime is
+    // the test, and the refusal names the exact command — with `--light` where
+    // that is the half being shot, because the two themes are two files.
+    {
+        const src = fs.readFileSync(path.join(ROOT, 'test', 'shoot_page.js'), 'utf8');
+        ok('‼️ shoot_page refuses a render older than its fixture rather than shooting it',
+            /fs\.statSync\(fixture\)\.mtimeMs > fs\.statSync\(html\)\.mtimeMs/.test(src)
+            && /is OLDER than test\/fixtures\//.test(src));
+        ok('…and the command it names re-renders the SAME theme it was asked for',
+            /const renderCmd = `node test\/render_page\.js \$\{name\}\$\{light \? ' --light' : ''\}`/.test(src)
+            && !/run: node test\/render_page\.js \$\{name\}`/.test(src));
+    }
 }
 
 // ---------- the sweep half -------------------------------------------------

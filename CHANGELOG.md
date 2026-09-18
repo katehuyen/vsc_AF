@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.550.0 - a smart account rule is a rule, not a deleted sign-in: no more "not on this machine: @emptiest" (K-41) (2026-09-18)
+
+- **‼️ The false alarm, and where it came from.** Picking a smart policy
+  (`@emptiest`, `@round-robin`, `@pool`, or a rule you named) in the Console's
+  account box put that id on the card as its stated account.
+  `statedAccountLabel` looked for it among the stored SLOTS, found nothing —
+  because a rule is not a slot and never will be — and answered through the
+  X-282 branch with `⚠ not on this machine: @emptiest`. A deleted-account
+  warning, drawn over a session running perfectly on a rule the user had just
+  chosen. Measured on a live card: `e45a1888`.
+- **A policy reads as itself.** `statedAccountLabel` asks `isPolicyId` before it
+  asks the slot list, so every surface that names a stated account — the card
+  badge, the tree, the task and schedule rows, the Sessions tables — shows
+  `@emptiest`. There is one producer of the missing-account mark, so one fix
+  covers every one of them.
+- **A rule that names nothing is still not accused here.** This function has no
+  rule list, and inventing one would be the second half of the same mistake. A
+  typo is refused at the door it was typed into (`policyRefusal`), which is
+  where it can still be fixed.
+- **‼️ And the panel no longer calls a rule a sign-in.** `Running as: @emptiest`
+  would be false — the rule is what CHOSE the sign-in, and it chose when the
+  process started. The card now reads `Picked by rule: @emptiest`, and a pending
+  swap to a rule says `Next message picks by rule:`. The page never tests the
+  `@` itself: the host answers which kind it is (`accountIsPolicy`), because the
+  rule living in two places is the first half of this very bug.
+- **The badge had no test at all** — that is how this shipped. It has one now,
+  in every state: a sign-in, a rule, a pending swap to a rule, and a scene of
+  its own (`console-card-policy`), shot dark and light.
+- **‼️ Trap fixed on sight: `shoot_page.js` refuses a stale render.** It shoots
+  whatever `dist/render/<name>.html` already holds, so a fixture edited without
+  a re-render answers with the page as it was — and with `--scene N`, adding a
+  scene shifts every number after it, so the stale file hands back a DIFFERENT
+  scene under the right number. Found here: `--light` had never been
+  re-rendered and photographed its neighbour (29 scenes against the dark 30).
+  The fixture's mtime is now the test, and the refusal names the exact command
+  including `--light`, because the two themes are two files.
+
 ## 3.549.0 - a session row says which run really produced it — and when it cannot, which kind of nothing that is (X-108) (2026-09-18)
 
 - **‼️ `null` was three different facts sharing one blank space.** A session row

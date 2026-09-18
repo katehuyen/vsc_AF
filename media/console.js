@@ -3579,16 +3579,25 @@
         const now = s.accountLabel || '';
         if (!now) { return ''; }
         const next = s.accountNext ? (s.accountNextLabel || s.accountNext) : '';
+        // ‼️ K-41 — A RULE IS NOT A SIGN-IN, AND THE PANEL MUST NOT SAY IT IS.
+        // `@emptiest` on the pill is right — it is what the user picked and what
+        // they recognise — but "Running as: @emptiest" would be false: the rule
+        // is what CHOSE the sign-in, and it chose at launch. The host answers
+        // which kind it is (`isPolicyId`); the page never tests the '@' itself.
+        const asRule = !!s.accountIsPolicy;
+        const nextIsRule = !!s.accountNextIsPolicy;
+        const rule = ' — the rule that picks the sign-in, applied when the process starts';
         return cardTip(
             `<span class="af-acct${next ? ' af-acct-next' : ''}">${C.esc(next ? next + ' →' : now)}</span>`,
             // SHORTHAND — the pill is the short form, the panel opens with the
             // long one so nobody has to already know what the arrow meant.
-            next ? `${next} — the sign-in this conversation moves to on its next message`
-                : `${now} — the sign-in this conversation is spending`,
+            next
+                ? `${next} — the ${nextIsRule ? 'rule that picks the sign-in' : 'sign-in'} this conversation moves to on its next message`
+                : `${now} — the ${asRule ? 'rule that picked the sign-in this conversation is spending' : 'sign-in this conversation is spending'}`,
             window.AFTip.lines([
-                'Running as: ' + now,
+                asRule ? 'Picked by rule: ' + now + rule : 'Running as: ' + now,
                 next
-                    ? 'Next message runs as: ' + next
+                    ? (nextIsRule ? 'Next message picks by rule: ' : 'Next message runs as: ') + next
                         + ' — the process is ended and the same conversation is resumed on it, '
                         + 'so nothing that has been said is lost'
                     : '',

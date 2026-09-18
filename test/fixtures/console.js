@@ -828,6 +828,32 @@ module.exports = {
             data: policyComposerData()
         },
         {
+            // ‼️ K-41 — THE CARD'S OWN BADGE WHEN THE SEAL IS A RULE. The scene
+            // above is the composer's BOX; this is the pill on a running card,
+            // which is where the bug was drawn and which no scene had ever
+            // shown. It used to read `⚠ not on this machine: @emptiest` — a
+            // deleted-account warning over a session running perfectly.
+            id: 'console-card-policy',
+            label: 'Console — a live card sealed to a RULE, not a sign-in (K-41)',
+            data: Object.assign(data(), {
+                selected: 'cs1',
+                sessions: [session({
+                    id: 'cs1', status: 'idle',
+                    account: '@emptiest', accountLabel: '@emptiest', accountIsPolicy: true,
+                    accountNext: '', accountNextLabel: '',
+                    accountAxis: true,
+                    accountRows: [
+                        { id: 'work-1', label: 'work@studio', health: 'ready', active: true, percent: 97 },
+                        { id: 'personal', label: 'personal@gmail', health: 'ready', active: false, percent: 12 }
+                    ],
+                    messages: [
+                        { id: 'm1', ts: NOW - 60000, role: 'user', text: 'devam et' },
+                        { id: 'm2', ts: NOW - 30000, role: 'assistant', text: 'Tamam, devam ediyorum.' }
+                    ]
+                })]
+            })
+        },
+        {
             // ‼️ X-213 — the swap the whole family exists for, caught mid-promise:
             // a live conversation whose next message moves to the other account
             // because this one has run out. The label carries the arrow, so the

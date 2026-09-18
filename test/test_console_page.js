@@ -1027,6 +1027,50 @@ const intentOf = (o) => Object.assign({
         posted.some(m => m.type === 'select' && m.id === 'csA'));
 }
 
+// ---------- ‼️ K-41 — the card's account badge: a RULE is not a SIGN-IN ------
+//
+// The badge had no test at all, which is how a deleted-account warning came to
+// be drawn over a session that was running perfectly. Picking a smart policy
+// (`@emptiest`) in the account box put `@emptiest` on the card as the stated
+// account; `statedAccountLabel` looked for it among the stored SLOTS, found
+// nothing, and answered with the X-282 missing-account mark. Measured on a live
+// card: e45a1888.
+{
+    const list = () => (els['c-list'] ? els['c-list']._html : '');
+    const card = (extra) => data(CONVO.slice(), { accountAxis: true, ...extra });
+
+    push(card({ account: 'claude-work', accountLabel: 'work@studio', accountIsPolicy: false }));
+    ok('a card pinned to a sign-in wears it', /class="af-acct[^"]*">work@studio</.test(list()));
+    ok('…and the panel says the conversation is spending it',
+        /Running as: work@studio/.test(list()));
+
+    push(card({ account: '@emptiest', accountLabel: '@emptiest', accountIsPolicy: true }));
+    ok('‼️ K-41 — a smart policy wears its own name on the card',
+        /class="af-acct[^"]*">@emptiest</.test(list()));
+    ok('‼️ …and NOT the deleted-account warning, which is what it used to draw',
+        !/not on this machine/.test(list()));
+    // ‼️ AND THE PANEL DOES NOT CALL IT A SIGN-IN. "Running as: @emptiest" would
+    // be false — the rule is what CHOSE the sign-in, and it chose at launch.
+    ok('‼️ …and the panel names it as the rule that picked, never as the sign-in',
+        /Picked by rule: @emptiest/.test(list()) && !/Running as: @emptiest/.test(list()));
+
+    push(card({
+        account: 'claude-work', accountLabel: 'work@studio', accountIsPolicy: false,
+        accountNext: '@round-robin', accountNextLabel: '@round-robin', accountNextIsPolicy: true
+    }));
+    ok('…and a pending swap TO a rule reads as a rule too',
+        /class="af-acct af-acct-next">@round-robin →</.test(list())
+        && /Next message picks by rule: @round-robin/.test(list()));
+
+    // The page must not decide this for itself: the '@' test is the rule living
+    // in two places, and a second opinion is the first half of this very bug.
+    const consoleSrc = fs.readFileSync(path.resolve(__dirname, '../media/console.js'), 'utf8');
+    const at = consoleSrc.indexOf('function accountBadge(');
+    const body = at < 0 ? '' : consoleSrc.slice(at, at + 2000);
+    ok('‼️ …and the page asks the host which kind it is rather than testing the "@"',
+        /s\.accountIsPolicy/.test(body) && !/startsWith\(['"]@['"]\)/.test(body));
+}
+
 // ---------- ‼️ the wait grows by itself ----------
 // "The nudge is TIME, not animation" — and time was the one thing that did not
 // move. Every figure here is written during a data push, and a push only
