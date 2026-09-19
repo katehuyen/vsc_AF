@@ -2,6 +2,50 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.576.0 - the second wire inside one binary, and the two documents a new engine is added from (X-117, part 3) (2026-09-19)
+
+- **‼️ THE CONSOLE DOOR ON OPENCODE, WHICH IS NOT THE ONE ALREADY MEASURED.** A
+  Claude card is a `claude -p` process per turn. An OpenCode card is not: ONE
+  shared `opencode acp` process serves every card on the host and the turn
+  travels as a JSON-RPC frame on its stdin. `run` and `acp` are two different
+  programs inside one binary, and only the first had ever been watched.
+  `test_e2e_opencode_console.js` runs a hosted card through the real ACP process
+  against local mock endpoints: the provider the CARD named is the one that
+  holds the wire — its endpoint, its bearer — the other declared provider is
+  never touched, and the session is written into a temp data home rather than
+  the user's.
+  - The ACP child inherits this process's environment, and that is the design
+    rather than a gap: `nodeOpencodeIo` passes no `env` because this engine owns
+    its own sign-in — its account axis is deliberately `unmapped` (moving the
+    XDG data root would move every other XDG application with it: a side effect,
+    not an isolation) and its route resolves to no environment of Agent Farm's
+    at all.
+- **‼️ THE SOP A NEW ENGINE IS ADDED FROM HAD NO PROVIDER AXIS IN IT.** 1 690
+  lines of end-to-end procedure, and not one mention of `dataOwnerOf`,
+  `resolveRuntime`, `spawnEnvironment` or `launchRouteRefusal` — so an engine
+  added today would ship with no answer to "who serves it", and every isolation
+  guarantee on the axis would quietly not apply to it. The SOP now carries the
+  axis as a gate of its own (before the engine may appear in any route picker)
+  and as ten implementation steps: decide whether the axis exists at all (no
+  axis is a real answer, not missing data), name the owner of each of the four
+  data parts, read the catalog from whoever owns it, what `resolveRuntime`
+  returns and why `clearEnv` without which `spawnEnv` is half an answer, never
+  build the environment yourself, where the REPORTED identity comes from when
+  the stream does not carry it, one rule for a route that is gone, the resume
+  verdict, the billing semantics — and the proof, which is the wire and not the
+  argv.
+- **The engines design document now describes the axis it predated.**
+  `MOTORLAR-TASARIM.tr.md` stopped at the fourth engine; it now carries phase 5:
+  why engine and provider are separate axes at all (the transcript does not
+  record which endpoint served a turn, so a wrong run and a right one were
+  indistinguishable), the data-ownership table, the two environment shapes and
+  the one order they are built in, requested vs reported, third-party cost as
+  arithmetic on no plan window, one refusal rule asked by three doors, the
+  resume verdicts, and the table of which file measures which door.
+- Route health was looked at in both themes at the arity that shows every
+  verdict — a pass, a failure, a superseded row, an unknown one and the two
+  notes that are not faults — and reads correctly in each.
+
 ## 3.575.0 - the three doors nobody was watching, run end to end on a route (X-117, part 2) (2026-09-19)
 
 - **‼️ THE TERMINAL DOORS, WHICH ARE THE OPPOSITE SHAPE OF PROBLEM FROM THE ONE

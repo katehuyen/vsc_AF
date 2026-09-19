@@ -175,6 +175,7 @@ başında ve sonunda kod tabanı çağrı zinciri ve aramalarla yeniden taranır
 | Kimlik ve kapsam | Motor/CLI ayrımı, kesin sürüm, birinci sınıf motor kararı, etkilenen yüzey envanteri | Enum, seçici veya ürün metni eklemek |
 | Ham ölçüm | Yardım, gerçek headless tur, gerçek interaktif davranış, ham olay ve süreç ölçümleri | Adapter yazmak |
 | Taşıma sözleşmesi | Komut, prompt, cwd, izin, model, effort, resume ve süreç matrisi | ConsoleHost’a bağlamak |
+| Sağlayıcı ekseni | Dört veri parçasının sahibi (`dataOwnerOf`), route çözümü, spawn ortamı ve temizleme, kalkmış route'un reddi, resume hükmü | Motoru bir route seçicisinde göstermek |
 | Protokol sözleşmesi | Olay → kanonik olay tablosu, token/kimlik/sonuç semantiği | UI’da konuşma göstermek |
 | Ajan çalışma alanı | Talimat keşfi, parent walk, anayasa, memory/duty/skill ve MCP yolları | Motoru ajan seçicilerinde birinci sınıf göstermek |
 | İki turlu Console | Aynı id, bağlam taşınması, doğru süreç kapanışı ve kullanım farkı | “Console destekliyor” demek |
@@ -561,6 +562,88 @@ const args = adapters[id] ?? adapters.codex;
 Kullanıcıdan veya kayıtlı ayardan gelen bilinmeyen id, giriş sınırında açıkça
 reddedilir. Geriye uyumluluk için yalnız gerçekten **eksik** eski değer Claude’a
 çözülebilir; tanınmayan dolu değer çözülmez.
+
+### Sağlayıcı ekseni — `src/core/providerRegistry.ts`, `providerRuntime.ts`, `resumeGate.ts`
+
+Motor "hangi program", sağlayıcı "onu kim servis ediyor". İkisi ayrı eksendir
+(bkz. *Motor, sağlayıcı veya model ailesi değildir*) ve yeni bir motor bu
+adımı atlarsa **koşunun kimliği sessizce bilinmez kalır**: hiçbir yüzey yanlış
+uç noktaya gitmiş bir koşuyu doğru gitmişten ayırt edemez, çünkü transkript
+hangi ucun servis ettiğini kaydetmez (X-98, ölçüldü).
+
+**1. Önce eksenin var olup olmadığına karar ver.** `adapter.axis`:
+
+- `provider` — motorun birden çok sağlayıcıyla konuşabildiği durum. Bu
+  cevabın kendisi de iki biçimde gelir: sağlayıcıyı **Agent Farm** kuruyorsa
+  (Claude'da route profilleri: base URL + anahtar + tier eşlemesi), ya da
+  **motor** kendi sağlayıcı listesini taşıyorsa (OpenCode).
+- eksensiz — motorun tek bir arkası vardır. Bu **gerçek bir cevaptır**, eksik
+  veri değil: `resumeGate` böyle bir motorda bir route istendiğinde reddeder ve
+  istenmediğinde `act: 'none'` döndürür. Sahte bir seçici çizme.
+
+**2. Dört parçanın sahibini ayrı ayrı adlandır** — `dataOwnerOf(engine, part)`,
+`catalog` · `credential` · `config` · `selection`. Tabloyu doldurmadan kod
+yazma; "motorun kendi tuttuğu" bir şeyin ikinci bir kopyasını Agent Farm'da
+tutmak iki gerçek yaratır ve eskiyen kopya sessizce kazanır. `selection`
+(kullanıcının hangi route'u seçtiği) her zaman Agent Farm'ındır.
+
+**3. Katalog nereden okunuyor.** Agent Farm'ın kurduğu eksende katalog
+profillerden doğar. Motorun kendi eksenindeyse **motora sorulur** ve kaynağı
+kaydedilir (`catalog().source === 'engine-reported'`) — bir katalog uydurma,
+bir listeyi sabit yazma.
+
+**4. `resolveRuntime(...)` üç şey döndürür ve üçü de zorunlu değildir:**
+
+- `spawnEnv` / `clearEnv` — motorun ortam değişkenleriyle yönlendirildiği
+  durum (Claude). ‼️ **`clearEnv` olmadan `spawnEnv` yarım bir cevaptır:** miras
+  bir bearer token ya da model adı, üzerine yazılmayan her adı sessizce
+  doldurur. Temizleme yazılmazsa izolasyon yoktur.
+- `args` — motorun seçimi komut satırında aldığı durum (OpenCode: `-m
+  saglayici/model`). Bu durumda **Agent Farm hiçbir ortam değişkeni
+  koymaz** — kendi girişini kendi yöneten bir motora ortam yazmak onun
+  sözleşmesini bozar.
+- `identity` — ne istendiği: `providerId`, profil id'si ve **revizyonu**,
+  `requestedModelRef`, `origin`, `proof`. Bu kayıt launch manifestine gider.
+
+**5. Ortamı kendin kurma.** Tek yer `providerRuntime.ts`:
+`spawnEnvironment(...)` eksiksiz bir ortam üretir (bir adı koymamak = kaldırmak),
+`terminalEnvOverlay(...)` ise bir **örtü** üretir (bir adı koymamak = hiçbir şey;
+kaldırmak için `null`, asla `''`). İkisi arasındaki farkı yeni bir çağrı yerinde
+yeniden yazmak, bu deponun iki kez ödediği hatadır.
+
+**6. Bildirilen kimliği çıkar.** `identityFromEvents(...)`: motorun akışında
+geri dönen model/sağlayıcı adı. Akış bunu taşımıyorsa **nereden alındığı
+yazılır** (OpenCode'da `opencode export <ses>`). İstenen ile bildirilen yan yana
+durur; biri diğerinin üzerine yazılmaz.
+
+**7. Kalkmış route tek kuralla reddedilir.** `launchRouteRefusal` — kuyruğa
+yazarken, spawn anında ve *Route health* "bu route koşulabilir mi" derken
+**aynı** sorulur. Yeni motorun kataloğu, arkasında profil olmayan şablon id'ler
+döndürüyorsa bu kuralı atlatır: X-117'nin ilk uçtan uca koşusunun bulduğu kusur
+tam olarak buydu.
+
+**8. Resume hükmünü bağla.** `resumeRoute(...)` → `pinned` · `switch` ·
+`unbound` · `refuse`. ‼️ `pinned: true` **boş bir `providerId`'yi bile olduğu
+gibi alır** ve ajanın duran seçimine düşmez; o düşüş, sürdürülen oturumları hiç
+koşmadıkları bir route'a taşıyan kusurun kendisidir. Motorun kendi
+`resumePolicy`'si farklı bir sağlayıcıya geçmeye izin veriyor mu, vermiyor mu —
+bu motorun gerçeğidir, ölçülür ve yazılır.
+
+**9. Ücret semantiğini söyle.** `billingOf(...)`: üçüncü taraf bir route'ta
+CLI'ın bastığı dolar **aritmetiktir, fatura değildir** ve hiçbir plan
+penceresini doldurmaz; motorun kendi bildirdiği figür `engine-reported`'dır. Bir
+abonelik penceresi yalnız birinci taraf girişinde vardır.
+
+**10. Kanıt: telin kendisi.** Bu adım, ortamı ya da argv'yi okuyan bir birim
+testiyle kapanmaz — ikisi de doğruyken CLI'ın **gönderdiği** yanlış olabilir.
+Yeni motor, sağlayıcısının API'sini konuşan **yerel bir sahte uç noktaya** karşı
+koşulur (`test/e2e_mocks.js`); iki sağlayıcı **eşzamanlı** koşar ve her biri
+yalnız kendi ucuna kendi anahtarıyla gider; miras ortam hiçbirine sızmaz; route
+seçilmemiş bir koşu miras uca **dokunulmadan** gider. ‼️ Ve temizleme
+**yanlışlanır**: aynı tur `clearEnv` düşürülerek koşulur ve miras değerin tele
+çıkması beklenir. Kırmızıya dönemeyen bir koruma koruma değildir. Örüntü:
+`test/test_e2e_claude_routes.js` (ortam ekseni) ve
+`test/test_e2e_opencode_providers.js` (argv ekseni).
 
 ### Protokol adapter’ı — `src/core/<motor>proto.ts`
 

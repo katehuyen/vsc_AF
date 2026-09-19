@@ -60,4 +60,45 @@ function anthropicMock(answerAs) {
     })));
 }
 
-module.exports = { cliPresent, anthropicMock };
+/**
+ * A local OpenAI Chat Completions endpoint — what a custom OpenCode provider
+ * (the `@ai-sdk/openai-compatible` npm package) talks to. Same record as the
+ * Anthropic one above: every request is kept, with its bearer and its model.
+ */
+/** A local endpoint speaking just enough of the Chat Completions API. */
+function openAiMock() {
+    const hits = [];
+    const srv = http.createServer((req, res) => {
+        let body = '';
+        req.on('data', d => { body += d; }).on('end', () => {
+            let j = {};
+            try { j = JSON.parse(body); } catch { /* not JSON */ }
+            hits.push({ method: req.method, url: req.url, auth: req.headers['authorization'] || '', model: j.model || '' });
+            if (req.method !== 'POST' || !req.url.includes('/chat/completions')) { res.writeHead(404); res.end('{}'); return; }
+            const model = j.model || 'mock';
+            const usage = { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 };
+            if (!j.stream) {
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(JSON.stringify({ id: 'c1', object: 'chat.completion', created: 1, model,
+                    choices: [{ index: 0, message: { role: 'assistant', content: 'pong' }, finish_reason: 'stop' }], usage }));
+                return;
+            }
+            res.writeHead(200, { 'content-type': 'text/event-stream' });
+            const chunk = (delta, finish) => res.write('data: ' + JSON.stringify({ id: 'c1', object: 'chat.completion.chunk',
+                created: 1, model, choices: [{ index: 0, delta, finish_reason: finish || null }] }) + '\n\n');
+            chunk({ role: 'assistant', content: '' });
+            chunk({ content: 'pong' });
+            chunk({}, 'stop');
+            res.write('data: ' + JSON.stringify({ id: 'c1', object: 'chat.completion.chunk', created: 1, model, choices: [], usage }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+        });
+    });
+    return new Promise(resolve => srv.listen(0, '127.0.0.1', () => resolve({
+        url: `http://127.0.0.1:${srv.address().port}/v1`, hits,
+        posts: () => hits.filter(h => h.method === 'POST'),
+        close: () => new Promise(r => srv.close(r))
+    })));
+}
+
+module.exports = { cliPresent, anthropicMock, openAiMock };

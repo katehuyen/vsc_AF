@@ -677,5 +677,24 @@ restart binding · ek dosya · yanlış model için başlamadan anlaşılır ret
   hiç görülmez: `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_STATE_HOME` geçici klasöre
   işaret eder ve bu doğrulanır (Windows'ta da uyulduğu ölçüldü). CLI PATH'te
   yoksa test atlanır, kırmızıya düşmez.
+- **X-117 kabulü (2. parça, Console/ACP):** `test/test_e2e_opencode_console.js`
+  bir kartı **gerçek `opencode acp` süreci** üzerinden koşturur — `run` ile `acp`
+  aynı binary'nin iki ayrı programıdır ve ikincisi hiç izlenmemişti. Ölçülen:
+  kartın adlandırdığı sağlayıcı teli tutar (kendi ucu, kendi bearer'ı), ikinci
+  tanımlı sağlayıcıya hiç dokunulmaz, oturum geçici veri evine yazılır.
+  ‼️ **ACP çocuğu bu sürecin ortamını devralır ve bu tasarımdır:**
+  `nodeOpencodeIo` `env` vermez, çünkü bu motor kendi girişini kendi yönetir —
+  hesap ekseni bilerek `unmapped`'tir (XDG veri kökünü taşımak her XDG
+  uygulamasını birlikte taşırdı, izolasyon değil yan etki olurdu) ve route'u da
+  Agent Farm'ın hiçbir ortam değişkenine çözülmez. Dolayısıyla sağlayıcılar
+  motorun okuduğu yerde, ortamda tanımlanır.
+- **‼️ ÖLÇÜLDÜ — tek veri evini paylaşan eşzamanlı koşular (X-329):** aynı
+  `XDG_DATA_HOME` altında aynı anda başlatılan iki `opencode run`, motorun kendi
+  SQLite deposunu kilitledi; biri sıfırdan farklı çıkış koduyla bitti ("database
+  is locked") ve turu hiç gerçekleşmedi. Bu depo motorundur, bu deponun yazdığı
+  bir şey değil — ama tek hesap altındaki iki kart tam olarak o evi paylaşır.
+  Uçtan uca dosyası artık her eşzamanlı koşuya kendi evini verir (bir
+  **sağlayıcı** iddiası sessizce bir **kilit** iddiası olmasın diye); ürün
+  tarafındaki soru X-329'dur.
 - **Sonraki çocuklar bu sözleşmeyi veri kabul eder** ve değiştirmek isterlerse
   önce bu belgeyi yeni bir ölçümle günceller.

@@ -511,3 +511,141 @@ kendi panelidir. Yapılacaklar:
   bilgisini görmemeye devam eder.
 - **Anahtarların köprüden yönetilmesi.** Köprü düz metin dosya kanalıdır; bu,
   kullanıcının 2026-07-19'da kabul ettiği güvenlik istisnasıdır.
+
+## 8. Faz 5 — sağlayıcı ekseni (X-97 … X-117)
+
+Faz 1–4 tek bir soruyu cevaplıyordu: **hangi motor**. Faz 5'in sorusu bir
+başkası ve bağımsız: **o motoru kim servis ediyor.** İkisi ayrı eksen, çünkü tek
+bir motor birden çok sağlayıcıyla konuşabiliyor — `claude` CLI'ı Anthropic'in
+birinci taraf ucuna da, `ANTHROPIC_BASE_URL` ile bir geçide (Kimi, MiniMax) de
+gider; `opencode` ise sağlayıcı eksenini motorun kendisi taşır.
+
+### 8.1 Motor ≠ sağlayıcı: neden ayrı eksen
+
+Ölçülen kusur şuydu: kullanıcı bir route seçiyor, satır "Kimi" yazıyor, ama
+süreç kabuğun taşıdığı `ANTHROPIC_BASE_URL`'e gidiyordu. Hiçbir yüzey bunu
+yalanlamıyordu, çünkü **transkript hangi ucun servis ettiğini kaydetmiyor**
+(X-98, ölçüldü). Yani yanlış çalışan bir koşuyla doğru çalışan bir koşu
+birbirinden ayırt edilemiyordu — bu sistemde bir kusurun alabileceği en sessiz
+biçim.
+
+Buradan iki ilke çıktı:
+
+- **Route yazıya geçendir, miras ortam değildir.** Launch manifesti route'u
+  kaydeder, transkript kaydetmez. İki cevap çatıştığında **kaydedilen kazanır**;
+  aksi halde koşunun tek kaydı yalan olurdu.
+- **Seçilmeyen hiçbir şeye dokunulmaz** (X-101). Route seçilmemişse miras uç
+  nokta aynen geçerlidir — temizleme yalnız bir route seçildiğinde yapılır.
+
+### 8.2 Veri sahipliği — omurganın kendisi
+
+Her motor için dört parçanın sahibi ayrı ayrı adlandırılır
+(`dataOwnerOf(engine, part)`; `catalog` · `credential` · `config` · `selection`):
+
+| Motor | Katalog | Kimlik bilgisi | Yapılandırma | Seçim |
+|---|---|---|---|---|
+| `claude` | Agent Farm | Agent Farm (kasa) | Agent Farm | Agent Farm |
+| `opencode` | motor | motor | motor | Agent Farm |
+
+Bu bir ayrıntı değil, **bölünmenin tasarımın kendisi olduğu** yer: Claude route
+kataloğunu Agent Farm kurar ve başka kimse bilmez; OpenCode zaten kendi
+`auth.json` ve `opencode.json`'ını tutar, ikinci bir kopya iki gerçek yaratır ve
+eskiyeni sessizce kazanır. Bir motorun sağlayıcı sorusu bu tabloya sorulur; bir
+yüzey kendi başına tahmin etmez.
+
+### 8.3 Ortam — iki şekil, tek sıra
+
+Bir koşunun ortamı **tek yerde** kurulur (`core/providerRuntime.ts`), çünkü iki
+çağrı yerine yazılmış bir kural ikincisinde unutulur ve miras route'u sessizce
+koruyan bir koşu, korumayan bir koşuya birebir benzer.
+
+- `spawnEnvironment(inherited, layers, runtime)` — `cp.spawn`'a **eksiksiz** bir
+  ortam verilir, dolayısıyla bir adı koymamak onu kaldırmaktır. Sıra tasarımın
+  kendisidir: **birleştir → temizle → route'un kendi değerlerini en sona yaz.**
+  Temizleme sonraki katmanlara da ulaşır; bu bir gözden kaçma değil karardır
+  (bir ajan sırrı ile seçilmiş bir route aynı soruya iki cevaptır, yazıya geçen
+  kazanır).
+- `terminalEnvOverlay(layers, runtime)` — VS Code terminaline ve OS penceresine
+  **örtü** verilir; pencerenin kendi ortamıyla birleştirilir, dolayısıyla bir adı
+  koymamak **hiçbir şey değiştirmez**. Burada temizleme yüksek sesle söylenmek
+  zorundadır: `null` = kaldır. `''` değil — boş dize CLI'ın bulup giriş yapmaya
+  çalıştığı bir değerdir; asıl amaç **yokluğun** kimlik dosyasına düşürmesidir.
+- Windows'ta OS penceresi komutu bir `.cmd` dosyasıyla alır: temizleme
+  `set "AD="`, değerler ise betiğin ilk işinde okuyup **sildiği** ayrı bir
+  dosyadan gelir — anahtar betiğin içinde durmaz, çünkü betiğin kendini silen
+  son satırına bir oturum hiçbir zaman ulaşmaz.
+
+### 8.4 İstenen ile bildirilen
+
+Bir koşunun kimliği iki yarımdır ve **ikisi de kaydedilir**:
+
+- **İstenen** — `resolveRuntime().identity`: `providerId`, profil id'si ve
+  **revizyonu**, `requestedModelRef`, `origin`, `proof`.
+- **Bildirilen** — `identityFromEvents(...)`: motorun kendi akışında geri
+  döndürdüğü model adı. Bir geçit kendi adıyla cevap verebilir (`kimi-k2` istendi,
+  `kimi-k2-0905-gateway` döndü); OpenCode'da bu bilgi akışta hiç yoktur ve
+  `opencode export <ses>` ile alınır.
+
+İkisi yan yana durur; biri diğerinin üzerine yazılmaz. "Ne istendi" ile "ne
+cevap verdi" farklı sorulardır ve fark, kullanıcıya gösterilmesi gereken şeydir.
+
+### 8.5 Ücret
+
+Üçüncü taraf bir route'ta CLI'ın bastığı dolar **aritmetiktir, fatura değildir**
+ve hiçbir plan penceresini doldurmaz (`billingOf` → `planWindow: false`,
+`dollar: 'arithmetic'`). OpenCode'da figür motorun kendi bildirimidir
+(`cost: 'engine-reported'`). Bir abonelik penceresi yalnız birinci taraf
+girişinde vardır.
+
+### 8.6 Kalkmış bir route — tek kural, üç kapı
+
+Bir profil, onu adlandıran bir görev kuyrukta beklerken silinebilir. Ölçüldü:
+silinmiş profil `unknown` bir kimliğe çözülüyor, **hiçbir şey enjekte edilmiyor
+ve hiçbir şey temizlenmiyor**, dolayısıyla koşu kabuğun taşıdığı uca gidiyordu.
+
+Kural tek bir yerdedir — `launchRouteRefusal` — ve üç kapı da **aynı** soruyu
+ona sorar: kuyruğa yazarken, spawn anında, ve *Route health* satırı "bu route
+koşulabilir mi" derken. Üçü ayrı okuma yapsaydı, biri "canlı" derken diğeri
+reddederdi; X-117'nin ilk uçtan uca koşusunun bulduğu şey tam olarak buydu.
+Adlandırılan route koşulamıyorsa görev **başlamadan başarısız** biter.
+
+### 8.7 Konuşmayı sürdürmek — `resumeGate`
+
+Bir oturumu sürdürürken route sorusu yeniden sorulur, çünkü bir konuşmanın
+ortasında uç nokta değiştirmek farklı bir programdır. `resumeRoute(...)` tek
+bir hüküm döndürür:
+
+- `pinned` — kaydında ne varsa ona sabitlenir; **`pinned: true` boş bir
+  `providerId`'yi bile olduğu gibi alır** ve ajanın duran seçimine asla düşmez.
+  Bu düşüş, sürdürülen oturumları hiç koşmadıkları bir route'a taşıyan kusurun
+  ta kendisiydi.
+- `switch` — motorun izin verdiği farklı bir route; **yeni bir koşu kimliği
+  olarak** kaydedilir, önceki turların neyle koştuğu yeniden yazılmaz.
+- `unbound` — kayıt yoksa sabitlenecek bir şey de yoktur; ne istendiyse (yoksa
+  ajanın duran seçimi) uygulanır ve `why` bunu söyler.
+- `refuse` — `remedy` ile: `fork` (yeni route'a çatalla) ya da `new`.
+
+### 8.8 Nerede ölçülüyor
+
+Bu eksende her birim testi Agent Farm'ın **kurduğu** ortamda ya da argv'de
+duruyordu; CLI'ın sonra **ne gönderdiği** hiç görülmemişti. X-117 bunu kapatıyor:
+gerçek CLI'lar, Anthropic Messages ve OpenAI Chat Completions API'lerini konuşan
+yerel HTTP sunucularına karşı koşuyor — makineden hiçbir şey çıkmıyor, tek gerçek
+token harcanmıyor.
+
+| Dosya | Hangi kapı |
+|---|---|
+| `test/test_e2e_claude_routes.js` | iki route eşzamanlı, miras ortam, istenen/bildirilen, ücret |
+| `test/test_e2e_console_route.js` | Console kartı (gerçek `ConsoleHost`) |
+| `test/test_e2e_terminal_route.js` | tümleşik terminal · Windows `.cmd` · POSIX kabuk |
+| `test/test_e2e_task_route.js` | headless görev + kalkmış route'un reddi |
+| `test/test_e2e_resume_route.js` | sürdürme: sabitleme, değiştirme, ret |
+| `test/test_e2e_opencode_providers.js` | `opencode run` ile iki özel sağlayıcı |
+| `test/test_e2e_opencode_console.js` | `opencode acp` üzerinden Console kartı |
+
+Ortak sahte uç noktalar `test/e2e_mocks.js`. Hepsi CLI PATH'te yoksa
+**başarısız olmaz, atlanır.**
+
+‼️ **Temizleme yanlışlanabilir olmak zorunda.** Terminal dosyasında aynı tur bir
+de route'un `clearEnv`'i düşürülerek koşulur ve miras bearer'ın tele **çıkması**
+beklenir. Kırmızıya dönemeyen bir koruma koruma değildir.
