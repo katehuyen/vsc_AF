@@ -25,6 +25,8 @@ export interface AccountsMessageDeps {
     completeAccount(id: string): string[];
     queueAccountRefresh(ids: string[], gesture: 'toggle' | 'all'): void;
     setAutoRefresh(on: boolean): Promise<unknown>;
+    /** X-238 — open a transcript the card names (the last session on a sign-in) */
+    openSession(file: string): void;
 }
 
 /** What differs per page. */
@@ -100,6 +102,12 @@ export async function handleAccountsMessage(
             const put = deps.completeAccount(String(msg.id ?? ''));
             await s.say(put.length ? `Put back ${put.join(' · ')}` : 'Already carried every clause.');
             s.refresh();
+            return true;
+        }
+        case 'accountOpenSession': {
+            // X-238 — a read: the viewer opens beside the page, nothing is redrawn.
+            const file = String(msg.file ?? '');
+            if (file) { deps.openSession(file); }
             return true;
         }
         case 'accountForget':

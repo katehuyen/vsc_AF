@@ -298,6 +298,33 @@
                 ]), 'acspendw');
         })();
         /**
+         * X-238 — WHO WAS LAST ON IT, and how busy it has been. Placed by the
+         * launch manifest like the spend above, so a run this farm did not start
+         * is on no card. No line when nothing was ever placed here: the spend
+         * line already says whether anything ran today.
+         */
+        const lu = a.lastUse;
+        const lastRow = !lu ? '' : (function () {
+            const when = age(lu.at, DATA.now || Date.now());
+            const runs = lu.recent + ' run' + (lu.recent === 1 ? '' : 's') + ' in 24h';
+            const text = 'last used ' + when + (lu.agent ? ' · ' + lu.agent : '') + ' · ' + runs;
+            const TT = window.AFTime;
+            return T.wrap(lu.file
+                ? '<div class="acspend go" data-acsession="' + esc(lu.file) + '" role="link" tabindex="0">' + esc(text) + '</div>'
+                : '<div class="acspend">' + esc(text) + '</div>',
+                'Last used ' + when + (lu.agent ? ' by ' + lu.agent : ''),
+                T.lines([
+                    'session: ' + (lu.title || lu.sessionId),
+                    'agent: ' + (lu.agent || 'not matched to an agent'),
+                    'last activity: ' + (TT ? TT.stamp(lu.at) : new Date(lu.at).toLocaleString()),
+                    'runs on this sign-in in the last 24 hours: ' + lu.recent,
+                    T.GAP,
+                    'Placed by the run\'s own launch manifest — the record of which account a spawn was '
+                    + 'sealed on. A session this farm did not start is on no card.',
+                    lu.file ? 'Press to open that transcript.' : 'Its transcript is not in the index any more.'
+                ]), 'acspendw');
+        })();
+        /**
          * ‼️ X-217 — THE SHAPE OF THE CONTROL STATES THE ARITHMETIC OF THE CHOICE.
          *
          * A switch says "these go on and off independently". These do not: an
@@ -726,7 +753,16 @@
                 + 'runs for weeks and then stops all at once.\n\nRenew it before then with the 🔑 beside this and '
                 + 'nothing is ever interrupted; leave it and the first thing that notices will be a session opening '
                 + 'as nobody.' + liveNote]
-            : [base[0], base[1], base[2], base[3] + liveNote];
+            // X-238 — a working sign-in says how long it keeps working: the
+            // badge carries the span (SHORTHAND), its panel opens with the date.
+            : sg.state === 'ready' && sg.refreshExpiresAt > 0 && sg.hoursLeft >= 0
+                ? [base[0], base[1] + ' · ' + (sg.hoursLeft >= 48 ? Math.round(sg.hoursLeft / 24) + 'd' : sg.hoursLeft + 'h'),
+                    base[2],
+                    'Renews itself until ' + dayOf(sg.refreshExpiresAt) + ' — ' + spanOf(sg.hoursLeft) + ' from now. '
+                    + 'That is the REFRESH token\'s own expiry, the one clock here that needs a person; the '
+                    + 'access token lasts hours and is renewed over HTTP without anybody noticing.\n\n'
+                    + base[3] + liveNote]
+                : [base[0], base[1], base[2], base[3] + liveNote];
         const onDisk = a.quotaSource === 'session-tail';
         const refresh = a.quotaSource === 'none'
             ? ''
@@ -809,6 +845,7 @@
             + '</div>'
             + window5
             + spendRow
+            + lastRow
             // ‼️ X-220 — THE ENGINE, IN THE PRODUCT'S OWN BADGE. This card wrote
             // the raw id in lowercase grey while the Console, the agent page and
             // the slash picker all drew `AFEngine.badge` for the same fact — one
@@ -1093,6 +1130,11 @@
         // `accounts.complete`, so the button and the op can never drift apart.
         document.querySelectorAll('[data-accomplete]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountComplete', id: b.dataset.accomplete })));
+        document.querySelectorAll('[data-acsession]').forEach(b => {
+            const go = () => post({ type: 'accountOpenSession', file: b.dataset.acsession });
+            b.addEventListener('click', go);
+            b.addEventListener('keydown', e => { if (e.key === 'Enter') { go(); } });
+        });
         document.querySelectorAll('[data-acforget]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'accountForget', id: b.dataset.acforget })));
         document.querySelectorAll('[data-accapture]').forEach(b =>

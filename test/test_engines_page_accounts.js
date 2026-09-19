@@ -720,7 +720,8 @@ const sec = () => {
     // ‼️ The one that is not a wording choice: the card may not invent a
     // measurement. A row whose host sent no figure draws no line, exactly as an
     // unread window draws no bar.
-    const drawn = (s.match(/class="acspend/g) || []).length;
+    // (the SPEND lines only — X-238's "last used" line wears the same class)
+    const drawn = (s.match(/class="acspend[^"]*"[^>]*>today/g) || []).length;
     ok('‼️ A ROW WITH NO FIGURE SENT DRAWS NO LINE, rather than claiming a quiet day'
         + ` (${drawn} of 5 rows)`, drawn === 4);
 

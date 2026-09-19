@@ -1885,6 +1885,16 @@
       ]
     },
     {
+      "capability": "accountsMessages.ts#accountOpenSession",
+      "ui": [
+        "page:accountsMessages.ts#accountOpenSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens the transcript a card names in the Session Viewer; reading it is sessions.* on the bridge, and the fact itself (lastUse) is on accounts.list."
+      }
+    },
+    {
       "capability": "accountsPanel.ts#afnav",
       "ui": [
         "page:accountsPanel.ts#afnav"

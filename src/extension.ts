@@ -207,7 +207,8 @@ import {
     manifestOf, newLaunchId, rememberManifest
 } from './core/launchManifest';
 import {
-    AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
+    AccountLastUse, AccountSpendReport, AccountSpendRow, lastDaysWindow, lastUseByAccount, spendByAccount,
+    SpendWindow, todayWindow
 } from './core/accountSpend';
 import { billingReader, describeDrift, runDrift, runIdentity, RunIdentity, sessionIdentity, turnRuntimes } from './core/turnRuntime';
 import { providersOf, RUN_SELECTION_ARGS, runSelectionArgs, runSelected } from './core/runFilter';
@@ -19472,6 +19473,35 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      *  built when that page is opened or refreshed, not on every repaint. */
     const accountSpendOver = (days: number): AccountSpendReport =>
         spendReport(lastDaysWindow(Date.now(), days));
+    /**
+     * X-238 — the last run each sign-in carried and how many in the last 24
+     * hours, placed by the same manifest reader as the spend. Memoised like the
+     * spend so a page drawing five cards reads the index once.
+     */
+    let lastUseMemo: { at: number; rows: Map<string, AccountLastUse> } | undefined;
+    const accountLastUse = (slotId: string): {
+        sessionId: string; at: number; recent: number; agent: string; title: string; file: string
+    } | null => {
+        const now = Date.now();
+        if (!lastUseMemo || now - lastUseMemo.at >= 3000) {
+            let rows = new Map<string, AccountLastUse>();
+            try {
+                const at = manifestIndex(launchManifests());
+                rows = lastUseByAccount(index.allWithExternal(),
+                    s => {
+                        const acc = String(at(s as { launchId?: string })?.account ?? '').trim();
+                        return acc ? { id: acc } : undefined;
+                    }, now - 24 * 3600e3);
+            } catch { /* a card without the line, never a page that fails to draw */ }
+            lastUseMemo = { at: now, rows };
+        }
+        const r = lastUseMemo.rows.get(slotId);
+        if (!r || !r.sessionId) { return null; }
+        const s = index.allWithExternal().find(x => x.sessionId === r.sessionId);
+        const agentId = s?.agentId || (s ? resolveAgentByCwd(s.cwd).agentId : undefined);
+        const agent = agentId ? agents.find(a => a.id === agentId) : undefined;
+        return { ...r, agent: agent?.name ?? '', title: s?.title ?? '', file: s?.file ?? '' };
+    };
     /** One slot as every surface may see it — never a token, ever. */
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
         const id = slotIdentity(slot);
@@ -19635,6 +19665,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
              * LIST an empty row would be noise; on a card that is drawn for
              * every account either way, silence would read as a missing figure.
              */
+            lastUse: accountLastUse(slot.id),
             spentToday: (() => {
                 const r = accountSpendToday().get(slot.id);
                 return {
@@ -21903,6 +21934,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         queueAccountRefresh: (ids: string[], gesture: 'toggle' | 'all'): void =>
             queueAccountRefresh(ids, gesture),
+        // X-238 — the card's "last used" line opens that transcript in the viewer
+        openSession: (file: string): void => {
+            void vscode.commands.executeCommand('agentfarm.openSession', file);
+        },
         /**
          * ‼️ X-305 — THE RULES, AND THE TWO WRITES. `policies()` is the same
          * reader every picker uses (`policyRowsFor`), so a rule cannot come to

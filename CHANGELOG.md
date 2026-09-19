@@ -2,6 +2,24 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.585.0 - an account card says how long its sign-in keeps working, and who was last on it (X-238) (2026-09-19)
+
+- **The sign-in's own clock, on every working card.** A ready badge carries
+  the span its refresh token has left (`🟢 ready · 23d`, SHORTHAND) and its
+  panel opens with the date it stops renewing — before, the date was said
+  only once a sign-in was inside its last week.
+- **Who was last on it.** `lastUseByAccount` (`src/core/accountSpend.ts`)
+  places each run by its launch manifest — the reader the spend uses —
+  skipping sidechains and aliases; the card draws `last used 12m ago ·
+  developer · 6 runs in 24h` and the line opens that transcript
+  (`accountOpenSession` → `deps.openSession`, the Session Viewer's own
+  command; parity: navigation). `accounts.list` carries `lastUse` too, since
+  it reads the same `publicAccount`. No line where nothing was ever placed.
+- X-238's other two asks were already on the card: the one-press standing
+  switch (⚡ Use this one / standing) and the 🔑 re-sign-in door.
+  `test_accounts_page` 35 checks; the Engines test's spend-line count now
+  counts spend lines only (the new line wears the same class).
+
 ## 3.584.0 - a bare placeholder can no longer eat the backlog, and the ways into the Accounts page (X-332, X-237) (2026-09-19)
 
 - **‼️ X-332 — A BARE `<tag>` IS PUT IN CODE, ON THE WAY IN AND BY THE TIDY.**

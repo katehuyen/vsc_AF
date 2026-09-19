@@ -64,6 +64,31 @@ const r = runPage('accounts.js', DATA);
     ok('a data push redraws from the new data', (r.html().match(/class="accard/g) || []).length === 1);
 }
 
+// ---- X-238 — how long a sign-in keeps working, and who was last on it --------
+{
+    const r3 = runPage('accounts.js', fixture.data());
+    const h = r3.html();
+    ok('a ready sign-in carries its span on the badge', />🟢 ready · 23d</.test(h));
+    ok('…and its panel opens with the date it stops renewing', /Renews itself until [^<]+ — 23 days from now/.test(h));
+    ok('the last run on it is one line: when, who, how many in 24h', />last used 12m ago · developer · 6 runs in 24h</.test(h));
+    ok('…a card nothing was placed on draws no such line', (h.match(/>last used /g) || []).length === 1);
+    r3.query('[data-acsession]')[0].click();
+    ok('…and pressing it opens that transcript', JSON.stringify(r3.last())
+        === JSON.stringify({ type: 'accountOpenSession', file: 'D:/fixture/b7c1e2d4.jsonl' }));
+    const shared = read('src', 'panels', 'accountsMessages.ts');
+    ok('the shared handler hands the file to deps.openSession and redraws nothing',
+        /case 'accountOpenSession': \{[\s\S]{0,200}deps\.openSession\(file\);\s*\}\s*return true;/.test(shared));
+    const S = require(path.join(__dirname, '..', 'out', 'core', 'accountSpend.js'));
+    const m = S.lastUseByAccount([
+        { sessionId: 'a', lastTs: 100, cost: 0, wTokens: 0, firstTs: 0 },
+        { sessionId: 'b', lastTs: 300, cost: 0, wTokens: 0, firstTs: 0 },
+        { sessionId: 'c', lastTs: 900, cost: 0, wTokens: 0, firstTs: 0, isSidechain: true },
+        { sessionId: 'd', lastTs: 800, cost: 0, wTokens: 0, firstTs: 0 }
+    ], s => (s.sessionId === 'd' ? undefined : { id: 'slot' }), 200);
+    ok('‼️ lastUseByAccount: the latest placed run wins, a sidechain never does, an unplaced run is on no slot',
+        m.get('slot').sessionId === 'b' && m.get('slot').at === 300 && m.get('slot').recent === 1 && m.size === 1);
+}
+
 // ---- the panel is the Engines panel's section, not a second one --------------
 {
     const src = read('src', 'panels', 'accountsPanel.ts');

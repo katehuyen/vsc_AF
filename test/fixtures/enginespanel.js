@@ -177,6 +177,11 @@ const data = () => {
                     state: 'ready', refreshExpiresAt: NOW + 23 * 24 * 3600 * 1000,
                     hoursLeft: 23 * 24, liveIsSame: false, liveHealth: 'ready'
                 },
+                // X-238 — who was last on it, by its launch manifest
+                lastUse: {
+                    sessionId: 'b7c1e2d4', at: NOW - 12 * 60 * 1000, recent: 6, agent: 'developer',
+                    title: 'X-35 kalan denetim listesini kapat', file: 'D:/fixture/b7c1e2d4.jsonl'
+                },
                 capturedAt: NOW - 6 * 24 * 3600 * 1000,
                 // X-206 — the figure's own age, and the refresh line: this one
                 // is being read right now, the next is waiting behind it.

@@ -28,6 +28,11 @@ import { handleAfNav, htmlShell } from './base';
  * metadata and verdicts, never a value.
  */
 
+/** X-238 — the last run a sign-in carried, as the card draws it. */
+export interface AccountLastUseView {
+    sessionId: string; at: number; recent: number; agent: string; title: string; file: string;
+}
+
 /** X-305 — what a rule comes to on one engine at this moment. */
 export interface PolicyNow { engine: string; picks: string; note: string; refusal: string }
 
@@ -176,6 +181,12 @@ export interface EnginesPanelDeps {
          */
         line?: { place: number; of: number } | null;
         /**
+         * X-238 — the last session this sign-in carried (by its launch manifest),
+         * who ran it, and how many ran on it in the last 24 hours. `null` = no
+         * run of this farm's was ever sealed on it.
+         */
+        lastUse?: AccountLastUseView | null;
+        /**
          * X-252 — today's spend on this sign-in, from the launch manifests. The
          * percentage above says how close the wall is; this says what was spent
          * getting there. `sessions: 0` means nothing ran on it today (a real
@@ -247,6 +258,8 @@ export interface EnginesPanelDeps {
      * line; a list is an add, and whatever was already waiting keeps its place.
      */
     queueAccountRefresh(ids: string[], gesture: 'toggle' | 'all'): void;
+    /** X-238 — open the transcript a card names; the Session Viewer's own command. */
+    openSession(file: string): void;
     /**
      * ‼️ X-305 — THE RULES THAT CHOOSE A SIGN-IN AT LAUNCH, and what each comes
      * to right now on every engine that holds a slot. The built-in four are

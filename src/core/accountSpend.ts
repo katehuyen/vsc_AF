@@ -203,6 +203,40 @@ export function spendByAccount(
     return { rows, unattributed, from: window.from ?? '', to: window.to ?? '' };
 }
 
+/** X-238 — the last run a sign-in carried, and how many it carried lately. */
+export interface AccountLastUse {
+    sessionId: string;
+    /** the session's last activity, epoch ms */
+    at: number;
+    /** sessions active on it since `since` */
+    recent: number;
+}
+
+/**
+ * ‼️ X-238 — WHO WAS LAST ON THIS SIGN-IN. Placed by the same reader the spend
+ * uses (the launch manifest), and skipping the same rows: a sidechain is a leg
+ * of its parent's turn and an alias is work already counted, so neither may
+ * stand as "the last session" of anything. A run with no manifest is on no
+ * account — never on whichever the machine happens to hold.
+ */
+export function lastUseByAccount(
+    sessions: readonly SpendSession[],
+    accountOf: (s: SpendSession) => SpendAccount | undefined,
+    since: number
+): Map<string, AccountLastUse> {
+    const out = new Map<string, AccountLastUse>();
+    for (const s of sessions) {
+        if (s.isSidechain || s.aliasOf || !(s.lastTs > 0)) { continue; }
+        const key = accountOf(s)?.id?.trim();
+        if (!key) { continue; }
+        const row = out.get(key) ?? { sessionId: '', at: 0, recent: 0 };
+        if (s.lastTs > row.at) { row.sessionId = s.sessionId; row.at = s.lastTs; }
+        if (s.lastTs >= since) { row.recent++; }
+        out.set(key, row);
+    }
+    return out;
+}
+
 /** The window a card means by "today" — one local day, as `daily` keys it. */
 export function todayWindow(now: number): SpendWindow {
     const d = dayKey(now);
