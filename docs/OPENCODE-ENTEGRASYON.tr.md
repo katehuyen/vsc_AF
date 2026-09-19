@@ -662,5 +662,20 @@ restart binding · ek dosya · yanlış model için başlamadan anlaşılır ret
   ve işaretli kalır. **Gerçek binary'de kalan tek boşluk:** 24 MB'ı aşan bir
   export'un `scanLimit` yolu (S-32 kuralı koddadır, o boyutta gerçek bir belge
   yoktu) — X-40'ta üretilebilir.
+- **X-117 kabulü (1. parça, GERÇEK binary + yerel sahte uç nokta):**
+  `test/test_e2e_opencode_providers.js` gerçek `opencode` CLI'ı, kullanıcının
+  tanımladığı biçimde iki özel OpenAI-uyumlu sağlayıcıyla (config
+  `OPENCODE_CONFIG_CONTENT` ile verilir, diske yazılmaz) yerel HTTP sunucularına
+  karşı koşturur — makineden hiçbir şey çıkmaz, gerçek token harcanmaz (bir tur
+  ~18 sn). Agent Farm tarafı koştuğu gibi sınanır: katalog `opencode models
+  --verbose`'tan okunur, adaptör `-m provider/model` üretir, iki sağlayıcı
+  **eşzamanlı** koşar ve her biri yalnız kendi uç noktasına kendi anahtarıyla
+  gider, kimlik `opencode export`'tan geri okunur, motorun kendi maliyet figürü
+  `engine-reported` kalır. **Ölçüldü:** `run --format json` akışı sağlayıcı
+  kimliğini taşımaz (yalnız `step_start`/`text`/`step_finish` + `tokens`/`cost`);
+  kimliğin kaynağı export'tur. Kullanıcının kendi OpenCode verisi ve config'i
+  hiç görülmez: `XDG_DATA_HOME`/`XDG_CONFIG_HOME`/`XDG_STATE_HOME` geçici klasöre
+  işaret eder ve bu doğrulanır (Windows'ta da uyulduğu ölçüldü). CLI PATH'te
+  yoksa test atlanır, kırmızıya düşmez.
 - **Sonraki çocuklar bu sözleşmeyi veri kabul eder** ve değiştirmek isterlerse
   önce bu belgeyi yeni bir ölçümle günceller.

@@ -21155,6 +21155,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }),
             ...(dataOwnerOf(engine, 'catalog') === 'agent-farm' ? {
                 savedRoutes: savedRoutesFor(engine),
+                routeRunnable: (id: string) => !launchRouteRefusal(engine, id, ''),
                 profileRead: readProfilesReport(cfg().get<unknown[]>('providerProfiles', []))
             } : {}),
             records: providerTestRecords()

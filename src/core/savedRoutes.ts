@@ -37,15 +37,18 @@ const CONSEQUENCE: Record<SavedRouteKind, string> = {
 
 /**
  * One sentence per route that no longer exists and is still named somewhere.
- * `known` is every route id the engine can be pointed at right now.
+ * `runnable` answers whether a launch can be pointed at a route id right now —
+ * ‼️ the host hands in the SAME rule the spawn refuses by, because a catalog
+ * lists the shipped route templates (`kimi`, `minimax`) even when no profile
+ * behind them exists, and a list-based check called those alive.
  */
 export function goneRouteProblems(
-    saved: readonly SavedRoute[] | undefined, known: ReadonlySet<string>
+    saved: readonly SavedRoute[] | undefined, runnable: (providerId: string) => boolean
 ): string[] {
     const byRoute = new Map<string, SavedRoute[]>();
     for (const s of saved ?? []) {
         const id = (s.providerId ?? '').trim();
-        if (!id || known.has(id)) { continue; }
+        if (!id || runnable(id)) { continue; }
         byRoute.set(id, [...(byRoute.get(id) ?? []), s]);
     }
     const out: string[] = [];

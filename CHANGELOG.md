@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.574.0 - both engines' provider paths, run end to end against local mock endpoints (X-117, part 1) (2026-09-19)
+
+- **‼️ THE WIRE ITSELF IS NOW WATCHED, NOT ASSUMED.** Every unit test of the
+  provider axis stopped at the environment or the argv Agent Farm builds; what
+  the CLI then SENT, and to whom, was never seen. Two new files run the real
+  CLIs against local HTTP servers speaking the Anthropic Messages and the
+  OpenAI Chat Completions APIs — nothing leaves the machine and no real token is
+  spent (measured: a Claude turn ~3.5s, an OpenCode turn ~18s on this PC).
+  - `test_e2e_claude_routes.js` — Kimi and MiniMax routes through Agent Farm's
+    own resolver and `spawnEnvironment`, **concurrently**: each reaches its own
+    endpoint with its own key and tier model, never the other's; an inherited
+    base URL, key, bearer token and model reach neither routed wire (mutating
+    the clearing turns it red — the overwrite alone does not hide it); a run
+    with nothing chosen goes to the inherited endpoint untouched, which is the
+    rule. A gateway answering under its own model name is recorded beside what
+    was asked; the CLI's own cost figure is arithmetic on no plan window.
+  - `test_e2e_opencode_providers.js` — two custom providers declared the way a
+    user declares them: the catalog is read from `opencode models --verbose`,
+    the adapter resolves `-m provider/model`, both run at once and reach only
+    their own endpoint and key, and `opencode export` reports the provider that
+    ran. The user's own OpenCode data and config are never touched (`XDG_*`
+    point into a temp folder, asserted).
+  - `test_e2e_console_route.js` — the Console door: a hosted card through the
+    real `ConsoleHost`, handed the resolver the extension hands it, with the
+    inherited route sitting in the window's own environment. The card's own
+    `providerId`/`tier` is what reaches the wire; dropping it at the spawn turns
+    three checks red.
+  All three skip, not fail, when their CLI is not on PATH; the mock endpoints are
+  shared in `test/e2e_mocks.js`.
+- **‼️ AND THE FIRST THING THE WIRE FOUND WAS IN 3.573.0.** The Claude catalog
+  lists the shipped route TEMPLATES (`kimi`, `minimax`) even with no profile
+  behind them, so the new *Route health* check — which asked the catalog — called
+  a removed `kimi` profile alive while the task runner, asking the launch rule,
+  refused it. Health is now handed the spawn's own rule (`launchRouteRefusal`),
+  so the two readings cannot disagree.
+
 ## 3.573.0 - a route that is gone stops being run on, and every file that answers it a second time is named (X-116, closes) (2026-09-19)
 
 - **‼️ A TASK WHOSE ROUTE WAS REMOVED WHILE IT WAITED RAN ANYWAY — ON WHATEVER THE

@@ -197,6 +197,8 @@ export interface ProviderHealthInput {
     configFiles?: readonly EngineConfigFile[];
     /** X-116 — every saved choice on this engine that names a route. */
     savedRoutes?: readonly SavedRoute[];
+    /** X-116 — can a launch be pointed at this route now? The spawn's own rule. */
+    routeRunnable?: (providerId: string) => boolean;
     /** X-116 — what reading the stored routes had to fill in or skip. */
     profileRead?: { upgraded: readonly string[]; dropped: readonly string[] };
     /** The engine's own credential file, for the engines that own one. */
@@ -379,7 +381,8 @@ export function providerHealth(input: ProviderHealthInput): ProviderHealthReport
     // ‼️ X-116 — only against a catalog somebody read: with none, every saved
     // route would be reported gone.
     if (fetched) {
-        problems.push(...goneRouteProblems(input.savedRoutes, new Set(rows.map(r => r.providerId))));
+        const listed = new Set(rows.map(r => r.providerId));
+        problems.push(...goneRouteProblems(input.savedRoutes, input.routeRunnable ?? (id => listed.has(id))));
     }
 
     for (const row of rows) {

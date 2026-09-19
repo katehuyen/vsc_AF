@@ -14,7 +14,8 @@ const H = require(path.join(ROOT, 'out', 'core', 'providerHealth.js'));
 
 // ---- the pure verdict ----
 {
-    const known = new Set(['anthropic', 'kimi']);
+    const held = new Set(['anthropic', 'kimi']);
+    const known = id => held.has(id);
     const saved = [
         { kind: 'agent default', label: 'developer', providerId: 'minimax' },
         { kind: 'schedule', label: 'nightly', providerId: 'minimax' },
@@ -49,6 +50,17 @@ const H = require(path.join(ROOT, 'out', 'core', 'providerHealth.js'));
         !held.problems.some(p => /no longer exists/.test(p)));
     const unread = H.providerHealth({ engine: 'claude', adapter, catalog: { ...catalog, source: 'not-fetched' }, savedRoutes, inheritedEnv: {} });
     ok('‼️ with no catalog read, nothing is called gone', !unread.problems.some(p => /no longer exists/.test(p)));
+
+    // ‼️ MEASURED: the Claude catalog lists the shipped route TEMPLATES (kimi,
+    // minimax) with no profile behind them, so a list-based check called a
+    // removed "kimi" profile alive while the spawn refused it. The host hands in
+    // the spawn's own rule, and it wins over the list.
+    const withTemplate = { ...catalog, providers: [...catalog.providers, { providerId: 'kimi', label: 'Kimi', models: [] }] };
+    const listOnly = H.providerHealth({ engine: 'claude', adapter, catalog: withTemplate, savedRoutes, inheritedEnv: {} });
+    const byRule = H.providerHealth({ engine: 'claude', adapter, catalog: withTemplate, savedRoutes, inheritedEnv: {},
+        routeRunnable: () => false });
+    ok('a template the catalog lists is alive to a list', !listOnly.problems.some(p => /no longer exists/.test(p)));
+    ok('‼️ …and gone to the spawn\'s own rule, which is what decides', byRule.problems.some(p => /route "kimi" no longer exists/.test(p)));
 }
 
 // ---- the host gathers every kind, and only where it owns the catalog ----
@@ -88,6 +100,8 @@ const H = require(path.join(ROOT, 'out', 'core', 'providerHealth.js'));
     ok('a skipped route is a report problem', rep.problems.some(p => /"Kimi Work" was skipped/.test(p)));
     ok('an upgraded route is a report note', rep.notes.some(n => /route "old" was stored in an older shape/.test(n)));
     const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('‼️ the host hands health the SAME rule the spawn refuses by',
+        /routeRunnable: \(id: string\) => !launchRouteRefusal\(engine, id, ''\)/.test(ext));
     ok('the host reads the stored list through the same reader', /profileRead: readProfilesReport\(cfg\(\)\.get<unknown\[\]>\('providerProfiles', \[\]\)\)/.test(ext));
 }
 
