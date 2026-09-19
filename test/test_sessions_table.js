@@ -940,6 +940,25 @@ const mkRow = (i, extra) => Object.assign({
     ok('…and it does NOT eat one of the N rows (2 + the pinned one)', rowsShown() === 3);
     ok('its labels are on the row', html().includes('>zen</span>') && html().includes('>release</span>'));
 
+    // ‼️ U-132 — THE SHELF HAS TO READ AS A SHELF. Sorting pinned rows first is
+    // only half of it: wearing the same tint as everything else they read as
+    // "whatever happens to be newest", which is the one thing they are not. The
+    // row itself carries the standing choice, and the boundary is drawn ONCE —
+    // on the last pinned row, which with a single pin is the same row.
+    ok('‼️ A PINNED ROW IS MARKED ON THE ROW, not only by its star',
+        /class="click sessrow pinned[ "]/.test(html()));
+    ok('…and where the shelf ENDS is drawn once, on the last of them',
+        (html().match(/class="click sessrow pinned lastpin/g) || []).length === 1);
+    ok('an unpinned row carries neither', !/sessrow pinned[^"]*"[^>]*>[\s\S]{0,400}title1/.test(
+        html().slice(html().indexOf('title1') - 200, html().indexOf('title1'))));
+    // The tint is the PIN COLUMN'S own colour, never a second blue: blue
+    // already means open and picked, which are states any row is in for a
+    // moment, and a standing choice must not share a colour with a passing one.
+    ok('‼️ THE SHELF WEARS THE PIN\'S COLOUR, and open/picked still win over it',
+        /tr\.sessrow\.pinned > td \{ background:color-mix\(in srgb, var\(--vscode-charts-yellow/.test(html())
+        && /tr\.sessrow\.pinned\.open > td/.test(html())
+        && /tr\.sessrow\.pinned\.picked > td/.test(html()));
+
     // ★ click: optimistic locally + persisted by the host
     click(containers.pin.querySelectorAll('[data-pin]')[0]);   // the pinned f5 → unpin
     const off = posted.find(p => p.type === 'pinSession');

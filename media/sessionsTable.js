@@ -353,6 +353,22 @@
         tr.sessrow > td:first-child { box-shadow:inset 3px 0 0 color-mix(in srgb, var(--vscode-textLink-foreground) 45%, transparent); }
         tr.sessrow.open > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 18%, transparent); }
         tr.sessrow.open > td:first-child { box-shadow:inset 3px 0 0 var(--vscode-textLink-foreground); }
+        /* U-132 — THE SHELF IS NOT THE TOP OF THE SORT. Pinned rows are listed
+           first and are exempt from the row cap, but wearing the same tint as
+           everything else they read as "whatever happens to be newest" — the
+           one thing the shelf is not. The colour is the PIN COLUMN'S OWN yellow
+           rather than a second blue: blue already means open and picked,
+           which are states any row can be in for a moment, and a standing
+           choice must not share a colour with a passing one. */
+        tr.sessrow.pinned > td { background:color-mix(in srgb, var(--vscode-charts-yellow, #d7ba7d) 13%, transparent); }
+        tr.sessrow.pinned > td:first-child { box-shadow:inset 3px 0 0 var(--vscode-charts-yellow, #d7ba7d); }
+        /* …and where the shelf ENDS is a fact of its own: without it the tint
+           just fades into the list and the reader still has to count stars. */
+        tr.sessrow.lastpin > td { border-bottom:2px solid color-mix(in srgb, var(--vscode-charts-yellow, #d7ba7d) 55%, transparent); }
+        /* Open and picked are things the reader just did; they still win over a
+           standing tint, so the row under the pointer is the row that lights up. */
+        tr.sessrow.pinned.open > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 18%, transparent); }
+        tr.sessrow.pinned.picked > td { background:color-mix(in srgb, var(--vscode-textLink-foreground) 26%, transparent); }
         /* the turn list is nested content: no tint, indented under its row */
         tr.sessturns > td { padding-left:12px; }
         .turnmini { margin:4px 0 10px; font-size:11px; width:auto; min-width:340px; }
@@ -1420,14 +1436,21 @@
             // The rows the selection actually covers — what a bulk command
             // would act on, and what the bar has to be able to say out loud.
             const chosen = shown.filter(r => picked.has(r.file));
-            const rowsHtml = shown.map(r => {
+            const rowsHtml = shown.map((r, ri) => {
                 const o = open.has(r.file);
                 const on = picked.has(r.file);
                 // The ROW still carries the hint, and only the row: a `<td>` with
                 // its own title overrides it, so this shows exactly where no cell
                 // has anything better to say — never eleven times over.
                 const tail = on ? bulkHint(chosen.length) : window.AFSessionCtx.HINT;
-                return `<tr class="click sessrow${o ? ' open' : ''}${on ? ' picked' : ''}" data-session="${C.esc(r.file)}"
+                // U-132 — the shelf has to READ as a shelf. Pinned rows sort to
+                // the top, and with every row wearing the same tint they read as
+                // the first few of the ordinary ordering instead. `lastpin` is
+                // the boundary between the two, drawn once.
+                const pin = r.pinned
+                    ? ' pinned' + (shown[ri + 1] && shown[ri + 1].pinned ? '' : ' lastpin')
+                    : '';
+                return `<tr class="click sessrow${pin}${o ? ' open' : ''}${on ? ' picked' : ''}" data-session="${C.esc(r.file)}"
                     ${window.AFSessionCtx.row(r, on ? bulkContext(chosen) : undefined)}
                     title="${tail}">
                     <td class="selcell"><input type="checkbox" data-sel="${C.esc(r.file)}"${on ? ' checked' : ''}

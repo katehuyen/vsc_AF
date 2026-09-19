@@ -100,8 +100,14 @@ const data = () => ({
                 }
             }
         }),
-        row(3, { engine: 'agy', models: ['gemini-3.5-flash'] }),
-        row(4, { engine: 'gemini', models: ['gemini-2.5-pro'] }),
+        // U-132 — TWO ON THE SHELF, which is the arity that draws both halves
+        // of the rule: the first pinned row wears the tint alone, the second
+        // wears the tint AND the boundary under it. One pinned row puts both
+        // classes on one `<tr>` and is the subset of this, so this is the scene
+        // that had to exist; the shelf is sorted to the top, so these two are
+        // drawn first whatever the sort says.
+        row(3, { engine: 'agy', models: ['gemini-3.5-flash'], pinned: true }),
+        row(4, { engine: 'gemini', models: ['gemini-2.5-pro'], pinned: true }),
         // ‼️ S-32 — the row whose transcript was too large to read. Its figures
         // are unread zeros, so the badge has to be visible enough that nobody
         // takes the row for a session that ran and did nothing.

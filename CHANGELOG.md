@@ -2,6 +2,23 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.589.0 - the shelf reads as a shelf (U-132) (2026-09-20)
+
+- **U-132 — a pinned session looked like whatever happened to be newest.**
+  Pinned rows have always sorted first and been exempt from the row cap, but
+  they wore the same tint as every other row, so the shelf read as the top of
+  the ordinary ordering — which is the one thing it is not. The row itself now
+  carries the standing choice: a soft tint, an accent down its leading edge,
+  and a rule drawn **once**, under the last pinned row, so where the shelf ENDS
+  is a fact of its own instead of something the reader counts stars for.
+- **The colour is the pin column's own yellow, not a second blue.** Blue
+  already means `open` and `picked` — states any row is in for a moment — and a
+  standing choice must not share a colour with a passing one. Both of those
+  still win over the shelf tint, so the row under the pointer is the row that
+  lights up.
+- One table, so every surface that carries it — Sessions, the Dashboard, the
+  agent pages — gets it at once.
+
 ## 3.588.0 - a sign-in's card stops saying it was idle when it was working (X-333) (2026-09-20)
 
 - **‼️ X-333 — the complaint, exactly as it was put: a card reading `last used
