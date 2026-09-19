@@ -645,6 +645,19 @@ seçilmemiş bir koşu miras uca **dokunulmadan** gider. ‼️ Ve temizleme
 `test/test_e2e_claude_routes.js` (ortam ekseni) ve
 `test/test_e2e_opencode_providers.js` (argv ekseni).
 
+**11. Bir kez de gerçek tel — süitin dışında, onayla.** Sahte uç nokta API'nin
+şeklini kanıtlar, gerçek sağlayıcının **davranışını** değil. Motor eklendikten
+sonra `tools/smoke_live.js`'ye bir bacak eklenir (aynı çözümleyici, motor
+başına **tek kısa tur**, en ucuz model) ve **kullanıcı onayıyla bir kez**
+koşulur: `node tools/smoke_live.js --<motor> --yes`. `--yes` yoksa araç yalnız
+planı basar; `test/` dışında durduğu için `run-all` onu hiç koşmaz ve süit
+token-siz kalır. Beklenen: motor cevap verir, bildirilen kimlik isteneni
+adlandırır, motorun **kendi** kullanım figürü gelir, `billingOf` koşuyu
+tasarımın dediği yere koyar. ‼️ Seçim önce ürünün kendi kapısından geçer:
+2026-09-19'da kataloğun ilk ücretsiz OpenCode modeli `preflight`'ta düştü ve
+gerçek koşusu 80 sn sonra tek kelime üretmeden çıkış 1 verdi — kapının kestiği
+tam olarak buydu. Ölçüm ve sonuç: `MOTORLAR-TASARIM.tr.md` §8.9.
+
 ### Protokol adapter’ı — `src/core/<motor>proto.ts`
 
 Motorun ham protokolü Agent Farm’ın kanonik Console olaylarına çevrilir. Adapter:

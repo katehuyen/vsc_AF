@@ -2,6 +2,40 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.579.0 - the one live smoke, and the gate it proved on a real wire (X-117 closed) (2026-09-19)
+
+- **‼️ EVERYTHING THE MOCKS CERTIFIED, SEEN ONCE ON A REAL WIRE.** The suite
+  stays token-free by design, so the live smoke is a tool outside it:
+  `tools/smoke_live.js` runs ONE short turn per engine through the same
+  resolver the product launches with (`providerRegistry` →
+  `spawnEnvironment` / `-m`), spends nothing without `--yes`, and `run-all`
+  never sees it. Run once with the user's approval, both legs green:
+  - **Claude, first-party, `haiku`** — nothing chosen, nothing touched: the
+    session's own sign-in served it. Exit 0 in 7.6 s, the engine reported
+    `claude-haiku-4-5-20251001`, its own usage (in 10 / out 220) and its own
+    cost ($0.018) arrived, the transcript named NO route (the design in
+    `MOTORLAR-TASARIM` §8.4, now measured live), and `billingOf` placed it on
+    the plan window at an API-equivalent dollar.
+  - **OpenCode, the engine's own free provider** — `opencode/ling-3.0-flash-fin-free`
+    in a temp XDG home with no `auth.json`. Exit 0 in 9.3 s, answer `pong`,
+    the engine's own `step_finish` (tokens 11571, cost 0), `opencode export`
+    reporting provider and model, `billingOf` → `engine-reported`, off the plan
+    window, the user's own store untouched.
+- **‼️ AND THE GATE WAS PROVED ON THE WIRE, WHICH THE MOCKS COULD NOT DO.** The
+  first free model in the engine's catalog (`jev-1.13-free`) publishes no tool
+  calling; `preflight` refuses it by name. Run past the refusal, the live turn
+  exited 1 after 80 s without a word — exactly what a session on it would have
+  met. The tool therefore takes the first free model the product's own gate
+  PASSES and names the ones it dropped; the SOP's provider-axis gate gains
+  step 11 (a live leg per new engine, once, with approval).
+- **Kimi and MiniMax stay mock-only** — no paid key exists for either; the
+  user's decision (2026-09-19). Their routes are measured end to end against
+  the local Anthropic endpoint and nowhere else.
+- Docs: `MOTORLAR-TASARIM.tr.md` §8.9 (the measurement table),
+  `YENI-MOTOR-EKLEME-SOP.tr.md` → provider axis step 11,
+  `OPENCODE-ENTEGRASYON.tr.md` → the free-provider live measurement and the
+  seven free models the provider served that day.
+
 ## 3.578.0 - where the context figure comes from, and a measurement in a comment that had quietly stopped being true (X-117, part 5) (2026-09-19)
 
 - **‼️ X-113 — THE CONTEXT FIGURE IS THE ENGINE'S, AND ON A THIRD-PARTY ROUTE

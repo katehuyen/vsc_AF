@@ -696,5 +696,18 @@ restart binding · ek dosya · yanlış model için başlamadan anlaşılır ret
   Uçtan uca dosyası artık her eşzamanlı koşuya kendi evini verir (bir
   **sağlayıcı** iddiası sessizce bir **kilit** iddiası olmasın diye); ürün
   tarafındaki soru X-329'dur.
+- **‼️ ÖLÇÜLDÜ — gerçek tel, motorun kendi ücretsiz sağlayıcısı (X-117 kapanışı,
+  2026-09-19):** `tools/smoke_live.js --opencode --yes`, geçici `XDG_*` evi ve
+  `auth.json` yokken `opencode run -m opencode/ling-3.0-flash-fin-free`: çıkış 0,
+  9,3 sn, cevap `pong`, `step_finish` → token 11571 / ücret 0, `opencode export`
+  sağlayıcıyı ve modeli bildirdi, `billingOf` → `engine-reported`, plan
+  penceresi kapalı. **Kapı gerçek telde doğrulandı:** kataloğun ilk ücretsiz
+  modeli `jev-1.13-free` araç çağrısı yayımlamaz, `preflight` onu adıyla
+  reddeder; reddi atlayıp koşulduğunda tur 80 sn sonra tek kelime üretmeden
+  çıkış 1 verdi. Araç bu yüzden kapıdan geçen ilk ücretsiz modeli alır.
+  Ücretsiz sağlayıcının o gün sunduğu yedi model: `jev-1.13-free`,
+  `ling-3.0-flash-fin-free`, `mimo-v2.5-free`, iki `muse-spark-*-contributor-free`,
+  `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free` — liste motorundur ve
+  değişir; ürün onu her koşuda motora sorar, sabit yazmaz.
 - **Sonraki çocuklar bu sözleşmeyi veri kabul eder** ve değiştirmek isterlerse
   önce bu belgeyi yeni bir ölçümle günceller.

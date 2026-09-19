@@ -649,3 +649,29 @@ Ortak sahte uç noktalar `test/e2e_mocks.js`. Hepsi CLI PATH'te yoksa
 ‼️ **Temizleme yanlışlanabilir olmak zorunda.** Terminal dosyasında aynı tur bir
 de route'un `clearEnv`'i düşürülerek koşulur ve miras bearer'ın tele **çıkması**
 beklenir. Kırmızıya dönemeyen bir koruma koruma değildir.
+
+### 8.9 Tek gerçek smoke — ÖLÇÜLDÜ (2026-09-19)
+
+Sahte uç noktaların kanıtladığı her şey bir kez de **gerçek telde** görülmek
+zorunda; ama süit her commit'te koşar ve gerçek token harcayan bir test süite
+girmez. Bu yüzden canlı smoke süitin dışında bir araçtır: `tools/smoke_live.js`
+— aynı çözümleyiciyle (`providerRegistry` → `spawnEnvironment` / `-m`) motor
+başına **tek kısa tur**, yalnız `--yes` ile harcar, `--yes` yoksa planı basıp
+çıkar. Kullanıcı onayıyla bir kez koşuldu (`node tools/smoke_live.js --claude
+--opencode --yes`):
+
+| Bacak | Ne koştu | Ölçülen |
+|---|---|---|
+| Claude, birinci taraf | `claude -p --model haiku`, oturumun kendi `CLAUDE_CONFIG_DIR`'ı, hiçbir şey seçilmemiş → hiçbir şey dokunulmamış | çıkış 0 · 7,6 sn · bildirilen model `claude-haiku-4-5-20251001` · `usage` in=10 out=220 · CLI'ın kendi ücreti $0,018 · transkript **hiçbir route adı vermiyor** (8.4'teki tasarım gerçek telde de böyle) · `billingOf` → `plan`, pencere **açık**, dolar API-eşdeğeri |
+| OpenCode, motorun kendi ücretsiz sağlayıcısı | `opencode run -m opencode/ling-3.0-flash-fin-free`, geçici `XDG_*` evi, `auth.json` yok | çıkış 0 · 9,3 sn · cevap `pong` · motorun kendi `step_finish` figürü token=11571 ücret=0 · `opencode export` sağlayıcıyı (`opencode`) ve modeli bildiriyor · `billingOf` → `engine-reported`, plan penceresi **kapalı** |
+
+‼️ **Kapı gerçek telde doğrulandı.** Kataloğun ilk ücretsiz modeli
+`jev-1.13-free` araç çağrısı yayımlamıyor; `preflight` onu adıyla reddediyor
+("a session here is tool calls from its first turn"). Reddi atlayıp koşulduğunda
+tur **80 sn sonra çıkış 1 ile, tek kelime üretmeden** düştü — kapının kestiği tam
+olarak kullanıcının yaşayacağı şeydi. Araç bu yüzden listenin ilkini değil,
+**kapıdan geçen ilk** ücretsiz modeli alır ve düşürdüklerini adıyla yazar.
+
+Kimi/MiniMax için anahtar yok; o iki route yalnız sahte uç noktada ölçülüdür
+(kullanıcı kararı, 2026-09-19). Yukarıdaki tablo kaydın kendisidir; ham döküm
+`--out` ile `dist/measure/` altına yazılır ve izlenmez.
