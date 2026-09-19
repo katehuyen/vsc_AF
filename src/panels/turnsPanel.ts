@@ -3,8 +3,10 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { PricingEngine } from '../core/pricing';
-import { SessionIndex } from '../core/sessions';
+import { SessionIndex, SessionInfo } from '../core/sessions';
 import { buildTurnRows, TurnRow } from '../core/turns';
+import { LaunchManifest } from '../core/launchManifest';
+import { RunIdentity, sessionIdentity } from '../core/turnRuntime';
 import { normalizeSpeakerConfig, renderSpeaker } from '../core/speaker';
 import { fmtDuration, fmtStepPair } from '../core/util';
 import { askExportOptions, handleAfNav, htmlShell, wikiMarkMessage } from './base';
@@ -24,6 +26,8 @@ export interface TurnsDeps {
     extensionUri: vscode.Uri;
     index: SessionIndex;
     getPricing(): PricingEngine;
+    /** X-111 — the launch manifests, so a turn can say which route its session ran on. */
+    launchManifests?(): readonly LaunchManifest[];
     /** Export MD remembers the last folder saved to (shared with the viewer). */
     lastExportDir?(): string | undefined;
     setLastExportDir?(dir: string): void;
@@ -38,6 +42,12 @@ interface TurnMsg {
     isError: boolean; sidechain: boolean; model: string;
 }
 
+/** The manifests are read ONCE per build, not once per session row. */
+function identityOf(deps: TurnsDeps): (s: SessionInfo) => RunIdentity | undefined {
+    const manifests = deps.launchManifests?.();
+    return s => sessionIdentity(s, manifests);
+}
+
 function buildData(deps: TurnsDeps): Record<string, unknown> {
     const now = Date.now();
     return {
@@ -48,7 +58,7 @@ function buildData(deps: TurnsDeps): Record<string, unknown> {
         // the Codex parse builds real turn rollups (cliTranscripts.ts) there is
         // something on the other side of the widening.
         rows: buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-            afConfig().get<number>('contextWindowTokens', 0)),
+            afConfig().get<number>('contextWindowTokens', 0), identityOf(deps)),
         tableN: TURNS_TABLE_N
     };
 }
@@ -121,7 +131,7 @@ export function buildTurnsMarkdown(
     // is not. The export silently dropped those rows and the header lookup below
     // fell through to a bare "turn N". A LOG surface reads the log list, once.
     for (const r of buildTurnRows(deps.index.allWithExternal(), s => deps.index.isSessionActive(s, now),
-        afConfig().get<number>('contextWindowTokens', 0))) {
+        afConfig().get<number>('contextWindowTokens', 0), identityOf(deps))) {
         rowByKey.set(r.file + '#' + r.n, r);
     }
     const sc = afConfig();

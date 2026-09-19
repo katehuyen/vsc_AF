@@ -383,6 +383,11 @@ export function htmlShell(
     // invented its own route pill, in its own colour, on one page — while every
     // other surface buried the provider in a hover line or in the model text.
     const provider = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afProvider.js'));
+    // Which runs a provider / profile / model selection MATCHES (X-111). Ships
+    // everywhere for the strongest form of the query language's reason: the
+    // extension host runs the SAME FILE (src/core/runFilter.ts) for the bridge,
+    // so a page and an agent cannot disagree about which sessions ran via Kimi.
+    const runFilter = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afRunFilter.js'));
     // Which sign-in a thing runs on, and how much of that plan is left (X-263).
     // Ships everywhere for the reason the two badges above do, with a sharper
     // one of its own: five pickers had hand-copied the same option body and two
@@ -447,6 +452,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${engine}"></script>
 <script nonce="${nonce}" src="${project}"></script>
 <script nonce="${nonce}" src="${provider}"></script>
+<script nonce="${nonce}" src="${runFilter}"></script>
 <script nonce="${nonce}" src="${account}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>

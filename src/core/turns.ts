@@ -2,6 +2,8 @@ import { BridgeRegistry, optNum, optStr } from './bridge';
 import { ENGINE_ENUM } from './consoleEngine';
 import { CtxWindowSource, contextWindowOf } from './pricing';
 import { SessionInfo, SessionOrigin, sessionOrigin } from './sessions';
+import { RunIdentity } from './turnRuntime';
+import { matchesAny, profileOf, providersOf, RUN_SELECTION_ARGS, runSelectionArgs } from './runFilter';
 
 /**
  * Turns page data: every session unrolled into one row per user turn. Turn
@@ -66,6 +68,19 @@ export interface TurnRow {
     /** ‼️ X-108 — provider(s) the engine itself named for this turn. Empty on
      *  every engine that publishes none, which is Claude for ever. */
     providerIds: string[];
+    /**
+     * ‼️ X-111 — THE PROVIDER(S) THIS TURN WAS SERVED BY, resolved by the one
+     * rule (media/afRunFilter.js): the turn's own report when it made one,
+     * else the route its session was launched on. This is how "only Kimi's
+     * turns" finds the Claude-via-Kimi turns, which never name Kimi themselves
+     * and were unfindable while `providerIds` was the only column.
+     */
+    providers: string[];
+    /** The stored profile the session was launched on — Claude routes only, '' elsewhere. */
+    profile: string;
+    /** The session's declared route (its provider id), '' when it was launched on none. */
+    route: string;
+    routeLabel: string;
     sidechain: boolean;
     /** Who started the session this turn belongs to — 'user' dialog or 'auto' run. */
     origin: SessionOrigin;
@@ -81,8 +96,9 @@ export interface TurnRow {
 }
 
 /** All turn rows of one session, newest data included. */
-export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0): TurnRow[] {
+export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0, identity?: RunIdentity): TurnRow[] {
     const origin = sessionOrigin(s);
+    const profile = profileOf(identity);
     return s.turns.map((t, i) => {
         const next = s.turns[i + 1];
         const endTs = next?.ts || s.lastTs || t.ts;
@@ -116,6 +132,10 @@ export function turnRowsFor(s: SessionInfo, active: boolean, forced = 0): TurnRo
             errors: t.errors,
             models: t.models,
             providerIds: t.providerIds ?? [],
+            providers: providersOf(identity, t.providerIds),
+            profile,
+            route: identity?.providerId ?? '',
+            routeLabel: identity?.providerLabel ?? '',
             sidechain: s.isSidechain,
             origin,
             active,
@@ -130,11 +150,14 @@ export function buildTurnRows(
     isActive: (s: SessionInfo) => boolean,
     /** The reader's own ceiling override, when the caller has the settings
      *  door; core has none of its own. */
-    forced = 0
+    forced = 0,
+    /** X-111 — the session's identity, as the Sessions table states it
+     *  (`sessionIdentity`). Absent, every turn is on no route. */
+    identityOf?: (s: SessionInfo) => RunIdentity | undefined
 ): TurnRow[] {
     const rows: TurnRow[] = [];
     for (const s of sessions) {
-        rows.push(...turnRowsFor(s, isActive(s), forced));
+        rows.push(...turnRowsFor(s, isActive(s), forced, identityOf?.(s)));
     }
     return rows.sort((a, b) => b.ts - a.ts);
 }
@@ -148,26 +171,35 @@ export function registerTurnsOps(
         /** The reader's ceiling override, so the op answers the same
          *  percentage the page draws. */
         forcedWindow?(): number;
+        /** X-111 — the session's identity, so the op's provider filter finds
+         *  what the page's does. */
+        identityOf?(s: SessionInfo): RunIdentity | undefined;
     }
 ): void {
     bridge.register({
         op: 'turns.list',
-        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), limit? (default 20). Each row carries ctx (what the window held when the turn ended), ctxWindow (the ceiling it is a fraction of, 0 = nobody stated one) and ctxWindowSource (forced | engine | model | "").',
+        describe: 'Every user turn across the farm, newest first (the Turns page as data). args: agent? (name filter), engine? (' + ENGINE_ENUM + ' — which engine ran the turn), origin? ("user" = turns of sessions a person started interactively — the page default; "auto" = turns of automation runs (schedule/trigger/task/mission); omit or "all" = both), ' + RUN_SELECTION_ARGS + ', limit? (default 20). Each row carries ctx (what the window held when the turn ended), ctxWindow (the ceiling it is a fraction of, 0 = nobody stated one), ctxWindowSource (forced | engine | model | ""), providerIds (what the engine itself named for the turn — empty on Claude for ever) and providers (what served it: the turn\'s own, else its session\'s route — the value the filter matches).',
         handler: (args) => {
             const agent = optStr(args, 'agent').toLowerCase();
             const engine = optStr(args, 'engine').toLowerCase();
             const origin = optStr(args, 'origin').toLowerCase();
+            const sel = runSelectionArgs(args);
             // ‼️ B-25 — `optNum`, not a `typeof === 'number'` test. The CLI's
             // `limit=50` shorthand and a hand-written arg both arrive as TEXT,
             // and a type test drops them for the default without saying so —
             // the same silence that queued four items at the bottom.
             const limit = Math.max(1, Math.floor(optNum(args, 'limit', 20)) || 20);
-            return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0)
+            return buildTurnRows(deps.sessions(), deps.isActive, deps.forcedWindow?.() ?? 0, deps.identityOf)
                 .filter(r => !agent || r.agentName.toLowerCase() === agent)
                 // ‼️ The same axis the page filters on — an agent calling this op
                 // to ask "what has Codex been doing" had no way to say so.
                 .filter(r => !engine || engine === 'all' || r.engine.toLowerCase() === engine)
                 .filter(r => origin !== 'user' && origin !== 'auto' ? true : r.origin === origin)
+                // X-111 — the three axes the page filters on, by the same rule;
+                // `providers` is already the resolved value, so no turn report.
+                .filter(r => matchesAny(r.providers, sel.providers)
+                    && matchesAny([r.profile].filter(Boolean), sel.profiles)
+                    && matchesAny(r.models, sel.models))
                 .slice(0, limit)
                 .map(r => ({
                     agent: r.agentName, engine: r.engine,
@@ -181,7 +213,8 @@ export function registerTurnsOps(
                     ctxWindowSource: r.ctxWindowSource,
                     wTokens: Math.round(r.wTokens),
                     cost: Math.round(r.cost * 10000) / 10000,
-                    tools: r.tools, errors: r.errors, models: r.models, providerIds: r.providerIds
+                    tools: r.tools, errors: r.errors, models: r.models, providerIds: r.providerIds,
+                    providers: r.providers, profile: r.profile || null, route: r.route || null
                 }));
         }
     });

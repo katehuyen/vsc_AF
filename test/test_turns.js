@@ -267,6 +267,34 @@ ok('origin rides on every turn of the session', rows.every(r => r.origin === 'us
     const anyScope = await reg.dispatch('turns.list', { origin: 'all' });
     ok('an unrecognized origin means "both", not "nothing"', anyScope.ok && anyScope.result.length === 2);
 
+    // ---------- 7) X-111 — the route a Claude turn inherits, and the three filters ----------
+    ok('with no identity dep, every turn is on no route',
+        all.result.every(r => Array.isArray(r.providers) && r.providers.length === 0 && r.route === null));
+    const reg2 = new BridgeRegistry();
+    const kimi = { providerId: 'kimi', providerLabel: 'Kimi', providerProfileId: 'kimi-work', reportedProviderIds: [], reportedModels: [] };
+    registerTurnsOps(reg2, { sessions: () => [info], isActive: () => false, identityOf: () => kimi });
+    const viaKimi = await reg2.dispatch('turns.list', {});
+    ok('‼️ X-111 — a Claude turn, which names no provider, is served by its session\'s route',
+        viaKimi.ok && viaKimi.result.every(r => r.providerIds.length === 0 && r.providers.join() === 'kimi'
+            && r.route === 'kimi' && r.profile === 'kimi-work'));
+    const onlyKimi = await reg2.dispatch('turns.list', { providers: 'kimi' });
+    const onlyAnthropic = await reg2.dispatch('turns.list', { providers: 'anthropic' });
+    ok('providers= finds the Claude-via-Kimi turns and nothing else',
+        onlyKimi.ok && onlyKimi.result.length === 2 && onlyAnthropic.ok && onlyAnthropic.result.length === 0);
+    const several = await reg2.dispatch('turns.list', { providers: 'anthropic,kimi' });
+    ok('…comma-separated is a list', several.ok && several.result.length === 2);
+    const noRoute = await reg.dispatch('turns.list', { providers: '(none)' });
+    const noRoute2 = await reg2.dispatch('turns.list', { providers: '(none)' });
+    ok('"(none)" is the turns on no route', noRoute.ok && noRoute.result.length === 2 && noRoute2.ok && noRoute2.result.length === 0);
+    const byProfile = await reg2.dispatch('turns.list', { profiles: ['kimi-work'] });
+    const wrongProfile = await reg2.dispatch('turns.list', { profiles: 'other' });
+    ok('profiles= is honoured', byProfile.ok && byProfile.result.length === 2 && wrongProfile.ok && wrongProfile.result.length === 0);
+    const haiku = await reg2.dispatch('turns.list', { models: 'claude-haiku-4-5' });
+    ok('models= matches the turn\'s OWN model', haiku.ok && haiku.result.length === 1 && haiku.result[0].turn === '2/2');
+    const both = await reg2.dispatch('turns.list', { providers: 'kimi', models: 'claude-haiku-4-5' });
+    ok('the axes combine by AND', both.ok && both.result.length === 1);
+    ok('the catalog names the three args', reg2.catalog().find(c => c.op === 'turns.list').describe.includes('providers?'));
+
     fs.rmSync(dir, { recursive: true, force: true });
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);

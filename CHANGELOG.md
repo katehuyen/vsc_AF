@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.569.0 - the route a run was served by is a filter of its own, beside the engine, on every surface that lists runs (X-111, closes) (2026-09-19)
+
+- **‼️ PROVIDER · PROFILE · MODEL as three multi-pick filters on the Sessions
+  tables and the Turns page, beside Engines and combined with everything by
+  AND.** The engine is not the provider (X-110): `claude` pointed at Kimi is
+  still the Claude CLI, so "Claude Code, only Kimi" is two ticks in two pickers,
+  not a special case. Providers lists the routes the rows actually hold, by the
+  chip's own label, plus **"no route"** for the runs on none - "everything that
+  did NOT go through a route" is a real question and a filter that could only
+  narrow to rows with a value could not ask it. Profiles appears only once a
+  row carries a stored route profile (Claude routes only); Models lists what
+  ANSWERED - never what was requested (X-108). A picker is offered only when
+  there is more than one value to pick between.
+- **‼️ ONE RULE, TWO RUNTIMES (`media/afRunFilter.js`).** Which rows a selection
+  matches is decided in one file the pages run in the webview and the host runs
+  for the bridge (`src/core/runFilter.ts` requires the same file, as the query
+  grammar and the clock already do), so a page and an agent cannot disagree
+  about which sessions ran through Kimi. The rule, stated: a turn that names
+  its own provider (an OpenCode turn) is the most specific answer and wins; a
+  turn that names none - **every Claude turn, for ever** - inherits its
+  session's route; a session that used several providers matches when ANY of
+  them is ticked, because "which runs touched Kimi" is the question the filter
+  is asked with; `null` is no filter (a route that appears tomorrow is included
+  by itself), `[]` is nothing.
+- **The Turns page had no idea which route a turn's session ran on.** `TurnRow`
+  carried only what the engine named per turn - empty on Claude - so a
+  Claude-via-Kimi turn was unfindable. Every turn row now carries `providers`
+  (resolved by the rule), `profile`, `route` and `routeLabel`, the hover names
+  the session's route, and the identity is the SAME one the Sessions table
+  draws its chip from: `sessionIdentity()` in `core/turnRuntime.ts` is now the
+  one place that decides manifest · engine · external, replacing three
+  hand-written copies (the table, the Turns page, and `sessionIdentityOf` in
+  the host).
+- **The bridge asks the same three questions.** `turns.list` and
+  `sessions.recent` take `providers?` / `profiles?` / `models?` (one id,
+  comma-separated, or a list; `(none)` = no route) and every row now carries
+  `providers`, `route` and `profile`. `sessions.page provider=kimi` opens the
+  Sessions page already narrowed to that route (`setProviderFilter` - the same
+  ✕ that clears every other filter clears it), and the page's header says
+  `via Kimi`.
+- **The text box finds a route by name too** - "kimi" typed on the Sessions
+  table matches the route's id and label the way a tick does.
+- Fixture: the Turns page photographs its filter panel open, with the four
+  routes and "no route" in the picker (`turns-filters`).
+
 ## 3.568.0 - a credential goes to one place, and every surface that keeps what came back is checked for it (X-115, closes) (2026-09-19)
 
 - **‼️ MEASURED LEAK, CLOSED: the OpenCode catalog was copying model options and

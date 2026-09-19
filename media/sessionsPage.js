@@ -64,7 +64,9 @@
                 // title can say what this list is supposed to BE, and a reader
                 // arriving from a button needs to recognise where they landed.
                 + (DATA.scope && DATA.scope.missionId
-                    ? ` · 🎯 ${C.esc(DATA.scope.missionTitle || DATA.scope.missionId)}` : ''),
+                    ? ` · 🎯 ${C.esc(DATA.scope.missionTitle || DATA.scope.missionId)}` : '')
+                + (DATA.scope && DATA.scope.provider
+                    ? ` · via ${C.esc(window.AFProvider.label(DATA.scope.provider) || DATA.scope.provider)}` : ''),
             searchTitle: 'Search inside every transcript',
             guide: 'dashboard'
         })}
@@ -80,11 +82,13 @@
         // it lands in the component's own project / mission filters so the ✕
         // that clears it is the same ✕ that clears every other filter.
         const sc = DATA.scope || {};
-        const key = (sc.missionId ? 'm:' + sc.missionId : '') + (sc.project ? 'p:' + sc.project : '');
+        const key = (sc.missionId ? 'm:' + sc.missionId : '') + (sc.project ? 'p:' + sc.project : '')
+            + (sc.provider ? 'r:' + sc.provider : '');
         if (key && key !== scopeApplied) {
             scopeApplied = key;
             if (sc.missionId) { table.setMissionFilter(sc.missionId); }
             if (sc.project) { table.setProjectFilter(sc.project); }
+            if (sc.provider) { table.setProviderFilter(sc.provider); }
         }
     }
 

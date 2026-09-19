@@ -64,6 +64,11 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // in its own colour, on one page, while every other surface hid the
     // provider in a hover line or inside the model text.
     'afProvider.js',
+    // afRunFilter.js was the twenty-second — which runs a provider / profile /
+    // model selection matches (X-111). Shared for the strongest form of the
+    // reason afQuery.js is: the extension host runs the SAME FILE
+    // (src/core/runFilter.ts) for sessions.recent and turns.list.
+    'afRunFilter.js',
     // afAccount.js was the twentieth — which sign-in pays, and how much of that
     // plan is left (X-263). Shared because it had ALREADY diverged: five
     // pickers hand-copied one option body and two of them had since grown the

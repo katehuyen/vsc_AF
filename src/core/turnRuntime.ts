@@ -29,7 +29,7 @@
  * Pure — no vscode, no I/O, no clock.
  */
 
-import { LaunchManifest, manifestIndex } from './launchManifest';
+import { LaunchManifest, manifestIndex, manifestOf } from './launchManifest';
 import { BillingIdentity, billingOf } from './billing';
 import {
     hasProviderConflict, ProviderIdentity, proofOf, scopeAllowsTurnChange, TurnRuntimeIdentity,
@@ -408,6 +408,41 @@ export function runIdentity(
         binding,
         billing: runBilling(manifest, engine, opts)
     };
+}
+
+/**
+ * A session as the index holds it — structural, like `TurnReport`, so the
+ * Turns page, the Sessions tables and the bridge can all ask the ONE question
+ * below without any of them dragging the index type in.
+ */
+export interface IndexedRun {
+    launchId?: string;
+    source?: string;
+    provenance?: string;
+    turns?: readonly TurnReport[];
+}
+
+/**
+ * ‼️ X-111 — THE IDENTITY OF A SESSION IN THE INDEX, asked once. The Sessions
+ * table had the only copy of "which manifest, which engine, is it ours" and the
+ * Turns page had none, so a Claude-via-Kimi turn could be listed on Sessions
+ * under its route and on Turns under nothing. Every surface that lists a run
+ * now asks here.
+ *
+ * ‼️ NOT OUR RUN: an import states its provenance, and a foreign CLI is named
+ * by `source`. Either way Agent Farm never spawned it, so "nobody was asked"
+ * would be a claim about records that were never ours.
+ */
+export function sessionIdentity(
+    s: IndexedRun, manifests: readonly LaunchManifest[] | undefined,
+    /** The caller's own word for the engine, when it knows better than the transcript. */
+    engineOverride?: string
+): RunIdentity {
+    const m = manifests ? manifestOf(manifests, s) : undefined;
+    const engine = engineOverride || s.source || 'claude';
+    const reports = (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds }));
+    const external = s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !m);
+    return runIdentity(m, engine, reports, { external });
 }
 
 /**

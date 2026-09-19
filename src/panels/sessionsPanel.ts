@@ -70,6 +70,8 @@ export interface SessionsPageScope {
     missionId?: string;
     /** That mission's title, for the page's own subtitle — the rows carry it too. */
     missionTitle?: string;
+    /** X-111 — open with the Providers filter set to this route id (`(none)` = no route). */
+    provider?: string;
 }
 
 function buildData(
@@ -97,7 +99,8 @@ function buildData(
         },
         scope: {
             project: scope?.project ?? '', agentName: scope?.agentName ?? '',
-            missionId: scope?.missionId ?? '', missionTitle: scope?.missionTitle ?? ''
+            missionId: scope?.missionId ?? '', missionTitle: scope?.missionTitle ?? '',
+            provider: scope?.provider ?? ''
         },
         sessions: sessionRowPool(sessions, s => deps.index.isSessionActive(s, now), tableN,
             s => (s.agentName ? projectByAgent[s.agentName] : undefined),

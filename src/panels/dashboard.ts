@@ -13,7 +13,7 @@ import { handleAfNav, htmlShell } from './base';
 import { buildData as buildViewerData } from './sessionViewer';
 import { afConfig } from '../core/settingsDoor';
 import { LaunchManifest, manifestOf } from '../core/launchManifest';
-import { billingReader, describeDrift, runDrift, runIdentity, turnRuntimes } from '../core/turnRuntime';
+import { billingReader, describeDrift, runDrift, sessionIdentity, turnRuntimes } from '../core/turnRuntime';
 import { DollarPart, sumDollars } from '../core/billing';
 import { SESSION_BREAK_MIN, sessionSpan } from '../core/sessionSpan';
 
@@ -208,11 +208,9 @@ export function sessionRowPool(
         const m = manifests ? manifestOf(manifests, s) : undefined;
         const engine = s.source ?? 'claude';
         const reports = (s.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds }));
-        // ‼️ NOT OUR RUN: an import states its provenance, and a foreign CLI is
-        // named by `source`. Either way Agent Farm never spawned it, so "nobody
-        // was asked" would be a claim about records that were never ours.
-        const external = s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !m);
-        const identity = runIdentity(m, engine, reports, { external });
+        // X-111 — the ONE identity rule (external, manifest, engine) lives in
+        // core now, so the Turns page and the bridge answer the same as this row.
+        const identity = sessionIdentity(s, manifests);
         if (!m) {
             return {
                 route: '', revision: null, requested: '', surface: '', account: '', at: 0,

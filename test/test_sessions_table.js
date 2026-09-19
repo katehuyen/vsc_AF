@@ -582,6 +582,72 @@ const mkRow = (i, extra) => Object.assign({
         ms.presets('sess-engines-flt').length === 0);
 }
 
+// ---------- part: X-111 — provider / profile / model filters, by the one rule ----------
+{
+    posted = []; state = {};
+    const t = sandbox.window.AFSessionsTable.create({
+        vscode: vscodeStub, C, containerId: 'rte',
+        columns: ['agent', 'title', 'when', 'cost'], stateKey: 'rte'
+    });
+    const via = (providerId, extra) => ({ launch: { identity: Object.assign({
+        engine: 'claude', providerId, providerLabel: providerId === 'kimi' ? 'Kimi' : '',
+        reportedProviderIds: [], reportedModels: ['claude-opus-4-8']
+    }, extra || {}) } });
+    const html = () => containers.rte.innerHTML;
+    const q = sel => containers.rte.querySelector(sel);
+    const shown = () => [1, 2, 3, 4].filter(n => html().includes('title' + n)).join('');
+
+    // every row on no route: the axis has nothing to offer and stays out of the panel
+    t.setRows([mkRow(1, via('')), mkRow(2, via(''))], 10);
+    const ms = containers.rte.ms;
+    click(q('.af-filter'));
+    ok('no route anywhere → no Providers picker, no Profiles picker',
+        !ms.has('sess-providers-rte') && !ms.has('sess-profiles-rte'));
+    ok('one model everywhere → no Models picker either', !ms.has('sess-models-rte'));
+
+    // a Claude session pointed at Kimi, one that changed provider mid-way, two on no route
+    t.setRows([
+        mkRow(1, via('kimi', { providerProfileId: 'kimi-work' })),
+        mkRow(2, via('anthropic', { reportedProviderIds: ['anthropic', 'kimi'], reportedModels: ['claude-haiku-4-5'] })),
+        mkRow(3, via('')), mkRow(4, via('', { reportedModels: [] }))
+    ], 10);
+    ok('the Providers picker lists the routes by label, with "no route" for the rows on none',
+        ms.has('sess-providers-rte') && ms.options('sess-providers-rte').join() === 'anthropic,kimi,(none)'
+        && html().includes('no route'));
+    ok('the Profiles picker appears only once a row carries one', ms.has('sess-profiles-rte')
+        && ms.options('sess-profiles-rte').join() === 'kimi-work,(none)');
+    ok('the Models picker lists what ANSWERED, short', ms.has('sess-models-rte')
+        && ms.options('sess-models-rte').join() === 'claude-haiku-4-5,claude-opus-4-8,(none)'
+        && html().includes('haiku-4-5'));
+    ms.only('sess-providers-rte', ['kimi']);
+    ok('‼️ "only Kimi" finds the Claude-via-Kimi session AND the one that touched Kimi mid-way', shown() === '12');
+    ok('…and the chip counts it', html().includes('Filters (1)'));
+    ms.only('sess-providers-rte', ['(none)']);
+    ok('"no route" is the sessions on none', shown() === '34');
+    ms.only('sess-providers-rte', ['anthropic']);
+    ok('a multi-provider session matches under any of its providers', shown() === '2');
+    click(q('.af-fclear'));
+    ok('Clear restores every row', shown() === '1234');
+    ms.only('sess-profiles-rte', ['kimi-work']);
+    ok('the profile axis narrows on its own', shown() === '1');
+    click(q('.af-fclear'));
+    ms.only('sess-models-rte', ['claude-opus-4-8']);
+    ok('the model axis matches what came back', shown() === '13');
+    ms.only('sess-providers-rte', ['kimi']);
+    ok('the axes combine by AND', shown() === '1' && html().includes('Filters (2)'));
+    click(q('.af-fclear'));
+    const txt = q('.af-ftext'); txt.value = 'kimi'; txt._fn(ev());
+    ok('the text box finds the route by its name too', shown() === '12');
+    click(q('.af-fclear'));
+
+    // the deep link — sessions.page provider=kimi lands here
+    t.setProviderFilter('Kimi');
+    ok('setProviderFilter scopes to the route, opens the panel and persists',
+        shown() === '12' && state.afSess.rte.filters.providers.join() === 'kimi' && state.afSess.rte.filtersOpen === true);
+    t.setProviderFilter('');
+    ok('…and an empty scope lifts it', shown() === '1234');
+}
+
 // ---------- part: three independent session-category switches ----------------
 {
     posted = []; state = {};

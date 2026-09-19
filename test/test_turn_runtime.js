@@ -404,21 +404,25 @@ const CLAUDE_ROUTE = {
     // somebody else's transcript (`external`, never anything to record), and
     // asked-with-no-answer (`unknown`, the only one worth looking at). The
     // VALUES stay empty — naming the absence is the opposite of filling it in.
+    // ‼️ X-111 — the identity is asked of core (`sessionIdentity`), the ONE
+    // place that decides manifest · engine · external, so the Turns page and
+    // the bridge answer exactly what this row does.
     ok('‼️ …and a run with no manifest says which kind of nothing it is',
-        /const identity = runIdentity\(m, engine, reports, \{ external \}\);/.test(dash)
+        /const identity = sessionIdentity\(s, manifests\);/.test(dash)
         && /route: '', revision: null, requested: '', surface: '', account: ''/.test(dash));
     ok('…with no value invented to go beside it',
         !/if \(!m\) \{ return null; \}/.test(dash));
     // ‼️ ALL THREE TABLES, NOT ONE. The same table component is embedded on the
     // Dashboard, the agent page and the Sessions page; a fact visible on one and
     // missing from the next is the gap a reader notices first.
-    const wired = ['panels/dashboard.ts', 'panels/agentDetail.ts', 'panels/sessionsPanel.ts']
+    // …and the Turns page since X-111: a turn's route is its session's.
+    const wired = ['panels/dashboard.ts', 'panels/agentDetail.ts', 'panels/sessionsPanel.ts', 'panels/turnsPanel.ts']
         .filter(p => /deps\.launchManifests\?\.\(\)/
             .test(fs.readFileSync(path.join(ROOT, 'src', p), 'utf8')));
-    eq('every surface that embeds the sessions table gets the same store',
-        wired.length, 3);
+    eq('every surface that lists sessions or their turns gets the same store',
+        wired.length, 4);
     ok('…and the host actually hands it over',
-        (ext.match(/launchManifests: \(\) => launchManifests\(\)/g) || []).length === 3);
+        (ext.match(/launchManifests: \(\) => launchManifests\(\)/g) || []).length === 4);
 
     // ‼️ AND THE RUNS A PERSON STARTED THEMSELVES ARE JOINED TOO. `publishLaunch
     // Bindings` is built out of TASKS, so without this second channel everything

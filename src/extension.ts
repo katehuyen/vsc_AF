@@ -207,7 +207,8 @@ import {
 import {
     AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount, SpendWindow, todayWindow
 } from './core/accountSpend';
-import { billingReader, describeDrift, runDrift, runIdentity, RunIdentity, turnRuntimes } from './core/turnRuntime';
+import { billingReader, describeDrift, runDrift, runIdentity, RunIdentity, sessionIdentity, turnRuntimes } from './core/turnRuntime';
+import { providersOf, RUN_SELECTION_ARGS, runSelectionArgs, runSelected } from './core/runFilter';
 import { BillingIdentity, DollarPart, partsOfTotal } from './core/billing';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
@@ -10407,7 +10408,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'sessions.recent',
-            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (' + ENGINE_ENUM_SPACED + '), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
+            describe: 'Most recent sessions farm-wide, EVERY ENGINE — each row carries `engine` (' + ENGINE_ENUM_SPACED + '), the same badge the tables draw. args: origin? ("user" = sessions a person started interactively — what the Sessions tables show by default; "auto" = automation runs (schedule/trigger/task/mission, any `claude -p`); omit or "all" = both), headless? (S-35 — splits the automation runs the way the tables\' 🌙 chip does: true = only runs with no terminal behind them (`claude -p`), false = only automation that opened a real terminal a person could type in, omit = both. Every row carries `headless` whether you filter on it or not), engine? (one id, or several comma-separated — the bridge form of the Sessions tables\' Engines filter; omit for all of them), ' + RUN_SELECTION_ARGS + ', limit? (default 10). Each row carries `id` (the session id, which sessions.open / the viewer take) and, when Agent Farm started the run itself, `launchedBy` = { kind: task|schedule|trigger|workflow|mission, label } — the mechanism BY NAME, which is also what decides `origin` rather than the transcript\'s entrypoint. ‼️ Cost and token figures are Claude\'s own measurements: a session from another CLI reports what that CLI records, which for some of them is honestly zero. ‼️ `scanLimit` (usually null) means the transcript is past the scan\'s read ceiling — { bytes, limit }: the id, the file and the times are real, every figure on that row is UNREAD rather than measured, so do not read its zeros as "this session did nothing".',
             handler: (args) => {
                 const limit = typeof args.limit === 'number' && args.limit > 0 ? Math.floor(args.limit) : 10;
                 const origin = optStr(args, 'origin').toLowerCase();
@@ -10421,15 +10422,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // kinds, exactly as the omitted `origin` means both scopes.
                 const wantHeadless = args.headless === true ? true
                     : args.headless === false ? false : undefined;
+                // X-111 — provider / profile / model, by the rule the Sessions
+                // table filters with (media/afRunFilter.js), off the same
+                // identity the table's route chip is drawn from.
+                const sel = runSelectionArgs(args);
+                const manifests = launchManifests();
+                const identities = new Map<string, RunIdentity>();
+                const identityOf = (s: SessionInfo): RunIdentity => {
+                    let id = identities.get(s.file);
+                    if (!id) { id = sessionIdentity(s, manifests); identities.set(s.file, id); }
+                    return id;
+                };
                 return index.allWithExternal()
                     .filter(s => origin !== 'user' && origin !== 'auto' ? true : sessionOrigin(s) === origin)
                     .filter(s => wantHeadless === undefined || sessionHeadless(s) === wantHeadless)
                     .filter(s => !wantEngines.length || wantEngines.includes(s.source ?? 'claude'))
+                    .filter(s => runSelected(sel, identityOf(s)))
                     .slice().sort((a, b) => (b.lastTs || b.mtime) - (a.lastTs || a.mtime))
                     .slice(0, limit)
                     .map(s => ({
                         id: s.sessionId,
                         agent: s.agentName, title: s.title, lastTs: s.lastTs,
+                        // X-111 — the route beside the engine, so a caller can
+                        // read what it filtered on. `providers` is the resolved
+                        // set (declared + reported); `route` the declared one.
+                        providers: providersOf(identityOf(s)),
+                        route: identityOf(s).providerId || null,
+                        profile: identityOf(s).providerProfileId || null,
                         // ‼️ Never an absence. A claude transcript has no
                         // `source`, which is exactly why the tables could not
                         // say "Claude" out loud until it was named here.
@@ -10788,11 +10807,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'its planner\'s own lane and every delegation it opened, with no dialogs of yours left mixed in. '
                 + 'This is the only scope that ADDS rows rather than narrowing: mission sessions are excluded from this page by default, '
                 + 'because a mission opens one session per delegation and would otherwise bury the log of your own conversations. '
-                + 'args: project? (name), agent? (agent name), mission? (run id)',
+                + 'args: project? (name), agent? (agent name), mission? (run id), provider? (X-111 — a provider id: opens the page with its Providers filter set to that route, e.g. "kimi"; "(none)" = the runs on no route)',
             handler: (args) => {
                 const project = optStr(args, 'project') ?? '';
                 const agentName = optStr(args, 'agent') ?? '';
                 const missionId = optStr(args, 'mission') ?? '';
+                const provider = optStr(args, 'provider') ?? '';
                 if (agentName) {
                     need(agents.some(a => a.name === agentName), `no agent called "${agentName}"`);
                 }
@@ -10801,11 +10821,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 void vscode.commands.executeCommand('agentfarm.openSessions', {
                     ...(project ? { project } : {}), ...(agentName ? { agentName } : {}),
-                    ...(missionId ? { missionId } : {})
+                    ...(missionId ? { missionId } : {}), ...(provider ? { provider } : {})
                 });
                 return {
                     opened: 'sessions', project: project || null, agent: agentName || null,
-                    mission: missionId || null
+                    mission: missionId || null, provider: provider || null
                 };
             }
         },
@@ -15437,7 +15457,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     registerTurnsOps(bridge, {
         sessions: () => index.allWithExternal(),
         isActive: s => index.isSessionActive(s, Date.now()),
-        forcedWindow: () => cfg().get<number>('contextWindowTokens', 0)
+        forcedWindow: () => cfg().get<number>('contextWindowTokens', 0),
+        // X-111 — the same identity the Sessions table states, so `providers=kimi`
+        // finds the Claude-via-Kimi turns here as it does on the page.
+        identityOf: s => sessionIdentity(s, launchManifests())
     });
 
     // ‼️ B-14 (X-50) — THE WIKI CANDIDATE POOL. Marking a turn is cheap and
@@ -21864,11 +21887,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const sessionIdentityOf = (sessionId: string, engine?: string): RunIdentity | undefined => {
         const s = index.byId(sessionId) ?? index.allWithExternal().find(x => x.sessionId === sessionId);
-        const manifest = manifestOf(launchManifests(), s);
-        if (!s && !engine) { return undefined; }
-        return runIdentity(manifest, engine || s?.source || 'claude',
-            (s?.turns ?? []).map(t => ({ n: t.n, models: t.models, providerIds: t.providerIds })),
-            { external: !!s && (s.provenance === 'imported' || (!!s.source && s.source !== 'claude' && !manifest)) });
+        if (!s) { return engine ? runIdentity(undefined, engine, [], {}) : undefined; }
+        // X-111 — the one identity rule, in core; this door only adds the lookup.
+        return sessionIdentity(s, launchManifests(), engine);
     };
     const sessionAccountOf = (sessionId: string): { id: string; label: string } | undefined => {
         const s = index.byId(sessionId);
@@ -34776,6 +34797,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 extensionUri: context.extensionUri,
                 index,
                 getPricing: () => pricing,
+                launchManifests: () => launchManifests(),
                 lastExportDir: () => context.globalState.get<string>('agentfarm.lastExportDir'),
                 setLastExportDir: (dir: string) => { void context.globalState.update('agentfarm.lastExportDir', dir); }
             });
@@ -34786,7 +34808,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // tooltip, an agent's page — can open it already narrowed, rather than
         // dropping you in the fleet-wide list to find the filter yourself.
         vscode.commands.registerCommand('agentfarm.openSessions',
-            (arg?: { project?: string; agentName?: string; missionId?: string }) => {
+            (arg?: { project?: string; agentName?: string; missionId?: string; provider?: string }) => {
                 // ‼️ X-95 — the mission scope names itself here rather than at
                 // every call site: a run id is what a caller has, and the title
                 // is what the page has to print. One lookup, one truth.
@@ -34808,7 +34830,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }, {
                     ...(typeof arg?.project === 'string' && arg.project ? { project: arg.project } : {}),
                     ...(typeof arg?.agentName === 'string' && arg.agentName ? { agentName: arg.agentName } : {}),
-                    ...(missionId ? { missionId, missionTitle: missionTitleOf(missionId) } : {})
+                    ...(missionId ? { missionId, missionTitle: missionTitleOf(missionId) } : {}),
+                    ...(typeof arg?.provider === 'string' && arg.provider ? { provider: arg.provider } : {})
                 });
             }),
 

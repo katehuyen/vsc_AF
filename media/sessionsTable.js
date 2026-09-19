@@ -164,8 +164,17 @@
     // being one more key on this object rather than a mode: "only Codex" and
     // "only Codex sessions of the developer agent with errors" are the same
     // gesture, in the same panel, with the same Clear.
+    // ‼️ X-111 — AND THREE MORE OF THE SAME SHAPE, for the run's ROUTE. The
+    // engine is not the provider (X-110): `claude` pointed at Kimi is still the
+    // Claude CLI, so "Claude Code, only Kimi" is two ticks in two pickers,
+    // combined by AND like everything else here. `profiles` and `models` are
+    // offered only once the rows hold more than one value. The rule that says
+    // which rows a selection matches is media/afRunFilter.js — the same file
+    // the bridge's sessions.recent runs — so a page and an agent cannot
+    // disagree about which sessions ran through Kimi.
     const FDEF = () => ({
         text: '', agents: null, engines: null, projects: null,
+        providers: null, profiles: null, models: null,
         // The permanent switches. You is the fresh-table default; Auto and
         // Mission are separate opt-ins, never aliases for "All".
         showUser: true, showAuto: false, showMission: false,
@@ -477,6 +486,7 @@
         function activeFilterCount() {
             let n = (filters.text ? 1 : 0) + (filters.agents ? 1 : 0) + (filters.engines ? 1 : 0)
                 + (filters.projects ? 1 : 0)
+                + (filters.providers ? 1 : 0) + (filters.profiles ? 1 : 0) + (filters.models ? 1 : 0)
                 + (filters.missions !== null ? 1 : 0)
                 // …but 🌙 IS counted, and for the opposite reason: it lives only
                 // inside the panel, so with the panel shut nothing else on the
@@ -506,14 +516,23 @@
                 // taken one back to its session did not look at it. A bare word
                 // is a substring, so the printed prefix finds the row without
                 // anybody typing a whole UUID.
+                // …and X-111: the route's id and label, so "kimi" typed in the
+                // box finds the Claude-via-Kimi sessions the same way a tick does.
                 if (!text.empty && !text.test((r.title || '') + ' ' + (r.agent || '') + ' '
-                    + (r.tags || []).join(' ') + ' ' + (r.sessionId || ''))) { return false; }
+                    + (r.tags || []).join(' ') + ' ' + (r.sessionId || '') + ' '
+                    + providersOf(r).join(' ') + ' ' + window.AFProvider.label(identityOf(r)))) { return false; }
                 if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
                 // The picker lists LABELS ("Antigravity"), because that is what
                 // the badge in the column says and a filter that disagrees with
                 // the cell beside it is unreadable.
                 if (filters.engines && filters.engines.indexOf(engineLabel(r)) < 0) { return false; }
                 if (filters.projects && filters.projects.indexOf(projectOf(r)) < 0) { return false; }
+                // X-111 — the route, by the one rule. A multi-provider session
+                // matches when ANY of its providers is ticked; a session on no
+                // route matches only `(none)`.
+                if (!RF.matchesAny(providersOf(r), filters.providers)) { return false; }
+                if (!RF.matchesAny(profilesOf(r), filters.profiles)) { return false; }
+                if (!RF.matchesAny(modelsOf(r), filters.models)) { return false; }
                 // ‼️ A ROW BELONGS TO EXACTLY ONE OF THE THREE SWITCHES. Mission
                 // wins over its technical `auto` origin, so 🎯 never needs 🤖
                 // to be on beside it and neither switch changes the other.
@@ -553,6 +572,21 @@
         const ENGINE_MS = 'sess-engines-' + opts.stateKey;
         const PROJECT_MS = 'sess-projects-' + opts.stateKey;
         const MISSION_MS = 'sess-missions-' + opts.stateKey;
+        const PROVIDER_MS = 'sess-providers-' + opts.stateKey;
+        const PROFILE_MS = 'sess-profiles-' + opts.stateKey;
+        const MODEL_MS = 'sess-models-' + opts.stateKey;
+        // X-111 — the three route axes of a row, off the identity the route
+        // chip in the Launch column is drawn from (`launch.identity`, X-108).
+        const RF = window.AFRunFilter;
+        const providersOf = r => RF.providersOf(identityOf(r));
+        const profilesOf = r => [RF.profileOf(identityOf(r))].filter(Boolean);
+        const modelsOf = r => RF.modelsOf(identityOf(r));
+        const shortModel = m => String(m || '').replace(/^claude-/, '');
+        // The options are built off the rows, like the engines list: a route
+        // that appears tomorrow is filterable without a list being told.
+        const providerOptions = () => RF.options(rows.map(providersOf), v => window.AFProvider.label(v), 'no route');
+        const profileOptions = () => RF.options(rows.map(profilesOf), null, 'no profile');
+        const modelOptions = () => RF.options(rows.map(modelsOf), shortModel, 'no model');
         function agentNames() {
             const agents = [];
             rows.forEach(r => { if (r.agentName && agents.indexOf(r.agentName) < 0) { agents.push(r.agentName); } });
@@ -720,6 +754,18 @@
                     ${projectNames().length > 1 ? window.AFFilter.multi({
                     id: PROJECT_MS, label: 'Projects', options: projectNames(), selected: filters.projects,
                     title: 'Which projects to list — manage them on the ◧ Projects page'
+                }) : ''}
+                    ${providerOptions().length > 1 ? window.AFFilter.multi({
+                    id: PROVIDER_MS, label: 'Providers', options: providerOptions(), selected: filters.providers,
+                    title: 'Which ROUTE served the run — a second axis from Engines: a Claude session pointed at Kimi is Engine Claude, Provider Kimi. A session that used several matches when any one is ticked; "no route" is the runs on none.'
+                }) : ''}
+                    ${profileOptions().length > 1 ? window.AFFilter.multi({
+                    id: PROFILE_MS, label: 'Profiles', options: profileOptions(), selected: filters.profiles,
+                    title: 'Which stored route profile the run was launched on — Claude routes only; other engines carry no profile.'
+                }) : ''}
+                    ${modelOptions().length > 1 ? window.AFFilter.multi({
+                    id: MODEL_MS, label: 'Models', options: modelOptions(), selected: filters.models,
+                    title: 'Which models ANSWERED in the session — what came back, never what was requested. A session that used several matches when any one is ticked.'
                 }) : ''}
                     ${flag('af-factive', 'Active now', filters.activeOnly, 'Active now',
                     'Only sessions with a live process working right now — the ● in the first column.')}
@@ -1571,6 +1617,18 @@
                     root, id: MISSION_MS,
                     onChange: sel => { filters.missions = sel; apply(); }
                 });
+                window.AFFilter.wireMulti({
+                    root, id: PROVIDER_MS,
+                    onChange: sel => { filters.providers = sel; apply(); }
+                });
+                window.AFFilter.wireMulti({
+                    root, id: PROFILE_MS,
+                    onChange: sel => { filters.profiles = sel; apply(); }
+                });
+                window.AFFilter.wireMulti({
+                    root, id: MODEL_MS,
+                    onChange: sel => { filters.models = sel; apply(); }
+                });
                 wireEl('.af-factive', 'click', () => { filters.activeOnly = !filters.activeOnly; apply(); });
                 wireEl('.af-ferrors', 'click', () => { filters.errorsOnly = !filters.errorsOnly; apply(); });
                 wireEl('.af-fmain', 'click', () => { filters.mainOnly = !filters.mainOnly; apply(); });
@@ -1744,6 +1802,19 @@
             renderSection();
         }
 
+        /**
+         * X-111 — SCOPE THE TABLE TO ONE ROUTE, the deep link `sessions.page
+         * provider=kimi` lands on. Like the project scope it is a filter and
+         * nothing else: the categories stay whatever the reader chose, and the
+         * same ✕ that clears every other filter clears this one.
+         */
+        function setProviderFilter(id) {
+            filters.providers = id ? [String(id).trim().toLowerCase()] : null;
+            filtersOpen = true;
+            saveState();
+            renderSection();
+        }
+
         function onMessage(ev) {
             if (!ev.data || ev.data.type !== 'sessionTurns') { return false; }
             const c = turnCache[ev.data.file];
@@ -1752,7 +1823,7 @@
             return true;
         }
 
-        return { setRows, onMessage, setProjectFilter, setMissionFilter };
+        return { setRows, onMessage, setProjectFilter, setMissionFilter, setProviderFilter };
     }
 
     window.AFSessionsTable = { SORTS, create };

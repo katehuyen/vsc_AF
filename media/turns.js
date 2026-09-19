@@ -46,8 +46,15 @@
     // the same shape for the same reason as in the sessions tables (X-27/X-35): a
     // build that learns about a fifth engine must list its turns without anybody
     // touching this default. See afFilters.js.
+    // ‼️ X-111 — `providers` and `profiles` are the run's ROUTE, a second axis
+    // from `engines` (X-110): a Claude turn served through Kimi is Engine
+    // Claude, Provider Kimi. What a turn's providers ARE is decided on the host
+    // by the one rule (media/afRunFilter.js → TurnRow.providers): the turn's
+    // own report when it made one, else its session's route — which is how
+    // "only Kimi" finds the Claude-via-Kimi turns that never name Kimi.
     const FDEF = () => ({
         text: '', session: '', agents: null, engines: null, models: null, origin: 'user',
+        providers: null, profiles: null,
         activeOnly: false, errorsOnly: false, mainOnly: false,
         from: '', to: '', ranges: {}
     });
@@ -56,6 +63,7 @@
     // `engine` is a Claude transcript — the field is an ABSENCE there, which is
     // exactly why the page could not print "Claude" until this line existed.
     const engineLabel = r => window.AFEngine.label(r.engine || 'claude');
+    const RF = window.AFRunFilter;
     /**
      * ‼️ X-110 — the provider chip for ONE turn, off what the engine itself
      * reported for it. Absent on every engine that publishes none (Claude, for
@@ -268,7 +276,7 @@
     // counted here (a permanent "(1)" on the Filters chip says nothing).
     function activeFilterCount() {
         let n = (filters.text ? 1 : 0) + (filters.session ? 1 : 0) + (filters.agents ? 1 : 0)
-            + (filters.engines ? 1 : 0)
+            + (filters.engines ? 1 : 0) + (filters.providers ? 1 : 0) + (filters.profiles ? 1 : 0)
             + (filters.models ? 1 : 0) + (filters.activeOnly ? 1 : 0) + (filters.errorsOnly ? 1 : 0)
             + (filters.mainOnly ? 1 : 0) + (filters.from ? 1 : 0) + (filters.to ? 1 : 0);
         FRANGES.forEach(k => {
@@ -288,7 +296,10 @@
             if (filters.agents && filters.agents.indexOf(r.agentName) < 0) { return false; }
             if (filters.engines && filters.engines.indexOf(engineLabel(r)) < 0) { return false; }
             if (filters.origin && originOf(r) !== filters.origin) { return false; }
-            if (filters.models && !(r.models || []).some(m => filters.models.indexOf(m) >= 0)) { return false; }
+            // X-111 — the three route axes, by the one rule (AND with the rest).
+            if (!RF.matchesAny(r.providers, filters.providers)) { return false; }
+            if (!RF.matchesAny([r.profile].filter(Boolean), filters.profiles)) { return false; }
+            if (!RF.matchesAny(r.models, filters.models)) { return false; }
             if (filters.activeOnly && !r.active) { return false; }
             if (filters.errorsOnly && !(r.errors > 0)) { return false; }
             if (filters.mainOnly && r.sidechain) { return false; }
@@ -330,7 +341,11 @@
         return {
             agents: agents.sort(), models: models.sort(),
             engines: engines.sort((a, b) =>
-                a === claude ? -1 : b === claude ? 1 : a.localeCompare(b))
+                a === claude ? -1 : b === claude ? 1 : a.localeCompare(b)),
+            // X-111 — off the rows, like the rest: a route that appears
+            // tomorrow is filterable without a list being told.
+            providers: RF.options(rows.map(r => r.providers), v => window.AFProvider.label(v), 'no route'),
+            profiles: RF.options(rows.map(r => [r.profile].filter(Boolean)), null, 'no profile')
         };
     }
 
@@ -375,6 +390,14 @@
                             values: facets.engines.filter(e => e !== window.AFEngine.label('claude')),
                             title: 'Everything that did not run on the default engine.'
                         }] : []
+                }) : ''}
+                ${facets.providers.length > 1 ? window.AFFilter.multi({
+                    id: 'turns-providers', label: 'Providers', options: facets.providers, selected: filters.providers,
+                    title: 'Which ROUTE served the turn — a second axis from Engines: a Claude turn through Kimi is Engine Claude, Provider Kimi. A turn that named no provider (every Claude turn) counts under its session\'s route; "no route" is the turns on none.'
+                }) : ''}
+                ${facets.profiles.length > 1 ? window.AFFilter.multi({
+                    id: 'turns-profiles', label: 'Profiles', options: facets.profiles, selected: filters.profiles,
+                    title: 'Which stored route profile the turn\'s session was launched on — Claude routes only.'
                 }) : ''}
                 ${models.length > 1 ? window.AFFilter.multi({
                     id: 'turns-models', label: 'Models', selected: filters.models,
@@ -554,6 +577,9 @@
             engineLabel(r), [
                 line('Model', (r.models || []).join(', ') || '—'),
                 line('Answered by', (r.providerIds || []).map(window.AFProvider.label).join(', ')),
+                // X-111 — the session's declared route, which is what the
+                // Providers filter counts a Claude turn under.
+                line('Session route', r.route ? (r.routeLabel || window.AFProvider.label(r.route)) : ''),
                 line('Turn', `${r.n} of ${r.of}`),
                 line('Cost', r.cost ? C.fmtUSD(r.cost) : '')
             ]),
@@ -845,6 +871,14 @@
             window.AFFilter.wireMulti({
                 root, id: 'turns-engines',
                 onChange: sel => { filters.engines = sel; apply(); }
+            });
+            window.AFFilter.wireMulti({
+                root, id: 'turns-providers',
+                onChange: sel => { filters.providers = sel; apply(); }
+            });
+            window.AFFilter.wireMulti({
+                root, id: 'turns-profiles',
+                onChange: sel => { filters.profiles = sel; apply(); }
             });
             window.AFFilter.wireMulti({
                 root, id: 'turns-models',

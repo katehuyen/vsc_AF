@@ -32,6 +32,10 @@ const rows = () => ([
         ctxWindow: 1_000_000, ctxWindowSource: 'model',
         tokens: 412_900, wTokens: 168_300, cost: 0.61,
         tools: 22, errors: 1, models: ['claude-opus-5'],
+        // X-111 — a Claude turn names no provider (providerIds stays empty for
+        // ever) but its session was launched on a route, and that is what the
+        // Providers filter counts it under.
+        providerIds: [], providers: ['kimi'], profile: 'kimi-work', route: 'kimi', routeLabel: 'Kimi',
         sidechain: false, origin: 'user', active: true,
         engine: 'claude'
     },
@@ -126,7 +130,7 @@ const rows = () => ([
         // from this and from nothing else: a turn's declared route is the
         // session's, and reading a provider out of "opencode/big-pickle" is the
         // one inference this family forbids.
-        providerIds: ['opencode'],
+        providerIds: ['opencode'], providers: ['opencode'], profile: '', route: '', routeLabel: '',
         sidechain: false, origin: 'user', active: false,
         engine: 'opencode'
     },
@@ -147,7 +151,7 @@ const rows = () => ([
         ctxWindow: 0, ctxWindowSource: '',
         tokens: 88_120, wTokens: 0, cost: 0.0311,
         tools: 5, errors: 0, models: ['anthropic/claude-opus-5', 'openai/gpt-5.6-sol'],
-        providerIds: ['anthropic', 'openai'],
+        providerIds: ['anthropic', 'openai'], providers: ['anthropic', 'openai'], profile: '', route: '', routeLabel: '',
         sidechain: false, origin: 'user', active: false,
         engine: 'opencode'
     }
@@ -167,6 +171,16 @@ const data = base;
  *  is new, so both are photographed — the emptier one first. */
 const variants = () => ([
     { id: 'turns', label: 'Turns — every engine, one row per turn', data: base() },
+    {
+        // ‼️ X-111 — THE PANEL OPEN, with the Providers and Profiles pickers
+        // beside Engines and Models. Photographed with the panel open because
+        // the pickers only exist inside it, and only once the rows carry more
+        // than one route — which the three rows above now do.
+        id: 'turns-filters',
+        label: 'Turns — filter panel open: Providers (Kimi · OpenCode · Anthropic · OpenAI · no route) and Profiles beside Engines and Models',
+        data: base(),
+        act: r => { const b = r.query('.af-filter')[0]; if (b) { b.click(); } }
+    },
     {
         id: 'turns-ctx-unknown',
         label: 'Turns — ctx panel, engine states no window and the model is unknown: NO fraction, and it says why',
