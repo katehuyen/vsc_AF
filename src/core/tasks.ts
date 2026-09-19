@@ -1678,6 +1678,12 @@ export interface TaskManagerOptions {
         route: { providerId?: string; tier?: string } | undefined
     ) => ResumeRoute;
     /**
+     * ‼️ X-116 — WHY THIS ROUTE CANNOT BE RUN ON NOW, or nothing when it can:
+     * the same rule that refuses writing it onto a task, asked again at the
+     * spawn, because a route can be removed while the task waits.
+     */
+    routeRefusal?: (engine: string, providerId: string, tier: string) => string | undefined;
+    /**
      * ‼️ X-106 — WHAT THAT ROUTE RESOLVES TO RIGHT NOW, as a redacted answer.
      *
      * Same doctrine as `engineRuntime` above: it arrives as an ANSWER, from the
@@ -3598,6 +3604,30 @@ export class TaskManager implements vscode.Disposable {
                 task.routePinned = gate.pinned;
                 noteTaskEvent(task, 'route', `${gate.act}: ${gate.why}`);
             }
+        }
+        /**
+         * ‼️ X-116 — A NAMED ROUTE THAT NO LONGER EXISTS IS REFUSED, NEVER FALLEN
+         * THROUGH. Measured: a removed profile resolves to an `unknown` identity
+         * with nothing injected AND NOTHING CLEARED, so the run started on
+         * whatever route variables the shell carried — an endpoint nobody chose,
+         * recorded as unknown. The drift event above said the profile went; this
+         * is what the run then does about it, and it is the answer the same
+         * route gets at the enqueue.
+         */
+        const named = routeOf(task);
+        const gone = named && this.opts.routeRefusal?.(
+            engineOf(task.engine).id, named.providerId ?? '', named.tier ?? '');
+        if (gone) {
+            const why = `the route it names cannot be run on now: ${gone} Point the task at a route `
+                + 'that exists, or clear its route to run on the agent\'s own.';
+            void vscode.window.showWarningMessage(`Agent Farm: "${task.title}" did not start — ${why}`);
+            task.status = 'failed';
+            task.endedAt = Date.now();
+            task.deferredReason = why;
+            task.deferredCode = undefined;
+            noteTaskEvent(task, 'finished', `failed before it started — ${why}`);
+            this.save();
+            return false;
         }
         /**
          * ‼️ X-102 — THE MANIFEST, AT THE ONE POINT EVERY SHAPE OF A RUN PASSES

@@ -471,5 +471,48 @@ console.log('\n== X-106 (1) — one resolver, asked twice, and the record that s
         /'route-drift': 'route moved under it'/.test(fs.readFileSync(path.join(ROOT, 'media', 'tasksPage.js'), 'utf8')));
 }
 
+console.log('\n== X-116 — a named route removed while the task waited is refused, never fallen through ==');
+{
+    const os = require('os');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-route-gone-'));
+    const agent = { id: 'a1', name: 'developer', dir };
+    const refusedFor = [];
+    let removed = false;
+    // ‼️ `recordLaunch` THROWS: it is the first thing after the refusal and
+    // before any spawn, so a refusal that stopped working turns this red without
+    // ever starting a real engine out of a temp folder.
+    const tm = new T.TaskManager(path.join(dir, 'tasks.json'), () => [agent], () => false, () => '', {
+        routeRefusal: (engine, providerId, tier) => {
+            refusedFor.push({ engine, providerId, tier });
+            return removed ? `"${providerId}" is not a route ${engine} can be pointed at —` : undefined;
+        },
+        recordLaunch: () => { throw new Error('reached the manifest'); }
+    });
+    const task = tm.addTask(agent, 'nightly', 'p', 'headless', { providerId: 'kimi', tier: 'opus', autoStart: false });
+    removed = true;
+    let started, threw = '';
+    try { started = tm.startTask(task); } catch (e) { threw = String(e.message); }
+    ok('‼️ the spawn asks the refusal for the route the task names', refusedFor.length === 1
+        && refusedFor[0].engine === 'claude' && refusedFor[0].providerId === 'kimi' && refusedFor[0].tier === 'opus');
+    ok('‼️ a removed route stops the run BEFORE the manifest and the spawn', started === false && threw === '');
+    ok('…as a finished run with the reason, never a task standing in `running`',
+        task.status === 'failed' && /cannot be run on now: "kimi" is not a route/.test(task.deferredReason || ''));
+    ok('…and its timeline says so', (task.events || []).some(e => e.kind === 'finished' && /failed before it started/.test(e.note || '')));
+
+    const bare = tm.addTask(agent, 'plain', 'p', 'headless', { autoStart: false });
+    refusedFor.length = 0;
+    try { tm.startTask(bare); } catch (e) { threw = String(e.message); }
+    ok('‼️ a task that names NO route is not asked about one', refusedFor.length === 0 && threw === 'reached the manifest');
+    tm.dispose();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+
+    const tasksTs = fs.readFileSync(path.join(ROOT, 'src', 'core', 'tasks.ts'), 'utf8');
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    ok('the refusal sits before the manifest is written', tasksTs.indexOf('this.opts.routeRefusal?.(')
+        < tasksTs.indexOf('task.launchId = this.opts.recordLaunch?.('));
+    ok('‼️ the host asks the SAME rule the enqueue applies, only where Agent Farm holds the catalog',
+        /routeRefusal: \(engine, providerId, tier\) =>\s*dataOwnerOf\(engineOf\(engine\)\.id, 'catalog'\) === 'agent-farm'\s*\? launchRouteRefusal\(engine, providerId, tier\) : undefined/.test(ext));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -50,7 +50,9 @@ import {
     AGENTS_MD_NAME, antigravityStatus, syncToAntigravity, syncToClaude, SyncResult
 } from './core/antigravity';
 import { syncCodexExtras } from './core/codex';
-import { opencodeStatus, syncToOpencode } from './core/opencodesync';
+import { opencodeStatus, opencodeWorktree, syncToOpencode } from './core/opencodesync';
+import { collectEngineConfigFiles } from './core/engineConfigDiagnosis';
+import { SavedRoute } from './core/savedRoutes';
 import { describePlan, FarmPlan, interpretCommand } from './core/commandbar';
 import { DispatchRule, dispatchText } from './core/dispatch';
 import { EmbeddingsConfig, EmbeddingsProvider, embedTexts } from './core/embeddings';
@@ -185,7 +187,7 @@ import { projectsDoor } from './launch/doors/projects';
 import { paletteDoor } from './launch/doors/palette';
 import { treeMenuDoor } from './launch/doors/treeMenu';
 import { treeRowDoor } from './launch/doors/treeRow';
-import { bumpRevision, ownershipTable, secretKeyFor } from './core/providerOwnership';
+import { bumpRevision, ownerOf as dataOwnerOf, ownershipTable, secretKeyFor } from './core/providerOwnership';
 import {
     describeDropped, describeProviderChoice, launchProviderForm, ProviderForm, ProviderPick,
     ProviderTransport, pruneProviderPick
@@ -213,7 +215,7 @@ import { BillingIdentity, DollarPart, partsOfTotal } from './core/billing';
 import { installOneShotCaps, oneShotArgv, oneShotEngines, oneShotEnv, oneShotEnvelope } from './core/oneShot';
 import { spawnEnvironment, terminalEnvOverlay } from './core/providerRuntime';
 import {
-    addProfile, duplicateProfile, publicProfiles, readProfiles, removeProfile, setProfile,
+    addProfile, duplicateProfile, publicProfiles, readProfiles, readProfilesReport, removeProfile, setProfile,
     StoredProviderProfile
 } from './core/providerProfiles';
 import {
@@ -3557,6 +3559,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // revision is theirs, so the answer comes from here and the task
             // seals what it is handed (see TaskRunnerOpts.sealRoute).
             sealRoute: (agentId, engine, route) => routeSealOf(agentId, engine, route),
+            // ‼️ X-116 — refused only where Agent Farm holds the route catalog
+            // itself: an engine-owned catalog may simply not have been read yet,
+            // and there the engine is the authority that refuses.
+            routeRefusal: (engine, providerId, tier) =>
+                dataOwnerOf(engineOf(engine).id, 'catalog') === 'agent-farm'
+                    ? launchRouteRefusal(engine, providerId, tier) : undefined,
             // ‼️ X-109 — the same gate every Console and terminal resume goes
             // through, so a task continuing a conversation cannot come to a
             // different answer about its route than a person would. A headless
@@ -21092,6 +21100,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             };
         } catch { return { file, present: true, entries: 0 }; }
     };
+    /** X-116 — every saved choice on this engine that names a route, read only. */
+    const savedRoutesFor = (engine: string): SavedRoute[] => {
+        const out: SavedRoute[] = [];
+        const on = (e: string | undefined) => (e || 'claude') === engine;
+        const defaults = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
+        for (const a of agents) {
+            const r = storedRoute(defaults, a.dir, engine as EngineId);
+            if (r.providerId) { out.push({ kind: 'agent default', label: a.name, providerId: r.providerId }); }
+        }
+        for (const p of launchProfiles()) {
+            if (on(p.engine) && p.providerId) { out.push({ kind: 'launch profile', label: p.name, providerId: p.providerId }); }
+        }
+        for (const s of taskManager.schedules) {
+            if (on(s.engine) && s.providerId) { out.push({ kind: 'schedule', label: s.title, providerId: s.providerId }); }
+        }
+        for (const t of taskManager.tasks) {
+            if (t.status === 'queued' && on(t.engine) && t.providerId) {
+                out.push({ kind: 'queued task', label: t.title, providerId: t.providerId });
+            }
+        }
+        return out;
+    };
     const providerHealthInput = async (engine: string): Promise<ProviderHealthInput> => {
         // ‼️ The engine is asked before the adapter is: on OpenCode the whole
         // answer lives in a catalog nothing may have read yet.
@@ -21114,6 +21144,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ? { settingsEnv: (readClaudeSettings().json.env as Record<string, unknown>) ?? {} }
                 : {}),
             ...(engine === 'opencode' ? { engineCredentials: openCodeCredentials() } : {}),
+            // X-116 — read, never written: the collector is handed a reader.
+            configFiles: collectEngineConfigFiles(engine, {
+                home: os.homedir(),
+                agents: agents.map(a => ({ name: a.name, dir: a.dir })),
+                read: (f: string) => {
+                    try { return fs.readFileSync(f, 'utf8'); } catch { return undefined; }
+                },
+                worktreeOf: (d: string) => opencodeWorktree(d)
+            }),
+            ...(dataOwnerOf(engine, 'catalog') === 'agent-farm' ? {
+                savedRoutes: savedRoutesFor(engine),
+                profileRead: readProfilesReport(cfg().get<unknown[]>('providerProfiles', []))
+            } : {}),
             records: providerTestRecords()
         };
     };
@@ -39575,7 +39618,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'revision + route revision), so a pass about an endpoint that has since been edited '
                 + 'is reported as superseded WITH THE REASON rather than shown as current or silently '
                 + 'dropped. ‼️ NO CREDENTIAL IS READ OUT OR RETURNED — whether one exists is public, '
-                + 'the value is not, the same boundary providers.list draws with hasSecret. Reads '
+                + 'the value is not, the same boundary providers.list draws with hasSecret. ‼️ X-116 '
+                + '— THE ENGINE\'S OWN CONFIG FILES ARE DIAGNOSED HERE, READ-ONLY: a route env name or '
+                + 'apiKeyHelper in an agent\'s .claude/settings(.local).json, and OpenCode\'s default '
+                + 'model / own providers / disabled providers from the global and project '
+                + 'opencode.json(c). A bare model id there is a problem and stays unknown, never '
+                + 'guessed; `config` lists every file read with its scope and the agents it reaches. '
+                + 'Agent Farm never rewrites those files — each finding names the file to edit. Reads '
                 + 'only; nothing is started and nothing is written. args: engine? (default claude)',
             handler: async (args) => {
                 const engine = (optStr(args, 'engine') || 'claude').trim().toLowerCase();

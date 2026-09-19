@@ -43,6 +43,8 @@ import {
 } from './providerAdapter';
 import { StoredProviderProfile } from './providerProfiles';
 import { isRouteEnvName } from './providerRuntime';
+import { diagnoseEngineConfig, EngineConfigFile, EngineConfigRead } from './engineConfigDiagnosis';
+import { goneRouteProblems, SavedRoute } from './savedRoutes';
 
 /** ‼️ `unknown` is an ANSWER: nothing was readable, so nothing is claimed. */
 export type Availability = 'yes' | 'no' | 'unknown';
@@ -167,6 +169,8 @@ export interface ProviderHealthReport {
     /** Wrong with the ENGINE rather than with any one provider. */
     problems: string[];
     notes: string[];
+    /** X-116 — the engine's own config files that were read (never written). */
+    config: EngineConfigRead[];
 }
 
 export interface ProviderHealthInput {
@@ -189,6 +193,12 @@ export interface ProviderHealthInput {
      * Farm owns the route and still loses to it, silently.
      */
     settingsEnv?: Record<string, unknown>;
+    /** X-116 — the per-folder and engine-owned config files, as found on disk. */
+    configFiles?: readonly EngineConfigFile[];
+    /** X-116 — every saved choice on this engine that names a route. */
+    savedRoutes?: readonly SavedRoute[];
+    /** X-116 — what reading the stored routes had to fill in or skip. */
+    profileRead?: { upgraded: readonly string[]; dropped: readonly string[] };
     /** The engine's own credential file, for the engines that own one. */
     engineCredentials?: { file: string; present: boolean; entries: number };
     records?: readonly ProviderTestRecord[];
@@ -235,10 +245,20 @@ export function providerHealth(input: ProviderHealthInput): ProviderHealthReport
             + 'only a route for a run started with no route at all');
     }
 
+    // X-116 — a provider named in a config file is only refused against a
+    // catalog somebody actually read; with none, it is neither confirmed nor
+    // refused.
+    const catalogRead = !!catalog && catalog.source !== 'not-fetched';
+    const cfg = diagnoseEngineConfig(input.configFiles ?? [],
+        catalogRead ? (catalog.providers ?? []).map(p => p.providerId) : undefined);
+    problems.push(...cfg.problems, ...(input.profileRead?.dropped ?? []));
+    notes.push(...cfg.notes, ...(input.profileRead?.upgraded ?? []));
+
     if (adapter.axis === 'not-applicable') {
         return {
             engine, axis: adapter.axis, source: catalog?.source ?? 'not-fetched', cli,
             rows: [],
+            config: cfg.files,
             problems,
             notes: [...notes, `${engine} has no provider axis — there is nothing here to configure`]
         };
@@ -356,6 +376,12 @@ export function providerHealth(input: ProviderHealthInput): ProviderHealthReport
         });
     }
 
+    // ‼️ X-116 — only against a catalog somebody read: with none, every saved
+    // route would be reported gone.
+    if (fetched) {
+        problems.push(...goneRouteProblems(input.savedRoutes, new Set(rows.map(r => r.providerId))));
+    }
+
     for (const row of rows) {
         const key = keyFor(input, row.providerId, row.modelRefs[0] ?? '');
         const found = findTest(input.records, key);
@@ -366,7 +392,10 @@ export function providerHealth(input: ProviderHealthInput): ProviderHealthReport
         }
     }
 
-    return { engine, axis: adapter.axis, source: catalog?.source ?? 'not-fetched', cli, rows, problems, notes };
+    return {
+        engine, axis: adapter.axis, source: catalog?.source ?? 'not-fetched', cli, rows, problems, notes,
+        config: cfg.files
+    };
 }
 
 /** The key a turn through this provider would be filed under. */

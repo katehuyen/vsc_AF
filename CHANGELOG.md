@@ -2,6 +2,48 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.573.0 - a route that is gone stops being run on, and every file that answers it a second time is named (X-116, closes) (2026-09-19)
+
+- **‼️ A TASK WHOSE ROUTE WAS REMOVED WHILE IT WAITED RAN ANYWAY — ON WHATEVER THE
+  SHELL CARRIED.** Measured against the registry: a removed profile resolves to
+  an `unknown` identity with nothing injected AND NOTHING CLEARED, so an
+  inherited `ANTHROPIC_BASE_URL` reached the run untouched — the exact isolation
+  X-101 exists to guarantee, undone by a delete. The spawn wrote a `route-drift`
+  line saying the profile went, and then started anyway. It now asks the same
+  rule the enqueue applies (`launchRouteRefusal`) and a named route that cannot
+  be run on ends the task as *failed before it started*, with the reason and a
+  warning — never a task standing in `running`. ‼️ Only where Agent Farm holds
+  the route catalog itself (Claude): an engine-owned catalog may simply not have
+  been read yet, and there the engine is the authority that refuses.
+- **…and the saved choices that still name a gone route are reported BEFORE they
+  fire.** Removing a route does not (and should not) edit the records that name
+  it. `providers.status` and the Engines page's *Route health* now list them,
+  grouped by route, with what each kind will do: a schedule is refused each time
+  it fires, a queued task when it starts, and an **agent default** starts that
+  agent's runs with nothing injected and nothing cleared. Nothing is called gone
+  against a catalog nobody has read.
+- **‼️ THE ENGINES' OWN CONFIG FILES, DIAGNOSED READ-ONLY.** The fleet-wide
+  `~/.claude/settings.json` env block was already checked (X-114); an agent's own
+  `.claude/settings.json` / `settings.local.json` were not, and a route variable
+  or an `apiKeyHelper` there answers the route a second time for that agent
+  only. OpenCode's global and project `opencode.json(c)` are now read for the
+  default `model` / `small_model`, the user's own `provider` block and
+  `disabled_providers` / `enabled_providers`. A bare model id there is a problem
+  and stays **unknown**, never guessed; a provider the read catalog does not offer
+  is refused; with no catalog read it is neither. `config` on the report lists
+  every file read, its scope and the agents it reaches — a nest-level file shared
+  by five agents is one entry naming five. ‼️ The module imports no file system
+  and is handed a reader, so it cannot write; no value from an `env` block,
+  `options.apiKey` or `headers` reaches a sentence (canary-tested). Measured on
+  this machine: five `settings.local.json` files and the global
+  `opencode.jsonc`, all clean — no false positives.
+- **A stored route read in an older shape, or skipped, now says so.** The reader
+  filled in a missing `engine`/`revision`/`label` silently and DROPPED a route
+  whose id could not be a keychain key — a route typed by hand with a space in
+  its id was simply not there, on any surface. `readProfilesReport` is the same
+  read with what it did said out loud; a skipped route is a problem, an upgraded
+  one a note, and the stored copy is never rewritten by reading it.
+
 ## 3.572.0 - an account card draws every wall it has, as one chart (X-215 round 2, closes) (2026-09-19)
 
 - **‼️ ONE BAR, TWO DIFFERENT WINDOWS, AND NOTHING SAYING WHICH.** The user's

@@ -203,15 +203,53 @@ const refuse = (list: StoredProviderProfile[], refusal: string[]): ProfileWrite 
 /** Read a stored list back into shape — a settings array is whatever somebody
  *  typed, and every consumer past this point may assume the shape. */
 export function readProfiles(raw: unknown): StoredProviderProfile[] {
-    if (!Array.isArray(raw)) { return []; }
-    const out: StoredProviderProfile[] = [];
-    for (const item of raw) {
-        if (!item || typeof item !== 'object' || Array.isArray(item)) { continue; }
-        const p = storedProfile(item as ProviderProfileInput);
+    return readProfilesReport(raw).list;
+}
+
+/**
+ * ‼️ X-116 — THE SAME READ, AND WHAT IT HAD TO DO TO THE STORED SHAPE, SAID.
+ *
+ * A record written before a field existed is read with that field filled in,
+ * and a record whose id cannot be a key is dropped. Both were silent: a route
+ * typed by hand with a space in its id simply was not there, on any surface.
+ * The stored copy is never rewritten here — the reader only reports.
+ */
+export interface ProfileReadReport {
+    list: StoredProviderProfile[];
+    /** One sentence per record read with a field filled in for it. */
+    upgraded: string[];
+    /** One sentence per record that could not be read at all. */
+    dropped: string[];
+}
+
+export function readProfilesReport(raw: unknown): ProfileReadReport {
+    const out: ProfileReadReport = { list: [], upgraded: [], dropped: [] };
+    if (!Array.isArray(raw)) { return out; }
+    raw.forEach((item, at) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+            out.dropped.push(`stored route #${at + 1} is not a record, so it was skipped`);
+            return;
+        }
+        const input = item as ProviderProfileInput;
+        const p = storedProfile(input);
         // ‼️ An unusable id is DROPPED rather than repaired: a repaired id is a
         // different id, and its credential is filed under the original.
-        if (PROFILE_ID.test(p.id)) { out.push(p); }
-    }
+        if (!PROFILE_ID.test(p.id)) {
+            out.dropped.push(`stored route "${str(input.id) || `#${at + 1}`}" was skipped: ${PROFILE_ID_REFUSAL}`);
+            return;
+        }
+        const filled: string[] = [];
+        if (!str(input.engine)) { filled.push(`engine ${p.engine}`); }
+        const rev = input.revision;
+        if (!(typeof rev === 'number' && Number.isFinite(rev) && rev >= 1)) { filled.push(`revision ${p.revision}`); }
+        if (!str(input.label)) { filled.push(`label "${p.label}"`); }
+        if (str(input.id) !== p.id) { filled.push(`id "${p.id}" (stored as "${str(input.id)}")`); }
+        if (filled.length) {
+            out.upgraded.push(`route "${p.id}" was stored in an older shape and is read with ${filled.join(', ')} `
+                + '— the stored copy is left as it is until the route is next saved');
+        }
+        out.list.push(p);
+    });
     return out;
 }
 
