@@ -46,8 +46,44 @@ import {
  * path nothing uses.
  */
 export type EngineRunner = (
-    command: string, args: string[], timeoutMs: number, shell?: boolean, stdin?: string
+    command: string, args: string[], timeoutMs: number, shell?: boolean, stdin?: string,
+    env?: EngineRunEnv
 ) => Promise<{ code: number; stdout: string; stderr: string }>;
+
+/**
+ * ‼️ X-114 — AND THE ENVIRONMENT IS PART OF THE CONTRACT TOO, on the one engine
+ * whose provider IS the environment.
+ *
+ * A Claude route is a set of environment names and nothing else (X-101), so a
+ * health check that cannot inject and clear them can only ever test whichever
+ * route this window happened to inherit — and then report the verdict under the
+ * name of a route it never reached. `clear` is named separately from `set`
+ * because emptying a name and giving it a value are different acts: the whole
+ * point of the isolation is that an inherited `ANTHROPIC_BASE_URL` must not
+ * answer for a route that did not name one.
+ */
+export interface EngineRunEnv {
+    set?: Record<string, string>;
+    clear?: string[];
+}
+
+/**
+ * What a PROVIDER-aimed check adds to an engine's own spec (X-114).
+ *
+ * The engine spec below answers "does this CLI work at all" and picks the
+ * cheapest turn on the plan to prove it. A provider check asks a narrower
+ * question — does THIS route, with THIS model, answer — and everything it needs
+ * to change is here: the model the turn must name, whatever argv the adapter's
+ * runtime resolved, and the route's environment.
+ */
+export interface ProviderAim {
+    providerId: string;
+    /** The model this turn must run on, in the ENGINE'S own spelling. */
+    modelRef?: string;
+    args?: string[];
+    spawnEnv?: Record<string, string>;
+    clearEnv?: string[];
+}
 
 export interface EngineTestResult {
     id: EngineId;
@@ -227,11 +263,36 @@ export function firstFault(stderr: string, stdout: string): string {
 }
 
 /**
+ * The engine's own check, re-aimed at one provider and one model (X-114).
+ *
+ * ‼️ THE MODEL IS REPLACED, NEVER APPENDED. Every spec above already names a
+ * model, because a health check must not be the most expensive turn on the
+ * account; adding a second `--model` would leave the CLI with two answers to
+ * one question and let it pick — measured on Antigravity, which then complains
+ * about a flag conflict rather than running anything. On the engine whose
+ * prompt is not on argv the whole argument list is rebuilt by its owner module,
+ * for the reason M-14 gives: no opencode-only flag is spelled outside it.
+ */
+export function aimedArgs(id: EngineId, args: string[], aim: ProviderAim): string[] {
+    const model = (aim.modelRef ?? '').trim();
+    const extra = (aim.args ?? []).filter(a => typeof a === 'string');
+    if (!model) { return [...args, ...extra]; }
+    if (id === 'opencode') {
+        return [...opencodeRunArgs({ model, agent: 'plan' }), ...extra];
+    }
+    const at = args.indexOf('--model');
+    const rebuilt = at >= 0 && at + 1 < args.length
+        ? args.map((a, i) => (i === at + 1 ? model : a))
+        : [...args, '--model', model];
+    return [...rebuilt, ...extra];
+}
+
+/**
  * Run one engine's health check. Never throws: a spawn that fails IS the
  * result, and it is the one a user most needs to read.
  */
 export async function testEngine(
-    id: EngineId, run: EngineRunner, now: () => number = Date.now
+    id: EngineId, run: EngineRunner, now: () => number = Date.now, aim?: ProviderAim
 ): Promise<EngineTestResult> {
     const spec = SPECS.find(s => s.id === id);
     const at = now();
@@ -242,7 +303,14 @@ export async function testEngine(
     try {
         let args = spec.args;
         let stdin = spec.stdin;
-        if (spec.resolve) {
+        // ‼️ AN AIMED CHECK DOES NOT RESOLVE A MODEL FOR ITSELF. The resolver
+        // exists to find the cheapest FREE model on the machine; here the caller
+        // has named the one whose route is in question, and quietly testing a
+        // different model would report a verdict about something nobody asked
+        // about. The caller's own gate decides whether that model may be spent.
+        if (aim?.modelRef) {
+            args = aimedArgs(id, args, aim);
+        } else if (spec.resolve) {
             // ‼️ THE LOOKUP IS INSIDE THE TRY, so a catalogue read that cannot
             // run at all lands in the same "could not be run" answer a failed
             // spawn does — a health check that throws is the one failure a user
@@ -256,11 +324,21 @@ export async function testEngine(
             if (plan.args) { args = plan.args; }
             if (plan.stdin !== undefined) { stdin = plan.stdin; }
         }
-        const r = await run(spec.command, args, spec.timeoutMs, spec.shell ?? true, stdin);
+        if (!aim?.modelRef && aim?.args?.length) { args = [...args, ...aim.args]; }
+        const r = await run(spec.command, args, spec.timeoutMs, spec.shell ?? true, stdin,
+            aim && (aim.spawnEnv || aim.clearEnv)
+                ? { ...(aim.spawnEnv ? { set: aim.spawnEnv } : {}), ...(aim.clearEnv ? { clear: aim.clearEnv } : {}) }
+                : undefined);
         const ms = now() - started;
         const answered = r.code === 0 && spec.expect(r.stdout);
         if (answered) {
-            return { id, ok: true, ms, at, detail: `Answered in ${(ms / 1000).toFixed(1)}s — the CLI, the sign-in and the provider all work.` };
+            return {
+                id, ok: true, ms, at,
+                detail: aim?.modelRef
+                    ? `Answered in ${(ms / 1000).toFixed(1)}s on ${aim.modelRef} — this route, this `
+                        + 'model and this CLI all work.'
+                    : `Answered in ${(ms / 1000).toFixed(1)}s — the CLI, the sign-in and the provider all work.`
+            };
         }
         const fault = firstFault(r.stderr, r.stdout);
         return {

@@ -27,7 +27,7 @@ import {
     HarvestResult, nodeOpencodeCli, OpencodeHarvester
 } from './core/opencodeharvest';
 import {
-    OPENCODE_EXE, OPENCODE_NEEDS_SHELL, OPENCODE_SESSION_ID,
+    OPENCODE_AUTH_FILE, OPENCODE_EXE, OPENCODE_NEEDS_SHELL, OPENCODE_SESSION_ID,
     opencodeModelsCatalogArgs, opencodeModelsListArgs, readOpencodeModelList
 } from './core/opencode';
 import { opencodeExport, opencodeSessionIsEmpty } from './core/opencodehistory';
@@ -192,6 +192,10 @@ import {
 } from './core/launchProvider';
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
 import { readOpenCodeCatalog } from './core/providerCatalog';
+import {
+    keyFor, providerHealth, ProviderHealthInput, ProviderHealthReport, ProviderTestRecord,
+    smokeRefusal, testKeyOf
+} from './core/providerHealth';
 import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
 import { describeResumeRoute, ResumeAsk, ResumeRoute, resumeRoute } from './core/resumeGate';
@@ -272,7 +276,7 @@ import {
 } from './core/handoverDiscovery';
 import { BRIDGE_GUARD_ESCAPE, bridgeGuardCoverage, bridgeGuardVerdict, bridgeGuardView, denyResponseBody } from './core/bridgeGuard';
 import { BridgeGuardLog } from './core/bridgeGuardLog';
-import { EngineRunner, testEngine } from './core/engineTest';
+import { EngineRunner, ProviderAim, testEngine } from './core/engineTest';
 import { capabilityRefusal, effortsFor, narrowLaunch, readEngineModels } from './core/models';
 import { QUICK_MENU, QUICK_MENU_GROUPS } from './core/quickmenu';
 import { CliSessionRecord, describeOwner, isSpareCliSession, Leftover, leftoversOf, mergeSessionNames, ownerOf, pidAlive, readCliSessionsAcross, sessionsDir, twinsOf } from './core/cliSessions';
@@ -20802,9 +20806,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * spawn, and because it spends a turn of the user's plan it is NEVER run on
      * a timer, on page open, or by a refresh — only by the button.
      */
-    const engineRunner: EngineRunner = (command, args, timeoutMs, shell = true, stdin) =>
+    const engineRunner: EngineRunner = (command, args, timeoutMs, shell = true, stdin, runEnv) =>
         new Promise((resolve, reject) => {
+            // ‼️ X-114 — THE ROUTE IS THE ENVIRONMENT ON THIS ENGINE, so a check
+            // aimed at a route has to be able to empty the inherited answer as
+            // well as give its own. Built the same way a real launch builds it:
+            // the names are DELETED rather than set to an empty string, because
+            // a CLI reading `ANTHROPIC_BASE_URL=""` has still been told
+            // something (X-101).
+            let childEnv: NodeJS.ProcessEnv | undefined;
+            if (runEnv && (runEnv.set || runEnv.clear)) {
+                childEnv = { ...process.env, ...(runEnv.set ?? {}) };
+                for (const name of runEnv.clear ?? []) { delete childEnv[name]; }
+            }
             const child = cp.execFile(command, args, {
+                ...(childEnv ? { env: childEnv } : {}),
                 // ‼️ THE ENGINE DECIDES (engineTest.ts). Under a shell the
                 // arguments are joined and NOT quoted, which turns a sentence
                 // into five arguments; an engine whose check carries one asks
@@ -20932,6 +20948,163 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // refuses nothing rather than refusing everything.
         ...(opencodeCatalog.text ? { openCodeCatalogText: opencodeCatalog.text } : {})
     });
+
+    /* ===================== X-114 — PROVIDER HEALTH =========================
+     *
+     * ‼️ THE VERDICTS THIS MACHINE HOLDS, KEYED BY WHAT THEY PROVED. A list
+     * rather than a map because the key is a shape (`ProviderTestKey`) and the
+     * superseded record — the one that answered for a route before it was
+     * edited — is worth keeping beside the current one: it is the difference
+     * between telling somebody "never tested" and telling them "tested, but the
+     * endpoint has changed since".
+     */
+    const PROVIDER_TESTS = 'agentfarm.providerTests';
+    const providerTestRecords = (): ProviderTestRecord[] =>
+        context.globalState.get<ProviderTestRecord[]>(PROVIDER_TESTS, []) ?? [];
+    const rememberProviderTest = async (rec: ProviderTestRecord): Promise<void> => {
+        const key = testKeyOf(rec.key);
+        const kept = providerTestRecords().filter(r => r && testKeyOf(r.key) !== key);
+        // A ceiling, because this is a globalState blob: a machine that presses
+        // the button all day must not grow it without end.
+        await context.globalState.update(PROVIDER_TESTS,
+            [rec, ...kept].sort((a, b) => b.at - a.at).slice(0, 200));
+    };
+    /**
+     * ‼️ A LOCAL CALL, NOT A TURN. `--version` spawns the CLI and asks it
+     * nothing: no network, no plan, no tokens. It is here because the CLI
+     * revision is part of what a pass PROVED — an engine upgraded since is a
+     * different program — and the answer is held for ten minutes so a page that
+     * asks for the status repeatedly does not spawn five processes doing it.
+     */
+    const cliVersions = new Map<string, { at: number; version: string }>();
+    const cliVersion = async (command: string): Promise<string> => {
+        const hit = cliVersions.get(command);
+        if (hit && Date.now() - hit.at < 10 * 60 * 1000) { return hit.version; }
+        try {
+            const r = await engineRunner(command, ['--version'], 15000, true);
+            const version = String(r.stdout || r.stderr).trim().split(/\r?\n/)[0].slice(0, 80);
+            cliVersions.set(command, { at: Date.now(), version });
+            return version;
+        } catch { return ''; }
+    };
+    /**
+     * OpenCode's own credentials file, counted and never read out. ‼️ THE COUNT
+     * IS THE WHOLE OF WHAT LEAVES THIS FUNCTION — the same boundary `hasSecret`
+     * draws for the routes Agent Farm owns, and for the same reason.
+     */
+    const openCodeCredentials = (): { file: string; present: boolean; entries: number } => {
+        const file = `~/${OPENCODE_AUTH_FILE}`;
+        const text = engineProbe.readHome(OPENCODE_AUTH_FILE);
+        if (text === undefined) { return { file, present: false, entries: 0 }; }
+        try {
+            const j = JSON.parse(text) as unknown;
+            return {
+                file, present: true,
+                entries: j && typeof j === 'object' && !Array.isArray(j)
+                    ? Object.keys(j as Record<string, unknown>).length : 0
+            };
+        } catch { return { file, present: true, entries: 0 }; }
+    };
+    const providerHealthInput = async (engine: string): Promise<ProviderHealthInput> => {
+        // ‼️ The engine is asked before the adapter is: on OpenCode the whole
+        // answer lives in a catalog nothing may have read yet.
+        if (engine === 'opencode') { await refreshOpencodeCatalog(); }
+        const adapter = adapterFor(engine, registryDeps());
+        const row = engineMatrix().find(e => e.id === engine);
+        const version = row?.cli.found ? await cliVersion(row.cli.command) : '';
+        return {
+            engine,
+            adapter,
+            catalog: adapter.catalog(),
+            profiles: providerProfiles().filter(p => p.engine === engine),
+            hasSecret: (id: string) => providerSecretIds().includes(id),
+            cli: { present: !!row?.cli.found, ...(version ? { version } : {}) },
+            inheritedEnv: process.env,
+            // ‼️ Claude only, because it is the only engine whose route IS the
+            // environment — and therefore the only one a settings file can
+            // answer for a second time.
+            ...(engine === 'claude'
+                ? { settingsEnv: (readClaudeSettings().json.env as Record<string, unknown>) ?? {} }
+                : {}),
+            ...(engine === 'opencode' ? { engineCredentials: openCodeCredentials() } : {}),
+            records: providerTestRecords()
+        };
+    };
+
+    /**
+     * X-114 — the free verdict for every engine that HAS a provider axis, and
+     * the ONE function both the bridge op and the Engines page are answered
+     * with. The four engines with no axis are left out rather than drawn as
+     * empty sections: `not-applicable` is a complete answer and a section
+     * saying nothing is not.
+     */
+    const providerHealthAll = async (): Promise<ProviderHealthReport[]> => {
+        const out: ProviderHealthReport[] = [];
+        const deps = registryDeps();
+        for (const e of engineMatrix()) {
+            // ‼️ THE AXIS IS ASKED FIRST, and it is free. Building the input
+            // reads a catalog and spawns `--version`; doing that for the three
+            // engines with no provider axis would be three processes on every
+            // page open whose whole answer is thrown away one line later.
+            if (adapterFor(e.id, deps).axis !== 'provider') { continue; }
+            out.push(providerHealth(await providerHealthInput(e.id)));
+        }
+        return out;
+    };
+    /**
+     * X-114 — ‼️ ONE REAL TURN THROUGH ONE ROUTE, and the one implementation the
+     * page's button and `providers.test` both press. Everything the free check
+     * already knows to be wrong refuses it here, before anything is spawned:
+     * spending a turn to rediscover a fault that was free to read is the one
+     * outcome worth preventing.
+     */
+    const runProviderTest = async (
+        engine: string, providerId: string, model = ''
+    ): Promise<ProviderTestRecord & { injected?: string[]; cleared?: string[]; offered?: string[] }> => {
+        const input = await providerHealthInput(engine);
+        const report = providerHealth(input);
+        const row = report.rows.find(r => r.providerId === providerId);
+        const modelRef = model.trim() || row?.modelRefs[0] || '';
+        const key = keyFor(input, providerId, modelRef);
+        const refusal = smokeRefusal(row, modelRef);
+        if (refusal) {
+            // ‼️ A REFUSAL IS A COMPLETE ANSWER, not an error: nothing ran,
+            // nothing was spent and nothing was proved. It comes back in the
+            // record's own shape so no caller has to grow a second branch.
+            return {
+                key, ok: false, refused: refusal, at: Date.now(), ms: 0, detail: refusal,
+                ...(report.rows.length ? { offered: report.rows.map(r => r.providerId) } : {})
+            };
+        }
+        const rt = adapterFor(engine, registryDeps())
+            .resolveRuntime({ engine, providerId, modelId: modelRef });
+        const aim: ProviderAim = {
+            providerId,
+            modelRef,
+            ...(rt.args?.length ? { args: rt.args } : {}),
+            ...(rt.spawnEnv && Object.keys(rt.spawnEnv).length ? { spawnEnv: rt.spawnEnv } : {}),
+            ...(rt.clearEnv?.length ? { clearEnv: rt.clearEnv } : {})
+        };
+        const r = await testEngine(engine as EngineId, engineRunner, Date.now, aim);
+        const record: ProviderTestRecord = {
+            key,
+            ok: r.ok,
+            at: r.at,
+            ms: r.ms,
+            detail: r.detail,
+            ...(r.error ? { error: r.error } : {}),
+            ...(r.refused ? { refused: r.detail } : {})
+        };
+        await rememberProviderTest(record);
+        return {
+            ...record,
+            // ‼️ NAMES, NEVER VALUES — the same line `providers.runtime` holds:
+            // a reader can confirm the isolation really happened without a key
+            // reaching a bridge response somebody wrote to a file.
+            injected: Object.keys(rt.spawnEnv ?? {}),
+            cleared: rt.clearEnv ?? []
+        };
+    };
 
     const engineRuntimeFor = (
         agentId: string, engine: string,
@@ -21407,6 +21580,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // and there is no dep here that can return a credential. A surface
         // cannot leak what it was never given.
         profiles: () => publicProviderProfiles(),
+        // ‼️ X-114 — the SAME two functions the bridge ops answer with, so the
+        // page and `providers.status` / `providers.test` cannot come to
+        // disagree about which route is usable or what a turn proved.
+        providerHealth: () => providerHealthAll(),
+        providerTest: (engine: string, providerId: string, model: string) =>
+            runProviderTest(engine, providerId, model),
         /**
          * ‼️ X-172 — the sign-ins, through the SAME reader the bridge answers
          * with (`publicAccount`), so the page and `accounts.list` cannot come to
@@ -39227,6 +39406,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     injects: Object.keys(rt.spawnEnv ?? {}),
                     preflight: adapter.preflight(sel)
                 };
+            }
+        },
+        {
+            op: 'providers.status',
+            describe: 'X-114 — THREE DIFFERENT QUESTIONS ABOUT A PROVIDER, AND THIS ONE COSTS '
+                + 'NOTHING. engines.status asks whether the ENGINE is ready and never reaches the '
+                + 'route: a Claude route with no key, a tier mapped to nothing, a route answered a '
+                + 'second time from inside the CLI\'s own settings.json env block, an OpenCode '
+                + 'provider the catalog stopped offering — every one of those starts and fails on an '
+                + 'engine both of those surfaces call healthy. ‼️ THE THREE STATES ARE NOT A LADDER: '
+                + 'configured (something declares it — a route Agent Farm holds, or the engine\'s own '
+                + 'catalog; it says nothing about whether it would run), available (the free static '
+                + 'verdict, and it has THREE values because "unknown" is a real answer — with no '
+                + 'catalog read, "no" would be a lie and "yes" a guess), and tested (a real turn '
+                + 'answered; absent until somebody presses providers.test, and it never becomes true '
+                + 'on its own). ‼️ AND A MISSING CREDENTIAL IS NOT A FAULT ON AN ENGINE THAT OWNS ITS '
+                + 'OWN: measured, OpenCode lists and runs seven models with a completely empty '
+                + 'auth.json, so that lands in `notes` rather than `problems` and the row stays '
+                + 'available. Every verdict names what it proved (provider + model + adapter + CLI '
+                + 'revision + route revision), so a pass about an endpoint that has since been edited '
+                + 'is reported as superseded WITH THE REASON rather than shown as current or silently '
+                + 'dropped. ‼️ NO CREDENTIAL IS READ OUT OR RETURNED — whether one exists is public, '
+                + 'the value is not, the same boundary providers.list draws with hasSecret. Reads '
+                + 'only; nothing is started and nothing is written. args: engine? (default claude)',
+            handler: async (args) => {
+                const engine = (optStr(args, 'engine') || 'claude').trim().toLowerCase();
+                need(!!ENGINES[engine as EngineId], `no engine called "${engine}"`);
+                return providerHealth(await providerHealthInput(engine));
+            }
+        },
+        {
+            op: 'providers.test',
+            describe: 'X-114 — ‼️ RUN ONE REAL TURN THROUGH ONE ROUTE and report whether THAT route '
+                + 'answered. engines.test proves the CLI and the sign-in work; it says nothing about '
+                + 'a third-party endpoint, a key stored against one route out of four, or a tier '
+                + 'mapping — on Claude it cannot, because the route IS the environment and its check '
+                + 'inherits whatever this window has. Here the adapter resolves the route, its '
+                + 'environment is injected and the inherited names that would answer for it a second '
+                + 'time are CLEARED (X-101), so the verdict is about the route that was named. ‼️ '
+                + 'THIS COSTS A TURN of that route\'s plan or key, so it is never run on a schedule, '
+                + 'on a refresh or on a page open — it is pressed, once. Everything providers.status '
+                + 'already knows to be wrong REFUSES it before anything is spawned, because spending '
+                + 'a turn to rediscover a fault that was free to read is the one outcome worth '
+                + 'preventing. ‼️ THREE ANSWERS, NOT TWO: ok true, ok false (the route WAS asked and '
+                + 'did not answer — with the engine\'s OWN words in `error`, never an invented '
+                + 'reason), and ok false with `refused` (nothing ran, nothing was spent, nothing was '
+                + 'proved — read it as "not tested", never as "failed"). The verdict is filed under '
+                + 'what it proved and returned by providers.status until one of those things changes. '
+                + 'No credential is read or returned. args: providerId, engine? (default claude), '
+                + 'model? (the engine\'s own spelling; omit for the first the route offers)',
+            handler: async (args) => {
+                const engine = (optStr(args, 'engine') || 'claude').trim().toLowerCase();
+                need(!!ENGINES[engine as EngineId], `no engine called "${engine}"`);
+                const providerId = argStr(args, 'providerId').trim();
+                // ‼️ THE SAME FUNCTION THE PAGE'S BUTTON PRESSES. The gates, the
+                // refusal and the filing live in there, once.
+                const out = await runProviderTest(engine, providerId, optStr(args, 'model'));
+                EnginesPanel.refreshIfOpen();
+                return out;
             }
         },
         {

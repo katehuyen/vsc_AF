@@ -11,6 +11,7 @@ scratchpad/**
 test/**
 dist/render/**
 docs/info/**
+docs/hesapların saklanan giriş bilgileri.md
 VERSION_4_27/**
 VERSION_4_35/**
 tools/**

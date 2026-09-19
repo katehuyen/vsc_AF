@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { AccountPolicy, PolicyStep } from '../core/accountPolicy';
 import { EngineId, EngineStatus } from '../core/engines';
 import { EngineTestResult } from '../core/engineTest';
+import { ProviderHealthReport, ProviderTestRecord } from '../core/providerHealth';
 import { OwnershipRow, PublicProviderProfile } from '../core/providerOwnership';
 import { handleAfNav, htmlShell } from './base';
 
@@ -87,6 +88,22 @@ export interface EnginesPanelDeps {
      * the webview in either direction.
      */
     profiles(): PublicProviderProfile[];
+    /**
+     * ‼️ X-114 — THE FREE VERDICT, and it is free because everything in it was
+     * already read for another reason. A route with no key, a tier mapped to
+     * nothing, a route answered a second time from inside the CLI's own
+     * settings file: every one of those starts and fails on an engine the cards
+     * above this section call ready, and until this dep existed nothing on the
+     * page looked one level down. Async because on OpenCode the whole answer is
+     * a catalog that may not have been read yet.
+     */
+    providerHealth?(): Promise<ProviderHealthReport[]>;
+    /**
+     * ‼️ …AND THE ONE THAT COSTS A TURN. Same discipline as `test` above: it is
+     * pressed, never scheduled, never run on a refresh or a page open. The
+     * verdict comes back filed under what it proved.
+     */
+    providerTest?(engine: string, providerId: string, model: string): Promise<ProviderTestRecord>;
     /**
      * ‼️ X-172 (first slice) — WHICH SIGN-IN THIS ENGINE IS CURRENTLY PLUGGED
      * INTO, and how much of that plan is left.
@@ -281,7 +298,10 @@ export interface EnginesPanelDeps {
     profileKey(id: string, label: string): void;
 }
 
-function buildData(deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestResult>): Record<string, unknown> {
+function buildData(
+    deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestResult>,
+    health: ProviderHealthReport[] = [], testing: string[] = []
+): Record<string, unknown> {
     const engines = deps.engines();
     return {
         engines,
@@ -310,7 +330,14 @@ function buildData(deps: EnginesPanelDeps, verdicts: Map<EngineId, EngineTestRes
         // X-241 — the switch and each slot's own beat, drawn on the section head
         autoRefresh: deps.autoRefresh(),
         policies: deps.policies(),
-        ownership: deps.ownership()
+        ownership: deps.ownership(),
+        // X-114 — one report per engine that HAS a provider axis. The page
+        // draws nothing for an empty list, which is the honest state of a
+        // machine whose catalog has not been read.
+        providerHealth: health,
+        // …and which rows have a turn in the air, so a second press cannot buy
+        // a second turn (the same guard `running` gives the engine button).
+        providerTesting: testing
     };
 }
 
@@ -325,6 +352,11 @@ export class EnginesPanel {
     private verdicts = new Map<EngineId, EngineTestResult>();
     /** ids with a call in flight — a second press must not buy a second turn */
     private running = new Set<EngineId>();
+    /** X-114 — the free verdicts, re-read on every refresh because they cost
+     *  nothing; unlike `verdicts`, which are bought. */
+    private health: ProviderHealthReport[] = [];
+    /** `<engine>/<providerId>` with a real turn in flight. */
+    private providerRunning = new Set<string>();
     /**
      * ‼️ X-187 — ONE TIMER FOR THE PAGE, never one per account. The service
      * already walks the slots in turn behind a single shared floor, so a timer
@@ -361,10 +393,12 @@ export class EnginesPanel {
 
     private constructor(readonly panel: vscode.WebviewPanel, private deps: EnginesPanelDeps) {
         panel.webview.html = htmlShell(
-            panel.webview, deps.extensionUri, 'Engines', buildData(deps, this.verdicts), 'engines.js');
+            panel.webview, deps.extensionUri, 'Engines',
+            buildData(deps, this.verdicts, this.health, [...this.providerRunning]), 'engines.js');
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         panel.webview.onDidReceiveMessage(msg => void this.onMessage(msg), null, this.disposables);
         this.live();
+        this.readHealth();
         this.beat = setInterval(() => {
             // A hidden page is not a page anybody is reading. `retainContextWhenHidden`
             // keeps this panel alive behind other tabs, so without this check an
@@ -394,8 +428,22 @@ export class EnginesPanel {
 
     private refresh(): void {
         void this.panel.webview.postMessage({
-            type: 'data', data: buildData(this.deps, this.verdicts)
+            type: 'data',
+            data: buildData(this.deps, this.verdicts, this.health, [...this.providerRunning])
         });
+    }
+
+    /**
+     * X-114 — re-read the free verdict and redraw. Separate from `live()`
+     * because it answers a different question and must not be able to delay the
+     * account beat: a catalog read that hangs would otherwise stop the quota
+     * figures refreshing.
+     */
+    private readHealth(): void {
+        if (!this.deps.providerHealth) { return; }
+        void Promise.resolve(this.deps.providerHealth())
+            .then(rows => { this.health = rows ?? []; this.refresh(); })
+            .catch(() => undefined);
     }
 
     private async onMessage(msg: { type: string;[k: string]: unknown }): Promise<void> {
@@ -408,6 +456,10 @@ export class EnginesPanel {
                 break;
             case 'engineTest':
                 await this.runTest(String(msg.id ?? '') as EngineId);
+                break;
+            case 'providerTest':
+                await this.runProviderTest(
+                    String(msg.engine ?? ''), String(msg.providerId ?? ''), String(msg.model ?? ''));
                 break;
             case 'engineCommand':
                 if (typeof msg.command === 'string' && msg.command) {
@@ -594,6 +646,32 @@ export class EnginesPanel {
         } finally {
             this.running.delete(id);
             this.refresh();
+        }
+    }
+
+    /**
+     * ‼️ ONE REAL TURN THROUGH ONE ROUTE, and every gate the bridge op has.
+     * This calls the SAME function `providers.test` calls, so the button and
+     * the op cannot come to mean two different things — and the refusal that
+     * stops a turn being spent to rediscover a known fault lives in there,
+     * once, rather than being re-decided here.
+     */
+    private async runProviderTest(engine: string, providerId: string, model: string): Promise<void> {
+        const key = `${engine}/${providerId}`;
+        if (!this.deps.providerTest || !engine || !providerId || this.providerRunning.has(key)) { return; }
+        this.providerRunning.add(key);
+        this.refresh();
+        try {
+            await this.deps.providerTest(engine, providerId, model);
+        } catch (e) {
+            void this.panel.webview.postMessage({
+                type: 'prov-msg', text: String((e as Error)?.message ?? e)
+            });
+        } finally {
+            this.providerRunning.delete(key);
+            // The verdict is filed by the function above, so the free read is
+            // what brings it back onto the page — one source, not two.
+            this.readHealth();
         }
     }
 

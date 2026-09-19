@@ -183,6 +183,47 @@ ok('it is the version package.json claims',
     ok('‼️ no stray file rode into the archive from the repo root'
         + (strays.length ? ' (' + strays.slice(0, 6).join(', ') + (strays.length > 6 ? ', …' : '') + ')' : ''),
         strays.length === 0);
+    /**
+     * ‼️ AND THE SAME ACCIDENT ONE LEVEL DOWN, WHICH THE ROOT RULE ABOVE CANNOT
+     * SEE.
+     *
+     * `vsce` packs the WORKING DIRECTORY, not the repository. A file dropped
+     * inside a folder that ships rides into the artefact without ever having
+     * been committed, reviewed, or seen by anybody but the person who left it
+     * there — and every gate passes, because it breaks no pattern and sits in
+     * no forbidden folder. Measured 2026-09-19: a private note named for stored
+     * account sign-ins sat untracked in `docs/` and was inside four consecutive
+     * builds before anybody looked.
+     *
+     * Git is the authority for "did anybody mean to ship this", and it is there
+     * wherever this tool is run. Where it is not — a build from a tarball — the
+     * check says so rather than passing silently, because a guard that cannot
+     * run is not a guard that found nothing.
+     */
+    {
+        const SHIPPED_SOURCE = /^extension\/(docs|media)\//;
+        let tracked;
+        try {
+            tracked = new Set(require('child_process')
+                .execFileSync('git', ['ls-files', '-z', 'docs', 'media'],
+                    { cwd: ROOT, encoding: 'utf8', windowsHide: true })
+                .split('\0').filter(Boolean).map(s => s.replace(/\\/g, '/')));
+        } catch { tracked = undefined; }
+        if (!tracked) {
+            console.log('  -- git is not available here, so "untracked file shipped" was NOT checked');
+        } else {
+            const untracked = [...names]
+                .filter(n => SHIPPED_SOURCE.test(n))
+                .map(n => n.slice('extension/'.length))
+                .filter(n => !tracked.has(n));
+            ok('‼️ nothing untracked rode into the archive from a folder that ships'
+                + (untracked.length
+                    ? ' (' + untracked.slice(0, 6).join(', ')
+                        + (untracked.length > 6 ? ', …' : '') + ')'
+                    : ''),
+                untracked.length === 0);
+        }
+    }
     const total = files.reduce((n, f) => n + f.size, 0);
     console.log(`  ${(total / 1048576).toFixed(1)} MB uncompressed · ${fs.statSync(vsix).size / 1048576 < 1 ? '<1' : (fs.statSync(vsix).size / 1048576).toFixed(1)} MB packed`);
     ok('the build did not silently double in size', total < 40 * 1048576);

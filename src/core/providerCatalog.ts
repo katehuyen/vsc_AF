@@ -151,6 +151,14 @@ export function readOpenCodeCatalog(text: string | undefined): ProviderCatalogRe
             providerId: r.providerId, providerLabel: r.providerId, models: [], variants: []
         };
         at.models.push(r.ref);
+        // ‼️ X-114 — THE FIELD WAS DECLARED AND NEVER FILLED. Every entry
+        // answered `[]` to "what reasoning variants does this provider offer",
+        // which is not "none" but "nobody ever asked the rows" — and the one
+        // difference that matters downstream is that a hosted card cannot carry
+        // a variant at all (ACP declares only model and mode), so a provider
+        // that publishes them has something to say about the transport.
+        const known = at.variants ?? (at.variants = []);
+        for (const v of r.variants) { if (v && !known.includes(v)) { known.push(v); } }
         providers.set(r.providerId, at);
     }
     // ‼️ NOTHING READ IS NOT AN EMPTY CATALOG. "The engine offers nothing" and

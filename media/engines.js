@@ -1731,6 +1731,146 @@
         });
     }
 
+    /**
+     * X-114 — ‼️ THREE STATES, DRAWN AS THREE THINGS.
+     *
+     * The cards at the top of this page answer "is this ENGINE ready" and stop
+     * there. Everything that goes wrong one level down — a route with no key, a
+     * tier mapped to nothing, a route answered a second time from inside the
+     * CLI's own settings file, a provider the catalog stopped offering — starts
+     * and fails on an engine every one of those cards calls ready.
+     *
+     * The two chips are deliberately separate and never collapse into one
+     * traffic light: `available` is what can be read for free and `tested` is
+     * what a real turn proved, and a row that is available and never tested is
+     * the ORDINARY state of a healthy machine. Painting it amber would send
+     * somebody to spend a turn for nothing.
+     */
+    function healthHtml() {
+        const reports = DATA.providerHealth || [];
+        if (!reports.length) { return ''; }
+        const T = window.AFTip;
+        const testing = DATA.providerTesting || [];
+        return '<div class="posec pohealth">'
+            + '<h3 class="potitle">Route health</h3>'
+            + '<p class="englede">What is readable for free about each route, and what a real turn has '
+                + 'proved. <b>Available and never tested is the ordinary state</b> — the free check is '
+                + 'everything that can be known without spending anything, and a turn is only ever '
+                + 'bought by pressing for it.</p>'
+            + reports.map(healthReportHtml).join('')
+            + '</div>';
+
+        function healthReportHtml(rep) {
+            const head = '<div class="pohead pohrow">'
+                + '<span class="poname">' + esc(engineLabel(rep.engine)) + '</span>'
+                + T.wrap('<span class="poid">' + esc(rep.source) + '</span>',
+                    'Where this list came from',
+                    'engine-reported = the engine was asked and answered. agent-farm-profile = these are '
+                    + 'routes Agent Farm assembles and injects. not-fetched = nobody has asked yet, which '
+                    + 'is why a row can be "unknown" rather than "no".')
+                + (rep.cli && rep.cli.version
+                    ? T.wrap('<span class="porev">' + esc(rep.cli.version) + '</span>',
+                        'CLI revision ' + rep.cli.version,
+                        'Part of what a pass proved: an engine upgraded since is a different program, so '
+                        + 'a verdict recorded against an older revision is reported as superseded rather '
+                        + 'than shown as current.')
+                    : '')
+                + '</div>';
+            const lines = (rep.problems || []).map(p =>
+                '<div class="pohprob">' + esc(p) + '</div>').join('')
+                + (rep.notes || []).map(n =>
+                    '<div class="pohnote">' + esc(n) + '</div>').join('');
+            const rows = (rep.rows || []).length
+                ? rep.rows.map(r => healthRowHtml(rep, r)).join('')
+                : '<div class="muted small">Nothing is offered on this engine yet.</div>';
+            return '<div class="pohrep">' + head + lines + rows + '</div>';
+        }
+
+        function healthRowHtml(rep, r) {
+            const busy = testing.indexOf(rep.engine + '/' + r.providerId) >= 0;
+            const avail = r.available === 'yes' ? 'h-yes' : r.available === 'no' ? 'h-no' : 'h-un';
+            const availWord = r.available === 'yes' ? 'available'
+                : r.available === 'no' ? 'not available' : 'unknown';
+            const availTip = T.wrap(
+                '<span class="pohchip ' + avail + '">' + esc(availWord) + '</span>',
+                'Available: ' + availWord,
+                r.available === 'yes'
+                    ? 'Everything readable without spending a token agrees a run could be started on this '
+                        + 'route. It is not a promise that the endpoint answers — that is the other chip.'
+                    : r.available === 'no'
+                        ? 'Something readable stops a run being started. The reasons are under this row, in '
+                            + 'the words a launch would print.'
+                        : 'No catalog has been read yet. "No" would be a lie and "yes" would be a guess, so '
+                            + 'this says neither.');
+            const conf = T.wrap('<span class="pohchip h-cfg">configured</span>',
+                'Configured by: ' + r.configuredBy,
+                'Something declares this route. It is a different question from whether it would run — a '
+                + 'route with no key is configured and unusable, and both facts are on this row.');
+            return '<div class="pocard pohcard">'
+                + '<div class="pohead">'
+                + '<span class="poname">' + esc(r.label) + '</span>'
+                + T.wrap('<span class="poid">' + esc(r.providerId) + '</span>', 'id: ' + r.providerId,
+                    'The engine\'s own id for this provider, and the one providers.test takes.')
+                + conf + availTip + testedChip(r)
+                + T.wrap('<span class="porev">' + esc(r.models) + ' model'
+                    + (r.models === 1 ? '' : 's') + '</span>',
+                    r.models + ' model' + (r.models === 1 ? '' : 's') + ' a launch could name',
+                    (r.modelRefs || []).join('\n') || 'None published here.')
+                + '<span class="grow"></span>'
+                + '<button class="secondary small" data-potest="' + esc(r.providerId) + '"'
+                + ' data-poteng="' + esc(rep.engine) + '"'
+                + ' data-potmodel="' + esc((r.modelRefs || [])[0] || '') + '"'
+                + (busy ? ' disabled' : '') + ' title="' + esc(
+                    'Runs ONE real turn through this route — a token off its plan or a line on its bill. '
+                    + 'Pressed, never scheduled. Anything already known to be wrong refuses it before '
+                    + 'anything is spawned.') + '">'
+                + (busy ? 'Testing…' : 'Test route') + '</button>'
+                + '</div>'
+                + (r.problems || []).map(p => '<div class="pohprob">' + esc(p) + '</div>').join('')
+                + (r.notes || []).map(n => '<div class="pohnote">' + esc(n) + '</div>').join('')
+                + '</div>';
+        }
+
+        /**
+         * ‼️ NEVER TESTED IS NOT A FAILURE, and neither is a refusal. Three
+         * readings the first draft of this chip collapsed into a red cross:
+         * nothing has been pressed yet, nothing was called at all, and a verdict
+         * that answered for a configuration this one replaced.
+         */
+        function testedChip(r) {
+            const t = r.tested;
+            if (!t && r.testedSuperseded) {
+                const s = r.testedSuperseded;
+                return T.wrap('<span class="pohchip h-old">superseded</span>',
+                    (s.ok ? 'Passed ' : 'Failed ') + window.AFTime.full(s.at),
+                    'That verdict is not about this configuration any more: '
+                    + (r.testedSupersededWhy || 'something it named has changed')
+                    + '. Press Test route to get one that is.');
+            }
+            if (!t) {
+                return T.wrap('<span class="pohchip h-none">never tested</span>',
+                    'No turn has been run through this route',
+                    'The ordinary state, and not a fault. A turn costs something, so nothing here buys '
+                    + 'one on its own — not on a timer, not on a refresh, not when this page opens.');
+            }
+            const state = t.ok ? 'h-ok' : t.refused ? 'h-held' : 'h-bad';
+            const word = t.ok ? 'tested' : t.refused ? 'not attempted' : 'failed';
+            return T.wrap('<span class="pohchip ' + state + '">' + esc(word) + ' · '
+                + esc(age(t.at, DATA.now || Date.now())) + '</span>',
+                (t.ok ? 'Answered · ' : t.refused ? 'Nothing was called · ' : 'Did not answer · ')
+                + window.AFTime.full(t.at),
+                window.AFTip.lines([
+                    t.detail,
+                    t.error ? 'The engine said: ' + t.error : '',
+                    'Took: ' + (t.ms / 1000).toFixed(1) + 's',
+                    'Proved: ' + t.key.providerId + ' · ' + (t.key.modelId || 'the route default')
+                        + ' · adapter ' + t.key.adapter
+                        + (t.key.cli ? ' · CLI ' + t.key.cli : '')
+                        + (t.key.revision === undefined ? '' : ' · route r' + t.key.revision)
+                ]));
+        }
+    }
+
     function providersHtml() {
         const profiles = DATA.profiles || [];
         return '<div class="posec">'
@@ -1768,6 +1908,7 @@
                 ? profiles.map(profileHtml).join('')
                 : '<div class="muted small">No routes yet. Claude Code runs first-party without one; '
                 + 'a route is how you point it at an Anthropic-compatible endpoint instead.</div>')
+            + healthHtml()
             + '</div>';
     }
 
@@ -2035,6 +2176,31 @@
                    reading the ⊘ verdict row above gets. */
                 .pokey.k-no { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
                 .pobody { margin-top:5px; }
+                /* X-114 -- route health. The chips are read left to right as
+                   three separate answers, so they are not one traffic light:
+                   configured is neutral, available carries the colour, and
+                   tested is its own chip because "never tested" is the ordinary
+                   state of a healthy row and must not look like a fault. */
+                .pohealth .pohrep { margin-bottom:12px; }
+                .pohrow { margin-bottom:6px; }
+                .pohcard { margin-left:12px; }
+                .pohchip { font-size:10px; padding:1px 8px; border-radius:9px; cursor:help;
+                    white-space:nowrap; border:1px solid var(--vscode-widget-border,#4446); }
+                .pohchip.h-cfg { opacity:.75; }
+                .pohchip.h-yes { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
+                .pohchip.h-no { background:var(--vscode-charts-red,#f85149); color:#fff; border-color:transparent; }
+                /* unknown is an ANSWER, so it is drawn rather than left blank --
+                   and it is not amber: nothing is wrong, nothing was read. */
+                .pohchip.h-un { opacity:.6; font-style:italic; }
+                .pohchip.h-none { opacity:.55; }
+                .pohchip.h-ok { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
+                .pohchip.h-bad { background:var(--vscode-charts-red,#f85149); color:#fff; border-color:transparent; }
+                /* nothing was called: the user's move, not a failure -- the same
+                   yellow "no key" wears above. */
+                .pohchip.h-held { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
+                .pohchip.h-old { background:var(--vscode-charts-orange,#d18616); color:#000; border-color:transparent; }
+                .pohprob { margin-top:4px; font-size:11px; color:var(--vscode-charts-red,#f85149); }
+                .pohnote { margin-top:4px; font-size:11px; opacity:.7; }
                 /* X-305 -- what a rule comes to now. The chip is the sign-in
                    chip's twin (.engacct), because it is the same kind of fact:
                    on whose plan. a-on is the blue outline the standing chip
@@ -2163,6 +2329,14 @@
         document.querySelectorAll('[data-pokey]').forEach(b =>
             b.addEventListener('click', () => post({
                 type: 'providerKey', id: b.dataset.pokey, label: b.dataset.polabel })));
+        // X-114 -- one real turn through one route. The disabled attribute is
+        // the page's half of the guard; the host holds the other half, so a
+        // second window cannot buy a second turn either.
+        document.querySelectorAll('[data-potest]').forEach(b =>
+            b.addEventListener('click', () => post({
+                type: 'providerTest', engine: b.dataset.poteng,
+                providerId: b.dataset.potest, model: b.dataset.potmodel || ''
+            })));
         document.querySelectorAll('[data-pocopy]').forEach(b =>
             b.addEventListener('click', () => post({ type: 'providerCopy', id: b.dataset.pocopy })));
         document.querySelectorAll('[data-porm]').forEach(b =>

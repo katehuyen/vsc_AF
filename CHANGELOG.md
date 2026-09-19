@@ -2,6 +2,69 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.567.0 - three different questions about a provider, and only one of them costs anything (X-114, closes) (2026-09-19)
+
+- **‼️ `engines.status` answers about the ENGINE, and every fault worth catching
+  lives one level down.** A Claude route with no key, a tier mapped to nothing,
+  an OpenCode provider the catalog stopped offering - each of those starts and
+  fails on an engine the cards at the top of the Engines page call ready, and
+  nothing on this machine was looking at that level. `providers.status` is the
+  free verdict: everything readable without spending a token, per route, in the
+  words a launch would print.
+- **The three states are not a ladder, and keeping them apart is the whole
+  design.** `configured` - something declares it, which says nothing about
+  whether it would run. `available` - the static verdict, with **three** values,
+  because `unknown` is a real answer: with no catalog read, "no" would be a lie
+  and "yes" a guess. `tested` - a real turn answered, absent until somebody
+  presses for it and never true on its own. A row that is available and never
+  tested is the ORDINARY state of a healthy machine; painting it amber would
+  send somebody to spend a turn for nothing.
+- **‼️ MEASURED, AND THE ONE THING A NAIVE CHECK GETS WRONG: an OpenCode
+  provider with no credential is not unhealthy.** With a completely empty
+  `auth.json` the CLI still lists and runs its own connected provider - already
+  written into `engines.ts`, now honoured one level down. The absence is a
+  **note**, never a problem, and the row stays available.
+- **‼️ A THIRD ANSWER TO THE ROUTE QUESTION, which X-101 could not reach.**
+  `clearEnv` empties the inherited process environment; a route-carrying name
+  sitting in the CLI's own `settings.json` `env` block is read afterwards, from
+  inside the process, and no amount of clearing touches it. Agent Farm owns the
+  route and still loses to it, silently. That is now an engine-wide problem with
+  the name in it - said once, not once per route - while the inherited names it
+  really does clear stay a note.
+- **A verdict names what it proved.** Provider + model + adapter + CLI revision
+  + route revision. Edit a route's endpoint, replace its key or upgrade the CLI
+  and yesterday's pass is about a configuration that no longer exists - so it is
+  reported as **superseded with the reason** rather than shown as current (a
+  lie) or dropped (which says "never tested" about a route tested twenty minutes
+  ago).
+- **`providers.test` runs one real turn THROUGH one route** - the adapter
+  resolves it, its environment is injected and the inherited names that would
+  answer for it a second time are cleared, so the verdict is about the route that
+  was named. `engines.test` cannot do this: on Claude the route IS the
+  environment and its check inherits whatever the window has. Everything the free
+  check already knows to be wrong refuses it before anything is spawned, because
+  spending a turn to rediscover a fault that was free to read is the one outcome
+  worth preventing. Three answers, never two: answered, did not answer, and
+  **nothing was called** - which is read as "not tested", never as "failed".
+- **‼️ NO CREDENTIAL CROSSES EITHER OP.** A key is a boolean on the way in
+  (`hasSecret`) and has no field to travel out in; the credentials file is
+  **counted**, never read out; what a turn injected comes back as NAMES. The same
+  boundary `providers.list` and `providers.runtime` already draw.
+- **Route health on the Engines page**, under Providers: the three chips side by
+  side, the problems in red under the row, the notes that are not faults in grey,
+  and a **Test route** button whose own tooltip says it costs a turn. A row with
+  a turn in the air cannot be pressed again, in the page and in the host.
+- **Found on the way: `ProviderCatalogEntry.variants` was declared and never
+  filled.** Every entry answered `[]` to "what reasoning variants does this
+  provider offer" - which is not "none" but "nobody ever asked the rows". Filled
+  from the rows, which is what lets a row say the one thing that matters
+  downstream: a hosted card cannot carry a variant at all (ACP declares only
+  model and mode, and the interactive TUI takes no `--variant` flag), so a
+  headless run can pick one and a card runs the model's default.
+- Tests: new `test_provider_health.js` 76 and `test_engines_route_health.js` 25;
+  a scene of its own in the Engines fixture carrying every state that only exists
+  after something happened, looked at in both themes.
+
 ## 3.566.0 - the ceiling a model publishes for itself becomes an answer, so the fallback table stops being Claude-only (X-113, part 4, closes) (2026-09-19)
 
 - **‼️ Measured on this machine: seven OpenCode models, every one of them

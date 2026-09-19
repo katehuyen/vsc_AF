@@ -464,6 +464,9 @@ const data = () => {
     };
     // ‼️ X-305 — the SMALLEST arity is the default scene: no rule of the
     // user's own, only the built-in four. The scenes with rules are below.
+    // X-114 — the free verdict for the two routes above.
+    d.providerHealth = baseHealth(NOW);
+    d.providerTesting = [];
     d.policies = policiesFor(d.accounts, []);
     // X-241 — the switch and each slot's own beat: work@studio has a turn
     // running (the 60 s beat), the rest are idle (the 5 min one).
@@ -624,12 +627,184 @@ const signinData = () => {
     return d;
 };
 
+/**
+ * X-114 — ‼️ THE TWO ROWS THE BASE SCENE NEEDS, and no more: one route that can
+ * run and one that cannot, which is the same pair the profiles above draw. The
+ * states that only appear after something has happened — a pass, a failure, a
+ * refusal, a verdict about a configuration that has since changed — are their
+ * own scene below, because a base scene carrying all of them would be the
+ * "every card warns" montage that hides the ordinary case.
+ */
+function baseHealth(NOW) {
+    return [
+        {
+            engine: 'claude',
+            axis: 'provider',
+            source: 'agent-farm-profile',
+            cli: { present: true, version: '2.1.0' },
+            problems: [],
+            notes: [],
+            rows: [
+                {
+                    engine: 'claude', providerId: 'kimi', label: 'Kimi (Moonshot)',
+                    configured: true, configuredBy: 'a route Agent Farm holds',
+                    available: 'yes', problems: [], notes: [],
+                    models: 2, modelRefs: ['kimi-k2-thinking', 'kimi-k2']
+                },
+                {
+                    engine: 'claude', providerId: 'minimax', label: 'MiniMax',
+                    configured: true, configuredBy: 'a route Agent Farm holds',
+                    available: 'no',
+                    problems: ['"MiniMax" has no stored key, so a run on it would reach '
+                        + 'https://api.minimax.io/anthropic unauthenticated.'],
+                    notes: [],
+                    models: 0, modelRefs: []
+                }
+            ]
+        }
+    ];
+}
+
+/**
+ * ‼️ EVERY STATE THAT ONLY EXISTS AFTER SOMETHING HAPPENED, in one place,
+ * because each of them was a reading the first draft of these chips collapsed
+ * into a red cross: a pass, a failure with the engine's own words, a check that
+ * never ran at all, a verdict about a route that has since been edited, and a
+ * provider nobody has read a catalog for. Plus the two notes that are NOT
+ * faults — an empty credentials file on an engine that owns its own, and a
+ * variant a hosted card cannot carry.
+ */
+function healthData() {
+    const d = data();
+    const NOW = d.now;
+    const key = (over) => ({
+        engine: 'claude', providerId: 'kimi', modelId: 'kimi-k2-thinking',
+        adapter: 'claude-route@1', cli: '2.1.0', revision: 3, ...over
+    });
+    d.providerHealth = [
+        {
+            engine: 'claude',
+            axis: 'provider',
+            source: 'agent-farm-profile',
+            cli: { present: true, version: '2.1.0' },
+            // ‼️ THE THIRD ANSWER TO THE ROUTE QUESTION, and the one nothing
+            // could reach before: clearing the inherited environment does not
+            // touch a name the CLI reads out of its own settings file.
+            problems: ['ANTHROPIC_BASE_URL is set in the CLI\'s own settings.json env block, which a '
+                + 'spawn cannot clear — the route chosen here is answered a second time from inside '
+                + 'the process'],
+            notes: ['ANTHROPIC_API_KEY is present in the inherited environment; a launch on a route '
+                + 'clears them by name (X-101), so this is only a route for a run started with no '
+                + 'route at all'],
+            rows: [
+                {
+                    engine: 'claude', providerId: 'kimi', label: 'Kimi (Moonshot)',
+                    configured: true, configuredBy: 'a route Agent Farm holds',
+                    available: 'yes', problems: [], notes: [],
+                    models: 2, modelRefs: ['kimi-k2-thinking', 'kimi-k2'],
+                    tested: {
+                        key: key(), ok: true, at: NOW - 3 * 60 * 1000, ms: 2900,
+                        detail: 'Answered in 2.9s on kimi-k2-thinking — this route, this model and '
+                            + 'this CLI all work.'
+                    }
+                },
+                {
+                    engine: 'claude', providerId: 'minimax', label: 'MiniMax',
+                    configured: true, configuredBy: 'a route Agent Farm holds',
+                    available: 'yes',
+                    problems: [],
+                    notes: ['this route names no endpoint of its own, so it is the engine\'s '
+                        + 'first-party one and its sign-in lives in the credentials file rather than here'],
+                    models: 1, modelRefs: ['MiniMax-M2'],
+                    tested: {
+                        key: key({ providerId: 'minimax', modelId: 'MiniMax-M2', revision: 1 }),
+                        ok: false, at: NOW - 22 * 60 * 1000, ms: 8100,
+                        detail: 'The command exited 1.',
+                        error: 'invalid_api_key: the key stored for this route was rejected'
+                    }
+                },
+                {
+                    engine: 'claude', providerId: 'anthropic', label: 'Anthropic (first-party)',
+                    configured: true, configuredBy: 'a route Agent Farm holds',
+                    available: 'no',
+                    problems: ['the "sonnet" tier maps to no model, so a run picking it would ask '
+                        + 'for a model with no name'],
+                    notes: [],
+                    models: 1, modelRefs: ['claude-opus-5'],
+                    // ‼️ A verdict that is not about this configuration any
+                    // more. Dropping it would say "never tested" about a route
+                    // tested twenty minutes ago; showing it as current would
+                    // claim a pass for an endpoint that has since changed.
+                    testedSuperseded: {
+                        key: key({ providerId: 'anthropic', modelId: 'claude-opus-5', revision: 2 }),
+                        ok: true, at: NOW - 20 * 60 * 1000, ms: 2100, detail: 'Answered in 2.1s.'
+                    },
+                    testedSupersededWhy: 'the route has been edited since (revision 2 → 3)'
+                }
+            ]
+        },
+        {
+            engine: 'opencode',
+            axis: 'provider',
+            source: 'engine-reported',
+            cli: { present: true, version: '1.18.19' },
+            problems: [],
+            // ‼️ MEASURED, AND NOT A FAULT: with a completely empty auth.json
+            // the CLI still lists and runs its own connected provider.
+            notes: ['~/.local/share/opencode/auth.json holds no credential, and on this engine that '
+                + 'is not a fault: its own connected provider lists and runs models with an empty '
+                + 'credentials file (measured) — a provider the catalog offers is available whether '
+                + 'or not one is stored'],
+            rows: [
+                {
+                    engine: 'opencode', providerId: 'opencode', label: 'opencode',
+                    configured: true, configuredBy: 'the engine\'s own catalog',
+                    available: 'yes', problems: [],
+                    notes: [
+                        'no credential is stored for this engine, and it is offering this provider anyway',
+                        'this provider publishes 2 reasoning variants (thinking, standard); a headless '
+                            + 'run can pick one, while a hosted card cannot — ACP declares only model '
+                            + 'and mode, and the interactive TUI takes no --variant flag'
+                    ],
+                    models: 7,
+                    modelRefs: ['opencode/big-pickle', 'opencode/ling-3.0-flash-fin-free',
+                        'opencode/muse-spark-1.3-contributor-free'],
+                    tested: {
+                        key: { engine: 'opencode', providerId: 'opencode',
+                            modelId: 'opencode/big-pickle', adapter: 'opencode@1', cli: '1.18.19' },
+                        ok: false, refused: 'a turn would fail for a reason already known',
+                        at: NOW - 6 * 60 * 1000, ms: 0,
+                        detail: 'No free model is on offer from the providers connected here.'
+                    }
+                },
+                {
+                    engine: 'opencode', providerId: 'anthropic', label: 'anthropic',
+                    configured: true, configuredBy: 'the engine\'s own catalog',
+                    // ‼️ UNKNOWN IS AN ANSWER. Nothing is wrong here and nothing
+                    // was read; drawing it amber would send somebody looking for
+                    // a fault that does not exist.
+                    available: 'unknown', problems: [], notes: [],
+                    models: 0, modelRefs: []
+                }
+            ]
+        }
+    ];
+    // one row with a turn in the air, so the disabled state is drawn too
+    d.providerTesting = ['claude/minimax'];
+    return d;
+}
+
 module.exports = {
     script: 'engines.js',
     data,
     brokenData,
     variants: () => [
         { id: 'enginespanel', label: 'Engines panel', data: data() },
+        {
+            id: 'engineshealth',
+            label: 'Engines panel — route health: a pass, a failure, a superseded verdict, an unknown row and the two notes that are not faults',
+            data: healthData()
+        },
         { id: 'enginesbroken', label: 'Engines panel — all three verdicts', data: brokenData() },
         { id: 'enginesprompt', label: 'Engines panel — one slot on the simplified prompt', data: promptDriftData() },
         { id: 'enginesincomplete', label: 'Engines panel — a slot missing three clauses of its contract', data: incompleteData() },
