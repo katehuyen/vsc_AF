@@ -275,6 +275,39 @@ const CLAUDE_ROUTE = {
     eq('…and nothing was requested, so nothing disagreed',
         rows[0].agreement, 'nothing-requested');
     eq('the engine still comes through', rows[0].identity.engine, 'claude');
+
+    /*
+     * ‼️ X-116 — AND IT IS THE PRODUCT'S OWN ANSWER, NOT A SECOND COPY OF IT.
+     *
+     * `declaredOf` used to spell this shape out by hand — `unknownIdentity`
+     * with the origin overwritten — while `legacyIdentity`, whose entire job is
+     * this one case, had no caller anywhere in `src/`. The two agreed, which is
+     * precisely why nobody saw it: X-116 is the SCHEMA UPGRADE item, so the next
+     * field added to `ProviderIdentity` would have reached the real function and
+     * not this line, and a run with no manifest would quietly have started
+     * meaning something different from what the product says it means.
+     *
+     * So the guard is not "the origin is legacy-inherit" (the assertions above
+     * already say that, and they passed the whole time the copy existed). It
+     * asks the two objects to be THE SAME OBJECT, field for field — which is a
+     * question a hand-written copy fails the moment the shape grows.
+     */
+    const P = require(path.join(ROOT, 'out', 'core', 'providerIdentity.js'));
+    const mine = rows[0].identity;
+    const theirs = P.legacyIdentity('claude');
+    const declared = Object.keys(theirs);
+    ok('…and the no-manifest identity carries every field legacyIdentity does'
+        + ' (missing: ' + declared.filter(k => !(k in mine)).join(', ') + ')',
+        declared.every(k => k in mine));
+    ok('‼️ …with the same value in each, so the two cannot drift apart',
+        declared.every(k => JSON.stringify(mine[k]) === JSON.stringify(theirs[k])));
+    // ‼️ AND THE HAND-WRITTEN COPY IS GONE FROM THE SOURCE, not merely
+    // out-agreed by it: a second call site that rebuilds the shape passes every
+    // assertion above and reintroduces the whole defect.
+    const src = require('fs').readFileSync(path.join(ROOT, 'src', 'core', 'turnRuntime.ts'), 'utf8');
+    ok('‼️ …and turnRuntime CALLS it rather than rebuilding the shape',
+        /return legacyIdentity\(/.test(src)
+        && !/\.\.\.unknownIdentity\([^)]*\),\s*origin:/.test(src));
 }
 
 /* =========================================================================

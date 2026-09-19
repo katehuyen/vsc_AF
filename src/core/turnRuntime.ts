@@ -32,8 +32,8 @@
 import { LaunchManifest, manifestIndex, manifestOf } from './launchManifest';
 import { BillingIdentity, billingOf } from './billing';
 import {
-    hasProviderConflict, ProviderIdentity, proofOf, scopeAllowsTurnChange, TurnRuntimeIdentity,
-    turnIdentity, unknownIdentity
+    hasProviderConflict, legacyIdentity, ProviderIdentity, proofOf, scopeAllowsTurnChange,
+    TurnRuntimeIdentity, turnIdentity
 } from './providerIdentity';
 
 /**
@@ -120,7 +120,15 @@ const list = (v: readonly string[] | undefined): string[] =>
  */
 function declaredOf(manifest: LaunchManifest | undefined, engine: string): ProviderIdentity {
     if (manifest) { return manifest.identity; }
-    return { ...unknownIdentity(str(engine) || 'claude'), origin: 'legacy-inherit' };
+    // ‼️ X-116 — AND IT IS `legacyIdentity`'s ANSWER, NOT A SECOND COPY OF IT.
+    // This line spelled the shape out by hand (`unknownIdentity` with the
+    // origin overwritten) while the function whose entire job is this case sat
+    // in providerIdentity.ts with no caller at all. The two agree today, which
+    // is exactly why it was invisible: X-116 is the SCHEMA UPGRADE item, so the
+    // next field added to `ProviderIdentity` reaches the real answer and not
+    // this one, and a run with no manifest would quietly start meaning
+    // something different from what the product says it means.
+    return legacyIdentity(str(engine) || 'claude');
 }
 
 /**
