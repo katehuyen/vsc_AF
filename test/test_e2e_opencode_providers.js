@@ -30,6 +30,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const R = require(path.join(ROOT, 'out', 'core', 'providerRegistry.js'));
 const B = require(path.join(ROOT, 'out', 'core', 'billing.js'));
+const CE = require(path.join(ROOT, 'out', 'core', 'consoleEngine.js'));
 const { openAiMock: mock } = require('./e2e_mocks');
 
 function cliPresent() {
@@ -97,6 +98,32 @@ async function main() {
         const ids = (cat.providers || []).map(p => p.providerId);
         ok('the catalog read from the engine offers both custom providers', ids.includes('oca') && ids.includes('ocb'));
         ok('…as a catalog the ENGINE reported', cat.source === 'engine-reported');
+        /**
+         * ‼️ X-113 — THE VARIANT SOURCE, ASKED OF THE ENGINE RATHER THAN OF A
+         * COMMENT — AND THE COMMENT WAS ALREADY WRONG.
+         *
+         * `consoleEngine.ts` said not one reachable OpenCode model published a
+         * reasoning variant, and that reading had gone stale: asked here, the
+         * engine's own catalog answers with three of its eight models
+         * publishing them. A measurement written into a comment ages silently;
+         * one asked of the engine on every run cannot.
+         *
+         * What is pinned is therefore the SHAPE of the answer, not a number
+         * that will move again: variants are published PER MODEL, some models
+         * have them and some do not, and that unevenness is exactly why the
+         * product still offers no box (X-330 — a flat list would offer `xhigh`
+         * on a model that publishes three levels, and ACP has no channel for
+         * one at all). The day every reachable model agrees, or the day none
+         * does, this line says so.
+         */
+        const rows = cat.rows || [];
+        const varied = rows.filter(r => r.variants && Object.keys(r.variants).length);
+        ok('the engine publishes reasoning variants per MODEL, not per provider '
+            + `(${varied.length} of ${rows.length} rows: `
+            + (varied.map(r => r.modelId || r.id).join(', ') || 'none') + ')',
+            rows.length > 0 && varied.length !== rows.length);
+        ok('‼️ …so the product still offers no box for one, and the two agree ON WHY (X-330)',
+            CE.engineTakesEffort('opencode') === false);
         ok('the adapter passes a model the catalog offers', adapter.preflight({ engine: 'opencode', providerId: 'oca', modelId: 'oca/m1' }).length === 0);
         ok('‼️ …and refuses one no provider serves', adapter.preflight({ engine: 'opencode', providerId: 'oca', modelId: 'oca/nope' }).length > 0);
 

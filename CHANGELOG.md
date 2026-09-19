@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.578.0 - where the context figure comes from, and a measurement in a comment that had quietly stopped being true (X-117, part 5) (2026-09-19)
+
+- **‼️ X-113 — THE CONTEXT FIGURE IS THE ENGINE'S, AND ON A THIRD-PARTY ROUTE
+  THAT IS THE POINT.** A gateway counts its own tokens; a number assembled this
+  side would be a guess wearing the engine's authority. The Claude end-to-end
+  file now pins the SOURCE rather than the shape of it: the usage the endpoint
+  declared is the usage that comes back out of the run, on the routed wire, from
+  the CLI's own single `result` event.
+- **‼️ AND THE VARIANT SOURCE, ASKED OF THE ENGINE RATHER THAN OF A COMMENT —
+  WHICH IS HOW THE COMMENT WAS CAUGHT.** `consoleEngine.ts` recorded a
+  measurement: not one reachable OpenCode model published a reasoning variant,
+  so the effort box is not offered on that engine. Put to the engine's own
+  catalog on a live run, the answer came back different — the `opencode`
+  provider serves eight models and THREE publish variants
+  (`ling-3.0-flash-fin-free` at low · medium · high, and two `muse-spark` builds
+  at minimal · low · medium · high · xhigh). A measurement written into a
+  comment ages silently; one asked on every run cannot, and the stale reading
+  has been replaced by the new one beside the reason it did not change the
+  answer.
+  - **The box is still not offered, and that is now a different decision rather
+    than the old one (X-330).** Variants are published PER MODEL: a flat list
+    across the picker would offer `xhigh` on a model that publishes three
+    levels, which is the same defect as a control with no referent at all; and
+    ACP declares only `model` and `mode` as session config, so a hosted card has
+    no channel for one and the box would work headless and not in Console.
+    Doing it properly — a list derived from the selected model's own row — is
+    its own item; flipping the flag alone would ship the half that misleads.
+  - What the test pins is therefore the SHAPE of the answer, not a number that
+    will move again: some models publish variants and some do not, and that
+    unevenness is the reason. The day they all agree, or none does, the suite
+    says so.
+
 ## 3.577.0 - the composition every unattended run shares, watched on the wire; and the third list nobody was reading (X-117, part 4) (2026-09-19)
 
 - **‼️ ONE SHAPE CARRIES THE ROUTE INTO EVERY UNATTENDED RUN, so that is where

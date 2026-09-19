@@ -1048,14 +1048,31 @@ export function enginePermissionSetting(
  */
 export function engineTakesEffort(engine: string | undefined): boolean {
     const id = engineOf(engine).id;
-    // ‼️ OPENCODE HAS THE FLAG AND NOTHING TO PUT IN IT — measured. `--variant`
-    // exists on the headless command, and on this machine not one of the seven
-    // reachable models publishes a variant (`export` → `variant: "default"`);
-    // ACP 1.18.18 declares only `model` and `mode` as session config, so a
-    // hosted card has no channel for one at all. A picker offering the box would
-    // be a control with no referent, which `docs/CONVENTIONS.md` already forbids
-    // — so the answer is no until a measurement says otherwise, at which point
-    // this is the one line that changes.
+    /**
+     * ‼️ OPENCODE HAS THE FLAG AND — AS OF X-117 — SOMETHING TO PUT IN IT ON
+     * SOME MODELS. THE ANSWER IS STILL NO, AND NOW FOR A DIFFERENT REASON.
+     *
+     * `--variant` exists on the headless command. The earlier reading here said
+     * not one reachable model published a variant; that has since stopped being
+     * true and the stale measurement is worse than none, so it is replaced.
+     * Measured again 2026-09-19 against `opencode models --verbose`: the
+     * `opencode` provider serves 8 models and THREE publish variants —
+     * `ling-3.0-flash-fin-free` (low · medium · high) and two `muse-spark`
+     * builds (minimal · low · medium · high · xhigh).
+     *
+     * It stays `false` because what changed does not make a flat box correct:
+     *   · variants are PER MODEL, not per provider, so one list offered across
+     *     the picker would offer `xhigh` on a model that publishes three levels
+     *     — a control with a referent only sometimes, which is the same defect
+     *     as one with none;
+     *   · ACP declares only `model` and `mode` as session config, so a hosted
+     *     card still has no channel for one and the box would work headless and
+     *     not in Console.
+     * Doing it properly is its own item (X-330); flipping this line alone would
+     * ship the half of it that misleads. `test_e2e_opencode_providers.js` reads
+     * the engine's catalog on every run, so this measurement cannot go stale
+     * again without saying so.
+     */
     return id !== 'gemini' && id !== 'opencode';
 }
 

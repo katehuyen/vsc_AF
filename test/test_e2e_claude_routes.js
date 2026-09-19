@@ -126,6 +126,23 @@ async function main() {
             wrongM.posts().length >= 1 && wrongM.posts().every(h => h.key === 'sk-inherited-CANARY'));
         ok('…recorded as a run nobody routed', !bareRt.identity.providerId);
 
+        // ---- 5b. X-113 — where the CONTEXT figure comes from ----
+        /**
+         * ‼️ THE FIGURE IS THE ENGINE'S, AND ON A THIRD-PARTY ROUTE THAT IS THE
+         * WHOLE POINT.
+         *
+         * A gateway counts its own tokens; nothing this side could recompute
+         * them, and a number assembled here would be a guess wearing the
+         * engine's authority. So the source is the CLI's own `result` event, and
+         * what this proves is that the number the ENDPOINT declared is the
+         * number that arrives — the mock answers a fixed usage, and the same
+         * usage comes back out of the run on the routed wire.
+         */
+        ok('‼️ the context figure is the engine\'s own, carried from the endpoint that served it',
+            !!result.usage && result.usage.input_tokens === 12 && result.usage.output_tokens === 3);
+        ok('…and the run is the one that declared it (one turn, one result)',
+            kimiRun.events.filter(e => e.type === 'result').length === 1);
+
         // ---- 6. a removed route ----
         const gone = R.adapterFor('claude', { ...deps, profiles: profiles.filter(p => p.id !== 'kimi') });
         const goneRt = gone.resolveRuntime({ engine: 'claude', providerId: 'kimi', tier: 'opus' });
