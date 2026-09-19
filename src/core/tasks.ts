@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { sendToTerminalWhenReady } from './shellReady';
 import { spawnEnvironment, terminalEnvOverlay } from './providerRuntime';
+import { SecretScrubber, secretValuesOf } from './secretScrub';
 import { AgentInfo } from './agents';
 import { RoundWhy } from './sentryWhy';
 import { normalizeFinishSound } from './alertVoices';
@@ -4203,6 +4204,12 @@ export class TaskManager implements vscode.Disposable {
          * the second is where somebody forgets, and a run that quietly kept the
          * inherited route looks exactly like one that did not.
          */
+        // ‼️ X-106 — the task's own route, on the headless path too. Both
+        // spawn shapes read it from the same helper, because the way this
+        // regresses is one of the two being given the route and the other
+        // being left inheriting (see `openInteractive`). Held in a name of its
+        // own because the output below needs to know what was injected (X-115).
+        const routeRuntime = this.opts.engineRuntime?.(agent.id, engine.id, this.spawnRouteOf(task));
         const spawnEnv = spawnEnvironment(
             process.env,
             // ‼️ X-169 — the account is one more LAYER on the list this argument
@@ -4210,11 +4217,7 @@ export class TaskManager implements vscode.Disposable {
             // stays the one thing that decides what survives.
             [engineEnv, this.opts.getEnv?.(agent.id),
                 this.opts.accountLayer?.(engine.id, task.account, agent.id)],
-            // ‼️ X-106 — the task's own route, on the headless path too. Both
-            // spawn shapes read it from the same helper, because the way this
-            // regresses is one of the two being given the route and the other
-            // being left inheriting (see `openInteractive`).
-            this.opts.engineRuntime?.(agent.id, engine.id, this.spawnRouteOf(task))
+            routeRuntime
         );
         const child = argv
             ? cp.spawn(engine.exe, argv, {
@@ -4264,8 +4267,27 @@ export class TaskManager implements vscode.Disposable {
         const opencodeRun = perTurn && engine.id === 'opencode';
         let bound = '';
         let seen = '';
+        /**
+         * ‼️ X-115 — THE OUTPUT FILE IS AN ARTEFACT AGENT FARM KEEPS, so the
+         * route's key does not get into it even when the CLI quotes it back
+         * (a proxy error echoing a header, a debug line). Only the values this
+         * spawn was handed as SECRETS are scrubbed; with none — almost every
+         * run — the scrubber is inactive and the raw bytes are written exactly
+         * as they always were.
+         */
+        const scrub = new SecretScrubber(secretValuesOf(routeRuntime?.spawnEnv));
+        const put = (chunk: Buffer | string): void => {
+            if (!scrub.active) { stream.write(chunk); return; }
+            const safe = scrub.push(chunk);
+            if (safe) { stream.write(safe); }
+        };
+        const drain = (): void => {
+            if (!scrub.active) { return; }
+            const rest = scrub.flush();
+            if (rest) { stream.write(rest); }
+        };
         child.stdout?.on('data', chunk => {
-            stream.write(chunk);
+            put(chunk);
             if (!opencodeRun) { return; }
             const text = String(chunk);
             seen += text;
@@ -4277,15 +4299,17 @@ export class TaskManager implements vscode.Disposable {
                 if (id) { bound = id; this.setRunProgress(task.id, { sessionId: id }); }
             }
         });
-        child.stderr?.on('data', chunk => stream.write(chunk));
+        child.stderr?.on('data', chunk => put(chunk));
         child.on('error', err => {
-            stream.write(`\n\n---\n[spawn error] ${String(err)}\n`);
+            drain();
+            stream.write(`\n\n---\n[spawn error] ${scrub.text(String(err))}\n`);
             stream.end();
             this.processes.delete(task.id);
             if (task.status === 'running') { this.finish(task, 'failed'); }
         });
         child.on('close', code => {
             const mins = task.startedAt ? Math.round((Date.now() - task.startedAt) / 60000) : 0;
+            drain();
             stream.write(`\n\n---\nFinished: ${new Date().toLocaleString()} · exit ${code ?? '?'} · ${mins} min\n`);
             stream.end();
             this.processes.delete(task.id);

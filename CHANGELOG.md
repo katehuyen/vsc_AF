@@ -2,6 +2,56 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.568.0 - a credential goes to one place, and every surface that keeps what came back is checked for it (X-115, closes) (2026-09-19)
+
+- **‼️ MEASURED LEAK, CLOSED: the OpenCode catalog was copying model options and
+  headers into Agent Farm's own store.** With a canary in
+  `OPENCODE_CONFIG_CONTENT`, `opencode models --verbose` printed a model's
+  `options` and `headers` **verbatim** from the user's config - the two places
+  OpenCode documents for a model's `apiKey` and an `Authorization` header - and
+  the raw listing was written straight into `globalState` and restored on every
+  activation. A credential OpenCode owns, copied into a store Agent Farm owns:
+  the "two vaults" failure X-100 exists to prevent. The listing is now reduced
+  by an **allow-list** before anything keeps it (`publicOpenCodeCatalogText`):
+  the fields the readers use, reduced to their public shapes - numbers stay
+  numbers, flags stay flags, a variant keeps its name and loses its settings -
+  and every other field and every stray line dropped. The reduction is
+  invisible downstream (rows, providers, the model list and the free-model pick
+  read identically before and after), and **a copy persisted by an earlier build
+  is reduced and rewritten on the first activation**, because otherwise it lives
+  on in the editor's state database until a fetch that may never come.
+- **A canary key through the real Claude adapter, looked for everywhere.** It
+  reaches the child's environment - the one place it belongs - and nowhere
+  else: not argv, not the identity, not the names to clear, not preflight, not
+  the catalog, not the launch manifest or the sentence that describes it, not
+  the public profile list, not `providers.status`. The official route (no
+  endpoint of its own) still clears an inherited `ANTHROPIC_BASE_URL` and key,
+  and the environment the child really gets holds neither.
+- **What a process says back is scrubbed of what was put into it**
+  (`core/secretScrub.ts`). A task's output file and a provider test's verdict
+  are artefacts Agent Farm keeps, and a CLI that quotes its own environment in
+  an error is not hypothetical. On a stream a chunk boundary can cut a key in
+  half, so the scrubber holds back (longest secret - 1) characters - proven at
+  every possible cut point, and with multi-byte characters split across byte
+  chunks. Only values injected as secrets are scrubbed (the endpoint and the
+  model are public and stay readable), and **with nothing injected - almost every
+  run - the raw bytes are written exactly as before**.
+- **A verdict about a route nobody holds is a statement about nothing.**
+  Removing a route - from the bridge or from the page, through one function -
+  now empties every test record filed under it, current and superseded. An
+  edited route keeps its records on purpose; they read as superseded with the
+  reason.
+- **The artefact and the repository are checked by CONTENT, not only by name.**
+  `npm run verify` inflates every text entry of the VSIX and refuses a
+  credential-shaped string by kind; the commit hook runs the same check over the
+  STAGED content of every staged text file (`tools/scan_staged.js`). One list of
+  shapes (`tools/credentialShapes.js`) for both, with bodies long enough that a
+  doc placeholder does not match, and a planted test value marked `CANARY` told
+  apart from a real key. Neither guard ever prints the value it found.
+- Tests: new `test_secret_canary.js` 54. Both new guards were proven to bite -
+  a synthetic VSIX with a deflated key and a throwaway repository with one
+  staged - before being trusted.
+
 ## 3.567.0 - three different questions about a provider, and only one of them costs anything (X-114, closes) (2026-09-19)
 
 - **‼️ `engines.status` answers about the ENGINE, and every fault worth catching

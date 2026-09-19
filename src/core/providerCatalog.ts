@@ -168,6 +168,85 @@ export function readOpenCodeCatalog(text: string | undefined): ProviderCatalogRe
     return { providers: [...providers.values()], source, rows };
 }
 
+/**
+ * X-115 — ‼️ WHAT OF THE ENGINE'S LISTING AGENT FARM IS ALLOWED TO KEEP.
+ *
+ * MEASURED 2026-09-19 with a canary in `OPENCODE_CONFIG_CONTENT`: `opencode
+ * models --verbose` prints each model's `options` and `headers` VERBATIM from
+ * the user's own config — both canaries came back in the listing. Those are
+ * exactly the two places OpenCode documents for a model's `apiKey` and an
+ * `Authorization` header, and the raw text was going straight into
+ * `globalState` and back out on every activation: a credential OpenCode owns,
+ * copied into a store Agent Farm owns, which is the "two vaults" failure X-100
+ * was written to make impossible.
+ *
+ * ‼️ AN ALLOW-LIST, NOT A DENY-LIST — built by naming what is public rather
+ * than by deleting what is not, the rule `publicProfile` already keeps. A field
+ * OpenCode adds next month is dropped until somebody decides it is safe. The
+ * fields kept are exactly the ones `rowFromOpenCode` reads, reduced to their
+ * public shapes (numbers stay numbers, flags stay flags, a variant keeps its
+ * NAME and loses its settings). Ref lines are kept verbatim because
+ * `readOpencodeModelList` reads them; every other line — a warning, a log line
+ * — is dropped, because nothing reads it and it could hold anything.
+ */
+export function publicOpenCodeCatalogText(text: string | undefined): string {
+    const out: string[] = [];
+    const lines = (text || '').split(/\r?\n/);
+    const REF = /^[\w.:-]+\/[\w.:-]+$/;
+    let i = 0;
+    while (i < lines.length) {
+        const line = lines[i].trim();
+        if (line === '{') {
+            let depth = 0, j = i;
+            const buf: string[] = [];
+            for (; j < lines.length; j++) {
+                buf.push(lines[j]);
+                for (const ch of lines[j]) {
+                    if (ch === '{') { depth++; } else if (ch === '}') { depth--; }
+                }
+                if (depth === 0) { break; }
+            }
+            let parsed: Record<string, unknown> | undefined;
+            try { parsed = obj(JSON.parse(buf.join('\n'))); } catch { parsed = undefined; }
+            // An object that does not parse is dropped whole: the reader
+            // drops it too, and it is the one shape nobody can vouch for.
+            if (parsed) { out.push(JSON.stringify(publicModelObject(parsed), null, 2)); }
+            i = j + 1;
+            continue;
+        }
+        if (REF.test(line)) { out.push(line); }
+        i++;
+    }
+    return out.join('\n');
+}
+
+/** Numbers, flags and nested maps of them — the shape a cost, a limit and a
+ *  capability set really have. A string inside one is not kept: none of those
+ *  maps has a reason to carry text, and text is what a secret is. */
+function numbersAndFlags(v: unknown): Record<string, unknown> {
+    const o: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(obj(v))) {
+        if (typeof x === 'number' || typeof x === 'boolean') { o[k] = x; }
+        else if (x && typeof x === 'object' && !Array.isArray(x)) { o[k] = numbersAndFlags(x); }
+    }
+    return o;
+}
+
+function publicModelObject(o: Record<string, unknown>): Record<string, unknown> {
+    const kept: Record<string, unknown> = {};
+    for (const k of ['id', 'providerID', 'name', 'status'] as const) {
+        if (typeof o[k] === 'string') { kept[k] = o[k]; }
+    }
+    if (o.cost !== undefined) { kept.cost = numbersAndFlags(o.cost); }
+    if (o.limit !== undefined) { kept.limit = numbersAndFlags(o.limit); }
+    if (o.capabilities !== undefined) { kept.capabilities = numbersAndFlags(o.capabilities); }
+    // The variant NAMES are the public fact; what a variant sets is config.
+    if (o.variants !== undefined) {
+        kept.variants = Object.fromEntries(Object.keys(obj(o.variants)).map(v => [v, {}]));
+    }
+    return kept;
+}
+
 function rowFromOpenCode(o: Record<string, unknown>): CatalogModelRow | undefined {
     // ‼️ THE FIELD, NOT THE PRINTED PREFIX. This is X-98's rule and it is one
     // line: read `providerID`, never `head.split('/')`.

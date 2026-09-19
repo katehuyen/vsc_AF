@@ -30,4 +30,12 @@ if [ -f out/core/ctxmenu.js ] && ! node test/test_ctxmenu.js >/dev/null 2>&1; th
   exit 1
 fi
 
+# Credential guard (X-115). Nothing shaped like a real key is committed: the
+# STAGED content of every staged text file is searched, and the kind of
+# credential is named without printing it. A test that plants one on purpose
+# marks it CANARY (tools/credentialShapes.js).
+if ! node tools/scan_staged.js; then
+  exit 1
+fi
+
 exit 0

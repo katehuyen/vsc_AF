@@ -191,11 +191,12 @@ import {
     ProviderTransport, pruneProviderPick
 } from './core/launchProvider';
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
-import { readOpenCodeCatalog } from './core/providerCatalog';
+import { publicOpenCodeCatalogText, readOpenCodeCatalog } from './core/providerCatalog';
 import {
-    keyFor, providerHealth, ProviderHealthInput, ProviderHealthReport, ProviderTestRecord,
+    dropTestsFor, keyFor, providerHealth, ProviderHealthInput, ProviderHealthReport, ProviderTestRecord,
     smokeRefusal, testKeyOf
 } from './core/providerHealth';
+import { scrubSecrets, secretValuesOf } from './core/secretScrub';
 import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
 import { describeResumeRoute, ResumeAsk, ResumeRoute, resumeRoute } from './core/resumeGate';
@@ -20647,8 +20648,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
          */
         text?: string;
     };
+    /**
+     * ‼️ X-115 — A LISTING PERSISTED BY AN EARLIER BUILD MAY HOLD A KEY.
+     *
+     * Before this item the raw `opencode models --verbose` text was stored as
+     * it came, and that text carries each model's `options` and `headers`
+     * verbatim from the user's config (measured with a canary). Reducing it on
+     * the way in is not enough: the stored copy lives on in the editor's state
+     * database until the next fetch overwrites it, which on a machine that stays
+     * offline is never. So the reduced text REPLACES the stored one the first
+     * time it differs.
+     */
+    const restoredCatalog = context.globalState.get<OpencodeCatalog>(OPENCODE_CATALOG_KEY) ?? {};
+    const restoredText = publicOpenCodeCatalogText(restoredCatalog.text);
+    if (restoredCatalog.text && restoredText !== restoredCatalog.text) {
+        void context.globalState.update(OPENCODE_CATALOG_KEY, { ...restoredCatalog, text: restoredText });
+    }
+    const { text: _unreducedText, ...restoredRest } = restoredCatalog;
     let opencodeCatalog: OpencodeCatalog = {
-        ...(context.globalState.get<OpencodeCatalog>(OPENCODE_CATALOG_KEY) ?? {}), fetching: false
+        ...restoredRest, ...(restoredText ? { text: restoredText } : {}), fetching: false
     };
     /**
      * ‼️ X-113 — THE ONE PLACE A PUBLISHED WINDOW BECOMES AN ANSWER.
@@ -20697,7 +20715,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // that names the same models would lose labels for nothing.
         const keep = via === 'cli' && opencodeCatalog.via === 'handshake' && sameIds;
         const beforeText = opencodeCatalog.text;
-        const nextText = String(text ?? '').trim() || opencodeCatalog.text;
+        // ‼️ X-115 — ONLY THE PUBLIC HALF OF THE LISTING IS KEPT. The engine
+        // prints a model's `options` and `headers` from the user's own config
+        // (measured), and those are where OpenCode documents a key and an
+        // Authorization header. What is not named as public does not get in.
+        const nextText = publicOpenCodeCatalogText(String(text ?? '')).trim() || opencodeCatalog.text;
         opencodeCatalog = {
             models: keep ? opencodeCatalog.models : models,
             fetchedAt: Date.now(), via: keep ? 'handshake' : via, fetching: false,
@@ -20969,6 +20991,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         await context.globalState.update(PROVIDER_TESTS,
             [rec, ...kept].sort((a, b) => b.at - a.at).slice(0, 200));
     };
+    /** X-115 — every verdict about a route that is gone, gone with it. */
+    const forgetProviderTests = async (engine: string, providerId: string): Promise<void> => {
+        const all = providerTestRecords();
+        const kept = dropTestsFor(all, engine, providerId);
+        if (kept.length !== all.length) { await context.globalState.update(PROVIDER_TESTS, kept); }
+    };
     /**
      * ‼️ A LOCAL CALL, NOT A TURN. `--version` spawns the CLI and asks it
      * nothing: no network, no plan, no tokens. It is here because the CLI
@@ -21086,14 +21114,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ...(rt.clearEnv?.length ? { clearEnv: rt.clearEnv } : {})
         };
         const r = await testEngine(engine as EngineId, engineRunner, Date.now, aim);
+        // ‼️ X-115 — what the engine said is stored and drawn, so what was
+        // injected into it is removed first: a CLI that quotes its own
+        // environment in an error must not turn the verdict into a copy of
+        // the key.
+        const injectedValues = secretValuesOf(rt.spawnEnv);
         const record: ProviderTestRecord = {
             key,
             ok: r.ok,
             at: r.at,
             ms: r.ms,
-            detail: r.detail,
-            ...(r.error ? { error: r.error } : {}),
-            ...(r.refused ? { refused: r.detail } : {})
+            detail: scrubSecrets(r.detail, injectedValues),
+            ...(r.error ? { error: scrubSecrets(r.error, injectedValues) } : {}),
+            ...(r.refused ? { refused: scrubSecrets(r.detail, injectedValues) } : {})
         };
         await rememberProviderTest(record);
         return {
@@ -21695,6 +21728,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // …and the credential goes with it, or it stays in the keychain
             // with nothing left to collect it.
             await clearProviderSecret(id);
+            // X-115 — the SAME function the bridge op calls.
+            await forgetProviderTests(w.profile?.engine ?? 'claude', id);
             EnginesPanel.refreshIfOpen();
             return [];
         },
@@ -39355,6 +39390,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const hadSecret = providerSecretIds().includes(id);
                 await writeProviderProfiles(w.list);
                 await clearProviderSecret(id);
+                // X-115 — and the verdicts filed under it, the last trace left.
+                await forgetProviderTests(w.profile?.engine ?? 'claude', id);
                 EnginesPanel.refreshIfOpen();
                 return { removed: id, credentialCollected: hadSecret };
             }

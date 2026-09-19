@@ -224,6 +224,49 @@ ok('it is the version package.json claims',
                 untracked.length === 0);
         }
     }
+    /**
+     * ‼️ X-115 — AND WHAT IS INSIDE THE FILES, NOT ONLY WHAT THEY ARE CALLED.
+     *
+     * Every rule above reads the LISTING. A key pasted into a doc that IS
+     * tracked, a fixture that slipped out of `test/`, a compiled module with a
+     * token left in a comment — each has a perfectly legal name, and each ships.
+     * So every text entry is inflated and searched for the shapes a real
+     * credential has. The shapes are the vendors' own prefixes with a body long
+     * enough that a placeholder in a doc (`sk-ant-...`, `ghp_xxxx`) does not
+     * match: a check that cries wolf on the documentation gets switched off.
+     */
+    {
+        // The list is shared with the commit hook (tools/scan_staged.js) — one
+        // copy, so the two guards cannot come to disagree about what a key is.
+        const { TEXT_FILE, credentialFindings } = require('./credentialShapes');
+        const zlib = require('zlib');
+        const buf = fs.readFileSync(vsix);
+        const found = [];
+        for (let i = 0; i + 46 <= buf.length; i++) {
+            if (buf.readUInt32LE(i) !== 0x02014b50) { continue; }
+            const method = buf.readUInt16LE(i + 10);
+            const csize = buf.readUInt32LE(i + 20);
+            const nameLen = buf.readUInt16LE(i + 28);
+            const extraLen = buf.readUInt16LE(i + 30);
+            const commentLen = buf.readUInt16LE(i + 32);
+            const local = buf.readUInt32LE(i + 42);
+            const name = buf.toString('utf8', i + 46, i + 46 + nameLen);
+            i += 46 + nameLen + extraLen + commentLen - 1;
+            if (!TEXT_FILE.test(name) || buf.readUInt32LE(local) !== 0x04034b50) { continue; }
+            const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+            const raw = buf.subarray(start, start + csize);
+            let text;
+            try {
+                text = (method === 8 ? zlib.inflateRawSync(raw) : raw).toString('utf8');
+            } catch { continue; }
+            for (const what of credentialFindings(text)) {
+                found.push(name.replace(/^extension\//, '') + ' (' + what + ')');
+            }
+        }
+        ok('‼️ no credential-shaped string is inside any shipped file'
+            + (found.length ? ' (' + found.slice(0, 6).join(', ') + (found.length > 6 ? ', …' : '') + ')' : ''),
+            found.length === 0);
+    }
     const total = files.reduce((n, f) => n + f.size, 0);
     console.log(`  ${(total / 1048576).toFixed(1)} MB uncompressed · ${fs.statSync(vsix).size / 1048576 < 1 ? '<1' : (fs.statSync(vsix).size / 1048576).toFixed(1)} MB packed`);
     ok('the build did not silently double in size', total < 40 * 1048576);

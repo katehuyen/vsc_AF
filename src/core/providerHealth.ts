@@ -407,3 +407,23 @@ export function smokeRefusal(row: ProviderHealthRow | undefined, modelId: string
     }
     return '';
 }
+
+/**
+ * X-115 — ‼️ A VERDICT ABOUT A ROUTE NOBODY HOLDS IS A STATEMENT ABOUT NOTHING.
+ *
+ * Removing a route collects its key from the keychain (X-100); the verdicts
+ * filed under it are the last trace left, and every one of them goes — current
+ * and superseded alike, because "superseded" only means something while there
+ * is a current configuration to be superseded BY. Matched on engine AND id: the
+ * same id on another engine is a different provider and is not touched.
+ *
+ * A route that was only EDITED keeps its records on purpose — they turn into
+ * superseded ones with the reason attached (`findTest`), which is the answer a
+ * reader of an edited route needs.
+ */
+export function dropTestsFor(
+    records: readonly ProviderTestRecord[] | undefined, engine: string, providerId: string
+): ProviderTestRecord[] {
+    return (records ?? []).filter(r =>
+        !(r && r.key && r.key.engine === engine && r.key.providerId === providerId));
+}
