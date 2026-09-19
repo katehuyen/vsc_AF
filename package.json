@@ -8955,6 +8955,10 @@
                 "Hold it and put the question to you."
               ],
               "markdownDescription": "‼️ What `smart` does when nobody can yet say whether the failed run had done any work. The one thing that must not happen is the original prompt going out as if the run had been idle — which is why the default HOLDS rather than guessing."
+            },
+            "carryOn": {
+              "type": "string",
+              "markdownDescription": "‼️ At a LIMIT, which sign-in carries the work on. **Empty (the default) = stay**: the run keeps the account it was given and waits for that plan's reset. `@emptiest`, `@round-robin` or `@<one of your named rules>` lets that rule choose among the engine's OTHER captured accounts; a slot id (e.g. `claude-work`) names the one account to carry on with, if it has room. A run's own policy (Tasks form → Retry → *At a limit, carry on with*) overrides this."
             }
           },
           "additionalProperties": false

@@ -419,6 +419,15 @@ export interface CarryOnInput {
     /** the moment the run would otherwise start again, epoch ms */
     waitUntil?: number;
     now?: number;
+    /**
+     * ‼️ X-226 (round 2) — THE SWITCH, AND IT SHIPS OFF. Empty = stay on `from`
+     * and wait; a policy id (`@emptiest` · `@round-robin` · `@<rule>`) hands the
+     * choice among the OTHER accounts to `resolve`; a slot id names the one
+     * account to carry on with, if it has room.
+     */
+    want?: string;
+    /** resolves a policy id over the pool (the host's `resolvePolicy`, with its cursor) */
+    resolve?: (policyId: string, pool: SlotUsage[]) => { id: string; note?: string; refusal?: string };
 }
 
 /** The answer, and always the sentence for it — a handover nobody can read is
@@ -463,7 +472,15 @@ export function carryOnAccount(i: CarryOnInput): CarryOn {
     const from = String(i.from ?? '').trim();
     const engine = (String(i.engine ?? '').trim() || 'claude').toLowerCase();
     const wait = typeof i.waitUntil === 'number' ? i.waitUntil : 0;
+    const want = String(i.want ?? '').trim();
 
+    // ‼️ X-226 (round 2) — NOTHING ASKED FOR IS NOTHING DONE. The run was given
+    // a sign-in; unless its policy names who may take over, it keeps that one
+    // and waits for its reset. This is the default, and it is the whole point.
+    if (!want) {
+        return { why: 'carrying on to another sign-in is off for this run (retry policy `carryOn` is '
+            + 'not set), so it waits for its own reset' };
+    }
     if (from === MACHINE_ACCOUNT) {
         return { why: 'this run is pinned to the identity the machine itself is signed in as, so '
             + 'nothing is injected — it waits rather than being moved onto a plan it did not name' };
@@ -478,6 +495,39 @@ export function carryOnAccount(i: CarryOnInput): CarryOn {
         return { why: `no other ${engine} account is captured on this machine, so there is nobody `
             + 'to hand the work to' };
     }
+    const walled = `${from || 'the active sign-in'} is walled until ${new Date(wait).toLocaleTimeString()}`;
+    const figure = (u: SlotUsage | undefined): string =>
+        u && u.state === 'ok' && u.percent >= 0 ? `${u.percent}%` : 'unmeasured';
+    // A NAMED ACCOUNT: that one, if it has room — never a substitute for it.
+    if (!want.startsWith('@')) {
+        if (want === from) {
+            return { why: `the policy names ${want} to carry on with, and that is the sign-in that just `
+                + 'hit the wall, so the wait stands' };
+        }
+        const u = pool.find(x => x.slotId === want);
+        if (!u) {
+            return { why: `the policy names ${want} to carry on with, which is not a captured ${engine} `
+                + 'sign-in on this machine, so the wait stands' };
+        }
+        if (u.state !== 'ok' || u.percent >= ceiling) {
+            return { why: `the policy names ${want} to carry on with, and it is ${u.state === 'ok'
+                ? `at ${u.percent}% of its window too` : u.state}, so the wait stands` };
+        }
+        return { slotId: want, why: `${walled}, and the policy names ${want} (${figure(u)}) — the work carries on there` };
+    }
+    // A POLICY: the host's own resolver, so `@round-robin` moves the same cursor a
+    // launch would; without one only the built-in @emptiest can be answered here.
+    if (i.resolve) {
+        const r = i.resolve(want, pool);
+        const id = String(r.id ?? '').trim();
+        if (r.refusal || !id) {
+            return { why: `${want} could not choose another ${engine} sign-in — ${r.refusal || 'nothing chosen'} — so the wait stands` };
+        }
+        return { slotId: id, why: `${walled}, and ${want} chose ${id} (${figure(pool.find(x => x.slotId === id))}) — the work carries on there` };
+    }
+    if (want.toLowerCase() !== '@emptiest') {
+        return { why: `${want} names a policy and nothing here can resolve one, so the wait stands` };
+    }
     const pick = pickAccount(pool, { ceiling, engine });
     if (!pick) {
         return { why: `every other ${engine} account is at or above ${ceiling}% of its five-hour `
@@ -485,8 +535,7 @@ export function carryOnAccount(i: CarryOnInput): CarryOn {
     }
     return {
         slotId: pick.slotId,
-        why: `${from || 'the active sign-in'} is walled until ${new Date(wait).toLocaleTimeString()}, `
-            + `and ${pick.slotId} has room (${pick.percent}%) — the work carries on there rather `
+        why: `${walled}, and ${pick.slotId} has room (${pick.percent}%) — the work carries on there rather `
             + 'than sleeping'
     };
 }

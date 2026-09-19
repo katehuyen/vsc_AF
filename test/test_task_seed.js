@@ -131,6 +131,65 @@ const DIMENSION_BOX = {
         ['', '', '', '']);
 }
 
+// ---------- ‼️ M-34 — EVERY FIELD OF THE RETRY POLICY, BOTH WAYS, BY NAME ----
+//
+// The bug: `behavior`, `continuationPrompt` and `unknownProgressFallback` were
+// read off the form and written to the store (M-10) and never seeded back, so
+// a policy saved as "continue it" reopened as "a fresh run" with its prompt
+// gone — and saving that form wrote the loss back. Nothing measured the seam.
+// Now the list is `RetryPolicy` itself, read out of the source: a field with no
+// box name here, no seed, no reader in `retryFromDraft` or no home on the blank
+// draft fails by name, so the next field cannot be dropped the same way.
+{
+    const retrySrc = fs.readFileSync(path.join(ROOT, 'src', 'core', 'retry.ts'), 'utf8');
+    const at = retrySrc.indexOf('export interface RetryPolicy');
+    const fields = [...retrySrc.slice(at, retrySrc.indexOf('\n}', at))
+        .matchAll(/^ {4}([a-zA-Z][\w]*)\??:/gm)].map(m => m[1]);
+    ok('RetryPolicy was found and has fields', at > 0 && fields.length >= 12);
+    const RETRY_BOX = {
+        max: 'retryMax', delayMin: 'retryDelayMin', delay2Min: 'retryDelay2Min', delay3Min: 'retryDelay3Min',
+        capMin: 'retryCapMin', backoff: 'retryBackoff', formula: 'retryFormula', when: 'retryWhen',
+        resetAware: 'retryResetAware', safetyBufferMin: 'retrySafetyMin', prompt: 'retryPrompt',
+        behavior: 'retryBehavior', continuationPrompt: 'retryContinuation',
+        continuationPrompt2: 'retryContinuation2', continuationPromptLater: 'retryContinuationLater',
+        unknownProgressFallback: 'retryUnknown',
+        // X-226 (round 2) — who carries on at a limit; '' = stay.
+        carryOn: 'retryCarryOn'
+    };
+    eq('‼️ every retry field has a box on the form, by name', fields.filter(f => !(f in RETRY_BOX)), []);
+    const full = {
+        max: 3, delayMin: 10, delay2Min: 20, delay3Min: 30, capMin: 300, backoff: 'formula', formula: 'prev*2',
+        when: 'limit', resetAware: true, safetyBufferMin: 7, prompt: 'again', behavior: 'smart',
+        continuationPrompt: 'carry on', continuationPrompt2: 'carry on twice', continuationPromptLater: 'still',
+        unknownProgressFallback: 'ask', carryOn: '@emptiest'
+    };
+    const seeded = P.retrySeed(full);
+    eq('‼️ …and a stored policy comes back into every one of them',
+        fields.map(f => RETRY_BOX[f]).filter(box => !(box in seeded)), []);
+    eq('‼️ M-34 — what a retry IS comes back as saved, with its prompt and its fallback',
+        [seeded.retryBehavior, seeded.retryContinuation, seeded.retryUnknown],
+        ['smart', 'carry on', 'ask']);
+    eq('…and the two later prompts the form has no box for ride the draft',
+        [seeded.retryContinuation2, seeded.retryContinuationLater], ['carry on twice', 'still']);
+    eq('‼️ X-226 (round 2) — the handover choice comes back', seeded.retryCarryOn, '@emptiest');
+    eq('…and a policy that never said comes back as "stay", "a fresh run" and "hold it"',
+        [P.retrySeed({ max: 2 }).retryCarryOn, P.retrySeed({ max: 2 }).retryBehavior, P.retrySeed({ max: 2 }).retryUnknown],
+        ['', 'simple', 'park']);
+
+    // The return leg and the blank draft, read out of the page's source.
+    const page = fs.readFileSync(path.join(ROOT, 'media', 'tasksPage.js'), 'utf8');
+    const fromDraft = page.slice(page.indexOf('function retryFromDraft('), page.indexOf('function submitComposer('));
+    ok('retryFromDraft was found', fromDraft.length > 500);
+    eq('‼️ every box is READ BACK into the policy when the form is saved',
+        fields.map(f => RETRY_BOX[f]).filter(box => !new RegExp('\\b' + box + '\\b').test(fromDraft)), []);
+    const blank = page.slice(page.indexOf('function newDraft('), page.indexOf('const draft = Object.assign(base, seed'));
+    eq('‼️ …and every box has a home on the blank draft, so a seed and a fresh form are one shape',
+        fields.map(f => RETRY_BOX[f]).filter(box => !new RegExp('\\b' + box + '\\b').test(blank)), []);
+    const reader = page.slice(page.indexOf('function readComposer('), page.indexOf('function retryFormulaError(') > 0 ? page.length : page.length);
+    ok('‼️ …and the form reads the carry-on box and the behavior box off the page',
+        /v\('retrycarryon', 'retryCarryOn'\)/.test(reader) && /v\('retrybehavior', 'retryBehavior'\)/.test(reader));
+}
+
 // ---------- ‼️ X-221 — AND THE RETURN LEG, WHICH NOBODY WAS MEASURING -------
 //
 // The sweep above is one direction: a stored task comes back into the form. The

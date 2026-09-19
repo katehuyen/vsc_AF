@@ -1284,7 +1284,20 @@ export function retrySeed(r: RetryPolicy | undefined): Record<string, unknown> {
         retryFormula: r.formula ?? '',
         retryCapMin: r.capMin ?? '',
         retryResetAware: !!r.resetAware,
-        retrySafetyMin: r.safetyBufferMin ?? 3
+        retrySafetyMin: r.safetyBufferMin ?? 3,
+        // ‼️ M-34 — WHAT A RETRY IS, AND WHAT SMART DOES, COME BACK TOO. These
+        // three were read off the form and written to the store (M-10) and
+        // never seeded back, so a policy saved as "continue it" reopened as "a
+        // fresh run" with its continuation prompt gone — and saving that form
+        // wrote the loss back. The two prompts the form has no box for are
+        // carried through the draft untouched, so an edit cannot drop them.
+        retryBehavior: r.behavior === 'smart' ? 'smart' : 'simple',
+        retryContinuation: r.continuationPrompt ?? '',
+        retryContinuation2: r.continuationPrompt2 ?? '',
+        retryContinuationLater: r.continuationPromptLater ?? '',
+        retryUnknown: r.unknownProgressFallback ?? 'park',
+        // X-226 (round 2) — who may carry the work on at a limit; '' = stay.
+        retryCarryOn: r.carryOn ?? ''
     };
 }
 

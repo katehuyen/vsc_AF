@@ -101,6 +101,19 @@ export interface RetryPolicy {
      * put the question to the user.
      */
     unknownProgressFallback?: UnknownProgressFallback;
+    /**
+     * ‼️ X-226 (round 2) — AT A LIMIT, WHICH SIGN-IN CARRIES THE WORK ON.
+     *
+     * ABSENT IS "STAY": the run keeps the sign-in it was given and waits for
+     * that plan's reset, which is what the user asked for by choosing it. The
+     * first cut of X-226 moved a walled run onto whichever account had room,
+     * with no setting and no question — the user had picked one account for
+     * the night on purpose and woke up to another plan spent. So the handover
+     * is OPT-IN and this field is the switch: a policy id (`@emptiest`,
+     * `@round-robin`, `@<named rule>`) lets that rule choose among the OTHER
+     * accounts of the engine; a slot id names the one account to carry on with.
+     */
+    carryOn?: string;
     /** How many times to try AGAIN after a failure. 0 (or absent) = never. */
     max?: number;
     /** Minutes to wait before the FIRST retry — and the `base` every strategy
@@ -488,6 +501,10 @@ export function normalizeRetry(raw: unknown): RetryPolicy | undefined {
         || o.unknownProgressFallback === 'stop' || o.unknownProgressFallback === 'ask') {
         out.unknownProgressFallback = o.unknownProgressFallback;
     }
+    // X-226 — kept as typed (a policy id or a slot id); the run resolves it
+    // against the accounts of the moment, and an empty string is "stay".
+    const carryOn = typeof o.carryOn === 'string' ? o.carryOn.trim() : '';
+    if (carryOn) { out.carryOn = carryOn.slice(0, 80); }
     return Object.keys(out).length ? out : undefined;
 }
 
@@ -529,6 +546,10 @@ export function resolveRetry(policy?: RetryPolicy, fallback?: RetryPolicy): Requ
     }
     const fb = a.unknownProgressFallback ?? b.unknownProgressFallback;
     if (fb) { out.unknownProgressFallback = fb; }
+    // X-226 — the handover switch falls through like the rest: a run that says
+    // nothing gets the user's default, and a user who said nothing STAYS.
+    const carryOn = (a.carryOn ?? b.carryOn ?? '').trim();
+    if (carryOn) { out.carryOn = carryOn; }
     return out;
 }
 
@@ -1199,5 +1220,8 @@ export function describeRetry(policy?: RetryPolicy, fallback?: RetryPolicy): str
         bits.push(`first retry at the limit reset + ${p.safetyBufferMin ?? RETRY_DEFAULT_SAFETY_MIN} min`);
     }
     if (p.prompt) { bits.push('with a different prompt'); }
+    // X-226 — said out loud, because it is the one part of a policy that can
+    // spend a plan the run was not given.
+    if (p.carryOn) { bits.push(`at a limit carries on via ${p.carryOn}`); }
     return bits.join(' · ');
 }

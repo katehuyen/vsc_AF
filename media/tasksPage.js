@@ -1206,6 +1206,12 @@
             // computing exactly what it computed before they existed.
             retryDelay2Min: '', retryDelay3Min: '', retryFormula: '', retryCapMin: '',
             retryResetAware: false, retrySafetyMin: 3,
+            // M-34 — every retry box has a home on the blank draft, so a seed and
+            // a fresh form are the same shape and nothing is read off `undefined`.
+            retryBehavior: 'simple', retryContinuation: '', retryContinuation2: '',
+            retryContinuationLater: '', retryUnknown: 'park',
+            // X-226 (round 2) — '' = stay on the run's sign-in at a limit.
+            retryCarryOn: '',
             // ‼️ S-19 — a new session, or the next turn of one that exists.
             // 'new' is the default and always will be: a task that silently
             // joined somebody else's conversation would be the worst kind of
@@ -1502,6 +1508,7 @@
                 ${num('retrycap', 'retryCapMin', 1, 720, '12 h')}</label>
             <label class="ntf" title="Which failures are worth trying again. A session limit means the work was never attempted and the limit clears by itself within hours; any other failure may well repeat."><span>On</span>
                 ${sel('retrywhen', c.retryWhen, [['limit', 'a session limit only'], ['any', 'any failure']])}</label>
+            ${carryOnRow(c)}
             <label class="ntf wide cbxf" title="${C.esc(
             'When the failure really WAS a usage/session limit, the engine has already said when the window '
             + 'reopens — the Claude usage endpoint and Codex\'s own rate-limit block both publish the hour, and '
@@ -1559,6 +1566,33 @@
             ['ask', 'hold it and ask me'],
             ['stop', 'do not retry at all']
         ])}</label>` : ''}`;
+    }
+
+    /**
+     * ‼️ X-226 (round 2) — AT A LIMIT, WHO CARRIES THE WORK ON — and it opens on
+     * "stay". The first cut moved a walled night run onto whichever account had
+     * room, with no box anywhere: the user had chosen one sign-in for the night
+     * on purpose and woke up to another plan spent. The choice is the user's:
+     * stay (default), one of the rules (@emptiest · @round-robin · their own
+     * named ones — the same group the Account box offers), or one named
+     * account. Drawn only where the policy retries on a limit at all, which is
+     * this custom block, and only when the engine has somebody to hand over to.
+     */
+    function carryOnRow(c) {
+        const rows = ntAccounts(c.engine);
+        const policies = ntPolicies(c.engine);
+        if (!rows.length && !policies.length) { return ''; }
+        const opts = C.option('', 'stay on this sign-in — wait for its reset', {
+            selected: !c.retryCarryOn,
+            detail: 'The run keeps the account it was given and its retry waits for that plan\'s window to reopen. Nothing is moved and nothing else is spent. The default.'
+        }) + window.AFAccount.grouped(policies, rows, c.retryCarryOn || '', C);
+        return `<label class="ntf wide" title="${C.esc(
+            'When the run hits a usage limit: stay on its own sign-in and wait for the reset (default), '
+            + 'let a rule choose among the engine\'s OTHER captured accounts (@emptiest, @round-robin, or one '
+            + 'of your named rules), or carry on with one named account if it has room. ‼️ Whatever you '
+            + 'pick, the account that just hit the wall is never chosen again, and a run that failed for '
+            + 'its own reasons is never moved.')}"><span>At a limit, carry on with</span>
+                <select id="nt-retrycarryon">${opts}</select></label>`;
     }
 
     /**
@@ -2589,7 +2623,7 @@
                     <div style="border-top: 1px solid var(--vscode-widget-border, #4443); padding-top: 10px;">
                         <b style="color: var(--vscode-textLink-foreground, #3b82f6); font-size: 12.5px;">6. Quick Decision Matrix</b>
                         <ul style="margin-top:4px;">
-                            <li><b>Overnight Heavy Task:</b> <code>Limit reset: ON</code>, <code>What a retry is: smart</code>, leave prompt boxes <b>empty</b>.</li>
+                            <li><b>Overnight Heavy Task:</b> <code>Limit reset: ON</code>, <code>What a retry is: smart</code>, leave prompt boxes <b>empty</b>. <code>At a limit, carry on with</code> stays on <b>stay</b> unless you want another plan spent — pick <code>@emptiest</code>, <code>@round-robin</code>, a named rule or one account.</li>
                             <li><b>Fresh Start with Alternative Prompt:</b> <code>What a retry is: simple</code>, enter instructions in <code>Retry prompt</code>.</li>
                             <li><b>Continue Prior Conversation:</b> <code>Conversation: continue existing...</code>, enter the next step in <code>Prompt</code>.</li>
                         </ul>
@@ -2996,6 +3030,8 @@
         // ‼️ M-10 — what a retry IS, and what to do when that cannot be told.
         v('retrybehavior', 'retryBehavior'); v('continuationprompt', 'retryContinuation');
         v('unknownfallback', 'retryUnknown');
+        // X-226 (round 2) — who carries on at a limit ('' = stay).
+        v('retrycarryon', 'retryCarryOn');
         b('retryresetaware', 'retryResetAware'); n('retrysafety', 'retrySafetyMin');
         // ‼️ S-19 — which conversation, and the box that narrows the list.
         v('conversation', 'conversation'); v('resumeid', 'resumeSessionId');
@@ -3100,9 +3136,18 @@
             out.behavior = 'smart';
             const cp = String(c.retryContinuation || '').trim();
             if (cp) { out.continuationPrompt = cp; }
+            // M-34 — the two later pick-up prompts have no box here; a policy
+            // that carries them (settings, bridge) keeps them through an edit.
+            const cp2 = String(c.retryContinuation2 || '').trim();
+            if (cp2) { out.continuationPrompt2 = cp2; }
+            const cpl = String(c.retryContinuationLater || '').trim();
+            if (cpl) { out.continuationPromptLater = cpl; }
             const fb = String(c.retryUnknown || '').trim();
             if (fb && fb !== 'park') { out.unknownProgressFallback = fb; }
         }
+        // X-226 (round 2) — the handover switch; empty is "stay" and is not sent.
+        const co = String(c.retryCarryOn || '').trim();
+        if (co) { out.carryOn = co; }
         return out;
     }
 
@@ -4139,6 +4184,7 @@
             // not map). The same shape the engine handler below has.
             byId('nt-route', 'change', () => { readComposer(); ntNarrowRoute(composer); render(); });
             byId('nt-account', 'change', () => { readComposer(); render(); });
+            byId('nt-retrycarryon', 'change', () => { readComposer(); });
             byId('nt-tier', 'change', () => { readComposer(); });
             byId('nt-engine', 'change', () => {
                 readComposer();

@@ -1024,6 +1024,94 @@ query('[data-expand="run:r3"]')[0].click();
     ok('‼️ …but a STORED object\'s kind is not offered: that would be deleting one thing and making another',
         /id="ntbox"/.test(html()) && !/id="nt-kind"/.test(html()));
     sandbox.document.getElementById('nt-cancel').click();
+
+    // ‼️ M-34 — EDIT REOPENS WHAT WAS SAVED, AND SAVING KEEPS IT. A schedule's
+    // policy saved as "continue it" came back as "a fresh run" with its prompt
+    // and its fallback gone, because the host's seed (retrySeed) never carried
+    // them — and saving that form wrote the loss back. This is the whole leg:
+    // the seed the host now builds arrives, every box shows it, and the save
+    // posts it back whole — plus X-226's handover box.
+    const fld = (id) => sandbox.document.getElementById(id);
+    onMessage.forEach(fn => fn({
+        type: 'x', data: {
+            type: 'plan-compose', kind: 'schedule', seed: {
+                mode2: 'edit', id: 's-smart', title: 'gece', agent: 'basit', prompt: 'gece işi', mode: 'headless',
+                engine: 'claude', every: 'daily', time: '03:00',
+                retryMode: 'custom', retryMax: 3, retryDelayMin: 40, retryBackoff: 'same', retryWhen: 'limit',
+                retryPrompt: '', retryDelay2Min: '', retryDelay3Min: '', retryFormula: '', retryCapMin: '',
+                retryResetAware: true, retrySafetyMin: 5,
+                retryBehavior: 'smart', retryContinuation: 'kaldığın yerden devam', retryContinuation2: 'ikinci',
+                retryContinuationLater: 'sonrakiler', retryUnknown: 'ask', retryCarryOn: 'personal'
+            }
+        }
+    }));
+    ok('‼️ M-34 — "continue it" reopens as "continue it"',
+        /id="nt-retrybehavior"/.test(html()) && /<option value="smart" selected/.test(html()));
+    ok('…with the continuation prompt still in its box',
+        /id="nt-continuationprompt" value="kaldığın yerden devam"/.test(html()));
+    ok('…and "if it cannot tell" still on "ask"', /<option value="ask" selected/.test(html()));
+    ok('‼️ X-226 (round 2) — the form asks who carries on at a limit, and shows the saved answer',
+        /id="nt-retrycarryon"/.test(html()) && /value="personal" selected/.test(html()));
+    ok('…and its first row is "stay", the default', /stay on this sign-in — wait for its reset/.test(html()));
+    // The shim hands out the same element objects across renders and reads
+    // `.value` off them, so what a previous case typed is still there: the
+    // boxes are set to what the markup above just drew before the save reads them.
+    const set = (id, v) => { const e = fld(id); if (e) { e.value = v; } };
+    set('nt-title', 'gece'); set('nt-prompt', 'gece işi'); set('nt-agent', 'basit');
+    set('nt-every', 'daily'); set('nt-time', '03:00'); set('nt-mode', 'headless');
+    set('nt-retrymode', 'custom'); set('nt-retrymax', '3'); set('nt-retrydelay', '40');
+    set('nt-retrybackoff', 'same'); set('nt-retrywhen', 'limit'); set('nt-retryprompt', '');
+    set('nt-retrydelay2', ''); set('nt-retrydelay3', ''); set('nt-retrycap', '');
+    if (fld('nt-retryresetaware')) { fld('nt-retryresetaware').checked = true; }
+    set('nt-retrysafety', '5'); set('nt-retrybehavior', 'smart');
+    set('nt-continuationprompt', 'kaldığın yerden devam'); set('nt-unknownfallback', 'ask');
+    set('nt-retrycarryon', 'personal');
+    posted = [];
+    fld('nt-add').click();
+    const kept = posted.find(p => p.type === 'plan-save');
+    ok('‼️ M-34 — saving the reopened form posts the whole policy back',
+        !!kept && !!kept.item.retry && kept.item.retry.behavior === 'smart'
+        && kept.item.retry.continuationPrompt === 'kaldığın yerden devam'
+        && kept.item.retry.unknownProgressFallback === 'ask'
+        && kept.item.retry.resetAware === true && kept.item.retry.safetyBufferMin === 5);
+    ok('…including the two prompts the form has no box for',
+        !!kept && kept.item.retry.continuationPrompt2 === 'ikinci' && kept.item.retry.continuationPromptLater === 'sonrakiler');
+    ok('‼️ X-226 (round 2) — and the handover choice', !!kept && kept.item.retry.carryOn === 'personal');
+    ok('…as an EDIT of the stored schedule, not a second one', !!kept && kept.item.mode2 === 'edit' && kept.item.id === 's-smart');
+    // The shim hands out the same element objects across renders, so the boxes
+    // are put back the way a fresh form draws them before the next case.
+    fld('nt-retrycarryon').value = ''; fld('nt-retrycarryon').fire('change');
+    fld('nt-retrybehavior').value = 'simple'; fld('nt-retrybehavior').fire('change');
+    fld('nt-unknownfallback').value = 'park';
+    fld('nt-continuationprompt').value = '';
+    sandbox.document.getElementById('nt-cancel').click();
+
+    // …and a fresh custom policy opens on "stay", which is sent as silence.
+    clickData('tab', 'run');
+    fld('nt-open').click();
+    fld('nt-prompt').value = 'yeni iş'; fld('nt-prompt').fire('input');
+    fld('nt-retrymode').value = 'custom'; fld('nt-retrymode').fire('change');
+    ok('a fresh custom policy opens on "stay"',
+        /id="nt-retrycarryon"/.test(html()) && /<option value="" selected[^>]*>stay on this sign-in/.test(html()));
+    posted = [];
+    fld('nt-add').click();
+    const fresh = posted.find(p => p.type === 'task-new');
+    ok('‼️ …and "stay" is sent as silence, never as a value',
+        !!fresh && !!fresh.task.retry && fresh.task.retry.carryOn === undefined && fresh.task.retry.behavior === undefined);
+    fld('nt-open').click();
+    fld('nt-prompt').value = 'gece'; fld('nt-prompt').fire('input');
+    fld('nt-retrymode').value = 'custom'; fld('nt-retrymode').fire('change');
+    fld('nt-retrycarryon').value = '@emptiest'; fld('nt-retrycarryon').fire('change');
+    posted = [];
+    fld('nt-add').click();
+    const opted = posted.find(p => p.type === 'task-new');
+    ok('…and a rule picked in the box travels as the policy\'s carryOn',
+        !!opted && !!opted.task.retry && opted.task.retry.carryOn === '@emptiest');
+    fld('nt-retrycarryon').value = ''; fld('nt-retrycarryon').fire('change');
+    fld('nt-retrymode').value = 'default'; fld('nt-retrymode').fire('change');
+    set('nt-title', ''); set('nt-prompt', '');
+    if (fld('nt-cancel')) { fld('nt-cancel').click(); }
+    clickData('tab', 'plan');
 }
 
 // ------------------------------------------ M-7: the row that went past its time

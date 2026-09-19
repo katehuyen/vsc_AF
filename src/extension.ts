@@ -3429,6 +3429,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // service answers from what it has already measured and never
             // fetches to answer a question.
             measuredAccounts: () => accountUsage.current(),
+            // ‼️ X-226 (round 2) — a retry policy that names a RULE for the
+            // handover is resolved by the same resolver a launch uses, over the
+            // pool the decision already narrowed (never the walled account), and
+            // a chosen @round-robin slot moves the same cursor a launch would.
+            resolveCarryOn: (policyId, engine, agentId, pool) => {
+                const r = resolvePolicy(policyId, { ...policyWorldFor(engine, agentId), usage: pool });
+                if (!r.refusal && r.cursor) {
+                    void context.workspaceState.update(roundRobinKey(String(engine || 'claude')), r.cursor);
+                }
+                return { id: r.id, note: r.note, ...(r.refusal ? { refusal: r.refusal } : {}) };
+            },
             // ‼️ M-26 — the two doors to the Console, forwarded. The queue
             // decides WHAT to run and never learns how to open a panel; the
             // panel owns its process, its engine refusals and its own report.

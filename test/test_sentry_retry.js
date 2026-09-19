@@ -94,7 +94,10 @@ const mk = (name) => new TaskManager(
         limitResetAt: () => Date.now() + 4 * HOUR,
         measuredAccounts: () => USAGE,
         sentryTick: (t) => drives.push(t ? t.id : '(poll)'),
-        defaultRetry: () => ({ max: 3, delayMin: 40, when: 'limit', resetAware: true })
+        // X-226 (round 2) — the handover is opt-in; this suite opts the
+        // ordinary run in, so the sentry's refusal is measured against a run
+        // that WOULD have moved.
+        defaultRetry: () => ({ max: 3, delayMin: 40, when: 'limit', resetAware: true, carryOn: '@emptiest' })
     });
 
 /** Put the given output on a row's own file, exactly as the runner leaves it. */
@@ -168,7 +171,7 @@ const withOutput = (m, t, out) => {
     const row = m.tasks.find(x => x.retryOf === t.id);
     ok('an ordinary headless run that met the same wall is still retried',
         !!row && row.retryAttempt === 1);
-    ok('‼️ …and still carries on to the sign-in with room — X-226 is untouched',
+    ok('‼️ …and, having opted in (carryOn: @emptiest), still carries on to the sign-in with room — X-226 is untouched',
         !!row && row.account === 'outsider');
     // The campaign's ordinary poll still happens on this beat (`pump` asks it
     // on every tick); what must NOT happen is this row arriving as a ROUND.

@@ -1566,6 +1566,14 @@ export interface TaskManagerOptions {
      */
     measuredAccounts?: () => SlotUsage[];
     /**
+     * ‼️ X-226 (round 2) — resolves a retry policy's `carryOn` when it names a
+     * rule (`@emptiest`, `@round-robin`, `@<named>`) over the OTHER accounts of
+     * the engine — the host's `resolvePolicy`, so a handover moves the same
+     * round-robin cursor a launch does. A named slot needs no resolver.
+     */
+    resolveCarryOn?: (policyId: string, engine: string, agentId: string, pool: SlotUsage[])
+        => { id: string; note?: string; refusal?: string };
+    /**
      * ‼️ S-19 — IS SOMETHING ELSE WRITING TO THAT CONVERSATION RIGHT NOW?
      *
      * Return a sentence naming the holder, or undefined when the session is
@@ -4731,13 +4739,22 @@ export class TaskManager implements vscode.Disposable {
          * kind of failure this was.
          */
         const wait = d.notBefore ?? Date.now() + Math.max(60_000, d.delayMs);
+        // ‼️ X-226 (round 2) — AND ONLY WHEN THE POLICY SAYS SO. `carryOn` is the
+        // switch (absent = stay on the run's own sign-in and wait); it falls
+        // through from the user's default policy like every other retry field.
+        const carryWant = resolveRetry(policy, fallback).carryOn ?? '';
+        const engineId = task.engine || 'claude';
         const carry = isLimitFailure(out)
             ? carryOnAccount({
                 ...(task.account ? { from: task.account } : {}),
                 ...(task.engine ? { engine: task.engine } : {}),
                 usage: this.opts.measuredAccounts?.() ?? [],
                 ceiling: SENTRY_DEFAULT_CEILING,
-                waitUntil: wait
+                waitUntil: wait,
+                want: carryWant,
+                ...(this.opts.resolveCarryOn
+                    ? { resolve: (id: string, pool: SlotUsage[]) => this.opts.resolveCarryOn!(id, engineId, agent.id, pool) }
+                    : {})
             })
             : undefined;
         // ‼️ AND THE HANDOVER STARTS AS SOON AS THE PUMP CAN TAKE IT. The wait
@@ -4795,7 +4812,10 @@ export class TaskManager implements vscode.Disposable {
                 // ‼️ X-226 — and on the record of the run that was refused, so
                 // the question "whose plan is the night being billed to now" is
                 // answered where it is asked: on the row that met the wall.
-                noteTaskEvent(task, 'retried', d.why + (carry?.slotId ? ` — ${carry.why}` : ''));
+                // …and when the policy ASKED for a handover and none was made, the
+                // reason is on the record too — a wait the user did not expect
+                // must say why it stood.
+                noteTaskEvent(task, 'retried', d.why + (carry?.slotId || (carry && carryWant) ? ` — ${carry.why}` : ''));
                 const t = this.addTask(agent, nextTitle, prompt, mode, {
                     projectId: task.projectId,
                     /**
