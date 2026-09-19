@@ -131,7 +131,7 @@ const push = afui => onMessage({ data: { type: 'afui', afui } });
 // a dozen destinations, most of them a single word, and nothing anywhere saying
 // what any of them opened. It also ran out of width and wrapped onto a second
 // line, so a toolbar moved under the pointer. Both halves are the same fix —
-// the five that are identical on every page are drawn as their ICON, and the
+// the ones that are identical on every page are drawn as their ICON, and the
 // name they no longer show is the first line of the panel (SHORTHAND + MIRROR).
 {
     const rx = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -147,13 +147,14 @@ const push = afui => onMessage({ data: { type: 'afui', afui } });
     ok('…and whose body says what that page is for',
         /<span class="af-tiph">Toolbox<\/span><span class="af-tipb">Everything that extends/.test(html));
 
-    for (const [name, icon] of [['Evals', '🧪'], ['Search', '⌕'], ['Settings', '⚙'],
-    ['Refresh', '⟳'], ['Guide', '?']]) {
+    const ICONS = [['Evals', '🧪'], ['Search', '⌕'], ['Engines', '🔌'], ['Settings', '⚙'],
+    ['Refresh', '⟳'], ['Guide', '?']];
+    for (const [name, icon] of ICONS) {
         ok(`${name} is its icon alone, at icon width, and still named for a screen reader`,
             new RegExp(`class="secondary af-ico[^"]*"[^>]*aria-label="${name}"[^>]*>${rx(icon)}</button>`).test(html));
     }
-    ok('‼️ …and it is exactly those five — shortening the rest is a decision, not a drift',
-        (html.match(/class="secondary af-ico/g) || []).length === 5);
+    ok('‼️ …and it is exactly those — shortening the rest is a decision, not a drift',
+        (html.match(/class="secondary af-ico/g) || []).length === ICONS.length);
     ok('nothing in the row is left with a paragraph in a native title (that is what the panel is for)',
         !/<button[^>]*title="[^"]{60,}"/.test(html));
 

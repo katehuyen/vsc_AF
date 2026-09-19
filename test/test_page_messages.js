@@ -94,5 +94,31 @@ for (const [pageRel, panelRel] of PAIRS) {
         && /handleAfNav/.test(read('src/panels/base.ts')));
 }
 
+/**
+ * ‼️ …AND ANSWERED FOR EVERY DESTINATION IT CAN NAME, not just in general.
+ *
+ * `handleAfNav` looks up a record and does nothing at all when the key is
+ * missing, so a nav button whose id never reached that record is a button that
+ * draws, hovers, depresses and opens nothing — X-234 was exactly this on the
+ * Dashboard's Farm Status card, and the only reason anybody found it was that
+ * the user pressed it. The header's destinations are two literals: the `id` of
+ * each NAV entry, and the hand-written `data-afnav="…"` of the icons appended
+ * after the loop. Both are readable, so both are checked.
+ */
+{
+    const head = read('media/pageHeader.js');
+    const dests = new Set();
+    const nav = /const NAV = \[([\s\S]*?)\n    \];/.exec(head);
+    for (const m of (nav ? nav[1] : '').matchAll(/\bid:\s*'([a-z]+)'/g)) { dests.add(m[1]); }
+    for (const m of head.matchAll(/data-afnav="([a-z]+)"/g)) { dests.add(m[1]); }
+    const map = /function handleAfNav[\s\S]*?\{([\s\S]*?)\n    \};/.exec(read('src/panels/base.ts'));
+    const routed = new Set();
+    for (const m of (map ? map[1] : '').matchAll(/^\s*([a-z]+):\s*'agentfarm\./gm)) { routed.add(m[1]); }
+    ok('both lists were really read', dests.size > 10 && routed.size > 10);
+    const dead = [...dests].filter(d => !routed.has(d));
+    ok('every destination the shared header can name has a command behind it'
+        + (dead.length ? ` — opens nothing: ${dead.join(', ')}` : ''), dead.length === 0);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

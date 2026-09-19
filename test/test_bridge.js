@@ -4591,18 +4591,20 @@ const { opencodeStatus, syncToOpencode } =
     // `_REF/agentfarm-dev.md` is that the two surfaces move together.
     {
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
-        // 12k, not 9k: `tasks.add` has the longest contract in the file and M-3
-        // added the retry policy to it. A window that stops short does not fail
-        // loudly — it silently stops seeing the handler, and every assertion
-        // about the handler starts measuring an empty string.
-        // 20k rather than 12k: `tasks.add`'s contract grew when S-19 gave it a
-        // `resume` argument and M-10 gave its retry policy five more fields, and
-        // a window that no longer reaches the handler silently stops testing it.
-        // ‼️ 26000, not 20000 (B-12). `tasks.add`'s contract grew again — it now
-        // spells out what a permission mode becomes on every engine — and a
-        // window too small silently stops covering the handler, which is an
-        // assertion that passes by not looking rather than by holding.
-        const at = (op) => src.slice(src.indexOf(`op: '${op}'`), src.indexOf(`op: '${op}'`) + 26000);
+        // ‼️ TO THE NEXT OP, NEVER A CHARACTER COUNT — the same repair the
+        // `tasks.rerun` block above already carries, arrived at the same way.
+        // This window was 9k, then 12k, then 20k, then 26k, and each time it was
+        // widened because `tasks.add`'s contract had grown past it: a window
+        // that stops short does not fail loudly, it silently stops seeing the
+        // handler, and every assertion about the handler starts passing by not
+        // looking. A number that has to be raised whenever the thing it measures
+        // gains a sentence is not a measurement.
+        const at = (op) => {
+            const start = src.indexOf(`op: '${op}'`);
+            if (start < 0) { return ''; }
+            const next = src.indexOf("\n            op: '", start + 1);
+            return src.slice(start, next < 0 ? src.length : next);
+        };
 
         // ---------- S-31: which run produced which transcript ----------
         // The op exists so a person (or an agent) who knows a run happened and
@@ -4684,7 +4686,13 @@ const { opencodeStatus, syncToOpencode } =
         // in the same commit, which is the whole rule.
         ok('‼️ triggers.add exists', /op: 'triggers\.add'/.test(src));
         const trig = at('triggers.add');
-        ok('…and takes the same dimensions', /runDims\(args\)/.test(trig));
+        // ‼️ `runDims(args, { mode })` — a trigger states the mode its run will
+        // take, so it hands the reader one more thing than a task does. The
+        // exact call, because the looser pattern this line used to carry was
+        // being satisfied by a NEIGHBOURING op's text while the window was a
+        // character count: the assertion held without ever reaching this block.
+        ok('…and takes the same dimensions, through the one reader',
+            /\brunDims\(args, \{ mode \}\)/.test(trig));
         ok('…refuses a watch trigger with nothing to watch',
             /A watch trigger needs watch/.test(trig));
         // ‼️ …and a path that is not there, which used to install happily and

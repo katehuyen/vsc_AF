@@ -188,6 +188,23 @@ const DIMENSION_BOX = {
     const reader = page.slice(page.indexOf('function readComposer('), page.indexOf('function retryFormulaError(') > 0 ? page.length : page.length);
     ok('‼️ …and the form reads the carry-on box and the behavior box off the page',
         /v\('retrycarryon', 'retryCarryOn'\)/.test(reader) && /v\('retrybehavior', 'retryBehavior'\)/.test(reader));
+
+    /**
+     * ‼️ …AND THE THIRD DOOR, WHICH HAS NO BOX TO COUNT.
+     *
+     * The bridge takes the whole policy through `normalizeRetry`, so a new field
+     * WORKS over `tasks.add` from the day it is added — and is invisible, because
+     * the only thing an agent can read is the op's `describe`. A dimension nobody
+     * can be told about is a dimension nobody uses: that is how `carryOn` shipped
+     * to the form and stayed unsayable on the bridge. The same list, against the
+     * sentence the op hands out.
+     */
+    const ext = fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8');
+    const addAt = ext.indexOf("op: 'tasks.add'");
+    const describe = ext.slice(addAt, ext.indexOf('handler:', addAt));
+    ok("tasks.add's describe was found", addAt > 0 && describe.length > 2000);
+    eq('‼️ every retry field the store accepts is NAMED on the bridge, or no agent can ask for it',
+        fields.filter(f => !new RegExp('`?\\b' + f + '\\b').test(describe)), []);
 }
 
 // ---------- ‼️ X-221 — AND THE RETURN LEG, WHICH NOBODY WAS MEASURING -------

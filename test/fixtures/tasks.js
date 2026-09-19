@@ -246,6 +246,29 @@ const data = () => ({
                 { id: 'spare', label: 'spare@gmail', health: 'needs-signin', active: false }
             ]
         },
+        // ‼️ X-226 (round 2) - the RULES beside those sign-ins, for exactly the
+        // reason the sign-ins are here. "At a limit, carry on with" offers three
+        // kinds of answer (stay, a rule, one named account) and a fixture with
+        // accounts alone photographs a two-group picker as a flat list - the one
+        // arity the row was built to show. One rule is deliberately refusing, so
+        // the state a reader has to be able to tell apart is drawn too.
+        policies: {
+            claude: [
+                {
+                    id: '@emptiest', label: '@emptiest', picks: 'personal@gmail', note: '', refusal: '',
+                    detail: 'The sign-in of this engine with the most of its five-hour window left at the moment the session starts.'
+                },
+                {
+                    id: '@round-robin', label: '@round-robin', picks: 'work@studio', note: '', refusal: '',
+                    detail: 'The usable sign-ins of this engine in turn, one after another across launches.'
+                },
+                {
+                    id: '@gece', label: '@gece', picks: '', note: '',
+                    refusal: 'every sign-in it lists is past its ceiling right now',
+                    detail: '2 steps, in order.'
+                }
+            ]
+        },
         engines: [
             { id: 'claude', label: 'Claude Code', ready: true, next: 'Ready, on a plan.' },
             { id: 'codex', label: 'Codex', ready: true, next: 'Ready, on a plan.' }

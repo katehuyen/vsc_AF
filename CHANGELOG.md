@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.570.0 - at a limit the sign-in that carries the work on is the user's choice, what a retry IS comes back into the form it was saved from, and Engines is one press from every page (X-226 round 2 + M-34, close) (2026-09-19)
+
+- **‼️ X-226 (round 2) — A RUN THAT MEETS A WALL NOW STAYS PUT UNLESS YOU SAID
+  OTHERWISE.** The first cut moved a walled run onto whichever account had room,
+  with no setting and no question: an account picked for the night on purpose,
+  and a different plan spent by morning. The handover is now OPT-IN and it is
+  named - `carryOn` on the retry policy, "At a limit, carry on with" on the
+  form, `agentFarm.taskRetry.carryOn` as the standing default. Absent means
+  **stay**: the run keeps the sign-in it was given and waits for that plan's own
+  reset. Set it and it is still a narrow permission - a rule (`@emptiest`,
+  `@round-robin`, one of your named rules) chooses among the engine's OTHER
+  captured accounts, or a slot id names the one account to carry on with, and a
+  **named account is never substituted**: if it has no room either, the wait
+  stands. Never across engines (a carried-on run resumes a transcript, and a
+  transcript belongs to one CLI), never the account that just refused the work,
+  never a run pinned to the machine's own identity, and never for a wait shorter
+  than the handover would itself take. Whatever happens, the `retried` event
+  carries the sentence for it - including why a handover that was asked for did
+  not happen.
+- **‼️ M-34 — A RETRY POLICY REOPENED AS SOMETHING ELSE, AND SAVING THE FORM
+  WROTE THE LOSS BACK.** `behavior`, `continuationPrompt` and
+  `unknownProgressFallback` (M-10) were read off the form and stored, and never
+  seeded back into it: a task saved as "continue it - pick up where it was cut
+  off" opened in Edit as "a fresh run", its continuation prompt gone, and the
+  next save made that the truth. One seam, one repair - and the list is now
+  `RetryPolicy` itself, read out of the source: a field with no box, no seed, no
+  reader, no home on the blank draft, **or no name in the `tasks.add` describe**
+  fails by name, so the next field cannot be dropped the same way. The page is
+  4.6k lines and it did not need rewriting; what it needed was for that seam to
+  be measured.
+- **🔌 Engines is in the global toolbar, on every page.** It was reachable from
+  the Dashboard's Farm Status row and from the Settings page and nowhere else -
+  a destination about what this machine can run at all, filed two clicks behind
+  two pages. It is drawn as its icon alone, between ⌕ Search and ⚙ Settings,
+  with the same hover contract as its neighbours. And the router now answers for
+  it: `handleAfNav` looks a destination up and does nothing at all when the key
+  is missing, so a nav button whose id never reached that record draws, hovers,
+  depresses and opens nothing (X-234 was exactly that on the Farm Status card) -
+  every destination the shared header can name is now checked against the
+  commands behind it.
+
 ## 3.569.0 - the route a run was served by is a filter of its own, beside the engine, on every surface that lists runs (X-111, closes) (2026-09-19)
 
 - **‼️ PROVIDER · PROFILE · MODEL as three multi-pick filters on the Sessions

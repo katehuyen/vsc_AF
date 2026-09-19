@@ -3,7 +3,7 @@
 // whose left half is the page's own scope controls and actions, and whose
 // right half — after a thin divider — is the GLOBAL cluster, identical on
 // every page (minus the page itself):
-//   Dashboard · Live Timeline · Tasks · Missions · Wiki · Toolbox · [related panel] · ⌕ Search · ⚙ Settings · Refresh · ? Guide
+//   Dashboard · Live Timeline · Tasks · Missions · Wiki · Toolbox · [related panel] · ⌕ Search · 🔌 Engines · ⚙ Settings · Refresh · ? Guide
 // A page owning several destinations of its own can send that `related` cluster
 // to a second, equally right-aligned row (`relatedRow`) instead of lengthening
 // the global one.
@@ -39,8 +39,8 @@
            than the page's own body buttons, which keep their normal size. */
         .af-head-bar button, .af-head-more button { font-size:11px; padding:3px 8px; }
         .af-head-bar .af-nav-n { opacity:.85; }
-        /* ‼️ U-68 — THE FIVE THAT ARE THE SAME EVERYWHERE ARE DRAWN AS THEIR
-           ICON ALONE. Evals, ⌕, ⚙, ⟳ and ? are on every page in the same order,
+        /* ‼️ U-68 — THE ONES THAT ARE THE SAME EVERYWHERE ARE DRAWN AS THEIR
+           ICON ALONE. Evals, ⌕, 🔌, ⚙, ⟳ and ? are on every page in the same order,
            so they are the row's cheapest width: nobody reads them, they are
            aimed at. Fixed width so the cluster's right edge does not move from
            page to page, and the whole name is one hover away (SHORTHAND). */
@@ -382,6 +382,16 @@
                 name: 'Search', icon: '⌕', attrs: 'data-afnav="search"',
                 tip: o.searchTitle || 'Search across the whole farm — sessions, tasks, agents, notices, '
                     + 'documents and the transcripts themselves, in one query.'
+            }));
+        }
+        // The Engines page was reachable from the Dashboard's Farm Status row
+        // and from the Settings page and nowhere else — a destination about
+        // what this machine can run at all, filed two clicks behind two pages.
+        if (o.page !== 'engines') {
+            cluster.push(navBtn({
+                name: 'Engines', icon: '🔌', attrs: 'data-afnav="engines"',
+                tip: 'Which agent CLI this machine can actually run and how each one is paid for — '
+                    + 'sign-ins, keys and captured accounts, with a real call that proves a turn gets through.'
             }));
         }
         if (o.page !== 'settings') {

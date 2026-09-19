@@ -262,6 +262,7 @@ export function handleAfNav(to: unknown): void {
         airtable: 'agentfarm.openAirtable',
         missions: 'agentfarm.openMissions',
         search: 'agentfarm.searchTranscripts',
+        engines: 'agentfarm.openEngines',
         settings: 'agentfarm.openFarmSettings',
         capabilities: 'agentfarm.openCapabilities',
         toolbox: 'agentfarm.openToolbox',
