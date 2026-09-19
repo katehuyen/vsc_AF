@@ -25,6 +25,20 @@ export interface InboundMessage {
     from: string;
     text: string;
     ts: number;
+    /**
+     * ‼️ U-113 — THE THREE FACTS A MESSAGE CARRIES ABOUT WHO IT IS FOR.
+     *
+     * One chat can be watching several conversations at once, and a bare text
+     * says nothing about which. Telegram already answers it twice over — the
+     * message this one REPLIES to, and the forum topic it was typed in — and
+     * dropping both here is what made a chat bridge a single-session toy.
+     * `messageId` is this message's own, so the reply chain can be followed
+     * back later. Absent where Telegram said nothing (a private chat has no
+     * topics; a fresh message replies to nothing). See `telegramRouting.ts`.
+     */
+    messageId?: number;
+    replyTo?: number;
+    threadId?: number;
 }
 
 export type ChatCommand =
@@ -45,6 +59,9 @@ export function parseUpdates(payload: unknown): InboundMessage[] {
             update_id?: number;
             message?: {
                 text?: string; date?: number;
+                message_id?: number;
+                message_thread_id?: number;
+                reply_to_message?: { message_id?: number };
                 chat?: { id?: number };
                 from?: { username?: string; first_name?: string };
             };
@@ -58,7 +75,14 @@ export function parseUpdates(payload: unknown): InboundMessage[] {
             chatId,
             from: msg.from?.username || msg.from?.first_name || String(chatId),
             text: msg.text.trim(),
-            ts: (msg.date ?? Math.floor(Date.now() / 1000)) * 1000
+            ts: (msg.date ?? Math.floor(Date.now() / 1000)) * 1000,
+            // U-113 — carried only where Telegram really said it; a 0 would be
+            // a message id and a topic id that do not exist.
+            ...(typeof msg.message_id === 'number' ? { messageId: msg.message_id } : {}),
+            ...(typeof msg.reply_to_message?.message_id === 'number'
+                ? { replyTo: msg.reply_to_message.message_id } : {}),
+            ...(typeof msg.message_thread_id === 'number'
+                ? { threadId: msg.message_thread_id } : {})
         });
     }
     return out;
