@@ -3306,17 +3306,24 @@ const intentOf = (o) => Object.assign({
         ...extra
     });
 
-    // 1. Initial composer with account axis on and Option A dual-window formatting
+    // ‼️ X-215 round 2 — a window as the HOST sends it, each naming itself. The
+    // four hand-named fields this replaced (`fivePercent` / `weekPercent` and
+    // their resets) could hold exactly one engine's pair, so a picker could not
+    // draw Codex's two windows however many of them the reading carried.
+    const W5 = p => ({ id: 'five_hour', window: 'five-hour window', short: '5h', percent: p, resetsAt: 0 });
+    const WW = p => ({ id: 'seven_day', window: 'Current week (all models)', short: 'wk', percent: p, resetsAt: 0 });
+
+    // 1. Initial composer with account axis on and dual-window formatting
     push(composer({
         composerAccountAxis: true,
         composerIntent: { account: 'work-1' },
         composerAccounts: [
-            { id: 'work-1', label: 'work@studio', health: 'ready', active: true, fivePercent: 0, weekPercent: 40 },
-            { id: 'spare', label: 'aicozums', health: 'ready', active: false, fivePercent: -1, weekPercent: -1 }
+            { id: 'work-1', label: 'work@studio', health: 'ready', active: true, bars: [W5(0), WW(40)] },
+            { id: 'spare', label: 'aicozums', health: 'ready', active: false, bars: [] }
         ]
     }));
 
-    ok('‼️ X-326: Option A dual-window labels are drawn initially in c-account',
+    ok('‼️ X-215 R2: dual-window labels are drawn initially in c-account',
         /work@studio · 5h: 0% \/ wk: 40%/.test(html())
         && /aicozums · —/.test(html()));
 
@@ -3325,13 +3332,13 @@ const intentOf = (o) => Object.assign({
         data: {
             type: 'accounts',
             composerAccounts: [
-                { id: 'work-1', label: 'work@studio', health: 'ready', active: true, fivePercent: 15, weekPercent: 45 },
-                { id: 'spare', label: 'aicozums', health: 'ready', active: false, fivePercent: 50, weekPercent: 20 }
+                { id: 'work-1', label: 'work@studio', health: 'ready', active: true, bars: [W5(15), WW(45)] },
+                { id: 'spare', label: 'aicozums', health: 'ready', active: false, bars: [W5(50), WW(20)] }
             ]
         }
     });
 
-    ok('‼️ X-326: accounts message updates select options in-place with fresh percentages',
+    ok('‼️ X-215 R2: accounts message updates select options in-place with fresh percentages',
         /work@studio · 5h: 15% \/ wk: 45%/.test((els['c-account'] || {})._html)
         && /aicozums · 5h: 50% \/ wk: 20%/.test((els['c-account'] || {})._html));
 
@@ -3342,11 +3349,11 @@ const intentOf = (o) => Object.assign({
         data: {
             type: 'accounts',
             composerAccounts: [
-                { id: 'work-1', label: 'work@studio', health: 'ready', active: true, fivePercent: 99, weekPercent: 99 }
+                { id: 'work-1', label: 'work@studio', health: 'ready', active: true, bars: [W5(99), WW(99)] }
             ]
         }
     });
-    ok('‼️ X-326: anti-flicker protection skips DOM update when select has active focus',
+    ok('‼️ X-215 R2: anti-flicker protection skips DOM update when select has active focus',
         (els['c-account'] || {})._writes === writesWhenActive
         && !/99%/.test((els['c-account'] || {})._html));
     sandbox.document.activeElement = null;

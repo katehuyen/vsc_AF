@@ -101,9 +101,32 @@ function namesBeside(text, figure) {
     ok('‼️ …and NOWHERE on the page is that same figure called a five-hour window',
         !at72.has('five-hour window') && !at72.has('5-hour window'));
 
-    const at91 = namesBeside(h, '91%');
-    ok('the Claude figure keeps the five-hour window',
-        at91.has('five-hour window') && !at91.has('current week'));
+    /**
+     * ‼️ X-215 round 2 — THE PROXIMITY RULE BROKE ON A CARD THAT CARRIES BOTH
+     * WINDOWS, AND THE REPLACEMENT IS STRICTER, NOT LOOSER.
+     *
+     * `namesBeside` asks "what window names are within ±90 characters of this
+     * figure", which measured agreement exactly as long as one card meant one
+     * window. A Claude card now draws its five-hour wall and its week together,
+     * so the week's name is a few characters from the five-hour figure BY
+     * DESIGN — and the old assertion would have failed on the fix it was
+     * written to protect.
+     *
+     * The page pairs them explicitly now, so the rule can be asked exactly:
+     * each figure appears against ITS OWN window's name, and never against the
+     * other one's. That catches a swap the ±90 window never could.
+     */
+    const pairs = h => (h.match(/([A-Za-z][A-Za-z0-9 ()\-]*?): (\d+)% used/g) || []);
+    const paired = new Set(pairs(h).map(s => s.trim()));
+    ok('the Claude five-hour figure is drawn against the five-hour window',
+        paired.has('five-hour window: 91% used'));
+    ok('…and its weekly figure against the week, in the same card',
+        paired.has('Current week (all models): 64% used'));
+    ok('‼️ …and NEITHER figure ever appears against the OTHER window\'s name',
+        !paired.has('five-hour window: 64% used')
+        && !paired.has('Current week (all models): 91% used'));
+    ok('…the same on the engine that names its own pair',
+        paired.has('Current week: 72% used') && !paired.has('Current week: 8% used'));
 
     // The unread Codex slot: no figure at all, and the one window name that
     // would certainly be wrong about it.

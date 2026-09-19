@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AccountPolicy, PolicyStep } from '../core/accountPolicy';
+import { UsageBar } from '../core/accountUsage';
 import { EngineId, EngineStatus } from '../core/engines';
 import { EngineTestResult } from '../core/engineTest';
 import { ProviderHealthReport, ProviderTestRecord } from '../core/providerHealth';
@@ -124,6 +125,12 @@ export interface EnginesPanelDeps {
         usageState: string; note: string; capturedAt: number; dir: string;
         /** X-215 — which window `percent` is of ('' = the five-hour one) */
         window: string;
+        /**
+         * X-215 round 2 — EVERY window this account is walled by, each naming
+         * itself. The card draws one bar per entry; `percent` above stays the
+         * fullest of them, which is what a rotation is decided on.
+         */
+        bars?: UsageBar[];
         /** X-215 — 'oauth-credentials' (an endpoint) | 'session-tail' (this disk) | 'none' */
         quotaSource: string;
         /** X-206 — when the FIGURE was read (0 = never), not when the account was filed */

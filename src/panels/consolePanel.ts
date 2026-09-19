@@ -16,6 +16,7 @@ import {
 } from '../core/consoleEngine';
 import { MACHINE_ACCOUNT, MACHINE_GLOBAL_ROW } from '../core/accountStore';
 import { isPolicyId } from '../core/accountPolicy';
+import { UsageBar } from '../core/accountUsage';
 import { EngineOption, engineRefusal } from '../core/engines';
 import { ProviderForm, ProviderPick, ProviderTransport } from '../core/launchProvider';
 import { EngineModels, narrowLaunch } from '../core/models';
@@ -331,10 +332,10 @@ export interface ConsoleDeps {
          *  where nothing has measured it. The figure the choice turns on, so it
          *  travels with the row rather than costing a click. */
         percent: number;
-        fivePercent?: number;
-        weekPercent?: number;
-        fiveResetsAt?: number;
-        weekResetsAt?: number;
+        /** ‼️ X-215 round 2 — every window this account is walled by, each
+         *  naming itself. The picker prints them all; `percent` is the fullest,
+         *  which is the one a rotation is decided on. */
+        bars?: UsageBar[];
         resetsAt?: number;
         window?: string;
     }[];

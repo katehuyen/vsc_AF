@@ -2,6 +2,63 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.572.0 - an account card draws every wall it has, as one chart (X-215 round 2, closes) (2026-09-19)
+
+- **‼️ ONE BAR, TWO DIFFERENT WINDOWS, AND NOTHING SAYING WHICH.** The user's
+  own reading of the Engines page: "the used/left bar shows the weekly quota on
+  some accounts and the five-hour one on others — apples and oranges." It was
+  not a drawing bug. X-309 taught a slot to carry whichever window is FULLER,
+  because either wall really does end a run — so the window under the bar
+  changed from card to card, correctly, and silently. A sign-in barely into its
+  five hours and nearly half through its week read `12%`, which is true about
+  one wall and useless about the one that will actually stop you.
+- **The card now draws every window the reading carries, as ONE chart.** Not two
+  stacked blocks with their own captions and reset lines — that doubles a card's
+  height for one extra number. The tracks sit 6px apart in a fixed gutter
+  carrying each window's short name and percentage (`5h  91%` / `wk  64%`), so
+  they line up on the same left edge and read as a pair. Each track takes its
+  own colour, so a full five-hour window goes red beside a week that is fine.
+  ‼️ The distance that mattered was not the margin: the rows were 15px tall
+  around a 6px track, so the tracks sat 12px apart — twice their own height —
+  until the text box was collapsed with `line-height:1`.
+- **…and underneath it, the figures complete and in the unit each window
+  deserves.** `5h: 37m left (02:17) · wk: 4d left (14 Sep 2026, 01:40)`. The
+  five-hour window is read in minutes and the week in days; the old single
+  rounding printed `2h` for both, which drops the minutes a session is decided
+  on and never says "days" at all. The unit comes out of the REMAINDER, not the
+  window's name, so an engine whose windows are neither gets a true answer. ‼️
+  And a turnover that is not today now carries its DATE — every reset on this
+  page printed as a bare `02:17`, which is right for five hours and a half-truth
+  for a week.
+- **‼️ THE ENGINE PATH WAS DROPPING ITS SECOND WINDOW ON THE FLOOR.**
+  `usageFromEngine` took `eu.bars[0]`, so Codex — which publishes
+  `codex_primary` AND `codex_secondary` — could not have had its week drawn even
+  after the card learned how. Worse, taking bar ZERO rather than the fullest is
+  the X-309 defect again on the other engine: a Codex sign-in at 8% of its five
+  hours and 72% of its week read as 8%, and the pool kept opening rounds on it.
+  Both are closed by the same shape.
+- **`SlotUsage` carries its windows as a LIST (`bars`), replacing the four
+  hand-named fields X-326 added.** `fivePercent` / `weekPercent` (+ their
+  resets) hard-coded that an account has exactly two windows and that they are
+  five hours and a week — right for Claude and only for Claude. Each entry names
+  itself (`id`, `window`, `short`, `percent`, `resetsAt`), so a picker, a card
+  and the bridge all iterate instead of counting to two. `accounts.list` returns
+  it, and its `describe` no longer tells an agent that `percent` is the
+  five-hour window — it is the fullest one, which is what a rotation is
+  decided on.
+- **‼️ AND THE NAME NEARLY DRIFTED AGAIN.** A `PlanBar`'s title is worded as
+  Claude Code's own `/usage` prints it ("Current session"), while the rest of
+  this product has one name for that window and it is "five-hour window". A card
+  carrying the reading's spelling in its bars and the product's in every
+  sentence around them would have said two things about one window — the exact
+  shape of the defect audit B-04.3 closed, with neither name wrong. The
+  five-hour row is named by the host (`windowNameOf`); every other row keeps the
+  name whoever measured it gave, which is what lets Codex's week be Codex's
+  week. The guard that pins this could not survive a card with two windows —
+  it asked "what window names are within ±90 characters of this figure" — so it
+  now asks the pairing exactly: each figure against its OWN window's name, never
+  against the other's. Verified by mutation.
+
 ## 3.571.0 - an emptied sign-in stops calling itself healthy, and the engine test runs as the account it is drawn beside (X-219 round 2, closes) (2026-09-19)
 
 - **‼️ A DATE IS NOT A CREDENTIAL, and the account health check believed one.**

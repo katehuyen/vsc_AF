@@ -71,8 +71,16 @@ const sec = () => {
 {
     const h = sec();
     const bars = (h.match(/class="progress"/g) || []).length;
-    ok('‼️ a bar per account whose percentage was really read, and only those',
-        bars === 3);
+    // ‼️ X-215 round 2 — ONE BAR PER WINDOW, not one per account. The count is
+    // asked of the fixture rather than typed, so a scene that gains a window
+    // moves this number instead of quietly disagreeing with it. The rule it
+    // protects is the same one: an account nobody has read draws NO bar, because
+    // an empty track reads as "none of it used", which is the opposite fact.
+    const windows = DATA.accounts
+        .filter(a => a.percent >= 0)
+        .reduce((n, a) => n + Math.max(1, (a.bars || []).length), 0);
+    ok('‼️ a bar per WINDOW of each account whose figure was really read, and only those',
+        bars === windows && windows === 6);
     ok('…drawn at the figure it read', /width:91%/.test(h) && /width:12%/.test(h));
     ok('‼️ the 91% one is marked hot rather than merely wide — a bar the reader '
         + 'has to measure with their eye is a figure they have to compute',
@@ -458,8 +466,16 @@ const sec = () => {
 // left are the same fact with only one of them answering the question.
 {
     const h = sec();
-    ok('‼️ X-196: the five-hour block answers with what is LEFT, not only what is used',
-        h.includes('used: 91%') && h.includes('left: 9%'));
+    // ‼️ X-215 round 2 — the panel lists one line PER WINDOW now, so the figures
+    // carry the window they belong to rather than sitting under a heading that
+    // named only one of them. The rule is unchanged: what is LEFT is answered.
+    ok('‼️ X-196: the window block answers with what is LEFT, not only what is used',
+        h.includes('five-hour window: 91% used · 9% left'));
+    ok('‼️ …and the OTHER wall is answered in the same breath, which is X-215 round 2',
+        h.includes('Current week (all models): 64% used · 36% left'));
+    ok('…each with its own turnover, since two windows do not turn over together',
+        /five-hour window: 91% used · 9% left · 37m left/.test(h)
+        && /Current week \(all models\): 64% used · 36% left · 4d left/.test(h));
     ok('…and how old the figure is, beside the figure rather than on the footer',
         h.includes('this figure was read 40s ago'));
     ok('…and whose plan it is, so the percentage has an owner',

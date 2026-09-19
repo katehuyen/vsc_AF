@@ -36,6 +36,13 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 const A = require(path.join(ROOT, 'media', 'afAccount.js'));
 const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
 
+// X-215 round 2 — a window as the host sends it: its own id, its own name, its
+// own short form. The two shorthands are the pair a Claude plan is walled by.
+const bar = (id, window, short, percent, resetsAt = 0) => ({ id, window, short, percent, resetsAt });
+const BAR5 = (percent, resetsAt = 0) => bar('five_hour', 'Current session', '5h', percent, resetsAt);
+const BARW = (percent, resetsAt = 0) =>
+    bar('seven_day', 'Current week (all models)', 'wk', percent, resetsAt);
+
 // ---------- the sentinels live once ----------
 {
     ok('the machine sentinel is the one the host and the core share',
@@ -54,15 +61,26 @@ const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
     ok('…and so does an account the host said nothing about at all',
         A.figure({}) === '—');
     ok('…and a full window still prints', A.figure({ percent: 100 }) === '100%');
-    // ‼️ X-326 Option A — dual-window formatting
-    ok('‼️ dual-window formats both 5h and weekly percentages',
-        A.figure({ fivePercent: 0, weekPercent: 40 }) === '5h: 0% / wk: 40%');
-    ok('dual-window with 5h only',
-        A.figure({ fivePercent: 12, weekPercent: -1 }) === '5h: 12%');
-    ok('dual-window with week only',
-        A.figure({ fivePercent: -1, weekPercent: 35 }) === 'wk: 35%');
-    ok('dual-window with both unread returns em dash',
-        A.figure({ fivePercent: -1, weekPercent: -1 }) === '—');
+    // ‼️ X-215 round 2 — the windows arrive as a LIST and each names itself,
+    // so nothing here decides how many an account has or what they are called.
+    ok('‼️ dual-window formats both windows out of the list',
+        A.figure({ bars: [BAR5(0), BARW(40)] }) === '5h: 0% / wk: 40%');
+    ok('one window alone prints alone',
+        A.figure({ bars: [BAR5(12)] }) === '5h: 12%');
+    ok('…and so does a weekly-only engine',
+        A.figure({ bars: [BARW(35)] }) === 'wk: 35%');
+    ok('‼️ an unread window is DROPPED from the list, never drawn as 0%',
+        A.figure({ bars: [BAR5(-1), BARW(35)] }) === 'wk: 35%');
+    ok('a list with nothing readable falls back to the binding figure',
+        A.figure({ bars: [BAR5(-1)], percent: -1 }) === '—');
+    // ‼️ THE LIST IS NOT CAPPED AT TWO, and that is the whole point of the
+    // shape: Claude has two windows, Codex has two of its OWN, and the four
+    // hand-named fields this replaced could hold exactly one engine's pair.
+    ok('‼️ a third window is drawn too — nothing here counts to two',
+        A.figure({ bars: [BAR5(5), BARW(40), bar('day', 'Current day', '1d', 17)] })
+        === '5h: 5% / wk: 40% / 1d: 17%');
+    ok('a window whose name has no short form still prints its figure',
+        A.figure({ bars: [bar('x', 'Current window', '', 8)] }) === '8%');
 }
 
 // ---------- the label: SHORTHAND, the shortest unambiguous form ----------
@@ -71,11 +89,11 @@ const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
         A.label({ label: 'work', health: 'ready' }) === 'work · —');
     ok('a measured slot carries the figure beside the name',
         A.label({ label: 'work', health: 'ready', percent: 42 }) === 'work · 42%');
-    ok('‼️ dual-window measured slot carries 5h and week explicitly',
-        A.label({ label: 'murvietnam', health: 'ready', fivePercent: 0, weekPercent: 40 })
+    ok('‼️ dual-window measured slot carries both windows explicitly',
+        A.label({ label: 'murvietnam', health: 'ready', bars: [BAR5(0), BARW(40)] })
         === 'murvietnam · 5h: 0% / wk: 40%');
     ok('the standing choice keeps its trailing dot, after the dual-window figure',
-        A.label({ label: 'wmmuratvural', health: 'ready', fivePercent: 12, weekPercent: 0, active: true })
+        A.label({ label: 'wmmuratvural', health: 'ready', bars: [BAR5(12), BARW(0)], active: true })
         === 'wmmuratvural · 5h: 12% / wk: 0% •');
     ok('the standing choice keeps its trailing dot, after the figure',
         A.label({ label: 'work', health: 'ready', percent: 42, active: true })
@@ -112,6 +130,49 @@ const read = f => fs.readFileSync(path.join(ROOT, f), 'utf8');
         /read before that/.test(past));
     ok('a turnover seconds away is still counted forwards, not backwards',
         /\(in 0m\)/.test(A.turns({ resetsAt: now + 5000 }, now)));
+}
+
+// ---------- X-215 round 2: how much is left, COMPLETE and in the right unit ----------
+{
+    const now = Date.UTC(2026, 8, 7, 10, 0, 0);
+    // ‼️ THE UNIT COMES OUT OF THE REMAINDER, NOT OUT OF THE WINDOW'S NAME.
+    // The item asked for the five-hour window in MINUTES and the week in DAYS,
+    // and `turns` above rounds both to a single figure — which drops the
+    // minutes a session is decided on and never says "days" at all.
+    ok('under an hour is minutes', A.left(37 * 60000) === '37m');
+    ok('…and a remainder of seconds is not rounded down to nothing',
+        A.left(20000) === '1m');
+    ok('over an hour keeps the minutes rather than rounding them away',
+        A.left(3 * 3600000 + 12 * 60000) === '3h 12m');
+    ok('…and a whole number of hours says so plainly', A.left(3 * 3600000) === '3h');
+    ok('‼️ a weekly window is counted in DAYS, which the old single unit never said',
+        A.left((2 * 24 + 4) * 3600000) === '2d 4h');
+    ok('…and a whole number of days too', A.left(2 * 24 * 3600000) === '2d');
+    ok('nothing left is nothing said', A.left(0) === '' && A.left(-5) === '');
+
+    // ‼️ A TURNOVER THAT IS NOT TODAY IS NOT A TIME OF DAY. Every reset on the
+    // card printed as `02:17`; a week that turns over next Saturday read the
+    // same way, and the two were about to sit on one line next to each other.
+    const sameDay = A.when(now + 3 * 3600000, now);
+    ok('a turnover later today is a clock (got ' + sameDay + ')',
+        /^\d{1,2}[:.]\d{2}/.test(sameDay) && !/\d{4}/.test(sameDay));
+    const otherDay = A.when(now + 5 * 24 * 3600000, now);
+    ok('‼️ a turnover on another day carries its DATE (got ' + otherDay + ')',
+        otherDay !== sameDay && /\d{4}/.test(otherDay));
+
+    const five = A.barTurns(BAR5(12, now + 37 * 60000), now);
+    ok('a window line says what is left AND when (got ' + five + ')',
+        /^37m left \(/.test(five));
+    const week = A.barTurns(BARW(40, now + (2 * 24 + 4) * 3600000), now);
+    ok('…and the weekly one says days (got ' + week + ')', /^2d 4h left \(/.test(week));
+    ok('‼️ a window already turned over says so instead of claiming 0m left',
+        /turned over/.test(A.barTurns(BAR5(91, now - 3600000), now)));
+    ok('a window with no reset time claims nothing about one',
+        A.barTurns(BAR5(12), now) === '');
+    ok('the prefixed form leads with the window it is about',
+        A.barLine(BARW(40, now + 3600000), now).indexOf('wk: ') === 0);
+    ok('…and a window with no time prints no orphan prefix',
+        A.barLine(BARW(40), now) === '');
 }
 
 // ---------- the detail: MIRROR, the full sentence the narrow box cannot hold ----------

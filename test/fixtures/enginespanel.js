@@ -156,6 +156,15 @@ const data = () => {
                 // X-282 — the provider's id, short, and who else carries it
                 uuidShort: '40fd76b3', duplicateOf: [],
                 percent: 91, resetsAt: NOW + 37 * 60 * 1000,
+                // ‼️ X-215 round 2 — BOTH WALLS, which is what this item is for.
+                // The five-hour window is the fuller one here, so this is the
+                // card that used to read "91% · five-hour window" while its own
+                // week at 64% was nowhere — and the card two rows down read a
+                // WEEK under the same layout with nothing saying so.
+                bars: [
+                    { id: 'five_hour', window: 'five-hour window', short: '5h', percent: 91, resetsAt: NOW + 37 * 60 * 1000 },
+                    { id: 'seven_day', window: 'Current week (all models)', short: 'wk', percent: 64, resetsAt: NOW + 4 * 24 * 3600 * 1000 }
+                ],
                 // ‼️ audit B-04.3 — the window arrives NAMED. The host fills the
                 // silence (`windowNameOf`), so a page never derives it and the
                 // five surfaces that each derived it their own way cannot drift.
@@ -208,6 +217,15 @@ const data = () => {
                 email: 'personal@gmail.com', plan: 'pro', health: 'ready', active: false,
                 uuidShort: 'dce63e3f', duplicateOf: ['spare'],
                 percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000,
+                // ‼️ X-215 round 2 — THE USER'S OWN EXAMPLE, drawn. Five hours
+                // barely touched and a week nearly two-fifths gone: under one
+                // bar this card said "12%" and the reader had no way to see the
+                // limit that would actually stop them. The weekly reset is DAYS
+                // away, which is why the line underneath carries a date.
+                bars: [
+                    { id: 'five_hour', window: 'five-hour window', short: '5h', percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000 },
+                    { id: 'seven_day', window: 'Current week (all models)', short: 'wk', percent: 38, resetsAt: NOW + 2 * 24 * 3600 * 1000 + 4 * 3600 * 1000 }
+                ],
                 usageState: 'ok', note: '', window: 'five-hour window',
                 quotaSource: 'oauth-credentials',
                 signin: {
@@ -292,6 +310,16 @@ const data = () => {
                 id: 'codex-work', engine: 'codex', label: 'work@studio',
                 email: 'work@studio.example', plan: 'plus', health: 'ready', active: false,
                 percent: 72, resetsAt: NOW + 3 * 24 * 3600 * 1000,
+                // ‼️ X-215 round 2 — THE ENGINE'S OWN PAIR. Codex publishes
+                // `codex_primary` and `codex_secondary`; `usageFromEngine` took
+                // bar ZERO and threw the second away, so this card could not
+                // have drawn a week even after it learned how — and the 8%
+                // primary was what the pool rotated on while the week was the
+                // wall that actually ended the runs.
+                bars: [
+                    { id: 'codex_primary', window: 'Current 5h window', short: '5h', percent: 8, resetsAt: NOW + 2 * 3600 * 1000 },
+                    { id: 'codex_secondary', window: 'Current week', short: 'wk', percent: 72, resetsAt: NOW + 3 * 24 * 3600 * 1000 }
+                ],
                 usageState: 'ok', window: 'Current week', quotaSource: 'session-tail',
                 note: 'Read from the account\'s own Codex transcript, which records the limit the service returned '
                     + 'on its last turn. It costs nothing and asks nothing - but it is as old as that turn.',
@@ -590,6 +618,28 @@ const oneSlotData = () => {
 };
 
 /**
+ * ‼️ X-215 round 2 — THE ONE-BAR ARITY, which is where a chart built for a pair
+ * either still reads or quietly stops reading.
+ *
+ * Two windows are drawn as one chart: a fixed gutter carrying each window's
+ * short name and percentage, and the tracks lined up beneath one another. The
+ * question a scene has to answer is what that gutter looks like with nothing
+ * under it — and with every card in the main scene carrying two windows, the
+ * answer would have been in no photograph at all.
+ *
+ * Both single-window states are real: a Claude snapshot whose weekly row has
+ * not arrived, and an engine publishing one window and no more.
+ */
+const oneWindowData = () => {
+    const d = data();
+    d.accounts = d.accounts
+        .filter(a => a.id === 'work-1' || a.id === 'codex-work')
+        .map(a => ({ ...a, bars: [a.bars[0]], percent: a.bars[0].percent,
+            resetsAt: a.bars[0].resetsAt, window: a.bars[0].window }));
+    return d;
+};
+
+/**
  * ‼️ X-275 — THE TWO STATES `health` COULD NOT EXPRESS, drawn beside a row that
  * is simply fine so the difference is the picture rather than the caption.
  *
@@ -809,6 +859,11 @@ module.exports = {
         { id: 'enginesprompt', label: 'Engines panel — one slot on the simplified prompt', data: promptDriftData() },
         { id: 'enginesincomplete', label: 'Engines panel — a slot missing three clauses of its contract', data: incompleteData() },
         { id: 'enginesoneslot', label: 'Engines panel — a single captured account', data: oneSlotData() },
+        {
+            id: 'enginesonewindow',
+            label: 'Engines panel — accounts walled by ONE window: the pair\'s gutter with a single track under it (X-215 R2)',
+            data: oneWindowData()
+        },
         { id: 'enginessignin', label: 'Engines panel — a sign-in running out, and one dead while the machine is signed in as it', data: signinData() },
         { id: 'enginesautooff', label: 'Engines panel — the background quota beat switched OFF (X-241)', data: autoOffData() },
         { id: 'enginesonerule', label: 'Engines panel — one account rule of the user\'s own', data: oneRuleData() },

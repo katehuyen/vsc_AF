@@ -60,6 +60,100 @@ import { ensureAccessToken, EXPIRY_SKEW_MS, RefreshOutcome } from './oauthRefres
 /** The `five_hour` row is the one that governs a session's life. */
 export const FIVE_HOUR = 'five_hour';
 
+/**
+ * ‼️ X-215 round 2 — ONE WINDOW A SLOT IS WALLED BY, NAMED, AND THE LIST OF
+ * THEM RATHER THAN A PAIR OF HAND-NAMED FIELDS.
+ *
+ * X-326 put `fivePercent` / `weekPercent` (+ their resets) on `SlotUsage` and
+ * the pickers drew both, which was right for Claude and only for Claude: those
+ * four names hard-code that an account has exactly two windows and that they
+ * are five hours and a week. Codex publishes its OWN pair (`codex_primary` /
+ * `codex_secondary`, named by their own minutes), and every one of its windows
+ * past the first was dropped on the floor by `usageFromEngine` — so a reading
+ * that HAD the second figure could not carry it, and the card had nowhere to
+ * put it even if it had.
+ *
+ * So a reading carries its windows as a LIST, each naming itself. Anything
+ * drawing them iterates; nothing above has to know how many an engine has or
+ * what they are called. `percent` / `resetsAt` stay beside it as the BINDING
+ * window (the fullest — X-309), because that is what a rotation decides on and
+ * a list is not a decision.
+ */
+export interface UsageBar {
+    /** the reading's own id — `five_hour`, `seven_day`, `codex_primary`… */
+    id: string;
+    /** the product's one name for this window ('five-hour window', 'Current
+     *  week (all models)') — see `toBar`, which is the only place it is decided */
+    window: string;
+    /** …the same name in the shortest unambiguous form ('5h', 'wk') */
+    short: string;
+    /** 0–100 */
+    percent: number;
+    /** epoch ms of the turnover; 0 when the reading did not say */
+    resetsAt: number;
+}
+
+/**
+ * ‼️ X-215 round 2 — THE SHORT NAME, DECIDED ON THE HOST, for the same reason
+ * `windowNameOf` is (audit B-04.3): a picker row, a card heading and a chip all
+ * need the two-character form, and three pages deriving it from the long name
+ * is three pages that can disagree about one window.
+ *
+ * The space of long names is exactly two producers' output — `BAR_SPECS`
+ * (src/core/planusage.ts) and `windowTitle` (src/core/engineUsage.ts) — so this
+ * is a translation of what exists, not a guess at what might arrive. A name it
+ * cannot shorten keeps the long one, which is ugly and true.
+ */
+export function shortWindowOf(window: string): string {
+    const n = String(window || '').toLowerCase();
+    if (!n) { return ''; }
+    if (n.includes('week')) { return 'wk'; }
+    // The product's own name for Claude's session window spells the five out.
+    if (n.includes('five-hour') || n.includes('session')) { return '5h'; }
+    const hours = n.match(/(\d+)\s*h\b/);
+    if (hours) { return hours[1] + 'h'; }
+    const mins = n.match(/(\d+)\s*m\b/);
+    if (mins) { return mins[1] + 'm'; }
+    const days = n.match(/(\d+)\s*day/);
+    if (days) { return days[1] + 'd'; }
+    if (n.includes('day')) { return '1d'; }
+    return window;
+}
+
+/**
+ * A reading's row, as the list above carries it.
+ *
+ * ‼️ THE NAME GOES THROUGH `windowNameOf`, NOT STRAIGHT OFF THE READING — audit
+ * B-04.3 again, and it nearly came back in here. A `PlanBar`'s title is worded
+ * as Claude Code's own /usage prints it ('Current session'), while the rest of
+ * this product has one name for that window and it is 'five-hour window'. A
+ * card carrying the reading's spelling in its bars and the product's in every
+ * sentence around them would have said two things about one window — which is
+ * the exact shape of the defect that audit closed, with neither name wrong.
+ * So the five-hour row is named by the host, and every other row keeps the name
+ * whoever measured it gave, which is what lets Codex's week be Codex's week.
+ */
+function toBar(b: PlanBar, engine: string): UsageBar {
+    const window = windowNameOf(b.id === FIVE_HOUR ? '' : b.title, engine);
+    return { id: b.id, window, short: shortWindowOf(window), percent: b.percent, resetsAt: b.resetsAt };
+}
+
+/**
+ * ‼️ X-215 round 2 — WHICH OF A READING'S WINDOWS BINDS, for an engine that
+ * names its own. The twin of `bindingBar` below and the same lesson X-309
+ * measured on Claude: a slot that reports the FIRST window while a second one
+ * is full is an account the pool keeps opening on and every round dies. Codex
+ * hit exactly this — `eu.bars[0]` is its five-hour window and its week was
+ * never looked at. A tie is the first bar, which is the engine's primary.
+ */
+export function fullestBar(bars: UsageBar[]): UsageBar | undefined {
+    let best: UsageBar | undefined;
+    for (const b of bars) {
+        if (!best || b.percent > best.percent) { best = b; }
+    }
+    return best;
+}
+
 /** How much room one slot has, in the terms every surface above prints. */
 export interface SlotUsage {
     slotId: string;
@@ -70,14 +164,12 @@ export interface SlotUsage {
     percent: number;
     /** epoch ms of the five-hour reset; 0 when unknown */
     resetsAt: number;
-    /** ‼️ X-326 Option A — 5-hour window percentage specifically; -1 when unknown */
-    fivePercent?: number;
-    /** ‼️ X-326 Option A — weekly window percentage specifically; -1 when unknown */
-    weekPercent?: number;
-    /** ‼️ X-326 Option A — epoch ms of 5-hour reset */
-    fiveResetsAt?: number;
-    /** ‼️ X-326 Option A — epoch ms of weekly reset */
-    weekResetsAt?: number;
+    /**
+     * ‼️ X-215 round 2 — EVERY WINDOW THIS READING CARRIES, each naming itself.
+     * Empty where nothing has been read. `percent` above is the fullest of
+     * these; this is the list the card draws, one bar per entry.
+     */
+    bars?: UsageBar[];
     /** the tier the credentials state ('pro', 'max', …) */
     plan: string;
     /** when these figures were read; 0 = never */
@@ -172,16 +264,20 @@ export function slotSessionDir(slot: { dir: string; engine: string } | undefined
  * with a real number in it, which is worse than the blank it replaces.
  */
 export function usageFromEngine(slot: { id: string; engine: string }, eu: EngineUsage): SlotUsage {
-    const bar = eu.bars[0];
+    // ‼️ X-215 round 2 — ALL of them, not `bars[0]`. An engine that publishes a
+    // second window had it dropped here, so the card could not have drawn it.
+    const bars = eu.state === 'ok' ? eu.bars.map(b => toBar(b, slot.engine)) : [];
+    const bar = fullestBar(bars);
     const read = eu.state === 'ok' && !!bar;
     return {
         slotId: slot.id, engine: slot.engine,
         state: read ? 'ok' : 'error',
         percent: read ? bar.percent : -1,
         resetsAt: read ? bar.resetsAt : 0,
+        bars,
         plan: eu.plan ?? '',
         fetchedAt: eu.fetchedAt ?? 0,
-        ...(read && bar.title ? { window: bar.title } : {}),
+        ...(read && bar.window ? { window: bar.window } : {}),
         ...(eu.note ? { note: eu.note } : {})
     };
 }
@@ -241,16 +337,26 @@ export function bindingBar(snap: PlanUsageSnapshot | undefined): PlanBar | undef
 export function usageFrom(slot: { id: string; engine: string }, snap: PlanUsageSnapshot): SlotUsage {
     const bar = bindingBar(snap);
     const five = fiveHourBar(snap);
-    const week = snap?.bars.find(b => b.id === SEVEN_DAY || b.id === 'seven_day_opus' || b.id === 'seven_day_sonnet');
+    /**
+     * ‼️ THE WEEK A CARD DRAWS AND THE WEEK THAT BINDS ARE NOT THE SAME ROW,
+     * deliberately. `bindingBar` folds in only the all-models week, because
+     * whether a per-model one walls a run depends on the launch's model and a
+     * slot figure does not know it (X-309). But a reader looking at the card
+     * still wants to SEE the weekly figure their plan actually publishes, so
+     * the drawn list falls back to the per-model row when there is no other.
+     */
+    const week = snap?.bars.find(b => b.id === SEVEN_DAY)
+        ?? snap?.bars.find(b => b.id === 'seven_day_opus')
+        ?? snap?.bars.find(b => b.id === 'seven_day_sonnet');
+    const bars = snap.state === 'ok'
+        ? [five, week].filter((b): b is PlanBar => !!b).map(b => toBar(b, slot.engine))
+        : [];
     return {
         slotId: slot.id, engine: slot.engine,
         state: snap.state,
         percent: snap.state === 'ok' && bar ? bar.percent : -1,
         resetsAt: bar?.resetsAt ?? 0,
-        fivePercent: snap.state === 'ok' && five ? five.percent : -1,
-        weekPercent: snap.state === 'ok' && week ? week.percent : -1,
-        fiveResetsAt: five?.resetsAt ?? 0,
-        weekResetsAt: week?.resetsAt ?? 0,
+        bars,
         plan: snap.plan,
         fetchedAt: snap.fetchedAt,
         ...(snap.state === 'ok' && bar && bar.id !== FIVE_HOUR && bar.title ? { window: bar.title } : {}),

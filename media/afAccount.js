@@ -49,10 +49,81 @@
 
     /** `AFTime` on a page, the same module through `require` in a test or on the
      *  host. Resolved at CALL time so script load order cannot matter. */
-    function clockOf(ts) {
-        const T = (typeof window !== 'undefined' && window.AFTime) ? window.AFTime
+    function timeApi() {
+        return (typeof window !== 'undefined' && window.AFTime) ? window.AFTime
             : (typeof require === 'function' ? require('./afTime.js') : null);
+    }
+
+    function clockOf(ts) {
+        const T = timeApi();
         return T ? T.clock(ts) : new Date(ts).toISOString().slice(11, 16);
+    }
+
+    /**
+     * ‼️ X-215 round 2 — A TURNOVER THAT IS NOT TODAY IS NOT A TIME OF DAY.
+     *
+     * Every reset on this page was printed as `02:17`, which is right for a
+     * five-hour window and a half-truth for a weekly one: a week that turns over
+     * next Saturday at 02:00 read as "02:17" and the reader had no way to see
+     * the days. The card carries both windows now, so the ambiguity would have
+     * been sitting on one line next to its own counter-example.
+     */
+    function whenOf(ts, now) {
+        const T = timeApi();
+        const at = typeof now === 'number' ? now : Date.now();
+        const sameDay = new Date(ts).toDateString() === new Date(at).toDateString();
+        if (sameDay || !T) { return clockOf(ts); }
+        return T.stamp(ts);
+    }
+
+    /**
+     * ‼️ X-215 round 2 — HOW MUCH IS LEFT, IN THE UNIT THAT WINDOW DESERVES,
+     * and COMPLETE rather than rounded to one figure.
+     *
+     * The five-hour window is read in minutes and the week in days, and the old
+     * single-unit rounding printed `2h` for both — which loses the minutes a
+     * session is actually decided on, and says nothing about days at all. The
+     * unit is taken from the REMAINDER rather than from the window's name, so
+     * an engine whose windows are neither five hours nor a week gets a true
+     * answer without this page knowing anything about it.
+     */
+    function leftOf(ms) {
+        if (!(ms > 0)) { return ''; }
+        const mins = Math.floor(ms / 60000);
+        if (mins < 60) { return Math.max(1, mins) + 'm'; }
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) {
+            const m = mins % 60;
+            return m ? hours + 'h ' + m + 'm' : hours + 'h';
+        }
+        const days = Math.floor(hours / 24);
+        const h = hours % 24;
+        return h ? days + 'd ' + h + 'h' : days + 'd';
+    }
+
+    /**
+     * ONE WINDOW'S FULL SENTENCE, the shortest form that is still complete:
+     * what is left, and when it turns over. Both facts, because "37m left" with
+     * no clock cannot be checked against anything and "18:19" alone makes the
+     * reader do the subtraction.
+     */
+    function barTurns(b, now) {
+        if (!b || !b.resetsAt) { return ''; }
+        const at = typeof now === 'number' ? now : Date.now();
+        const left = b.resetsAt - at;
+        // ‼️ A TURNOVER IN THE PAST IS NOT "0m LEFT" — audit B-04.1, and the
+        // same trap as `turns` below: the figure beside it belongs to the OLD
+        // window, and a row that hides that dresses a stale reading as a fresh
+        // one.
+        if (left <= 0) { return 'turned over ' + whenOf(b.resetsAt, at) + ', figure is older'; }
+        return leftOf(left) + ' left (' + whenOf(b.resetsAt, at) + ')';
+    }
+
+    /** …the same sentence with the window's short name in front, for the one
+     *  line that has to carry every window at once. */
+    function barLine(b, now) {
+        const t = barTurns(b, now);
+        return t ? (b.short ? b.short + ': ' : '') + t : '';
     }
 
     /**
@@ -69,18 +140,25 @@
      * print `5h: X% / wk: Y%` so that a weekly limit (e.g. 40%) is never confused
      * with a five-hour window limit (e.g. 0%).
      */
+    /**
+     * ‼️ X-215 round 2 — THE WINDOWS A READING CARRIES, AS A LIST.
+     *
+     * X-326 read `fivePercent` / `weekPercent`, which named Claude's two
+     * windows in this page's own spelling; an engine with different ones (and
+     * Codex has two of its own) could not be drawn by it at all. The host sends
+     * the list and each entry names itself — nothing here decides how many
+     * windows an account has or what they are called.
+     */
+    function barsOf(a) {
+        return (a && Array.isArray(a.bars) ? a.bars : [])
+            .filter(b => b && typeof b.percent === 'number' && b.percent >= 0);
+    }
+
     function figure(a) {
         if (!a) { return '—'; }
-        const has5 = typeof a.fivePercent === 'number' && a.fivePercent >= 0;
-        const hasW = typeof a.weekPercent === 'number' && a.weekPercent >= 0;
-        if (has5 && hasW) {
-            return '5h: ' + a.fivePercent + '% / wk: ' + a.weekPercent + '%';
-        }
-        if (has5) {
-            return '5h: ' + a.fivePercent + '%';
-        }
-        if (hasW) {
-            return 'wk: ' + a.weekPercent + '%';
+        const bars = barsOf(a);
+        if (bars.length) {
+            return bars.map(b => (b.short ? b.short + ': ' : '') + b.percent + '%').join(' / ');
         }
         const p = typeof a.percent === 'number' ? a.percent : -1;
         return p >= 0 ? p + '%' : '—';
@@ -173,14 +251,16 @@
                 || 'This sign-in has fallen over — capture it again before it can pay for a run.');
         }
         if (a.active) { out.push('The standing choice for this engine right now.'); }
-        const has5 = typeof a.fivePercent === 'number' && a.fivePercent >= 0;
-        const hasW = typeof a.weekPercent === 'number' && a.weekPercent >= 0;
-        if (has5 && hasW) {
-            // X-326 — two bars the READING carried apart (fiveHourBar / the
-            // seven-day bar), so the two names are the host's, not this page's.
-            out.push('5h: ' + a.fivePercent + '% used · weekly: ' + a.weekPercent + '% used.');
-            const t = turns(a, now);
-            if (t) { out.push(t.charAt(0).toUpperCase() + t.slice(1) + '.'); }
+        const bars = barsOf(a);
+        if (bars.length) {
+            // ‼️ X-215 round 2 — ONE LINE PER WINDOW, each naming itself, each
+            // complete: how much is gone, how much is left, and when it turns
+            // over. The reading decides how many there are; this does not.
+            for (const b of bars) {
+                const t = barTurns(b, now);
+                out.push(b.window + ': ' + b.percent + '% used, ' + Math.max(0, 100 - b.percent) + '% left'
+                    + (t ? ' — ' + t : '') + '.');
+            }
         } else if (typeof a.percent === 'number' && a.percent >= 0) {
             const w = windowPhrase(a);
             out.push(a.percent + '% of the ' + (w || 'window') + ' used.');
@@ -293,6 +373,9 @@
     return {
         MACHINE: MACHINE, MACHINE_ROW: MACHINE_ROW,
         figure: figure, turns: turns, label: label, detail: detail,
+        // X-215 round 2 — the window list and its wording, so the card that
+        // DRAWS the bars and the pickers that only name them share one reader.
+        bars: barsOf, barTurns: barTurns, barLine: barLine, left: leftOf, when: whenOf,
         windowPhrase: windowPhrase,
         row: row, options: options,
         POLICY_GROUP: POLICY_GROUP, ACCOUNT_GROUP: ACCOUNT_GROUP,

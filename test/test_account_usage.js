@@ -20,7 +20,7 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
 
 const {
     AccountUsageService, mostRoom, pickAccount, accountOrder, roomOrder, nextResetAt, slotIsUsable, usageFrom,
-    unreadUsage, fiveHourBar, FIVE_HOUR
+    unreadUsage, fiveHourBar, FIVE_HOUR, usageFromEngine, fullestBar, shortWindowOf
 } = require(path.join(__dirname, '..', 'out', 'core', 'accountUsage.js'));
 const { RATE_LIMIT_BACKOFF_START_MS } = require(path.join(__dirname, '..', 'out', 'core', 'planusage.js'));
 
@@ -593,6 +593,117 @@ async function main() {
             && usageFrom(slot('a'), walledWeek).window === 'Current week (all models)');
         ok('a snapshot with only the five-hour bar reads exactly as before',
             usageFrom(slot('a'), { ...snap, bars: [{ id: FIVE_HOUR, title: 'Current session', percent: 33, resetsAt: t }] }).percent === 33);
+
+        // ---------- X-215 round 2: BOTH windows travel, not only the binding one ----------
+        /*
+         * ‼️ WHAT THE USER MEASURED: "the bar shows the weekly quota on some
+         * accounts and the five-hour one on others — apples and oranges." That
+         * is not a drawing bug, it is X-309 working exactly as designed: the row
+         * carries whichever window is FULLER, so the window under the bar
+         * changes from card to card and nothing said so. The answer is not to
+         * pick differently — either wall really does end a run — it is that the
+         * reading carries EVERY window and the card draws them all.
+         */
+        ok('‼️ a reading carries both windows, not only the one that binds',
+            weekly.bars.length === 2
+            && weekly.bars[0].id === FIVE_HOUR && weekly.bars[0].percent === 33
+            && weekly.bars[1].id === 'seven_day' && weekly.bars[1].percent === 71);
+        // ‼️ THE FIVE-HOUR ROW IS NAMED BY THE HOST, NOT BY THE READING — audit
+        // B-04.3. `PlanBar.title` spells it as Claude Code's own /usage does
+        // ('Current session'); the product has ONE name for that window and it
+        // is 'five-hour window'. A card drawing the reading's spelling in its
+        // bars and the product's in every sentence around them would say two
+        // things about one window. Every OTHER row keeps the name whoever
+        // measured it gave, which is what lets Codex's week be Codex's week.
+        ok('…each naming itself, so no page has to know what an engine\'s windows are called',
+            weekly.bars[0].window === 'five-hour window' && weekly.bars[1].window === 'Current week');
+        ok('…in the short form too, decided here rather than by three pages separately',
+            weekly.bars[0].short === '5h' && weekly.bars[1].short === 'wk');
+        ok('…and each carries ITS OWN reset, which is the whole point of drawing two',
+            weekly.bars[0].resetsAt === t && weekly.bars[1].resetsAt === t + 86400_000);
+        ok('the five-hour window keeps its place in the list when IT is the fuller one',
+            f.bars.length === 2 && f.bars[0].percent === 60 && f.bars[1].percent === 30);
+        ok('a snapshot with one bar carries a list of one, never a phantom second',
+            usageFrom(slot('a'), { ...snap, bars: [{ id: FIVE_HOUR, title: 'Current session', percent: 33, resetsAt: t }] })
+                .bars.length === 1);
+        /*
+         * ‼️ THE WEEK A CARD DRAWS AND THE WEEK THAT BINDS ARE NOT THE SAME ROW.
+         * X-309 deliberately keeps the per-model weeklies OUT of the binding
+         * choice (whether one walls a run depends on the launch's model, which a
+         * slot figure does not know) — but a reader still wants to SEE the only
+         * weekly figure their plan publishes. Drawn, not binding.
+         */
+        const opusOnly = { ...snap, bars: [
+            { id: FIVE_HOUR, title: 'Current session', percent: 10, resetsAt: t },
+            { id: 'seven_day_opus', title: 'Current week (Opus only)', percent: 80, resetsAt: t + 86400_000 }
+        ] };
+        const oo = usageFrom(slot('a'), opusOnly);
+        ok('‼️ a per-model week is DRAWN when it is the only one published…',
+            oo.bars.length === 2 && oo.bars[1].percent === 80 && oo.bars[1].short === 'wk');
+        ok('…and still does NOT bind, because which model runs decides whether it walls anything',
+            oo.percent === 10 && oo.window === undefined);
+        const errored = usageFrom(slot('a'), { ...snap, state: 'error' });
+        ok('‼️ a reading that failed draws no bars at all — -1 is not 0%',
+            errored.bars.length === 0 && errored.percent === -1);
+
+        // ---------- the engine path: the second window was being DROPPED ----------
+        /*
+         * ‼️ `usageFromEngine` took `eu.bars[0]` and threw the rest away, so an
+         * engine that publishes two windows (Codex does — `codex_primary` and
+         * `codex_secondary`) could not have had its second one drawn even after
+         * the card learned how. And taking bar ZERO rather than the fullest is
+         * the X-309 bug again, on the other engine: a Codex account at 100% of
+         * its week read as 8% and the pool kept opening rounds on it.
+         */
+        const eu = {
+            id: 'codex', label: 'Codex', state: 'ok', plan: 'plus', fetchedAt: NOW, note: '', bars: [
+                { id: 'codex_primary', title: 'Current 5h window', percent: 8, resetsAt: t },
+                { id: 'codex_secondary', title: 'Current week', percent: 72, resetsAt: t + 86400_000 }
+            ]
+        };
+        const ce = usageFromEngine(slot('c', 'codex'), eu);
+        ok('‼️ an engine\'s SECOND window is no longer dropped on the floor',
+            ce.bars.length === 2 && ce.bars[1].id === 'codex_secondary' && ce.bars[1].percent === 72);
+        ok('…and the engine\'s own window names travel with it',
+            ce.bars[0].window === 'Current 5h window' && ce.bars[1].window === 'Current week');
+        ok('…shortened by the same rule Claude\'s windows get',
+            ce.bars[0].short === '5h' && ce.bars[1].short === 'wk');
+        ok('‼️ the FULLER engine window binds, exactly as it does for Claude (X-309)',
+            ce.percent === 72 && ce.resetsAt === t + 86400_000 && ce.window === 'Current week');
+        ok('…so a Codex account walled by its week is no longer offered as empty',
+            !slotIsUsable(ce, 70));
+        const one = usageFromEngine(slot('c', 'codex'), { ...eu, bars: [eu.bars[0]] });
+        ok('a single-window engine reads exactly as it did — one bar, its own name',
+            one.bars.length === 1 && one.percent === 8 && one.window === 'Current 5h window');
+        const dead = usageFromEngine(slot('c', 'codex'), { ...eu, state: 'error', bars: [] });
+        ok('a failed engine reading draws nothing and claims nothing',
+            dead.bars.length === 0 && dead.percent === -1 && dead.state === 'error');
+        ok('a tie between engine windows is the primary — the first one it published',
+            usageFromEngine(slot('c', 'codex'), { ...eu, bars: [
+                { id: 'codex_primary', title: 'Current 5h window', percent: 50, resetsAt: t },
+                { id: 'codex_secondary', title: 'Current week', percent: 50, resetsAt: t + 86400_000 }
+            ] }).resetsAt === t);
+        ok('fullestBar on an empty list is undefined, not a zero',
+            fullestBar([]) === undefined);
+
+        // ---------- the short name, decided once on the host ----------
+        /*
+         * The long names are exactly two producers' output — BAR_SPECS
+         * (core/planusage.ts) and windowTitle (core/engineUsage.ts) — so this
+         * is a translation of what exists, not a guess at what might arrive.
+         */
+        ok('Claude\'s session window shortens to 5h', shortWindowOf('Current session') === '5h');
+        ok('…and every spelling of its week to wk',
+            shortWindowOf('Current week (all models)') === 'wk'
+            && shortWindowOf('Current week (Opus only)') === 'wk'
+            && shortWindowOf('Current 2 weeks') === 'wk');
+        ok('an engine naming its window by the hour keeps the hour',
+            shortWindowOf('Current 5h window') === '5h' && shortWindowOf('Current 3h window') === '3h');
+        ok('…by the minute, the minute', shortWindowOf('Current 30m window') === '30m');
+        ok('…and by the day, the day',
+            shortWindowOf('Current day') === '1d' && shortWindowOf('Current 3 days') === '3d');
+        ok('‼️ a name it cannot shorten keeps the long one — ugly and true beats short and wrong',
+            shortWindowOf('Current window') === 'Current window' && shortWindowOf('') === '');
     }
 
     // ---------- X-207: the pool the user allowed, and how it is walked --------

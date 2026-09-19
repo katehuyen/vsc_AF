@@ -457,16 +457,72 @@
         const silence = a.health === 'unreadable' ? 'unreadable'
             : (a.health !== 'ready' || a.usageState === 'no-auth' || a.usageState === 'expired') ? 'dead'
                 : 'unread';
+        /**
+         * ‼️ X-215 round 2 — EVERY WINDOW THIS ACCOUNT IS WALLED BY, AS ONE
+         * FIGURE RATHER THAN AS N PARAGRAPHS.
+         *
+         * The card drew ONE bar, so a Claude plan's five-hour wall and its
+         * weekly wall were squeezed into a single percentage whose window
+         * changed under the reader — whichever was fuller won (X-309) — and two
+         * cards side by side could be showing two different windows with
+         * nothing saying so. That is the apples-and-oranges the user measured.
+         *
+         * DENSITY decided the shape: not two stacked blocks with their own
+         * captions and their own reset lines, which would have doubled the
+         * card's height for one extra number, but ONE chart — the bars 3px
+         * apart, each with its own short name and percentage in a fixed gutter
+         * so the tracks start on the same edge and read as a pair. The
+         * complete figures (how much is left, in the unit that window deserves,
+         * and the moment it turns over with its DATE when it is not today) go
+         * on the single line underneath, one clause per window.
+         */
+        const drawn = window.AFAccount.bars(a);
+        const barRow = (b) => '<div class="acwrow">'
+            + '<span class="acwk">' + esc(b.short || '') + '</span>'
+            + '<span class="acwp">' + b.percent + '%</span>'
+            + '<div class="progress"><div class="'
+            + (b.percent >= 90 ? 'hot' : b.percent >= 75 ? 'warn' : '')
+            + '" style="width:' + b.percent + '%"></div></div></div>';
+        // ONE window uses the same gutter as two — measured on the scene, where
+        // `5h  8%` over a single track reads better than the caption did and
+        // lines up with the card above it. The caption layout is kept for the
+        // other case only: a reading with a percentage and NO window list,
+        // where there is no short name to put in the gutter at all.
+        const rows = drawn.length
+            ? drawn.map(barRow).join('')
+            : '<div class="acwt"><span>' + esc(winName) + '</span><strong>' + a.percent + '%</strong></div>'
+                + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>';
+        const resets = (drawn.length
+            ? drawn.map(b => window.AFAccount.barLine(b, DATA.now)).filter(Boolean).join(' · ')
+            : accountTurns(a)) || 'no reset time was read';
+        const heading = drawn.length > 1
+            ? 'Allowance — ' + (a.label || a.id)
+            : winName.charAt(0).toUpperCase() + winName.slice(1) + ' — ' + (a.label || a.id);
         const window5 = read
-            ? T.wrap('<div class="acwin">'
-                + '<div class="acwt"><span>' + esc(winName) + '</span><strong>' + a.percent + '%</strong></div>'
-                + '<div class="progress"><div class="' + hot + '" style="width:' + a.percent + '%"></div></div>'
-                + '<div class="acsub">' + esc(accountTurns(a) || 'no reset time was read') + '</div></div>',
-                winName.charAt(0).toUpperCase() + winName.slice(1) + ' — ' + (a.label || a.id),
+            ? T.wrap('<div class="acwin">' + rows
+                + '<div class="acsub">' + esc(resets) + '</div></div>',
+                heading,
                 T.lines([
-                    'used: ' + a.percent + '%',
-                    'left: ' + Math.max(0, 100 - a.percent) + '%',
-                    accountTurns(a) || 'reset: no time was read, so nothing is claimed about when it turns over',
+                    ...(drawn.length
+                        ? drawn.map(b => b.window + ': ' + b.percent + '% used · '
+                            + Math.max(0, 100 - b.percent) + '% left'
+                            + (window.AFAccount.barTurns(b, DATA.now)
+                                ? ' · ' + window.AFAccount.barTurns(b, DATA.now) : ''))
+                        : [
+                            'used: ' + a.percent + '%',
+                            'left: ' + Math.max(0, 100 - a.percent) + '%',
+                            accountTurns(a)
+                                || 'reset: no time was read, so nothing is claimed about when it turns over'
+                        ]),
+                    // ‼️ WHICH ONE THE ROTATION IS DECIDED ON. Two bars on one
+                    // card raise a question one bar never could: a pool picking
+                    // "the emptiest account" is comparing ONE of these, and a
+                    // reader who assumes it is the five-hour one is wrong
+                    // exactly when it matters (X-309).
+                    ...(drawn.length > 1
+                        ? [T.GAP, 'A rotation compares the FULLER of these two — ' + a.percent
+                            + '% right now — because either wall ends a run.']
+                        : []),
                     'this figure was ' + readAge,
                     a.plan ? 'plan: ' + a.plan : '',
                     T.GAP,
@@ -2114,6 +2170,25 @@
                 span.acwinw, span.acspendw { display:block; }
                 .acwt { display:flex; justify-content:space-between; align-items:baseline;
                     gap:8px; font-size:12px; }
+                /* X-215 round 2 — the windows as ONE chart. The gutter is fixed
+                   so both tracks start on the same edge and the pair reads as a
+                   single figure; the rows are 3px apart, which is close enough
+                   to group them and far enough that neither bar looks like the
+                   other's shadow. Tabular numerals keep 9% and 40% from
+                   shifting the track's left edge between rows. */
+                /* ‼️ line-height:1 IS THE RULE THAT MAKES THIS ONE CHART, and it
+                   was found by measuring rather than by looking. Without it the
+                   rows were 15px tall around a 6px track, so the tracks sat
+                   12px apart — twice their own height, which reads as two
+                   unrelated bars however small the margin between the ROWS is.
+                   The text box, not the margin, was the distance. */
+                .acwrow { display:flex; align-items:center; gap:6px; line-height:1; }
+                .acwrow + .acwrow { margin-top:2px; }
+                .acwk { flex:none; width:16px; font-size:10px; opacity:.7;
+                    text-transform:uppercase; letter-spacing:.3px; }
+                .acwp { flex:none; width:30px; text-align:right; font-size:11px;
+                    font-variant-numeric:tabular-nums; }
+                .acwrow .progress { flex:1; margin-top:0; height:7px; }
                 .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
                 .acnone { margin-top:6px; font-size:12px; }
                 /* X-252 — the day's spend, on the card's own ruler under the

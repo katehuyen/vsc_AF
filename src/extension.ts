@@ -260,7 +260,7 @@ import {
     slotsFor, statedAccountLabel, unportableDirs
 } from './core/accountStore';
 import {
-    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, accountOrder, mostRoom, nextResetAt,
+    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, UsageBar, accountOrder, mostRoom, nextResetAt,
     slotCredentialsFile, slotIsUsable,
     slotSessionDir, windowNameOf, windowPhraseOf
 } from './core/accountUsage';
@@ -19430,6 +19430,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // has to derive it, which is how five surfaces came to disagree with
             // this one (audit B-04.3).
             window: windowNameOf(u?.window, slot.engine),
+            // ‼️ X-215 round 2 — AND EVERY WINDOW, NOT ONLY THE ONE THAT BINDS.
+            // The card drew a single bar, so a Claude account's five-hour and
+            // weekly walls were squeezed into one figure whose window changed
+            // under the reader (whichever was fuller won), and Codex's second
+            // window never left the reading at all. One bar per entry now.
+            bars: u?.bars ?? [],
             // ‼️ X-215 — AND WHERE THE FIGURE COMES FROM AT ALL. The ⟳ button's
             // panel promised "one request, never less than five seconds apart"
             // on every card; on one whose figure is a file on this disk that is
@@ -20480,10 +20486,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return {
             percent: u && u.percent >= 0 ? u.percent : -1,
             resetsAt: u && u.resetsAt ? u.resetsAt : 0,
-            fivePercent: u && typeof u.fivePercent === 'number' ? u.fivePercent : undefined,
-            weekPercent: u && typeof u.weekPercent === 'number' ? u.weekPercent : undefined,
-            fiveResetsAt: u && typeof u.fiveResetsAt === 'number' ? u.fiveResetsAt : undefined,
-            weekResetsAt: u && typeof u.weekResetsAt === 'number' ? u.weekResetsAt : undefined,
+            // ‼️ X-215 round 2 — EVERY WINDOW, NOT A HAND-NAMED PAIR. The four
+            // fields that stood here named Claude's two windows in their own
+            // spelling, so an engine with different ones had nowhere to put
+            // them; the reading carries its list and a picker iterates it.
+            bars: u && u.bars && u.bars.length ? u.bars : undefined,
             // ‼️ audit B-04.3 — AND WHAT THAT WINDOW IS CALLED. The pickers drew
             // the figure and then named its window themselves, always "five-hour";
             // one reader sends both, so a Codex slot cannot read `72%` under a
@@ -20493,11 +20500,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const engineAccountMatrix = (): Record<string,
         { id: string; label: string; health: string; active: boolean;
-            percent: number; resetsAt: number; fivePercent?: number; weekPercent?: number;
-            fiveResetsAt?: number; weekResetsAt?: number; window: string }[]> => {
+            percent: number; resetsAt: number; bars?: UsageBar[]; window: string }[]> => {
         const out: Record<string, { id: string; label: string; health: string; active: boolean;
-            percent: number; resetsAt: number; fivePercent?: number; weekPercent?: number;
-            fiveResetsAt?: number; weekResetsAt?: number; window: string }[]> = {};
+            percent: number; resetsAt: number; bars?: UsageBar[]; window: string }[]> = {};
         const active = activeAccounts();
         // ‼️ THE USAGE IS AN IN-MEMORY SNAPSHOT (X-170), not a request — the
         // service holds one budget per account and refreshes on its own beat, so
@@ -37875,7 +37880,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'so the identity of the session you are talking to right now is never touched and two '
                 + 'accounts can run at once. Per account: id, engine, label, email, plan, health '
                 + '("ready" | "needs-signin" = the refresh token died and only a person can fix it | '
-                + '"unreadable"), percent (the five-hour window, -1 when not read yet), resetsAt, active. '
+                + '"unreadable"), percent, resetsAt, active. '
+                + '‼️ X-215 — `percent` IS THE WINDOW THAT BINDS, NOT ALWAYS THE FIVE-HOUR ONE: a plan '
+                + 'is walled by several windows at once and the figure here is the FULLEST of them '
+                + '(-1 = nobody has read this slot), with `window` naming which one it is. Reading it '
+                + 'as "the five-hour window" is how a sign-in at 0% of its five hours and 100% of its '
+                + 'week was called the emptiest account in the pool while every round opened on it '
+                + 'died. `bars` is the whole list rather than the one that won — per window: id '
+                + '(five_hour | seven_day | the engine\'s own, e.g. codex_primary), window (its name), '
+                + 'short ("5h" / "wk"), percent and resetsAt. Empty where nothing has been read. '
                 + 'Also `engines`: what each engine can do about accounts at all and WHY — "measured" '
                 + '(proven on a real machine), "declared" (the vendor documents the variable, unproven '
                 + 'here), "unmapped" (no verified way to keep two identities apart, so capture is '
@@ -38012,8 +38025,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'whether anything is usable at all, and when the first exhausted account comes back so '
                 + 'a loop can sleep spending nothing until then. Unlike accounts.list this may spend one '
                 + 'request to refresh a stale figure — one, whatever the number of accounts, because the '
-                + 'budget is shared. args: engine? (default claude), ceiling? (0-100, the five-hour '
-                + 'percentage at which an account counts as full; default 95)',
+                + 'budget is shared. args: engine? (default claude), ceiling? (0-100, the percentage at '
+                + 'which an account counts as full — read against whichever of its windows is FULLEST, '
+                + 'not the five-hour one alone, since either wall ends a run; default 95)',
             handler: async (args) => {
                 const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
                 const ceiling = Math.max(1, Math.min(100, optNum(args, 'ceiling', 95)));
