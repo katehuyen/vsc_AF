@@ -199,6 +199,23 @@ export function askWhich(candidates: RoutableSession[]): string {
 }
 
 /**
+ * `/sessions` — the same numbering `askWhich` uses, because the reader is
+ * expected to answer one with the other and two numbering schemes for one list
+ * is the bug this whole module exists to avoid. The conversation in focus is
+ * marked rather than moved: its number must not change under the reader's
+ * fingers between reading the list and typing the number.
+ */
+export function sessionList(sessions: RoutableSession[], focusId?: string): string {
+    if (!sessions.length) { return 'No live conversations. Send a message to start a headless run instead.'; }
+    return [
+        `${sessions.length} live conversation${sessions.length === 1 ? '' : 's'}:`,
+        ...sessions.map((s, i) => `${i + 1}. ${sessionLabel(s)}${s.id === focusId ? '  ← focus' : ''}`),
+        '',
+        'Reply to one of my messages to answer it, or /focus <number>.'
+    ].join('\n');
+}
+
+/**
  * `/focus 2`, `/focus developer`, `/focus <host id>` — one door, because the
  * reader does not know which of the three they are holding.
  *

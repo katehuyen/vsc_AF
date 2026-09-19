@@ -192,5 +192,26 @@ const msg = (over = {}) => ({ chatId: CHAT, ...over });
         && R.sessionLabel(three[2]) === 'developer · TalkScribe · working');
 }
 
+// ---------- /sessions: the list the reader answers with a number ----------
+{
+    const list = R.sessionList(three, 'h2');
+    // ‼️ ONE NUMBERING. The reader is asked a question by `askWhich` and
+    // answers it off `/sessions`; two schemes for one list is the confusion
+    // this whole module exists to prevent.
+    const asked = R.askWhich(three);
+    ok('‼️ /sessions AND THE QUESTION NUMBER THE SAME LIST THE SAME WAY',
+        three.every((s, i) => list.includes(`${i + 1}. ${R.sessionLabel(s)}`)
+            && asked.includes(`${i + 1}. ${R.sessionLabel(s)}`)));
+    ok('the conversation in focus is MARKED, never moved to the top',
+        /2\. asistan {2}← focus/.test(list) && list.indexOf('1. developer') < list.indexOf('2. asistan'));
+    ok('the list says how to answer it', /\/focus <number>/.test(list));
+    ok('one conversation is counted in the singular',
+        /^1 live conversation:/.test(R.sessionList([three[0]])));
+    ok('an empty farm says so instead of printing a heading over nothing',
+        /No live conversations/.test(R.sessionList([])));
+    ok('a focus that is no longer live marks nothing',
+        !R.sessionList(three, 'gone').includes('← focus'));
+}
+
 console.log(`test_telegram_routing: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

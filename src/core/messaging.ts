@@ -47,6 +47,10 @@ export type ChatCommand =
     | { kind: 'agents' }
     | { kind: 'use'; agent: string }
     | { kind: 'cancel' }
+    /** U-113 — the live conversations, numbered, so `/focus 2` has a 2 */
+    | { kind: 'sessions' }
+    /** U-113 — where plain messages from this chat go. Empty arg = ask */
+    | { kind: 'focus'; arg: string }
     | { kind: 'prompt'; text: string };
 
 /** Telegram's getUpdates payload → the messages we care about. */
@@ -100,6 +104,8 @@ export function parseCommand(text: string): ChatCommand {
     if (cmd === 'agents') { return { kind: 'agents' }; }
     if (cmd === 'cancel' || cmd === 'stop') { return { kind: 'cancel' }; }
     if (cmd === 'agent' || cmd === 'use') { return { kind: 'use', agent: arg }; }
+    if (cmd === 'sessions') { return { kind: 'sessions' }; }
+    if (cmd === 'focus') { return { kind: 'focus', arg }; }
     // an unknown slash command is not a prompt — running it would be a guess
     return { kind: 'help' };
 }
@@ -131,9 +137,13 @@ export function withinBudget(ledger: SpendLedger, capUSD: number, day: string): 
 export const HELP_TEXT = [
     'Agent Farm — this chat can talk to your agents.',
     '',
-    'Send any message and the agent you are bound to runs it, then answers here.',
+    'Reply to one of my messages and your words go back to THAT conversation.',
+    'In a Forum group each conversation gets its own topic — just type in it.',
+    'Anywhere else, plain messages go to the conversation in focus.',
     '',
-    '/agent <name> — bind this chat to an agent',
+    '/sessions — the live conversations, numbered',
+    '/focus <number|agent> — send plain messages to that one (/focus off clears it)',
+    '/agent <name> — the agent a headless run is started for when nothing is live',
     '/agents — list the agents',
     '/status — farm status: what is running, what needs you, today\'s cost',
     '/cancel — stop the run this chat started',

@@ -2,6 +2,54 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.587.0 - a phone message now knows which conversation it is for (U-113) (2026-09-20)
+
+- **‼️ U-113 — the chat bridge could talk to ONE agent, and on a farm running
+  three conversations that is a wrong answer rather than a missing feature.**
+  `/agent <name>` bound the whole chat; a "yes, do it" typed about one
+  conversation was started as a fresh headless run for whichever agent the
+  chat happened to be bound to, and nothing said so until that agent had
+  acted on it. A plain message is now ROUTED, and Telegram answers the
+  question twice before anything has to be guessed
+  (`src/core/telegramRouting.ts`, wired through `chatHandle`):
+  - **The reply chain.** Every message the bot sends *for* a conversation is
+    remembered against it (`sendMessage` returns Telegram's own message id —
+    it used to be thrown away at the transport, and an id dropped there can
+    never be recovered). Replying to that message names its target exactly,
+    with no state to go stale, and it still works days later: the map is
+    persisted with the chat state and bounded to the newest 500 entries.
+  - **The forum topic.** In a group with Topics on, each conversation gets a
+    thread of its own (`🧵 developer · AgentFarm`), opened the first time the
+    bot speaks for it, and everything typed in that thread flows to that
+    conversation. A group that is not a Forum — and a bot that was never given
+    `can_manage_topics` — falls back to the main thread and keeps talking;
+    the bridge never goes quiet over a decoration.
+  - **The focus.** `/sessions` lists the live conversations, numbered;
+    `/focus 2`, `/focus developer`, `/focus <id>` or `/focus off` says where
+    plain messages go. `/status` now says it too, on the one screen somebody
+    checks before typing.
+- **‼️ AND AMBIGUOUS IS AN ANSWER, NOT A FAILURE.** Where nothing decides and
+  more than one conversation could be meant, the bridge REFUSES and asks, with
+  the candidates numbered the same way `/sessions` numbers them — one list,
+  one numbering, because the reader answers the question off the list. A
+  single live conversation is not a choice and is never asked about.
+- **A conversation that ended keeps no seat.** All three maps are pruned
+  against the live Console sessions on every message, so a remembered id that
+  has since finished falls through to the layer below instead of the reader
+  being told their instruction reached something that is gone.
+- **The routed message reaches the conversation, and says which and why** —
+  `→ developer · AgentFarm (reply)`. On an engine that cannot be spoken into
+  mid-turn the answer says it was held and goes in when the turn ends, rather
+  than reporting a delivery that did not happen.
+- **On the bridge:** `telegram.routing` (the conversations, the topic bound to
+  each, which chats point where, and whether a focus still resolves) and
+  `telegram.focus` (set or clear a chat's focus — refused by name when the
+  word fits two conversations). No token and no chat content crosses either.
+- Tests: `test_telegram_routing.js` (42), `test_telegram_transport.js` (13 —
+  the outbound half of the bridge had never been run by anything),
+  `test_telegram_bridge.js` (16), plus the command parsing in
+  `test_access.js`.
+
 ## 3.586.0 - the status bar follows the conversation on screen, and the plan card can be read for any sign-in (X-243, X-244, X-242, U-137) (2026-09-20)
 
 - **‼️ X-243 — the indicator stops answering for the wrong account.**

@@ -131,7 +131,19 @@ const {
     ok('/stop is an alias for cancel', parseCommand('/stop').kind === 'cancel');
     ok('an UNKNOWN slash command is never run as a prompt',
         parseCommand('/deploy production').kind === 'help');
+    // U-113 — the two doors into the routing engine. `/focus` with no argument
+    // is the LIST rather than a refusal: somebody who cannot remember the
+    // number is exactly who typed it.
+    ok('/sessions asks for the live conversations', parseCommand('/sessions').kind === 'sessions');
+    ok('/focus carries whatever the reader typed',
+        parseCommand('/focus 2').kind === 'focus' && parseCommand('/focus 2').arg === '2'
+        && parseCommand('/focus developer').arg === 'developer');
+    ok('a bare /focus is not an error — it has an empty argument',
+        parseCommand('/focus').kind === 'focus' && parseCommand('/focus').arg === '');
     ok('the help text explains the rails', /daily budget/.test(HELP_TEXT) && /\/agent/.test(HELP_TEXT));
+    ok('‼️ the help text names the three ways a message finds its conversation',
+        /Reply to one of my messages/.test(HELP_TEXT) && /Forum/.test(HELP_TEXT)
+        && /\/focus/.test(HELP_TEXT) && /\/sessions/.test(HELP_TEXT));
     ok('long output is cut with an honest marker',
         /cut — /.test(clipForChat('x'.repeat(5000))) && clipForChat('x'.repeat(5000)).length < 4096);
     ok('empty output says so', clipForChat('') === '(no output)');

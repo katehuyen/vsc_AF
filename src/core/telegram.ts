@@ -11,6 +11,16 @@ import { InboundMessage, parseUpdates } from './messaging';
 
 const API = 'https://api.telegram.org';
 
+/**
+ * The one call this module makes, as a type — so a test can hand its own in
+ * and every method here is exercisable without a network. The poller has had
+ * this door since U-84; `sendMessage` and the topic calls had none, which is
+ * why the whole outbound half was unmeasured.
+ */
+export type TelegramCall = (
+    method: string, params: Record<string, string | number>, timeoutMs: number
+) => Promise<unknown>;
+
 function request(
     token: string, method: string, params: Record<string, string | number>,
     timeoutMs: number
@@ -30,16 +40,67 @@ function request(
     });
 }
 
-export async function sendMessage(token: string, chatId: number, text: string): Promise<void> {
+/**
+ * ‼️ U-113 — WHAT WENT OUT IS AS IMPORTANT AS THAT IT WENT OUT. The id of the
+ * message Telegram just created is the whole of the reply layer: a reader who
+ * replies to it names the conversation exactly, and an id that was thrown away
+ * at the transport can never be recovered. So this returns it rather than
+ * `void`, and `threadId` puts the message in a forum topic — the other half of
+ * the same question, answered by where the message is rather than by what it
+ * is a reply to.
+ */
+export async function sendMessage(
+    token: string, chatId: number, text: string, threadId?: number, call?: TelegramCall
+): Promise<number | undefined> {
     // POST would be tidier, but a GET with an encoded query needs no body
     // handling and Telegram accepts it; the text is URL-encoded above.
-    await request(token, 'sendMessage', { chat_id: chatId, text, disable_web_page_preview: 'true' }, 15_000);
+    const r = await (call ?? ((m, p, t) => request(token, m, p, t)))('sendMessage', {
+        chat_id: chatId, text, disable_web_page_preview: 'true',
+        ...(threadId && threadId > 0 ? { message_thread_id: threadId } : {})
+    }, 15_000) as { ok?: boolean; result?: { message_id?: number } };
+    return r?.ok && typeof r.result?.message_id === 'number' ? r.result.message_id : undefined;
 }
 
 export async function getMe(token: string): Promise<{ ok: boolean; username?: string }> {
     const r = await request(token, 'getMe', {}, 15_000) as
         { ok?: boolean; result?: { username?: string } };
     return { ok: !!r?.ok, username: r?.result?.username };
+}
+
+/**
+ * Is this chat a Forum (Topics on)? The answer decides whether a conversation
+ * can be given a thread of its own, and it is a property of the group rather
+ * than of anything we set — so it is asked, never assumed. A private chat
+ * answers `false`, which is the correct answer and not an error.
+ */
+export async function isForumChat(
+    token: string, chatId: number, call?: TelegramCall
+): Promise<boolean> {
+    try {
+        const r = await (call ?? ((m, p, t) => request(token, m, p, t)))(
+            'getChat', { chat_id: chatId }, 15_000) as
+            { ok?: boolean; result?: { is_forum?: boolean } };
+        return !!(r?.ok && r.result?.is_forum);
+    } catch { return false; }
+}
+
+/**
+ * Open a topic for one conversation. Refusals are returned rather than thrown:
+ * the bot may simply lack `can_manage_topics` in that group, and the bridge's
+ * answer to that is to carry on in the main thread — not to stop talking.
+ */
+export async function createForumTopic(
+    token: string, chatId: number, name: string, call?: TelegramCall
+): Promise<{ ok: boolean; threadId?: number; error?: string }> {
+    try {
+        const r = await (call ?? ((m, p, t) => request(token, m, p, t)))(
+            'createForumTopic', { chat_id: chatId, name }, 15_000) as
+            { ok?: boolean; description?: string; result?: { message_thread_id?: number } };
+        if (r?.ok && typeof r.result?.message_thread_id === 'number') {
+            return { ok: true, threadId: r.result.message_thread_id };
+        }
+        return { ok: false, error: r?.description || 'Telegram refused the topic' };
+    } catch (e) { return { ok: false, error: String((e as Error).message ?? e) }; }
 }
 
 export interface PollerOptions {

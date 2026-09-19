@@ -366,8 +366,12 @@ import {
     addSpend, clipForChat, HELP_TEXT, InboundMessage, isAllowed, parseCommand,
     SpendLedger, withinBudget
 } from './core/messaging';
-import { getMe, sendMessage, TelegramPoller } from './core/telegram';
+import { createForumTopic, getMe, isForumChat, sendMessage, TelegramPoller } from './core/telegram';
 import { bridgeStatus, budgetReading } from './core/telegramCockpit';
+import {
+    askWhich, forgetGone, pickFocus, rememberOutgoing, rememberTopic, resolve as resolveRoute,
+    RoutableSession, RouteWhy, RoutingTable, sessionLabel, sessionList, setFocus, topicName
+} from './core/telegramRouting';
 import { generateToken, RunningWebServer, startWebServer, lanAddress } from './core/webserver';
 import { buildPortfolioRows } from './panels/portfolioPanel';
 import {
@@ -27983,6 +27987,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         agentByChat: Record<string, string>;
         ledger: SpendLedger;
         taskByChat: Record<string, string>;
+        /** U-113 — who this chat is talking to (telegramRouting.ts) */
+        routing: RoutingTable;
     }
     const chatState = (): ChatState => {
         const s = context.globalState.get<Partial<ChatState>>(CHAT_STATE_KEY, {});
@@ -27990,7 +27996,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             offset: typeof s.offset === 'number' ? s.offset : 0,
             agentByChat: s.agentByChat ?? {},
             ledger: s.ledger ?? { day: dayKey(Date.now()), usd: 0 },
-            taskByChat: s.taskByChat ?? {}
+            taskByChat: s.taskByChat ?? {},
+            // The reply map is the layer that has to survive a reload — a
+            // reader scrolling back to yesterday's message is the case it
+            // exists for, so a table held only in memory would be a layer that
+            // works until the first window reload and then quietly stops.
+            routing: {
+                byMessage: s.routing?.byMessage ?? {},
+                byTopic: s.routing?.byTopic ?? {},
+                focus: s.routing?.focus ?? {}
+            }
         };
     };
     const saveChatState = (next: ChatState) => context.globalState.update(CHAT_STATE_KEY, next);
@@ -28015,11 +28030,104 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     /** The bot's own name, once something has asked Telegram for it. */
     let chatBotName: string | undefined;
 
-    const chatSend = async (chatId: number, text: string) => {
+    /**
+     * ‼️ U-113 — THE CONVERSATIONS THIS CHAT COULD BE TALKING TO. Console
+     * sessions, because those are the ones a person steers a turn at a time;
+     * an ended or broken card is not one of them and must not keep a number in
+     * the list somebody is about to type.
+     */
+    const chatRoutable = (): RoutableSession[] => consoleHost.list()
+        .filter(s => s.status !== 'ended' && s.status !== 'error')
+        .map(s => ({
+            id: s.id,
+            ...(s.sessionId ? { sessionId: s.sessionId } : {}),
+            agentId: s.agentId,
+            agentName: s.agentName,
+            project: (s.projectId ? projectStore.get(s.projectId)?.name : '') || '',
+            status: s.status,
+            lastTs: s.lastTs
+        }));
+
+    /**
+     * Read the state with dead conversations already dropped out of the routing
+     * table — a stale id routes a message into nothing while telling the reader
+     * it arrived, which is the one failure this layer exists to prevent.
+     */
+    const chatPruned = async (): Promise<{ st: ChatState; live: RoutableSession[] }> => {
+        const st = chatState();
+        const live = chatRoutable();
+        const routing = forgetGone(st.routing, live);
+        if (JSON.stringify(routing) === JSON.stringify(st.routing)) { return { st, live }; }
+        const next = { ...st, routing };
+        await saveChatState(next);
+        return { st: next, live };
+    };
+
+    /**
+     * Forum mode: one topic per conversation, opened the first time we speak
+     * for it. A group that is not a Forum — and a bot without
+     * `can_manage_topics` — gets the main thread instead: the bridge never goes
+     * quiet over a decoration, and the refusal is remembered so the failing
+     * call is not repeated on every message.
+     */
+    const chatIsForum = new Map<number, boolean>();
+    const chatTopicFor = async (token: string, chatId: number, sessionId: string): Promise<number | undefined> => {
+        const known = Object.entries(chatState().routing.byTopic).find(([, v]) => v === sessionId);
+        if (known) { return Number(known[0]); }
+        let forum = chatIsForum.get(chatId);
+        if (forum === undefined) {
+            forum = await isForumChat(token, chatId);
+            chatIsForum.set(chatId, forum);
+        }
+        if (!forum) { return undefined; }
+        const s = chatRoutable().find(x => x.id === sessionId);
+        if (!s) { return undefined; }
+        const made = await createForumTopic(token, chatId, topicName(s));
+        if (!made.ok || !made.threadId) { chatIsForum.set(chatId, false); return undefined; }
+        const now = chatState();
+        await saveChatState({ ...now, routing: rememberTopic(now.routing, made.threadId, sessionId) });
+        return made.threadId;
+    };
+
+    /**
+     * ‼️ U-113 — A MESSAGE THE BOT SENDS *FOR* A CONVERSATION IS REMEMBERED
+     * AGAINST IT. That single fact is the whole reply layer: replying to it
+     * names its target exactly, months later, with no state to go stale. Sent
+     * without `forSession` it is the bridge speaking for itself, and nothing is
+     * remembered — a reply to "this chat is not allowed" belongs nowhere.
+     */
+    const chatSend = async (chatId: number, text: string, forSession?: string) => {
         const token = vault.get(TELEGRAM_SECRET);
         if (!token) { return; }
-        try { await sendMessage(token, chatId, clipForChat(text)); }
-        catch (e) { console.warn('Agent Farm: telegram send failed', e); }
+        try {
+            const threadId = forSession ? await chatTopicFor(token, chatId, forSession) : undefined;
+            const messageId = await sendMessage(token, chatId, clipForChat(text), threadId);
+            if (forSession && messageId) {
+                const st = chatState();
+                await saveChatState({ ...st, routing: rememberOutgoing(st.routing, messageId, forSession) });
+            }
+        } catch (e) { console.warn('Agent Farm: telegram send failed', e); }
+    };
+
+    /**
+     * The routed message reaches the conversation it was for — and the answer
+     * says WHICH one and WHY it went there. A bridge that silently picks a
+     * target is a bridge whose mistakes are invisible until an agent has
+     * already acted on somebody else's "yes, do it".
+     */
+    const chatSay = async (chatId: number, sessionId: string, text: string, why: RouteWhy) => {
+        const s = chatRoutable().find(x => x.id === sessionId);
+        const r = consoleHost.send(sessionId, text);
+        if (!r) {
+            await chatSend(chatId, 'That conversation is no longer live. /sessions lists the ones that are.');
+            return;
+        }
+        if (r.refused) { await chatSend(chatId, r.refused, sessionId); return; }
+        ConsolePanel.refreshIfOpen();
+        const where = s ? sessionLabel(s) : sessionId;
+        await chatSend(chatId, r.queued
+            ? `⏸ ${where} (${why}) — held; it goes in when the turn ends.`
+            : `→ ${where} (${why})`, sessionId);
     };
 
     /** Run one chat message as a headless task and answer in the same thread. */
@@ -28091,7 +28199,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 'Add it to agentFarm.telegram.allowedChats to enable it.');
             return;
         }
-        const st = chatState();
+        const { st, live } = await chatPruned();
+        const focused = st.routing.focus[String(msg.chatId)];
         const bound = st.agentByChat[msg.chatId] ?? c.defaultAgent;
         const cmd = parseCommand(msg.text);
         if (cmd.kind === 'help') { await chatSend(msg.chatId, HELP_TEXT); return; }
@@ -28118,6 +28227,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 `Today: ${fmtUSD(cost)} · chat runs ${fmtUSD(st.ledger.day === today ? st.ledger.usd : 0)} of ${fmtUSD(c.maxDailyUSD)}`,
                 `Needs you: ${needs.length}${needs.length ? ' — ' + needs[0].title : ''}`,
                 `Running tasks: ${running.length}${running.length ? ' — ' + running[0].title : ''}`,
+                // U-113 — where a plain message would go, said on the one screen
+                // somebody checks before typing one.
+                `Conversations: ${live.length}` + (live.length
+                    ? ' · focus ' + (live.find(s => s.id === focused)
+                        ? sessionLabel(live.find(s => s.id === focused)!)
+                        : 'none — I will ask')
+                    : ''),
                 bound ? `This chat: ${bound}` : 'This chat is not bound to an agent yet (/agent <name>)'
             ].join('\n'));
             return;
@@ -28132,6 +28248,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await chatSend(msg.chatId, 'Nothing from this chat is running.');
             }
             return;
+        }
+        if (cmd.kind === 'sessions') { await chatSend(msg.chatId, sessionList(live, focused)); return; }
+        if (cmd.kind === 'focus') {
+            if (/^(off|none|clear)$/i.test(cmd.arg)) {
+                await saveChatState({ ...st, routing: setFocus(st.routing, msg.chatId, '') });
+                await chatSend(msg.chatId, 'Focus cleared — a plain message will ask which conversation it is for.');
+                return;
+            }
+            if (!cmd.arg) { await chatSend(msg.chatId, sessionList(live, focused)); return; }
+            const pick = pickFocus(cmd.arg, live);
+            if (pick.kind === 'session') {
+                await saveChatState({ ...st, routing: setFocus(st.routing, msg.chatId, pick.session.id) });
+                await chatSend(msg.chatId, `Focus: ${sessionLabel(pick.session)}`, pick.session.id);
+            } else if (pick.kind === 'ambiguous') {
+                await chatSend(msg.chatId, askWhich(pick.candidates));
+            } else {
+                await chatSend(msg.chatId, `Nothing here matches "${cmd.arg}".\n\n` + sessionList(live, focused));
+            }
+            return;
+        }
+        // ‼️ U-113 — WHICH CONVERSATION IS THIS FOR, asked before anything is
+        // run. A live Console session is a conversation a person is steering, so
+        // it answers first; the headless run below is what happens when the farm
+        // has nothing open to talk to.
+        if (live.length) {
+            const routed = resolveRoute(st.routing, msg, live);
+            if (routed.kind === 'ambiguous') { await chatSend(msg.chatId, askWhich(routed.candidates)); return; }
+            if (routed.kind === 'session') { await chatSay(msg.chatId, routed.id, cmd.text, routed.why); return; }
         }
         if (!bound) {
             await chatSend(msg.chatId,
@@ -39923,6 +40067,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     defaultAgent: c.defaultAgent,
                     budget
                 };
+            }
+        },
+        {
+            op: 'telegram.routing',
+            describe: 'U-113 — WHICH CONVERSATION A PHONE MESSAGE WOULD GO TO, and by which of the three '
+                + 'layers. `conversations` is the live Console sessions in the order /sessions numbers them '
+                + '(so `n` here is the number a person types), each with the forum topic bound to it and '
+                + 'whether it is the focus of any chat. `chats` is one row per chat that has ever chosen: '
+                + 'its focus and the conversation that focus resolves to NOW — null when the conversation it '
+                + 'named has since ended, which is exactly the case that used to send a message into nothing. '
+                + '`replyMap` is how many outgoing messages are still answerable (bounded, newest kept). '
+                + '‼️ A conversation that ended keeps no seat: the table is pruned on every read, so this op '
+                + 'never reports a target that could not receive a message. No token and no chat content.',
+            handler: async () => {
+                const { st, live } = await chatPruned();
+                const topicOf = (id: string) => Object.entries(st.routing.byTopic)
+                    .find(([, v]) => v === id)?.[0];
+                return {
+                    conversations: live.map((s, i) => ({
+                        n: i + 1, id: s.id, agent: s.agentName, project: s.project || '',
+                        status: s.status ?? '', label: sessionLabel(s),
+                        topicId: topicOf(s.id) ? Number(topicOf(s.id)) : null,
+                        focusOf: Object.entries(st.routing.focus)
+                            .filter(([, v]) => v === s.id).map(([k]) => Number(k))
+                    })),
+                    chats: Object.entries(st.routing.focus).map(([chat, id]) => ({
+                        chatId: Number(chat), focus: id,
+                        resolves: live.find(s => s.id === id)?.id ?? null
+                    })),
+                    replyMap: Object.keys(st.routing.byMessage).length,
+                    topics: Object.keys(st.routing.byTopic).length
+                };
+            }
+        },
+        {
+            op: 'telegram.focus',
+            describe: 'U-113 — set which conversation a chat\'s PLAIN messages go to (a reply and a forum '
+                + 'topic still win over it, because both name their target and this only guesses). '
+                + 'args: chat (the Telegram chat id), session? (a /sessions number, an agent name, a Console '
+                + 'id or an engine session id — the same door /focus takes), clear? (true drops the focus, so '
+                + 'an ambiguous message is asked about instead of being sent somewhere). ‼️ Refuses rather '
+                + 'than guesses when the word fits more than one conversation, and names the candidates.',
+            handler: async (args) => {
+                // ‼️ optNum, never Number(optStr): `af.js telegram.focus chat=-100123`
+                // hands the id over as a WORD, and a chat id typed as JSON arrives
+                // as a number — one helper reads both, and laundering one through
+                // the other eats whichever form it was not written for.
+                const chatId = optNum(args, 'chat', 0);
+                need(Number.isFinite(chatId) && chatId !== 0, 'chat must be a Telegram chat id');
+                const { st, live } = await chatPruned();
+                if (optBool(args, 'clear')) {
+                    await saveChatState({ ...st, routing: setFocus(st.routing, chatId, '') });
+                    return { chatId, focus: null };
+                }
+                const pick = pickFocus(argStr(args, 'session'), live);
+                need(pick.kind !== 'none',
+                    `nothing matches that — the live conversations are: ${live.map((s, i) => `${i + 1}. ${sessionLabel(s)}`).join(' · ') || '(none)'}`);
+                need(pick.kind !== 'ambiguous',
+                    pick.kind === 'ambiguous'
+                        ? `that fits ${pick.candidates.length} conversations — say which: ${pick.candidates.map(s => s.id).join(' · ')}`
+                        : '');
+                const chosen = (pick as { kind: 'session'; session: RoutableSession }).session;
+                await saveChatState({ ...st, routing: setFocus(st.routing, chatId, chosen.id) });
+                return { chatId, focus: chosen.id, label: sessionLabel(chosen) };
             }
         }
     ]);
