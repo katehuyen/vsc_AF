@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.590.0",
+  "version": "3.591.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8188,6 +8188,17 @@
           "default": "",
           "x-af-values": "agent",
           "description": "Agent a new chat talks to before it picks one with /agent. Empty = a chat must bind an agent first."
+        },
+        "agentFarm.telegram.digest": {
+          "type": "string",
+          "enum": ["focused", "all", "off"],
+          "default": "focused",
+          "enumDescriptions": [
+            "A chat hears the turn cards of the conversation it is focused on (/focus), or of the only live one — where a reply from it would go.",
+            "Every allowed chat hears every live conversation's turn cards.",
+            "No turn cards; commands and replies keep working."
+          ],
+          "markdownDescription": "When a Console turn ends, or an agent stops to ask you something, the bridge sends the chat a **card**: what the agent said this turn, what it is waiting on, and what the turn cost — with buttons under it (a question's options, Allow / Deny, Continue · Cancel · Diff · Status). `focused` = the conversation the chat is focused on, or the only live one; `all` = every live conversation; `off` = none."
         },
         "agentFarm.accounts": {
           "type": "array",

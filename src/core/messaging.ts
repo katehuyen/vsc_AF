@@ -39,6 +39,15 @@ export interface InboundMessage {
     messageId?: number;
     replyTo?: number;
     threadId?: number;
+    /**
+     * U-114 — A TAP, NOT A TEXT. A button under a card comes back as a
+     * `callback_query`: no words, only the `data` the button carried and the
+     * id Telegram wants answered (`answerCallbackQuery`) so the phone stops
+     * showing a spinner. `text` is '' for these; `messageId` is the CARD the
+     * button was on, which is how a tap is routed to the conversation the card
+     * was sent for (telegramRouting.ts, the reply layer).
+     */
+    callback?: { id: string; data: string };
 }
 
 export type ChatCommand =
@@ -69,9 +78,32 @@ export function parseUpdates(payload: unknown): InboundMessage[] {
                 chat?: { id?: number };
                 from?: { username?: string; first_name?: string };
             };
+            callback_query?: {
+                id?: string; data?: string;
+                from?: { username?: string; first_name?: string };
+                message?: { message_id?: number; message_thread_id?: number; chat?: { id?: number } };
+            };
         };
-        const msg = u?.message;
-        if (typeof u?.update_id !== 'number' || !msg || typeof msg.text !== 'string') { continue; }
+        if (typeof u?.update_id !== 'number') { continue; }
+        const cb = u.callback_query;
+        if (cb && typeof cb.id === 'string' && typeof cb.data === 'string') {
+            const chatId = cb.message?.chat?.id;
+            if (typeof chatId !== 'number') { continue; }
+            out.push({
+                updateId: u.update_id,
+                chatId,
+                from: cb.from?.username || cb.from?.first_name || String(chatId),
+                text: '',
+                ts: Date.now(),
+                callback: { id: cb.id, data: cb.data },
+                ...(typeof cb.message?.message_id === 'number' ? { messageId: cb.message.message_id } : {}),
+                ...(typeof cb.message?.message_thread_id === 'number'
+                    ? { threadId: cb.message.message_thread_id } : {})
+            });
+            continue;
+        }
+        const msg = u.message;
+        if (!msg || typeof msg.text !== 'string') { continue; }
         const chatId = msg.chat?.id;
         if (typeof chatId !== 'number') { continue; }
         out.push({

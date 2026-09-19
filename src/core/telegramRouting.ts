@@ -75,7 +75,8 @@ export const EMPTY_ROUTING: RoutingTable = { byMessage: {}, byTopic: {}, focus: 
  */
 export const REPLY_MEMORY = 500;
 
-export type RouteWhy = 'reply' | 'topic' | 'focus' | 'only-one';
+/** U-114 — `button`: a tap on a card the bot sent for that conversation */
+export type RouteWhy = 'reply' | 'topic' | 'focus' | 'only-one' | 'button';
 
 export type Routed =
     /** the target is known, and `why` says which layer answered */

@@ -265,7 +265,7 @@ const CATEGORY_OF: Record<string, string> = {
     // reaching the farm from outside this VS Code window
     'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
     'telegram.enabled': 'access', 'telegram.allowedChats': 'access',
-    'telegram.maxDailyUSD': 'access', 'telegram.defaultAgent': 'access',
+    'telegram.maxDailyUSD': 'access', 'telegram.defaultAgent': 'access', 'telegram.digest': 'access',
     // health & insights
     livingChecks: 'health', noticeStaleHours: 'health', idleSessionNoticeMinutes: 'health',
     staleMemoryDays: 'health', contextBudgetTokens: 'health', permissionLint: 'health',

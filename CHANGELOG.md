@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.591.0 - the turn as a card a phone can read, and the taps that answer it (U-114) (2026-09-20)
+
+- **When a Console turn ends, or an agent stops to ask you something, the
+  Telegram bridge now sends the chat a card** — three blocks under Telegram's
+  4096: what the agent SAID this turn (its own closing words, tool noise left
+  out; cut at the head when long, so the verdict survives), what it is waiting
+  on, and what the turn cost (tokens on a plan-billed engine, a price only
+  where there is one — X-19). `src/core/telegramDigest.ts`, pure and measured
+  without a bot.
+- **Buttons, not words to type back.** An AskUserQuestion's options are one
+  button each; a tool permission is Allow / Deny; and under them Continue
+  (idle) or Cancel (working), Diff and Status. A tap is acknowledged the moment
+  it is read (the phone spins until it is), then applied against the
+  conversation's state NOW: an option only if that question is still the one
+  pending, a permission only while that request is open — a tap on
+  yesterday's card cannot answer today's question. Answers go through the same
+  `consoleHost.answer` the panel's own card uses.
+- **Who hears it is the routing layer read backwards** (`agentFarm.telegram.digest`,
+  default `focused`): the chat focused on the conversation, or the only live
+  one — where a reply to the card would be routed from. `all` widens it, `off`
+  closes it; never a chat outside the allowlist. The memo runs while the bridge
+  is off, so switching it on announces nothing old, and a reload re-announces
+  no turn (a pending question, being actionable, is announced on first sight).
+- **📄 Diff is the working tree's `status --short` and `diff --stat`**, not the
+  diff: from a phone the question is "did it touch what I think it touched".
+  On the bridge as `console.changes`; the card itself is readable as
+  `telegram.digest` (read-only — see what the phone will be shown, and who).
+- Transport: `getUpdates` now asks for `callback_query`, a tap parses to an
+  `InboundMessage` carrying the card's id, `sendMessage` carries the keyboard
+  as `reply_markup`, `answerCallbackQuery` is new.
+- ‼️ Not tried on a live Telegram — this machine's vault holds no bot token;
+  measured with the injected transport, as U-113 was.
+
 ## 3.590.0 - the rules that choose a sign-in, on the page about sign-ins (X-305 on the Accounts page) (2026-09-20)
 
 - **The Accounts page now draws the Account policies section under its

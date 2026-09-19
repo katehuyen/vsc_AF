@@ -50,15 +50,40 @@ function request(
  * is a reply to.
  */
 export async function sendMessage(
-    token: string, chatId: number, text: string, threadId?: number, call?: TelegramCall
+    token: string, chatId: number, text: string, threadId?: number, call?: TelegramCall,
+    keyboard?: { text: string; data: string }[][]
 ): Promise<number | undefined> {
     // POST would be tidier, but a GET with an encoded query needs no body
     // handling and Telegram accepts it; the text is URL-encoded above.
+    // U-114 — the buttons travel as `reply_markup`, Telegram's own JSON shape.
     const r = await (call ?? ((m, p, t) => request(token, m, p, t)))('sendMessage', {
         chat_id: chatId, text, disable_web_page_preview: 'true',
-        ...(threadId && threadId > 0 ? { message_thread_id: threadId } : {})
+        ...(threadId && threadId > 0 ? { message_thread_id: threadId } : {}),
+        ...(keyboard && keyboard.length ? {
+            reply_markup: JSON.stringify({
+                inline_keyboard: keyboard.map(row => row.map(b => ({ text: b.text, callback_data: b.data })))
+            })
+        } : {})
     }, 15_000) as { ok?: boolean; result?: { message_id?: number } };
     return r?.ok && typeof r.result?.message_id === 'number' ? r.result.message_id : undefined;
+}
+
+/**
+ * U-114 — A TAP IS ANSWERED OR THE PHONE SPINS. Telegram shows a progress
+ * indicator on the button until `answerCallbackQuery` is called, and gives up
+ * after a while with nothing said; so every tap is acknowledged the moment it
+ * is read, with a short toast when there is something to say. Failures are
+ * swallowed: the acknowledgement is a courtesy to the phone, not a step the
+ * action depends on.
+ */
+export async function answerCallbackQuery(
+    token: string, callbackId: string, text?: string, call?: TelegramCall
+): Promise<void> {
+    try {
+        await (call ?? ((m, p, t) => request(token, m, p, t)))('answerCallbackQuery', {
+            callback_query_id: callbackId, ...(text ? { text: text.slice(0, 200) } : {})
+        }, 15_000);
+    } catch { /* the phone stops spinning on its own */ }
 }
 
 export async function getMe(token: string): Promise<{ ok: boolean; username?: string }> {
@@ -166,7 +191,8 @@ export class TelegramPoller {
                 request(this.opts.token, method, params, timeoutMs));
         try {
             const payload = await call('getUpdates',
-                { offset: this.offset, timeout: wait, allowed_updates: '["message"]' },
+                // U-114 — taps on a card's buttons arrive as callback_query
+                { offset: this.offset, timeout: wait, allowed_updates: '["message","callback_query"]' },
                 (wait + 10) * 1000);
             const msgs = parseUpdates(payload);
             if (msgs.length) {

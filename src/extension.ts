@@ -371,7 +371,11 @@ import {
     addSpend, clipForChat, HELP_TEXT, InboundMessage, isAllowed, parseCommand,
     SpendLedger, withinBudget
 } from './core/messaging';
-import { createForumTopic, getMe, isForumChat, sendMessage, TelegramPoller } from './core/telegram';
+import { answerCallbackQuery, createForumTopic, getMe, isForumChat, sendMessage, TelegramPoller } from './core/telegram';
+import {
+    DigestKeyboard, DigestMemo, digestEvents, digestText, EMPTY_MEMO, forgetMemo, keyboardFor, parseTap, tapAnswer
+} from './core/telegramDigest';
+import { changesSummary, changesText } from './core/workdirChanges';
 import { bridgeStatus, budgetReading } from './core/telegramCockpit';
 import {
     askWhich, forgetGone, pickFocus, rememberOutgoing, rememberTopic, resolve as resolveRoute,
@@ -11983,6 +11987,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         }))
                         : undefined
                 }));
+            }
+        },
+        {
+            op: 'console.changes',
+            describe: 'U-114 — WHAT A CONVERSATION HAS CHANGED ON DISK, as the phone\'s 📄 Diff button reads it: '
+                + 'the working folder\'s `git status --short` and `git diff --stat` (unstaged, then staged). The '
+                + 'stat, not the diff: from a phone the question is "did it touch what I think it touched". '
+                + 'A folder that is not a repository, or a git that is not installed, comes back as a sentence in '
+                + '`note`, never a throw. args: id (a Console id — console.sessions lists them)',
+            handler: async (args) => {
+                const id = argStr(args, 'id');
+                const s = consoleHost.get(id);
+                need(s, 'no such live console session (console.sessions lists them)');
+                const c = await changesSummary(s!.cwd);
+                return { id, ...c, text: changesText(s!.agentName, c) };
             }
         },
         {
@@ -28104,7 +28123,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         allow: (cfg().get<number[]>('telegram.allowedChats', []) ?? [])
             .filter(n => typeof n === 'number'),
         maxDailyUSD: cfg().get<number>('telegram.maxDailyUSD', 1),
-        defaultAgent: cfg().get<string>('telegram.defaultAgent', '').trim()
+        defaultAgent: cfg().get<string>('telegram.defaultAgent', '').trim(),
+        /** U-114 — which conversations' turn cards a chat hears (telegramDigest.ts) */
+        digest: cfg().get<'focused' | 'all' | 'off'>('telegram.digest', 'focused')
     });
     let poller: TelegramPoller | undefined;
     /**
@@ -28186,12 +28207,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * without `forSession` it is the bridge speaking for itself, and nothing is
      * remembered — a reply to "this chat is not allowed" belongs nowhere.
      */
-    const chatSend = async (chatId: number, text: string, forSession?: string) => {
+    const chatSend = async (chatId: number, text: string, forSession?: string, keyboard?: DigestKeyboard) => {
         const token = vault.get(TELEGRAM_SECRET);
         if (!token) { return; }
         try {
             const threadId = forSession ? await chatTopicFor(token, chatId, forSession) : undefined;
-            const messageId = await sendMessage(token, chatId, clipForChat(text), threadId);
+            const messageId = await sendMessage(token, chatId, clipForChat(text), threadId, undefined, keyboard);
             if (forSession && messageId) {
                 const st = chatState();
                 await saveChatState({ ...st, routing: rememberOutgoing(st.routing, messageId, forSession) });
@@ -28280,6 +28301,118 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         context.subscriptions.push(sub);
     };
 
+    /** One line a phone can read about a conversation right now. */
+    const chatStatusLine = (s: ConsoleSessionState): string => {
+        const r = chatRoutable().find(x => x.id === s.id);
+        const label = r ? sessionLabel(r) : s.agentName;
+        const spend = engineOf(s.engine).reportsCost && s.costUSD > 0 ? ` · ${fmtUSD(s.costUSD)}` : '';
+        const ask = s.pendingAsk ? (s.pendingAsk.questions.length ? ' · waiting on your answer' : ` · waiting on permission: ${s.pendingAsk.displayName || s.pendingAsk.tool}`) : '';
+        return `📊 ${label} — ${s.status} · turn ${s.turns} · ${fmtTokens(s.tokens)} tokens${spend}${ask}`;
+    };
+
+    /**
+     * ‼️ U-114 — A TAP ON A CARD'S BUTTON. Acknowledged first (the phone spins
+     * until it is), then acted on against the conversation's state NOW: an
+     * option is applied only if the question it answers is still the one
+     * pending, a permission only if that request is still open. The Allow /
+     * Deny pair is deliberately NOT a bridge op (see console.answer) — from the
+     * phone it is the USER deciding, on a chat in the allowlist, which is the
+     * same person and the same authority as the panel's own button.
+     */
+    const chatTap = async (msg: InboundMessage, cb: { id: string; data: string }) => {
+        const token = vault.get(TELEGRAM_SECRET);
+        if (!token) { return; }
+        const ack = (text?: string) => answerCallbackQuery(token, cb.id, text);
+        const tap = parseTap(cb.data);
+        if (!tap) { await ack('Not a button I know.'); return; }
+        const s = consoleHost.get(tap.id);
+        if (!s || s.status === 'ended' || s.status === 'error') {
+            await ack('That conversation is no longer live.');
+            await chatSend(msg.chatId, 'That conversation is no longer live. /sessions lists the ones that are.');
+            return;
+        }
+        const r = chatRoutable().find(x => x.id === s.id);
+        const label = r ? sessionLabel(r) : s.agentName;
+        switch (tap.kind) {
+            case 'continue':
+                await ack('Sent.');
+                await chatSay(msg.chatId, tap.id, 'Continue.', 'button');
+                return;
+            case 'cancel': {
+                const ok = consoleHost.interrupt(tap.id);
+                await ack(ok ? 'Interrupting.' : 'Nothing was running.');
+                if (ok) { ConsolePanel.refreshIfOpen(); }
+                await chatSend(msg.chatId, ok ? `⏹ ${label} — interrupted.` : `${label} — nothing was running.`, tap.id);
+                return;
+            }
+            case 'status':
+                await ack();
+                await chatSend(msg.chatId, chatStatusLine(s), tap.id);
+                return;
+            case 'diff':
+                await ack();
+                await chatSend(msg.chatId, changesText(label, await changesSummary(s.cwd)), tap.id);
+                return;
+            case 'option': {
+                const a = tapAnswer(s.pendingAsk, tap);
+                if ('refused' in a) { await ack(a.refused); return; }
+                const ok = consoleHost.answer(tap.id, { kind: 'answer', answers: a.answers });
+                await ack(ok ? `Answered: ${a.label}` : 'Nothing was answered.');
+                if (ok) {
+                    ConsolePanel.refreshIfOpen();
+                    await chatSend(msg.chatId, `✔ ${label} — answered "${a.label}".`, tap.id);
+                }
+                return;
+            }
+            case 'permission': {
+                const ask = s.pendingAsk;
+                if (!ask || ask.requestId.slice(0, 8) !== tap.rid) { await ack('That request is no longer open.'); return; }
+                const ok = consoleHost.answer(tap.id, tap.allow ? { kind: 'allow' } : { kind: 'deny', message: 'Declined from the phone.' });
+                await ack(ok ? (tap.allow ? 'Allowed.' : 'Denied.') : 'Nothing was answered.');
+                if (ok) {
+                    ConsolePanel.refreshIfOpen();
+                    await chatSend(msg.chatId,
+                        `${tap.allow ? '✅' : '🚫'} ${label} — ${ask.displayName || ask.tool} ${tap.allow ? 'allowed' : 'denied'}.`, tap.id);
+                }
+                return;
+            }
+        }
+    };
+
+    /**
+     * ‼️ U-114 — WHICH CHATS HEAR A CONVERSATION'S CARD. The routing layer's
+     * own answer, read backwards: a chat focused on it, or the one live
+     * conversation there is (the `only-one` rule a plain message already
+     * follows) — so the card lands where a reply to it would be routed from.
+     * `all` widens it to every live conversation, `off` closes it. Never a chat
+     * outside the allowlist, whatever the setting says.
+     */
+    const chatAudience = (sessionId: string, liveCount: number): number[] => {
+        const c = chatCfg();
+        if (c.digest === 'off' || !c.allow.length) { return []; }
+        const focus = chatState().routing.focus;
+        return c.allow.filter(chat => c.digest === 'all' || focus[String(chat)] === sessionId || liveCount === 1);
+    };
+    const chatDigestCtx = (s: ConsoleSessionState) => ({
+        project: (s.projectId ? projectStore.get(s.projectId)?.name : '') || '',
+        priced: engineOf(s.engine).reportsCost
+    });
+    let chatDigestMemo: DigestMemo = EMPTY_MEMO;
+    context.subscriptions.push(consoleHost.onChange(id => {
+        const s = consoleHost.get(id);
+        if (!s) { chatDigestMemo = forgetMemo(chatDigestMemo, consoleHost.list().map(x => x.id)); return; }
+        const r = digestEvents(chatDigestMemo, s);
+        chatDigestMemo = r.memo;
+        // the memo is kept even while the bridge is off, so switching it on
+        // does not announce every turn that ended while it was
+        if (!r.events.length || !poller) { return; }
+        const audience = chatAudience(id, chatRoutable().length);
+        if (!audience.length) { return; }
+        const text = digestText(s, chatDigestCtx(s));
+        const keyboard = keyboardFor(s);
+        for (const chat of audience) { void chatSend(chat, text, id, keyboard); }
+    }));
+
     const chatHandle = async (msg: InboundMessage) => {
         const c = chatCfg();
         if (!isAllowed(msg.chatId, c.allow)) {
@@ -28289,6 +28422,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 'Add it to agentFarm.telegram.allowedChats to enable it.');
             return;
         }
+        // U-114 — a tap is not a text: it names the card it was on and is done
+        if (msg.callback) { await chatTap(msg, msg.callback); return; }
         const { st, live } = await chatPruned();
         const focused = st.routing.focus[String(msg.chatId)];
         const bound = st.agentByChat[msg.chatId] ?? c.defaultAgent;
@@ -40279,6 +40414,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const chosen = (pick as { kind: 'session'; session: RoutableSession }).session;
                 await saveChatState({ ...st, routing: setFocus(st.routing, chatId, chosen.id) });
                 return { chatId, focus: chosen.id, label: sessionLabel(chosen) };
+            }
+        },
+        {
+            op: 'telegram.digest',
+            describe: 'U-114 — THE CARD A PHONE GETS FOR A CONVERSATION, as it stands now: the three-block '
+                + 'text (what the agent said this turn · what it is waiting on · what the turn cost, under '
+                + 'Telegram\'s 4096) and the buttons under it (a question\'s options, Allow/Deny on a permission, '
+                + 'then Continue/Cancel · Diff · Status by state). Read-only — nothing is sent; use it to see what '
+                + 'the phone will be shown. `audience` is the allowed chats that would hear it under '
+                + 'agentFarm.telegram.digest (focused | all | off). args: id (a Console id — console.sessions lists them)',
+            handler: (args) => {
+                const id = argStr(args, 'id');
+                const s = consoleHost.get(id);
+                need(s, 'no such live console session (console.sessions lists them)');
+                return {
+                    id, text: digestText(s!, chatDigestCtx(s!)), keyboard: keyboardFor(s!),
+                    audience: chatAudience(id, chatRoutable().length), mode: chatCfg().digest
+                };
             }
         }
     ]);
