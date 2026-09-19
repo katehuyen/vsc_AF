@@ -8,6 +8,8 @@ tsconfig.json
 *.vsix
 .tmp/**
 scratchpad/**
+scratch/**
+*.stackdump
 test/**
 dist/render/**
 docs/info/**

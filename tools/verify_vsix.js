@@ -184,6 +184,30 @@ ok('it is the version package.json claims',
         + (strays.length ? ' (' + strays.slice(0, 6).join(', ') + (strays.length > 6 ? ', …' : '') + ')' : ''),
         strays.length === 0);
     /**
+     * ‼️ AND THE SAME ACCIDENT AS A WHOLE FOLDER, WHICH EVERY RULE HERE MISSES.
+     *
+     * The leak rule above NAMES the workshop folders, so it only ever catches
+     * the names somebody already thought of; the root rule sees files, not
+     * folders; the untracked rule below looks inside `docs` and `media` only.
+     * A new top-level folder therefore rides in through the gap between all
+     * three — measured on 3.574.0, a `scratch/` a session had left behind (one
+     * letter off the ignored `scratchpad/`) shipped twelve files of session
+     * dumps and every gate passed. What the artefact's top level holds is a
+     * SHORT KNOWN LIST, so it is stated as one rather than guessed at from the
+     * other side: a folder nobody put on it is an accident by definition, and
+     * the next stray name is caught without anybody having to predict it.
+     */
+    const FOLDERS_OK = new Set(['dist', 'docs', 'media', 'out']);
+    const strayDirs = [...new Set([...names]
+        .filter(n => n.startsWith('extension/'))
+        .map(n => n.slice('extension/'.length).split('/')[0])
+        .filter(seg => seg && !FOLDERS_OK.has(seg)
+            && [...names].some(n => n.startsWith('extension/' + seg + '/'))))];
+    ok('‼️ no folder nobody meant to ship rode into the archive'
+        + (strayDirs.length ? ' (' + strayDirs.slice(0, 6).join(', ')
+            + (strayDirs.length > 6 ? ', …' : '') + '/)' : ''),
+        strayDirs.length === 0);
+    /**
      * ‼️ AND THE SAME ACCIDENT ONE LEVEL DOWN, WHICH THE ROOT RULE ABOVE CANNOT
      * SEE.
      *

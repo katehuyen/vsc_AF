@@ -37,6 +37,16 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
   a removed `kimi` profile alive while the task runner, asking the launch rule,
   refused it. Health is now handed the spawn's own rule (`launchRouteRefusal`),
   so the two readings cannot disagree.
+- **‼️ AND A FOLDER NOBODY MEANT TO SHIP CANNOT RIDE INTO THE ARTEFACT ANY MORE.**
+  Packaging this release put a `scratch/` a session had left behind — twelve
+  files of session dumps, one letter off the ignored `scratchpad/` — inside the
+  VSIX, and every gate passed: the leak rule names the workshop folders it
+  already knows, the stray rule sees root FILES rather than folders, and the
+  untracked rule looks inside `docs` and `media` only. `verify_vsix` now states
+  what the artefact's top level may hold (`dist` · `docs` · `media` · `out`)
+  instead of guessing at it from the other side, so the next stray name is
+  caught without anybody having to predict it. `scratch/` and `*.stackdump` are
+  ignored by both git and the packer.
 
 ## 3.573.0 - a route that is gone stops being run on, and every file that answers it a second time is named (X-116, closes) (2026-09-19)
 

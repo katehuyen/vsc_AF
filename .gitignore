@@ -14,6 +14,10 @@ par.out
 # Scratch a session writes and does not keep: temporary files, one-shot test scripts, commit messages
 .tmp/
 scratchpad/
+scratch/
+
+# Git Bash writes one of these where it crashed; it is never part of the build
+*.stackdump
 
 .tmp_*
 
