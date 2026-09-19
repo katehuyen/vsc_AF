@@ -819,9 +819,20 @@ const LIVE_PAYLOAD = {
         // ‼️ U-96 — and only Claude's re-read spends a request. Every other
         // engine's source is on this disk, so asking again must not quietly
         // charge the endpoint's budget for a file the extension already walks.
+        // Read inside the command's own body: `usage.engines refresh:true` also
+        // spends a request further up the file, and that is a different door.
+        const checkNow = ext.slice(ext.indexOf("registerCommand('agentfarm.planUsageRefresh'"),
+            ext.indexOf("registerCommand('agentfarm.openCapabilities'"));
         ok('‼️ a non-Claude Check now repaints from disk instead of spending a request',
-            /if \(usageEngine\(\) !== 'claude'\) \{\s*\n\s*planUsageBar\.paint\(\);/.test(ext)
-            && ext.indexOf("if (usageEngine() !== 'claude')") < ext.indexOf('await planUsage.get(true)'));
+            /if \(usageEngine\(\) !== 'claude'\) \{\s*\n\s*planUsageBar\.paint\(\);/.test(checkNow)
+            && checkNow.indexOf("if (usageEngine() !== 'claude')") < checkNow.indexOf('await planUsage.get(true)'));
+        // ‼️ X-306 — Antigravity's re-read is its own local command, run at once
+        // on Check now; it never touches Claude's request budget.
+        ok('‼️ …and Antigravity\'s Check now runs `agy -p /usage` itself, not the Claude endpoint',
+            /if \(usageEngine\(\) === 'agy'\) \{\s*\n\s*await refreshAgyUsage\(true\);/.test(checkNow)
+            && checkNow.indexOf("usageEngine() === 'agy'") < checkNow.indexOf("usageEngine() !== 'claude'")
+            && /cp\.execFile\('agy', \['-p', '\/usage', '--output-format', 'json'\]/.test(ext)
+            && /child\.stdin\?\.end\(\);\s*\n\s*return agyUsageInFlight;/.test(ext));
         ok('an agent asking usage.plan is told how live the answer is',
             /beat: planBeat\(\),/.test(ext));
         // ‼️ "nothing changed" and "we are not allowed to look" read identically

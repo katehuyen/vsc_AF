@@ -31,9 +31,19 @@ const engines = () => ([
             + 'percentage of. What it has spent is in the cost figures, not here.'
     },
     {
-        id: 'agy', label: 'Antigravity', state: 'not-published', plan: '', fetchedAt: 0, bars: [],
-        note: 'Antigravity publishes no quota figure this machine can read: its CLI refreshes one '
-            + 'internally and writes it to no file. Its usage is visible in the Antigravity app itself.'
+        // X-306 — the REAL reading off `agy -p /usage --output-format json`
+        // (2026-09-19): two pools on one account, each with a 5-hour and a
+        // weekly window. Four bars is the arity this card had never drawn.
+        id: 'agy', label: 'Antigravity', state: 'ok', plan: '', fetchedAt: NOW - 2 * 60000,
+        bars: [
+            { id: 'gemini-weekly', title: 'Current week (Gemini Models)', percent: 36, resetsAt: NOW + 3 * 86400e3 + 13 * 3600e3 },
+            { id: 'gemini-5h', title: 'Current 5h window (Gemini Models)', percent: 1, resetsAt: NOW + 4 * 3600e3 + 18 * 60000 },
+            { id: '3p-weekly', title: 'Current week (Claude and GPT models)', percent: 0, resetsAt: NOW + 7 * 86400e3 },
+            { id: '3p-5h', title: 'Current 5h window (Claude and GPT models)', percent: 0, resetsAt: NOW + 5 * 3600e3 }
+        ],
+        note: 'Read from Antigravity’s own `/usage` (`agy -p /usage`, a local command — no turn, no '
+            + 'token). Two pools share the account: Gemini models, and Claude and GPT models; each has '
+            + 'a 5-hour and a weekly window, and the figure is what the CLI prints, as used rather than remaining.'
     },
     {
         // ‼️ U-59 — THE FIFTH TAB, AND THE WIDTH IS THE POINT. U-40 cut these
@@ -86,8 +96,24 @@ const variants = () => ([
     { id: 'planusage-codex', label: 'Plan usage — Codex (read off its own transcript)', data: base('codex') },
     {
         id: 'planusage-agy',
-        label: 'Plan usage — Antigravity (‼️ not published, and NOT 0%)',
+        label: 'Plan usage — Antigravity (‼️ two pools × two windows, read from its own /usage)',
         data: base('agy')
+    },
+    {
+        // ‼️ THE ARITY THAT MUST NOT LOOK LIKE 0%. Before the first background
+        // read lands the row is `unknown`: no bar, and the note says how the
+        // figure is read rather than pretending it cannot be.
+        id: 'planusage-agy-unread',
+        label: 'Plan usage — Antigravity before its first read (‼️ not read yet, and NOT 0%)',
+        data: (() => {
+            const d = base('agy');
+            d.planUsageEngines = d.planUsageEngines.map(e => e.id !== 'agy' ? e : {
+                ...e, state: 'unknown', fetchedAt: 0, bars: [],
+                note: 'Antigravity answers `/usage` in print mode (`agy -p /usage`, ~4 s, no token) and that '
+                    + 'answer has not arrived here yet. It is read in the background; Check now asks at once.'
+            });
+            return d;
+        })()
     },
     {
         // ‼️ U-59 — "no plan window" is a THIRD answer, and it is not the same

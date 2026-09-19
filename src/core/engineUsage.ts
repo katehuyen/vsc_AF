@@ -20,12 +20,17 @@
  *     resets_at }, secondary, plan_type }`. That is a real quota reading, for
  *     free, with no network call and no token — the CLI wrote it down while it
  *     worked. This module reads the newest one.
- *   · Antigravity — nothing. Its CLI runs a `quota_manager` (the log says so:
- *     `doRefreshQuota: starting reload`) and it does not write the figures
- *     anywhere this extension can read: no cache file, no state file, and the
- *     conversation store is protobuf. **This is reported as "not published",
- *     never as 0%** — a limit bar reading zero for an engine nobody can measure
- *     is the single most dangerous thing this file could draw.
+ *   · Antigravity — ‼️ ITS OWN `/usage`, IN PRINT MODE (X-306, measured
+ *     2026-09-19, agy 1.2.7). The CLI writes its quota to no file — but the
+ *     slash command the user types in a session is expanded in print mode too
+ *     (`--disable-slash-commands` exists to turn that OFF), so
+ *     `agy -p /usage --output-format json` answers in ~4 s with `num_turns: 0`
+ *     and every usage counter at zero: a local command, not a turn, no token.
+ *     The answer is structured — `command.data.groups[].buckets[]`, two POOLS
+ *     (Gemini models · Claude and GPT models), each with a 5-hour and a weekly
+ *     window, `remaining_fraction` and an ISO `reset_time`. The runner fetches
+ *     it in the background and hands the text in; this module parses it. Until
+ *     the first answer lands the row is `unknown`, never 0%.
  *   · Gemini — an API key, billed per token. There is no plan to have a
  *     percentage OF, so the honest row says that rather than showing an empty
  *     bar.
@@ -226,13 +231,113 @@ export function readCodexUsage(
     return base;
 }
 
+/**
+ * What the runner hands in for Antigravity: the stdout of
+ * `agy -p /usage --output-format json`, when it arrived — or why it did not.
+ * This module never spawns anything.
+ */
+export interface AgyUsageInput {
+    text?: string;
+    fetchedAt?: number;
+    /** the CLI's own failure when the last fetch produced no text
+     *  (not on PATH, not signed in, timed out) */
+    error?: string;
+}
+
+/**
+ * ‼️ THE FIGURES ARE THE CLI'S, INCLUDING THE ROUNDING. `/usage` prints
+ * REMAINING and rounds it (0.6367 → `64%`); a bar here is USED, so the complement
+ * of that same rounding (36%) is what the reader saw a second ago in the CLI,
+ * and a floor of the used fraction (36.32 → 36, but 0.907 → 0 against a printed
+ * `99%`) would disagree with it by one point on the windows that matter least
+ * and look wrong on the one that matters most.
+ */
+function agyPercent(remaining: unknown): number | undefined {
+    // ‼️ A window the CLI stated no fraction for gets NO bar — a 0% here would
+    // be the "nothing used" this whole module exists to never draw.
+    if (typeof remaining !== 'number' || !isFinite(remaining)) { return undefined; }
+    return Math.max(0, Math.min(100, 100 - Math.round(remaining * 100)));
+}
+
+/** `5h` → `5h window`, `weekly` → `week` — the shapes `shortWindow` already
+ *  reads, so the strip prints `5h` and `wk` for this engine as for the others. */
+function agyWindowWord(window: unknown): string {
+    const w = String(window ?? '').trim().toLowerCase();
+    if (w === 'weekly' || w === 'week') { return 'week'; }
+    if (w === 'daily' || w === 'day') { return 'day'; }
+    const m = /^(\d+)\s*h(?:ours?)?$/.exec(w);
+    if (m) { return `${m[1]}h window`; }
+    return w || 'window';
+}
+
+export function readAgyUsage(input: AgyUsageInput | undefined): EngineUsage {
+    const base: EngineUsage = {
+        id: 'agy', label: 'Antigravity', state: 'unknown', bars: [], plan: '', fetchedAt: 0,
+        note: 'Antigravity answers `/usage` in print mode (`agy -p /usage`, ~4 s, no token) and that '
+            + 'answer has not arrived here yet. It is read in the background; Check now asks at once.'
+    };
+    const text = String(input?.text ?? '').trim();
+    if (!text) {
+        return input?.error
+            ? { ...base, note: `Antigravity's \`/usage\` could not be read: ${input.error}. `
+                + 'It answers only where the Antigravity app is installed and signed in.' }
+            : base;
+    }
+    let doc: Record<string, unknown> | undefined;
+    try { doc = JSON.parse(text) as Record<string, unknown>; } catch { doc = undefined; }
+    const command = doc && typeof doc.command === 'object' && doc.command ? doc.command as Record<string, unknown> : undefined;
+    const data = command && typeof command.data === 'object' && command.data ? command.data as Record<string, unknown> : undefined;
+    const groups = Array.isArray(data?.groups) ? data!.groups as Record<string, unknown>[] : [];
+    if (String(command?.name ?? '') !== 'usage' || !groups.length) {
+        return { ...base, fetchedAt: input?.fetchedAt ?? 0,
+            note: 'Antigravity answered `/usage`, but not in the shape this build reads '
+                + '(`command.data.groups[].buckets[]`) — the CLI may have changed its output.' };
+    }
+    const bars: PlanBar[] = [];
+    for (const g of groups) {
+        const group = String(g.name ?? '').trim() || 'Antigravity';
+        const buckets = Array.isArray(g.buckets) ? g.buckets as Record<string, unknown>[] : [];
+        for (const b of buckets) {
+            const percent = agyPercent(b.remaining_fraction);
+            if (percent === undefined) { continue; }
+            const word = agyWindowWord(b.window);
+            const reset = Date.parse(String(b.reset_time ?? ''));
+            bars.push({
+                id: String(b.id ?? '').trim() || `${group.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${word.split(' ')[0]}`,
+                // `Current <window> (<pool>)` — the shape Claude's own `Current
+                // week (all models)` already has, so every reader of a title
+                // (the card, the strip, the summary) needs no second rule.
+                title: `Current ${word} (${group})`,
+                percent,
+                resetsAt: isNaN(reset) ? 0 : reset
+            });
+        }
+    }
+    if (!bars.length) {
+        return { ...base, fetchedAt: input?.fetchedAt ?? 0,
+            note: 'Antigravity answered `/usage` with no windows in it.' };
+    }
+    return {
+        ...base,
+        state: 'ok',
+        bars,
+        fetchedAt: input?.fetchedAt ?? 0,
+        note: 'Read from Antigravity\'s own `/usage` (`agy -p /usage`, a local command — no turn, no '
+            + 'token). Two pools share the account: Gemini models, and Claude and GPT models; each has '
+            + 'a 5-hour and a weekly window, and the figure is what the CLI prints, as used rather than remaining.'
+    };
+}
+
 /** The whole matrix, in the order a picker draws it. */
 export function readEngineUsage(
     probe: UsageProbe,
     mtimeOf: (p: string) => number,
     /** Claude's answer comes from the OAuth endpoint and is passed in — this
      *  module never makes a network call. */
-    claude: { state: UsageState; bars: PlanBar[]; plan: string; fetchedAt: number; note: string }
+    claude: { state: UsageState; bars: PlanBar[]; plan: string; fetchedAt: number; note: string },
+    /** Antigravity's answer comes from a background `agy -p /usage` and is
+     *  passed in the same way. */
+    agy?: AgyUsageInput
 ): EngineUsage[] {
     return [
         { id: 'claude', label: 'Claude Code', ...claude },
@@ -242,13 +347,7 @@ export function readEngineUsage(
             note: 'This engine is billed per token against an API key, so there is no plan window to be '
                 + 'a percentage of. What it has spent is in the cost figures, not here.'
         },
-        {
-            // ‼️ NOT ZERO. Its CLI refreshes a quota and writes the numbers
-            // nowhere — measured. A bar at 0% would read as "nothing used".
-            id: 'agy', label: 'Antigravity', state: 'not-published', bars: [], plan: '', fetchedAt: 0,
-            note: 'Antigravity publishes no quota figure this machine can read: its CLI refreshes one '
-                + 'internally and writes it to no file. Its usage is visible in the Antigravity app itself.'
-        },
+        readAgyUsage(agy),
         {
             // ‼️ U-59 — THE ROW EXISTS BECAUSE THE ENGINE DOES. This matrix is
             // what the status-bar hover, the Dashboard card and `engines.usage`
@@ -362,18 +461,39 @@ export function engineBarText(u: EngineUsage | undefined, remaining: (at: number
                 : 'usage ?';
         return `$(dashboard) ${why}`;
     }
+    /**
+     * ‼️ TWO POOLS ON ONE ENGINE (X-306). Antigravity's account has a 5-hour
+     * and a weekly window TWICE — once for Gemini models, once for Claude and
+     * GPT — so the short names collide (`5h … / wk … / 5h … / wk …`) and a
+     * strip that dropped the qualifier would print four figures nobody could
+     * tell apart. Only when names collide, each field carries the pool's
+     * initials (`G`, `CG`); an engine with one pool keeps the shape it had.
+     */
+    const names = u.bars.map(b => shortWindow(b.title));
+    const collide = new Set(names).size !== names.length;
     const parts = u.bars.map((b, i) => {
-        const name = shortWindow(b.title);
+        const tag = collide ? poolTag(b.title) : '';
+        const name = (tag ? tag + ' ' : '') + names[i];
         if (i === 0) {
             // The first field is the TIME LEFT, not a label: a fixed window name
             // in front of the leading percentage is a constant, and the one
             // number a reader wants about time is how long until it comes back.
             const left = b.resetsAt ? remaining(b.resetsAt) : '';
-            return left ? `${left} - ${b.percent}%` : `${name} ${b.percent}%`;
+            return left ? `${tag ? tag + ' ' : ''}${left} - ${b.percent}%` : `${name} ${b.percent}%`;
         }
         return `${name} ${b.percent}%`;
     });
     return `$(dashboard) ${parts.join(' / ')}`;
+}
+
+/** `Current week (Claude and GPT models)` → `CG`: the initials of the pool's
+ *  proper names, skipping the filler the CLI writes around them. */
+function poolTag(title: string): string {
+    const m = /\(([^()]*)\)\s*$/.exec(title);
+    if (!m) { return ''; }
+    return m[1].split(/\s+/)
+        .filter(w => /^[A-Z]/.test(w) && !/^(models?|and|limit)$/i.test(w))
+        .map(w => w[0].toUpperCase()).join('');
 }
 
 /** The peak percentage across an engine's windows — what decides the warning

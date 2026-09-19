@@ -10068,14 +10068,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'figure came from and how old it is. WHERE EACH ONE COMES FROM (measured 2026-08-10): '
                 + 'Claude = Anthropic\'s usage endpoint, live; Codex = the `rate_limits` block its own '
                 + 'rollout transcript records at each turn boundary, so it is free but as old as its '
-                + 'last turn; Gemini = an API key, no plan; Antigravity = nothing on disk at all; '
+                + 'last turn; Gemini = an API key, no plan; Antigravity = its own `/usage` slash '
+                + 'command run in print mode (`agy -p /usage --output-format json`, ~4 s, a local '
+                + 'command with no turn and no token — X-306, measured 2026-09-19), read in the '
+                + 'background on the indicator\'s beat, two pools (Gemini · Claude and GPT) each with '
+                + 'a 5-hour and a weekly window; '
                 + 'OpenCode = each model runs against its own provider, so there is no single plan '
                 + 'window — it states the price of every turn instead. '
                 + '‼️ NEVER TREAT A MISSING FIGURE AS 0% — that is the one mistake this op is shaped to '
                 + 'prevent. `shown` is the engine the status bar is currently displaying '
-                + '(agentFarm.planUsageEngine). args: id? (' + ENGINE_ENUM_SPACED + ')',
-            handler: (args) => {
+                + '(agentFarm.planUsageEngine). args: id? (' + ENGINE_ENUM_SPACED + '), refresh? '
+                + '(true = re-read before answering: Claude spends one usage request, Antigravity runs '
+                + 'its local command; Codex is re-read from disk on every call anyway)',
+            handler: async (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
+                if (optBool(args, 'refresh') === true) {
+                    if (!id || id === 'claude') { await planUsage.get(true); }
+                    if (!id || id === 'agy') { await refreshAgyUsage(true); }
+                }
                 const all = engineUsageMatrix();
                 need(!id || all.some(e => e.id === id),
                     `no engine called "${id}" — try ${all.map(e => e.id).join(', ')}`);
@@ -18124,8 +18134,58 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             finally { if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already gone */ } } }
         }
     };
+    /**
+     * ‼️ X-306 — ANTIGRAVITY'S QUOTA IS ITS OWN `/usage`, RUN IN PRINT MODE.
+     *
+     * The CLI writes its quota to no file (measured 2026-08-10) — but the slash
+     * command a user types in a session is expanded in print mode too, so
+     * `agy -p /usage --output-format json` answers in ~4 s with `num_turns: 0`
+     * and every token counter at zero (measured 2026-09-19, agy 1.2.7): a local
+     * command, not a turn. Same shape as the catalog fetch next door — in the
+     * background, kept with its arrival time, offered as whatever is known —
+     * and on the SAME BEAT as Claude's indicator (`planBeatMs`), so the two
+     * engines' figures age at one rate. The read ends in a repaint (U-31): a
+     * figure that lands in a variable nobody reads again is a figure nobody
+     * sees. ‼️ `stdin.end()` is load-bearing here exactly as it is for
+     * `agy models`: the binary does not exit while its stdin is open.
+     */
+    let agyUsage: { text?: string; fetchedAt?: number; error?: string; fetching?: boolean } = {};
+    let agyUsageInFlight: Promise<void> | undefined;
+    const refreshAgyUsage = (force = false): Promise<void> => {
+        if (agyUsage.fetching) { return agyUsageInFlight ?? Promise.resolve(); }
+        const age = Date.now() - (agyUsage.fetchedAt ?? 0);
+        if (!force && agyUsage.fetchedAt && age < planBeatMs()) { return Promise.resolve(); }
+        // An engine that is not on this machine is asked once per beat at most,
+        // and its absence is the row's own note rather than a retry storm.
+        if (!force && agyUsage.error && age < planBeatMs()) { return Promise.resolve(); }
+        agyUsage = { ...agyUsage, fetching: true };
+        let settle = (): void => { /* replaced below */ };
+        agyUsageInFlight = new Promise<void>(res => { settle = res; });
+        const child = cp.execFile('agy', ['-p', '/usage', '--output-format', 'json'], {
+            timeout: 30000, windowsHide: true, shell: false, maxBuffer: 1024 * 1024
+        }, (err, stdout, stderr) => {
+            const text = String(stdout ?? '').trim();
+            const before = agyUsage.text ?? '';
+            agyUsage = text
+                ? { text, fetchedAt: Date.now(), fetching: false }
+                : { ...agyUsage, fetching: false, fetchedAt: Date.now(),
+                    error: (err as NodeJS.ErrnoException | null)?.code === 'ENOENT' ? 'agy is not on PATH'
+                        : String(stderr ?? '').trim().split('\n').pop() || (err ? err.message : 'no answer') };
+            if ((agyUsage.text ?? '') !== before || !text) {
+                planUsageBar.paint();
+                DashboardPanel.refreshIfOpen();
+            }
+            agyUsageInFlight = undefined;
+            settle();
+        });
+        child.stdin?.end();
+        return agyUsageInFlight;
+    };
     const engineUsageMatrix = (): EngineUsage[] => {
         const snap = planUsage.current();
+        // Every reader of the matrix keeps Antigravity's figure on the beat;
+        // the call returns at once and the answer repaints when it lands.
+        void refreshAgyUsage();
         return readEngineUsage(
             usageProbe,
             p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } },
@@ -18137,7 +18197,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 note: snap?.note
                     ?? (snap ? 'Read from Anthropic\'s own usage endpoint — the figures /usage prints in the CLI.'
                         : 'Not read yet.')
-            });
+            },
+            { text: agyUsage.text, fetchedAt: agyUsage.fetchedAt, error: agyUsage.error });
     };
     /** Which engine the indicator is currently showing. A choice, so it is
      *  remembered; a setting, so the Settings page and the bridge can both see
@@ -34853,6 +34914,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // there is a repaint (`engineUsageMatrix` walks the files each call)
         // and it must NOT spend Claude's request budget to do it.
         vscode.commands.registerCommand('agentfarm.planUsageRefresh', async () => {
+            // X-306 — Antigravity's source is a local command, so Check now
+            // runs it at once rather than waiting for the beat; still no token.
+            if (usageEngine() === 'agy') {
+                await refreshAgyUsage(true);
+                planUsageBar.paint();
+                DashboardPanel.refreshIfOpen();
+                if (agyUsage.error) {
+                    void vscode.window.showInformationMessage(`Agent Farm: Antigravity's /usage could not be read: ${agyUsage.error}`);
+                }
+                return;
+            }
             if (usageEngine() !== 'claude') {
                 planUsageBar.paint();
                 DashboardPanel.refreshIfOpen();

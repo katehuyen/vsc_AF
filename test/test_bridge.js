@@ -319,7 +319,7 @@ const { opencodeStatus, syncToOpencode } =
     // ---------- U-27: usage.engines, registered the way the extension does ----------
     // ‼️ The op exists so an agent asking "how much is left" cannot be handed
     // Claude's percentage for a Codex run. Its sharpest contract is what it does
-    // NOT do: an engine whose quota nobody can read comes back as `not-published`
+    // NOT do: an engine whose figure has not arrived comes back as `unknown`
     // with no bars, never as 0%.
     {
         const EU = require(path.join(__dirname, '..', 'out', 'core', 'engineUsage.js'));
@@ -359,8 +359,10 @@ const { opencodeStatus, syncToOpencode } =
         const by = Object.fromEntries(all.result.engines.map(e => [e.id, e]));
         ok('Codex\'s own transcript is a real quota reading',
             by.codex.state === 'ok' && by.codex.bars[0].percent === 7);
-        ok('‼️ an engine nobody can measure says so, and shows NO bar',
-            by.agy.state === 'not-published' && by.agy.bars.length === 0);
+        // X-306 — Antigravity has a source now (its own /usage, run by the
+        // extension in the background); with nothing handed in it is `unknown`.
+        ok('‼️ an engine whose figure has not arrived says so, and shows NO bar',
+            by.agy.state === 'unknown' && by.agy.bars.length === 0);
         ok('‼️ …and a per-token engine is not a plan at 0% either',
             by.gemini.state === 'no-plan' && by.gemini.bars.length === 0);
         ok('the op says which engine the indicator is showing', all.result.shown === 'claude');

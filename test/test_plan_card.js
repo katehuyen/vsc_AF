@@ -47,7 +47,7 @@ const media = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'u
     // the thing the status bar's hover got right and this card did not.
     ok('‼️ …and the engines you are NOT on are readable without switching',
         /class="sub muted pu-others"/.test(html)
-        && /Codex <b>7%/.test(html) && /Antigravity <b>not published/.test(html));
+        && /Codex <b>7%/.test(html) && /Antigravity <b>36%/.test(html));
 
     // The colour comes from the ONE palette (AFEngine.cls → --af-engc), never
     // from a copy of the four values in this page's own stylesheet.
@@ -70,12 +70,22 @@ const media = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'u
     ok('‼️ a tab flips locally first, then tells the host',
         /DATA\.planUsageEngine = want;\s*\n\s*render\(\);\s*\n\s*vscode\.postMessage/.test(dash));
 
-    // The other two variants must not look like an engine at 0%.
+    // An engine whose figure has not arrived must not look like an engine at 0%.
+    const unreadHtml = runPage(fx.script, fx.variants().find(v => v.id === 'planusage-agy-unread').data).html();
+    const unreadCard = unreadHtml.slice(unreadHtml.indexOf('class="card pucard"'),
+        unreadHtml.indexOf('class="card pucard"') + 3000);
+    ok('an engine not read yet is never drawn at 0%',
+        !/pu-bar/.test(unreadCard) && /agy -p \/usage/.test(unreadCard));
+    ok('…and prints no "Checked" clock for a read that never happened (epoch 0 drew as 1970)',
+        !/Checked /.test(unreadCard));
+    // X-306 — and once its own /usage has been read, the card draws every
+    // window of every pool: four bars, each naming its pool.
     const agyHtml = runPage(fx.script, fx.variants().find(v => v.id === 'planusage-agy').data).html();
     const agyCard = agyHtml.slice(agyHtml.indexOf('class="card pucard"'),
-        agyHtml.indexOf('class="card pucard"') + 3000);
-    ok('an engine nobody can measure is never drawn at 0%',
-        !/pu-bar/.test(agyCard) && /Antigravity publishes no quota/.test(agyCard));
+        agyHtml.indexOf('class="card pucard"') + 6000);
+    ok('‼️ Antigravity\'s two pools × two windows are four bars, each naming its pool',
+        (agyCard.match(/pu-bar/g) || []).length >= 4
+        && /Gemini Models/.test(agyCard) && /Claude and GPT models/.test(agyCard));
 }
 
 // ---------- the Notices toolbar's "File under…" ----------

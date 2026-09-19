@@ -895,8 +895,20 @@ sync Bridge dispatch testleri, drift/foreign/conflict vakaları ve en az bir ger
 Yeni motor için:
 
 - kullanım/kota kaynağı varsa bağımsız adapter yazılır;
+- ‼️ **"diske yazmıyor" ile "kaynağı yok" aynı şey değildir (X-306).** Antigravity
+  kotasını hiçbir dosyaya yazmıyor diye bir yıl `not-published` kaldı; oysa
+  kullanıcının oturumda yazdığı `/usage` print modunda da genişliyor
+  (`--disable-slash-commands` bayrağı bunu *kapatmak* için var) ve
+  `agy -p /usage --output-format json` ~4 sn'de, `num_turns: 0` ve sıfır token
+  ile yapısal bir cevap veriyor. Yeni motorun bir eğik çizgi komutu, alt komutu
+  ya da yerel bir sorgusu var mı — **önce bu sorulur**, `not-published` en son
+  cevaptır. Kalıp: koşucu arka planda motorun kendi komutunu koşar
+  (`refreshAgyUsage`, `agy models` ile aynı şekil, `stdin.end()` dahil), metni
+  `readEngineUsage`'a verir, saf okuyucu (`readAgyUsage`) çözer; ilk cevap
+  gelene kadar satır `unknown`'dır, asla %0;
 - yoksa `not-published` veya `not-applicable` kullanılır;
-- kayıp/bozuk yanıt `0% used` yapılmaz;
+- kayıp/bozuk yanıt `0% used` yapılmaz; fraksiyonu belirtilmemiş bir pencere
+  **çubuk çizmez** (ölçüldü: X-306'nın ilk taslağı böyle bir pencereyi %0 çizerdi);
 - plan bar’ının pencere/reset zamanı uydurulmaz;
 - `input`, `cacheRead`, `cacheWrite`, `output`, `reasoning` çakışmaları test edilir;
 - session harcaması, turn harcaması, son-çağrı context’i ve etkin pencere dört ayrı

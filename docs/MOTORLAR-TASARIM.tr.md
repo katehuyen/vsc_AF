@@ -444,6 +444,26 @@ dosyayı adlandırmak yerine. Bu yüzden `EngineKey.env` bu motorda **boş**tur 
 boşluk gerçek bir cevaptır: yüzeyler "Add key" düğmesini çizmiyor, çünkü hiçbir
 şeyin okumadığı bir sırrı saklatmak kullanıcıyı yanlış eksiğe yönlendirirdi.
 
+**Kota: dosya yok, komut var — ÖLÇÜLDÜ (2026-09-19, agy 1.2.7, X-306).** CLI
+kotasını hiçbir dosyaya yazmıyor (yukarıdaki ölçüm hâlâ doğru); ama kullanıcının
+oturumda yazdığı `/usage` **print modunda da genişliyor** —
+`--disable-slash-commands` bayrağı tam bunu kapatmak için var. `agy -p /usage
+--output-format json`: ~4 sn, `num_turns: 0`, her token sayacı sıfır — tur
+değil, yerel komut. Cevap yapısal: `command.data.groups[].buckets[]` — **iki
+havuz** (`Gemini Models` · `Claude and GPT models`), her birinde 5 saatlik ve
+haftalık pencere, `remaining_fraction` ve ISO `reset_time`. Ürün bunu Claude
+göstergesiyle **aynı vuruşta** arka planda okur (`refreshAgyUsage`; `agy models`
+kalıbı, `stdin.end()` dahil), *Check now* ve `usage.engines refresh=true` anında
+sorar; satır ilk cevaba kadar `unknown`'dır, asla %0. Yüzde CLI'ın bastığının
+tümleyenidir (`64%` kaldı → `36%` kullanıldı; CLI yuvarlıyor, biz de). Durum
+çubuğunda iki havuzun `5h`/`wk` adları çakıştığı için her alan havuz
+baş harfini taşır (`G 4h 18m - 1% / G wk 36% / CG 5h 0% / CG wk 0%`).
+
+‼️ **Git Bash tuzağı:** `agy -p "/usage"` Git Bash'ten koşulursa MSYS
+`/usage`'ı `C:\Program Files\Git\usage` yoluna çevirir ve model Git hakkında bir
+tur konuşur (ölçüldü, 72 sn). `MSYS_NO_PATHCONV=1` ya da kabuksuz `execFile`
+(ürünün yaptığı) bunu önler.
+
 **Akış protokolü.** Üç olay: `init` · `step_update` · `result`. Metin, düşünme,
 araç çağrısı, araç çıktısı ve token sayısı — hepsi tek olay tipinin üstünde
 biniyor.

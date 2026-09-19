@@ -13,7 +13,7 @@ const path = require('path');
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
-const { engineBarText, readCodexLimits, readCodexUsage, readEngineUsage, usageSummary, windowTitle } =
+const { canRecheck, engineBarText, readAgyUsage, readCodexLimits, readCodexUsage, readEngineUsage, usageSummary, windowTitle } =
     require(path.join(__dirname, '..', 'out', 'core', 'engineUsage.js'));
 
 const NULL_LINE = JSON.stringify({
@@ -107,11 +107,14 @@ const probe = (files, tails) => ({
     ok('Claude\'s answer is passed in, never fetched here', by.claude.bars[0].percent === 86);
     ok('Codex reads its own transcript', by.codex.state === 'ok');
 
-    // ‼️ THE ASSERTION THIS FILE EXISTS FOR. An engine nobody can measure must
-    // never be drawn as an engine at 0%.
-    ok('‼️ Antigravity says NOT PUBLISHED, and shows no bar',
-        by.agy.state === 'not-published' && by.agy.bars.length === 0);
-    ok('…and says where the figure does live', /Antigravity app/.test(by.agy.note));
+    // ‼️ THE ASSERTION THIS FILE EXISTS FOR. An engine whose figure has not
+    // arrived must never be drawn as an engine at 0%. Antigravity now HAS a
+    // source (X-306: its own `/usage`, run in print mode by the runner), so
+    // with nothing handed in it is `unknown` — "publishes one, not read yet" —
+    // and it says how the figure is read rather than pretending it cannot be.
+    ok('‼️ Antigravity with nothing read yet says UNKNOWN, and shows no bar',
+        by.agy.state === 'unknown' && by.agy.bars.length === 0);
+    ok('…and says where the figure comes from', /agy -p \/usage/.test(by.agy.note) && /no token/.test(by.agy.note));
     ok('‼️ Gemini says there is no plan to be a percentage of',
         by.gemini.state === 'no-plan' && by.gemini.bars.length === 0);
     // ‼️ …AND OPENCODE IS `no-plan`, NOT `not-published`: nothing is being
@@ -130,9 +133,74 @@ const probe = (files, tails) => ({
         && usageSummary(by.gemini) === 'no plan — per-token');
 
     ok('a summary never prints a number it does not have',
-        usageSummary(by.agy) === 'not published'
+        usageSummary(by.agy) === 'not read yet'
         && usageSummary(by.gemini) === 'no plan — per-token'
         && /week 7%/.test(usageSummary(by.codex)));
+}
+
+// ---------- X-306: Antigravity's own /usage, in print mode ----------
+{
+    // ‼️ THE REAL ANSWER, read off this machine 2026-09-19 (agy 1.2.7) with
+    // `agy -p /usage --output-format json`: num_turns 0, every token counter 0,
+    // ~4 s. Two pools, each with a 5-hour and a weekly window; the fraction is
+    // what is LEFT, and the CLI prints it rounded (0.6367 → 64%).
+    const REAL_USAGE = JSON.stringify({
+        conversation_id: '', status: 'SUCCESS',
+        response: 'Gemini Models\tWeekly Limit Remaining\t64%\t2026-09-23T03:06:33Z\n',
+        duration_seconds: 0, num_turns: 0,
+        usage: { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cache_read_tokens: 0, total_tokens: 0 },
+        command: { name: 'usage', data: {
+            description: 'Within each group, models share a weekly limit and a 5-hour limit.',
+            groups: [
+                { name: 'Gemini Models', description: 'Models within this group: Gemini Flash, Gemini Pro', buckets: [
+                    { id: 'gemini-weekly', name: 'Weekly Limit Remaining', window: 'weekly',
+                        remaining_fraction: 0.6367819309234619, reset_time: '2026-09-23T03:06:33Z' },
+                    { id: 'gemini-5h', name: 'Five Hour Limit Remaining', window: '5h',
+                        remaining_fraction: 0.990929901599884, reset_time: '2026-09-19T18:06:26Z' }
+                ] },
+                { name: 'Claude and GPT models', description: 'Models within this group: Claude Opus, Claude Sonnet, GPT-OSS', buckets: [
+                    { id: '3p-weekly', name: 'Weekly Limit Remaining', window: 'weekly', remaining_fraction: 1, reset_time: '2026-09-26T13:48:21Z' },
+                    { id: '3p-5h', name: 'Five Hour Limit Remaining', window: '5h', remaining_fraction: 1, reset_time: '2026-09-19T18:48:21Z' }
+                ] }
+            ] } }
+    });
+    const agy = readAgyUsage({ text: REAL_USAGE, fetchedAt: 1789824000000 });
+    ok('‼️ Antigravity reads its own /usage into real figures', agy.state === 'ok' && agy.bars.length === 4);
+    ok('…one bar per pool × window, keyed by the CLI\'s own bucket ids',
+        agy.bars.map(b => b.id).join(',') === 'gemini-weekly,gemini-5h,3p-weekly,3p-5h');
+    ok('‼️ the percentage is USED, as the complement of the rounding the CLI prints (64% left → 36% used, 99% left → 1%)',
+        agy.bars[0].percent === 36 && agy.bars[1].percent === 1 && agy.bars[2].percent === 0 && agy.bars[3].percent === 0);
+    ok('the title has the shape Claude\'s own has — `Current <window> (<pool>)`',
+        agy.bars[0].title === 'Current week (Gemini Models)' && agy.bars[1].title === 'Current 5h window (Gemini Models)'
+        && agy.bars[3].title === 'Current 5h window (Claude and GPT models)');
+    ok('the reset is the CLI\'s ISO time, as epoch ms', agy.bars[0].resetsAt === Date.parse('2026-09-23T03:06:33Z'));
+    ok('the read time is the fetch\'s, and the note says it cost no turn',
+        agy.fetchedAt === 1789824000000 && /no turn, no token/.test(agy.note));
+    ok('the summary is the same shape every engine gets',
+        usageSummary(agy) === 'week (Gemini Models) 36% · 5h window (Gemini Models) 1% · week (Claude and GPT models) 0% · 5h window (Claude and GPT models) 0%');
+    ok('…and it can be re-read', canRecheck(agy) === true);
+    ok('the whole matrix carries it when the runner hands the text in',
+        readEngineUsage(probe([], {}), () => 0, { state: 'unknown', bars: [], plan: '', fetchedAt: 0, note: 'x' },
+            { text: REAL_USAGE, fetchedAt: 5 }).find(u => u.id === 'agy').state === 'ok');
+
+    // ‼️ THE STRIP: two pools collide on `wk` / `5h`, so each field carries
+    // the pool's initials — and ONLY then; Claude's strip below is unchanged.
+    ok('‼️ the strip tags every field with its pool when the short names collide',
+        engineBarText(agy, () => '3d 13h') === '$(dashboard) G 3d 13h - 36% / G 5h 1% / CG wk 0% / CG 5h 0%');
+
+    // ---- the ways it can fail to arrive, none of them a zero ----
+    const absent = readAgyUsage({ error: 'agy is not on PATH', fetchedAt: 1 });
+    ok('a CLI that is not there is `unknown` with the reason, not 0%',
+        absent.state === 'unknown' && absent.bars.length === 0 && /not on PATH/.test(absent.note));
+    const odd = readAgyUsage({ text: JSON.stringify({ status: 'SUCCESS', response: 'hello', command: null }), fetchedAt: 2 });
+    ok('an answer in a shape this build does not read says so, and shows no bar',
+        odd.state === 'unknown' && odd.bars.length === 0 && /shape/.test(odd.note));
+    ok('garbage is not a figure', readAgyUsage({ text: '{not json', fetchedAt: 3 }).state === 'unknown');
+    // ‼️ A window the CLI stated no fraction for is NOT a 0% bar — it is no
+    // bar, and with none left the row is `unknown` and says why.
+    const blank = readAgyUsage({ text: JSON.stringify({ command: { name: 'usage', data: { groups: [{ name: 'P', buckets: [{ id: 'x', window: '5h' }] }] } } }) });
+    ok('‼️ a window with no stated fraction draws no bar, never 0%',
+        blank.state === 'unknown' && blank.bars.length === 0 && /no windows/.test(blank.note));
 }
 
 // ---------- U-40: the STRIP, which is not a sentence ----------

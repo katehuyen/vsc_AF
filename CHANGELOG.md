@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.580.0 - Antigravity's quota, read from its own /usage — "writes no file" was never "has no source" (X-306) (2026-09-19)
+
+- **‼️ THE FIGURE WAS A LOCAL COMMAND AWAY THE WHOLE TIME.** Antigravity's row
+  has said `not published` since 2026-08-10, on a true measurement — the CLI
+  refreshes a quota internally and writes it to no file. But the `/usage` a
+  user types in a session is expanded in print mode too (the
+  `--disable-slash-commands` flag exists to turn that OFF), and
+  `agy -p /usage --output-format json` answers in ~4 s with `num_turns: 0` and
+  every token counter at zero: a local command, not a turn, no token (measured
+  2026-09-19, agy 1.2.7). The answer is structured — two POOLS on one account
+  (Gemini models · Claude and GPT models), each with a 5-hour and a weekly
+  window, a remaining fraction and an ISO reset.
+- **Wired the way the catalog is.** The extension runs it in the background
+  (`refreshAgyUsage`: the `agy models` shape, `stdin.end()` included — the
+  binary does not exit while its stdin is open) on the SAME BEAT as Claude's
+  indicator, keeps it with its arrival time, and repaints the status bar and
+  the Dashboard card when it lands (U-31: a read nobody sees is not a read).
+  `readAgyUsage` in `engineUsage.ts` parses it; until the first answer the row
+  is `unknown` — never 0%. *Check now* on the Antigravity strip runs the
+  command at once; `usage.engines refresh=true` does the same on the bridge
+  (and spends one request on Claude only when Claude is asked).
+- **The percentage is the CLI's own, as used.** `/usage` prints REMAINING and
+  rounds it (`64%`); a bar here is USED, so it is the complement of that same
+  rounding (36%) — what the reader saw in the CLI a second ago, not a floor
+  that disagrees by a point. A window the CLI stated no fraction for draws NO
+  bar (the first draft drew 0%, which is the one thing this module exists to
+  never draw).
+- **Two pools on one strip.** Antigravity's short window names collide
+  (`5h`/`wk` twice), so — only when they collide — each field carries the
+  pool's initials: `G 4h 18m - 1% / G wk 36% / CG 5h 0% / CG wk 0%`. Every
+  other engine's strip keeps its shape.
+- **Seen, not just tested.** The Dashboard card drew FOUR bars for the first
+  time (dark and light) — and the "not read yet" scene showed a pre-existing
+  defect: `Checked 07:00 (00:00 UTC)` under every unread engine, epoch 0
+  printed as a clock. Fixed: no read, no clock.
+- Docs: `MOTORLAR-TASARIM.tr.md` §5.5 (the measurement, and the Git Bash
+  `/usage` → `C:\Program Files\Git\usage` path-conversion trap that cost one
+  wasted turn while measuring), `YENI-MOTOR-EKLEME-SOP.tr.md` → usage/quota
+  ("writes no file" ≠ "has no source": ask for a slash command or subcommand
+  first; `not-published` is the LAST answer).
+
 ## 3.579.0 - the one live smoke, and the gate it proved on a real wire (X-117 closed) (2026-09-19)
 
 - **‼️ EVERYTHING THE MOCKS CERTIFIED, SEEN ONCE ON A REAL WIRE.** The suite

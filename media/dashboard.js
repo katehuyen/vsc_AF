@@ -526,7 +526,11 @@
             foot = '';
         } else if (pu.state !== 'ok') {
             body = `<div class="sub" style="margin-top:8px">${C.esc(pu.note || 'Usage data is unavailable.')}</div>`;
-            foot = `<div class="sub muted" style="margin-top:8px">Checked ${window.AFTime.clockUtc(pu.fetchedAt)}</div>`;
+            // A row nobody has read yet has no time to print — epoch 0 drew as
+            // a 1970 clock under every unread engine (measured on X-306).
+            foot = pu.fetchedAt > 0
+                ? `<div class="sub muted" style="margin-top:8px">Checked ${window.AFTime.clockUtc(pu.fetchedAt)}</div>`
+                : '';
         } else {
             body = pu.bars.map(b => {
                 const cls = b.percent >= 90 ? ' hot' : b.percent >= 75 ? ' warn' : '';
