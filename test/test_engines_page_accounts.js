@@ -51,8 +51,10 @@ const sec = () => {
     ok('the Accounts section is drawn', /class="potitle">Accounts</.test(h));
     // Three sections share the shell: Accounts, Account policies (X-305) and
     // Providers. A fourth would be a design decision, not a count to bump.
+    // (the policies section wears .polsec beside it — the class its own
+    // stylesheet is scoped under, since X-305 it is drawn on the Accounts page too)
     ok('…in the page\'s own section shell, not a new CSS family',
-        h.indexOf('<div class="posec">') >= 0 && (h.match(/class="posec"/g) || []).length === 3);
+        h.indexOf('<div class="posec">') >= 0 && (h.match(/class="posec( polsec)?"/g) || []).length === 3);
 }
 
 // ---- one card per captured sign-in -----------------------------------------
@@ -817,7 +819,7 @@ const sec = () => {
     ok('the shared handler hands the press to deps.setAutoRefresh and redraws',
         /case 'accountsAutoRefresh':[\s\S]{0,200}await deps\.setAutoRefresh\(msg\.on === true\);[\s\S]{0,60}s\.refresh\(\);/.test(shared));
     ok('‼️ …and the Engines panel enters that handler before its own switch, with its own section, redraw and live read',
-        /if \(await handleAccountsMessage\(msg, this\.deps, \{[\s\S]{0,400}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
+        /if \(await handleAccountsMessage\(msg, this\.deps, \{[\s\S]{0,400}\}\)\) \{ return; \}\s*\n[\s\S]{0,200}?if \(await handlePolicyMessage\(msg, this\.deps, \{[\s\S]{0,300}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
         && /say: async text => \{ await this\.panel\.webview\.postMessage\(\{ type: 'acc-msg', text \}\); \}/.test(src)
         && /live: \(\) => this\.live\(\)/.test(src) && !/case 'accountCapture'/.test(src));
     ok('…and the data the page is handed carries autoRefresh from deps.autoRefresh()', /autoRefresh: deps\.autoRefresh\(\)/.test(src));

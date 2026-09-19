@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
-import { AccountPolicy, PolicyStep } from '../core/accountPolicy';
+import { AccountPolicy } from '../core/accountPolicy';
 import { handleAccountsMessage } from './accountsMessages';
+import { handlePolicyMessage, PolicyMatrix } from './policyMessages';
 import { UsageBar } from '../core/accountUsage';
 import { EngineId, EngineStatus } from '../core/engines';
 import { EngineTestResult } from '../core/engineTest';
@@ -40,46 +41,6 @@ export interface AccountLastUseView {
      */
     why?: string;
     whySaid?: string;
-}
-
-/** X-305 — what a rule comes to on one engine at this moment. */
-export interface PolicyNow { engine: string; picks: string; note: string; refusal: string }
-
-/**
- * ‼️ X-305 — THE PAGE HANDS OVER A FORM, NOT A RECORD. Everything the webview
- * posts as a rule goes through this allow-list, so a field the page invented
- * — or one a compromised page appended — is dropped rather than stored. The
- * SHAPE (name, chain, ceilings) is then judged by the core, not here.
- */
-export function policyFromForm(input: unknown): AccountPolicy {
-    const o = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
-    const str = (v: unknown): string => String(v ?? '').trim();
-    const pct = (v: unknown): number | undefined => {
-        const n = typeof v === 'number' ? v : Number(str(v));
-        return Number.isFinite(n) && n > 0 ? n : undefined;
-    };
-    const chain: PolicyStep[] = (Array.isArray(o.chain) ? o.chain : []).map((raw): PolicyStep => {
-        const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-        const models = Array.isArray(s.models) ? s.models.map(str).filter(Boolean)
-            : str(s.models).split(',').map(x => x.trim()).filter(Boolean);
-        const ceiling = pct(s.ceiling);
-        return {
-            ...(str(s.account) ? { account: str(s.account) } : {}),
-            ...(str(s.policy) ? { policy: str(s.policy) } : {}),
-            ...(ceiling !== undefined ? { ceiling } : {}),
-            ...(models.length ? { models } : {})
-        };
-    });
-    const ceiling = pct(o.ceiling);
-    return {
-        name: str(o.name),
-        chain,
-        ...(str(o.note) ? { note: str(o.note) } : {}),
-        ...(str(o.engine) ? { engine: str(o.engine).toLowerCase() } : {}),
-        ...(ceiling !== undefined ? { ceiling } : {}),
-        // X-324 — passed as typed; whether it is a strategy at all is the core's verdict
-        ...(str(o.strategy) ? { strategy: str(o.strategy).toLowerCase() as AccountPolicy['strategy'] } : {})
-    };
 }
 
 export interface EnginesPanelDeps {
@@ -276,12 +237,7 @@ export interface EnginesPanelDeps {
      * rather than one figure, because a rule is asked about an engine and the
      * page draws the engines side by side.
      */
-    policies(): {
-        engines: string[];
-        builtIn: { id: string; label: string; detail: string; now: PolicyNow[] }[];
-        rules: (AccountPolicy & { now: PolicyNow[] })[];
-        ceiling: number;
-    };
+    policies(): PolicyMatrix;
     /**
      * ‼️ X-305 — THE SAME TWO FUNCTIONS THE BRIDGE'S `policies.save` AND
      * `policies.delete` CALL. The page hands over a FORM; whether the rule
@@ -484,6 +440,12 @@ export class EnginesPanel {
             refresh: () => this.refresh(),
             live: () => this.live()
         })) { return; }
+        // X-305 — and the policies section's, by the handler the Accounts page
+        // runs too: a rule saved here is the rule the other page lists.
+        if (await handlePolicyMessage(msg, this.deps, {
+            say: async text => { await this.panel.webview.postMessage({ type: 'pol-msg', text }); },
+            refresh: () => this.refresh()
+        })) { return; }
         switch (msg.type) {
             case 'refresh':
                 this.refresh();
@@ -530,19 +492,6 @@ export class EnginesPanel {
                 // moment at which the page holds a credential.
                 this.deps.profileKey(String(msg.id ?? ''), String(msg.label ?? msg.id ?? ''));
                 break;
-            /* ---- X-305 — the rules that choose a sign-in at launch ---------- */
-            //
-            // ‼️ BOTH CALL THE FUNCTION THE BRIDGE OP CALLS. The page hands over
-            // a form; whether the rule could ever choose, whether another rule
-            // steps through the one being removed, and the write itself are
-            // decided in `savePolicy` / `deletePolicy`, so `policies.save` and
-            // this button cannot come to mean two different things.
-            case 'policySave':
-                await this.wrotePolicy(await this.deps.savePolicy(policyFromForm(msg.policy)));
-                break;
-            case 'policyDelete':
-                await this.wrotePolicy(await this.deps.deletePolicy(String(msg.name ?? '')));
-                break;
             case 'engineDocs':
                 // https only — a docs button is not a way to open anything else.
                 if (typeof msg.url === 'string' && /^https:\/\//.test(msg.url)) {
@@ -564,16 +513,6 @@ export class EnginesPanel {
         }
         await this.panel.webview.postMessage({ type: 'prov-msg', text: '' });
         this.refresh();
-    }
-
-    /**
-     * X-305 — the same rule again, for the policies section: the refusal lands
-     * in the form that was submitted. An empty one closes the form and redraws
-     * — the page reads `pol-msg` with no text as "written".
-     */
-    private async wrotePolicy(refusal: string): Promise<void> {
-        await this.panel.webview.postMessage({ type: 'pol-msg', text: refusal });
-        if (!refusal) { this.refresh(); }
     }
 
     /**

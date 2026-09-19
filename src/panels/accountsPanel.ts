@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { AccountsMessageDeps, handleAccountsMessage } from './accountsMessages';
 import { EnginesPanelDeps } from './enginesPanel';
+import { handlePolicyMessage, PolicyMessageDeps } from './policyMessages';
 import { handleAfNav, htmlShell } from './base';
 
 /**
@@ -11,7 +12,9 @@ import { handleAfNav, htmlShell } from './base';
  * presses are answered by `handleAccountsMessage`, the handler the Engines
  * panel runs first. What this page adds is only a place to stand: the figures
  * are wanted many times a day, and the section sat at the bottom of a page
- * about something else.
+ * about something else. X-305's rules come with it (`media/afPolicies.js`,
+ * answered by `handlePolicyMessage`): they choose a sign-in, and a page about
+ * sign-ins that could not show the rules was the page's one gap.
  *
  * ‼️ THE DEPS ARE THE ENGINES PANEL'S, BY NAME. Every field here is picked out
  * of `EnginesPanelDeps`, so extension.ts hands both pages one object and the
@@ -20,6 +23,7 @@ import { handleAfNav, htmlShell } from './base';
 export type AccountsPanelDeps = Pick<EnginesPanelDeps,
     'extensionUri' | 'accounts' | 'accountEngines' | 'autoRefresh' | 'readAccounts' | 'accountBeatMs'>
     & AccountsMessageDeps
+    & PolicyMessageDeps
     & { engineLabels: Record<string, string> };
 
 export function buildAccountsData(deps: AccountsPanelDeps): Record<string, unknown> {
@@ -28,6 +32,7 @@ export function buildAccountsData(deps: AccountsPanelDeps): Record<string, unkno
         accounts: deps.accounts?.() ?? [],
         accountEngines: deps.accountEngines(),
         autoRefresh: deps.autoRefresh(),
+        policies: deps.policies(),
         engineLabels: deps.engineLabels
     };
 }
@@ -87,6 +92,10 @@ export class AccountsPanel {
             say: async text => { await this.panel.webview.postMessage({ type: 'acc-msg', text }); },
             refresh: () => this.refresh(),
             live: () => this.live()
+        })) { return; }
+        if (await handlePolicyMessage(msg, this.deps, {
+            say: async text => { await this.panel.webview.postMessage({ type: 'pol-msg', text }); },
+            refresh: () => this.refresh()
         })) { return; }
         switch (msg.type) {
             case 'refresh':

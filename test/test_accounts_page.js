@@ -7,7 +7,10 @@
 //   * every press posts the message types src/panels/accountsMessages.ts answers;
 //   * the panel enters that handler before its own switch, and its deps are the
 //     Engines panel's by name;
-//   * the view's stylesheet and age wording live once, in media/afAccounts.js.
+//   * the view's stylesheet and age wording live once, in media/afAccounts.js;
+//   * X-305 — the rules that choose a sign-in are drawn under the sign-ins, by
+//     the view the Engines page draws them with (media/afPolicies.js), and a
+//     save or a delete is answered by the handler both panels run.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -44,7 +47,7 @@ const r = runPage('accounts.js', DATA);
     ok('…grouped by engine, labelled from the engine labels the host sends',
         /class="acgrpn">Claude Code</.test(h) && /class="acgrpn">Codex</.test(h));
     ok('…the view\'s stylesheet is in the page', /\.accard \{/.test(h) && /\.posec \{/.test(h));
-    ok('…and the section sits flush under the header', /\.acpage > \.posec \{ margin-top:0; border-top:0; padding-top:0; \}/.test(h));
+    ok('…and the section sits flush under the header', /\.acpage > \.posec:first-child \{ margin-top:0; border-top:0; padding-top:0; \}/.test(h));
 }
 
 // ---- the presses post what the shared handler answers -------------------------
@@ -89,11 +92,42 @@ const r = runPage('accounts.js', DATA);
         m.get('slot').sessionId === 'b' && m.get('slot').at === 300 && m.get('slot').recent === 1 && m.size === 1);
 }
 
+// ---- X-305 — the rules, under the sign-ins, by the Engines page's own view ----
+{
+    const h = r.html();
+    ok('the Account policies section is drawn on the page', /class="potitle">Account policies</.test(h));
+    ok('…under the sign-ins, not above them', h.indexOf('>Accounts<') < h.indexOf('>Account policies<'));
+    ok('…wearing the class its own stylesheet is scoped under', /<div class="posec polsec">/.test(h));
+    ok('…with the built-in four as a table, one column per engine that holds a slot',
+        /class="potab poltab"/.test(h) && (h.match(/class="poeng af-tipw"/g) || []).length === 4);
+    ok('…and the view\'s stylesheet is in the page, scoped', /\.polsec \.polnow \{/.test(h) && /\.polsec \.pocard \{/.test(h));
+    ok('no rule of the user\'s own yet says so', /No rule of your own yet/.test(h));
+    ok('+ New rule is offered', /data-polnew="1"/.test(h));
+
+    // the many-rules scene: cards, then a press, then the host's answer
+    const r2 = runPage('accounts.js', fixture.rulesData());
+    let s2 = r2.html();
+    ok('rules: one card per rule of the user\'s own', (s2.match(/class="pocard polcard"/g) || []).length === 4);
+    r2.query('[data-poldel="Gece_Nobeti"]')[0].click();
+    ok('Delete posts policyDelete with the NAME', JSON.stringify(r2.last()) === JSON.stringify({ type: 'policyDelete', name: 'Gece_Nobeti' }));
+    r2.send({ type: 'pol-msg', text: 'Refused: @Agir_Isler steps through it' });
+    s2 = r2.html();
+    ok('a refusal lands in the section\'s own line', /id="pol-msg">Refused: @Agir_Isler steps through it</.test(s2));
+    r2.query('[data-poledit="Gece_Nobeti"]')[0].click();
+    s2 = r2.html();
+    ok('Edit opens the form on that rule', /id="polform"/.test(s2) && /Edit @Gece_Nobeti</.test(s2));
+    r2.query('[data-afact="submit"]')[0].click();
+    const m = r2.last();
+    ok('Save posts policySave with the FORM', m.type === 'policySave' && m.policy && m.policy.name === 'Gece_Nobeti' && Array.isArray(m.policy.chain));
+    r2.send({ type: 'pol-msg', text: '' });
+    ok('…and an empty pol-msg closes it', !/id="polform"/.test(r2.html()));
+}
+
 // ---- the panel is the Engines panel's section, not a second one --------------
 {
     const src = read('src', 'panels', 'accountsPanel.ts');
-    ok('the panel enters the shared handler before its own switch',
-        /if \(await handleAccountsMessage\(msg, this\.deps, \{[\s\S]{0,400}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
+    ok('the panel enters the shared handlers — accounts, then policies — before its own switch',
+        /if \(await handleAccountsMessage\(msg, this\.deps, \{[\s\S]{0,400}\}\)\) \{ return; \}\s*\n[\s\S]{0,200}?if \(await handlePolicyMessage\(msg, this\.deps, \{[\s\S]{0,300}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
         && /say: async text => \{ await this\.panel\.webview\.postMessage\(\{ type: 'acc-msg', text \}\); \}/.test(src)
         && !/case 'account/.test(src));
     ok('…its deps are picked out of EnginesPanelDeps by name', /Pick<EnginesPanelDeps,/.test(src) && /& AccountsMessageDeps/.test(src));

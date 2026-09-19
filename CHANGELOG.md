@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.590.0 - the rules that choose a sign-in, on the page about sign-ins (X-305 on the Accounts page) (2026-09-20)
+
+- **The Accounts page now draws the Account policies section under its
+  sign-ins** — the built-in four as a table, every named rule as a card, the
+  rule form with its nested step editor — and it is the Engines page's own
+  section, not a second one: the view was lifted out of `engines.js` verbatim
+  into `media/afPolicies.js` (the `afAccounts.js` pattern), and both pages hand
+  it their data and draw what comes back. A rule chooses a sign-in, and the
+  dedicated page about sign-ins was the one surface that could not show the
+  rules.
+- **The choice, and why it was this one.** The open question was whether the
+  section should stay on Engines only, be drawn on both pages, or MOVE to
+  Accounts. Both pages won: moving it would have taken a section off the
+  Engines page, which X-233 itself asked to keep as it is, and leaving it would
+  have kept the "dedicated" page incomplete. One code path makes the second
+  surface free; if the Engines copy is ever unwanted, it is one call to remove.
+- **A save or a delete is answered by one handler for both panels**
+  (`src/panels/policyMessages.ts`, where `policyFromForm` now lives): the page
+  hands over a FORM, the core judges the shape, and the refusal lands in the
+  section that pressed — so a rule saved on one page is the rule the other
+  page lists, and `policies.save` / `policies.delete` on the bridge remain the
+  same two functions.
+- The section's stylesheet travels with the view, scoped under its own class
+  (`.polsec`), so it stands alone on a page that has no routes and changes
+  nothing on the page that does. Photographed both ways, dark and light, with
+  the form open.
+
 ## 3.589.0 - the shelf reads as a shelf (U-132) (2026-09-20)
 
 - **U-132 — a pinned session looked like whatever happened to be newest.**

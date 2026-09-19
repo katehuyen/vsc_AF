@@ -404,6 +404,11 @@ export function htmlShell(
     // how one account comes to read differently on two surfaces. Loaded after
     // afAccount.js, whose `turns` it asks.
     const accounts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAccounts.js'));
+    // The account policies VIEW (X-305): the built-in four, the named rules and
+    // the rule form. Ships everywhere for the reason afAccounts.js does — the
+    // Engines page and the Accounts page draw the same section. Loaded after
+    // afAccounts.js, whose section frame it borrows.
+    const policies = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afPolicies.js'));
     // The Telegram bridge card (U-84). Ships everywhere for the reason the
     // badges above do, with one extra: the fact it draws is "can your phone
     // reach the farm", and a card invented per page is a card that answers that
@@ -464,6 +469,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${runFilter}"></script>
 <script nonce="${nonce}" src="${account}"></script>
 <script nonce="${nonce}" src="${accounts}"></script>
+<script nonce="${nonce}" src="${policies}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>

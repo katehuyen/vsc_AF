@@ -876,6 +876,7 @@ module.exports = {
     data,
     brokenData,
     oneSlotData,
+    rulesData,
     variants: () => [
         { id: 'enginespanel', label: 'Engines panel', data: data() },
         {

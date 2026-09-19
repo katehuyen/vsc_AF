@@ -64,7 +64,9 @@ const secOf = (h) => {
     ok('…between Accounts and Providers',
         h.indexOf('>Accounts<') < h.indexOf('>Account policies<')
         && h.indexOf('>Account policies<') < h.indexOf('>Providers<'));
-    ok('…in the page\'s own section shell', /<div class="posec">\s*<div class="posech">\s*<h3 class="potitle">Account policies</.test(h));
+    // X-305 on the Accounts page: the section wears .polsec too, the class its own
+    // stylesheet is scoped under so it stands alone on a page that has no routes.
+    ok('…in the page\'s own section shell', /<div class="posec polsec">\s*<div class="posech">\s*<h3 class="potitle">Account policies</.test(h));
     ok('the built-in four are a table, one row each',
         /<table class="potab poltab">/.test(s) && (s.match(/<tr>\s*<td class="poeng af-tipw"/g) || []).length === 4);
     ok('…with a column per engine that holds a slot',
@@ -368,7 +370,7 @@ const formOf = (s) => {
         }
         return origLoad.apply(this, arguments);
     };
-    const { policyFromForm } = require(path.resolve(__dirname, '../out/panels/enginesPanel.js'));
+    const { policyFromForm } = require(path.resolve(__dirname, '../out/panels/policyMessages.js'));
     Module._load = origLoad;
 
     const p = policyFromForm({
@@ -395,15 +397,23 @@ const formOf = (s) => {
         policyFromForm(null).name === '' && policyFromForm('str').chain.length === 0 && policyFromForm({ chain: 'no' }).chain.length === 0);
 
     // the panel source: the two cases call the deps the bridge calls, and the
-    // refusal goes back as pol-msg
+    // refusal goes back as pol-msg. The two arms live in the handler BOTH panels
+    // run (src/panels/policyMessages.ts) — a second switch answering the same
+    // message is how one page comes to store a rule the other refuses.
     const src = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'enginesPanel.ts'), 'utf8');
-    const save = src.slice(src.indexOf("case 'policySave'"), src.indexOf("case 'policyDelete'"));
-    const del = src.slice(src.indexOf("case 'policyDelete'"), src.indexOf("case 'engineDocs'"));
+    const shared = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'policyMessages.ts'), 'utf8');
+    const save = shared.slice(shared.indexOf("case 'policySave'"), shared.indexOf("case 'policyDelete'"));
+    const del = shared.slice(shared.indexOf("case 'policyDelete'"), shared.indexOf('return false;'));
     ok('policySave hands the FORM through policyFromForm to deps.savePolicy', /deps\.savePolicy\(policyFromForm\(msg\.policy\)\)/.test(save));
     ok('policyDelete hands the NAME to deps.deletePolicy', /deps\.deletePolicy\(String\(msg\.name/.test(del));
-    ok('both answer through wrotePolicy → pol-msg, redrawing only when written',
-        /wrotePolicy\(/.test(save) && /wrotePolicy\(/.test(del)
-        && /type: 'pol-msg', text: refusal/.test(src) && /if \(!refusal\) \{ this\.refresh\(\); \}/.test(src));
+    ok('both answer through the surface → pol-msg, redrawing only when written',
+        /wrote\(/.test(save) && /wrote\(/.test(del)
+        && /await surface\.say\(refusal\);\s*\n\s*if \(!refusal\) \{ surface\.refresh\(\); \}/.test(shared));
+    ok('‼️ neither panel keeps an arm of its own', !/case 'policySave'/.test(src) && !/wrotePolicy/.test(src)
+        && !/case 'policySave'/.test(require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'accountsPanel.ts'), 'utf8')));
+    ok('the Engines panel enters the shared handler before its own switch, saying into pol-msg',
+        /if \(await handlePolicyMessage\(msg, this\.deps, \{[\s\S]{0,300}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
+        && /say: async text => \{ await this\.panel\.webview\.postMessage\(\{ type: 'pol-msg', text \}\); \}/.test(src));
     ok('the data the page is handed carries policies from deps.policies()', /policies: deps\.policies\(\)/.test(src));
 }
 

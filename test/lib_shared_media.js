@@ -80,6 +80,11 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // Engines page verbatim so the Accounts page draws the same thing. Loaded
     // after afAccount.js, whose `turns` it asks.
     'afAccounts.js',
+    // afPolicies.js was the twenty-fourth — the account policies VIEW (X-305):
+    // the built-in four, the named rules and the rule form, lifted out of the
+    // Engines page verbatim so the Accounts page draws the same section.
+    // Loaded after afAccounts.js, whose section frame it borrows.
+    'afPolicies.js',
     // afTelegram.js was the sixteenth — the Telegram bridge card (U-84).
     // Shared the moment the item asked for it in two places: the fact it draws
     // is "can your phone reach the farm", and a card invented per page is a

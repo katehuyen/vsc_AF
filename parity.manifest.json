@@ -1964,18 +1964,18 @@
       ]
     },
     {
-      "capability": "enginesPanel.ts#policyDelete",
+      "capability": "policyMessages.ts#policyDelete",
       "ui": [
-        "page:enginesPanel.ts#policyDelete"
+        "page:policyMessages.ts#policyDelete"
       ],
       "ops": [
         "policies.delete"
       ]
     },
     {
-      "capability": "enginesPanel.ts#policySave",
+      "capability": "policyMessages.ts#policySave",
       "ui": [
-        "page:enginesPanel.ts#policySave"
+        "page:policyMessages.ts#policySave"
       ],
       "ops": [
         "policies.save"
