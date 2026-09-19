@@ -1803,72 +1803,72 @@
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountActivate",
+      "capability": "accountsMessages.ts#accountActivate",
       "ui": [
-        "page:enginesPanel.ts#accountActivate"
+        "page:accountsMessages.ts#accountActivate"
       ],
       "ops": [
         "accounts.activate"
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountCapture",
+      "capability": "accountsMessages.ts#accountCapture",
       "ui": [
-        "page:enginesPanel.ts#accountCapture"
+        "page:accountsMessages.ts#accountCapture"
       ],
       "ops": [
         "accounts.capture"
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountComplete",
+      "capability": "accountsMessages.ts#accountComplete",
       "ui": [
-        "page:enginesPanel.ts#accountComplete"
+        "page:accountsMessages.ts#accountComplete"
       ],
       "ops": [
         "accounts.complete"
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountFixSettings",
+      "capability": "accountsMessages.ts#accountFixSettings",
       "ui": [
-        "page:enginesPanel.ts#accountFixSettings"
+        "page:accountsMessages.ts#accountFixSettings"
       ],
       "ops": [
         "accounts.repairSettings"
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountForget",
+      "capability": "accountsMessages.ts#accountForget",
       "ui": [
-        "page:enginesPanel.ts#accountForget"
+        "page:accountsMessages.ts#accountForget"
       ],
       "ops": [
         "accounts.forget"
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountReauth",
+      "capability": "accountsMessages.ts#accountReauth",
       "ui": [
-        "page:enginesPanel.ts#accountReauth"
+        "page:accountsMessages.ts#accountReauth"
       ],
       "ops": [
         "accounts.reauth"
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountRefresh",
+      "capability": "accountsMessages.ts#accountRefresh",
       "ui": [
-        "page:enginesPanel.ts#accountRefresh"
+        "page:accountsMessages.ts#accountRefresh"
       ],
       "ops": [
         "accounts.refresh"
       ]
     },
     {
-      "capability": "enginesPanel.ts#accountsAutoRefresh",
+      "capability": "accountsMessages.ts#accountsAutoRefresh",
       "ui": [
-        "page:enginesPanel.ts#accountsAutoRefresh"
+        "page:accountsMessages.ts#accountsAutoRefresh"
       ],
       "ops": [
         "accounts.autoRefresh"

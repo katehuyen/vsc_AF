@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AccountPolicy, PolicyStep } from '../core/accountPolicy';
+import { handleAccountsMessage } from './accountsMessages';
 import { UsageBar } from '../core/accountUsage';
 import { EngineId, EngineStatus } from '../core/engines';
 import { EngineTestResult } from '../core/engineTest';
@@ -454,6 +455,13 @@ export class EnginesPanel {
     }
 
     private async onMessage(msg: { type: string;[k: string]: unknown }): Promise<void> {
+        // X-236 — the accounts section's presses are answered by the handler both
+        // panels share; the switch below is this page's own.
+        if (await handleAccountsMessage(msg, this.deps, {
+            say: async text => { await this.panel.webview.postMessage({ type: 'acc-msg', text }); },
+            refresh: () => this.refresh(),
+            live: () => this.live()
+        })) { return; }
         switch (msg.type) {
             case 'refresh':
                 this.refresh();
@@ -500,76 +508,6 @@ export class EnginesPanel {
                 // moment at which the page holds a credential.
                 this.deps.profileKey(String(msg.id ?? ''), String(msg.label ?? msg.id ?? ''));
                 break;
-            /* ---- X-172 — the sign-ins this machine holds ---------------- */
-            //
-            // ‼️ EVERY ONE OF THESE CALLS THE FUNCTION THE BRIDGE OP CALLS.
-            // The page names an account and an engine; which files move,
-            // whether it is allowed at all and what it costs is decided in one
-            // place, so `accounts.capture` and this button cannot come to mean
-            // two different things.
-            case 'accountCapture':
-                await this.wroteAccount(await this.deps.captureAccount(
-                    String(msg.engine ?? ''), String(msg.label ?? '')));
-                break;
-            case 'accountActivate':
-                // An empty id is a real answer and the way BACK: it clears the
-                // engine rather than naming an account, which is the main
-                // sign-in — the absence of a choice, not a row.
-                await this.wroteAccount(await this.deps.activateAccount(
-                    String(msg.id ?? ''), String(msg.engine ?? '')));
-                break;
-            case 'accountRefresh':
-                // ‼️ X-206 — one id is a TOGGLE (press a waiting card again and
-                // it leaves the line); a list is "all of these", spaced. The
-                // page never counts requests and never names an interval.
-                this.deps.queueAccountRefresh(
-                    Array.isArray(msg.ids) ? msg.ids.map(String).filter(Boolean) : [],
-                    msg.gesture === 'all' ? 'all' : 'toggle');
-                this.refresh();
-                break;
-            case 'accountsAutoRefresh':
-                // X-241 — the same function `accounts.autoRefresh` calls
-                await this.deps.setAutoRefresh(msg.on === true);
-                this.refresh();
-                break;
-            case 'accountReauth': {
-                // ‼️ X-219 — NOT `wroteAccount`: nothing was written and nobody is
-                // signed in yet. Its live reading would spend a request on the very
-                // account whose credential is the thing that stopped working.
-                const refused = await this.deps.reauthAccount(String(msg.id ?? ''));
-                await this.panel.webview.postMessage({ type: 'acc-msg', text: refused });
-                if (!refused) { this.refresh(); }
-                break;
-            }
-            case 'accountFixSettings': {
-                // X-269 — it cannot refuse: the file is reproduced out of the
-                // fleet's own, so the only thing to report is what it had to
-                // put back. Silence would read as a dead button.
-                const wrote = this.deps.repairAccountSettings(String(msg.id ?? ''));
-                await this.panel.webview.postMessage({
-                    type: 'acc-msg',
-                    text: wrote.length ? `Reproduced ${wrote.join(' · ')}` : 'Already carried every guarantee.'
-                });
-                this.refresh();
-                break;
-            }
-            case 'accountComplete': {
-                // ‼️ X-284 — like the [fix] press above it cannot refuse: every
-                // clause is either put back or reported by name. Silence would
-                // read as a dead button, and "already whole" is a real answer.
-                const put = this.deps.completeAccount(String(msg.id ?? ''));
-                await this.panel.webview.postMessage({
-                    type: 'acc-msg',
-                    text: put.length ? `Put back ${put.join(' \u00b7 ')}` : 'Already carried every clause.'
-                });
-                this.refresh();
-                break;
-            }
-            case 'accountForget':
-                // X-282 — the host shows what goes and what stays, then asks;
-                // the folder goes by default, after the slot is drained.
-                await this.wroteAccount(await this.deps.forgetAccount(String(msg.id ?? '')));
-                break;
             /* ---- X-305 — the rules that choose a sign-in at launch ---------- */
             //
             // ‼️ BOTH CALL THE FUNCTION THE BRIDGE OP CALLS. The page hands over
@@ -604,19 +542,6 @@ export class EnginesPanel {
         }
         await this.panel.webview.postMessage({ type: 'prov-msg', text: '' });
         this.refresh();
-    }
-
-    /**
-     * X-172 — the same rule as `write`, for the accounts section: a refusal
-     * lands in the section it happened in rather than in a toast that outlives
-     * the press. Nothing was written when there is one, so nothing is redrawn.
-     */
-    private async wroteAccount(refusal: string): Promise<void> {
-        await this.panel.webview.postMessage({ type: 'acc-msg', text: refusal });
-        // ‼️ X-187 — a gesture that went through changed WHICH accounts there
-        // are to have figures for, so the reading is asked for again rather
-        // than waiting out the interval on a card that has never been read.
-        if (!refusal) { this.live(); }
     }
 
     /**

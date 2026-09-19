@@ -2,6 +2,21 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.582.0 - the accounts presses answered in one place, for both panels (X-236, part 2a) (2026-09-19)
+
+- **‼️ ONE HANDLER, TWO PANELS.** The eight
+  `account*` arms left the Engines panel's switch for
+  `src/panels/accountsMessages.ts` (`handleAccountsMessage`): every arm still
+  calls the function the bridge op calls, and a panel hands in only what
+  differs — how to say a refusal into ITS section, how to redraw ITSELF, how
+  to ask for a live reading. The Engines panel enters it before its own
+  switch; the parity manifest names the eight capabilities by their new file.
+- **What remains (part 2b):** `src/panels/accountsPanel.ts` + `media/accounts.js`
+  drawing `AFAccounts.sectionHtml` under its own header and entering the same
+  handler, `agentfarm.openAccounts` (command + parity entry), a fixture and a
+  page test. Then X-237 rewires the sidebar title, Settings and Dashboard
+  buttons.
+
 ## 3.581.0 - the accounts view lifted out of the Engines page, so a second page can draw it (X-236, part 1) (2026-09-19)
 
 - **‼️ ONE VIEW, TWO PAGES — AND THE VIEW MOVED FIRST.** The dedicated
@@ -22,11 +37,6 @@ All notable changes to Agent Farm. Detailed release notes live in the built-in g
   out / dead sign-in) was photographed and read; every Engines test and every
   test that reads the page's source is green, the two that pinned phrases of
   the card now read the page and the view together.
-- **What remains (part 2):** `src/panels/accountsPanel.ts` + `media/accounts.js`
-  drawing `AFAccounts.sectionHtml` under its own header, `agentfarm.openAccounts`
-  (command + parity entry), the same `accounts.*` message handlers served from
-  one place for both panels, a fixture and a page test. Then X-237 rewires the
-  sidebar title, Settings and Dashboard buttons.
 
 ## 3.580.0 - Antigravity's quota, read from its own /usage — "writes no file" was never "has no source" (X-306) (2026-09-19)
 

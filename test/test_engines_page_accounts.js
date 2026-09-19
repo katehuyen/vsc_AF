@@ -775,10 +775,17 @@ const sec = () => {
     r2.query('[data-acauto]')[0].click();
     ok('…pressing it posts on: true', JSON.stringify(r2.last()) === JSON.stringify({ type: 'accountsAutoRefresh', on: true }));
 
-    // the panel half: the message calls the SAME function the bridge op calls
+    // the panel half: the message calls the SAME function the bridge op calls.
+    // X-236 — the arm lives in the handler BOTH panels share, and the Engines
+    // panel enters it before its own switch.
     const src = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'enginesPanel.ts'), 'utf8');
-    ok('the panel hands the press to deps.setAutoRefresh and redraws',
-        /case 'accountsAutoRefresh':[\s\S]{0,200}await this\.deps\.setAutoRefresh\(msg\.on === true\);[\s\S]{0,60}this\.refresh\(\);/.test(src));
+    const shared = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'panels', 'accountsMessages.ts'), 'utf8');
+    ok('the shared handler hands the press to deps.setAutoRefresh and redraws',
+        /case 'accountsAutoRefresh':[\s\S]{0,200}await deps\.setAutoRefresh\(msg\.on === true\);[\s\S]{0,60}s\.refresh\(\);/.test(shared));
+    ok('‼️ …and the Engines panel enters that handler before its own switch, with its own section, redraw and live read',
+        /if \(await handleAccountsMessage\(msg, this\.deps, \{[\s\S]{0,400}\}\)\) \{ return; \}\s*\n\s*switch \(msg\.type\)/.test(src)
+        && /say: async text => \{ await this\.panel\.webview\.postMessage\(\{ type: 'acc-msg', text \}\); \}/.test(src)
+        && /live: \(\) => this\.live\(\)/.test(src) && !/case 'accountCapture'/.test(src));
     ok('…and the data the page is handed carries autoRefresh from deps.autoRefresh()', /autoRefresh: deps\.autoRefresh\(\)/.test(src));
 }
 
