@@ -1534,16 +1534,16 @@ const reduce = (s, ev, now = NOW) => reduceEvent(s, ev, now).state;
     ok('…then Sessions, then the Turns inside them',
         title.indexOf('agentfarm.openSessions') === title.indexOf('agentfarm.openConsole') + 1
         && title.indexOf('agentfarm.openTurns') === title.indexOf('agentfarm.openSessions') + 1);
-    // The reading row ends where the writing row begins: everything above opens
-    // something to look at, and the LAST thing on the strip is the one button
-    // that creates. P-11 put the Backlog at the end of the reading row — what
-    // the fleet is FOR comes after what it is made of — so the matrix is no
-    // longer the last read, but the shape of the strip is unchanged: reads,
-    // then "+".
-    ok('the Backlog closes the reading row, between the matrix and the +',
+    // P-11 put the Backlog after the matrix — what the fleet is FOR comes after
+    // what it is made of. X-237 (the user's call) gave the "+" slot at the end
+    // to the Accounts page: a sign-in's figures are asked for many times a day
+    // and an agent is created rarely, so + New Agent moved beside the
+    // Dashboard's Agents heading and the strip is reads only.
+    ok('the Backlog follows the matrix, and the Accounts page closes the strip',
         title.indexOf('agentfarm.openBacklog') === title.indexOf('agentfarm.openCapabilities') + 1
-        && title.indexOf('agentfarm.openBacklog') === title.indexOf('agentfarm.newAgent') - 1);
-    ok('…and + closes the strip', title[title.length - 1] === 'agentfarm.newAgent');
+        && title.indexOf('agentfarm.openBacklog') === title.indexOf('agentfarm.openAccounts') - 1
+        && title[title.length - 1] === 'agentfarm.openAccounts');
+    ok('…and + New Agent is off the strip', title.indexOf('agentfarm.newAgent') < 0);
     // A title strip is not a menu: what does not belong to THIS view's subject
     // is taken off it. The Timeline is the Live Feed's own title button and the
     // Guide is reachable from the welcome view, the walkthrough and the palette.

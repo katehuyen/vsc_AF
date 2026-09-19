@@ -755,6 +755,9 @@ export class DashboardPanel {
             case 'startSession':
                 vscode.commands.executeCommand('agentfarm.startSession', { agentId: msg.agentId });
                 break;
+            case 'newAgent':
+                vscode.commands.executeCommand('agentfarm.newAgent');
+                break;
             case 'openGuide':
                 vscode.commands.executeCommand('agentfarm.openGuide', msg.anchor);
                 break;

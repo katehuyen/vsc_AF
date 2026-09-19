@@ -263,15 +263,12 @@ export function buildFarmStatus(i: FarmStatusInput): SubsystemStatus[] {
      * either — `slotIsUsable` lets such a slot run.
      */
     /**
-     * ‼️ THE SAME PAGE, UNDER THE ROW'S OWN SUBJECT. The accounts section lives
-     * on the Engines page today, so the command is the same one — but two
-     * adjacent buttons both reading "Engines" are two controls a reader has to
-     * tell apart by counting rows. A row's door is named for what it opens ONTO
-     * (X-203), and when the accounts page of its own arrives only the command
-     * changes here.
+     * ‼️ THE ROW'S OWN SUBJECT, ON ITS OWN PAGE (X-237). A row's door is named
+     * for what it opens ONTO (X-203): two adjacent buttons both reading
+     * "Engines" are two controls a reader has to tell apart by counting rows.
      */
     const accountsDoor = {
-        label: 'Accounts', kind: 'command', value: 'agentfarm.openEngines'
+        label: 'Accounts', kind: 'command', value: 'agentfarm.openAccounts'
     } as const;
     const accounts = i.accounts ?? [];
     if (accounts.length === 0) {

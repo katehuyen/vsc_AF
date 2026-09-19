@@ -855,7 +855,11 @@
             ${kpis}
             ${statusRow}
             ${charts}
-            <h2>Agents</h2>
+            <div class="secthead">
+                <h2>Agents</h2>
+                <button class="secondary" data-dnewagent="1"
+                    title="New Agent — create an agent folder in one of your agent roots, with its CLAUDE.md, memory and duties. The same command the palette runs; it moved here from the Agents view's title bar, whose slot now opens the Accounts page.">+ New Agent</button>
+            </div>
             <div class="grid">${cards}</div>
             ${cmpSection()}
             ${projectsCard}
@@ -926,6 +930,8 @@
             b.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'openAgent', agentId: b.dataset.detail }); }));
         document.querySelectorAll('[data-start]').forEach(b =>
             b.addEventListener('click', ev => { ev.stopPropagation(); vscode.postMessage({ type: 'startSession', agentId: b.dataset.start }); }));
+        document.querySelectorAll('[data-dnewagent]').forEach(b =>
+            b.addEventListener('click', () => vscode.postMessage({ type: 'newAgent' })));
         document.querySelectorAll('.agent-card').forEach(card =>
             card.addEventListener('click', () => vscode.postMessage({ type: 'openAgent', agentId: card.dataset.agent })));
         document.querySelectorAll('[data-agent-row]').forEach(row =>

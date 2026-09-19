@@ -114,6 +114,8 @@ export interface FarmSettingsDeps {
     engineKey?(name: string): void;
     /** Open the Engines panel — the page this section is the summary of (X-14). */
     openEngines?(): void;
+    /** X-237 — open the Accounts page, the Engines page's accounts section on its own. */
+    openAccounts?(): void;
     /** U-29 — what each engine currently offers, so the per-agent model box
      *  is drawn from the engine's own catalog rather than a typed list. */
     engineModels?(): Record<string, EngineModels>;
@@ -772,6 +774,9 @@ export class FarmSettingsPanel {
                 break;
             case 'openEngines':
                 this.deps.openEngines?.();
+                break;
+            case 'openAccounts':
+                this.deps.openAccounts?.();
                 break;
             case 'engineKey':
                 if (typeof msg.name === 'string' && msg.name) {

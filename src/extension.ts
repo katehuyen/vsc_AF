@@ -13277,7 +13277,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.add',
-            describe: 'Put an item in the backlog. Fields (area, kind, priority, effort) should be filled following the legend at the top of the project\'s Backlog.md. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ `parent` says this item is PART OF another one, by its code — a link on THIS line, not a code shape and not an indent, so a `U` child of a `P` epic is ordinary and nothing moves in the file. It is refused if the code is not there. An uncoded capture may carry one too (the link is stored on the child). What it is NOT is ⛔ `blockedBy`: composition, not dependency. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#byAI` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#byREQ` (the user asked for it; you were the typist). Default is `byAI`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kinds?/tags? (array or comma-separated; the origin stamp is added beside them, never instead of them), priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), parent? (the code this is part of), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would)',
+            describe: 'Put an item in the backlog. Fields (area, kind, priority, effort) should be filled following the legend at the top of the project\'s Backlog.md. With `area` the item is filed there and given the next free code — codes only ever count UP, so a cancelled item\'s number stays spent and a note from three months ago quoting K-8 still means this item. Without one, it lands in the 📥 inbox with no code, to be classified later by whoever has the context (see projects.backlog.code). ‼️ `parent` says this item is PART OF another one, by its code — a link on THIS line, not a code shape and not an indent, so a `U` child of a `P` epic is ordinary and nothing moves in the file. It is refused if the code is not there. An uncoded capture may carry one too (the link is stored on the child). What it is NOT is ⛔ `blockedBy`: composition, not dependency. ‼️ ORIGIN IS STAMPED AND YOU MUST GET IT RIGHT: every item added through this op carries `#byAI` (you noticed it yourself and filed it — a PROPOSAL nobody has agreed to) or, when you pass `origin:"user"`, `#byREQ` (the user asked for it; you were the typist). Default is `byAI`, so a line the user dictated and you forgot to mark reads as your own idea for ever. Items the user writes in the panel or in Obsidian carry neither. Creates the backlog document from the skeleton if the project has none. args: project (id or name), text, area? (1-2 capital letters), origin? (agent|user, default agent), kinds?/tags? (array or comma-separated; the origin stamp is added beside them, never instead of them), priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL), parent? (the code this is part of), due? (YYYY-MM-DD), plan? (a plan item\'s 🆔), from?, blockedBy? (code or array), at? (1-based queue position for the new item — 1 puts it at the very top; needs an area, because the queue holds codes and an uncoded capture has none; omit it and the item queues wherever a new one normally would). A bare `<tag>` in text is put in a code span on the way in (X-332), so a placeholder cannot break the file in Obsidian.',
             handler: (args) => {
                 const { project, folder, file, text } = backlogDoc(argStr(args, 'project'), true);
                 const body = argStr(args, 'text').trim();
@@ -13445,7 +13445,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.set',
-            describe: 'Change an item\'s axes — priority, effort, kinds, due date, plan link, the item it is PART OF, what it waits on, or its words. Honest about what it does: unlike backlog.check this REBUILDS the line, in a fixed order (`code text #kinds PRIO [fields] ⛔ 🆔 📅`), which is the price of being able to set a priority without hand-writing markdown. It never touches a line it was not asked about and never drops a piece it did not understand — anything unrecognised rides along in the text. Pass `null` for effort/due/plan/parent to clear one; `kinds`/`blockedBy` REPLACE what is there (an empty array clears them). ‼️ `parent` is REFUSED rather than warned about when it names something that is not there, the item itself, or one of its own descendants — a loop in the chain is invisible on the row you are editing and breaks every walk over the tree afterwards. Changing a parent moves NO line and changes NO code. ‼️ HONEST ABOUT WHAT TOOK (X-287): the answer carries `asked` (the axes you named) and `updated` (the axes whose value really differs on the re-read line) — an empty `updated` with a note means the item already had those values; a call that names NO axis, or an unknown priority/effort, is refused rather than answered `ok`. args: project (id or name), code?/line?/item? (which one), priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL, or null), kinds?/tags? (array or comma-separated; REPLACES the tags on the line), due?, plan?, parent? (a code, or null), blockedBy?, text? (new words)',
+            describe: 'Change an item\'s axes — priority, effort, kinds, due date, plan link, the item it is PART OF, what it waits on, or its words. Honest about what it does: unlike backlog.check this REBUILDS the line, in a fixed order (`code text #kinds PRIO [fields] ⛔ 🆔 📅`), which is the price of being able to set a priority without hand-writing markdown. It never touches a line it was not asked about and never drops a piece it did not understand — anything unrecognised rides along in the text. Pass `null` for effort/due/plan/parent to clear one; `kinds`/`blockedBy` REPLACE what is there (an empty array clears them). ‼️ `parent` is REFUSED rather than warned about when it names something that is not there, the item itself, or one of its own descendants — a loop in the chain is invisible on the row you are editing and breaks every walk over the tree afterwards. Changing a parent moves NO line and changes NO code. ‼️ HONEST ABOUT WHAT TOOK (X-287): the answer carries `asked` (the axes you named) and `updated` (the axes whose value really differs on the re-read line) — an empty `updated` with a note means the item already had those values; a call that names NO axis, or an unknown priority/effort, is refused rather than answered `ok`. args: project (id or name), code?/line?/item? (which one), priority? (highest|high|medium|normal|low|lowest), effort? (XS|S|M|L|XL, or null), kinds?/tags? (array or comma-separated; REPLACES the tags on the line), due?, plan?, parent? (a code, or null), blockedBy?, text? (new words — a bare `<tag>` in them is put in a code span, X-332)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 const target = backlogTarget(args);
@@ -13644,23 +13644,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         {
             op: 'projects.backlog.tidy',
-            describe: 'Put the file back in its own order, in two moves. FIRST, an item filed under somebody else\'s heading is carried back under its own — a P-coded line parked in the `## U` section is invisible to the person who scrolls to `## P` looking for it, and the panel hides the damage because it groups by the CODE and draws it in the right place regardless. THEN each area\'s items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. An area with no heading in the file is never invented; the inbox (nothing to sort by) and the archive (a record, not a list) are skipped. Returns `reseated` (the codes that went home, by name) and `moved` (how many were re-ordered). args: project (id or name)',
+            describe: 'Put the file back in its own order, in two moves. FIRST, an item filed under somebody else\'s heading is carried back under its own — a P-coded line parked in the `## U` section is invisible to the person who scrolls to `## P` looking for it, and the panel hides the damage because it groups by the CODE and draws it in the right place regardless. THEN each area\'s items go back in code order — K-1, K-2, K-3 — so the file reads as the dictionary it is. Safe by construction: the queue names CODES and a code does not care which line it is on, so the order a person sees is untouched by this. ‼️ A section with PROSE between its items is left alone and reported: somebody wrote that paragraph where it is for a reason and no sort knows what it was. Blank lines between items are furniture and are closed up. An area with no heading in the file is never invented; the inbox (nothing to sort by) and the archive (a record, not a list) are skipped. ‼️ X-332 — BEFORE either move, every bare `<tag>` (`<id>`, `<ALAN>`, `</div>`) outside code spans, fences, HTML comments and front matter is put in a code span: Markdown and Obsidian read one as an unclosed HTML tag and swallow every heading and task line after it. Returns `sanitized` (tags put in code), `reseated` (the codes that went home, by name) and `moved` (how many were re-ordered). args: project (id or name)',
             handler: (args) => {
                 const { project, folder, file } = backlogDoc(argStr(args, 'project'));
                 let moved = 0;
                 let skipped: string[] = [];
                 let reseated: string[] = [];
+                let sanitized = 0;
                 const out = editProjectDoc(folder, file, src => {
                     const res = tidyBacklogFile(src);
                     moved = res.moved;
                     skipped = res.skipped;
                     reseated = res.reseated;
+                    sanitized = res.sanitized;
                     return res;
                 });
                 projectDocWritten(project.id);
                 return {
                     project: project.name, file: relDoc(folder, out.file),
-                    moved, reseated, skipped, note: out.note ?? null
+                    moved, reseated, skipped, sanitized, note: out.note ?? null
                 };
             }
         },
@@ -31966,13 +31968,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 backlogTidy: (id: string) => {
                     let moved = 0;
                     let reseated: string[] = [];
+                    let sanitized = 0;
                     const res = edit(id, text => {
                         const r = tidyBacklogFile(text);
                         moved = r.moved;
                         reseated = r.reseated;
+                        sanitized = r.sanitized;
                         return r;
                     });
-                    return { ...res, moved, reseated };
+                    return { ...res, moved, reseated, sanitized };
                 },
                 backlogCode: (id: string, target: BacklogTarget, area: string) => {
                     let code: string | undefined;
@@ -36769,6 +36773,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     // installed, does a call get through, what did it cost to
                     // find out — is not what a list of `agentFarm.*` keys is for.
                     openEngines: () => { EnginesPanel.show(enginesPanelDeps); },
+                    openAccounts: () => { AccountsPanel.show(accountsPanelDeps); },
                     // U-29 — the per-agent model box reads the chosen engine's own
                     // catalog, not a list typed into a setting.
                     engineModels: () => engineModelMatrix(),

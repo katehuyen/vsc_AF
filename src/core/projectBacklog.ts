@@ -1,4 +1,5 @@
 import { eolOf, lineStartOffset, TASK_LINE } from './projectPlan';
+import { sanitizeBacklogMarkdown, sanitizeBacklogTags } from './backlogSanitize';
 
 /**
  * The backlog — a project's standing pile of work, in the user's own markdown.
@@ -1560,7 +1561,10 @@ export function setBacklogFields(
     const plan = fields.plan === null ? undefined : (fields.plan ?? item.plan);
     const blockedBy = fields.blockedBy ?? item.blockedBy;
     const hold = fields.hold === undefined ? !!item.onHold : !!fields.hold;
-    const words = (fields.text ?? item.text).replace(/\r?\n/g, ' ').trim();
+    // X-332 — new words pass the write gate; a press that did not bring any
+    // (a priority, a tag) leaves the old ones exactly as they were.
+    const words = (fields.text === undefined ? item.text : sanitizeBacklogTags(fields.text))
+        .replace(/\r?\n/g, ' ').trim();
     if (!words) { return { ok: false, error: 'an item needs some text' }; }
 
     // ‼️ REFUSED BEFORE A BYTE IS WRITTEN. A loop in the parent chain is
@@ -1699,7 +1703,8 @@ export interface AddBacklogResult extends BacklogEditResult {
  */
 export function addBacklogItem(text: string, input: AddBacklogInput): AddBacklogResult {
     const src = String(text ?? '');
-    const words = String(input.text ?? '').replace(/\r?\n/g, ' ').trim();
+    // ‼️ X-332 — the write gate: a bare `<tag>` cannot land, whoever wrote it.
+    const words = sanitizeBacklogTags(String(input.text ?? '').replace(/\r?\n/g, ' ').trim());
     if (!words) { return { ok: false, error: 'an item needs some text' }; }
     const parsed = parseBacklog(src);
     const eol = eolOf(src);
@@ -2272,6 +2277,8 @@ export interface TidyResult extends BacklogEditResult {
      *  Named rather than counted: this one is worth reading, because a line in
      *  the wrong place is a line its owner cannot find in Obsidian. */
     reseated: string[];
+    /** X-332 — bare `<tag>`s put in a code span. 0 = none were found. */
+    sanitized: number;
 }
 
 /**
@@ -2369,7 +2376,11 @@ export function tidyBacklogFile(text: string): TidyResult {
     // ‼️ HOME FIRST, THEN ORDER. Sorting cannot cross a heading, so an item
     // sorted before it is reseated is sorted into the wrong section and stays
     // there looking correct. See reseatMisfiled.
-    const reseat = reseatMisfiled(String(text ?? ''));
+    // X-332 — a bare `<tag>` suspends Markdown's block parser for everything
+    // below it, so it is repaired before anything reads the file's shape.
+    const clean = sanitizeBacklogMarkdown(String(text ?? ''));
+    const sanitized = clean.wrapped;
+    const reseat = reseatMisfiled(clean.text);
     const reseated = reseat.moved;
     const src = reseat.text;
     const parsed = parseBacklog(src);
@@ -2431,6 +2442,9 @@ export function tidyBacklogFile(text: string): TidyResult {
     }
 
     const parts: string[] = [];
+    if (sanitized) {
+        parts.push(`put ${sanitized} bare tag${sanitized === 1 ? '' : 's'} in code`);
+    }
     if (reseated.length) {
         parts.push(`carried ${reseated.join(', ')} back under ${reseated.length === 1 ? 'its' : 'their'} own heading`);
     }
@@ -2440,11 +2454,11 @@ export function tidyBacklogFile(text: string): TidyResult {
     const left = parts.join('; ');
     if (!moved) {
         return {
-            ok: true, text: src, moved: 0, skipped, reseated,
+            ok: true, text: src, moved: 0, skipped, reseated, sanitized,
             note: left || 'already in code order'
         };
     }
-    return { ok: true, text: lines.join(eol), moved, skipped, reseated, ...(left ? { note: left } : {}) };
+    return { ok: true, text: lines.join(eol), moved, skipped, reseated, sanitized, ...(left ? { note: left } : {}) };
 }
 
 const insideBlock = (blocks: { from: number; to: number }[], line: number): boolean =>

@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.584.0 - a bare placeholder can no longer eat the backlog, and the ways into the Accounts page (X-332, X-237) (2026-09-19)
+
+- **‼️ X-332 — A BARE `<tag>` IS PUT IN CODE, ON THE WAY IN AND BY THE TIDY.**
+  A placeholder written as text (`<ALAN>`, `<id>`, `<model>`) reads to
+  Markdown/Obsidian as an unclosed HTML tag and can swallow every heading and
+  task line below it. `src/core/backlogSanitize.ts` (`sanitizeBacklogTags` ·
+  `sanitizeBacklogMarkdown`) wraps it in a code span, and it runs in three
+  places: `addBacklogItem` and `setBacklogFields` (only when new words are
+  given — a priority press does not rewrite the text), so the page, the
+  bridge's `projects.backlog.add`/`.set` and every agent pass the same gate;
+  and `tidyBacklogFile`, BEFORE the reseat and the sort, so 🧹 Tidy repairs a
+  file already broken and says how many it wrapped (`sanitized` on the op and
+  the page's line).
+- **Only a tag left OPEN is touched — measured on the real backlog first.** A
+  dry run of the first draft wrapped 40; three kinds were wrong and are now
+  kept: the `<br>` the user breaks long items with (void elements), a path
+  like `C:\Users\<user>` (a backslash-escaped `<` is already literal), and a
+  line whose inline code quotes `<!-- -->` (a code span and a comment are one
+  left-to-right scan, whichever opens first wins). A pair closed on the line
+  (`<b>…</b>`), fences, multi-line comments, front matter, `](<…>)` link
+  targets, autolinks and paths are left alone too. The fence chosen is never
+  the length of a literal backtick run on the line, or that run would pair
+  with it. The real file now has 25, all placeholders; it was NOT rewritten —
+  that is the user's press. `test/test_backlog_sanitize.js` 33 checks.
+- **X-237 — the doors.** The Agents view's title bar opens the Accounts page
+  (`$(organization)`) in the slot `+ New Agent` held; `+ New Agent` stands
+  beside the Dashboard's Agents heading (the same command, `dashboard.ts`
+  `newAgent`); Farm Settings' engines section has 👥 Open Accounts beside
+  ⚙ Open Engines; and the Farm Status card's Accounts row opens the Accounts
+  page instead of the Engines page. Parity: `dashboard.ts#newAgent`,
+  `settingsPanel.ts#openAccounts` (navigation). `test/test_accounts_nav.js`
+  13 checks; both headings measured and the dashboard photographed.
+
 ## 3.583.0 - the Accounts page: the Engines page's accounts section on a page of its own (X-236) (2026-09-19)
 
 - **‼️ A PAGE, NOT A SECOND VIEW.** `agentfarm.openAccounts` (palette:

@@ -129,7 +129,7 @@ export interface ProjectsPanelDeps {
     backlogJoinParent(id: string, code: string): { error?: string; note?: string };
     /** Carry misfiled items back under their own heading, then put each area's
      *  items in code order. The queue is unaffected by either. */
-    backlogTidy(id: string): { error?: string; note?: string; moved?: number; reseated?: string[] };
+    backlogTidy(id: string): { error?: string; note?: string; moved?: number; reseated?: string[]; sanitized?: number };
     /** Give an inbox capture a code and file it under an area. */
     backlogCode(id: string, target: { line?: number }, area: string):
         { error?: string; code?: string };
@@ -766,10 +766,16 @@ export class ProjectsPanel {
                     ? `${(res.reseated as string[]).join(', ')} moved back under `
                     + `${(res.reseated as string[]).length === 1 ? 'its' : 'their'} own heading. `
                     : '';
+                // X-332 — a tag put in code is named too: it was hiding every
+                // heading below it in Obsidian, and the reader should know why
+                // their file suddenly reads right.
+                const tags = res.sanitized
+                    ? `${res.sanitized} bare tag${res.sanitized === 1 ? '' : 's'} put in code. `
+                    : '';
                 this.done(res.error, res.error ? undefined
-                    : home + (res.moved
+                    : (home + tags + (res.moved
                         ? `${res.moved} item${res.moved === 1 ? '' : 's'} back in code order.`
-                        : (home ? '' : (res.note ?? 'Already in code order.'))));
+                        : (home || tags ? '' : (res.note ?? 'Already in code order.')))).trim());
                 break;
             }
             case 'backlogCode': {

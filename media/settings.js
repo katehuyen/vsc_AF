@@ -1425,6 +1425,8 @@
             (the <b>Secrets</b> page is the full table); it is injected into an agent's environment under the exact name the engine reads.</p>
             <div class="pj-row" style="margin:0 0 10px"><button id="openengines"
                 title="${C.esc('The Engines page: the same rows, plus a real call that proves a turn actually gets through — everything here was read off disk.')}">⚙ Open Engines</button>
+                <button id="openaccounts" class="secondary"
+                title="${C.esc('The Accounts page: every captured sign-in, how much of its plan is left, and the switch between them — the Engines page\'s accounts section on a page of its own.')}">👥 Open Accounts</button>
                 <span class="muted small">everything below was read off disk — only a call proves it works</span></div>
             ${list.map(engineRow).join('')}`;
     }
@@ -2859,6 +2861,7 @@
             b.addEventListener('click', () =>
                 vscode.postMessage({ type: 'engineDocs', url: b.dataset.engdocs })));
         onClick('openengines', 'openEngines');
+        onClick('openaccounts', 'openAccounts');
         onClick('promptspick', 'promptsPick');
         onClick('promptsopen', 'promptsOpen');
         onClick('promptsreload', 'promptsReload');

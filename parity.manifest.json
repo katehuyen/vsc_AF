@@ -1576,6 +1576,16 @@
       ]
     },
     {
+      "capability": "dashboard.ts#newAgent",
+      "ui": [
+        "page:dashboard.ts#newAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Runs agentfarm.newAgent, which only opens the Portfolio page's compose card — whatever is created there is a capability of its own."
+      }
+    },
+    {
       "capability": "dashboard.ts#startSession",
       "ui": [
         "page:dashboard.ts#startSession"
@@ -5719,6 +5729,16 @@
       "exempt": {
         "kind": "navigation",
         "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#openAccounts",
+      "ui": [
+        "page:settingsPanel.ts#openAccounts"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
     },
     {
