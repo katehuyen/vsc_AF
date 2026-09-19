@@ -477,6 +477,7 @@ import { registerToolboxOps } from './core/toolboxBridge';
 import { ToolboxPanel } from './panels/toolboxPanel';
 import { EnginesPanel } from './panels/enginesPanel';
 import { SecretsPanel } from './panels/secretsPanel';
+import { AccountsPanel } from './panels/accountsPanel';
 import { EvalsPanel } from './panels/evalsPanel';
 import { registerTurnsOps } from './core/turns';
 import {
@@ -18824,6 +18825,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const setAccountsAutoRefresh = async (on: boolean): Promise<{ on: boolean; beat: { slotId: string; ms: number; active: boolean }[] }> => {
         await cfg().update('accountsAutoRefresh', on, vscode.ConfigurationTarget.Global);
         EnginesPanel.refreshIfOpen();
+        AccountsPanel.refreshIfOpen();
         if (on) { void accountUsage.beat(); }
         return accountsAutoRefreshState();
     };
@@ -18899,11 +18901,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (step.slotId) {
             refreshQueue = step.state;
             EnginesPanel.refreshIfOpen();
+            AccountsPanel.refreshIfOpen();
             void accountUsage.refreshSlot(step.slotId)
                 .catch(() => undefined)
                 .then(() => {
                     refreshQueue = accountQueue.finish(refreshQueue, step.slotId);
                     EnginesPanel.refreshIfOpen();
+                    AccountsPanel.refreshIfOpen();
                     pumpRefreshQueue();
                 });
             return;
@@ -18936,6 +18940,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ? accountQueue.toggle(refreshQueue, queued[0])
             : accountQueue.enqueue(refreshQueue, queued);
         EnginesPanel.refreshIfOpen();
+        AccountsPanel.refreshIfOpen();
         pumpRefreshQueue();
     };
     /** Which slots a "refresh all" / "refresh this engine" press really means. */
@@ -20000,6 +20005,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             sub.dispose();
             identitySeen.delete(slot.id);
             EnginesPanel.refreshIfOpen();
+            AccountsPanel.refreshIfOpen();
         });
         return '';
     };
@@ -21939,6 +21945,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         },
         profileKey: (id: string, label: string) => { void askProviderSecret(id, label); }
     };
+    // X-236 — the Accounts page is handed the Engines page's own deps, so the
+    // two surfaces read the same accounts and answer presses with the same writers.
+    const accountsPanelDeps = { ...enginesPanelDeps, engineLabels: ENGINE_LABELS };
     // One dependency object for the Toolbox page, because the page is now
     // opened from six places (the nav, the palette, and the four tool commands
     // that used to build their object out of input boxes — U-14).
@@ -34975,6 +34984,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // the summary of it; this is where a call actually gets made.
         vscode.commands.registerCommand('agentfarm.openEngines', () => {
             EnginesPanel.show(enginesPanelDeps);
+        }),
+
+        // X-236 — the captured sign-ins on a page of their own; the same view
+        // the Engines page draws at its foot.
+        vscode.commands.registerCommand('agentfarm.openAccounts', () => {
+            AccountsPanel.show(accountsPanelDeps);
         }),
 
         vscode.commands.registerCommand('agentfarm.openTurns', () => {

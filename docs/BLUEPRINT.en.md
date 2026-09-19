@@ -1745,6 +1745,7 @@ The same method works for every service: `ELEVENLABS_KEY`, `N8N_TOKEN`… — wh
 - **Single Selection Discipline (`X-217`):** Enforces the single standing account rule per engine (`normalizeActive`). Misleading toggle switches are replaced with clear radio semantics: the active account wears a **`🟢 standing`** state badge (clicking clears active slot back to global sign-in), while all other accounts carry a **`⚡ Use this one`** action chip (`role="radio"` with one `aria-checked="true"`).
 - **Live Quota & Staggered Polling (`X-187`, `X-206`, `X-215`):** Displays live 5-hour and weekly quota bars per account. Network-bound Claude reads observe rate-limit delays (5s gap, 429 backoff), while local Codex file reads execute without network queuing.
 - **Refresh All Accounts Button (`[🔄 Refresh all accounts (All Engines)]` - `X-218`):** Top-level action refreshing every slot across engines, displaying live progress directly on the control (`◍ 3 in the line`).
+- **Dedicated Accounts Page (`X-236`, 3.583.0):** `agentfarm.openAccounts` opens the same section on a page of its own. The view exists once (`media/afAccounts.js`: cards, groups, capture form, stylesheet `AFAccounts.css`), its presses are answered by the handler both panels share (`src/panels/accountsMessages.ts`), and the page's deps are a subset of `EnginesPanelDeps` — two surfaces cannot say two things about one account. Account policies (X-305) stay on the Engines page for now.
 
 ### Smart Account Selection Policies, Protocols & Quota Architecture (X-305 / X-324) {#hesap-politikalari}
 

@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.583.0 - the Accounts page: the Engines page's accounts section on a page of its own (X-236) (2026-09-19)
+
+- **‼️ A PAGE, NOT A SECOND VIEW.** `agentfarm.openAccounts` (palette:
+  *Open Accounts*) opens `src/panels/accountsPanel.ts` + `media/accounts.js`:
+  a header and `AFAccounts.sectionHtml` — the same cards, groups, capture
+  form and presses the Engines page draws at its foot. Presses enter
+  `handleAccountsMessage` before the page's own two-arm switch
+  (`refresh` · `afnav`), and the deps are `Pick<EnginesPanelDeps, …>`: in
+  `extension.ts` the page gets `{ ...enginesPanelDeps, engineLabels }`, so
+  the two surfaces cannot be wired to different readers of one account. One
+  timer per page, asking only while the page is visible (X-187).
+- **The view's stylesheet moved with it.** The accounts rules and the section
+  frame they wear (`.posec`, `.poform`, `.pohead`, `.pomsg`, …) are now
+  `AFAccounts.css` (176 lines out of `engines.js`, which draws them through
+  `${window.AFAccounts.css}` where they stood — the routes, policies and
+  health sections below wear the same frame and render unchanged). The age
+  wording is `AFAccounts.age`, and the Engines page ages its verdicts with it.
+- An open Accounts page redraws wherever the Engines page does for the queue,
+  the auto-refresh switch and a re-auth terminal closing; `afnav` knows
+  `accounts`. Parity: `openAccounts` (navigation) and the page's `refresh` /
+  `afnav`. Fixture `test/fixtures/accounts.js` reuses the Engines fixture's
+  accounts at three arities (none · one · five on two engines);
+  `test/test_accounts_page.js` 28 checks. Looked at: all three scenes dark,
+  one light, and the Engines page whole after the CSS move.
+- **Not moved:** the account policies (X-305) stay on the Engines page until
+  the user decides where they belong.
+
 ## 3.582.0 - the accounts presses answered in one place, for both panels (X-236, part 2a) (2026-09-19)
 
 - **‼️ ONE HANDLER, TWO PANELS.** The eight

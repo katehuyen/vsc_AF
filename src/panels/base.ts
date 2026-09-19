@@ -263,6 +263,7 @@ export function handleAfNav(to: unknown): void {
         missions: 'agentfarm.openMissions',
         search: 'agentfarm.searchTranscripts',
         engines: 'agentfarm.openEngines',
+        accounts: 'agentfarm.openAccounts',
         settings: 'agentfarm.openFarmSettings',
         capabilities: 'agentfarm.openCapabilities',
         toolbox: 'agentfarm.openToolbox',

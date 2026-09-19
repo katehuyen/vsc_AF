@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.582.0",
+  "version": "3.583.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1243,6 +1243,12 @@
         "title": "Open Engines (which CLI can run, and how it is paid for)",
         "category": "Agent Farm",
         "icon": "$(plug)"
+      },
+      {
+        "command": "agentfarm.openAccounts",
+        "title": "Open Accounts (every captured sign-in, and how much of its plan is left)",
+        "category": "Agent Farm",
+        "icon": "$(organization)"
       },
       {
         "command": "agentfarm.openTurns",

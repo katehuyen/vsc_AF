@@ -1875,6 +1875,26 @@
       ]
     },
     {
+      "capability": "accountsPanel.ts#afnav",
+      "ui": [
+        "page:accountsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
+      "capability": "accountsPanel.ts#refresh",
+      "ui": [
+        "page:accountsPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
       "capability": "enginesPanel.ts#afnav",
       "ui": [
         "page:enginesPanel.ts#afnav"
@@ -3257,6 +3277,16 @@
       "exempt": {
         "kind": "navigation",
         "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "openAccounts",
+      "ui": [
+        "cmd:agentfarm.openAccounts"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing. Every press on the page is answered by accountsMessages.ts, whose arms carry their own ops."
       }
     },
     {

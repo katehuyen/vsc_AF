@@ -67,15 +67,9 @@
     const post = (m) => vscode.postMessage(m);
     const esc = (s) => C.esc(String(s === undefined || s === null ? '' : s));
 
-    /** How old a verdict is, said the way a person would. Mirrors core/engineTest. */
-    function age(at, now) {
-        const s = Math.max(0, Math.round((now - at) / 1000));
-        if (s < 60) { return s + 's ago'; }
-        const m = Math.round(s / 60);
-        if (m < 60) { return m + 'm ago'; }
-        const h = Math.round(m / 60);
-        return h < 48 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
-    }
+    /** How old a verdict is — the accounts view's wording, so a verdict and an
+     *  account figure on this page age in one voice. */
+    const age = window.AFAccounts.age;
 
     const verdictOf = (id) => (DATA.verdicts || []).find(v => v.id === id);
 
@@ -389,7 +383,7 @@
     /* ---- X-236 — the accounts view lives in media/afAccounts.js, shared with
        the Accounts page. This page hands it its own context and draws the
        result; the presses post the message types this panel answers. ---- */
-    const accountsCtx = () => ({ DATA, post, esc, age, engineLabel, msg: acctMsg });
+    const accountsCtx = () => ({ DATA, post, esc, engineLabel, msg: acctMsg });
     function accountsHtml() { return window.AFAccounts.sectionHtml(accountsCtx()); }
 
     /* ---- X-305 — the rules that choose a sign-in at launch ------------------ */
@@ -999,7 +993,6 @@
                 .engcard.eng-off { --engc:var(--vscode-descriptionForeground,#9d9d9d); }
                 .enghead { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
                 .engname { font-weight:600; font-size:14px; }
-                .grow { flex:1 1 auto; }
                 .engbadge { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
                     cursor:help; border:1px solid var(--vscode-widget-border,#4446); }
                 .engbadge.b-ok { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
@@ -1017,10 +1010,6 @@
                 .engacct.a-on { border-style:solid; opacity:1;
                     border-color:var(--vscode-charts-blue,#4a9eff);
                     color:var(--vscode-charts-blue,#4a9eff); }
-                /* X-241 — the auto-refresh switch: lit while on, grey while off */
-                .acauto.a-on { border-color:var(--vscode-charts-blue,#4a9eff);
-                    color:var(--vscode-charts-blue,#4a9eff); }
-                .acauto.a-off { opacity:.55; }
                 .engbill { font-size:12px; opacity:.75; margin-top:6px; max-width:820px; }
                 .engnext { font-size:12px; margin-top:5px; max-width:820px; }
                 .engdetail { margin-top:2px; }
@@ -1044,167 +1033,11 @@
                 .engnote { margin-top:6px; font-size:12px;
                     background:var(--vscode-inputValidation-warningBackground,#663);
                     padding:5px 8px; border-radius:5px; }
-                .englede { max-width:820px; margin:0 0 14px; font-size:12px; opacity:.8; }
-                /* ‼️ X-172 — accounts. The card, the head and the body are the
-                   ROUTES' classes (.pocard is .accard's twin and .pohead/.pobody
-                   are shared outright): two sections of one page that look like
-                   two products is the fault a new CSS family here would ship.
-                   What is new is only what a plan figure needs. */
-                .accard { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px;
-                    padding:8px 11px; margin-bottom:8px; }
-                /* the standing one wears the rule, in the SAME blue as the chip on
-                   its engine card — one colour for one fact across the page */
-                .accard.a-now { border-left:3px solid var(--vscode-charts-blue,#3794ff); }
-                .acplan, .acbad { font-size:10px; padding:1px 8px; border-radius:9px;
-                    white-space:nowrap; border:1px solid var(--vscode-widget-border,#4446); }
-                /* ‼️ X-220 — three states, three colours. A working sign-in is the
-                   ordinary case and is drawn QUIETLY: shouting it in green would
-                   cost the two that need the eye their only advantage. An expired
-                   one is YOUR MOVE, in the same yellow the held verdict and the
-                   keyless route wear; an unreadable one is a FAULT and wears the
-                   red every other fault on this page does. */
-                /* X-255 -- who stands on this account. The SAME blue the standing
-                   rule and the standing chip wear, because it is the same fact one
-                   subject over: this card is the sign-in somebody opens on. It is
-                   a label and not a control, so it carries no border and no fill. */
-                .acpin { font-size:10px; white-space:nowrap; cursor:help; max-width:220px;
-                    overflow:hidden; text-overflow:ellipsis;
-                    color:var(--vscode-charts-blue,#3794ff); }
-                /* X-258 -- who is ON it now. GREEN because it is the one fact on this
-                   card about something ALIVE; the blue beside it is configuration and
-                   the yellow is a warning, so three kinds of statement wear three
-                   colours rather than competing for one. */
-                .acbusy { font-size:10px; white-space:nowrap; cursor:help; max-width:240px;
-                    overflow:hidden; text-overflow:ellipsis;
-                    color:var(--vscode-charts-green,#89d185); }
-                /* X-258 -- where it stands in the ROTATION. A bordered pill, because it
-                   is a position in a line and not a label: the shape is what keeps it
-                   from being read as another status word.
-                   ‼️ AND IT IS DELIBERATELY NOT FILLED WITH A COLOUR. The first draft
-                   filled the leading one green and it was photographed beside the green
-                   "who is on it" line on the same card -- one colour carrying two
-                   unrelated meanings (a forecast and a live fact) two centimetres apart.
-                   The word "next" already says which end of the line this is; emphasis
-                   is all the extra the leader needs, and it costs the palette nothing. */
-                .acrota { font-size:10px; padding:1px 7px; border-radius:9px; white-space:nowrap;
-                    cursor:help; border:1px solid var(--vscode-widget-border,#4446);
-                    color:var(--vscode-descriptionForeground,#9d9d9d); }
-                .acrota.on { color:var(--vscode-foreground,#ccc); font-weight:600;
-                    border-color:var(--vscode-foreground,#ccc); }
-                .acbad { cursor:help; }
-                .acbad.ok { background:transparent; color:var(--vscode-descriptionForeground,#9d9d9d);
-                    border-color:var(--vscode-widget-border,#4446); }
-                .acbad.warn { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
-                    border-color:transparent; }
-                .acbad.bad { background:var(--vscode-charts-red,#f14c4c); color:#fff;
-                    border-color:transparent; }
-                /* X-282 — one account filed twice: its own badge, not a verdict, so the
-                   verdict count stays one per card */
-                .acdup { font-size:10px; padding:1px 8px; border-radius:9px; white-space:nowrap;
-                    background:var(--vscode-charts-red,#f14c4c); color:#fff; cursor:help; }
-                .acuuid { font-family:var(--vscode-editor-font-family,monospace); }
-                /* X-219 — the one control that answers that badge wears the badge's
-                   colour: a dead sign-in and its remedy are one fact, said twice. */
-                .acreauth { border-color:var(--vscode-charts-yellow,#d7ba7d); }
-                /* ‼️ X-205 — the standing account is a SWITCH. Two states of one
-                   control, drawn rather than spelled: a button whose label has
-                   to be read is a button the eye has to stop at, and this one
-                   is read at a glance down a column of cards. The ON colour is
-                   the SAME blue the standing badge and the card's left rule
-                   wear — one colour for one fact, across the page. */
-                /* ‼️ X-217 — ONE ENGINE, ONE STANDING ACCOUNT, so the control is a
-                   single selection and not a row of switches: the chosen one wears
-                   the state as a badge (the same pill the rest of the head speaks
-                   in), the others offer the action. Same family, two jobs — which
-                   is why they share a class and differ by one modifier. */
-                .acsel { font-size:10px; padding:1px 8px; border-radius:9px; flex:none;
-                    line-height:16px; cursor:pointer; white-space:nowrap;
-                    border:1px solid var(--vscode-widget-border,#4446);
-                    background:var(--vscode-button-secondaryBackground,#3a3d41);
-                    color:var(--vscode-button-secondaryForeground,#ccc);
-                    transition:background .12s ease, border-color .12s ease; }
-                .acsel:hover { border-color:var(--vscode-focusBorder,#3794ff); }
-                .acsel.on { background:var(--vscode-charts-blue,#3794ff); color:#fff;
-                    border-color:transparent; }
-                /* ‼️ X-206 — the refresh button IS the queue indicator. A second
-                   badge beside it would say the same thing twice and take the
-                   width the card does not have: the glyph is ⟳ at rest, the
-                   PLACE IN THE LINE while it waits (a number the reader can act
-                   on, not a spinner that says "soon"), and a filled ring while
-                   the request is in flight. */
-                .acref { width:24px; height:22px; padding:0; flex:none; font-size:12px; line-height:1;
-                    border-radius:5px; cursor:pointer;
-                    border:1px solid var(--vscode-widget-border,#4446);
-                    background:var(--vscode-button-secondaryBackground,#3a3d41);
-                    color:var(--vscode-button-secondaryForeground,#ccc); }
-                .acref:hover { border-color:var(--vscode-focusBorder,#3794ff); }
-                /* waiting wears the same yellow as every other "your move is
-                   already made, this is not done yet" state on the page */
-                .acref.queued { background:var(--vscode-charts-yellow,#d7ba7d); color:#000;
-                    border-color:transparent; font-weight:600; }
-                .acref.reading { background:var(--vscode-charts-blue,#3794ff); color:#fff;
-                    border-color:transparent; animation:acspin 1.1s linear infinite; }
-                @keyframes acspin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
-                .acgrp { display:flex; align-items:center; gap:8px; margin:12px 0 5px;
-                    padding-bottom:3px; border-bottom:1px solid var(--vscode-widget-border,#4443); }
-                .acgrpn { font-size:12px; font-weight:600; }
-                .acwin { margin-top:6px; max-width:420px; }
-                /* X-196 — the window block is the card's own paragraph, so the
-                   AFTip wrapper around it has to be one too: an inline wrapper
-                   would collapse the block it holds. */
-                /* ‼️ THE SELECTOR HAS TO OUT-WEIGH common.css's own
-                   span.af-tipw inline-block rule (0,1,1) — a bare class (0,1,0)
-                   loses to it, so this rule sat here doing nothing from X-196
-                   until X-252 put a second block beside it and the two drew on
-                   ONE line, the spend figure glued to the tail of the reset
-                   sentence. Measured: both wrappers reported inline-block with
-                   this rule in force. (No backticks in this block: the whole
-                   stylesheet is a template literal and one would end it.) */
-                span.acwinw, span.acspendw { display:block; }
-                .acwt { display:flex; justify-content:space-between; align-items:baseline;
-                    gap:8px; font-size:12px; }
-                /* X-215 round 2 — the windows as ONE chart. The gutter is fixed
-                   so both tracks start on the same edge and the pair reads as a
-                   single figure; the rows are 3px apart, which is close enough
-                   to group them and far enough that neither bar looks like the
-                   other's shadow. Tabular numerals keep 9% and 40% from
-                   shifting the track's left edge between rows. */
-                /* ‼️ line-height:1 IS THE RULE THAT MAKES THIS ONE CHART, and it
-                   was found by measuring rather than by looking. Without it the
-                   rows were 15px tall around a 6px track, so the tracks sat
-                   12px apart — twice their own height, which reads as two
-                   unrelated bars however small the margin between the ROWS is.
-                   The text box, not the margin, was the distance. */
-                .acwrow { display:flex; align-items:center; gap:6px; line-height:1; }
-                .acwrow + .acwrow { margin-top:2px; }
-                .acwk { flex:none; width:16px; font-size:10px; opacity:.7;
-                    text-transform:uppercase; letter-spacing:.3px; }
-                .acwp { flex:none; width:30px; text-align:right; font-size:11px;
-                    font-variant-numeric:tabular-nums; }
-                .acwrow .progress { flex:1; margin-top:0; height:7px; }
-                .acsub, .acnone { font-size:11px; opacity:.7; margin-top:3px; }
-                .acnone { margin-top:6px; font-size:12px; }
-                /* X-252 — the day's spend, on the card's own ruler under the
-                   window block. A block wrapper for the same reason .acwinw is
-                   one. It is deliberately quieter than the percentage: the bar
-                   is what a rotation is decided on, this is what it cost. */
-                .acspend { margin-top:5px; max-width:420px; font-size:11px; opacity:.85;
-                    font-variant-numeric:tabular-nums; }
-                .acspend.none { opacity:.55; }
-                /* The door, stated only under the hand: the resting row is the
-                   figure and nothing else, so the card looks exactly as it did. */
-                .acspend.go { cursor:pointer; }
-                .acspend.go:hover { color:var(--vscode-textLink-foreground); }
-                .acwhy { margin-top:8px; }
-                .poform select { font-size:12px; padding:3px 6px;
-                    background:var(--vscode-input-background); color:var(--vscode-input-foreground);
-                    border:1px solid var(--vscode-input-border,#4446); border-radius:4px; }
-                #ac-label { width:220px; }
+                /* X-236 — the accounts view's own rules, and the section frame (.posec,
+                   .poform, .pohead ...) it shares with the routes below: one copy, in
+                   media/afAccounts.js, so the Accounts page draws the same cards. */
+                ${window.AFAccounts.css}
                 /* X-100 — providers */
-                .posec { margin-top:22px; border-top:1px solid var(--vscode-widget-border,#4443); padding-top:14px; }
-                .potitle { font-size:14px; margin:0 0 8px; }
-                .posech { display:flex; align-items:center; gap:8px; }
-                .posech .potitle { margin:0 0 8px; }
                 /* ‼️ NOT full width. Four short columns stretched across a
                    1400px page put the reader's eye on a journey between the
                    engine and its answer — DENSITY is the fact per pixel, not
@@ -1221,29 +1054,18 @@
                 .poown.o-af { background:var(--vscode-charts-blue,#3794ff); color:#fff; border-color:transparent; }
                 .poown.o-eng { background:var(--vscode-charts-purple,#b180d7); color:#fff; border-color:transparent; }
                 .powhy { opacity:.5; }
-                .poform { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
-                .poform input { font-size:12px; padding:3px 6px; width:150px;
-                    background:var(--vscode-input-background); color:var(--vscode-input-foreground);
-                    border:1px solid var(--vscode-input-border,#4446); border-radius:4px; }
                 /* the two that hold a URL and a tier map need to show what was
                    typed, or the box is a place to lose your own text in */
                 #po-url { width:260px; }
                 #po-tiers { width:280px; }
-                .pomsg:empty { display:none; }
-                .pomsg { font-size:12px; margin-bottom:8px; padding:5px 8px; border-radius:5px;
-                    background:var(--vscode-inputValidation-errorBackground,#5a1d1d); }
                 .pocard { border:1px solid var(--vscode-widget-border,#4443); border-radius:7px;
                     padding:8px 11px; margin-bottom:8px; }
-                .pohead { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-                .poname { font-weight:600; font-size:13px; }
-                .poid, .porev { font-size:11px; opacity:.7; cursor:help; font-family:var(--vscode-editor-font-family,monospace); }
                 .pokey { font-size:10px; padding:1px 8px; border-radius:9px; cursor:help; white-space:nowrap;
                     border:1px solid var(--vscode-widget-border,#4446); }
                 .pokey.k-yes { background:var(--vscode-charts-green,#3fb950); color:#fff; border-color:transparent; }
                 /* "no key" is the step you are ON, not a failure — the same
                    reading the ⊘ verdict row above gets. */
                 .pokey.k-no { background:var(--vscode-charts-yellow,#d7ba7d); color:#000; border-color:transparent; }
-                .pobody { margin-top:5px; }
                 /* X-114 -- route health. The chips are read left to right as
                    three separate answers, so they are not one traffic light:
                    configured is neutral, available carries the colour, and

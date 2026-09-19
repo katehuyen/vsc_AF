@@ -848,6 +848,7 @@ module.exports = {
     script: 'engines.js',
     data,
     brokenData,
+    oneSlotData,
     variants: () => [
         { id: 'enginespanel', label: 'Engines panel', data: data() },
         {
