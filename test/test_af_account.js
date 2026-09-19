@@ -116,6 +116,13 @@ const BARW = (percent, resetsAt = 0) =>
     const later = A.turns({ percent: 10, resetsAt: now + 3 * 3600000 }, now);
     ok('over an hour it is counted in hours (got ' + later + ')',
         /window turns over at .+ \(in 3h\)/.test(later));
+    // ‼️ U-137 — THE MINUTES ARE NOT THROWN AWAY. The wait used to round to one
+    // unit, so everything from 3h to 3h59m read `(in 3h)`: the reader could not
+    // tell a window about to turn over from one with an hour still in it. It is
+    // `leftOf` now, the same function the bars use.
+    const odd = A.turns({ percent: 10, resetsAt: now + 3 * 3600000 + 12 * 60000 }, now);
+    ok('‼️ AND THE MINUTES INSIDE THAT HOUR ARE PRINTED TOO (got ' + odd + ')',
+        /window turns over at .+ \(in 3h 12m\)/.test(odd));
     // ‼️ THIS RULE WAS NAILED DOWN THE WRONG WAY UP — audit B-04.1. It used to
     // require "(in 0m)" for a reset already past, on the reasoning that zero is
     // better than a negative. It is: both are wrong, and "in 0m" is the one that
@@ -128,8 +135,11 @@ const BARW = (percent, resetsAt = 0) =>
         !/\(in 0m\)/.test(past) && /turned over at/.test(past));
     ok('…and it says the figure beside it belongs to the window before',
         /read before that/.test(past));
+    // Seconds away is `1m`, not `0m`: `leftOf` floors to whole minutes and then
+    // lifts the answer off zero, because a window that has NOT turned over must
+    // not print the same figure as one that has.
     ok('a turnover seconds away is still counted forwards, not backwards',
-        /\(in 0m\)/.test(A.turns({ resetsAt: now + 5000 }, now)));
+        /\(in 1m\)/.test(A.turns({ resetsAt: now + 5000 }, now)));
 }
 
 // ---------- X-215 round 2: how much is left, COMPLETE and in the right unit ----------

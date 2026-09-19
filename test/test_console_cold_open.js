@@ -48,6 +48,9 @@ const makePanel = () => {
         webview: makeWebview(), title: 'Console', revealed: 0,
         reveal() { this.revealed++; },
         onDidDispose: () => ({ dispose() { } }),
+        // X-243 — a real WebviewPanel always has this; the panel listens to it
+        // so the status bar stops following a Console that went behind a tab.
+        onDidChangeViewState: () => ({ dispose() { } }),
         dispose() { }
     };
     panels.push(p);

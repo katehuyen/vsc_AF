@@ -6,7 +6,8 @@ import {
 } from './planusage';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
 import { MACHINE_ACCOUNT } from './accountStore';
-import { EngineUsage } from './engineUsage';
+import { EngineId } from './engines';
+import { EngineUsage, UsageState } from './engineUsage';
 import { ensureAccessToken, EXPIRY_SKEW_MS, RefreshOutcome } from './oauthRefresh';
 
 /**
@@ -279,6 +280,31 @@ export function usageFromEngine(slot: { id: string; engine: string }, eu: Engine
         fetchedAt: eu.fetchedAt ?? 0,
         ...(read && bar.window ? { window: bar.window } : {}),
         ...(eu.note ? { note: eu.note } : {})
+    };
+}
+
+/**
+ * ‼️ X-243 — THE INVERSE OF `usageFromEngine`, for the surfaces that have to
+ * draw a NAMED sign-in where they normally draw an engine.
+ *
+ * The status bar and the Dashboard card both speak `EngineUsage`; a slot's
+ * reading is a `SlotUsage`. Shaping one into the other at the call site would
+ * be a second answer about one set of figures — exactly the drift
+ * `usageFromEngine` exists to stop from the other side — so the conversion is
+ * here, once, and `not-published` survives it: an engine with no readable
+ * allowance must not arrive as a failed read.
+ */
+export function engineUsageFromSlot(
+    u: SlotUsage | undefined, engine: EngineId, label: string, note = ''
+): EngineUsage {
+    const bars: PlanBar[] = (u && u.state === 'ok' ? u.bars ?? [] : [])
+        .map(b => ({ id: b.id, title: b.window, percent: b.percent, resetsAt: b.resetsAt }));
+    const state: UsageState = !u ? 'unknown'
+        : u.state === 'no-source' ? 'not-published'
+            : bars.length ? 'ok' : 'unknown';
+    return {
+        id: engine, label, state, bars,
+        plan: u?.plan ?? '', fetchedAt: u?.fetchedAt ?? 0, note: u?.note || note
     };
 }
 

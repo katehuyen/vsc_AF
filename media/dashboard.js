@@ -139,6 +139,9 @@
             // engine cannot hold a second account) and dropping it would leave
             // the previous engine's owner sitting over the new engine's figures.
             if (ev.data.account !== undefined) { DATA.planUsageAccount = ev.data.account; }
+            // X-244 — every pickable sign-in rides the same message, so the one
+            // the picker is parked on moves with ⟳ like the one on show.
+            if (ev.data.accounts) { DATA.planUsageAccounts = ev.data.accounts; }
             render();
             armPlanUsage();
             return;
@@ -378,6 +381,16 @@
            and truncating it beats pushing ⟳ off the edge. */
         .pu-acct { flex:1 1 auto; min-width:0; text-align:right; font-size:11px;
             opacity:.75; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        /* X-244 — the picker takes the SAME room the label took, so a card that
+           gains a second sign-in does not change width or push ⟳ off the edge.
+           Its rows are the browser's own menu, which is why the card can afford
+           a control here at all. */
+        .pu-pick { border:1px solid transparent; border-radius:4px; padding:1px 2px;
+            background:transparent; color:var(--vscode-foreground); cursor:pointer;
+            font-family:inherit; font-size:11px; max-width:100%; text-align:right; }
+        .pu-pick:hover, .pu-pick:focus { opacity:1; border-color:var(--vscode-widget-border, #4444);
+            background:var(--vscode-list-hoverBackground); }
+        .pu-pick option { color:var(--vscode-foreground); background:var(--vscode-dropdown-background); }
         .pu-ref { font-size:12px; line-height:1; padding:2px 7px; border-radius:4px; cursor:pointer;
             background:transparent; color:var(--vscode-foreground); opacity:.6;
             border:1px solid var(--vscode-widget-border, #4444); }
@@ -497,29 +510,112 @@
      */
     function puOwner() {
         const who = String(DATA.planUsageAccount || '');
-        if (!who) { return ''; }
-        const tip = 'Account: ' + who + '\n'
-            + 'The sign-in these figures belong to. Set it on the Engines page — '
-            + 'the status bar, this card and every new session follow it.';
-        return `<span class="pu-acct" title="${C.esc(tip)}">${C.esc(who)}</span>`;
+        const mine = puAccounts();
+        // ‼️ X-244 — A PICKER ONLY WHERE THERE IS SOMETHING TO PICK. One sign-in
+        // on this engine is not a choice, and a `<select>` with a single row is
+        // a control that lies about what the machine can do. Then the X-212
+        // label stands, exactly as it did.
+        if (mine.length < 2) {
+            if (!who) { return ''; }
+            const tip = 'Account: ' + who + '\n'
+                + 'The sign-in these figures belong to. Set it on the Engines page — '
+                + 'the status bar, this card and every new session follow it.';
+            return `<span class="pu-acct" title="${C.esc(tip)}">${C.esc(who)}</span>`;
+        }
+        /**
+         * MIRROR — the control is narrow enough to cut its own rows, so its
+         * tooltip opens with the value it is currently on; and SHORTHAND — the
+         * row is `name  72%`, because the percentage is what the choice is made
+         * on and the card underneath carries everything else.
+         */
+        const cur = puAccountId();
+        const tip = 'Showing: ' + (puAccountRow() ? puAccountRow().label : who || 'the standing sign-in') + '\n\n'
+            + 'Which sign-in of this engine the card is reading. The standing one '
+            + 'is what new sessions use; the others are shown here so a rotation '
+            + 'can be judged without leaving the page. Nothing is switched by '
+            + 'looking — the Accounts page is where a sign-in is stood up.';
+        const rows = mine.map(a => {
+            const pct = a.percent >= 0 ? a.percent + '%'
+                : a.state === 'not-published' ? 'no quota' : 'not read';
+            // ‼️ U-128 — the popup a `<select>` opens is drawn by the operating
+            // system, so an AFTip cannot reach into it and the native `title`
+            // is the only surface a row has. Figures, not an explanation: the
+            // column is defined once, on the control itself.
+            const otip = [
+                a.label + (a.standing ? ' — the standing sign-in' : ''),
+                ...(a.bars || []).map(b => b.title + ': ' + b.percent + '%'),
+                a.plan ? 'Plan: ' + a.plan : '',
+                a.fetchedAt ? 'Read: ' + window.AFTime.clockUtc(a.fetchedAt) : 'Read: not yet',
+                a.health && a.health !== 'ready' ? 'Sign-in: ' + a.health : ''
+            ].filter(Boolean).join('\n');
+            return `<option value="${C.esc(a.id)}"${a.id === cur ? ' selected' : ''}
+                title="${C.esc(otip)}"
+                >${C.esc(a.label)}${a.standing ? ' ★' : ''} · ${C.esc(pct)}</option>`;
+        }).join('');
+        return `<select class="pu-acct pu-pick" id="pu-account" title="${C.esc(tip)}">${rows}</select>`;
     }
+
+    /** The sign-ins of the engine on show — the only ones this card can draw. */
+    function puAccounts() {
+        const eng = puEngineId();
+        return (DATA.planUsageAccounts || []).filter(a => a && a.engine === eng);
+    }
+    /**
+     * ‼️ X-244 — THE CHOICE IS THE PAGE'S, NOT THE MACHINE'S.
+     *
+     * Looking at another sign-in's figures is not standing it up, and a picker
+     * that quietly wrote `activeAccounts` would move every future session on a
+     * glance. So this lives here and dies with the page; the engine tabs above
+     * are a SETTING for the opposite reason — the status bar shares that axis.
+     * An id that is not on this engine falls back to the standing one, which is
+     * also how a tab change resets the picker without a second rule.
+     */
+    let puAccountPick = '';
+    const puAccountId = () => {
+        const mine = puAccounts();
+        if (mine.some(a => a.id === puAccountPick)) { return puAccountPick; }
+        const standing = mine.find(a => a.standing);
+        return standing ? standing.id : (mine[0] ? mine[0].id : '');
+    };
+    /** The picked row, ONLY when it is not the standing one — a card on the
+     *  standing account is the card this page has always drawn, snapshot and
+     *  all, and re-deriving it from the slot cache would be a second answer. */
+    const puAccountRow = () => {
+        const mine = puAccounts();
+        const row = mine.find(a => a.id === puAccountId());
+        return row && !row.standing ? row : null;
+    };
 
     function planCard() {
         const eng = puEngineRow();
         // Claude keeps the endpoint-shaped snapshot (state, backoff, beat);
         // every other engine answers from its own record, which is a different
         // set of facts and is drawn from the matrix instead.
-        const pu = eng && eng.id !== 'claude'
-            ? { state: eng.state === 'ok' ? 'ok' : 'other', bars: eng.bars || [],
-                plan: eng.plan || '', fetchedAt: eng.fetchedAt || 0, note: eng.note || '' }
-            : DATA.planUsage;
+        // ‼️ X-244 — and a PICKED sign-in outranks both: the snapshot belongs to
+        // the machine's own credentials, so drawing it under another account's
+        // name would be the right figure with the wrong owner on it.
+        const picked = puAccountRow();
+        const pu = picked
+            ? { state: picked.state === 'ok' ? 'ok' : 'other', bars: picked.bars || [],
+                plan: picked.plan || '', fetchedAt: picked.fetchedAt || 0, note: picked.note || '' }
+            : eng && eng.id !== 'claude'
+                ? { state: eng.state === 'ok' ? 'ok' : 'other', bars: eng.bars || [],
+                    plan: eng.plan || '', fetchedAt: eng.fetchedAt || 0, note: eng.note || '' }
+                : DATA.planUsage;
         const beat = DATA.planUsageBeat || { ms: 0, active: false };
         // the beat is a fact about the page, so it is stated on the page: how
         // often these figures are re-read, and which of the two windows we are in
         const beatText = !(beat.ms > 0) ? 'manual refresh only'
             : beat.active ? 'live · every ' + Math.max(1, Math.round(beat.ms / 1000)) + ' s while an agent works'
                 : 'auto every ' + Math.max(1, Math.round(beat.ms / 60000)) + ' min';
-        const btn = `<button class="pu-ref" id="pu-refresh" title="Read your subscription limits from Anthropic now">${puBusy ? '…' : '⟳'}</button>`;
+        // X-244 — the button says what it will actually move. While another
+        // sign-in is on show it reads the STANDING one's limits, because that
+        // is the only account this machine holds credentials for at the
+        // endpoint; the picked row moves on the accounts beat instead.
+        const btn = `<button class="pu-ref" id="pu-refresh" title="${C.esc(picked
+            ? 'Read the standing sign-in\'s limits from Anthropic now — '
+                + puAccountRow().label + ' is read from its own record, on its own beat'
+            : 'Read your subscription limits from Anthropic now')}">${puBusy ? '…' : '⟳'}</button>`;
         let body, foot;
         if (!pu) {
             body = '<div class="sub" style="margin-top:8px">Reading your subscription limits…</div>';
@@ -543,16 +639,19 @@
             // ‼️ THE BEAT BELONGS TO THE ENDPOINT, SO IT IS ONLY CLAIMED FOR IT.
             // Codex's figure is read off a file it wrote at its last turn; saying
             // "auto every 5 min" under it would promise a refresh nothing performs.
-            const isClaude = !eng || eng.id === 'claude';
+            // ‼️ X-244 — a picked sign-in is read off the slot cache on ITS own
+            // beat, so claiming the endpoint's beat under it would promise a
+            // refresh this card's ⟳ does not perform for it.
+            const isClaude = !picked && (!eng || eng.id === 'claude');
             foot = `<div class="sub muted" style="margin-top:10px">${pu.plan ? C.esc(pu.plan) + ' plan · ' : ''}`
                 + `${pu.fetchedAt ? (isClaude ? 'updated ' : 'as of ') + window.AFTime.clockUtc(pu.fetchedAt) : 'no reading yet'}`
                 + `${isClaude ? ' · ' + beatText : ''}</div>`
-                + (isClaude ? '' : `<div class="sub muted">${C.esc(eng.note)}</div>`);
+                + (isClaude || !pu.note ? '' : `<div class="sub muted">${C.esc(pu.note)}</div>`);
         }
         // The card's own controls are one ⟳; everything else about the plan
         // window (check it now, reset the token lap, clear it) lived only in the
         // command palette.
-        const bars = ((DATA.planUsage || {}).bars || [])
+        const bars = ((pu || {}).bars || [])
             .map(b => `${b.title}: ${b.percent}%`).join(' · ');
         return `<div class="card pucard"
             ${window.AFCtx.row('afPlanUsage', { puText: bars })}
@@ -980,6 +1079,14 @@
                 render();
                 vscode.postMessage({ type: 'setUsageEngine', id: want });
             }));
+
+        // X-244 — the sign-in picker. Nothing is posted: the rows carry their
+        // own readings, so this is a redraw and never a request (and never a
+        // change to which account the machine actually runs on).
+        const puPick = document.getElementById('pu-account');
+        if (puPick) {
+            puPick.addEventListener('change', () => { puAccountPick = puPick.value; render(); });
+        }
 
         // ---- Agent comparison controls ----
         const wireCmp = (id, ev, fn) => {

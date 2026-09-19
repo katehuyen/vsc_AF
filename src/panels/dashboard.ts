@@ -47,6 +47,17 @@ export interface DashboardDeps {
      *  a second one). The card names it for the same reason the status bar's
      *  heading does: an owner-less percentage is read as the reader's own. */
     planUsageAccount?(engine: string): string;
+    /**
+     * ‼️ X-244 — EVERY SIGN-IN THIS MACHINE HOLDS, with its own reading.
+     *
+     * `planUsageAccount` names ONE owner — the standing one — which is the
+     * right answer to "whose figures are these" and no answer at all to "and
+     * how are the others doing". On a machine rotating between sign-ins that
+     * second question is the one the card is opened for, and until this it was
+     * a page away. Each row carries its own bars, so switching is a redraw and
+     * never a second request.
+     */
+    planUsageAccounts?(): unknown[];
     /** B1: per-project rollup for the Projects card (empty = no projects declared). */
     projects?(): ProjectRollup[];
     /** B1: agent name → project name, so rows can be grouped client-side. */
@@ -624,6 +635,9 @@ function buildData(deps: DashboardDeps, tableN = DASHBOARD_SESSION_TABLE_N): Rec
         planUsageEngines: deps.planUsageEngines?.() ?? [],
         planUsageEngine: deps.planUsageEngine?.() ?? 'claude',
         planUsageAccount: deps.planUsageAccount?.(deps.planUsageEngine?.() ?? 'claude') ?? '',
+        // X-244 — …and the other sign-ins, each with its own reading, so the
+        // picker on the card switches without asking the host anything.
+        planUsageAccounts: deps.planUsageAccounts?.() ?? [],
         // E3: external-CLI sessions (side list — excluded from every cost/usage
         // figure above; surfaced as an honest one-liner).
         externalSessions: (() => {
@@ -706,9 +720,14 @@ export class DashboardPanel {
         engine?: string,
         account?: string
     ): void {
-        if (!DashboardPanel.current) { return; }
-        void DashboardPanel.current.panel.webview.postMessage({
-            type: 'planUsage', usage, beat, engines, engine, account, push: true
+        const panel = DashboardPanel.current;
+        if (!panel) { return; }
+        void panel.panel.webview.postMessage({
+            type: 'planUsage', usage, beat, engines, engine, account, push: true,
+            // X-244 — read here rather than taken as a sixth argument: the list
+            // is a fact about the machine, not about this beat, and a caller
+            // that forgot to pass it would silently empty the picker.
+            accounts: panel.deps.planUsageAccounts?.() ?? []
         });
     }
 
@@ -821,7 +840,11 @@ export class DashboardPanel {
                         // X-212 — the owner rides with the figures, so a card
                         // refreshed by its own ⟳ cannot fall behind the heading
                         account: this.deps.planUsageAccount?.(
-                            this.deps.planUsageEngine?.() ?? 'claude') ?? ''
+                            this.deps.planUsageEngine?.() ?? 'claude') ?? '',
+                        // X-244 — and the pickable sign-ins with them, so ⟳
+                        // moves every figure on the card and not just the one
+                        // that happens to be on show.
+                        accounts: this.deps.planUsageAccounts?.() ?? []
                     });
                 })();
                 break;

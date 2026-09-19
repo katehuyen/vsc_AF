@@ -129,5 +129,79 @@ const media = f => fs.readFileSync(path.resolve(__dirname, '..', 'media', f), 'u
         /No projects declared yet/.test(none) && /nt-fileunder/.test(none));
 }
 
+// ---------- X-244: the sign-in picker on the plan card ----------
+//
+// The card named ONE owner (X-212) and that is the right answer to "whose
+// figures are these". It is no answer to "and how are the others doing", which
+// on a machine rotating between sign-ins is the question the card is opened
+// for — and until this it was a page away.
+{
+    const fx = fixture('planusage');
+    const run = () => runPage(fx.script, fx.data());
+    const r = run();
+    const html = r.html();
+
+    ok('the head carries a picker once the engine holds more than one sign-in',
+        /<select class="pu-acct pu-pick" id="pu-account"/.test(html));
+    ok('…listing every sign-in of THAT engine and no other engine\'s',
+        /<option value="claude-murvietnam"/.test(html)
+        && /<option value="claude-kateanhkim"/.test(html)
+        && /<option value="claude-aicozums"/.test(html)
+        && !/<option value="codex-murposta"/.test(html));
+    ok('…opening on the standing one, marked',
+        /<option value="claude-murvietnam" selected/.test(html)
+        && /murvietnam ★ · 86%/.test(html));
+    // ‼️ SHORTHAND — the figure is what the choice is made on, so it is ON the
+    // row; and an account nobody has read says so rather than reading as 0%.
+    ok('‼️ AN UNREAD SIGN-IN IS "not read", NEVER 0%',
+        /aicozums · not read/.test(html) && !/aicozums ★? ?· 0%/.test(html));
+    // MIRROR — a control narrow enough to cut its own rows opens its tooltip
+    // with the value it is currently on.
+    ok('…and the control mirrors its current value on the first line of its tip',
+        /title="Showing: the standing sign-in|title="Showing: murvietnam/.test(html));
+
+    // ---- parked on another sign-in ----
+    const picked = runPage(fx.script, fx.variants().find(v => v.id === 'planusage-picked').data);
+    const sel = picked.query('#pu-account')[0];
+    sel.value = 'claude-kateanhkim';
+    sel.fire('change');
+    const h2 = picked.html();
+    ok('‼️ THE CARD DRAWS THE PICKED SIGN-IN\'S OWN BARS',
+        /Current session<\/span><strong>97%/.test(h2) && !/<strong>86%/.test(h2));
+    ok('…its plan and its own reading time', /pro plan/.test(h2) && !/max plan/.test(h2));
+    // ‼️ The endpoint's beat belongs to the endpoint. A slot read off its own
+    // record on the accounts beat must not carry "auto every 5 min", which
+    // promises a refresh this card's ⟳ does not perform for it.
+    ok('‼️ …AND NEVER THE ENDPOINT\'S BEAT, WHICH IS NOT WHAT MOVES IT',
+        !/auto every 5 min/.test(h2) && /on the accounts beat/.test(h2));
+    ok('…and the ⟳ says which account it would actually re-read',
+        /Read the standing sign-in&#39;s limits|Read the standing sign-in's limits/.test(h2));
+    // Nothing is switched by looking: a picker that wrote `activeAccounts`
+    // would move every future session on a glance.
+    ok('‼️ LOOKING AT A SIGN-IN NEVER STANDS IT UP — nothing is posted',
+        !picked.posted.some(m => m && /account/i.test(String(m.type || ''))));
+
+    // ---- one sign-in on the engine: the X-212 label, untouched ----
+    //
+    // ‼️ A `<select>` with a single row is a control that lies about what the
+    // machine can do, so the engine with one sign-in keeps the plain label it
+    // has had since X-212 — the whole of that behaviour, tip included.
+    const codex = fx.variants().find(v => v.id === 'planusage-codex').data;
+    const one = runPage(fx.script, { ...codex, planUsageAccount: 'murposta' }).html();
+    ok('an engine with a single sign-in draws no picker at all', !/id="pu-account"/.test(one));
+    ok('…and keeps the plain label, with the tip X-212 gave it',
+        /<span class="pu-acct" title="Account: murposta/.test(one));
+    // …and an engine that cannot hold a second sign-in draws nothing, which is
+    // a third state and not an empty picker.
+    const bare = runPage(fx.script, codex).html();
+    ok('an engine that names no owner still draws nothing in the head',
+        !/id="pu-account"/.test(bare) && !/class="pu-acct"/.test(bare));
+
+    // ---- and the list reaches the page through the host, on every path ----
+    const dash = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'panels', 'dashboard.ts'), 'utf8');
+    ok('‼️ THE LIST RIDES EVERY PLAN-USAGE ANSWER, or the picker empties on a refresh',
+        (dash.match(/planUsageAccounts\?\.\(\) \?\? \[\]/g) || []).length === 3);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

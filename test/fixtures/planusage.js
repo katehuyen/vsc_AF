@@ -86,8 +86,42 @@ const base = (engine) => ({
     // X-212 — whose sign-in the card is showing. Claude carries an address (the
     // long case the head has to survive); everything else answers '' because it
     // cannot hold a second sign-in, and that must draw nothing at all.
-    planUsageAccount: engine === 'claude' ? 'murvietnam@gmail.com' : ''
+    planUsageAccount: engine === 'claude' ? 'murvietnam@gmail.com' : '',
+    // ‼️ X-244 — the pickable sign-ins. One per engine except Claude, which has
+    // three: the standing one, one nearly full (the reason to look at all) and
+    // one nobody has read yet, which must not draw as 0%.
+    planUsageAccounts: accounts()
 });
+
+/** ‼️ X-244 — and the three arities the picker has, in one fixture: an engine
+ *  with several sign-ins (a `<select>`), one with a single sign-in (the X-212
+ *  label, unchanged) and one with none at all (nothing in the head). */
+const accounts = () => ([
+    {
+        id: 'claude-murvietnam', engine: 'claude', label: 'murvietnam', standing: true,
+        state: 'ok', percent: 86, plan: 'max', fetchedAt: NOW - 60000, note: '',
+        health: 'ready', bars: engines()[0].bars
+    },
+    {
+        id: 'claude-kateanhkim', engine: 'claude', label: 'kateanhkim', standing: false,
+        state: 'ok', percent: 97, plan: 'pro', fetchedAt: NOW - 8 * 60000, health: 'ready',
+        note: 'Read from this sign-in’s own record, on the accounts beat.',
+        bars: [
+            { id: 'five_hour', title: 'Current session', percent: 97, resetsAt: NOW + 22 * 60e3 },
+            { id: 'seven_day', title: 'Current week (all models)', percent: 73, resetsAt: NOW + 2 * 86400e3 }
+        ]
+    },
+    {
+        id: 'claude-aicozums', engine: 'claude', label: 'aicozums', standing: false,
+        state: 'unknown', percent: -1, plan: '', fetchedAt: 0, bars: [], health: 'ready',
+        note: 'This sign-in has not been read yet — the Accounts page reads it.'
+    },
+    {
+        id: 'codex-murposta', engine: 'codex', label: 'murposta', standing: true,
+        state: 'ok', percent: 7, plan: 'plus', fetchedAt: NOW - 40 * 60000, note: '',
+        health: 'ready', bars: engines()[1].bars
+    }
+]);
 
 const data = () => base('claude');
 
@@ -121,6 +155,35 @@ const variants = () => ([
         id: 'planusage-opencode',
         label: 'Plan usage — OpenCode (‼️ no single window to be a percentage of — five tabs on one line)',
         data: base('opencode')
+    },
+    {
+        // ‼️ X-244 — THE STATE THE PICKER EXISTS FOR, pressed rather than
+        // posed: the card parked on a sign-in that is NOT the standing one.
+        // Its bars, its plan, its reading time and its own note — and the head
+        // still fits, which is the thing a picture answers and a string cannot.
+        id: 'planusage-picked',
+        label: 'Plan usage — parked on a sign-in that is not the standing one (‼️ picker changed)',
+        data: base('claude'),
+        act: (r) => {
+            const sel = (r.query('#pu-account') || [])[0];
+            if (!sel) { return; }
+            sel.value = 'claude-kateanhkim';
+            sel.fire('change');
+        }
+    },
+    {
+        // ‼️ X-244 — and the one nobody has read. A blank percentage here reads
+        // as 0%, which is the figure that would send somebody to start a long
+        // turn on an account nobody knows anything about.
+        id: 'planusage-picked-unread',
+        label: 'Plan usage — parked on a sign-in nobody has read yet (‼️ not 0%)',
+        data: base('claude'),
+        act: (r) => {
+            const sel = (r.query('#pu-account') || [])[0];
+            if (!sel) { return; }
+            sel.value = 'claude-aicozums';
+            sel.fire('change');
+        }
     },
     {
         // ‼️ X-212 — the absence of a standing account is a NAME, not a gap.

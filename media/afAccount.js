@@ -170,6 +170,12 @@
      * `AFTime.ago` is deliberately not used: it is written for the PAST and a
      * reset is in the future, so it would print "37m ago" about a window that
      * has not turned over yet.
+     *
+     * ‼️ U-137 — THE WAIT IS `leftOf`, NOT A SECOND ROUNDING. This line used to
+     * round to a single unit of its own and printed `(in 3h)` for anything from
+     * three hours to nearly four, which is the figure a session is decided on.
+     * Every remaining-time reading on both account surfaces is now the one
+     * function, so a card and its bars can never disagree about the same clock.
      */
     function turns(a, now) {
         if (!a || !a.resetsAt) { return ''; }
@@ -196,9 +202,7 @@
             return 'window turned over at ' + clockOf(a.resetsAt)
                 + ' — the figure beside it was read before that';
         }
-        const mins = Math.round(left / 60000);
-        const wait = mins < 60 ? mins + 'm' : Math.round(mins / 60) + 'h';
-        return 'window turns over at ' + clockOf(a.resetsAt) + ' (in ' + wait + ')';
+        return 'window turns over at ' + clockOf(a.resetsAt) + ' (in ' + leftOf(left) + ')';
     }
 
     /**

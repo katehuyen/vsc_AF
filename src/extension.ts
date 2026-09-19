@@ -89,7 +89,7 @@ import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, DEFA
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
-import { EngineUsage, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
+import { EngineUsage, enginePeak, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
 import {
     AgentEngineDefaults, agentKey, agentSeedDefault, resolveDefault, storedAccount, storedDefault,
     storedRoute, withAgentDefault
@@ -263,7 +263,8 @@ import {
     slotsFor, statedAccountLabel, unportableDirs
 } from './core/accountStore';
 import {
-    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, UsageBar, accountOrder, mostRoom, nextResetAt,
+    ACCOUNT_WALL_CEILING, AccountUsageService, SlotUsage, UsageBar, accountOrder, engineUsageFromSlot,
+    mostRoom, nextResetAt,
     slotCredentialsFile, slotIsUsable,
     slotSessionDir, windowNameOf, windowPhraseOf
 } from './core/accountUsage';
@@ -536,7 +537,7 @@ import {
 import { TimelinePanel } from './panels/timeline';
 import { FarmStatusBar } from './views/statusBar';
 import { MuteStatusBar } from './views/muteBar';
-import { PlanUsageBar } from './views/planUsageBar';
+import { PlanUsageBar, WatchedUsage } from './views/planUsageBar';
 import { TaskNode, TasksTreeProvider } from './views/tasksTree';
 import {
     AgentNode, AgentsTreeProvider, FeedTreeProvider, InsightsTreeProvider, SessionsTreeProvider
@@ -18210,6 +18211,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const usageEngine = (): string =>
         (cfg().get<string>('planUsageEngine', 'claude') || 'claude').trim().toLowerCase();
 
+    /**
+     * ‼️ X-243 — LATE-BOUND ON PURPOSE, and for the reason written at the top of
+     * this function: the bar paints inside its own constructor, and the account
+     * reader this needs (`accountUsage`) belongs to the X-167 block far below.
+     * Naming it directly here would read a `const` in its temporal dead zone and
+     * take the whole extension down with it, so the hook is a function that
+     * answers "nothing watched" until the real one is installed.
+     */
+    let watchedAccountUsage: () => WatchedUsage | undefined = () => undefined;
+
     // …and the two percentages that decide whether to start the next long turn,
     // permanently in the status bar rather than behind a page you have to open
     // (see PlanUsageBar). Same service, so it shares the one request budget.
@@ -18226,12 +18237,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         engine: usageEngine,
         // X-212 — and whose sign-in of it (see usageAccountLabel)
         accountLabel: usageAccountLabel,
+        // X-243 — …unless the reader is looking at a conversation that runs as
+        // somebody else, in which case that is the wall they are about to hit.
+        watched: () => watchedAccountUsage(),
         // whatever the indicator just read goes to an open Dashboard card in
         // the same step: two surfaces on one beat can never drift apart
         onRefresh: snap => DashboardPanel.pushPlanUsage(
             snap, planBeat(), engineUsageMatrix(), usageEngine(), usageAccountLabel(usageEngine()))
     });
     context.subscriptions.push(planUsageBar);
+    // X-243 — repaint the moment the subject changes, not at the next minute's
+    // wake. `paint()` and not `refresh()`: following a conversation is a change
+    // of what is drawn, never a reason to spend a request.
+    context.subscriptions.push(
+        ConsolePanel.onWatchedAccountChanged(() => planUsageBar.paint()));
     /**
      * ‼️ ONE CHOICE, TWO SURFACES, NO SECOND STORE (U-27). The hover's links and
      * the Dashboard card's tabs both call this, and it writes the SETTING — so
@@ -18358,6 +18377,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         planUsageEngine: usageEngine,
         // X-212 — …and the third: whose sign-in of it these figures are.
         planUsageAccount: usageAccountLabel,
+        // X-244 — …and every other sign-in with it, so the card's picker can
+        // switch owner without a request. Wrapped for the same reason
+        // `watched` is: the reader it needs is declared with the accounts block.
+        planUsageAccounts: () => planUsageAccountRows(),
         // B1: the project axis — the card's rollup and the map the rows group by.
         projects: () => projectRollup(),
         agentProjects: () => agentProjectNames(
@@ -18807,6 +18830,72 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             ? readCodexUsage(usageProbe, p => { try { return fs.statSync(p).mtimeMs; } catch { return 0; } }, dir)
             : undefined)
     });
+    /**
+     * ‼️ X-243 — THE STATUS BAR FOLLOWS THE CONVERSATION ON SCREEN.
+     *
+     * `activeAccounts` answers who the NEXT session runs as; the card in front
+     * of the reader may already be running as somebody else, and then the
+     * standing account's percentages are a correct figure about the wrong
+     * sign-in. Three ways back to the standing one, all of them the same line:
+     * the Console is not on screen, no card is selected, or the selected card
+     * took whatever was standing (`account` absent) — `watchedAccount` answers
+     * undefined for each.
+     */
+    /**
+     * ‼️ X-244 — THE PICKABLE SIGN-INS, each carrying its own reading.
+     *
+     * `current()` and never `refresh()`: drawing a card must not put five
+     * accounts into a request queue (the X-256 rule, and the same cache the
+     * Engines page, the Accounts page and the status bar all read). A slot
+     * nobody has looked at yet says so rather than arriving as a zero.
+     */
+    const planUsageAccountRows = () => {
+        const seen = accountUsage.current();
+        const active = activeAccounts();
+        return storedAccounts().map(sl => {
+            const u = engineUsageFromSlot(
+                seen.find(x => x.slotId === sl.id), sl.engine as EngineId,
+                ENGINE_LABELS[sl.engine] ?? sl.engine,
+                'This sign-in has not been read yet — the Accounts page reads it.');
+            return {
+                id: sl.id, engine: sl.engine, label: slotLabel(sl),
+                standing: active[sl.engine] === sl.id,
+                state: u.state, bars: u.bars, plan: u.plan,
+                fetchedAt: u.fetchedAt, note: u.note,
+                // -1 rather than 0 where nothing was read: an untouched account
+                // and an empty one must never draw the same figure.
+                percent: u.state === 'ok' && u.bars.length ? enginePeak(u) : -1,
+                health: slotIdentityFresh(sl).health
+            };
+        });
+    };
+    watchedAccountUsage = () => {
+        const w = ConsolePanel.watchedAccount();
+        if (!w) { return undefined; }
+        const eng = (w.engine || 'claude').trim().toLowerCase();
+        // Watching the account the bar already shows is not a second subject.
+        if ((activeAccounts()[eng] || '') === w.account) { return undefined; }
+        const slot = findSlot(storedAccounts(), w.account);
+        const label = slot ? slotLabel(slot) : MACHINE_GLOBAL;
+        const usage = engineUsageFromSlot(
+            slot ? accountUsage.current().find(x => x.slotId === slot.id) : undefined,
+            eng as EngineId,
+            ENGINE_LABELS[eng] ?? eng,
+            // ‼️ The machine's own sign-in has no slot to read: its figures come
+            // through whichever account is standing, so while another one is,
+            // there is nothing this bar can honestly print for it. Said, not
+            // guessed — a blank here would read as 0%.
+            slot
+                ? 'This sign-in has not been read yet — the Accounts page reads it.'
+                : 'The main sign-in publishes no reading of its own while another '
+                    + 'account is standing; the Accounts page is where it is read.'
+        );
+        return {
+            usage, label,
+            why: `Following the Console — the conversation on screen runs as ${label}, `
+                + 'not the standing account.'
+        };
+    };
     /**
      * ‼️ X-239 — THE BEAT RUNS WHETHER OR NOT A PAGE IS OPEN. Until this, the
      * only timer calling `beat()` was the Engines page's own, so a machine with

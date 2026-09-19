@@ -31,7 +31,7 @@
         return h < 48 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
     }
     const engineLabel = (id) => ctx.engineLabel(id);
-    const accountTurns = (a) => window.AFAccount.turns(a);
+    const accountTurns = (a) => window.AFAccount.turns(a, DATA.now);
     const val = (id) => (document.getElementById(id) || {}).value || '';
     const use = (c) => { ctx = c || {}; DATA = ctx.DATA || {}; acctMsg = String(ctx.msg || ''); };
 

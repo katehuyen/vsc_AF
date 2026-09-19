@@ -790,5 +790,17 @@ const sec = () => {
     ok('…and the data the page is handed carries autoRefresh from deps.autoRefresh()', /autoRefresh: deps\.autoRefresh\(\)/.test(src));
 }
 
+// ---------- U-137: the countdown on the engine chip ----------
+{
+    // The chip's AFTip is the place the user met this: a window with four hours
+    // and twenty-two minutes in it read `(in 4h)`, and the minutes are what a
+    // session is actually decided on.
+    const h = html();
+    ok('‼️ THE WAIT KEEPS ITS MINUTES (U-137)', /turns over at .+ \(in 4h 22m\)/.test(h));
+    ok('…and it is read against the SNAPSHOT clock, not this machine\'s',
+        /const accountTurns = \(a\) => window\.AFAccount\.turns\(a, DATA\.now\);/
+            .test(require('fs').readFileSync(path.join(__dirname, '..', 'media', 'engines.js'), 'utf8')));
+}
+
 console.log(`test_engines_page_accounts: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

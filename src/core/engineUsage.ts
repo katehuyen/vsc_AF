@@ -450,16 +450,25 @@ function shortWindow(title: string): string {
  *
  * Returns undefined when there is nothing to show at all, which is what makes
  * the item hide itself rather than print a placeholder.
+ *
+ * ‼️ X-243 — `who` NAMES THE SIGN-IN, and only where naming it is the point.
+ * The strip normally shows the standing account, so a name on it would be a
+ * constant. The moment it follows something else — the conversation on screen
+ * — the owner stops being implied, and an unowned percentage is attributed to
+ * whatever the reader is working in (the X-212 argument, one surface further).
  */
-export function engineBarText(u: EngineUsage | undefined, remaining: (at: number) => string): string | undefined {
+export function engineBarText(
+    u: EngineUsage | undefined, remaining: (at: number) => string, who = ''
+): string | undefined {
     if (!u) { return undefined; }
+    const named = (rest: string) => `$(dashboard) ${who ? who + ' · ' : ''}${rest}`;
     if (u.state !== 'ok' || !u.bars.length) {
         // ‼️ MINIMISED, NOT OMITTED. "not published" is three words and says
         // the read is not broken; the hover carries the paragraph.
         const why = u.state === 'no-plan' ? 'per-token'
             : u.state === 'not-published' ? 'no quota published'
                 : 'usage ?';
-        return `$(dashboard) ${why}`;
+        return named(why);
     }
     /**
      * ‼️ TWO POOLS ON ONE ENGINE (X-306). Antigravity's account has a 5-hour
@@ -483,7 +492,7 @@ export function engineBarText(u: EngineUsage | undefined, remaining: (at: number
         }
         return `${name} ${b.percent}%`;
     });
-    return `$(dashboard) ${parts.join(' / ')}`;
+    return named(parts.join(' / '));
 }
 
 /** `Current week (Claude and GPT models)` → `CG`: the initials of the pool's

@@ -221,14 +221,18 @@ const data = () => {
                 id: 'personal', engine: 'claude', label: 'personal@gmail',
                 email: 'personal@gmail.com', plan: 'pro', health: 'ready', active: false,
                 uuidShort: 'dce63e3f', duplicateOf: ['spare'],
-                percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000,
+                // ‼️ U-137 — A REMAINDER THAT IS NOT A WHOLE HOUR. The only
+                // scene that draws the countdown used to land on an exact 4h,
+                // so the rounding the user complained about was invisible in
+                // every picture of it.
+                percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000 + 22 * 60 * 1000,
                 // ‼️ X-215 round 2 — THE USER'S OWN EXAMPLE, drawn. Five hours
                 // barely touched and a week nearly two-fifths gone: under one
                 // bar this card said "12%" and the reader had no way to see the
                 // limit that would actually stop them. The weekly reset is DAYS
                 // away, which is why the line underneath carries a date.
                 bars: [
-                    { id: 'five_hour', window: 'five-hour window', short: '5h', percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000 },
+                    { id: 'five_hour', window: 'five-hour window', short: '5h', percent: 12, resetsAt: NOW + 4 * 60 * 60 * 1000 + 22 * 60 * 1000 },
                     { id: 'seven_day', window: 'Current week (all models)', short: 'wk', percent: 38, resetsAt: NOW + 2 * 24 * 3600 * 1000 + 4 * 3600 * 1000 }
                 ],
                 usageState: 'ok', note: '', window: 'five-hour window',

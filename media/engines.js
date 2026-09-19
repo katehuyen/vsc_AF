@@ -378,7 +378,7 @@
     // describing the same window in two different phrasings is the drift the
     // component exists to stop. The card keeps its own layout; only the words
     // about the window are shared.
-    const accountTurns = (a) => window.AFAccount.turns(a);
+    const accountTurns = (a) => window.AFAccount.turns(a, DATA.now);
 
     /* ---- X-236 — the accounts view lives in media/afAccounts.js, shared with
        the Accounts page. This page hands it its own context and draws the

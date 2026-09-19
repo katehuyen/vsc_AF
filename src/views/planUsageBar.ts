@@ -82,6 +82,32 @@ export interface PlanUsageBarOptions {
      * exist on it.
      */
     accountLabel?(engine: string): string;
+    /**
+     * ‼️ X-243 — THE SIGN-IN THE READER IS ACTUALLY WATCHING, when it is not
+     * the standing one.
+     *
+     * The strip answers "how much is left before the next long turn stops".
+     * `activeAccounts` decides who the NEXT session runs as — but the
+     * conversation on screen may already be running as somebody else, and then
+     * the standing account's percentages are the wrong answer to the question
+     * the reader is asking. So the bar follows the conversation while one is in
+     * front of them, and falls back the moment it is not.
+     *
+     * undefined = nothing is being watched, or what is being watched is the
+     * standing account anyway; the caller decides that, because only it knows
+     * what standing means.
+     */
+    watched?(): WatchedUsage | undefined;
+}
+
+/** X-243 — one sign-in's figures, and why the bar left the standing one. */
+export interface WatchedUsage {
+    /** the account's reading, shaped like any other engine row */
+    usage: EngineUsage;
+    /** whose sign-in it is, in the shortest form that identifies it */
+    label: string;
+    /** one line for the panel: what the bar is following and why */
+    why: string;
 }
 
 export class PlanUsageBar implements vscode.Disposable {
@@ -89,6 +115,8 @@ export class PlanUsageBar implements vscode.Disposable {
     private timer?: NodeJS.Timeout;
     /** last known side of the idle/active line, so only the EDGE acts */
     private lastActive: boolean;
+    /** X-243 — the sign-in this paint is describing, or undefined */
+    private watching?: WatchedUsage;
 
     constructor(private opts: PlanUsageBarOptions) {
         // Left, just after the farm item and the notices bell, so the three
@@ -167,6 +195,9 @@ export class PlanUsageBar implements vscode.Disposable {
     /** The engine on show, with its figures — or undefined when nothing can
      *  be drawn at all (no engine list yet, or the chosen id is gone). */
     private shown(): EngineUsage | undefined {
+        // X-243 — a watched conversation outranks the engine axis: the reader
+        // chose the engine once, and is looking at this session now.
+        if (this.watching) { return this.watching.usage; }
         const list = this.opts.engines?.() ?? [];
         if (!list.length) { return undefined; }
         const want = (this.opts.engine?.() ?? 'claude').trim().toLowerCase();
@@ -174,9 +205,12 @@ export class PlanUsageBar implements vscode.Disposable {
     }
 
     paint(): void {
+        // Read ONCE per paint: the text, the colour and the panel must all
+        // describe the same sign-in, and a session can end between two reads.
+        this.watching = this.opts.watched?.();
         const shown = this.shown();
         const text = this.opts.enabled()
-            ? engineBarText(shown, at => remainingText(at) || '')
+            ? engineBarText(shown, at => remainingText(at) || '', this.watching?.label)
             : undefined;
         if (!text) { this.item.hide(); return; }
         this.item.text = text;
@@ -204,7 +238,10 @@ export class PlanUsageBar implements vscode.Disposable {
      */
     private heading(shown: EngineUsage | undefined): string {
         const name = shown ? shown.label : 'Claude Code';
-        const who = (this.opts.accountLabel?.(shown ? shown.id : 'claude') || '').trim();
+        // X-243 — while the bar follows a conversation, the owner is that
+        // conversation's sign-in, not the one the next session would use.
+        const who = (this.watching?.label
+            ?? this.opts.accountLabel?.(shown ? shown.id : 'claude') ?? '').trim();
         return who ? `${name} (${who})` : name;
     }
 
@@ -268,12 +305,20 @@ export class PlanUsageBar implements vscode.Disposable {
      */
     private tooltip(snap: PlanUsageSnapshot | undefined): vscode.MarkdownString {
         const shown = this.shown();
-        const isClaude = !shown || shown.id === 'claude';
+        // ‼️ X-243 — A WATCHED SIGN-IN IS NEVER READ OFF `snap`. The snapshot
+        // belongs to the machine's own credentials, so drawing it under the
+        // watched account's name would put somebody else's percentages beside
+        // the right owner — the one mistake this whole item exists to stop.
+        const isClaude = !this.watching && (!shown || shown.id === 'claude');
         // The heading names WHOSE limits these are — the whole point of U-27,
         // and the reason nothing on the strip itself has to repeat it (U-40).
         // ‼️ X-212 — and WHICH SIGN-IN of it, because on this machine the engine
         // is no longer the owner of the figure; the account is.
         const lines = [`**${this.heading(shown)} — plan usage**`, ''];
+        // X-243 — and why these are the figures on show, said before them: a
+        // reader who does not know the bar has moved reads the right number
+        // about the wrong account.
+        if (this.watching) { lines.push(`_${this.watching.why}_`, ''); }
 
         // ---- the figures ----
         if (isClaude) {
@@ -290,7 +335,7 @@ export class PlanUsageBar implements vscode.Disposable {
                 if (snap.plan) { lines.push('', `Plan: ${snap.plan}`); }
                 lines.push(`_Checked ${afClockUtc(snap.fetchedAt)}_`);
             }
-        } else if (shown.state === 'ok' && shown.bars.length) {
+        } else if (shown && shown.state === 'ok' && shown.bars.length) {
             for (const b of shown.bars) {
                 lines.push(`- ${b.title}: **${b.percent}%**`
                     + (b.resetsAt ? ` — resets ${untilText(b.resetsAt)}` : ''));
@@ -301,12 +346,12 @@ export class PlanUsageBar implements vscode.Disposable {
             // exactly the inconsistency this rule exists for.
             if (shown.fetchedAt) { lines.push(`_Read ${afClockUtc(shown.fetchedAt)}_`); }
         } else {
-            lines.push(`_${usageSummary(shown)}_`);
+            lines.push(shown ? `_${usageSummary(shown)}_` : '_Not read yet._');
         }
 
         // ---- where the figures come from, and how often ----
         lines.push('');
-        lines.push(isClaude ? this.beatLine() : `_${shown.note}_`);
+        lines.push(isClaude ? this.beatLine() : `_${shown?.note ?? ''}_`);
 
         // ---- what you can do from here ----
         //
@@ -325,6 +370,21 @@ export class PlanUsageBar implements vscode.Disposable {
         // refresh, `not-published` writes its quota nowhere this machine can
         // read. Neither is an omission, and now neither looks like one.
         lines.push('');
+        // ‼️ X-243 — A WATCHED SIGN-IN IS RE-READ WHERE IT LIVES. `Check now`
+        // spends a request against the MACHINE's credentials, so offering it
+        // under somebody else's name would refresh a figure that is not on
+        // screen; and the engine picker below would switch an axis this paint
+        // is not using. Both are replaced by the one door that can act on this
+        // account, and by the sentence that says how the bar comes back.
+        if (this.watching) {
+            lines.push('[Open Accounts](command:agentfarm.openAccounts)'
+                + ' · _the bar follows the conversation on screen; leave the Console'
+                + ' or select a session on the standing account and it goes back_');
+            const md = new vscode.MarkdownString(lines.join('\n'));
+            md.isTrusted = { enabledCommands: ['agentfarm.openAccounts'] };
+            md.supportHtml = false;
+            return md;
+        }
         lines.push(!shown || canRecheck(shown)
             ? '[Check now](command:agentfarm.planUsageRefresh) · _click the bar for the Dashboard card_'
             : `_Nothing to check — ${shown.state === 'no-plan'

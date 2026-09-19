@@ -1000,10 +1000,49 @@ export class ConsolePanel {
         return !!c && c.panel.visible && c.selected === hostId;
     }
 
+    /**
+     * ‼️ X-243 — WHICH SIGN-IN THE READER IS LOOKING AT.
+     *
+     * The status bar normally answers for the STANDING account, which is who
+     * the next session would run as. The conversation on screen may already be
+     * running as somebody else, and then that is the account whose wall the
+     * reader is about to hit. Absent `account` is not a gap: it means the card
+     * took whatever was standing, so there is nothing to follow.
+     */
+    static watchedAccount(): { engine: string; account: string } | undefined {
+        const c = ConsolePanel.current;
+        if (!c || !c.panel.visible || !c.selected) { return undefined; }
+        const s = c.deps.host.list().find(x => x.id === c.selected);
+        // `accountNext` is deliberately not read: it is what the NEXT message
+        // will run as, and the figures on the bar are about the turn in front
+        // of the reader.
+        return s?.account ? { engine: s.engine || 'claude', account: s.account } : undefined;
+    }
+
+    private static watchChanged = new vscode.EventEmitter<void>();
+    /** X-243 — fires whenever `watchedAccount()` has changed its answer. */
+    static readonly onWatchedAccountChanged = ConsolePanel.watchChanged.event;
+    private static lastWatch = '';
+    /**
+     * ‼️ ONLY ON A REAL CHANGE. `refresh()` runs on every host event, which on
+     * a streaming turn is many a second; a repaint per token would be the
+     * indicator costing more than the thing it reports on.
+     */
+    private static announceWatch(): void {
+        const w = ConsolePanel.watchedAccount();
+        const key = w ? `${w.engine}/${w.account}` : '';
+        if (key === ConsolePanel.lastWatch) { return; }
+        ConsolePanel.lastWatch = key;
+        ConsolePanel.watchChanged.fire();
+    }
+
     private constructor(private panel: vscode.WebviewPanel, private deps: ConsoleDeps) {
         panel.webview.onDidReceiveMessage(m => void this.onMessage(m), null, this.disposables);
         panel.onDidDispose(() => this.dispose(), null, this.disposables);
         this.disposables.push(deps.host.onChange(() => this.refresh()));
+        // X-243 — the panel going behind another tab is a change of subject for
+        // the status bar just as much as selecting a different conversation is.
+        panel.onDidChangeViewState(() => ConsolePanel.announceWatch(), null, this.disposables);
     }
 
     /**
@@ -1811,6 +1850,7 @@ export class ConsolePanel {
         // window this closes is short (construction to `mount()`), but it is the
         // window a host event landing in it would lose the door's message in.
         if (!this.mounted) { return; }
+        ConsolePanel.announceWatch();
         const data = this.data();
         // The tab says how many conversations are waiting for you, so the nudge
         // reaches you with the Console in the background — the one place a
@@ -2705,6 +2745,9 @@ export class ConsolePanel {
 
     private dispose(): void {
         ConsolePanel.current = undefined;
+        // …and the bar goes back to the standing account in the same step, not
+        // at the next minute's wake.
+        ConsolePanel.announceWatch();
         // The sessions deliberately OUTLIVE the panel: closing a tab must not
         // kill a conversation. They end with the window, or when you close them.
         this.disposables.forEach(d => d.dispose());

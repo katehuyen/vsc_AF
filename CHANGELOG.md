@@ -2,6 +2,49 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.586.0 - the status bar follows the conversation on screen, and the plan card can be read for any sign-in (X-243, X-244, X-242, U-137) (2026-09-20)
+
+- **‼️ X-243 — the indicator stops answering for the wrong account.**
+  `activeAccounts` says who the NEXT session runs as; the Console card in
+  front of you may already be running as somebody else, and then the standing
+  account's percentages are a correct figure about the wrong sign-in. While a
+  Console conversation is on screen and running as another account, the strip
+  follows it and NAMES it (`$(dashboard) murvietnam · 21m - 97% / wk 64%`) —
+  a name only appears while it is not a constant (U-40). It falls back the
+  moment the Console goes behind a tab, the card is deselected or the
+  selection is on the standing account (`ConsolePanel.watchedAccount` +
+  `onWatchedAccountChanged`, which fires only on a real change, never per
+  streamed token). The panel says what it is following before any figure, and
+  the two doors that would act on the wrong account — **Check now**, which
+  spends a request against the machine's own credentials, and the engine
+  picker — are replaced by **Open Accounts** and the sentence that says how
+  the bar comes back.
+- **‼️ X-244 — the Plan usage card is a picker, not a label.** X-212 put ONE
+  owner on the card; on a machine rotating between sign-ins, "how are the
+  others doing" was a page away. The head now carries a compact `<select>`
+  (`pu-pick`) of that engine's sign-ins — the standing one first and marked
+  `★`, each row `name · 72%` with its windows, plan, reading time and sign-in
+  health on its own `title`. Picking one redraws the card from that account's
+  own reading: **no request is sent and nothing is stood up** — looking at a
+  sign-in must never move every future session. A slot nobody has read says
+  `not read` and draws its note, never 0%; and a picked row never claims the
+  endpoint's beat, because its figures move on the accounts beat instead. One
+  sign-in on the engine keeps the plain X-212 label — a one-row `<select>`
+  would lie about what the machine can do.
+- **U-137 — the wait keeps its minutes.** `AFAccount.turns` rounded to a
+  single unit, so everything from 3h to 3h59m read `(in 3h)` — the figure a
+  session is decided on. It is `leftOf` now, the same function the bars use,
+  and it reads the SNAPSHOT clock rather than this machine's, so a card and
+  the chip above it can no longer disagree about one turnover. The fixture
+  landed on an exact 4h, which is why no picture of it had ever shown the
+  defect.
+- One conversion for both: `engineUsageFromSlot` (`src/core/accountUsage.ts`),
+  the inverse of `usageFromEngine` — `not-published` survives it, and a
+  reading with no bars left is `unknown` rather than `ok`.
+- Suite 391 files · 23 833 passed · 0 failed. New `test_status_bar_account.js`
+  drives the real `PlanUsageBar`; two new plan-card scenes photograph the
+  picker parked off the standing account, read and unread.
+
 ## 3.585.0 - an account card says how long its sign-in keeps working, and who was last on it (X-238) (2026-09-19)
 
 - **The sign-in's own clock, on every working card.** A ready badge carries
