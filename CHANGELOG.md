@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.577.0 - the composition every unattended run shares, watched on the wire; and the third list nobody was reading (X-117, part 4) (2026-09-19)
+
+- **‼️ ONE SHAPE CARRIES THE ROUTE INTO EVERY UNATTENDED RUN, so that is where
+  it is worth watching.** A retry, a workflow step, a schedule and a trigger all
+  build their task by spreading `runExtras(<what was stored>)` — the rule this
+  repo states as *a run's dimensions travel by the SHAPE, never a hand-written
+  field list*, which exists because the automatic retry once hand-copied eight
+  fields and silently dropped seven, the route among them, on the path where
+  nobody is at a window to notice. A unit test can say the shape carries the
+  field; whether the composed task then reaches that endpoint is a different
+  claim. `test_e2e_task_route.js` now builds a task exactly the way the
+  automatic retry builds one — from a run that really happened — starts it, and
+  watches it arrive at the first run's endpoint with that route's key and tier
+  model, and at no other.
+- **‼️ AND THE THIRD HAND-WRITTEN LIST, WHICH WAS PINNED BY NOTHING.** Two of
+  the three bodies that carry a run's dimensions forward are held against
+  `RunDimensions` read out of the source, so the next dimension somebody adds
+  fails the suite until they carry it too. The third — `retryTask`, the retry a
+  PERSON presses and the one the bridge calls — was held by nothing at all. It
+  carries all eighteen today; the point is the nineteenth, which would have been
+  dropped silently on the path with somebody watching who has no way to see it,
+  with every test green. It is now read the same way the other two are.
+  - Measured rather than assumed on the way there: a first reading reported the
+    route missing from that body, and it was not — `retryRoute` is computed just
+    ABOVE the call, because a retry is a new enqueue and takes its own seal. The
+    test's window says so, so the next reader does not repeat the alarm.
+
 ## 3.576.0 - the second wire inside one binary, and the two documents a new engine is added from (X-117, part 3) (2026-09-19)
 
 - **‼️ THE CONSOLE DOOR ON OPENCODE, WHICH IS NOT THE ONE ALREADY MEASURED.** A

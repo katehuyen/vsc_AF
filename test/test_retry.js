@@ -467,6 +467,29 @@ const BROKE = 'Error: ENOENT: no such file or directory';
     ok('‼️ X-229 — and the ACCOUNT above all: a round resumes a conversation, and '
         + 'resuming one on a sign-in that never had it is the drift X-211 ended',
         /\baccount\b/.test(round));
+
+    /**
+     * ‼️ X-117 — AND THE THIRD HAND-WRITTEN LIST, WHICH WAS THE ONE NOBODY WAS
+     * READING.
+     *
+     * Two bodies above are pinned; `retryTask` — the retry a PERSON presses,
+     * and the one the bridge calls — is a third list of the same kind and it
+     * was pinned by nothing. It carries all eighteen today (measured while
+     * writing X-117: the route travels as `retryRoute`, computed just above the
+     * call, which is why a window starting at `addTask` reports it missing when
+     * it is not). The point is the nineteenth: a dimension added tomorrow would
+     * be dropped here silently, on the path with a person watching who has no
+     * way to see it, and every test would stay green.
+     */
+    const mAnchor = '    retryTask(';
+    const mi = tasksTs.indexOf(mAnchor);
+    const manual = mi >= 0 ? tasksTs.slice(mi, tasksTs.indexOf('\n        return copy;', mi)) : '';
+    ok('the hand-pressed retry\'s own reading of the run it repeats was found',
+        manual.length > 200 && /\bpermissionMode\b/.test(manual));
+    ok('‼️ the retry a PERSON presses carries EVERY dimension of the run it '
+        + 'repeats (missing: '
+        + fields.filter(f => !new RegExp(`\\b${f}\\b`).test(manual)).join(', ') + ')',
+        fields.every(f => new RegExp(`\\b${f}\\b`).test(manual)));
 }
 
 console.log(`${pass} passed, ${fail} failed`);

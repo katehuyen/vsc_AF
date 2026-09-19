@@ -12,7 +12,10 @@
 //      never touched.
 //   2. A task naming a route that has since been removed is refused at the
 //      spawn: failed before it started, nothing spawned, no wire touched.
-//   3. A task naming NO route runs on the inherited endpoint untouched, which
+//   3. A task composed the way every automation door composes one — by the
+//      SHAPE (`runExtras`), which a retry, a workflow step, a schedule and a
+//      trigger all build from — reaches the route it was composed from.
+//   4. A task naming NO route runs on the inherited endpoint untouched, which
 //      is the rule ("nothing chosen means nothing touched", X-101).
 //
 // Skipped (not failed) when the CLI is not on PATH.
@@ -56,7 +59,8 @@ Module._load = function (request, parent, isMain) {
     return origLoad.call(this, request, parent, isMain);
 };
 
-const { TaskManager } = require(path.join(ROOT, 'out', 'core', 'tasks.js'));
+const T = require(path.join(ROOT, 'out', 'core', 'tasks.js'));
+const { TaskManager } = T;
 const R = require(path.join(ROOT, 'out', 'core', 'providerRegistry.js'));
 const RT = require(path.join(ROOT, 'out', 'core', 'providerRuntime.js'));
 const { cliPresent, anthropicMock: mock } = require('./e2e_mocks');
@@ -134,6 +138,7 @@ async function main() {
 
         // ---- 2. the refusal, at the spawn ----
         const afterRouted = kimiM.hits.length;
+        const routedPosts = kimiM.posts().length;
         const ghost = mgr.addTask(agent, 'ghost', 'say ping', 'headless',
             { engine: 'claude', providerId: 'ghost', tier: 'opus', workDir: tmp });
         const ghostStarted = mgr.startTask(ghost);
@@ -144,7 +149,37 @@ async function main() {
         await sleep(1500);
         ok('‼️ …and nothing at all went on any wire', kimiM.hits.length === afterRouted && wrongM.hits.length === 0);
 
-        // ---- 3. nothing chosen means nothing touched ----
+        // ---- 3. the composition every automation door shares ----
+        /**
+         * ‼️ ONE SHAPE CARRIES THE ROUTE INTO EVERY UNATTENDED RUN, so this is
+         * where it is worth watching rather than once per door.
+         *
+         * A retry, a workflow step, a schedule and a trigger all build their
+         * task by spreading `runExtras(<the thing that was stored>)` — that is
+         * the rule the repo states as "a run's dimensions travel by the SHAPE,
+         * never a hand-written field list", and it exists because the automatic
+         * retry once hand-copied eight fields and silently dropped seven, the
+         * route among them, on the path where nobody is at a window to notice.
+         *
+         * A unit test can only say the shape carries the field. Whether the
+         * composed task then reaches that endpoint is a different claim, and it
+         * is this one: built exactly the way the auto-retry builds it, from a
+         * run that really happened.
+         */
+        const retried = mgr.addTask(agent, 'retry of routed', 'say ping', 'headless',
+            { ...T.runExtras(routed), workDir: tmp, retryOf: routed.id, retryAttempt: 1 });
+        ok('the shape carried the route onto the composed task',
+            retried.providerId === 'kimi' && retried.tier === 'opus');
+        mgr.startTask(retried);
+        const stR = await settle(retried);
+        ok(`the composed run finished (${stR})`, stR === 'done');
+        ok('‼️ …and reached the endpoint of the run it was composed from',
+            kimiM.posts().length > routedPosts
+            && kimiM.posts().slice(routedPosts).every(h => h.key === 'sk-kimi-CANARY' && h.model === 'kimi-k2'));
+        ok('‼️ …and not the inherited one', wrongM.hits.length === 0);
+        const afterRetry = kimiM.hits.length;
+
+        // ---- 4. nothing chosen means nothing touched ----
         const plain = mgr.addTask(agent, 'plain', 'say ping', 'headless', { engine: 'claude', workDir: tmp });
         mgr.startTask(plain);
         const st3 = await settle(plain);
@@ -152,7 +187,7 @@ async function main() {
         ok('‼️ a task naming NO route runs on the inherited endpoint, untouched',
             wrongM.posts().length >= 1 && wrongM.posts().every(h => h.key === 'sk-inherited-CANARY'));
         ok('‼️ …and it did not stray onto the route nobody asked for',
-            kimiM.hits.length === afterRouted);
+            kimiM.hits.length === afterRetry);
     } finally {
         try { mgr && mgr.dispose && mgr.dispose(); } catch { /* nothing held */ }
         for (const k of Object.keys(inherited)) { delete process.env[k]; }
