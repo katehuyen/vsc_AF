@@ -578,6 +578,77 @@ const by = (list, id) => list.find(e => e.id === id);
         ok('a verdict says how old it is', verdictAge(1000, 1000) === '0s ago'
             && verdictAge(0, 3600000) === '1h ago' && verdictAge(0, 300000) === '5m ago');
 
+        // ---------- X-219 (round 2): a SPENT PLAN is not a broken engine ------
+        //
+        // The user pressed Test on a sign-in with quota to spare; the turn went
+        // out on whichever account this window had inherited, that one was
+        // walled, and the card answered `✗ The command exited 1` — a red cross
+        // against the CLI, the credential and the route, none of which had been
+        // tested at all. A wall is the `refused` shape (U-59): nothing spent on
+        // the question asked, nothing proved, so nothing claimed.
+        {
+            const walled = await testEngine('claude', runner({
+                code: 1,
+                stderr: 'Claude usage limit reached. Your limit will reset at 5am (Europe/Istanbul).'
+            }), clock(1000));
+            ok('‼️ X-219 — a plan wall is NOT TESTED, not failed',
+                walled.ok === false && walled.refused === true);
+            ok('…and it says so in words a person can act on, never a bare exit code',
+                /Not tested/.test(walled.detail) && !/exited 1/.test(walled.detail));
+            ok('‼️ …and it clears the engine rather than blaming it',
+                /not a verdict on the CLI|Nothing here is a verdict/i.test(walled.detail));
+            ok('…while the engine\'s own line, with the reset in it, still rides along',
+                /reset at 5am/.test(walled.error || ''));
+            // The two windows do not reset on the same calendar, so which one it
+            // was is part of the answer (B-03.8).
+            const weekly = await testEngine('claude', runner({
+                code: 1, stderr: 'You have hit your weekly limit for this model.'
+            }), clock(1000));
+            ok('‼️ …and a WEEKLY wall says weekly, because that is days rather than hours',
+                weekly.refused === true && /WEEKLY/.test(weekly.detail)
+                && /days, not hours/.test(weekly.detail));
+            // ‼️ AND IT MUST NOT SWALLOW THE ORDINARY FAILURE. An engine that
+            // really is broken still reads as broken — the refusal is for the
+            // quota sentence and nothing else.
+            const broken = await testEngine('claude', runner({
+                code: 1, stderr: 'error: failed to connect to api.anthropic.com'
+            }), clock(1000));
+            ok('‼️ …and a real failure is still a failure, with its exit code',
+                broken.ok === false && !broken.refused && /exited 1/.test(broken.detail));
+
+            // ‼️ AND THE TURN GOES OUT AS THE ACCOUNT THE PAGE DREW IT BESIDE.
+            // The aim's environment is what binds it; a check that measures a
+            // different sign-in than the row it sits on is a wrong answer with a
+            // tick beside it.
+            const envSeen = [];
+            const envRunner = (command, args, timeoutMs, shell, stdin, runEnv) => {
+                envSeen.push(runEnv);
+                return Promise.resolve({ code: 0, stdout: 'OK', stderr: '' });
+            };
+            await testEngine('claude', envRunner, clock(1000),
+                { providerId: '', spawnEnv: { CLAUDE_CONFIG_DIR: 'D:/slots/claude-b' } });
+            ok('‼️ X-219 — the aimed sign-in reaches the spawn, so the test runs AS that account',
+                (envSeen[0] || {}).set?.CLAUDE_CONFIG_DIR === 'D:/slots/claude-b');
+            await testEngine('claude', envRunner, clock(1000),
+                { providerId: '', clearEnv: ['CLAUDE_CONFIG_DIR'] });
+            ok('…and the machine\'s own sign-in CLEARS the variable rather than blanking it (X-101)',
+                (envSeen[1] || {}).clear?.[0] === 'CLAUDE_CONFIG_DIR'
+                && (envSeen[1] || {}).set === undefined);
+        }
+
+        // ‼️ …AND BOTH DOORS ASK IT OF THE SAME ACCOUNT. The page's button and
+        // the bridge op are one question; wiring the sign-in into one of them is
+        // how the two come to disagree (`_REF/agentfarm-dev.md`).
+        {
+            const fsx = require('fs');
+            const ext = fsx.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
+            const aimed = (ext.match(/testEngine\(\s*id[^)]*engineTestAim\(id\)/g) || []).length;
+            ok('‼️ X-219 — the page dep and the bridge op both aim the test at the standing sign-in',
+                aimed === 2);
+            ok('…and the aim is built from the SAME pair a launch resolves with',
+                /const engineTestAim[\s\S]{0,700}accountResolution\([\s\S]{0,200}accountEnvFor\(/.test(ext));
+        }
+
         // ---------- the panel: nothing spends anything on its own ----------
         const fs = require('fs');
         const panel = fs.readFileSync(path.join(__dirname, '..', 'src', 'panels', 'enginesPanel.ts'), 'utf8');

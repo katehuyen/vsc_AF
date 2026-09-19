@@ -25,6 +25,11 @@ import {
     opencodeFreeModel, opencodeModelsListArgs, opencodeRunArgs,
     OPENCODE_EXE, OPENCODE_NEEDS_SHELL
 } from './opencode';
+// ‼️ X-219 (round 2) — WHAT A PLAN WALL LOOKS LIKE IS ALREADY WRITTEN DOWN, in
+// the one place that decides whether a failed RUN may be retried (M-10 taught it
+// four engines' words). A second regex here would be a second opinion about the
+// same sentence, and the two would drift the first time an engine reworded it.
+import { limitWindow } from './retry';
 
 /**
  * What a test run needs from the outside world.
@@ -341,6 +346,43 @@ export async function testEngine(
             };
         }
         const fault = firstFault(r.stderr, r.stdout);
+        /**
+         * ‼️ X-219 (round 2) — A SPENT PLAN IS NOT A BROKEN ENGINE, and this
+         * line said it was. The user pressed Test on a sign-in with quota to
+         * spare, the turn went out on whichever account the window had
+         * inherited, that one was walled, and the card answered `✗ The command
+         * exited 1` — a red cross against the CLI, the credential and the route,
+         * none of which had been tested at all.
+         *
+         * A wall is the `refused` shape this file already has (U-59): nothing
+         * was proved, so nothing is claimed. It is drawn as ⊘ rather than ✗, and
+         * it says which window it was, because a session window reopens in hours
+         * and a weekly one in days. The engine's own line — usually carrying the
+         * reset time — rides along in `error` as it always did.
+         */
+        const hay = `${r.stderr}\n${r.stdout}`;
+        const wall = limitWindow(hay);
+        if (wall) {
+            /**
+             * ‼️ AND THE LINE THAT SAYS WHEN IT REOPENS IS THE ONE WORTH
+             * KEEPING. `firstFault` hunts for the words a crash uses — error,
+             * fatal, denied, refused — and a CLI announcing a quota uses none of
+             * them ("Claude usage limit reached. Your limit will reset at 5am"),
+             * so the most actionable sentence the engine ever prints was the one
+             * sentence dropped. Asked with the same rule that named the wall, so
+             * there is still only one definition of what a limit line is.
+             */
+            const wallLine = hay.split('\n').map(l => l.trim()).find(l => l && limitWindow(l));
+            return {
+                id, ok: false, refused: true, ms, at,
+                detail: `Not tested: this sign-in's ${wall === 'weekly' ? 'WEEKLY' : 'five-hour'} `
+                    + 'limit is spent, so the turn was refused before the engine did anything. '
+                    + 'Nothing here is a verdict on the CLI, the credential or the route — test '
+                    + `again once the window reopens, or on another sign-in${wall === 'weekly'
+                        ? ' (a weekly window is days, not hours)' : ''}.`,
+                error: (wallLine || fault).slice(0, 300) || undefined
+            };
+        }
         return {
             id, ok: false, ms, at,
             detail: r.code === 0

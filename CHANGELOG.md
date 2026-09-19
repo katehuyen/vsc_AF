@@ -2,6 +2,46 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.571.0 - an emptied sign-in stops calling itself healthy, and the engine test runs as the account it is drawn beside (X-219 round 2, closes) (2026-09-19)
+
+- **‼️ A DATE IS NOT A CREDENTIAL, and the account health check believed one.**
+  `claude-kateanhkim` sat on this machine with `accessToken: ""`,
+  `refreshToken: ""` and a `refreshTokenExpiresAt` a month away — the only field
+  anybody read — so the row was stamped `ready`. The card then HID its 🔑 (it is
+  hidden on a healthy row, X-275), which is the expensive half: the account was
+  dead, said it was fine, and offered no way back. Every other reader in that
+  file already asked whether the grant is THERE; this one asked only when it
+  expires. Now an emptied grant is `needs-signin` whatever its expiry says — and
+  so is an expired access token with no refresh token behind it, which is the
+  same fact one hour later. A LIVE access token with no refresh beside it still
+  reads `ready`, because it still works and the card already counts it down.
+- **‼️ THE ENGINE TEST SPENT ITS TURN ON WHICHEVER ACCOUNT THE WINDOW HAD
+  INHERITED.** The button (and `engines.test`) ran `claude -p` in the main config
+  directory every time, never binding the standing sign-in's `CLAUDE_CONFIG_DIR`
+  — so on a machine whose main account was walled, the user tested an account
+  with quota to spare and read a verdict about a different one. Both doors now
+  aim the turn through the same pair a launch resolves with
+  (`accountResolution` → `accountEnvFor`), and the machine's own sign-in CLEARS
+  the variable rather than blanking it (X-101).
+- **‼️ …AND A SPENT PLAN IS NOT A BROKEN ENGINE.** A walled turn answered `✗ The
+  command exited 1` — a red cross against the CLI, the credential and the route,
+  none of which had been tested at all. A wall is now the `refused` shape (⊘,
+  U-59): nothing was proved, so nothing is claimed, and it names WHICH window,
+  because a five-hour one reopens in hours and a weekly one in days. What a
+  limit looks like is not re-decided here — it is `limitWindow`, the one rule
+  that already decides whether a failed RUN may be retried. And the engine's own
+  limit line now survives: `firstFault` hunts for crash words (error, fatal,
+  denied, refused) and a CLI announcing a quota uses none of them, so *"Your
+  limit will reset at 5am"* — the single most actionable sentence it prints —
+  was the one sentence being dropped.
+- **A link repair that could not run said nothing at all.** When the pool
+  directory is absent the repair refuses to invent it (right — inventing it
+  would point every slot at a home directory nobody chose), but it refused
+  *silently*: the clause read `wrote:false, error:undefined`, the badge stayed
+  red, and pressing Complete again changed nothing and explained nothing. It is
+  now named as a failure. Refusing to invent the pool is still right; refusing
+  silently is the Principle 1 fault the repair journal exists to end.
+
 ## 3.570.0 - at a limit the sign-in that carries the work on is the user's choice, what a retry IS comes back into the form it was saved from, and Engines is one press from every page (X-226 round 2 + M-34, close) (2026-09-19)
 
 - **‼️ X-226 (round 2) — A RUN THAT MEETS A WALL NOW STAYS PUT UNLESS YOU SAID

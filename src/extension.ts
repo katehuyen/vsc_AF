@@ -19032,7 +19032,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // redirected HOME would otherwise link the machine's real slots into
             // a temp folder. An absent pool means this is not a machine whose
             // links can be repaired, so nothing is touched.
-            if (!fs.existsSync(path.join(home, a.liveDir))) { continue; }
+            //
+            // ‼️ X-219 (round 2) — BUT IT IS NAMED, because until now this was
+            // the one branch that returned "I did nothing" and "nothing was
+            // wrong" in the same empty answer. The clause reads `wrote:false,
+            // error:undefined`, the badge stays red, and pressing Complete again
+            // changes nothing and says nothing — Principle 1, in the repair that
+            // exists to end exactly this. Refusing to invent the pool is still
+            // right; refusing SILENTLY is not.
+            if (!fs.existsSync(path.join(home, a.liveDir))) {
+                for (const name of a.sharedPaths) { failed.push(path.join(slot.dir, name)); }
+                continue;
+            }
             for (const name of a.sharedPaths) {
                 const from = path.join(home, a.liveDir, name);
                 const to = path.join(slot.dir, name);
@@ -21646,10 +21657,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         if (!value.trim()) { await clearProviderSecret(id); return; }
         await setProviderSecret(id, value.trim());
     };
+    /**
+     * ‼️ X-219 (round 2) — THE ENGINE TEST RUNS AS THE SIGN-IN THE FLEET WOULD
+     * USE, not as whatever this window inherited.
+     *
+     * The button spent one real turn in the MAIN config directory every time,
+     * whichever account was standing: on a machine whose main sign-in was walled
+     * the user tested an account with quota to spare and read `exited 1` about
+     * it. A check that measures a different account than the one it is drawn
+     * beside is worse than no check — it is a wrong answer with a tick beside
+     * it.
+     *
+     * Resolved through the SAME pair every launch goes through
+     * (`accountResolution` → `accountEnvFor`), so the test cannot be pointed
+     * somewhere a session would not go. `null` is the machine's own sign-in
+     * (X-211): the variable is CLEARED rather than set to a path, because a CLI
+     * told `CLAUDE_CONFIG_DIR=""` has still been told something (X-101).
+     */
+    const engineTestAim = (engine: string): ProviderAim | undefined => {
+        const id = accountResolution('', engine, activeAccounts(),
+            agentStandingAccount(undefined, engine)).id;
+        const env = accountEnvFor(engine, id, storedAccounts());
+        const set: Record<string, string> = {};
+        const clear: string[] = [];
+        for (const [k, v] of Object.entries(env)) {
+            if (v === null) { clear.push(k); } else { set[k] = v; }
+        }
+        if (!Object.keys(set).length && !clear.length) { return undefined; }
+        return {
+            providerId: '',
+            ...(Object.keys(set).length ? { spawnEnv: set } : {}),
+            ...(clear.length ? { clearEnv: clear } : {})
+        };
+    };
     const enginesPanelDeps = {
         extensionUri: context.extensionUri,
         engines: () => engineMatrix(),
-        test: (id: EngineId) => testEngine(id, engineRunner),
+        test: (id: EngineId) => testEngine(id, engineRunner, Date.now, engineTestAim(id)),
         command: (command: string) => engineTerminal(command),
         key: (name: string) => { SecretsPanel.compose(secretsDeps, name); },
         // ‼️ X-100 — the page is handed the PUBLIC list and the ownership table,
@@ -39299,10 +39343,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'as the second is what calls a working engine broken: `ok:true` (the call got '
                 + 'through), `ok:false` (the engine WAS asked and did not answer — `detail`, plus the '
                 + 'engine\'s OWN words in `error`, never an invented reason), and `ok:false, '
-                + 'refused:true` (‼️ THE CHECK NEVER RAN. Nothing was spent and nothing was proved: '
-                + 'Agent Farm will not pick a BILLED model for a health check, so an engine with no '
-                + 'free model on offer is refused rather than quietly charged. Read it as "not '
-                + 'tested", never as "failed"). No credential is read or returned. '
+                + 'refused:true` (‼️ NOTHING WAS PROVED, and it is read as "not tested", never as '
+                + '"failed". Two reasons reach it: Agent Farm will not pick a BILLED model for a '
+                + 'health check, so an engine with no free model on offer is refused rather than '
+                + 'quietly charged — and (X-219) the sign-in\'s own plan window is SPENT, which is a '
+                + 'fact about the quota and not about the CLI, the credential or the route. `detail` '
+                + 'says which, and names the window, because a five-hour one reopens in hours and a '
+                + 'weekly one in days). ‼️ THE TURN GOES OUT AS THE SIGN-IN THE FLEET WOULD USE for '
+                + 'this engine — the standing account, resolved exactly as a launch resolves it — not '
+                + 'as whatever the window inherited, so the verdict belongs to the account the page '
+                + 'draws it beside. No credential is read or returned. '
                 + 'args: id (' + ENGINE_ENUM_SPACED + ')',
             handler: async (args) => {
                 const id = argStr(args, 'id').trim().toLowerCase();
@@ -39311,7 +39361,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 // Refuse rather than spend: there is nothing to call.
                 need(engine!.cli.found,
                     `${engine!.label} is not installed — ${engine!.next}`);
-                return await testEngine(id as EngineId, engineRunner);
+                // ‼️ X-219 (round 2) — THE SAME SIGN-IN THE PAGE'S BUTTON USES.
+                // The two doors ask one question and must not answer it about
+                // two different accounts (`_REF/agentfarm-dev.md`).
+                return await testEngine(id as EngineId, engineRunner, Date.now, engineTestAim(id));
             }
         },
         /* ================ X-100 — PROVIDER ROUTES AND THE VAULT BOUNDARY ======

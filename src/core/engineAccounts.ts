@@ -467,15 +467,40 @@ export function readClaudeIdentity(fsr: AccountFs, dir: string, now = Date.now()
     }
 
     const refreshExpiresAt = num(oauth.refreshTokenExpiresAt);
+    const expiresAt = num(oauth.expiresAt);
+    /**
+     * ‼️ X-219 (round 2) — A DATE IS NOT A CREDENTIAL, and this line believed
+     * one. `claude-kateanhkim` sat on this machine with `accessToken: ""` and
+     * `refreshToken: ""` and a `refreshTokenExpiresAt` a month away, so the only
+     * thing that was read said "in date" and the row was stamped `ready`. The
+     * card then HID its 🔑 (it is hidden on a healthy row, X-275), which is the
+     * expensive half: the account was dead, said it was fine, and offered no way
+     * back. Every other reader in this file already asks whether the grant is
+     * THERE — Codex checks `access_token`, Gemini checks `refresh_token`; this
+     * one asked only when it expires.
+     *
+     * Two states, and both are "a person is needed":
+     *   · nothing to present and nothing to refresh with — the measured case;
+     *   · nothing to refresh with and what was presentable has expired, which is
+     *     the same fact one hour later. A live access token with no refresh
+     *     beside it is still `ready`, because it still works and the countdown
+     *     the card already draws is the honest warning for it.
+     */
+    const tok = (v: unknown): boolean => typeof v === 'string' && !!v.trim();
+    const canPresent = tok(oauth.accessToken);
+    const canRefresh = tok(oauth.refreshToken);
+    const spent = !canPresent && !canRefresh
+        ? true
+        : !canRefresh && !!expiresAt && expiresAt <= now;
     return {
         email, accountUuid,
         subscriptionType: typeof oauth.subscriptionType === 'string' ? oauth.subscriptionType : '',
-        expiresAt: num(oauth.expiresAt),
+        expiresAt,
         refreshExpiresAt,
         // A missing refresh expiry is treated as "still good": some grants do
         // not carry one, and refusing to use an account because a field is
         // absent would be inventing a fault out of silence.
-        health: refreshExpiresAt && refreshExpiresAt <= now ? 'needs-signin' : 'ready'
+        health: spent || (refreshExpiresAt && refreshExpiresAt <= now) ? 'needs-signin' : 'ready'
     };
 }
 

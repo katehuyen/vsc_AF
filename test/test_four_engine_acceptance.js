@@ -469,7 +469,17 @@ const threw = fn => { try { fn(); return false; } catch { return true; } };
         const engTest = at('engines.test', 3500);
         ok('‼️ engines.test says a refusal is its own answer, not a failure',
             /refused:true/.test(engTest.replace(/\s+/g, ''))
-            && /THE CHECK NEVER RAN/.test(engTest));
+            && /NOTHING WAS PROVED/.test(engTest)
+            && /never as\s*'?\s*\+?\s*'?"failed"/.test(engTest.replace(/\s+/g, ' ')));
+        // ‼️ X-219 (round 2) — AND THE SECOND REASON A CHECK REFUSES. A spent
+        // plan window is a fact about the quota, not about the CLI, the
+        // credential or the route; an agent reading the old two-reason contract
+        // would take the flag to mean "no free model" and look in the wrong
+        // place. The contract names both, and says which window it was.
+        ok('‼️ X-219 — …and it names the plan wall as one of the reasons, with its window',
+            /plan window/i.test(engTest) && /weekly one in days/.test(engTest));
+        ok('‼️ X-219 — …and states the turn goes out as the sign-in the fleet would use',
+            /THE TURN GOES OUT AS THE SIGN-IN/.test(engTest));
         {
             const src = fs.readFileSync(path.join(__dirname, '..', 'src/core/engineTest.ts'), 'utf8');
             ok('…and the function really returns it, so the contract is not describing a wish',

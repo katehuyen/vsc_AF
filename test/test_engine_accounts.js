@@ -97,6 +97,30 @@ const config = (email) => JSON.stringify({
     ok('‼️ a credentials file that will not parse says so instead of lying',
         readClaudeIdentity(fsOf({ 'D:/slots/x/.credentials.json': '{ not json' }), 'D:/slots/x', NOW)
             .health === 'unreadable');
+
+    /**
+     * ‼️ X-219 (round 2) — AND AN EMPTIED GRANT, WHICH THE DATES CALLED HEALTHY.
+     *
+     * Measured on this machine: both token strings blank, `refreshTokenExpiresAt`
+     * a month out, verdict `ready` — and the card hides its 🔑 on a ready row, so
+     * the dead account was also the unrecoverable one. The expiry is a fact
+     * ABOUT a credential; it is not one.
+     */
+    ok('‼️ X-219 — an emptied grant is signed out, whatever its expiry says',
+        at({ accessToken: '', refreshToken: '' }) === 'needs-signin');
+    ok('…and blanks that are only whitespace are blanks',
+        at({ accessToken: '   ', refreshToken: '\t' }) === 'needs-signin');
+    ok('…and a missing pair of fields is the same answer as an empty one',
+        at({ accessToken: undefined, refreshToken: undefined }) === 'needs-signin');
+    // The other half of the same fact, an hour later: nothing to refresh with
+    // and nothing left to present.
+    ok('‼️ …and an expired access token with NO refresh token behind it is signed out',
+        at({ refreshToken: '', expiresAt: NOW - 60_000 }) === 'needs-signin');
+    // …but not before then. It still works, and the card already counts it down.
+    ok('…while a live access token with no refresh beside it still works, and says so',
+        at({ refreshToken: '' }) === 'ready');
+    ok('…and an access token alone, with the refresh token merely absent, is not condemned early',
+        at({ refreshToken: undefined }) === 'ready');
 }
 
 // ---------- what activating a slot actually IS ----------
