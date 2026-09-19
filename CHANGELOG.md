@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.566.0 - the ceiling a model publishes for itself becomes an answer, so the fallback table stops being Claude-only (X-113, part 4, closes) (2026-09-19)
+
+- **‼️ Measured on this machine: seven OpenCode models, every one of them
+  publishing its own window, and not one of them reaching a single table.**
+  `contextWindowFor` falls back to a shipped list of Claude family regexes, so
+  `opencode models --verbose` could state `limit.context` on all seven -
+  200 000 on `big-pickle`, 262 144 on `ling-3.0-flash-fin-free`, **1 048 576**
+  on `muse-spark-1.3-contributor-free` - and every Sessions row, Turns row and
+  Dashboard cell still drew a bare token count with no ceiling, no percentage
+  and no bar. The catalog was read, cached and persisted already; nothing had
+  ever handed its limits to the rule that asks.
+- **Shipping seven more regexes would have been the wrong repair.** The list
+  is the engine's, it changes without us, and a model added next week would
+  have gone back to zero. So the host installs what a catalog published
+  (`setPublishedWindows`), in the one place the catalog lands - on restore
+  from `globalState` as well as on every refresh, because a window that opens
+  offline still knows the ceilings it read last time.
+- **And the published figure outranks the shipped table**, for the reason the
+  precedence in `contextWindowOf` already gives: a list we wrote is the
+  weakest evidence in the room. It is still the MODEL answer, not the engine's
+  - a live OpenCode turn reports its own operational `size` and that continues
+  to win, so the value/source separation this item asks for holds end to end.
+- **Both spellings of a model resolve, and an ambiguous one refuses to.** A
+  launch and a live card carry the engine's wire ref (`opencode/big-pickle`);
+  a transcript read off disk carries the bare id (`big-pickle`) - the same two
+  spellings that had `catalogRefusal` refusing every OpenCode model there is
+  in part 3. A bare id two providers publish with DIFFERENT windows is dropped
+  rather than resolved to whichever was read last.
+- Tests: `test_ctx_window.js` 54 (+16) - the catalog round trip, the two
+  spellings, the ambiguous id, the precedence against a stated window, and the
+  two call sites that install it and the reader they install from, because a
+  published window nobody installs is part 3's defect under another name.
+
 ## 3.565.0 - a model that cannot do what the pick asks says so while it is being picked (X-113, part 3) (2026-09-18)
 
 - **The catalog was told what a model cannot do and threw half of it away.**

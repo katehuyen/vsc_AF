@@ -390,8 +390,63 @@ const CONTEXT_WINDOWS: { re: RegExp; tokens: number }[] = [
     { re: /opus-4|sonnet-4|haiku-4|claude-3/i, tokens: 200_000 }
 ];
 
+/**
+ * ‼️ X-113 — WINDOWS THE ENGINE ITSELF PUBLISHED, which the table above cannot
+ * hold and must not try to.
+ *
+ * The table is a list of Claude families, so it answers 0 for every model of
+ * every other engine — measured on this machine: `opencode models --verbose`
+ * publishes `limit.context` on all seven models it reaches (200 000 up to
+ * 1 048 576) and not one of them matched, so a `muse-spark` conversation drew a
+ * raw token count with no ceiling on every table while the engine had stated
+ * the answer all along. Shipping seven more regexes would be the wrong repair:
+ * the list is the engine's, it changes without us, and it is already read.
+ *
+ * Same writer discipline as ACTIVE above — the host installs it whenever a
+ * catalog is read, every consumer is read-only.
+ */
+let PUBLISHED_WINDOWS: Record<string, number> = {};
+
+/**
+ * Install what a catalog published. Both spellings of a model are accepted
+ * because both are real: a launch and a live card carry the engine's wire ref
+ * (`opencode/big-pickle`) and a transcript read off disk carries the bare id
+ * (`big-pickle`) — the two-spellings trap that had `catalogRefusal` refusing
+ * every OpenCode model there is. A bare id two providers both publish with
+ * DIFFERENT windows is dropped rather than resolved to whichever came last.
+ */
+export function setPublishedWindows(rows: { model: string; tokens: number }[]): void {
+    const next: Record<string, number> = {};
+    const bare = new Map<string, number | null>();
+    for (const r of rows ?? []) {
+        const model = String(r?.model ?? '').trim().toLowerCase();
+        const tokens = Number(r?.tokens);
+        if (!model || !(tokens > 0)) { continue; }
+        next[model] = tokens;
+        const tail = model.slice(model.lastIndexOf('/') + 1);
+        if (tail === model) { continue; }
+        const seen = bare.get(tail);
+        bare.set(tail, seen === undefined || seen === tokens ? tokens : null);
+    }
+    for (const [tail, tokens] of bare) {
+        if (tokens !== null && next[tail] === undefined) { next[tail] = tokens; }
+    }
+    PUBLISHED_WINDOWS = next;
+}
+
+/** What is installed right now — for the surfaces that explain themselves. */
+export function publishedWindows(): Record<string, number> {
+    return { ...PUBLISHED_WINDOWS };
+}
+
 export function contextWindowFor(model: string): number {
     if (!model) { return 0; }
+    // ‼️ THE PUBLISHED FIGURE OUTRANKS THE SHIPPED TABLE, for the same reason
+    // the engine's own per-session statement outranks this function entirely
+    // (see contextWindowOf): a list we wrote is the weakest evidence in the
+    // room. It only ever holds what a catalog really stated.
+    const published = PUBLISHED_WINDOWS[model.trim().toLowerCase()];
+    if (published) { return published; }
     const hit = CONTEXT_WINDOWS.find(c => c.re.test(model));
     return hit ? hit.tokens : 0;
 }

@@ -119,7 +119,7 @@ import { discoverProductions, newProduction, PRODUCTION_FILENAME, writeProductio
 import { buildEdl, buildFcpXml, detectSceneId, pickSequenceAssets } from './core/premiere';
 import { applyMergedContent } from './core/memorySync';
 import { SecretsVault } from './core/secrets';
-import { contextAfter, contextWindowOf, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, RawUsage, setQuotaConfig, totalTokens, Usage } from './core/pricing';
+import { contextAfter, contextWindowOf, DEFAULT_PRICING, PriceRule, PricingEngine, PricingVersion, QuotaWeight, QuotaWeightMode, RawUsage, setPublishedWindows, setQuotaConfig, totalTokens, Usage } from './core/pricing';
 import {
     BUILT_IN_PROMPT_FILE, parsePromptSnippets, PromptSnippetsSnapshot, resolvePromptFile
 } from './core/prompts';
@@ -191,6 +191,7 @@ import {
     ProviderTransport, pruneProviderPick
 } from './core/launchProvider';
 import { adapterFor, RegistryDeps, resolveRuntime } from './core/providerRegistry';
+import { readOpenCodeCatalog } from './core/providerCatalog';
 import { ProviderIdentity } from './core/providerIdentity';
 import { providerOfModelRef, providerSwitchPolicy } from './core/providerSwitch';
 import { describeResumeRoute, ResumeAsk, ResumeRoute, resumeRoute } from './core/resumeGate';
@@ -20645,6 +20646,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     let opencodeCatalog: OpencodeCatalog = {
         ...(context.globalState.get<OpencodeCatalog>(OPENCODE_CATALOG_KEY) ?? {}), fetching: false
     };
+    /**
+     * ‼️ X-113 — THE ONE PLACE A PUBLISHED WINDOW BECOMES AN ANSWER.
+     *
+     * `contextWindowFor`'s shipped table is Claude families, so every table in
+     * the extension answered 0 for every OpenCode model while the engine was
+     * publishing `limit.context` on each of them. The catalog is already read,
+     * already cached and already persisted; this hands its limits to the rule
+     * that every surface asks, rather than to the surfaces one at a time (the
+     * six-copies defect part 1 of this item exists to have ended).
+     *
+     * Called on restore as well as on refresh: the text survives in
+     * `globalState`, so a window that opens offline still knows the ceilings.
+     */
+    const applyPublishedWindows = (): void => {
+        const rows = readOpenCodeCatalog(opencodeCatalog.text).rows;
+        setPublishedWindows(rows.flatMap(r => {
+            const tokens = r.limit?.context ?? 0;
+            // Both spellings, because a transcript read off disk carries the
+            // bare id and a launch carries the wire ref (see setPublishedWindows).
+            return tokens > 0 ? [{ model: r.ref, tokens }, { model: r.modelId, tokens }] : [];
+        }));
+    };
+    applyPublishedWindows();
     let opencodeInFlight: Promise<void> | undefined;
     /**
      * One place both sources land, so the rule about which wins is written once:
@@ -20683,6 +20707,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // are identical: the providers, variants and limits X-103 draws its rows
         // from all live in the text, and a redraw gated on ids alone would leave
         // a stale variant list on screen after the engine changed one.
+        if (nextText !== beforeText) { applyPublishedWindows(); }
         if ((!keep && now !== before) || nextText !== beforeText) { modelPickersChanged(); }
     };
     const refreshOpencodeCatalog = (force = false): Promise<void> => {

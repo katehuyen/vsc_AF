@@ -30,7 +30,8 @@ Module._load = function (request) {
     return origLoad.apply(this, arguments);
 };
 const out = f => require(path.join(__dirname, '..', 'out', 'core', f));
-const { contextWindowFor, contextWindowOf } = out('pricing.js');
+const { contextWindowFor, contextWindowOf, publishedWindows, setPublishedWindows } = out('pricing.js');
+const { readOpenCodeCatalog } = out('providerCatalog.js');
 const { turnRowsFor } = out('turns.js');
 const read = p => fs.readFileSync(path.resolve(__dirname, '..', p), 'utf8');
 Module._load = origLoad;
@@ -162,6 +163,94 @@ for (const f of ['src/extension.ts', 'src/panels/dashboard.ts',
     'src/panels/consolePanel.ts', 'src/core/turns.ts']) {
     ok(f + ' does not write the precedence out by hand',
         !/forced\s*>\s*0\s*\?\s*forced\s*:/.test(read(f)));
+}
+
+// ---------- 8) the window the ENGINE published, which the table cannot hold ----
+// ‼️ X-113 part 4 — the fallback table is Claude families, so it answered 0 for
+// every model of every other engine while `opencode models --verbose` was
+// publishing `limit.context` on each one. Measured on this machine, OpenCode
+// 1.18.19: seven models, 200 000 up to 1 048 576, not one of them matched.
+// Two entries kept verbatim — one 200K, one over a million — because the point
+// is that no regex we could ship would have covered either.
+{
+    const VERBOSE = `opencode/big-pickle
+{
+  "id": "big-pickle",
+  "providerID": "opencode",
+  "name": "Big Pickle",
+  "limit": { "context": 200000, "input": 160000, "output": 32000 },
+  "capabilities": { "toolcall": true },
+  "variants": {}
+}
+opencode/muse-spark-1.3-contributor-free
+{
+  "id": "muse-spark-1.3-contributor-free",
+  "providerID": "opencode",
+  "name": "Muse Spark 1.3 Contributor Free",
+  "limit": { "context": 1048576, "output": 32768 },
+  "capabilities": { "toolcall": true },
+  "variants": {}
+}`;
+    const rows = readOpenCodeCatalog(VERBOSE).rows;
+    eq('the catalog still publishes a window for every row', rows.length, 2);
+
+    eq('before anything is installed the table has no answer for it',
+        contextWindowFor('opencode/muse-spark-1.3-contributor-free'), 0);
+
+    setPublishedWindows(rows.flatMap(r => {
+        const tokens = r.limit?.context ?? 0;
+        return tokens > 0 ? [{ model: r.ref, tokens }, { model: r.modelId, tokens }] : [];
+    }));
+
+    eq('the wire ref a launch carries resolves',
+        contextWindowFor('opencode/muse-spark-1.3-contributor-free'), 1048576);
+    // ‼️ The two-spellings trap that had catalogRefusal refusing every OpenCode
+    // model there is: a transcript read off disk carries the BARE id.
+    eq('…and so does the bare id a transcript carries',
+        contextWindowFor('muse-spark-1.3-contributor-free'), 1048576);
+    eq('a second model keeps its own figure rather than the last one read',
+        contextWindowFor('big-pickle'), 200000);
+    ok('a model nobody published is still 0, not a borrowed ceiling',
+        contextWindowFor('some-model-nobody-published') === 0);
+
+    // The whole point: the rule's MODEL branch, on a surface that only ever had
+    // a numerator for this engine.
+    const w = contextWindowOf(0, 'opencode/big-pickle');
+    eq('the published figure answers as the model, not as the engine', w.source, 'model');
+    eq('…with the engine\'s own number', w.tokens, 200000);
+    // The per-session statement still outranks it — a live OpenCode turn reports
+    // its operational `size`, and that is the window it really ran against.
+    eq('a stated window still wins over the published one',
+        contextWindowOf(262144, 'opencode/big-pickle').source, 'engine');
+
+    // A bare id two providers publish with DIFFERENT windows is dropped, never
+    // resolved to whichever was read last.
+    setPublishedWindows([
+        { model: 'alpha/gpt-4o', tokens: 128000 },
+        { model: 'beta/gpt-4o', tokens: 256000 }
+    ]);
+    eq('an ambiguous bare id refuses to answer', contextWindowFor('gpt-4o'), 0);
+    eq('…while each full ref still does', contextWindowFor('beta/gpt-4o'), 256000);
+
+    setPublishedWindows([]);
+    eq('installing nothing empties it rather than leaving the last catalog',
+        Object.keys(publishedWindows()).length, 0);
+    eq('and the shipped table is untouched by any of it',
+        contextWindowFor('claude-opus-5'), 1_000_000);
+}
+
+// ---------- 9) …and it is actually WIRED, which is the defect that keeps recurring
+// ‼️ Part 3 of this item found `catalogRefusal` refusing every OpenCode model
+// because nothing had ever called it. A published window nobody installs is the
+// same bug with a different name, so the call sites are pinned here.
+{
+    const ext = read('src/extension.ts');
+    ok('the host installs the published windows on restore',
+        /applyPublishedWindows\(\);/.test(ext));
+    ok('…and again whenever the catalog text changes',
+        /nextText !== beforeText\) \{ applyPublishedWindows\(\); \}/.test(ext));
+    ok('…from the catalog reader rather than a second hand-written list',
+        /readOpenCodeCatalog\(opencodeCatalog\.text\)/.test(ext));
 }
 
 console.log(`${pass} passed, ${fail} failed`);
