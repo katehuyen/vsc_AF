@@ -46,7 +46,19 @@ for (const f of files) {
     totalFail += fail;
     if (r.status !== 0 || !m || fail > 0) {
         failed.push(f);
-        console.log(`FAIL ${f}${r.error ? ' — ' + r.error.message : ''}`);
+        // ‼️ X-299 — A FILE THAT CRASHED IS NOT A FILE THAT FAILED, and the
+        // line has to say which. A crash after a clean summary printed `FAIL`
+        // over output where every check passed, which reads exactly like a real
+        // red — so the habit it teaches is to wave the next real red through as
+        // "that flaky one again". Naming it sends the reader to the teardown
+        // rather than to the assertions.
+        // ‼️ A TIMED-OUT OR UNSPAWNABLE FILE IS NEITHER of the two. It carries
+        // `status: null` and an `error`, and calling that "died with exit null"
+        // would be a third wrong label replacing the second one.
+        const crashed = fail === 0 && !r.error && typeof r.status === 'number' && r.status !== 0;
+        console.log(`${crashed ? 'CRASH' : 'FAIL '} ${f}`
+            + (crashed ? ` — every check passed, then the process died (exit ${r.status})` : '')
+            + (r.error ? ' — ' + r.error.message : ''));
         console.log(out.trim().split('\n').map(l => '    ' + l).join('\n'));
     } else {
         console.log(`ok   ${f} (${pass})`);

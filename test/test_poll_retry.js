@@ -85,7 +85,35 @@ const server = http.createServer((req, res) => {
         { urlField: 'poll_url', statusField: 'status' }, { pollMs: 5 });
     check('webhook poll survives blip', r.ok && r.response.value === 42);
 
+    /**
+     * ‼️ X-299 — THE CRASH WAS NOT IN ANY ASSERTION ABOVE, IT WAS IN THE EXIT.
+     *
+     * Measured 2026-09-13: this file run nine times alone passed 9/9 eight
+     * times and once died printing one of Node's own stack addresses
+     * (`28: 00007FFA63EC26B1`) — and in the full suite that reads as "7 failed"
+     * on a file whose checks all pass. A gate that lies one run in eight is
+     * worse than no gate: it teaches the reader to wave a real red through as
+     * "that flaky one again".
+     *
+     * Two things were wrong at the end, both of them races:
+     *
+     *   · `server.close()` stops LISTENING; it does not touch sockets that are
+     *     already open, and the backoff tests above leave keep-alive
+     *     connections behind by design.
+     *   · `process.exit()` tears the process down at once, whatever the loop is
+     *     in the middle of. Called while one of those sockets — or the dead-port
+     *     connection from step 4 — is mid-teardown, the abort surfaces as a raw
+     *     address, which is exactly the shape that was seen.
+     *
+     * So the sockets are closed first, and the process is allowed to LEAVE
+     * rather than being killed: `exitCode` states the verdict and the loop
+     * drains. The unref'd timer is the belt to that brace — it cannot hold the
+     * process open, so a clean run exits before it ever fires, and a run with a
+     * handle genuinely stuck still ends instead of hanging the suite.
+     */
+    server.closeAllConnections?.();
     server.close();
     console.log(`\n${pass} passed, ${fail} failed`);
-    process.exit(fail ? 1 : 0);
+    process.exitCode = fail ? 1 : 0;
+    setTimeout(() => process.exit(process.exitCode ?? 0), 250).unref();
 })().catch(e => { console.error('CRASH (F3 must never throw):', e); process.exit(1); });
