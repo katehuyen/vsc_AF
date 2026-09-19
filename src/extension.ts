@@ -207,9 +207,14 @@ import {
     manifestOf, newLaunchId, rememberManifest
 } from './core/launchManifest';
 import {
-    AccountLastUse, AccountSpendReport, AccountSpendRow, lastDaysWindow, lastUseByAccount, spendByAccount,
+    AccountSpendReport, AccountSpendRow, lastDaysWindow, spendByAccount,
     SpendWindow, todayWindow
 } from './core/accountSpend';
+import {
+    AccountEvidence, Attribution, AttributionWhy, attributeSessions, COUNTS_AS_SPEND, slotActivity, WHY_SAID
+    , uniqueSlotRecords
+} from './core/accountAttribution';
+import { readSlotEvidence } from './core/accountEvidence';
 import { billingReader, describeDrift, runDrift, runIdentity, RunIdentity, sessionIdentity, turnRuntimes } from './core/turnRuntime';
 import { providersOf, RUN_SELECTION_ARGS, runSelectionArgs, runSelected } from './core/runFilter';
 import { BillingIdentity, DollarPart, partsOfTotal } from './core/billing';
@@ -19530,16 +19535,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * uses (`runBilling`), so a total and the row it came from cannot place one
      * run on two different bills.
      */
+    /**
+     * ‼️ X-333 — THE ENGINES' OWN RECORDS, BEHIND THE MANIFEST AND NEVER INSTEAD
+     * OF IT.
+     *
+     * X-251's refusal stands: a run this farm did not seal is not moved onto
+     * whichever sign-in the machine happens to hold. What changes is that a
+     * manifest is no longer treated as the only RECORD in existence — the CLI
+     * keeps its own, under the slot's own directory, and reading them is not
+     * guessing. The rules are in `accountAttribution.ts` and the disk half in
+     * `accountEvidence.ts`; this is only where they are read and memoised,
+     * because `accounts()` repaints far more often than a slot directory
+     * changes and this walks five of them.
+     */
+    let slotEvidenceMemo: { at: number; ev: AccountEvidence } | undefined;
+    const slotEvidence = (): AccountEvidence => {
+        const now = Date.now();
+        if (!slotEvidenceMemo || now - slotEvidenceMemo.at >= 3000) {
+            let ev: AccountEvidence = {};
+            try {
+                ev = readSlotEvidence(storedAccounts().map(s => ({
+                    id: s.id, engine: s.engine, dir: s.dir,
+                    ...(s.capturedAt ? { capturedAt: s.capturedAt } : {})
+                })));
+            } catch { /* less evidence, never a page that fails to draw */ }
+            slotEvidenceMemo = { at: now, ev };
+        }
+        return slotEvidenceMemo.ev;
+    };
+    /**
+     * What the evidence layers alone can place. The manifest is deliberately
+     * NOT folded in here: every caller already has it to hand and asks it
+     * first, so adding it would build the same map twice and invite the two
+     * copies to disagree.
+     */
+    const evidencePlaced = (): Map<string, Attribution> => attributeSessions(slotEvidence());
+    /** sessionId → slot as the launch record sealed it, for the whole index. */
+    const manifestPlaced = (): Record<string, string> => {
+        const at = manifestIndex(launchManifests());
+        const out: Record<string, string> = {};
+        for (const s of index.allWithExternal()) {
+            if (s.isSidechain || s.aliasOf) { continue; }
+            const acc = String(at(s as { launchId?: string })?.account ?? '').trim();
+            if (acc) { out[s.sessionId] = acc; }
+        }
+        return out;
+    };
     const sessionBillingReader = (): ((s: SessionInfo) => BillingIdentity) =>
         billingReader(launchManifests());
     const spendReport = (window: SpendWindow): AccountSpendReport => {
         const at = manifestIndex(launchManifests());
         const billingOfSession = sessionBillingReader();
+        const placed = evidencePlaced();
+        const named = (acc: string) => ({ id: acc, label: statedAccountLabel(acc, storedAccounts()) || acc });
         return spendByAccount(
             index.allWithExternal(),
             s => {
                 const acc = String(at(s as { launchId?: string })?.account ?? '').trim();
-                return acc ? { id: acc, label: statedAccountLabel(acc, storedAccounts()) || acc } : undefined;
+                if (acc) { return named(acc); }
+                // ‼️ X-333 — AND THEN THE ENGINE'S OWN RECORD, which is not a
+                // guess: `COUNTS_AS_SPEND` is what decides whether a layer may
+                // fund a figure at all, so a slot merely TOUCHED adds no
+                // dollars to anybody — it has no session to add up.
+                const ev = placed.get(s.sessionId);
+                return ev && COUNTS_AS_SPEND[ev.why] ? named(ev.slot) : undefined;
             },
             window,
             // X-19 — an engine that publishes neither price nor tokens has no
@@ -19571,29 +19630,55 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * hours, placed by the same manifest reader as the spend. Memoised like the
      * spend so a page drawing five cards reads the index once.
      */
-    let lastUseMemo: { at: number; rows: Map<string, AccountLastUse> } | undefined;
+    /**
+     * ‼️ X-333 — AND THIS IS THE LINE THE COMPLAINT WAS ABOUT. It could only
+     * see runs the manifest had placed, so a sign-in used from a terminal read
+     * as never used at all. `slotActivity` lets every record speak, and where
+     * none can name a run a TOUCH still gives a time — `why` says which of the
+     * two a caller is holding, because a row sourced from a touch has no
+     * session to draw a title or a transcript link beside.
+     */
+    let lastUseMemo: {
+        at: number;
+        rows: Map<string, { at: number; why: AttributionWhy; sessionId?: string }>;
+        recent: Map<string, number>;
+    } | undefined;
     const accountLastUse = (slotId: string): {
-        sessionId: string; at: number; recent: number; agent: string; title: string; file: string
+        sessionId: string; at: number; recent: number; agent: string; title: string;
+        file: string; why: AttributionWhy; whySaid: string
     } | null => {
         const now = Date.now();
         if (!lastUseMemo || now - lastUseMemo.at >= 3000) {
-            let rows = new Map<string, AccountLastUse>();
+            let rows = new Map<string, { at: number; why: AttributionWhy; sessionId?: string }>();
+            const recent = new Map<string, number>();
             try {
-                const at = manifestIndex(launchManifests());
-                rows = lastUseByAccount(index.allWithExternal(),
-                    s => {
-                        const acc = String(at(s as { launchId?: string })?.account ?? '').trim();
-                        return acc ? { id: acc } : undefined;
-                    }, now - 24 * 3600e3);
+                const live = new Map(index.allWithExternal()
+                    .filter(s => !s.isSidechain && !s.aliasOf)
+                    .map(s => [s.sessionId, s]));
+                const evidence = { manifest: manifestPlaced(), ...slotEvidence() };
+                rows = slotActivity(evidence, id => live.get(id)?.lastTs);
+                const since = now - 24 * 3600e3;
+                for (const [sessionId, a] of attributeSessions(evidence)) {
+                    if ((live.get(sessionId)?.lastTs ?? 0) >= since) {
+                        recent.set(a.slot, (recent.get(a.slot) ?? 0) + 1);
+                    }
+                }
             } catch { /* a card without the line, never a page that fails to draw */ }
-            lastUseMemo = { at: now, rows };
+            lastUseMemo = { at: now, rows, recent };
         }
         const r = lastUseMemo.rows.get(slotId);
-        if (!r || !r.sessionId) { return null; }
-        const s = index.allWithExternal().find(x => x.sessionId === r.sessionId);
+        if (!r) { return null; }
+        const s = r.sessionId
+            ? index.allWithExternal().find(x => x.sessionId === r.sessionId)
+            : undefined;
         const agentId = s?.agentId || (s ? resolveAgentByCwd(s.cwd).agentId : undefined);
         const agent = agentId ? agents.find(a => a.id === agentId) : undefined;
-        return { ...r, agent: agent?.name ?? '', title: s?.title ?? '', file: s?.file ?? '' };
+        return {
+            sessionId: r.sessionId ?? '', at: r.at,
+            recent: lastUseMemo.recent.get(slotId) ?? 0,
+            agent: agent?.name ?? '', title: s?.title ?? '', file: s?.file ?? '',
+            why: r.why, whySaid: WHY_SAID[r.why]
+        };
     };
     /** One slot as every surface may see it — never a token, ever. */
     const publicAccount = (slot: EngineAccountSlot, usage: SlotUsage[], active: Record<string, string>) => {
@@ -22206,7 +22291,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     };
     const sessionAccountOf = (sessionId: string): { id: string; label: string } | undefined => {
         const s = index.byId(sessionId);
-        const id = String(manifestOf(launchManifests(), s)?.account ?? '').trim();
+        let id = String(manifestOf(launchManifests(), s)?.account ?? '').trim();
+        // ‼️ X-333 — the manifest first, always, because it is a DECISION this
+        // farm made; the engine's own records answer only where it is silent,
+        // which is every session this farm did not start. Still no guessing:
+        // where no record names the run, the answer stays absent.
+        if (!id) { id = evidencePlaced().get(sessionId)?.slot ?? ''; }
         if (!id) { return undefined; }
         return { id, label: statedAccountLabel(id, storedAccounts()) || id };
     };
@@ -38273,6 +38363,64 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 await setPromptSnippetsFile(file);
                 const snap = readPromptSnippets();
                 return { file: snap.file || null, source: snap.source, count: snap.items.length };
+            }
+        },
+        {
+            op: 'accounts.attribution',
+            describe: 'X-333 — WHY A SIGN-IN\'S CARD SAYS WHAT IT SAYS: which record places which run on '
+                + 'which account, and what each layer could see. The complaint this answers is a card '
+                + 'reading "last used 3d ago" for an account used an hour ago — so the answer is the '
+                + 'EVIDENCE, not another figure. Per slot: `lastUse` (when, and `why` — `manifest` = '
+                + 'Agent Farm sealed the launch · `registry` = the CLI\'s own <slot>/sessions/<pid>.json, '
+                + 'certain and live-only · `slot-record` = the slot\'s own .claude.json project history · '
+                + '`slot-touch` = its files changed then, naming NO run), `placed` (runs this layer set '
+                + 'places) and `sessions` (how many of the whole index are on it). '
+                + '‼️ A `slot-touch` ROW FUNDS NOTHING — it names no session, so it adds no dollars to '
+                + 'any card; `countsAsSpend` says so per layer rather than leaving it to be inferred. '
+                + '‼️ AND `copiesDropped` IS THE ONE TO READ WHEN A FIGURE LOOKS WRONG: .claude.json is '
+                + 'copied when a slot is CAPTURED, so its history can belong to another sign-in — a '
+                + 'session id appearing under more than one slot is a copy and is DROPPED rather than '
+                + 'shared out, and this counts how many went that way. Nothing here guesses: a run no '
+                + 'record names stays unattributed. No credential, no token, no chat content.',
+            handler: () => {
+                const ev = slotEvidence();
+                const placed = evidencePlaced();
+                const manifest = manifestPlaced();
+                const all = attributeSessions({ manifest, ...ev });
+                const perSlot = new Map<string, number>();
+                for (const a of all.values()) { perSlot.set(a.slot, (perSlot.get(a.slot) ?? 0) + 1); }
+                const evidenceOnly = new Map<string, number>();
+                for (const a of placed.values()) {
+                    evidenceOnly.set(a.slot, (evidenceOnly.get(a.slot) ?? 0) + 1);
+                }
+                return {
+                    slots: storedAccounts().map(s => {
+                        const lu = accountLastUse(s.id);
+                        return {
+                            id: s.id, engine: s.engine, label: slotLabel(s),
+                            lastUse: lu
+                                ? {
+                                    at: lu.at, why: lu.why, said: lu.whySaid,
+                                    sessionId: lu.sessionId || null, agent: lu.agent || null,
+                                    countsAsSpend: COUNTS_AS_SPEND[lu.why]
+                                }
+                                : null,
+                            sessions: perSlot.get(s.id) ?? 0,
+                            placed: evidenceOnly.get(s.id) ?? 0
+                        };
+                    }),
+                    layers: {
+                        manifest: Object.keys(manifest).length,
+                        registry: (ev.registry ?? []).length,
+                        slotRecords: (ev.slotRecords ?? []).length,
+                        touches: (ev.touches ?? []).length
+                    },
+                    // ‼️ The number to read first when a card looks wrong.
+                    copiesDropped: (ev.slotRecords ?? []).length
+                        - uniqueSlotRecords(ev.slotRecords ?? []).length,
+                    attributed: all.size,
+                    countsAsSpend: COUNTS_AS_SPEND
+                };
             }
         },
         {

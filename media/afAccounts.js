@@ -236,11 +236,25 @@
             // honest answer, and it is visibly different from a line saying zero.
             if (!sp) { return ''; }
             if (!sp.sessions && !sp.unsplit) {
-                return T.wrap('<div class="acspend none">today — nothing ran here</div>',
-                    'Nothing ran on this sign-in today',
-                    'Not the same as a day that cost nothing: no run was attributed to this '
-                    + 'account at all. The figure above is the plan window, which can still be '
-                    + 'part-used by yesterday\'s work.');
+                // ‼️ X-333 — AND THE WORDING IS NARROWER THAN IT WAS. "nothing
+                // ran here" was written when the launch manifest was the only
+                // record there was, so an unrecorded run and an idle account
+                // were indistinguishable and the line picked the wrong one of
+                // the two. What is known is that no run was RECORDED — which is
+                // also why there is no figure — and directly under a line
+                // saying the sign-in was active eleven minutes ago, the old
+                // wording was not vague, it was a contradiction.
+                var touched = a.lastUse && a.lastUse.why === 'slot-touch';
+                return T.wrap('<div class="acspend none">today — no run recorded here</div>',
+                    'No run on this sign-in was recorded today',
+                    touched
+                        ? 'Its own files changed today, so it WAS in use — but no record names a run, '
+                        + 'so there is nothing to add up and an invented figure would be worse than '
+                        + 'none. The line below says when it was last active.'
+                        : 'Not the same as a day that cost nothing: no record places a run on this '
+                        + 'account at all — neither a launch manifest nor the CLI\'s own registry and '
+                        + 'project history. The figure above is the plan window, which can still be '
+                        + 'part-used by yesterday\'s work.');
             }
             var bits = [];
             if (!allUnpriced) { bits.push(N.fmtUSD(sp.cost)); }
@@ -262,10 +276,11 @@
                     'weighted tokens: ' + N.fmtTok(Math.round(sp.wTokens)),
                     'runs attributed: ' + sp.sessions,
                     T.GAP,
-                    'Each run is placed on this sign-in by its own launch manifest, which is the '
-                    + 'only record of which account a spawn was sealed on. A session this farm '
-                    + 'did not start carries no manifest and is counted nowhere rather than being '
-                    + 'put on whichever account the machine happens to hold.',
+                    'Each run is placed on this sign-in by a RECORD: the launch manifest Agent Farm '
+                    + 'sealed at the spawn, or — where there is none — the CLI\'s own session '
+                    + 'registry and project history inside this account\'s own directory. A run no '
+                    + 'record names is counted nowhere rather than being put on whichever account '
+                    + 'the machine happens to hold.',
                     sp.unpriced
                         ? sp.unpriced + ' of them ran on an engine that publishes no price, so the '
                         + 'money here is not the whole day — that is a missing figure, not a zero.'
@@ -298,17 +313,42 @@
                 ]), 'acspendw');
         })();
         /**
-         * X-238 — WHO WAS LAST ON IT, and how busy it has been. Placed by the
-         * launch manifest like the spend above, so a run this farm did not start
-         * is on no card. No line when nothing was ever placed here: the spend
-         * line already says whether anything ran today.
+         * X-238 — WHO WAS LAST ON IT, and how busy it has been.
+         *
+         * ‼️ X-333 — AND WHICH RECORD SAYS SO. This used to see only runs the
+         * launch manifest had placed, so a sign-in used from a terminal an hour
+         * ago read `last used 3d ago` — a wrong answer stated plainly, not a
+         * missing one. Every record now speaks, and where none can NAME a run
+         * the slot's own files still date it. Those are two different claims
+         * and the line says which it is: a touch has no session, so no title
+         * and no transcript link are drawn beside it.
          */
         const lu = a.lastUse;
         const lastRow = !lu ? '' : (function () {
             const when = age(lu.at, DATA.now || Date.now());
+            const TT = window.AFTime;
+            const named = lu.why !== 'slot-touch';
+            if (!named) {
+                // SHORTHAND: the row carries the one fact it adds — WHEN. Why
+                // there is no session to open is the panel's job, and the spend
+                // line above has already said no run was recorded.
+                return T.wrap('<div class="acspend">active ' + esc(when) + '</div>',
+                    'This sign-in was in use ' + when,
+                    T.lines([
+                        'last activity: ' + (TT ? TT.stamp(lu.at) : new Date(lu.at).toLocaleString()),
+                        'source: ' + (lu.whySaid || 'this sign-in\'s own files changed then'),
+                        T.GAP,
+                        'Its own files changed then, so it was signed in and working — but no record '
+                        + 'names the run, so there is no session to open and nothing is added to the '
+                        + 'spend above. That happens when a session is started outside Agent Farm.',
+                        T.GAP,
+                        'This is the honest half of an answer. It replaces the line that used to say '
+                        + 'the account had not been used in days, which was not a gap in what was '
+                        + 'known — it was wrong.'
+                    ]), 'acspendw');
+            }
             const runs = lu.recent + ' run' + (lu.recent === 1 ? '' : 's') + ' in 24h';
             const text = 'last used ' + when + (lu.agent ? ' · ' + lu.agent : '') + ' · ' + runs;
-            const TT = window.AFTime;
             return T.wrap(lu.file
                 ? '<div class="acspend go" data-acsession="' + esc(lu.file) + '" role="link" tabindex="0">' + esc(text) + '</div>'
                 : '<div class="acspend">' + esc(text) + '</div>',
@@ -319,8 +359,10 @@
                     'last activity: ' + (TT ? TT.stamp(lu.at) : new Date(lu.at).toLocaleString()),
                     'runs on this sign-in in the last 24 hours: ' + lu.recent,
                     T.GAP,
-                    'Placed by the run\'s own launch manifest — the record of which account a spawn was '
-                    + 'sealed on. A session this farm did not start is on no card.',
+                    'source: ' + (lu.whySaid || 'the run\'s own launch manifest'),
+                    'A run is placed on this sign-in by a RECORD — the launch manifest Agent Farm '
+                    + 'sealed, or the CLI\'s own registry and project history under this account\'s '
+                    + 'own directory. Never by which account the machine happens to hold.',
                     lu.file ? 'Press to open that transcript.' : 'Its transcript is not in the index any more.'
                 ]), 'acspendw');
         })();

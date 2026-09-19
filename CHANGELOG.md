@@ -2,6 +2,52 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.588.0 - a sign-in's card stops saying it was idle when it was working (X-333) (2026-09-20)
+
+- **‼️ X-333 — the complaint, exactly as it was put: a card reading `last used
+  3d ago` — or `today — nothing ran here` — for an account used an hour ago
+  and three times that day.** Not a rendering fault. X-251 made the
+  LaunchManifest the one reader with no fallback, on purpose: the alternative
+  then on the table was guessing the machine's current sign-in onto an
+  unplaced run, which puts one account's dollars on another's card. That
+  refusal stands. What was wrong is that a manifest was treated as the only
+  RECORD in existence — a terminal the user opened themselves, a session
+  resumed under another sign-in, anything from before X-251, all seal no
+  manifest, and the card then called the account idle. That is not "I do not
+  know"; it is a wrong answer stated plainly.
+- **Three more records now speak, behind the manifest and never instead of
+  it** (`src/core/accountAttribution.ts`, `accountEvidence.ts`):
+  - the CLI's own `<slot>/sessions/<pid>.json` — not one of the shared
+    junctions, so a record under a slot is a process that really ran with that
+    directory as its config dir. Certain, and the only thing that can place a
+    session started from a bare terminal;
+  - the slot's own `.claude.json` → `projects[<cwd>].lastSessionId`;
+  - the slot having been **touched** at all — a time with no session attached,
+    which is what turns "nothing ran here" into "active 11m ago".
+- **‼️ AND THE TRAP THAT MAKES THE THIRD OF THOSE DANGEROUS, measured rather
+  than assumed:** `.claude.json` is one of a slot's OWN files, so capturing a
+  slot COPIES it and the copy carries the other account's history — on this
+  machine five session ids appeared identically under all four Claude slots. A
+  value that is not UNIQUE across slots is a copy and is **dropped**, never
+  handed to the first slot alphabetically. A touch at or before the slot's
+  capture is the capture, not a run.
+- **Nothing guesses.** Every layer is a record somebody else wrote down; where
+  none exists the answer stays absent and the unattributed row keeps its
+  meaning. The layer that answered travels with the answer, and a **touch
+  funds nothing** — it names no session, so it adds no dollars to any card.
+- **On the card:** a run a record names keeps its agent, its 24-hour run count
+  and its way into the transcript. A sign-in only touched says `active 11m
+  ago` and draws none of those, having none. The spend line above it narrowed
+  with it — `today — no run recorded here`, because "nothing ran here"
+  directly above "active 11m ago" was not vague, it was a contradiction.
+- **On the bridge:** `accounts.attribution` — which record places which run on
+  which account, what each layer could see, and `copiesDropped`, the number to
+  read first when a figure still looks wrong.
+- Tests: `test_account_attribution.js` (24), `test_account_evidence.js` (14),
+  the two card shapes drawn in `test/fixtures/enginespanel.js` and pinned in
+  `test_engines_page_accounts.js`, the op's contract in
+  `test_accounts_bridge.js`.
+
 ## 3.587.0 - a phone message now knows which conversation it is for (U-113) (2026-09-20)
 
 - **‼️ U-113 — the chat bridge could talk to ONE agent, and on a farm running

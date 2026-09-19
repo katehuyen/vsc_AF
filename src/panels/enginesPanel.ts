@@ -31,6 +31,15 @@ import { handleAfNav, htmlShell } from './base';
 /** X-238 — the last run a sign-in carried, as the card draws it. */
 export interface AccountLastUseView {
     sessionId: string; at: number; recent: number; agent: string; title: string; file: string;
+    /**
+     * ‼️ X-333 — WHICH RECORD ANSWERED. A row placed by the launch manifest and
+     * one placed by the slot's files having changed are two different claims,
+     * and only the first has a session to draw a title or a transcript link
+     * beside it. A card that printed them the same way would be inventing the
+     * missing half. `whySaid` is the sentence its panel carries.
+     */
+    why?: string;
+    whySaid?: string;
 }
 
 /** X-305 — what a rule comes to on one engine at this moment. */

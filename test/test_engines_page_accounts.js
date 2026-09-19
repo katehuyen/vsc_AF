@@ -710,8 +710,13 @@ const sec = () => {
     // fifth row deliberately sends no figure at all and is checked below.
     ok('a busy day is stated as money, weighted tokens and a run count',
         s.includes('today $4.31') && s.includes('7 runs'));
-    ok('‼️ AND "NOTHING RAN HERE" IS SAID IN WORDS, not drawn as $0.00',
-        s.includes('today — nothing ran here') && !s.includes('today $0.00'));
+    // ‼️ X-333 narrowed the wording: "nothing ran here" was written when the
+    // launch manifest was the only record there was, so an UNRECORDED run and
+    // an idle account were indistinguishable and the line picked the wrong one.
+    // What is still pinned here, and is the point, is that the blank is said in
+    // WORDS and never drawn as a confident $0.00.
+    ok('‼️ AND AN EMPTY DAY IS SAID IN WORDS, not drawn as $0.00',
+        s.includes('today — no run recorded here') && !s.includes('today $0.00'));
     ok('‼️ AN ENGINE THAT STATES NO PRICE GETS NO MONEY FIGURE AT ALL'
         + ' — its zero would read as a free day',
         /today ⚖ 52\.0k · 2 runs · no price stated/.test(s));
@@ -726,8 +731,36 @@ const sec = () => {
         + ` (${drawn} of 5 rows)`, drawn === 4);
 
     // MIRROR — the panel carries what the row cannot, including both refusals.
-    ok('the panel says the figure comes from the run\'s own launch manifest',
-        s.includes('placed on this sign-in by its own launch manifest'));
+    // ‼️ X-333 — the manifest is the FIRST record, no longer the only one: the
+    // CLI keeps its own under the slot's directory, and a run it names is as
+    // firmly placed as one this farm sealed. What is unchanged, and is the
+    // half worth pinning, is that both are RECORDS and neither is the
+    // machine's current sign-in guessed onto an unplaced run.
+    // ‼️ X-333 — THE TWO SHAPES OF "LAST USED", which are two different claims.
+    ok('a run a record NAMES is drawn with its agent, its run count and a way in',
+        /last used [^<]*· developer ·[^<]*6 runs in 24h/.test(s)
+        && s.includes('data-acsession="D:/fixture/b7c1e2d4.jsonl"'));
+    ok('‼️ A SIGN-IN ONLY TOUCHED SAYS WHEN — the line that used to read "3d ago" was WRONG, not vague',
+        />active 11m ago<\/div>/.test(s));
+    // SHORTHAND: the row adds the one fact the line above has not — the time.
+    // Everything it does NOT know stays off it: no agent, no run count, no
+    // transcript link, because a touch names no session to hang them on.
+    ok('…and it draws no agent, no run count and no transcript link, having none',
+        !/>active [^<]*runs in 24h/.test(s) && !/>active [^<]*data-acsession/.test(s));
+    ok('…and its panel says where the time came from and why nothing opens',
+        s.includes('this sign-in\'s files changed then')
+        && s.includes('no record names the run, so there is no session to open'));
+    // The card whose own files were only touched must not become a figure —
+    // ‼️ and the two lines must not contradict each other. "nothing ran here"
+    // directly above "active 11m ago" was not vague, it was a contradiction.
+    ok('‼️ A TOUCH FUNDS NOTHING, and the spend line no longer contradicts the one below it',
+        s.includes('today — no run recorded here') && !s.includes('nothing ran here'));
+    ok('…and its panel says the sign-in WAS in use, so the blank is not a quiet day',
+        s.includes('Its own files changed today, so it WAS in use'));
+    ok('the panel says the figure comes from a record, naming both kinds',
+        s.includes('placed on this sign-in by a RECORD')
+        && s.includes('launch manifest Agent Farm sealed at the spawn')
+        && s.includes('inside this account\'s own directory'));
     ok('…and that an unattributed run is counted nowhere rather than guessed',
         s.includes('counted nowhere rather than being'));
     ok('…and it counts the runs whose engine published no price',

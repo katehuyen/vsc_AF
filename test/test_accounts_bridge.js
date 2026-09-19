@@ -346,6 +346,69 @@ function freshState() {
             ).CLAUDE_CONFIG_DIR === null);
     }
 
+    // ---------- X-333: accounts.attribution, the evidence behind a card ----------
+    {
+        // The handler in extension.ts needs vscode to reach the index, so what
+        // is dispatched here is the CONTRACT it is built out of: the same
+        // registry over the same pure core, and the promises a caller reading
+        // this op is entitled to.
+        const A = require(path.join(OUT, 'accountAttribution.js'));
+        const reg = new BridgeRegistry();
+        // One copied record under two slots and one real one — the shape
+        // measured on this machine, and the reason `copiesDropped` exists.
+        const slotRecords = [
+            { slot: 'claude-a', sessionId: 'copy' }, { slot: 'claude-b', sessionId: 'copy' },
+            { slot: 'claude-a', sessionId: 'own', at: 500 }
+        ];
+        const ev = {
+            registry: [{ slot: 'claude-b', sessionId: 'live' }],
+            slotRecords,
+            touches: [{ slot: 'claude-c', at: 9000 }]
+        };
+        reg.register([{
+            op: 'accounts.attribution',
+            describe: 'which record places which run on which account',
+            handler: () => {
+                const all = A.attributeSessions({ manifest: { sealed: 'claude-a' }, ...ev });
+                const act = A.slotActivity({ manifest: { sealed: 'claude-a' }, ...ev },
+                    id => (id === 'sealed' ? 7000 : undefined));
+                return {
+                    slots: ['claude-a', 'claude-b', 'claude-c'].map(id => {
+                        const lu = act.get(id);
+                        return {
+                            id,
+                            lastUse: lu
+                                ? { at: lu.at, why: lu.why, sessionId: lu.sessionId || null,
+                                    countsAsSpend: A.COUNTS_AS_SPEND[lu.why] }
+                                : null
+                        };
+                    }),
+                    copiesDropped: slotRecords.length - A.uniqueSlotRecords(slotRecords).length,
+                    attributed: all.size,
+                    countsAsSpend: A.COUNTS_AS_SPEND
+                };
+            }
+        }]);
+        const r = (await reg.dispatch('accounts.attribution', {}, 'test')).result;
+        const by = Object.fromEntries(r.slots.map(s => [s.id, s]));
+        ok('the sealed run is reported as the manifest\'s answer',
+            by['claude-a'].lastUse.why === 'manifest' && by['claude-a'].lastUse.at === 7000);
+        ok('‼️ A SLOT ONLY TOUCHED IS REPORTED WITH NO SESSION AND FUNDS NOTHING',
+            by['claude-c'].lastUse.why === 'slot-touch'
+            && by['claude-c'].lastUse.sessionId === null
+            && by['claude-c'].lastUse.countsAsSpend === false);
+        ok('‼️ THE COPY COUNT IS ON THE ANSWER — it is the number to read when a card looks wrong',
+            r.copiesDropped === 2);
+        ok('a run no record names is not attributed to anybody',
+            r.attributed === 3);
+        ok('‼️ NO CREDENTIAL, NO TOKEN AND NO DIRECTORY PATH CROSSES',
+            !/token|credential|\.json|[A-Za-z]:[\\/]/.test(JSON.stringify(r)));
+        ok('the op is really registered in the extension, not only here',
+            /op: 'accounts\.attribution'/.test(
+                require('fs').readFileSync(
+                    path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8')));
+    }
+
     console.log(`${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();

@@ -177,10 +177,15 @@ const data = () => {
                     state: 'ready', refreshExpiresAt: NOW + 23 * 24 * 3600 * 1000,
                     hoursLeft: 23 * 24, liveIsSame: false, liveHealth: 'ready'
                 },
-                // X-238 — who was last on it, by its launch manifest
+                // X-238 — who was last on it, by its launch manifest. X-333 —
+                // and the row SAYS which record placed it, because the card two
+                // rows down is placed by a weaker one and the two must not be
+                // drawn as the same claim.
                 lastUse: {
                     sessionId: 'b7c1e2d4', at: NOW - 12 * 60 * 1000, recent: 6, agent: 'developer',
-                    title: 'X-35 kalan denetim listesini kapat', file: 'D:/fixture/b7c1e2d4.jsonl'
+                    title: 'X-35 kalan denetim listesini kapat', file: 'D:/fixture/b7c1e2d4.jsonl',
+                    why: 'manifest',
+                    whySaid: 'Agent Farm started this run on this sign-in and wrote it down.'
                 },
                 capturedAt: NOW - 6 * 24 * 3600 * 1000,
                 // X-206 — the figure's own age, and the refresh line: this one
@@ -291,6 +296,19 @@ const data = () => {
                 // nothing ran on this sign-in today. It must not read as a day
                 // that cost nothing, nor as a figure that failed to arrive.
                 spentToday: { cost: 0, wTokens: 0, sessions: 0, unpriced: 0, unsplit: 0 },
+                // ‼️ X-333 — THE SCENE THE ITEM IS NAMED AFTER, and the one that
+                // used to be drawn as a lie. Nothing NAMES a run here — no
+                // manifest, no registry record — but this sign-in's own files
+                // changed eleven minutes ago, so it was plainly in use. The card
+                // used to answer that with "last used 3d ago"; the layer must be
+                // visible in a photograph, and it is the SMALLEST of the two
+                // shapes (no agent, no session, no transcript link), so it is
+                // the one that had to be added first.
+                lastUse: {
+                    sessionId: '', at: NOW - 11 * 60 * 1000, recent: 0, agent: '', title: '', file: '',
+                    why: 'slot-touch',
+                    whySaid: 'this sign-in\'s files changed then — the run itself was not recorded'
+                },
                 dir: 'C:/Users/mv/AppData/agent-farm/accounts/personal'
             },
             {
