@@ -103,8 +103,13 @@ function shQuote(value: string): string {
  *
  * It removes itself on its last line: cmd has already read that line by the
  * time it runs, so a window nobody is watching leaves nothing behind.
+ *
+ * Exported for the same reason `posixEnvPrefix` is: the script IS the channel
+ * on this platform, so what it says about the environment can only be measured
+ * by reading it — and X-117 runs the real CLI through one, which needs the path
+ * without opening a window on somebody's desktop.
  */
-function writeWindowsRunScript(
+export function writeWindowsRunScript(
     cwd: string | undefined, command: string, title: string | undefined,
     exitFile?: string, env?: Record<string, string | null>
 ): string {

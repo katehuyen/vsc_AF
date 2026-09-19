@@ -2,6 +2,60 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.575.0 - the three doors nobody was watching, run end to end on a route (X-117, part 2) (2026-09-19)
+
+- **‼️ THE TERMINAL DOORS, WHICH ARE THE OPPOSITE SHAPE OF PROBLEM FROM THE ONE
+  ALREADY MEASURED.** A Console card is handed a COMPLETE environment, so a name
+  left out of it is a name removed. A terminal is handed an OVERLAY that VS Code
+  merges onto the window's own, and the OS window is handed the same map to say
+  in its shell's words — on both of those a route name left unsaid SURVIVES
+  inherited, which is the entire reason `terminalEnvOverlay` exists and exactly
+  what no test had ever run a CLI through. `test_e2e_terminal_route.js` runs the
+  real `claude` three ways in a window that already carries a route: through VS
+  Code's own documented merge (`string` sets, `null` removes), through the
+  `.cmd` the external launcher really writes (run by cmd.exe, so `set "NAME="`
+  is the clearing and the values arrive through a file the script eats and
+  deletes), and through the `export`/`unset` prefix in a real POSIX shell. The
+  key it carries holds `=`, `%` and `!` — the three characters the Windows
+  script's own comment claims survive its `for /f` parse, and the claim had
+  never been run. The script is also read before it is run: the key is not in
+  it, and after the run neither the values file nor the script is left behind.
+  - **‼️ AND THE CLEARING IS FALSIFIED, NOT ASSERTED.** The same turn with the
+    route's `clearEnv` dropped is expected to carry the inherited bearer onto
+    the wire — and does. A guard nothing can turn red is not a guard.
+- **‼️ THE HEADLESS DOOR — THE ONE WITH NOBODY IN FRONT OF IT.** Every other
+  file on this axis replaces `launch` with a recorder and measures the decision,
+  so what an unattended spawn actually put on the wire had never been watched.
+  `test_e2e_task_route.js` drives the real `TaskManager`: a queued task naming a
+  route reaches that endpoint with its key and tier model while the route in the
+  machine's own shell is never touched; a task naming a route that has since
+  been removed is refused at the spawn (X-116) — failed before it started, and
+  nothing at all on any wire; a task naming NO route runs on the inherited
+  endpoint untouched, which is the rule.
+- **‼️ RESUMING A CONVERSATION: THE GATE'S VERDICT, ON THE WIRE.** X-109's gate
+  has been read in tests since it was written; the risk was never the answer but
+  the spawn not obeying it. `test_e2e_resume_route.js` opens a real conversation
+  on a route, then resumes it and asserts ONE relation — whatever the gate says,
+  that is the endpoint the process talks to. Resumed with nothing asked it is
+  pinned to what it ran on; resumed asking for another route the wire follows
+  the verdict whichever way it falls; a refused resume is a run that never
+  happens.
+  - **‼️ AND THE GATE HAD A VERDICT WHOSE WORDS AND BEHAVIOUR DISAGREED.** A
+    binding it did not recognise was described as *having a launch record* while
+    the decision — which tests for one by name — treated it as having none. Two
+    opposite statements in one answer is worse than either alone, and it read as
+    a product defect for an hour while this was being written. An unrecognised
+    binding now says which route the session ran on is not known.
+- **‼️ AND ONE FINDING THAT IS THE ENGINE'S, WRITTEN DOWN RATHER THAN ABSORBED
+  (X-329).** Two `opencode run` processes started at once against ONE
+  `XDG_DATA_HOME` raced the engine's own SQLite store: measured in a suite pass,
+  one exited non-zero with *database is locked* and its turn never happened.
+  Nothing in this repo writes that database, but two cards on one account share
+  exactly that home. The OpenCode end-to-end file now gives each concurrent run
+  a home of its own — so a claim about PROVIDERS is not quietly also a claim
+  about locking — and the product question is a backlog item instead of a
+  comment nobody would find.
+
 ## 3.574.0 - both engines' provider paths, run end to end against local mock endpoints (X-117, part 1) (2026-09-19)
 
 - **‼️ THE WIRE ITSELF IS NOW WATCHED, NOT ASSUMED.** Every unit test of the

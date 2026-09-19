@@ -103,9 +103,26 @@ async function main() {
             models: { m1: { name: 'M1' } } });
         const config = { $schema: 'https://opencode.ai/config.json',
             provider: { oca: provider(a, 'sk-oca-CANARY'), ocb: provider(b, 'sk-ocb-CANARY') } };
-        const env = { ...process.env, OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
-            XDG_DATA_HOME: path.join(tmp, 'data'), XDG_CONFIG_HOME: path.join(tmp, 'config'),
-            XDG_STATE_HOME: path.join(tmp, 'state') };
+        /**
+         * ‼️ A DATA HOME PER CONCURRENT RUN, AND THAT IS A MEASUREMENT RATHER
+         * THAN TIDINESS.
+         *
+         * OpenCode keeps its sessions in SQLite under `XDG_DATA_HOME`. Two runs
+         * started at once against ONE home raced it: measured in a suite pass,
+         * `opencode run` exited non-zero with "database is locked" and the turn
+         * never happened. That is the ENGINE's own store, not anything this
+         * repo writes — but it is reachable wherever two sessions share a data
+         * home, which is what two cards on one account are. What THIS file is
+         * for is the routing, so the two runs are given homes of their own and
+         * the lock is not mixed into a claim about providers.
+         */
+        const homed = tag => ({ ...process.env, OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
+            XDG_DATA_HOME: path.join(tmp, tag, 'data'), XDG_CONFIG_HOME: path.join(tmp, tag, 'config'),
+            XDG_STATE_HOME: path.join(tmp, tag, 'state') });
+        // The export below must read the SAME home the run wrote, so A's env is
+        // the one that is kept and reused rather than a third one.
+        const env = homed('a');
+        const envB = homed('b');
 
         // ---- 1. the catalog, read from the engine ----
         const models = await run('opencode models --verbose', env, work);
@@ -125,7 +142,7 @@ async function main() {
         ok('‼️ and no environment of Agent Farm\'s is put on an engine that owns its sign-in', !rtA.spawnEnv && !rtA.clearEnv);
         const [runA, runB] = await Promise.all([
             run(`opencode run ${rtA.args.join(' ')} --format json "say ping"`, env, work),
-            run(`opencode run ${rtB.args.join(' ')} --format json "say ping"`, env, work)
+            run(`opencode run ${rtB.args.join(' ')} --format json "say ping"`, envB, work)
         ]);
         ok('both turns finished', runA.code === 0 && runB.code === 0);
         if (runA.code !== 0 || runB.code !== 0) { console.log('  stderr:', (runA.err + runB.err).slice(0, 400)); }
@@ -158,7 +175,7 @@ async function main() {
 
         // ---- the user's own OpenCode home was not touched ----
         ok('‼️ the runs wrote their sessions into the temp data home, not the user\'s',
-            fs.existsSync(path.join(tmp, 'data', 'opencode')));
+            fs.existsSync(path.join(tmp, 'a', 'data', 'opencode')));
     } finally {
         await Promise.all([a.close(), b.close()]);
         fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });

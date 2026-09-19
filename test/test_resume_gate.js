@@ -149,6 +149,14 @@ console.log('\n== X-109 — nothing recorded: nothing pinned, and the answer say
         /not started by Agent Farm/.test(R.resumeRoute(claude(), 'external', {}, {}, STANDING).why));
     ok('an unknown session says it is not in the index',
         /not in the index/.test(R.resumeRoute(claude(), 'unknown', {}, {}, STANDING).why));
+    // ‼️ AND A BINDING THIS MODULE DOES NOT RECOGNISE SAYS SO, rather than
+    // describing itself as bound. The decision below tests `=== 'declared'`, so
+    // a default that claimed a launch record made the verdict's words and its
+    // behaviour say opposite things — measured while writing X-117, where a
+    // caller passing 'launch' was told it had a record and resumed as if it had
+    // none, and the contradiction read as a product defect for an hour.
+    ok('‼️ a binding nobody recognises does not claim to have a launch record',
+        !/has a launch record/.test(R.resumeRoute(claude(), 'launch', {}, {}, STANDING).why));
     eq('…but an unknown route asked on any of them is still refused',
         R.resumeRoute(claude(), 'legacy', {}, { providerId: 'nope' }, STANDING).act, 'refuse');
 }

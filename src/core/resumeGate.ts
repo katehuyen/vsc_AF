@@ -139,7 +139,15 @@ function describeBinding(binding: ResumeBinding): string {
         case 'legacy': return 'this session was started before launches were recorded, so which route it ran on is not known';
         case 'external': return 'this session was not started by Agent Farm, so which route it ran on is not known';
         case 'unknown': return 'this session is not in the index, so which route it ran on is not known';
-        default: return 'this session has a launch record';
+        case 'declared': return 'this session has a launch record';
+        // ‼️ AND ANYTHING ELSE IS NOT A LAUNCH RECORD. A `default` that claimed
+        // one described every unrecognised value as bound while the decision
+        // below — which tests `=== 'declared'` — treated it as unbound: a
+        // verdict whose words and whose behaviour said opposite things, which
+        // is worse than either answer alone. (Measured while writing X-117: a
+        // caller passing 'launch' was told it had a record and resumed as
+        // though it had none.)
+        default: return 'which route this session ran on is not known';
     }
 }
 
