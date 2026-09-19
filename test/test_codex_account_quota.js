@@ -140,7 +140,11 @@ const rollout = (used, windowMinutes, resetsAtSec, plan) => JSON.stringify({
     // exactly what let six other copies exist elsewhere, each deriving the name
     // its own way, five of them wrong. The page names nothing now; the host
     // fills the silence once. Inverted, not deleted.
-    const page = fs.readFileSync(path.join(ROOT, 'media', 'engines.js'), 'utf8');
+    // X-236 — the account card lives in media/afAccounts.js now, drawn by the
+    // Engines page and the Accounts page alike; the page and the view are read
+    // together, because the phrases pinned here belong to the view.
+    const page = fs.readFileSync(path.join(ROOT, 'media', 'engines.js'), 'utf8')
+        + '\n' + fs.readFileSync(path.join(ROOT, 'media', 'afAccounts.js'), 'utf8');
     ok('‼️ X-215 — the card names the window the figure belongs to',
         /const winName = a\.window/.test(page));
     // ‼️ LINE BY LINE, WITH THE COMMENTS TAKEN OUT. A quote-pair regex run over

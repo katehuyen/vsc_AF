@@ -68,7 +68,9 @@ const htmlOf = (data) => runPage('taskAnalytics.js', data).html();
 {
     const fs = require('fs');
     const ROOT = path.resolve(__dirname, '..');
-    const eng = fs.readFileSync(path.join(ROOT, 'media', 'engines.js'), 'utf8');
+    // X-236 — the card is drawn by media/afAccounts.js on both pages now.
+    const eng = fs.readFileSync(path.join(ROOT, 'media', 'engines.js'), 'utf8')
+        + '\n' + fs.readFileSync(path.join(ROOT, 'media', 'afAccounts.js'), 'utf8');
     ok('‼️ THE ENGINES CARD\'S SPEND LINE IS THE DOOR — no control was added beside it',
         /class="acspend go" data-afnav="analytics"/.test(eng));
     ok('…and its panel says where pressing it goes, because a surface that acts '

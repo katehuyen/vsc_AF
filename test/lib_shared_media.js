@@ -75,6 +75,11 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // five-hour figure, so one account read `work •` on the Tasks form and
     // `work • 42% used` in the Console.
     'afAccount.js',
+    // afAccounts.js was the twenty-third — the accounts VIEW (X-236): the card,
+    // the groups, the capture form and their presses, lifted out of the
+    // Engines page verbatim so the Accounts page draws the same thing. Loaded
+    // after afAccount.js, whose `turns` it asks.
+    'afAccounts.js',
     // afTelegram.js was the sixteenth — the Telegram bridge card (U-84).
     // Shared the moment the item asked for it in two places: the fact it draws
     // is "can your phone reach the farm", and a card invented per page is a

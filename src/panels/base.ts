@@ -396,6 +396,13 @@ export function htmlShell(
     // `work •` on one page and `work • 42% used` on another — and the figure is
     // the one thing the choice actually turns on.
     const account = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAccount.js'));
+    // The accounts VIEW — a captured sign-in as a card, the cards grouped by
+    // engine, the capture form and every press on them (X-236). Shipped
+    // everywhere for the reason the option body above is: the Engines page and
+    // the Accounts page draw the same thousand lines, and a copy per page is
+    // how one account comes to read differently on two surfaces. Loaded after
+    // afAccount.js, whose `turns` it asks.
+    const accounts = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afAccounts.js'));
     // The Telegram bridge card (U-84). Ships everywhere for the reason the
     // badges above do, with one extra: the fact it draws is "can your phone
     // reach the farm", and a card invented per page is a card that answers that
@@ -455,6 +462,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${provider}"></script>
 <script nonce="${nonce}" src="${runFilter}"></script>
 <script nonce="${nonce}" src="${account}"></script>
+<script nonce="${nonce}" src="${accounts}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>

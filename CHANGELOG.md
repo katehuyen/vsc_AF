@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.581.0 - the accounts view lifted out of the Engines page, so a second page can draw it (X-236, part 1) (2026-09-19)
+
+- **‼️ ONE VIEW, TWO PAGES — AND THE VIEW MOVED FIRST.** The dedicated
+  Accounts page (X-235/X-236) must draw the SAME cards from the SAME data with
+  the SAME gestures as the Engines page's accounts section, and a second copy
+  of a thousand-line view is how two surfaces come to disagree about one
+  account. So the section — a captured sign-in as a card, the cards grouped
+  by engine, the head with its refresh gestures, the capture form, and the
+  wiring of every press — is now `media/afAccounts.js` (`window.AFAccounts`:
+  `sectionHtml` · `groupsHtml` · `cardHtml` · `wire`), lifted out of
+  `engines.js` **verbatim** (1,012 + 47 lines; the page went from 2,422 to
+  1,369 lines). The page hands in its context (`DATA`, `post`, its own
+  `esc`/`age`/`engineLabel`, the section's message) and draws what comes back.
+- **Shipped everywhere, like the option body it asks.** `afAccounts.js` joins
+  the shell's shared scripts (`base.ts`, after `afAccount.js`, whose `turns`
+  it uses) and the test harness's list, so the shell-matches-list guard pins
+  the pair. The Engines page renders identically — scene 8 (accounts running
+  out / dead sign-in) was photographed and read; every Engines test and every
+  test that reads the page's source is green, the two that pinned phrases of
+  the card now read the page and the view together.
+- **What remains (part 2):** `src/panels/accountsPanel.ts` + `media/accounts.js`
+  drawing `AFAccounts.sectionHtml` under its own header, `agentfarm.openAccounts`
+  (command + parity entry), the same `accounts.*` message handlers served from
+  one place for both panels, a fixture and a page test. Then X-237 rewires the
+  sidebar title, Settings and Dashboard buttons.
+
 ## 3.580.0 - Antigravity's quota, read from its own /usage — "writes no file" was never "has no source" (X-306) (2026-09-19)
 
 - **‼️ THE FIGURE WAS A LOCAL COMMAND AWAY THE WHOLE TIME.** Antigravity's row
