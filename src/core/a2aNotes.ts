@@ -1,0 +1,254 @@
+import { a2aId, Envelope, readEnvelope, withLock, writeEnvelope } from './a2aStore';
+
+/**
+ * N-3 — WHAT ONE AGENT LEAVES FOR ANOTHER TO READ. A note is PASSIVE: nobody
+ * is assigned it, nothing waits on it, and it is consumed by whoever the
+ * coordinates match. That is the whole difference from a task, and it is why
+ * the two are separate stores rather than one table with a flag — a queue you
+ * can read without claiming is a queue whose states mean nothing.
+ *
+ * ‼️ THE COORDINATES ARE A MATCH, NOT AN ADDRESS. `project` · `subsystem` ·
+ * `topic` · `targetRole` say what the note is ABOUT and who it is FOR, and a
+ * reader arrives with coordinates of their own. `'*'` on either side is
+ * "anything", which is how a broadcast is written without a second mechanism.
+ * `strictness` decides what happens when only some of them line up:
+ *
+ *   hard      — every stated coordinate must match, or the note is not yours
+ *   preferred — mismatches are allowed but rank below exact hits
+ *   any       — the coordinates are a label; anyone may read it
+ */
+
+export type A2ACategory = 'info' | 'warning' | 'convention' | 'discovery' | 'result';
+export const A2A_CATEGORIES: A2ACategory[] = ['info', 'warning', 'convention', 'discovery', 'result'];
+
+export type A2AStrictness = 'hard' | 'preferred' | 'any';
+export const A2A_STRICTNESS: A2AStrictness[] = ['hard', 'preferred', 'any'];
+
+/** The user's word on a note, and it outranks every rule an agent applies. */
+export interface HumanDirective {
+    kind: 'steer' | 'veto' | 'constraint';
+    text: string;
+    ts: number;
+}
+
+export interface A2ANote {
+    id: string;
+    ts: number;
+    fromAgent: string;
+    fromSessionId?: string;
+    /** '*' = every project */
+    project: string;
+    /** the workdir or subsystem it is about; '*' = anywhere */
+    subsystem: string;
+    /** the anchor a reader searches by; '*' = anything */
+    topic: string;
+    /** the role or capability meant to read it; '*' = anyone */
+    targetRole: string;
+    strictness: A2AStrictness;
+    category: A2ACategory;
+    title: string;
+    body: string;
+    /** absolute paths worth opening alongside the note */
+    contextFiles: string[];
+    humanDirective?: HumanDirective;
+    /** epoch ms after which the note is history; 0 = it does not expire */
+    expiresAt: number;
+    resolved: boolean;
+    /** who has read it — a note is passive, so this is the only "state" it has */
+    readBy: string[];
+}
+
+export interface A2ANoteInput {
+    fromAgent: string;
+    fromSessionId?: string;
+    title: string;
+    body?: string;
+    project?: string;
+    subsystem?: string;
+    topic?: string;
+    targetRole?: string;
+    strictness?: A2AStrictness;
+    category?: A2ACategory;
+    contextFiles?: string[];
+    /** how long it stays live, in ms; 0 or absent = forever */
+    ttlMs?: number;
+}
+
+const str = (v: unknown, fallback = ''): string =>
+    typeof v === 'string' && v.trim() ? v.trim() : fallback;
+
+export function makeNote(input: A2ANoteInput, now = Date.now()): A2ANote {
+    const ttl = typeof input.ttlMs === 'number' && input.ttlMs > 0 ? input.ttlMs : 0;
+    return {
+        id: a2aId('n', now),
+        ts: now,
+        fromAgent: str(input.fromAgent, 'unknown'),
+        ...(input.fromSessionId ? { fromSessionId: input.fromSessionId } : {}),
+        project: str(input.project, '*'),
+        subsystem: str(input.subsystem, '*'),
+        topic: str(input.topic, '*'),
+        targetRole: str(input.targetRole, '*'),
+        strictness: A2A_STRICTNESS.includes(input.strictness as A2AStrictness)
+            ? input.strictness as A2AStrictness : 'preferred',
+        category: A2A_CATEGORIES.includes(input.category as A2ACategory)
+            ? input.category as A2ACategory : 'info',
+        title: str(input.title, '(untitled)'),
+        body: typeof input.body === 'string' ? input.body : '',
+        contextFiles: Array.isArray(input.contextFiles)
+            ? input.contextFiles.filter(f => typeof f === 'string' && f.trim()) : [],
+        expiresAt: ttl ? now + ttl : 0,
+        resolved: false,
+        readBy: []
+    };
+}
+
+/** A row off disk, filled in — a note written by an older build is still a note. */
+export function normaliseNote(row: Partial<A2ANote> & { id: string }): A2ANote {
+    return {
+        id: row.id,
+        ts: typeof row.ts === 'number' ? row.ts : 0,
+        fromAgent: str(row.fromAgent, 'unknown'),
+        ...(row.fromSessionId ? { fromSessionId: row.fromSessionId } : {}),
+        project: str(row.project, '*'),
+        subsystem: str(row.subsystem, '*'),
+        topic: str(row.topic, '*'),
+        targetRole: str(row.targetRole, '*'),
+        strictness: A2A_STRICTNESS.includes(row.strictness as A2AStrictness)
+            ? row.strictness as A2AStrictness : 'preferred',
+        category: A2A_CATEGORIES.includes(row.category as A2ACategory)
+            ? row.category as A2ACategory : 'info',
+        title: str(row.title, '(untitled)'),
+        body: typeof row.body === 'string' ? row.body : '',
+        contextFiles: Array.isArray(row.contextFiles) ? row.contextFiles : [],
+        ...(row.humanDirective ? { humanDirective: row.humanDirective } : {}),
+        expiresAt: typeof row.expiresAt === 'number' ? row.expiresAt : 0,
+        resolved: row.resolved === true,
+        readBy: Array.isArray(row.readBy) ? row.readBy : []
+    };
+}
+
+export interface NoteQuery {
+    project?: string;
+    subsystem?: string;
+    topic?: string;
+    /** the reader's own role — matched against the note's targetRole */
+    role?: string;
+    category?: A2ACategory;
+    /** the reader's name, for unread-only reads */
+    reader?: string;
+    unreadOnly?: boolean;
+    includeResolved?: boolean;
+    includeExpired?: boolean;
+}
+
+/** One coordinate: '*' on either side is anything, and a blank query asks nothing. */
+function axis(noteValue: string, want: string | undefined): 'hit' | 'wild' | 'miss' {
+    if (!want) { return 'wild'; }
+    if (noteValue === '*' || want === '*') { return 'wild'; }
+    return noteValue.toLowerCase() === want.toLowerCase() ? 'hit' : 'miss';
+}
+
+/**
+ * How well a note answers a reader's coordinates. `undefined` = not theirs.
+ * A higher score is a closer fit, which is what `preferred` needs to mean
+ * anything: without ranking it would be indistinguishable from `any`.
+ */
+export function noteScore(note: A2ANote, q: NoteQuery): number | undefined {
+    const axes = [
+        axis(note.project, q.project), axis(note.subsystem, q.subsystem),
+        axis(note.topic, q.topic), axis(note.targetRole, q.role)
+    ];
+    if (note.strictness === 'hard' && axes.includes('miss')) { return undefined; }
+    if (note.strictness === 'preferred' && axes.filter(a => a === 'hit').length === 0
+        && axes.includes('miss')) { return undefined; }
+    return axes.filter(a => a === 'hit').length;
+}
+
+export function matchNotes(notes: A2ANote[], q: NoteQuery, now = Date.now()): A2ANote[] {
+    return notes
+        .filter(n => q.includeResolved || !n.resolved)
+        .filter(n => q.includeExpired || !n.expiresAt || n.expiresAt > now)
+        .filter(n => !q.category || n.category === q.category)
+        .filter(n => !(q.unreadOnly && q.reader) || !n.readBy.includes(q.reader as string))
+        .map(n => ({ n, score: noteScore(n, q) }))
+        .filter(x => x.score !== undefined)
+        .sort((a, b) => (b.score as number) - (a.score as number) || b.n.ts - a.n.ts)
+        .map(x => x.n);
+}
+
+export class A2ANotesStore {
+    notes: A2ANote[] = [];
+    private rev = 0;
+
+    constructor(private file: string) { }
+
+    load(): void {
+        const env = readEnvelope<A2ANote>(this.file, r => normaliseNote(r as A2ANote & { id: string }));
+        this.notes = env.items;
+        this.rev = env.rev;
+    }
+
+    /**
+     * Every write is a locked read-modify-write against what is ON DISK, not
+     * against what this process last saw. Another host's note written while
+     * this one was thinking survives; the alternative is a farm where the
+     * second agent to speak erases the first.
+     */
+    private mutate<T>(fn: (notes: A2ANote[]) => { notes: A2ANote[]; out: T }): T | undefined {
+        return withLock(this.file, () => {
+            const disk = readEnvelope<A2ANote>(this.file, r => normaliseNote(r as A2ANote & { id: string }));
+            const r = fn(disk.items);
+            const env: Envelope<A2ANote> = { rev: disk.rev + 1, items: r.notes };
+            if (!writeEnvelope(this.file, env)) { return undefined as T; }
+            this.notes = r.notes;
+            this.rev = env.rev;
+            return r.out;
+        });
+    }
+
+    add(input: A2ANoteInput, now = Date.now()): A2ANote | undefined {
+        const note = makeNote(input, now);
+        return this.mutate(notes => ({ notes: [note, ...notes], out: note }));
+    }
+
+    get(id: string): A2ANote | undefined { return this.notes.find(n => n.id === id); }
+
+    read(q: NoteQuery, now = Date.now()): A2ANote[] {
+        this.load();
+        return matchNotes(this.notes, q, now);
+    }
+
+    /** Mark it seen by this reader. Idempotent — reading twice is not news. */
+    markRead(id: string, reader: string): A2ANote | undefined {
+        return this.mutate(notes => {
+            const out = notes.map(n => n.id === id && !n.readBy.includes(reader)
+                ? { ...n, readBy: [...n.readBy, reader] } : n);
+            return { notes: out, out: out.find(n => n.id === id) };
+        });
+    }
+
+    resolve(id: string, resolved = true): A2ANote | undefined {
+        return this.mutate(notes => {
+            const out = notes.map(n => n.id === id ? { ...n, resolved } : n);
+            return { notes: out, out: out.find(n => n.id === id) };
+        });
+    }
+
+    /** The user's word, which every agent treats as the highest rule there is. */
+    direct(id: string, directive: HumanDirective): A2ANote | undefined {
+        return this.mutate(notes => {
+            const out = notes.map(n => n.id === id ? { ...n, humanDirective: directive } : n);
+            return { notes: out, out: out.find(n => n.id === id) };
+        });
+    }
+
+    /** Drop what has expired AND been resolved — history the board no longer owes. */
+    sweep(now = Date.now()): number {
+        const before = this.notes.length;
+        const kept = this.mutate(notes => {
+            const out = notes.filter(n => !(n.resolved && n.expiresAt && n.expiresAt <= now));
+            return { notes: out, out: out.length };
+        });
+        return kept === undefined ? 0 : before - kept;
+    }
+}
