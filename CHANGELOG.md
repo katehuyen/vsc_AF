@@ -2,6 +2,26 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.602.0 - a task switch stops re-deriving the same strings for every session (X-128) (2026-09-20)
+
+- **‼️ Every task switch re-binds every session, and the number of sessions only
+  goes up.** Bindings are held down by monthly archiving — about fifteen — but
+  the matcher re-derived the same normalised strings inside the loops: the
+  binding's folder once per *session*, the session's transcript path once per
+  *binding*, all from a small fixed set of strings, all giving the same answer.
+  Over 94 profiles that was 14.3% of all blocking (32 s, ≈97 million calls). The
+  bindings are prepared once now (`indexBindings`) and the whole sweep shares
+  one prepared set. Measured on this machine at 10 000 sessions × 15 bindings:
+  **115 ms → 23 ms, 5.0×**, with all 10 000 answers identical to the previous
+  matcher — the change is a speed change and nothing about attribution moved.
+- **‼️ And the obvious fix was measured and thrown away.** Indexing the bindings
+  by folder and walking a session's parent folders to find them reads like the
+  answer, and it is **1.5× slower** at fifteen bindings: a hash lookup per
+  ancestor, plus the arrays it allocates, costs more than a linear pass with
+  early exits. What was expensive was the re-deriving, not the scanning. Both
+  numbers are in `test_launch_binding.js`, so the next person to have that idea
+  reads the measurement instead of repeating it.
+
 ## 3.601.0 - the filter box you can edit in the middle, and two sections that answer it properly (U-143, U-140) (2026-09-20)
 
 - **‼️ The filter box was append-only.** Every keystroke redraws the page, which

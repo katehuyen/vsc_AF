@@ -216,6 +216,85 @@ const session = (over) => Object.assign({
 }
 
 // ===========================================================================
+// 3b) X-128 — THE SWEEP, AT A SIZE THE FARM WILL ACTUALLY REACH
+//
+// ‼️ THE COST GROWS ON THE SESSION AXIS AND NOTHING CAPS IT. Bindings are held
+// down by monthly archiving — about fifteen — but every task switch re-binds
+// EVERY session, and the number of sessions only ever goes up. The matcher used
+// to re-derive the same normalised strings inside those loops: `normCwd` of the
+// binding's folder once per SESSION, `normCwd` of the session's file once per
+// BINDING, all from a small fixed set of strings, all giving the same answer.
+// Over 94 profiles that was 14.3% of all blocking (32 s, ≈97 million calls).
+//
+// ‼️ AND THE OBVIOUS FIX WAS MEASURED AND THROWN AWAY. Indexing the bindings by
+// folder and walking a session's parents to find them reads like the answer and
+// is 1.5× SLOWER at fifteen bindings — a hash lookup per ancestor, plus the
+// arrays it allocates, costs more than a linear pass with early exits. What was
+// expensive was the re-deriving, not the scanning. Measured on this machine,
+// 10 000 sessions × 15 bindings: 115 ms before, 23 ms after (5.0×), with all
+// 10 000 answers identical to the previous matcher.
+{
+    const { indexBindings, bindSessionIn } =
+        require(path.join(ROOT, 'out', 'core', 'launchBinding.js'));
+    const ROOTS = [REPO.replace(/\\/g, '/'), AGENTDIR, 'D:/zone/know/note/obsidian'];
+    const ENG = ['claude', 'codex', 'agy'];
+    const many = [];
+    for (let i = 0; i < 15; i++) {
+        many.push(binding({
+            taskId: 't' + i, engine: ENG[i % ENG.length], cwd: ROOTS[i % ROOTS.length],
+            startedAt: T0 + i, endedAt: T1 + i,
+            // a run that has already been resolved records both; that is the
+            // steady state, and it is the state the old `find` paid most for
+            ...(i % 2 ? { sessionId: 'done-' + i, transcriptFile: 'C:/u/p/' + i + '.jsonl' } : {})
+        }));
+    }
+    const idx = indexBindings(many);
+
+    ok('X-128: the index prepares each binding ONCE — folder and transcript normalised',
+        idx.length === 15 && idx.all[0].cwd === normCwd(ROOTS[0])
+        && idx.all[1].file === normCwd('C:/u/p/1.jsonl'));
+
+    // ‼️ THE POINT OF THE CHANGE IS THAT NOTHING ABOUT THE ANSWER MOVED. Every
+    // session is asked both ways and the two are compared, because a sweep that
+    // got faster and started attributing transcripts differently would be a far
+    // worse defect than the one it fixed.
+    const shape = r => (!r ? 'none' : isBindingHit(r) ? r.binding.taskId + '/' + r.proof
+        : 'amb:' + r.candidates.map(c => c.taskId).join(','));
+    const crowd = [];
+    for (let i = 0; i < 400; i++) {
+        crowd.push(session({
+            sessionId: 'sid-' + i,
+            file: 'C:/u/p/' + (i % 30) + '.jsonl',
+            cwd: i % 7 === 0 ? undefined : ROOTS[i % ROOTS.length] + (i % 3 ? '/src/core' : ''),
+            source: ENG[i % ENG.length],
+            firstTs: T0 + (i % 5) * 400, lastTs: T1 - (i % 4) * 400
+        }));
+    }
+    const moved = crowd.filter(s =>
+        shape(bindSessionIn(s, idx, T1 + 5000)) !== shape(bindSession(s, many, T1 + 5000)));
+    ok('‼️ X-128: the prepared sweep answers exactly what the one-shot does, for every session',
+        moved.length === 0);
+
+    // A ceiling, not a stopwatch: this machine does the 10 000-session sweep in
+    // ~23 ms, so a second is an order of magnitude of headroom and fails only on
+    // a regression of the kind this item was opened for.
+    const big = [];
+    for (let i = 0; i < 10000; i++) {
+        big.push(session({
+            sessionId: 'big-' + i, file: 'C:/u/q/' + i + '.jsonl',
+            cwd: ROOTS[i % ROOTS.length] + '/media/pages/deep',
+            source: ENG[i % ENG.length],
+            firstTs: T0 + (i % 5) * 400, lastTs: T1 - (i % 4) * 400
+        }));
+    }
+    const t = Date.now();
+    for (const s of big) { bindSessionIn(s, idx, T1 + 5000); }
+    const ms = Date.now() - t;
+    ok(`‼️ X-128: 10 000 sessions × 15 bindings in ${ms} ms — one task switch, at ten thousand`,
+        ms < 1000);
+}
+
+// ===========================================================================
 // 4) THE INDEX — THE ORDER OF THE TWO LINES, MEASURED ON REAL FILES
 //
 // `includeUnmatchedProjects` is FALSE here, which is the default and the state

@@ -118,11 +118,79 @@ export function normCwd(p: string | undefined): string {
     return s.toLowerCase();
 }
 
-/** Is a session's folder inside (or equal to) the folder the run was spawned in? */
-function underCwd(sessionCwd: string | undefined, bindingCwd: string): boolean {
-    const s = normCwd(sessionCwd), b = normCwd(bindingCwd);
+/**
+ * ‼️ X-128 — THE NORMALISED FORM IS COMPUTED ONCE, NOT ONCE PER COMPARISON.
+ *
+ * `bindSession` used to normalise both sides of every test inside the loops:
+ * `normCwd(b.transcriptFile)` and `normCwd(session.file)` for every BINDING,
+ * `normCwd(b.cwd)` for every SESSION — all from a small, fixed set of strings,
+ * all giving the same answer every time. Measured over 94 profiles that was
+ * 14.3% of all blocking (32 s, ≈97 million calls), and it grows on the SESSION
+ * axis, which nothing caps: 324 sessions × 15 bindings is 26 ms a task switch,
+ * 10 000 sessions is ~800 ms, and the switch runs every time a task changes.
+ *
+ * So the bindings are prepared once and kept: their engine, their folder, their
+ * transcript and their session id in the form the tests actually compare.
+ */
+interface PreparedBinding {
+    readonly binding: LaunchBinding;
+    /** position in the caller's list — the tie-break that keeps first-wins */
+    readonly at: number;
+    readonly engine: string;
+    readonly cwd: string;
+    readonly file: string;
+    readonly sessionId: string;
+}
+
+/**
+ * The bindings, prepared and grouped so a session reaches only the ones that
+ * could possibly claim it. Build it once per list (`indexBindings`) and hand it
+ * to `bindSessionIn` for every session; `bindSession` is the one-shot that
+ * builds one for a single call.
+ */
+export interface BindingIndex {
+    readonly length: number;
+    readonly all: readonly PreparedBinding[];
+    /** the two DECLARED lookups, which used to be a scan with a normCwd inside */
+    readonly bySessionId: ReadonlyMap<string, PreparedBinding>;
+    readonly byFile: ReadonlyMap<string, PreparedBinding>;
+    /** engine → its bindings, so a session never looks at another engine's */
+    readonly byEngine: ReadonlyMap<string, readonly PreparedBinding[]>;
+}
+
+/** Is a session's folder inside (or equal to) the run's — both already normalised. */
+function underNorm(s: string, b: string): boolean {
     if (!s || !b) { return false; }
     return s === b || s.startsWith(b + '/');
+}
+
+const push = <T>(map: Map<string, T[]>, key: string, v: T): void => {
+    const row = map.get(key);
+    if (row) { row.push(v); } else { map.set(key, [v]); }
+};
+
+export function indexBindings(list: readonly LaunchBinding[]): BindingIndex {
+    const all: PreparedBinding[] = [];
+    const bySessionId = new Map<string, PreparedBinding>();
+    const byFile = new Map<string, PreparedBinding>();
+    const byEngine = new Map<string, PreparedBinding[]>();
+    const byCwd = new Map<string, PreparedBinding[]>();
+    (list ?? []).forEach((binding, at) => {
+        if (!binding) { return; }
+        const engine = engineKey(binding.engine);
+        const p: PreparedBinding = {
+            binding, at, engine,
+            cwd: normCwd(binding.cwd),
+            file: normCwd(binding.transcriptFile),
+            sessionId: String(binding.sessionId ?? '').trim()
+        };
+        all.push(p);
+        // First wins on both, the way `Array.find` did.
+        if (p.sessionId && !bySessionId.has(p.sessionId)) { bySessionId.set(p.sessionId, p); }
+        if (p.file && !byFile.has(p.file)) { byFile.set(p.file, p); }
+        push(byEngine, engine, p);
+    });
+    return { length: all.length, all, bySessionId, byFile, byEngine };
 }
 
 export interface BindingHit {
@@ -159,22 +227,51 @@ export function bindSession(
     now: number = Date.now(),
     tolMs = 120_000
 ): BindingHit | BindingAmbiguity | undefined {
-    if (!session || session.isSidechain) { return undefined; }
+    return bindSessionIn(session, indexBindings(bindings), now, tolMs);
+}
+
+/** The same answer, against an index built once for a whole sweep (X-128). */
+export function bindSessionIn(
+    session: BindableSession,
+    index: BindingIndex,
+    now: number = Date.now(),
+    tolMs = 120_000
+): BindingHit | BindingAmbiguity | undefined {
+    if (!session || session.isSidechain || !index.length) { return undefined; }
     const id = String(session.sessionId ?? '').trim();
+    const file = normCwd(session.file);
 
     // 1. DECLARED — the id or the file was known before anything was deduced.
-    const declared = bindings.find(b =>
-        (!!b.sessionId && !!id && b.sessionId === id)
-        || (!!b.transcriptFile && !!session.file && normCwd(b.transcriptFile) === normCwd(session.file)));
-    if (declared) { return { binding: declared, proof: declared.sessionId === id ? 'declared' : 'reported' }; }
+    // Two lookups where there was a scan, and the LOWER position wins, because
+    // `Array.find` returned whichever of the two conditions the earlier binding
+    // satisfied and that order is what the caller has always been given.
+    const byId = id ? index.bySessionId.get(id) : undefined;
+    const byPath = file ? index.byFile.get(file) : undefined;
+    const declared = byId && byPath ? (byId.at <= byPath.at ? byId : byPath) : (byId ?? byPath);
+    if (declared) {
+        return {
+            binding: declared.binding,
+            proof: declared.sessionId === id ? 'declared' : 'reported'
+        };
+    }
 
     // 2. MATCHED — engine, folder and lifespan, and only when exactly one fits.
     if (!session.firstTs) { return undefined; }
     const want = engineKey(session.source);
-    const candidates = bindings.filter(b => {
-        if (engineKey(b.engine) !== want) { return false; }
+    const cwd = normCwd(session.cwd);
+    // ‼️ MEASURED, AND THE OBVIOUS ANSWER WAS THE WRONG ONE. Indexing the
+    // bindings by folder and walking the session's parents to find them reads
+    // like the fix — and it is 1.5× SLOWER here, because there are fifteen
+    // bindings, not fifteen thousand: a hash lookup per ancestor plus the
+    // arrays it allocates costs more than a linear pass over fifteen items with
+    // early exits. What was actually expensive was re-deriving the same
+    // normalised strings on every comparison, and `indexBindings` has already
+    // removed that. So this stays a scan, over one engine's bindings only.
+    const reach = index.byEngine.get(want) ?? [];
+    const candidates = reach.filter(p => {
+        const b = p.binding;
         // A binding that already owns a different transcript is spoken for.
-        if (b.sessionId && b.sessionId !== id) { return false; }
+        if (p.sessionId && p.sessionId !== id) { return false; }
         // ‼️ A SESSION THAT STATES NO FOLDER CANNOT CONTRADICT ONE (S-37).
         //
         // The folder test is here to stop a binding claiming a transcript from
@@ -188,7 +285,11 @@ export function bindSession(
         // from the Sessions page altogether, which is exactly the report.
         // Ambiguity is still refused below, so this widens what CAN be decided
         // without letting anything be decided on less than one clear candidate.
-        if (session.cwd && !underCwd(session.cwd, b.cwd)) { return false; }
+        //
+        // ‼️ X-128 — both sides are already normalised here (`cwd` once for the
+        // session, `p.cwd` once for the binding), where this used to normalise
+        // BOTH on every comparison.
+        if (session.cwd && !underNorm(cwd, p.cwd)) { return false; }
         const ended = b.endedAt ?? now;
         // ‼️ S-41 — AN INTERACTIVE RUN IS CLAIMED AT ITS SPAWN OR NOT AT ALL.
         //
@@ -207,10 +308,10 @@ export function bindSession(
             && session.firstTs <= ended + 15_000
             && session.lastTs <= ended + tolMs;
     });
-    if (candidates.length === 1) { return { binding: candidates[0], proof: 'matched' }; }
+    if (candidates.length === 1) { return { binding: candidates[0].binding, proof: 'matched' }; }
     if (candidates.length > 1) {
         return {
-            candidates,
+            candidates: candidates.map(p => p.binding),
             why: `${candidates.length} runs of ${want} in ${session.cwd || 'that folder'} overlap this `
                 + 'transcript, so which one produced it cannot be told from the outside — '
                 + 'the run that publishes its own session id is the one that will claim it'

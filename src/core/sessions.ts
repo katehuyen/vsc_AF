@@ -5,7 +5,8 @@ import { AgentInfo } from './agents';
 import { isGeneratedPrompt, wrapperGoal } from './authorship';
 import { SessionProvenance } from './externalImports';
 import {
-    applyBinding, BindableSession, bindSession, isBindingHit, LaunchBinding, normCwd
+    applyBinding, BindableSession, BindingIndex, bindSessionIn, indexBindings, isBindingHit,
+    LaunchBinding, normCwd
 } from './launchBinding';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { normalizeMarks, SessionMarks } from './sessionmarks';
@@ -1274,6 +1275,10 @@ export class SessionIndex implements vscode.Disposable {
     private launchers = new Map<string, SessionLauncher>();
     /** ‼️ S-31 — the runs Agent Farm started, written at the spawn. */
     private bindings: LaunchBinding[] = [];
+    /** ‼️ X-128 — the bindings PREPARED, rebuilt only when they change. Every
+     *  sweep below used to hand `bindSession` the raw list, which normalised
+     *  every folder and every transcript path again for each of them. */
+    private bindingIndex: BindingIndex = indexBindings([]);
     /** ‼️ X-102 — sessionId → launchId for the runs no binding covers: the
      *  terminals and Console cards a person opens by hand. See `setSpawnIds`. */
     private spawnIds = new Map<string, string>();
@@ -1712,7 +1717,7 @@ export class SessionIndex implements vscode.Disposable {
      */
     private applyLaunchBinding(info: SessionInfo): void {
         if (!this.bindings.length) { return; }
-        const r = bindSession(info, this.bindings, Date.now());
+        const r = bindSessionIn(info, this.bindingIndex, Date.now());
         if (!r) { this.bindingDoubts.delete(info.file); return; }
         if (!isBindingHit(r)) {
             // Two of our own runs could have written this. Recording which, and
@@ -1779,12 +1784,13 @@ export class SessionIndex implements vscode.Disposable {
         const after = next.map(sig).join('|');
         if (before === after) { return; }
         this.bindings = [...next];
+        this.bindingIndex = indexBindings(this.bindings);
 
         // The files that were thrown away: any that one of these claims comes
         // back, parsed properly this time.
         let rescued = 0;
         for (const memo of [...this.dropped.values()]) {
-            const r = bindSession(memo, this.bindings, Date.now());
+            const r = bindSessionIn(memo, this.bindingIndex, Date.now());
             if (!isBindingHit(r)) { continue; }
             this.dropped.delete(memo.file);
             if (fs.existsSync(memo.file)) {
@@ -1866,7 +1872,7 @@ export class SessionIndex implements vscode.Disposable {
         const out: { taskId: string; sessionId: string; file: string; proof: string }[] = [];
         const taken = new Set<string>();
         for (const s of [...this.sessions.values(), ...this.externalList]) {
-            const r = bindSession(s, this.bindings, now);
+            const r = bindSessionIn(s, this.bindingIndex, now);
             if (!isBindingHit(r) || taken.has(r.binding.taskId)) { continue; }
             taken.add(r.binding.taskId);
             out.push({ taskId: r.binding.taskId, sessionId: s.sessionId, file: s.file, proof: r.proof });
