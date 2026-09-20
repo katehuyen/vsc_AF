@@ -125,7 +125,22 @@ const { charts } = require('./lib_charts_stub.js');
                     let m;
                     while ((m = re.exec(app._html))) {
                         const el = { dataset: { [key]: m[1] }, type: '', value: '', checked: false };
-                        el.addEventListener = (_e, fn) => { el._fn = fn; };
+                        /*
+                         * ‼️ ONE ELEMENT, MORE THAN ONE LISTENER. This kept only
+                         * the last handler bound, so the day the page put a
+                         * `keydown` beside the `change` on every scalar box
+                         * (U-139), `_fn()` below silently drove the WRONG one
+                         * and the assertion went red for a product that was
+                         * fine. Kept by event name, so the next listener added
+                         * beside these cannot do it again; `_fn` stays the
+                         * handler the gesture under test actually runs.
+                         */
+                        el._on = {};
+                        el.addEventListener = (ev, fn) => {
+                            el._on[ev] = fn;
+                            if (ev === 'change' || ev === 'click' || ev === 'input') { el._fn = fn; }
+                        };
+                        el.blur = () => { };
                         list.push(el);
                     }
                 };

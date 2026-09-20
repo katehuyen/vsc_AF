@@ -2,6 +2,28 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.600.0 - switching the web view on used to take the whole extension down (X-344) (2026-09-20)
+
+- **‼️ `agentFarm.web.enabled` bricked every installed build until it was turned
+  off by hand.** The switch is read during `activate()`, and the server it
+  starts took its first snapshot on the spot — but the snapshot reads bindings
+  declared further down `activate()`, so it reached a `const` before its
+  initializer had run: `ReferenceError: Cannot access 'projectRollup' before
+  initialization`, thrown out of activation. That is not a broken web view: the
+  extension never finishes activating, so there are no commands, no pages and no
+  bridge, and it shows only as "Activating…" that never ends. Because the
+  setting is shared by every version, rolling back to older builds changed
+  nothing — which is exactly how it was met, as a product that looked destroyed
+  by whatever had shipped last. The snapshot now waits one tick, by which time
+  activation has returned, and it can no longer throw into a timer either.
+- **And the suite can see this class now.** `test_activation.js` had only ever
+  activated a machine whose settings are untouched, so every optional surface
+  answered its own `false` and its activation-time work never ran. It activates
+  a second time with **every boolean setting package.json contributes turned
+  on** — derived, not listed, so a switch added tomorrow is covered the day it
+  is contributed. Against the old code that pass reproduces the user's
+  ReferenceError exactly.
+
 ## 3.599.0 - Enter saves a scalar box too, and + add lands the caret everywhere (U-139, U-141, U-142) (2026-09-20)
 
 - **‼️ Enter lets go of a one-line SCALAR box, which is how it saves (U-139).**

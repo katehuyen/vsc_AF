@@ -28053,6 +28053,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } catch { /* storage unavailable — the page will show its own staleness */ }
     };
 
+    /**
+     * ‼️ THE SNAPSHOT IS NEVER TAKEN FROM INSIDE activate()'S OWN BODY.
+     *
+     * `writeWebSnapshot` reads bindings declared much further down activate
+     * (`projectRollup`, `noticesStore`, `taskManager`…) and `applyWebServer()`
+     * is called from up here, so reaching one before its initializer has run is
+     * a ReferenceError — thrown out of activate(), which rejects, which leaves
+     * the extension stuck on "Activating" with no commands and no pages. It is
+     * not a web-view defect at that point: the whole product is gone, in EVERY
+     * installed build, until `agentFarm.web.enabled` is turned off by hand.
+     * Measured 2026-09-20, after the switch had been on for one session.
+     *
+     * A tick is enough — activate() has returned by then — and the throw is
+     * held here rather than in a timer callback, where it would take the
+     * extension host down instead.
+     */
+    const takeWebSnapshot = () => {
+        try { writeWebSnapshot(); } catch (e) {
+            console.warn('Agent Farm: web snapshot failed —', (e as Error)?.message ?? e);
+        }
+    };
+
     // The service reads its own copy of the web settings (it has no access to
     // VS Code's), so the two sides can never disagree about port or token.
     const writeWebConfigForService = () => {
@@ -28089,10 +28111,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.window.showWarningMessage(
                     `Agent Farm: web view could not start on port ${w.port} — ${String(err.message ?? err)}`);
             });
-        if (webServer) { writeWebSnapshot(); }
+        if (webServer) { setTimeout(takeWebSnapshot, 0); }
     };
     applyWebServer();
-    const webTimer = setInterval(writeWebSnapshot, 20_000);
+    const webTimer = setInterval(takeWebSnapshot, 20_000);
     context.subscriptions.push({
         dispose: () => {
             clearInterval(webTimer);

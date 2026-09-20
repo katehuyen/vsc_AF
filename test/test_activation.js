@@ -86,6 +86,9 @@ const OUT = path.join(__dirname, '..', 'out', 'extension.js');
  */
 const registered = { commands: [], views: [], disposables: 0 };
 
+/** The settings this pass activates under, by their full `agentFarm.*` id. */
+let CONFIG = {};
+
 const anyNode = (label) => {
     const target = function () { };
     target.__af = label;
@@ -238,15 +241,23 @@ const vscodeStub = {
             createDirectory: async () => { },
             delete: async () => { }
         },
-        // ‼️ THE DEFAULT IS THE ANSWER. A cold machine has no settings written,
-        // so every reader gets the fallback it declared — which is exactly the
-        // configuration a first install activates under.
-        getConfiguration: () => ({
-            get: (_key, dflt) => dflt,
-            has: () => false,
-            inspect: () => undefined,
-            update: async () => { }
-        }),
+        /*
+         * ‼️ THE DEFAULT IS THE ANSWER — UNTIL A PASS SAYS OTHERWISE. A cold
+         * machine has no settings written, so every reader gets the fallback it
+         * declared, which is exactly the configuration a first install
+         * activates under. `CONFIG` is how the second pass activates the
+         * machine of somebody who has switched things ON — see "the warm pass".
+         */
+        getConfiguration: (section) => {
+            const full = (key) => (section ? section + '.' : '') + key;
+            return {
+                get: (key, dflt) => (Object.prototype.hasOwnProperty.call(CONFIG, full(key))
+                    ? CONFIG[full(key)] : dflt),
+                has: (key) => Object.prototype.hasOwnProperty.call(CONFIG, full(key)),
+                inspect: () => undefined,
+                update: async () => { }
+            };
+        },
         onDidChangeConfiguration: () => disposable(),
         onDidSaveTextDocument: () => disposable(),
         onDidOpenTextDocument: () => disposable(),
@@ -273,7 +284,7 @@ const vscodeStub = {
 };
 
 // ---------- the fake context ----------
-const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'af-activate-'));
+const storageRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'af-activate-'));
 const memento = () => {
     const map = new Map();
     return {
@@ -284,26 +295,31 @@ const memento = () => {
     };
 };
 const extRoot = path.join(__dirname, '..');
-const context = {
-    subscriptions: [],
-    globalState: memento(),
-    workspaceState: memento(),
-    secrets: {
-        get: async () => undefined, store: async () => { }, delete: async () => { },
-        onDidChange: () => disposable()
-    },
-    extensionUri: fakeUri(extRoot),
-    extensionPath: extRoot,
-    globalStorageUri: fakeUri(path.join(storage, 'global')),
-    globalStoragePath: path.join(storage, 'global'),
-    storageUri: fakeUri(path.join(storage, 'workspace')),
-    storagePath: path.join(storage, 'workspace'),
-    logUri: fakeUri(path.join(storage, 'log')),
-    logPath: path.join(storage, 'log'),
-    extensionMode: 3,
-    environmentVariableCollection: anyNode('envVarCollection'),
-    asAbsolutePath: (p) => path.join(extRoot, p),
-    extension: { id: 'muvusoft.agent-farm', packageJSON: require(path.join(extRoot, 'package.json')) }
+const PKG = require(path.join(extRoot, 'package.json'));
+/** One pass gets one storage root, so the warm start cannot read the cold one's files. */
+const makeContext = (pass) => {
+    const storage = path.join(storageRoot, pass);
+    return {
+        subscriptions: [],
+        globalState: memento(),
+        workspaceState: memento(),
+        secrets: {
+            get: async () => undefined, store: async () => { }, delete: async () => { },
+            onDidChange: () => disposable()
+        },
+        extensionUri: fakeUri(extRoot),
+        extensionPath: extRoot,
+        globalStorageUri: fakeUri(path.join(storage, 'global')),
+        globalStoragePath: path.join(storage, 'global'),
+        storageUri: fakeUri(path.join(storage, 'workspace')),
+        storagePath: path.join(storage, 'workspace'),
+        logUri: fakeUri(path.join(storage, 'log')),
+        logPath: path.join(storage, 'log'),
+        extensionMode: 3,
+        environmentVariableCollection: anyNode('envVarCollection'),
+        asAbsolutePath: (p) => path.join(extRoot, p),
+        extension: { id: 'muvusoft.agent-farm', packageJSON: PKG }
+    };
 };
 
 // ---------- run it ----------
@@ -324,13 +340,24 @@ const context = {
     ok('out/extension.js loads (compiled, and its imports resolve)',
         !importError || (console.log('  ↳ ' + (importError && importError.stack || importError)), false));
 
+    /** Activate once under `config`, from a clean slate, and hand back what happened. */
+    const activateUnder = async (pass, config) => {
+        CONFIG = config;
+        registered.commands = [];
+        registered.views = [];
+        registered.disposables = 0;
+        const ctx = makeContext(pass);
+        let err;
+        try { await mod.activate(ctx); } catch (e) { err = e; }
+        return { ctx, err };
+    };
+
+    let context = makeContext('cold');
     if (mod) {
         ok('it exports activate()', typeof mod.activate === 'function');
-        try {
-            await mod.activate(context);
-        } catch (e) {
-            activateError = e;
-        }
+        const cold = await activateUnder('cold', {});
+        context = cold.ctx;
+        activateError = cold.err;
     }
 
     /*
@@ -359,6 +386,53 @@ const context = {
         + (missing.length ? ' — missing: ' + missing.slice(0, 12).join(', ') : ''),
         missing.length === 0);
 
+    // ---------- the warm pass ----------
+    /*
+     * ‼️ AND THE COLD START IS NOT THE ONE THE USER HAS.
+     *
+     * Everything above activates a machine whose settings are untouched, so
+     * every optional surface answers its own `false` and its activation-time
+     * work never runs. On 2026-09-20 that gap cost the user the extension for
+     * two hours: `agentFarm.web.enabled` had been switched on in one session,
+     * and from the next start on, `applyWebServer()` reached a `const` declared
+     * further down activate() —
+     *
+     *     ReferenceError: Cannot access 'projectRollup' before initialization
+     *
+     * — which rejected activate(), in every installed build, so rolling back to
+     * older versions changed nothing and the product looked destroyed. The
+     * suite was green throughout, because nothing here had ever turned a switch
+     * ON before activating.
+     *
+     * So the second pass is the warm machine, and it is derived rather than
+     * listed: every boolean setting package.json contributes goes to `true`,
+     * which means a feature added tomorrow is covered the day its switch is
+     * contributed, without anybody remembering this file. The web view needs a
+     * token to start at all (and a port of its own, so a real window's server
+     * is never disturbed); Telegram deliberately gets no bot token, because a
+     * poller that starts here would go to the network.
+     */
+    const warm = {};
+    for (const [key, spec] of Object.entries(PKG.contributes.configuration.properties || {})) {
+        if (spec.type === 'boolean') { warm[key] = true; }
+    }
+    warm['agentFarm.web.token'] = 'af-activation-test-token';
+    warm['agentFarm.web.port'] = 45000 + (process.pid % 2000);
+
+    const hot = await activateUnder('warm', warm);
+    ok('‼️ activate() completes with every contributed switch turned ON',
+        !hot.err || (console.log('  ↳ ' + (hot.err && hot.err.stack || hot.err)), false));
+    ok('the warm start registers its commands too', registered.commands.length > 50);
+
+    /*
+     * And the work the warm start DEFERRED off activate() has to survive its own
+     * tick: the snapshot is the one piece that reads half of activate's
+     * bindings, so the file appearing is the proof that it ran and came back.
+     */
+    await new Promise(r => setTimeout(r, 150));
+    ok('the web snapshot the warm start scheduled was actually written',
+        fs.existsSync(path.join(storageRoot, 'warm', 'global', 'web-snapshot.json')));
+
     // ‼️ X-265 — AND THE SANDBOX IS CHECKED, not assumed. A test that quietly
     // stopped being isolated is how this file came to edit the machine it runs
     // on; the assertion is cheap and it is the only thing standing between the
@@ -368,7 +442,7 @@ const context = {
         && !fs.existsSync(path.join(os.homedir(), '.claude', 'settings.json')));
 
     Module._load = origLoad;
-    try { fs.rmSync(storage, { recursive: true, force: true }); } catch { /* temp dir */ }
+    try { fs.rmSync(storageRoot, { recursive: true, force: true }); } catch { /* temp dir */ }
     try { fs.rmSync(SANDBOX, { recursive: true, force: true }); } catch { /* temp dir */ }
 
     console.log(`test_activation.js: ${pass} passed, ${fail} failed`);

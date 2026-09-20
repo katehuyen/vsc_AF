@@ -527,6 +527,39 @@ defaults is a place where a wire can go missing in silence.
 
 ---
 
+## `activate()` cannot be read backwards, and a setting is what makes it try (X-344)
+
+`activate()` is one enormous function whose body is a long chain of `const`
+declarations, so **anything called from that body can only see what is already
+above it.** A helper defined at the top and invoked at the top may still read a
+binding from the bottom — the closure compiles, and the read is a
+`ReferenceError` at run time:
+
+    ReferenceError: Cannot access 'projectRollup' before initialization
+
+Thrown from there it does not break one surface. It rejects `activate()`, so the
+extension registers nothing: no commands, no pages, no bridge, and the only
+symptom is "Activating…" that never finishes.
+
+**Which is why the gate is a SETTING, not a line count.** The dangerous calls are
+the ones behind a switch — `applyWebServer()` ran its first snapshot on the spot,
+but only when `agentFarm.web.enabled` was on, so the defect sat in every shipped
+build and appeared the day somebody used the feature. Rolling back does not help:
+the setting is shared by all versions.
+
+- **Start the thing, then defer the read.** Binding a port, creating a poller and
+  registering a watcher are fine at the top. Anything that *reads the farm* —
+  snapshots, rollups, summaries — waits a tick (`setTimeout(fn, 0)`), by which
+  time activation has returned and every binding exists. Deferred work catches
+  its own throw, or it takes the host down instead of activation.
+- **`test_activation.js` activates TWICE, and the second pass is derived.** Every
+  boolean setting `package.json` contributes goes to `true`, so a switch added
+  tomorrow is covered the day it is contributed and nobody has to remember this
+  page. A feature that cannot be turned on in that pass without real network or
+  a real process says so in a comment there, next to the reason.
+
+---
+
 ## Adding a mission primitive (X-69)
 
 **A primitive is a row in two places, and both are checked.** `PRIMITIVES` in
