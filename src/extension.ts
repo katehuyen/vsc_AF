@@ -379,6 +379,9 @@ import {
     chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
     PendingSends, queueInbound, turnEnded
 } from './core/telegramExecution';
+import {
+    agentsText, cancelTarget, farmStatusText, sessionsKeyboard, splitAgentPrompt
+} from './core/telegramCommands';
 import { changesSummary, changesText } from './core/workdirChanges';
 import { bridgeStatus, budgetReading } from './core/telegramCockpit';
 import {
@@ -28174,7 +28177,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             agentName: s.agentName,
             project: (s.projectId ? projectStore.get(s.projectId)?.name : '') || '',
             status: s.status,
-            lastTs: s.lastTs
+            lastTs: s.lastTs,
+            turns: s.turns,
+            // U-116 — the same distinction the card draws: a question parks the
+            // turn, a permission stops it at a tool, and they are not one thing
+            ...(s.pendingAsk
+                ? { waiting: s.pendingAsk.questions.length
+                    ? 'your answer'
+                    : `permission: ${s.pendingAsk.displayName || s.pendingAsk.tool}` }
+                : {})
         }));
 
     /**
@@ -28373,6 +28384,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         context.subscriptions.push(sub);
     };
 
+    /**
+     * U-116 — `/status`, gathered here and rendered in `telegramCommands.ts`,
+     * so the bridge can hand an agent the same screen the phone gets without
+     * a bot token in the way.
+     */
+    const chatStatusText = (
+        st: ChatState, live: RoutableSession[], focused?: string, bound?: string
+    ): string => {
+        const needs = buildNeeds();
+        const running = taskManager.tasks.filter(t => t.status === 'running');
+        const today = dayKey(Date.now());
+        const focus = live.find(s => s.id === focused);
+        return farmStatusText({
+            agents: agents.length, activeAgents: index.activeAgentIds().size,
+            todayUSD: index.all().reduce((n, s) => n + (s.daily[today]?.cost ?? 0), 0),
+            chatUSD: st.ledger.day === today ? st.ledger.usd : 0,
+            capUSD: chatCfg().maxDailyUSD,
+            needs: { count: needs.length, ...(needs.length ? { first: needs[0].title } : {}) },
+            runningTasks: { count: running.length, ...(running.length ? { first: running[0].title } : {}) },
+            conversations: live.length,
+            ...(focus ? { focus: sessionLabel(focus) } : {}),
+            queued: Object.values(st.inbox).reduce((n, q) => n + q.length, 0),
+            ...(bound ? { bound } : {}),
+            engines: engineUsageMatrix()
+        });
+    };
+
+    /** `/agents` — the name alone does not say what it will think with. */
+    const chatAgentsText = (bound?: string): string => {
+        const defaults = cfg().get<AgentEngineDefaults>('agentEngineDefaults', {}) ?? {};
+        const launch = launchDefaults();
+        const engine = (launch.engine || 'claude') as EngineId;
+        return agentsText(agents.map(a => {
+            const model = storedDefault(defaults, a.dir, engine)?.model || launch.model;
+            return { name: a.name, ...(model ? { model } : {}) };
+        }), bound);
+    };
+
     /** One line a phone can read about a conversation right now. */
     const chatStatusLine = (s: ConsoleSessionState): string => {
         const r = chatRoutable().find(x => x.id === s.id);
@@ -28434,6 +28483,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     ConsolePanel.refreshIfOpen();
                     await chatSend(msg.chatId, `✔ ${label} — answered "${a.label}".`, tap.id);
                 }
+                return;
+            }
+            case 'focus': {
+                const st = chatState();
+                await saveChatState({ ...st, routing: setFocus(st.routing, msg.chatId, tap.id) });
+                await ack(`Focus: ${label}`);
+                await chatSend(msg.chatId, `🎯 Focus: ${label}`, tap.id);
                 return;
             }
             case 'confirm': {
@@ -28539,10 +28595,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const chatHandle = async (msg: InboundMessage) => {
         const c = chatCfg();
         if (!isAllowed(msg.chatId, c.allow)) {
-            // Say who it is, so adding the id to the allowlist is one copy away.
-            await chatSend(msg.chatId,
-                `This chat is not allowed to drive the farm.\nChat id: ${msg.chatId}\n` +
-                'Add it to agentFarm.telegram.allowedChats to enable it.');
+            // ‼️ U-116 — THE ID IS ONLY OFFERED WHILE THERE IS NOBODY TO PROTECT.
+            // An empty allowlist is a bridge being set up, and the reader needs
+            // the id to finish; once one chat is allowed, a stranger who finds
+            // the bot learns nothing — not that it exists, not which farm it is.
+            if (!c.allow.length) {
+                await chatSend(msg.chatId,
+                    `This chat is not allowed to drive the farm.\nChat id: ${msg.chatId}\n` +
+                    'Add it to agentFarm.telegram.allowedChats to enable it.');
+            }
             return;
         }
         // U-114 — a tap is not a text: it names the card it was on and is done
@@ -28552,58 +28613,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const bound = st.agentByChat[msg.chatId] ?? c.defaultAgent;
         const cmd = parseCommand(msg.text);
         if (cmd.kind === 'help') { await chatSend(msg.chatId, HELP_TEXT); return; }
-        if (cmd.kind === 'agents') {
-            await chatSend(msg.chatId, agents.length
-                ? 'Agents: ' + agents.map(a => a.name).join(', ') + (bound ? `\nThis chat: ${bound}` : '')
-                : 'No agents found.');
-            return;
-        }
+        if (cmd.kind === 'agents') { await chatSend(msg.chatId, chatAgentsText(bound)); return; }
         if (cmd.kind === 'use') {
-            const agent = agents.find(a => a.name.toLowerCase() === cmd.agent.toLowerCase());
-            if (!agent) { await chatSend(msg.chatId, `No agent called "${cmd.agent}". /agents lists them.`); return; }
-            await saveChatState({ ...st, agentByChat: { ...st.agentByChat, [msg.chatId]: agent.name } });
-            await chatSend(msg.chatId, `This chat now talks to ${agent.name}.`);
+            // ‼️ U-116 — `/agent developer` binds, `/agent developer run the
+            // tests` runs. Split against the real names, longest first: an
+            // agent's name is a folder name and can carry a space.
+            const split = splitAgentPrompt(cmd.agent, agents.map(a => a.name));
+            if (!split) {
+                await chatSend(msg.chatId, cmd.agent
+                    ? `No agent called "${cmd.agent}". /agents lists them.`
+                    : 'Which agent? /agent <name> binds this chat, /agent <name> <prompt> runs one.');
+                return;
+            }
+            if (split.prompt) { await chatRunPrompt(msg.chatId, split.prompt, split.agent); return; }
+            await saveChatState({ ...st, agentByChat: { ...st.agentByChat, [msg.chatId]: split.agent } });
+            await chatSend(msg.chatId, `This chat now talks to ${split.agent}.`);
             return;
         }
         if (cmd.kind === 'status') {
-            const needs = buildNeeds();
-            const running = taskManager.tasks.filter(t => t.status === 'running');
-            const today = dayKey(Date.now());
-            const cost = index.all().reduce((n, s) => n + (s.daily[today]?.cost ?? 0), 0);
-            await chatSend(msg.chatId, [
-                `Farm: ${agents.length} agents · ${index.activeAgentIds().size} active`,
-                `Today: ${fmtUSD(cost)} · chat runs ${fmtUSD(st.ledger.day === today ? st.ledger.usd : 0)} of ${fmtUSD(c.maxDailyUSD)}`,
-                `Needs you: ${needs.length}${needs.length ? ' — ' + needs[0].title : ''}`,
-                `Running tasks: ${running.length}${running.length ? ' — ' + running[0].title : ''}`,
-                // U-113 — where a plain message would go, said on the one screen
-                // somebody checks before typing one.
-                `Conversations: ${live.length}` + (live.length
-                    ? ' · focus ' + (live.find(s => s.id === focused)
-                        ? sessionLabel(live.find(s => s.id === focused)!)
-                        : 'none — I will ask')
-                    : ''),
-                // U-115 — a message you were told was queued is a fact you can
-                // see, not one you have to remember you sent
-                ...(() => {
-                    const waiting = Object.values(st.inbox).reduce((n, q) => n + q.length, 0);
-                    return waiting ? [`Queued from here: ${waiting} message${waiting > 1 ? 's' : ''}`] : [];
-                })(),
-                bound ? `This chat: ${bound}` : 'This chat is not bound to an agent yet (/agent <name>)'
-            ].join('\n'));
+            await chatSend(msg.chatId, chatStatusText(st, live, focused, bound));
             return;
         }
         if (cmd.kind === 'cancel') {
+            // U-116 — "stop it" is one thought on a phone: with no argument the
+            // run this chat started, with one a live conversation's turn, named
+            // the same three ways /focus accepts.
+            if (cancelTarget(cmd.arg) === 'session') {
+                const pick = pickFocus(cmd.arg, live);
+                if (pick.kind === 'ambiguous') { await chatSend(msg.chatId, askWhich(pick.candidates)); return; }
+                if (pick.kind === 'none') {
+                    await chatSend(msg.chatId, `Nothing here matches "${cmd.arg}".\n\n` + sessionList(live, focused));
+                    return;
+                }
+                const ok = consoleHost.interrupt(pick.session.id);
+                if (ok) { ConsolePanel.refreshIfOpen(); }
+                await chatSend(msg.chatId,
+                    ok ? `⏹ ${sessionLabel(pick.session)} — interrupted.`
+                        : `${sessionLabel(pick.session)} — nothing was running.`, pick.session.id);
+                return;
+            }
             const id = st.taskByChat[msg.chatId];
             const t = id ? taskManager.tasks.find(x => x.id === id) : undefined;
             if (t && t.status === 'running') {
                 taskManager.cancelTask(t);
                 await chatSend(msg.chatId, 'Stopped.');
             } else {
-                await chatSend(msg.chatId, 'Nothing from this chat is running.');
+                await chatSend(msg.chatId, 'Nothing from this chat is running. /cancel <number> stops a live turn.');
             }
             return;
         }
-        if (cmd.kind === 'sessions') { await chatSend(msg.chatId, sessionList(live, focused)); return; }
+        if (cmd.kind === 'sessions') {
+            await chatSend(msg.chatId, sessionList(live, focused), undefined, sessionsKeyboard(live, focused));
+            return;
+        }
         if (cmd.kind === 'focus') {
             if (/^(off|none|clear)$/i.test(cmd.arg)) {
                 await saveChatState({ ...st, routing: setFocus(st.routing, msg.chatId, '') });
@@ -40560,6 +40622,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     id, text: digestText(s!, chatDigestCtx(s!)), keyboard: keyboardFor(s!),
                     audience: chatAudience(id, chatRoutable().length), mode: chatCfg().digest
+                };
+            }
+        },
+        {
+            op: 'telegram.commands',
+            describe: 'U-116 — THE CHAT COMMAND SET AND WHAT EACH ONE WOULD ANSWER RIGHT NOW, without a bot '
+                + 'token and without sending anything. `help` is the card a phone gets; `status` is the whole '
+                + 'farm on one screen (agents, today\'s spend against the chat cap, what needs you, running '
+                + 'tasks, live conversations and the focus, messages queued from a chat, and ‼️ WHAT IS LEFT ON '
+                + 'EACH PLAN — an engine that publishes no figure is NAMED, never rendered as 0%); `sessions` is '
+                + 'the numbered list with what each conversation is waiting on, plus the buttons under it. '
+                + 'Read-only: this is what the phone WOULD be shown. To act, use the op the command stands on '
+                + '(console.interrupt, telegram.focus, tasks.add). args: chat? (a chat id — its focus and bound '
+                + 'agent are used; omitted, the first allowed chat)',
+            handler: (args) => {
+                const c = chatCfg();
+                const chat = optNum(args, 'chat', c.allow[0] ?? 0);
+                const st = chatState();
+                const live = chatRoutable();
+                const focused = st.routing.focus[String(chat)];
+                const bound = st.agentByChat[chat] ?? c.defaultAgent;
+                return {
+                    chat: chat || null,
+                    help: HELP_TEXT,
+                    status: chatStatusText(st, live, focused, bound),
+                    sessions: { text: sessionList(live, focused), keyboard: sessionsKeyboard(live, focused) },
+                    agents: chatAgentsText(bound)
                 };
             }
         },

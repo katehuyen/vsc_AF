@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.593.0 - the farm on one phone screen, and the commands that act on it (U-116) (2026-09-20)
+
+- **`/status` now says what is LEFT on each plan**, not only what the day has
+  cost. One line per engine that publishes a figure, and — the point of the
+  block — an engine that publishes none is **named with the reason**
+  (`No figure: Codex (keeps a quota but writes it nowhere readable), Gemini
+  (billed per token — no window to be a percentage of)`). A missing quota is
+  never rendered as 0%: that is the one mistake that turns telemetry into a lie
+  somebody acts on from a bus stop.
+- **`/sessions` rows say where a conversation GOT TO** — its turn count, and
+  what it has stopped for (`⏳ your answer`, `⏳ permission: Bash`), which is
+  the one thing on that screen worth opening a laptop for. Under the list, one
+  **button per conversation**: the number still works for a reader scrolling
+  back, but the list in front of them is now one tap from being the focus.
+- **`/cancel <number>` interrupts a live turn.** With no argument it still
+  stops the headless run this chat started — from a phone "stop it" is one
+  thought, and making the reader remember which kind of thing they started is a
+  design that serves the code. The conversation is named the same three ways
+  `/focus` accepts, and an ambiguous word is asked about rather than guessed.
+- **`/agents` says what each agent thinks with**, not only its name — the
+  figure you are actually choosing between. **`/agent <name> <prompt>` runs
+  that prompt now** in the same thread, under the same daily budget shield;
+  `/agent <name>` alone still just binds the chat. ‼️ The split is made against
+  the REAL agent names, longest first, because an agent's name is a folder name
+  and a folder name can carry a space — counting words would bind `data` and
+  throw `scientist plot the costs` away.
+- **‼️ A chat that is not on the allowlist is now answered only while the
+  allowlist is EMPTY.** An empty allowlist is a bridge being set up and the
+  reader needs the id it reports to finish; once one chat is allowed, a
+  stranger who finds the bot learns nothing — not that it exists, not which
+  farm it is.
+- `telegram.commands` on the bridge renders the same screens without a bot
+  token: `help`, `status`, `sessions` (text and keyboard) and `agents`. It
+  calls what the chat calls rather than drawing a second copy, so the op and
+  the phone cannot say two different things.
+- `src/core/telegramCommands.ts`, pure, 62 tests.
+
 ## 3.592.0 - a message typed on a phone waits its turn, and asks before it costs or breaks something (U-115) (2026-09-20)
 
 - **Write to a conversation that is already working and your message now

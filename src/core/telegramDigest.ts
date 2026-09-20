@@ -48,7 +48,9 @@ export type Tap =
     /** a tool permission — the user's decision, from the user's own phone */
     | { kind: 'permission'; id: string; rid: string; allow: boolean }
     /** U-115 — yes/no under a message a gate stopped (telegramExecution.ts) */
-    | { kind: 'confirm'; id: string; yes: boolean };
+    | { kind: 'confirm'; id: string; yes: boolean }
+    /** U-116 — a row of /sessions, tapped to make it the focus */
+    | { kind: 'focus'; id: string };
 
 const rid8 = (requestId: string): string => requestId.slice(0, 8);
 
@@ -204,6 +206,7 @@ export function parseTap(data: string): Tap | undefined {
     if (p[0] === 'n' && p.length === 3 && p[1] && (p[2] === 'go' || p[2] === 'no')) {
         return { kind: 'confirm', id: p[1], yes: p[2] === 'go' };
     }
+    if (p[0] === 'f' && p.length === 2 && p[1]) { return { kind: 'focus', id: p[1] }; }
     return undefined;
 }
 

@@ -46,6 +46,10 @@ export interface RoutableSession {
     status?: string;
     /** last activity, epoch ms — the tie-break when nothing else decides */
     lastTs?: number;
+    /** U-116 — how many turns it has had, for the list a reader scans */
+    turns?: number;
+    /** U-116 — what it has stopped for, when it has: the reason to open it */
+    waiting?: string;
 }
 
 /**
@@ -210,7 +214,13 @@ export function sessionList(sessions: RoutableSession[], focusId?: string): stri
     if (!sessions.length) { return 'No live conversations. Send a message to start a headless run instead.'; }
     return [
         `${sessions.length} live conversation${sessions.length === 1 ? '' : 's'}:`,
-        ...sessions.map((s, i) => `${i + 1}. ${sessionLabel(s)}${s.id === focusId ? '  ← focus' : ''}`),
+        // U-116 — the row says where the conversation GOT TO, not only who it
+        // is: a turn count to see it moving, and what it has stopped for, which
+        // is the one thing on this screen worth opening a laptop for.
+        ...sessions.map((s, i) => `${i + 1}. ${sessionLabel(s)}`
+            + (s.turns ? ` · turn ${s.turns}` : '')
+            + (s.waiting ? ` · ⏳ ${s.waiting}` : '')
+            + (s.id === focusId ? '  ← focus' : '')),
         '',
         'Reply to one of my messages to answer it, or /focus <number>.'
     ].join('\n');

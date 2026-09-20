@@ -74,8 +74,15 @@ const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' +
     const ext = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');
     ok('the daily digest still counts agents, because that is what it says',
         /activeAgents: index\.activeAgentIds\(now\)\.size/.test(ext));
-    ok('…and so does the chat status line',
-        /\$\{agents\.length\} agents · \$\{index\.activeAgentIds\(\)\.size\} active/.test(ext));
+    // U-116 moved the RENDERING to telegramCommands.ts; the rule is unchanged
+    // and now has two halves — what extension.ts feeds in, and what the pure
+    // renderer calls it. Both are pinned, because either one drifting alone is
+    // the same bug: a session count under the word "agents".
+    ok('…and so does the chat status line, on the side that gathers it',
+        /agents: agents\.length, activeAgents: index\.activeAgentIds\(\)\.size/.test(ext));
+    const cmds = fs.readFileSync(path.join(__dirname, '..', 'src', 'core', 'telegramCommands.ts'), 'utf8');
+    ok('…and on the side that words it',
+        /\$\{i\.agents\} agents · \$\{i\.activeAgents\} active/.test(cmds));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -55,7 +55,8 @@ export type ChatCommand =
     | { kind: 'status' }
     | { kind: 'agents' }
     | { kind: 'use'; agent: string }
-    | { kind: 'cancel' }
+    /** U-116 — no arg stops the run this chat started; an arg names a live turn */
+    | { kind: 'cancel'; arg: string }
     /** U-113 — the live conversations, numbered, so `/focus 2` has a 2 */
     | { kind: 'sessions' }
     /** U-113 — where plain messages from this chat go. Empty arg = ask */
@@ -134,7 +135,7 @@ export function parseCommand(text: string): ChatCommand {
     if (cmd === 'help' || cmd === 'start') { return { kind: 'help' }; }
     if (cmd === 'status') { return { kind: 'status' }; }
     if (cmd === 'agents') { return { kind: 'agents' }; }
-    if (cmd === 'cancel' || cmd === 'stop') { return { kind: 'cancel' }; }
+    if (cmd === 'cancel' || cmd === 'stop') { return { kind: 'cancel', arg }; }
     if (cmd === 'agent' || cmd === 'use') { return { kind: 'use', agent: arg }; }
     if (cmd === 'sessions') { return { kind: 'sessions' }; }
     if (cmd === 'focus') { return { kind: 'focus', arg }; }
@@ -173,12 +174,13 @@ export const HELP_TEXT = [
     'In a Forum group each conversation gets its own topic — just type in it.',
     'Anywhere else, plain messages go to the conversation in focus.',
     '',
-    '/sessions — the live conversations, numbered',
+    '/sessions — the live conversations, numbered, one tap from being the focus',
     '/focus <number|agent> — send plain messages to that one (/focus off clears it)',
     '/agent <name> — the agent a headless run is started for when nothing is live',
-    '/agents — list the agents',
-    '/status — farm status: what is running, what needs you, today\'s cost',
-    '/cancel — stop the run this chat started',
+    '/agent <name> <prompt> — run that prompt now, answered in this thread',
+    '/agents — the agents and what each one thinks with',
+    '/status — the farm: what is running, what needs you, today\'s cost, what is left on each plan',
+    '/cancel — stop the run this chat started · /cancel <number> stops a live turn',
     '/help — this message',
     '',
     'Runs started from chat are headless and carry their own daily budget.',
