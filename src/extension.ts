@@ -37,6 +37,9 @@ import {
 } from './core/worktree';
 import { applyDistilled, distillFile, scanContradictions } from './core/distill';
 import { MemoryIndexReport, registerMemoryOps } from './core/memoryBridge';
+import { registerA2AOps } from './core/a2aBridge';
+import { A2ANotesStore } from './core/a2aNotes';
+import { A2ATasksStore } from './core/a2aTasks';
 import { buildImpactReport, correlateVersions, InstructionHistory } from './core/instrhistory';
 import { chunkMemoryFile, memoryFileRefs } from './core/memquery';
 import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpolicy';
@@ -920,6 +923,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // separate places to scan.
     const workQueueStore = new WorkQueueStore(path.join(context.globalStorageUri.fsPath, 'work-queue.json'));
     workQueueStore.load();
+    // A2A (N-3/N-4) — what one agent leaves for another, and the work it hands
+    // over. Two files, each a locked read-modify-write shared across hosts;
+    // every op re-reads the disk, so nothing here is cached beyond one call.
+    const a2aNotes = new A2ANotesStore(path.join(context.globalStorageUri.fsPath, 'a2a-notes.json'));
+    const a2aTasks = new A2ATasksStore(path.join(context.globalStorageUri.fsPath, 'a2a-tasks.json'));
+    a2aNotes.load();
+    a2aTasks.load();
     // Doc-open config (core/docopen.ts) — the module store behind the shared
     // "open with" split-button on report/answer .md links in BOTH boards. Its
     // own JSON file, deliberately NOT a VS Code settings leak (the custom-app
@@ -12265,7 +12275,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         if (list.length) { answers[q] = list; }
                     }
                 }
-                const response = argStr(args, 'response');
+                const response = optStr(args, 'response');
                 need(Object.keys(answers).length || response,
                     'say something: answers (keyed by the question text) or response');
                 need(consoleHost.answer(id, { kind: 'answer', answers, response }), 'nothing was answered');
@@ -16032,6 +16042,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     .then(pick => { if (pick) { void vscode.commands.executeCommand('agentfarm.openNotices'); } });
             }
         }
+    });
+
+    registerA2AOps(bridge, {
+        notes: a2aNotes, tasks: a2aTasks,
+        resolveProject: (key) => projectStore.get(key)?.id,
+        inferProject: projectOfRunningAgent,
+        // the session id the CLI published to its children (X-310), owned by
+        // a card this window hosts, a session the live monitor sees, or one
+        // the index has read — in that order, the surest first
+        agentOfSession: (sid) => consoleHost.list().find(s => s.sessionId === sid)?.agentName
+            ?? live.sessions().find(s => s.sessionId === sid)?.agentName
+            ?? index.byId(sid)?.agentName
     });
 
     // A work item's detailed ANSWER (a "cevap", NOT a user-requested report) is
@@ -40665,8 +40687,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 + 'omitted, every conversation with something waiting), action? (list | drop, default list; drop '
                 + 'needs id and clears that conversation\'s queue — it does NOT cancel a turn)',
             handler: async (args) => {
-                const id = argStr(args, 'id');
-                const action = argStr(args, 'action') || 'list';
+                const id = optStr(args, 'id');
+                const action = optStr(args, 'action') || 'list';
                 const st = chatState();
                 if (action === 'drop') {
                     need(id, 'drop needs an id (console.sessions lists them)');

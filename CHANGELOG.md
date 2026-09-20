@@ -2,6 +2,52 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.594.0 - what one agent leaves for another, reachable from a shell (N-4) (2026-09-20)
+
+- **Eighteen `a2a.*` ops open the A2A stores N-3 built.** `src/core/a2aBridge.ts`
+  is a thin door over `A2ANotesStore` / `A2ATasksStore` (two files under
+  globalStorage, `a2a-notes.json` · `a2a-tasks.json`): every handler calls the
+  store, and the page that comes in N-6 will call the same methods. Notes:
+  `post · list · get · resolve · sweep`. Tasks: `add · fromNote · list · next ·
+  claim · heartbeat · finish · cancel · handoff`. Supervisor: `directive.set ·
+  directive.remove · tasks.reroute`. And `a2a.status`, the session-start glance
+  in figures — unread notes for you, tasks you could take, what you hold with
+  the lease left, what you handed over by state, what is blocked for a person.
+- **The caller says who it is, or the session does.** `agent=` is taken as
+  written; without one the session id the CLI published to its own children
+  (X-310) is looked up on the host — a hosted Console card first, then the live
+  monitor, then the index — and an op that writes refuses when neither names
+  anyone. **The project is filled in the way Notices fill it in (N-1)**:
+  omitted, it is the project the caller runs under and the answer says so
+  (`projectFrom`); a name resolves to the id; `"*"` means every project and is
+  never overridden.
+- **A finished task wakes its poster.** `a2a.tasks.finish` leaves a RESULT note
+  addressed to the agent that handed the work over (category `result`, same
+  project and topic), so the caller finds it on its own next `a2a.notes.list`
+  rather than by polling. `notify=false` keeps quiet.
+- **A human reroute is the way out of the loop guard.** `a2a.tasks.handoff`
+  (agent→agent) makes a new task at depth+1 and blocks the third hop, as N-3
+  designed. `a2a.tasks.reroute` is the user's move: no guard, the new task
+  starts at depth 0, and the user's directive travels with the work — a person
+  deciding where blocked work goes is what the guard was waiting for.
+- **A note is promoted once.** `a2a.tasks.fromNote` refuses a note that already
+  has a live task and names it (`again=true` to mean it); `resolveNote=true`
+  closes the note now that it is work.
+- **Reading marks, listing does not.** `a2a.notes.get` records the reader
+  (`markRead=false` to peek); `unreadOnly` on the list then leaves it out.
+- **Two arguments the catalogue promised as optional were read as required
+  (X-334).** `telegram.inbox` with no `id` — the "every conversation" form its
+  own describe advertised — threw `Missing required string arg "id"`, and
+  `console.answer` with `answers` alone threw for `response`, so a question
+  could not be answered by option label over the bridge. Both read `optStr`
+  now, and ‼️ **the rule is measured**: `test_bridge.js` reads every op in the
+  catalogue (435) and fails any `name?` in a describe that meets
+  `argStr(args, 'name')` in its handler. Twelve conditional requirements
+  ("required for scope session") are named on a list that may only shrink.
+- A finished task keeps its claim as history, so `claim` on it now says
+  `not open for claiming` rather than `already claimed` — the latter is a live
+  lease only. `direct(id, undefined)` takes a directive off a note or a task.
+
 ## 3.593.0 - the farm on one phone screen, and the commands that act on it (U-116) (2026-09-20)
 
 - **`/status` now says what is LEFT on each plan**, not only what the day has

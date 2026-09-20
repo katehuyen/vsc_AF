@@ -275,7 +275,9 @@ export class A2ATasksStore {
             const task = tasks.find(t => t.id === id);
             if (!task) { return { tasks, out: { refused: 'no such task' as ClaimRefusal } }; }
             if (!isOpen(task, now)) {
-                return { tasks, out: { refused: (task.claimedBy ? 'already claimed' : 'not open for claiming') as ClaimRefusal } };
+                // a finished task keeps its claim as history — "already claimed" is only a LIVE lease
+                const live = task.state === 'claimed' || task.state === 'running';
+                return { tasks, out: { refused: (live ? 'already claimed' : 'not open for claiming') as ClaimRefusal } };
             }
             const no = claimable(task, by);
             if (no) { return { tasks, out: { refused: no } }; }
@@ -332,40 +334,54 @@ export class A2ATasksStore {
      * survives instead of being overwritten by whoever held it last.
      */
     handoff(
-        id: string, to: { targetRole: string; requires?: string[] }, by: string, now = Date.now()
+        id: string, to: { targetRole: string; requires?: string[]; project?: string; workdir?: string },
+        by: string, now = Date.now(),
+        /** `override` is HUMAN authority: no loop guard, and the new task starts the count again —
+         *  a person deciding where blocked work goes is what the guard was waiting for. */
+        opts: { override?: boolean; why?: string } = {}
     ): { task: A2ATask } | { refused: string } {
         const r = this.mutate<{ task: A2ATask } | { refused: string }>(tasks => {
             const task = tasks.find(t => t.id === id);
             if (!task) { return { tasks, out: { refused: 'no such task' } }; }
-            const depth = task.handoffDepth + 1;
-            if (depth >= MAX_HANDOFF_DEPTH) {
+            const depth = opts.override ? 0 : task.handoffDepth + 1;
+            if (!opts.override && depth >= MAX_HANDOFF_DEPTH) {
                 const blocked = tasks.map(t => t.id === id
                     ? { ...t, state: 'blocked' as A2ATaskState, handoffDepth: depth,
                         resultSummary: `Handed on ${depth} times — a person decides where this goes.` }
                     : t);
                 return { tasks: blocked, out: { refused: `loop guard: ${depth} handoffs is the ceiling` } };
             }
-            const next = makeTask({
-                fromAgent: by, title: task.title, instructions: task.instructions,
-                expectedOutput: task.expectedOutput, project: task.project, workdir: task.workdir,
-                topic: task.topic, strictness: task.strictness, maxCostUSD: task.maxCostUSD,
-                maxTurns: task.maxTurns, parentTaskId: task.id, handoffDepth: depth,
-                targetRole: to.targetRole, requires: to.requires ?? task.requires,
-                ...(task.sourceNoteId ? { sourceNoteId: task.sourceNoteId } : {}),
-                ...(task.sourceQueueItemId ? { sourceQueueItemId: task.sourceQueueItemId } : {})
-            }, now);
+            const next: A2ATask = {
+                ...makeTask({
+                    fromAgent: by, title: task.title, instructions: task.instructions,
+                    expectedOutput: task.expectedOutput, project: to.project ?? task.project,
+                    workdir: to.workdir ?? task.workdir,
+                    topic: task.topic, strictness: task.strictness, maxCostUSD: task.maxCostUSD,
+                    maxTurns: task.maxTurns, parentTaskId: task.id, handoffDepth: depth,
+                    targetRole: to.targetRole, requires: to.requires ?? task.requires,
+                    ...(task.sourceNoteId ? { sourceNoteId: task.sourceNoteId } : {}),
+                    ...(task.sourceQueueItemId ? { sourceQueueItemId: task.sourceQueueItemId } : {})
+                }, now),
+                // the user's word travels with the work when the user is the one moving it
+                ...(opts.override && task.humanDirective ? { humanDirective: task.humanDirective } : {})
+            };
             const closed = tasks.map(t => t.id === id
-                ? { ...t, state: 'done' as A2ATaskState, resultSummary: `Handed on to ${to.targetRole} (${next.id}).` }
+                ? { ...t, state: 'done' as A2ATaskState,
+                    resultSummary: `Handed on to ${to.targetRole} (${next.id})${opts.why ? ' — ' + opts.why : ''}.` }
                 : t);
             return { tasks: [next, ...closed], out: { task: next } };
         }, now);
         return r ?? { refused: 'the store is busy' };
     }
 
-    /** The user's word, which outranks every rule the claimant applies. */
-    direct(id: string, directive: HumanDirective, now = Date.now()): A2ATask | undefined {
+    /** The user's word, which outranks every rule the claimant applies; `undefined` takes it off. */
+    direct(id: string, directive: HumanDirective | undefined, now = Date.now()): A2ATask | undefined {
         return this.mutate(tasks => {
-            const out = tasks.map(t => t.id === id ? { ...t, humanDirective: directive } : t);
+            const out = tasks.map(t => {
+                if (t.id !== id) { return t; }
+                const { humanDirective: _old, ...rest } = t;
+                return directive ? { ...rest, humanDirective: directive } : rest;
+            });
             return { tasks: out, out: out.find(t => t.id === id) };
         }, now);
     }

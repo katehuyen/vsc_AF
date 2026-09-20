@@ -234,10 +234,14 @@ export class A2ANotesStore {
         });
     }
 
-    /** The user's word, which every agent treats as the highest rule there is. */
-    direct(id: string, directive: HumanDirective): A2ANote | undefined {
+    /** The user's word, which every agent treats as the highest rule there is; `undefined` takes it off. */
+    direct(id: string, directive: HumanDirective | undefined): A2ANote | undefined {
         return this.mutate(notes => {
-            const out = notes.map(n => n.id === id ? { ...n, humanDirective: directive } : n);
+            const out = notes.map(n => {
+                if (n.id !== id) { return n; }
+                const { humanDirective: _old, ...rest } = n;
+                return directive ? { ...rest, humanDirective: directive } : rest;
+            });
             return { notes: out, out: out.find(n => n.id === id) };
         });
     }

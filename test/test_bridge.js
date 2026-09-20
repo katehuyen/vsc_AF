@@ -5873,6 +5873,63 @@ const { opencodeStatus, syncToOpencode } =
             && /retryInMs: plan\.retryInMs/.test(site) && /note: plan\.note/.test(site));
     }
 
+    // ---------- X-334: an arg the describe marks `name?` is never read with argStr ----------
+    // ‼️ THE CONTRACT AND THE READER DISAGREED, AND THE READER WON. `telegram.inbox`
+    // promised `id? (omitted, every conversation with something waiting)` and read
+    // it with argStr, so the one form the promise was about threw "Missing required
+    // string arg". `console.answer` promised `response?` and did the same — answering
+    // a question by option label alone never reached the session. Measured live on
+    // 3.593.0. So every op in the catalogue is read here: each `name?` after `args:`
+    // in a describe must not meet `argStr(args, 'name')` in its handler. The twelve
+    // named below read the arg with argStr INSIDE a branch the describe names
+    // ("required for scope session", "required unless stop") — a conditional
+    // requirement, stated. The list may shrink; it never grows.
+    {
+        const conditional = new Set([
+            'insights.restore:key', 'insights.delegate:key', 'triggers.add:title', 'templates.run:agent',
+            'live.alerts.set:action', 'alerts.mute:sessionId', 'alerts.read:sessionId', 'alerts.voice.set:sessionId',
+            'console.queue:text', 'telegram.focus:session', 'docopen.set:defaultMode', 'toolbox.enable:agent'
+        ]);
+        const root = path.join(__dirname, '..');
+        const files = ['src/extension.ts', ...fs.readdirSync(path.join(root, 'src', 'core'))
+            .filter(f => /\.ts$/.test(f)).map(f => 'src/core/' + f)];
+        const bad = [];
+        const seen = new Set();
+        let scanned = 0;
+        for (const f of files) {
+            const src = fs.readFileSync(path.join(root, f), 'utf8');
+            const starts = [];
+            const re = /op: '([a-zA-Z0-9_.]+)'/g;
+            let m;
+            while ((m = re.exec(src))) { starts.push({ op: m[1], at: m.index }); }
+            for (let i = 0; i < starts.length; i++) {
+                const block = src.slice(starts[i].at, i + 1 < starts.length ? starts[i + 1].at : starts[i].at + 8000);
+                const h = block.indexOf('handler:');
+                if (h < 0) { continue; }
+                scanned++;
+                const describe = block.slice(0, h);
+                const handler = block.slice(h);
+                const argsAt = describe.lastIndexOf('args:');
+                if (argsAt < 0) { continue; }
+                const tre = /\b([a-zA-Z_][a-zA-Z0-9_]*)\?/g;
+                let t;
+                const optional = new Set();
+                while ((t = tre.exec(describe.slice(argsAt)))) { optional.add(t[1]); }
+                for (const name of optional) {
+                    if (!new RegExp(`argStr\\(args, '${name}'\\)`).test(handler)) { continue; }
+                    const key = `${starts[i].op}:${name}`;
+                    if (conditional.has(key)) { seen.add(key); } else { bad.push(key); }
+                }
+            }
+        }
+        ok(`‼️ every optional arg is read with optStr — ${scanned} ops scanned` + (bad.length ? ` — ${bad.join(', ')}` : ''),
+            bad.length === 0);
+        ok('…and the conditional list names only cases that still exist (shrink it when one goes)',
+            [...conditional].every(k => seen.has(k)));
+        ok('…telegram.inbox and console.answer read their optional args as optional now',
+            !bad.includes('telegram.inbox:id') && !bad.includes('console.answer:response'));
+    }
+
     console.log(`\n${pass} passed, ${fail} failed`);
     process.exit(fail ? 1 : 0);
 })();
