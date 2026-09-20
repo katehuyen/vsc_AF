@@ -1,5 +1,5 @@
 import { CAPABILITY_RE, normaliseCapabilities, PREFERRED_GRACE_MS } from './a2aMatch';
-import { A2ANotesStore, A2A_CATEGORIES, A2A_STRICTNESS, A2ACategory, A2ANote, A2AStrictness, HumanDirective, NoteQuery } from './a2aNotes';
+import { A2ANotesStore, A2A_CATEGORIES, A2A_STRICTNESS, A2ACategory, A2ANote, A2AStrictness, directiveBlock, HumanDirective, NoteQuery } from './a2aNotes';
 import { A2A_TASK_STATES, A2ATask, A2ATasksStore, A2ATaskState, ClaimantView, isOpen, LEASE_MS, taskFit } from './a2aTasks';
 import { argStr, BridgeCaller, BridgeRefusal, BridgeRegistry, need, optBool, optNum, optStr } from './bridge';
 
@@ -142,6 +142,14 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
         return v as T;
     };
 
+    /**
+     * N-8 — THE USER'S WORD FIRST. A note or task handed to an agent that
+     * carries a directive answers with `supervisor` as its FIRST key, so the
+     * block is the first thing in the output whatever the agent reads next.
+     */
+    const supervised = <T extends { humanDirective?: HumanDirective }>(row: T): T | ({ supervisor: string } & T) =>
+        row.humanDirective ? { supervisor: directiveBlock(row.humanDirective), ...row } : row;
+
     /** What this agent could take right now — the closest fit first, the oldest within a fit. */
     const openFor = (args: Record<string, unknown>, by: ClaimantView): A2ATask[] => {
         const now = Date.now();
@@ -211,6 +219,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
         {
             op: 'a2a.notes.get',
             describe: 'N-4 — ONE NOTE IN FULL, and reading it MARKS IT READ for you (readBy), so a later unreadOnly '
+                + '‼️ A note carrying the user\'s directive answers with `supervisor` FIRST — the block outranks every rule you apply. '
                 + 'list does not show it again. args: id, agent? (you; omitted, read off your session — with neither, '
                 + 'nothing is marked), markRead? (false to look without leaving a trace).',
             handler: (args, from) => {
@@ -221,7 +230,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                     note = written(deps.notes.markRead(id, reader));
                     changed();
                 }
-                return note;
+                return supervised(note);
             }
         },
         {
@@ -355,18 +364,18 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                 const open = openFor(args, by);
                 const task = open[0];
                 if (!task) { return { task: null, waiting: 0 }; }
-                if (!optBool(args, 'claim', false)) { return { task, waiting: open.length - 1 }; }
+                if (!optBool(args, 'claim', false)) { return { ...(task.humanDirective ? { supervisor: directiveBlock(task.humanDirective) } : {}), task, waiting: open.length - 1 }; }
                 const r = deps.tasks.claim(task.id, by, Date.now(), Math.max(1, optNum(args, 'leaseMinutes', LEASE_MS / 60_000)) * 60_000);
                 if ('refused' in r) {
                     throw new BridgeRefusal(`Could not claim ${task.id}: ${r.refused} — somebody was faster; call again.`, { taskId: task.id, refused: r.refused });
                 }
                 changed();
-                return { task: r.task, waiting: open.length - 1, claimed: true };
+                return { ...(r.task.humanDirective ? { supervisor: directiveBlock(r.task.humanDirective) } : {}), task: r.task, waiting: open.length - 1, claimed: true };
             }
         },
         {
             op: 'a2a.tasks.claim',
-            describe: 'N-4 — TAKE A TASK. Decided inside the store\'s lock against what is on disk that instant, so two '
+            describe: 'N-4 — TAKE A TASK (‼️ a task carrying the user\'s directive answers with `supervisor` FIRST — it outranks everything else you read). Decided inside the store\'s lock against what is on disk that instant, so two '
                 + 'agents asking together get one winner and one refusal that says why (already claimed · not open · '
                 + 'missing a required capability · another project · reserved for its target role, with `opensAt` · the '
                 + 'coordinates are not yours), and `axes` saying which coordinate hit, missed or was wild. The claim is a LEASE: heartbeat within '
@@ -386,12 +395,13 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                         { taskId: id, refused: r.refused, axes: f.axes, ...(f.opensAt ? { opensAt: f.opensAt } : {}) });
                 }
                 changed();
-                return r.task;
+                return supervised(r.task);
             }
         },
         {
             op: 'a2a.tasks.heartbeat',
             describe: 'N-4 — STILL ON IT, AND HERE IS WHERE IT GOT TO. Pushes the lease forward and records `progress` '
+                + '(‼️ and answers with `supervisor` FIRST when the user has set a directive since you claimed — read it before you go on) '
                 + 'so a watcher can tell "working, slowly" from "gone" without waiting for the lease to die; the first '
                 + 'heartbeat moves the task from claimed to running. Only the holder\'s heartbeat counts. args: id, '
                 + 'agent? (you; omitted, read off your session), progress? (one line), leaseMinutes? (default 30).',
@@ -404,7 +414,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                 const out = written(deps.tasks.heartbeat(id, t.claimedBy!.agent, optStr(args, 'progress'), Date.now(),
                     Math.max(1, optNum(args, 'leaseMinutes', LEASE_MS / 60_000)) * 60_000));
                 changed();
-                return out;
+                return supervised(out);
             }
         },
         {

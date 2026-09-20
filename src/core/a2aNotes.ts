@@ -32,6 +32,22 @@ export interface HumanDirective {
     ts: number;
 }
 
+export const DIRECTIVE_HEADER = '⚠️ [HUMAN SUPERVISOR DIRECTIVE]';
+
+/**
+ * N-8 — THE DIRECTIVE AS THE FIRST THING AN AGENT READS. Rendered at the top
+ * of every bridge answer that hands over a note or a task carrying one, and
+ * at the top of the prompt of a run started for such a task, so the user's
+ * word is met before the constitution, the agent's own file or the task's
+ * instructions — which is what "supreme override" means in practice.
+ */
+export function directiveBlock(d: HumanDirective): string {
+    const verb = { steer: 'do it THIS way', veto: 'NOT this — do something else', constraint: 'stay WITHIN these limits' }[d.kind] ?? d.kind;
+    return `${DIRECTIVE_HEADER} — ${d.kind}: ${verb}\n${d.text.trim()}\n`
+        + `(set by the user ${new Date(d.ts).toISOString()}. This outranks every rule you apply — the constitution, `
+        + 'your own instructions, the task\'s own text. Follow it; if it cannot be followed, stop and say why.)';
+}
+
 export interface A2ANote {
     id: string;
     ts: number;

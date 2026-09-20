@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.596.0 - the user's word first, and the A2A road proven end to end (N-8, N-9) (2026-09-20)
+
+- **‼️ The supervisor directive is the FIRST thing an agent reads (N-8).** A
+  note or task carrying the user's `humanDirective` answers `a2a.tasks.claim`,
+  `a2a.tasks.next`, `a2a.tasks.heartbeat` and `a2a.notes.get` with
+  `supervisor` as its first key — a `⚠️ [HUMAN SUPERVISOR DIRECTIVE] — steer |
+  veto | constraint` block that says, in the block, that it outranks the
+  constitution, the agent's own instructions and the task's text. The
+  heartbeat is the moment a directive set *after* the claim reaches its
+  holder, which is why the heartbeat answer carries it too. `directiveBlock()`
+  in `a2aNotes.ts` is the one renderer; the "Run Now" prompt (N-7) will use
+  the same one.
+- **The agent side of A2A exists now (N-8).** `ajanlar/_REF/a2a.md` — note vs
+  task, the coordinates and the strictness table, the session-start glance,
+  the claim · heartbeat · finish loop, the loop guard, the directive as
+  supreme override, English-as-technical-spec as the board's language, and
+  `@args.json` for every payload. One trigger row in the constitution; an
+  **A2A board [session-start]** duty on developer, explorer, manager and
+  genel (`a2a.status` with each agent's role and capabilities); the
+  cross-engine copies re-synced in the same commit.
+- **The road is proven end to end (N-9).** `test_a2a_cli.js` spawns the real
+  `af.js` against a temp bridge folder with a runner standing in for the
+  extension: the session id the CLI publishes names the caller with nothing
+  typed, `@args.json` and `--stdin-base64` carry Turkish and backticks intact,
+  `key=value` coerces csv and numbers, `--out` writes UTF-8 without a BOM, a
+  refusal comes back as `ok:false` with its `detail`, and the claim ·
+  heartbeat · finish · result-note loop works over the wire. The stores test
+  now also pins TTL sweeping (only what is both resolved and expired goes) and
+  the lineage that travels with a handoff (`sourceNoteId`,
+  `sourceQueueItemId`). With `test_a2a_stores.js` (75), `test_a2a_bridge.js`
+  (102), `test_a2a_matching.js` (63, six-process claim race) and
+  `test_a2a_cli.js` (18), the A2A suite is the four files N-9 named.
+
 ## 3.595.0 - whose is this: the A2A matching engine (N-5) (2026-09-20)
 
 - **One engine under both stores** — `src/core/a2aMatch.ts`. A note and a task

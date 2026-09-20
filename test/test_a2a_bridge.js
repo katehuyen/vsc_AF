@@ -226,6 +226,31 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-a2a-bridge-'));
         const offTask = await call('a2a.directive.remove', { id: rr.result.id });
         ok('the same for a task', offTask.ok && !('humanDirective' in offTask.result));
 
+        // ---------- N-8: the user's word is the FIRST thing in the answer ----------
+        {
+            const sv = (await call('a2a.tasks.add', { title: 'Supervised', agent: 'manager', targetRole: 'developer' })).result;
+            const plain = await call('a2a.tasks.claim', { id: sv.id, agent: 'developer', role: 'developer' });
+            ok('no directive, no supervisor key', plain.ok && !('supervisor' in plain.result));
+            await call('a2a.directive.set', { id: sv.id, kind: 'constraint', text: 'Touch nothing under media/.' });
+            const hb = await call('a2a.tasks.heartbeat', { id: sv.id, agent: 'developer', progress: 'starting' });
+            ok('‼️ a directive set AFTER the claim reaches the holder on its next heartbeat, as the FIRST key',
+                hb.ok && Object.keys(hb.result)[0] === 'supervisor' && /HUMAN SUPERVISOR DIRECTIVE\] — constraint/.test(hb.result.supervisor)
+                && /Touch nothing under media/.test(hb.result.supervisor) && /outranks every rule/.test(hb.result.supervisor));
+            await call('a2a.tasks.cancel', { id: sv.id });
+            const sv2 = (await call('a2a.tasks.add', { title: 'Supervised from the start', agent: 'manager', targetRole: 'developer' })).result;
+            await call('a2a.directive.set', { id: sv2.id, kind: 'steer', text: 'Start with the tests.' });
+            const nx = await call('a2a.tasks.next', { agent: 'developer', role: 'developer' });
+            ok('next shows the block before the task', nx.ok && nx.result.task.id === sv2.id && Object.keys(nx.result)[0] === 'supervisor');
+            const cl = await call('a2a.tasks.claim', { id: sv2.id, agent: 'developer', role: 'developer' });
+            ok('claim answers with the block first', cl.ok && Object.keys(cl.result)[0] === 'supervisor' && /steer: do it THIS way/.test(cl.result.supervisor));
+            await call('a2a.tasks.cancel', { id: sv2.id });
+            const nn = (await call('a2a.notes.post', { title: 'Vetoed', agent: 'manager' })).result;
+            await call('a2a.directive.set', { id: nn.id, kind: 'veto', text: 'Not the sqlite route.' });
+            const gt = await call('a2a.notes.get', { id: nn.id, agent: 'developer' });
+            ok('a note with a directive is read with the block first', gt.ok && Object.keys(gt.result)[0] === 'supervisor' && /veto: NOT this/.test(gt.result.supervisor));
+            await call('a2a.notes.resolve', { id: nn.id });
+        }
+
         // ---------- status: the session-start glance ----------
         const st = await call('a2a.status', { agent: 'manager', role: 'manager' });
         ok('status names the agent and counts its unread notes', st.ok && st.result.agent === 'manager' && st.result.unreadNotes >= 1);
