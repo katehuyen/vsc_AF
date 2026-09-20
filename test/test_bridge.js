@@ -2758,6 +2758,177 @@ const { opencodeStatus, syncToOpencode } =
                 cap && Array.isArray(cap.ops) && cap.ops.includes('parallel.run') && !cap.gap && man.gapBudget <= 29);
             try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* tmp */ }
         }
+        // ---------- B-19: four services, each with two doors ----------
+        // schedules.forecast · web.enable · packs.gallery · search.index.build
+        // — the command palette and the op reach each through ONE closure
+        // (forecastNow · enableWebView/webViewUrl · galleryPacks ·
+        // buildSemanticNow). The forecast and the gallery run the real core;
+        // the web server and the embeddings provider are stood in.
+        {
+            const FC = require(path.join(__dirname, '..', 'out', 'core', 'forecast.js'));
+            const PG = require(path.join(__dirname, '..', 'out', 'core', 'packgallery.js'));
+            const AP = require(path.join(__dirname, '..', 'out', 'core', 'agentpack.js'));
+            const need = (c, m) => { if (!c) { throw new Error(m); } };
+            // --- schedules.forecast: the real forecast over a fixture schedule
+            const FROM = new Date(2026, 6, 11, 8, 0, 0, 0).getTime();
+            const schedules = [{ id: 'x', agentId: 'a1', agentName: 'yazar', title: 'Rapor', prompt: 'p', mode: 'headless', kind: 'daily', hour: 9, minute: 0, enabled: true }];
+            const tasksHere = [{ title: 'Elde iş', agentName: 'yazar', status: 'queued', deferredReason: 'agent busy' }];
+            let forecastDays = 7;
+            const forecastNow = (days) => FC.buildForecast(schedules, tasksHere, [], FROM, days ?? forecastDays);
+            reg.register({
+                op: 'schedules.forecast',
+                describe: 'B-19 — the forecast as data. args: days?, markdown?',
+                handler: (args) => {
+                    const days = Number(args.days || 0);
+                    need(days >= 0 && days <= 365, 'days must be between 1 and 365.');
+                    const forecast = forecastNow(days > 0 ? days : undefined);
+                    return args.markdown === true ? { ...forecast, markdown: FC.renderForecastMarkdown(forecast) } : forecast;
+                }
+            });
+            const f7 = await reg.dispatch('schedules.forecast', {});
+            ok('B-19: schedules.forecast answers the page\'s own forecast — window, upcoming firings, the board',
+                f7.ok && f7.result.days === 7 && f7.result.upcoming.length >= 7 && f7.result.upcoming.length <= 8
+                && f7.result.upcoming.every(u => u.title === 'Rapor' && u.agentName === 'yazar' && u.kind === 'daily')
+                && f7.result.queued.length === 1 && f7.result.queued[0].deferredReason === 'agent busy'
+                && f7.result.totalScheduledRuns === f7.result.upcoming.length && !('markdown' in f7.result));
+            const f2 = await reg.dispatch('schedules.forecast', { days: 2, markdown: true });
+            ok('B-19: …days narrows the window and markdown:true adds the rendered page',
+                f2.ok && f2.result.days === 2 && f2.result.upcoming.length <= 3
+                && typeof f2.result.markdown === 'string' && /Rapor/.test(f2.result.markdown));
+            const fbad = await reg.dispatch('schedules.forecast', { days: 400 });
+            ok('B-19: …a window past a year is refused', fbad.ok === false);
+            // --- web.enable: confirm-shaped, a port is opened
+            let webState = { enabled: false, port: 8378, bind: 'local', token: '' };
+            const writes = [];
+            const webCfg = () => ({ ...webState });
+            const enableWebView = async (bind) => {
+                const token = webCfg().token || 'tok-' + Math.random().toString(36).slice(2, 8);
+                writes.push(['web.token', token], ['web.bind', bind], ['web.enabled', true]);
+                webState = { ...webState, token, bind, enabled: true };
+                return webCfg();
+            };
+            let snapshots = 0;
+            const webViewUrl = () => {
+                snapshots++;
+                const w = webCfg();
+                const host = w.bind === 'lan' ? '192.168.1.20' : '127.0.0.1';
+                return { ...w, host, url: `http://${host}:${w.port}/?t=${w.token}` };
+            };
+            reg.register({
+                op: 'web.enable',
+                describe: 'B-19 — turn on the read-only web view. args: bind?, confirm (true — required)',
+                handler: async (args) => {
+                    need(args.confirm === true, 'This opens a port on the machine — pass confirm:true if that is meant.');
+                    const bind = String(args.bind || 'local');
+                    need(bind === 'local' || bind === 'lan', 'bind must be local or lan.');
+                    const before = webCfg();
+                    const alreadyOn = before.enabled && !!before.token;
+                    if (!alreadyOn) { await enableWebView(bind); }
+                    const w = webViewUrl();
+                    return { enabled: w.enabled, bind: w.bind, port: w.port, host: w.host, url: w.url, alreadyOn };
+                }
+            });
+            const noConfirm = await reg.dispatch('web.enable', { bind: 'lan' });
+            ok('B-19: web.enable without confirm:true is refused and writes nothing',
+                noConfirm.ok === false && /confirm:true/.test(noConfirm.error) && writes.length === 0 && !webState.enabled);
+            const badBind = await reg.dispatch('web.enable', { bind: 'world', confirm: true });
+            ok('B-19: …a binding that is not local|lan is refused', badBind.ok === false && writes.length === 0);
+            const on = await reg.dispatch('web.enable', { bind: 'lan', confirm: true });
+            ok('B-19: …confirmed: mints the token, records the binding, switches on, answers the phone link',
+                on.ok && on.result.enabled === true && on.result.bind === 'lan' && on.result.alreadyOn === false
+                && on.result.host === '192.168.1.20' && on.result.url === `http://192.168.1.20:8378/?t=${webState.token}`
+                && writes.map(w => w[0]).join(',') === 'web.token,web.bind,web.enabled' && snapshots === 1);
+            const again = await reg.dispatch('web.enable', { bind: 'local', confirm: true });
+            ok('B-19: …already on: nothing is rewritten, bind is ignored, the current link is answered with alreadyOn',
+                again.ok && again.result.alreadyOn === true && again.result.bind === 'lan' && writes.length === 3
+                && again.result.url === on.result.url && snapshots === 2);
+            // --- packs.gallery: the real collector over a local folder source
+            const groot = fs.mkdtempSync(path.join(os.tmpdir(), 'af-b19-'));
+            const gsrc = path.join(groot, 'gallery'); fs.mkdirSync(path.join(gsrc, 'nested'), { recursive: true });
+            const pack = { format: AP.PACK_FORMAT, version: AP.PACK_VERSION, name: 'sesli', exportedAt: FROM, files: [{ path: 'CLAUDE.md', content: '# sesli' }], workflows: [{ title: 'w' }], triggers: [], schedules: [] };
+            fs.writeFileSync(path.join(gsrc, 'sesli.agentpack'), JSON.stringify(pack));
+            fs.writeFileSync(path.join(gsrc, 'nested', 'broken.agentpack'), '{not json');
+            let sources = [];
+            const galleryPacks = () => PG.collectGalleryPacks(sources, path.join(groot, 'cache')).then(r => ({ sources, ...r }));
+            reg.register({
+                op: 'packs.gallery',
+                describe: 'B-19 — the packs on offer in the configured galleries. args: none',
+                handler: async () => {
+                    const r = await galleryPacks();
+                    need(r.sources.length, 'No gallery sources are configured — set agentFarm.packGalleryRepos first.');
+                    return r;
+                }
+            });
+            const noSrc = await reg.dispatch('packs.gallery', {});
+            ok('B-19: packs.gallery with no sources configured is refused by name', noSrc.ok === false && /packGalleryRepos/.test(noSrc.error));
+            sources = [gsrc, path.join(groot, 'missing')];
+            const gal = await reg.dispatch('packs.gallery', {});
+            ok('B-19: …lists every pack under a source (nested too), names the file to import, and the source that failed',
+                gal.ok && gal.result.sources.length === 2 && gal.result.packs.length === 1
+                && gal.result.packs[0].packName === 'sesli' && gal.result.packs[0].file === path.join(gsrc, 'sesli.agentpack')
+                && gal.result.packs[0].fileCount === 1 && gal.result.packs[0].workflowCount === 1 && gal.result.packs[0].source === gsrc
+                && gal.result.errors.some(e => /missing/.test(e)));
+            try { fs.rmSync(groot, { recursive: true, force: true }); } catch { /* tmp */ }
+            // --- search.index.build: provider gate, busy is said, maxSessions passes through
+            let provider = 'off';
+            let semBusy = false;
+            const calls = [];
+            const stats = { sessions: 12, chunks: 340 };
+            const updateSemanticIndex = async (maxSessions) => {
+                if (provider === 'off') { return { indexed: 0, remaining: 0, error: 'embeddings provider is off' }; }
+                if (semBusy) { return { indexed: 0, remaining: 0, busy: true }; }
+                calls.push(maxSessions);
+                return { indexed: maxSessions ? Math.min(maxSessions, 5) : 5, remaining: maxSessions ? 5 - Math.min(maxSessions, 5) : 0 };
+            };
+            const buildSemanticNow = async (maxSessions) => ({ provider, ...(await updateSemanticIndex(maxSessions)), ...stats });
+            reg.register({
+                op: 'search.index.build',
+                describe: 'B-19 — build the transcript meaning index. args: maxSessions?',
+                handler: async (args) => {
+                    need(provider !== 'off', 'Set agentFarm.embeddingsProvider first.');
+                    const max = Number(args.maxSessions || 0);
+                    need(max >= 0, 'maxSessions must be 0 or more.');
+                    return buildSemanticNow(max > 0 ? max : undefined);
+                }
+            });
+            const off = await reg.dispatch('search.index.build', {});
+            ok('B-19: search.index.build with the provider off is refused, not run', off.ok === false && /embeddingsProvider/.test(off.error) && calls.length === 0);
+            provider = 'gemini';
+            const all = await reg.dispatch('search.index.build', {});
+            ok('B-19: …builds everything pending and answers provider, counts and the index size',
+                all.ok && all.result.provider === 'gemini' && all.result.indexed === 5 && all.result.remaining === 0
+                && all.result.sessions === 12 && all.result.chunks === 340 && calls[0] === undefined);
+            const two = await reg.dispatch('search.index.build', { maxSessions: 2 });
+            ok('B-19: …maxSessions caps one call and says what is left', two.ok && two.result.indexed === 2 && two.result.remaining === 3 && calls[1] === 2);
+            semBusy = true;
+            const busy = await reg.dispatch('search.index.build', {});
+            ok('B-19: …a build already running answers busy:true instead of a silent zero', busy.ok && busy.result.busy === true && busy.result.indexed === 0);
+            // --- the two doors share the closures, in the source
+            const opBlock = (name) => src.slice(src.indexOf(`op: '${name}'`), src.indexOf(`op: '${name}'`) + 2600);
+            const cmdBlock = (name, n) => src.slice(src.indexOf(`registerCommand('${name}'`), src.indexOf(`registerCommand('${name}'`) + n);
+            ok('B-19: extension.ts registers schedules.forecast through forecastNow, and the command renders the same call',
+                /forecastNow\(days > 0 \? days : undefined\)/.test(opBlock('schedules.forecast')) && /renderForecastMarkdown\(forecast\)/.test(opBlock('schedules.forecast'))
+                && /renderForecastMarkdown\(forecastNow\(\)\)/.test(cmdBlock('agentfarm.openForecast', 400)) && !/buildForecast\(/.test(cmdBlock('agentfarm.openForecast', 400)));
+            ok('B-19: …web.enable requires confirm:true and goes through enableWebView + webViewUrl, as the command does — no second settings write',
+                /args\.confirm === true/.test(opBlock('web.enable')) && /await enableWebView\(bind/.test(opBlock('web.enable')) && /webViewUrl\(\)/.test(opBlock('web.enable'))
+                && /await enableWebView\(bindPick\.bind\)/.test(cmdBlock('agentfarm.openWebView', 1800)) && /webViewUrl\(\)/.test(cmdBlock('agentfarm.openWebView', 1800))
+                && !/cfg\(\)\.update\('web\./.test(cmdBlock('agentfarm.openWebView', 1800)));
+            ok('B-19: …packs.gallery and the command both read the galleries through galleryPacks, and the manifest pairs it with agents.pack.import',
+                /await galleryPacks\(\)/.test(opBlock('packs.gallery')) && /galleryPacks\(\)/.test(cmdBlock('agentfarm.browsePackGallery', 900))
+                && !/collectGalleryPacks\(/.test(cmdBlock('agentfarm.browsePackGallery', 900)));
+            ok('B-19: …search.index.build and the command both build through buildSemanticNow, behind the same provider gate',
+                /buildSemanticNow\(max > 0 \? max : undefined\)/.test(opBlock('search.index.build')) && /embeddingsCfg\(\)\.provider !== 'off'/.test(opBlock('search.index.build'))
+                && /await buildSemanticNow\(undefined, m => progress\.report/.test(cmdBlock('agentfarm.buildSemanticIndex', 1400))
+                && !/updateSemanticIndex\(/.test(cmdBlock('agentfarm.buildSemanticIndex', 1400)));
+            ok('B-19: …a build already running is SAID by updateSemanticIndex (busy:true), not folded into "up to date"',
+                /if \(semBusy\) \{ return \{ indexed: 0, remaining: 0, busy: true \}; \}/.test(src));
+            const man19 = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'parity.manifest.json'), 'utf8'));
+            const caps = ['openForecast:schedules.forecast', 'openWebView:web.enable', 'browsePackGallery:packs.gallery', 'buildSemanticIndex:search.index.build']
+                .map(s => s.split(':')).map(([c, o]) => man19.entries.find(e => e.capability === c)).map((e, i) => e && Array.isArray(e.ops) && !e.gap
+                    && e.ops.includes(['schedules.forecast', 'web.enable', 'packs.gallery', 'search.index.build'][i]));
+            ok('B-19: the parity manifest names all four ops and no longer four gaps, and the budget came down to 25',
+                caps.every(Boolean) && man19.entries.find(e => e.capability === 'browsePackGallery').ops.includes('agents.pack.import') && man19.gapBudget <= 25);
+        }
         // ‼️ `force` from an AGENT is not a person clicking ⟳: it may skip the
         // cache, never a backoff, or a looping agent becomes a request storm
         ok('…and an agent\'s force takes the edge path, not the human one',

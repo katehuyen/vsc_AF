@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 29,
+  "gapBudget": 25,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -982,18 +982,19 @@
       "ui": [
         "cmd:agentfarm.browsePackGallery"
       ],
-      "gap": {
-        "why": "An op that lists the configured pack-gallery repos and installs a pack from one. The page can; an agent asked to add that agent from the gallery cannot."
-      }
+      "ops": [
+        "packs.gallery",
+        "agents.pack.import"
+      ]
     },
     {
       "capability": "buildSemanticIndex",
       "ui": [
         "cmd:agentfarm.buildSemanticIndex"
       ],
-      "gap": {
-        "why": "memory.semantic.build indexes MEMORY; the TRANSCRIPT index behind search has no build op, so an agent cannot warm the search it is about to use."
-      }
+      "ops": [
+        "search.index.build"
+      ]
     },
     {
       "capability": "cancelTask",
@@ -3574,9 +3575,9 @@
       "ui": [
         "cmd:agentfarm.openForecast"
       ],
-      "gap": {
-        "why": "The schedule forecast (what will fire, when, and what it will cost) is computed for the page only; no op returns it."
-      }
+      "ops": [
+        "schedules.forecast"
+      ]
     },
     {
       "capability": "openGallery",
@@ -3836,9 +3837,9 @@
       "ui": [
         "cmd:agentfarm.openWebView"
       ],
-      "gap": {
-        "why": "Turning the phone-facing web view on, choosing its binding and minting its token is panel-only. It opens a port, so an op needs a confirm-shaped contract like service.install."
-      }
+      "ops": [
+        "web.enable"
+      ]
     },
     {
       "capability": "openWiki",

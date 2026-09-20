@@ -4704,10 +4704,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const updateSemanticIndex = async (
         maxSessions?: number,
         report?: (msg: string) => void
-    ): Promise<{ indexed: number; remaining: number; error?: string }> => {
+    ): Promise<{ indexed: number; remaining: number; error?: string; busy?: boolean }> => {
         const ecfg = embeddingsCfg();
         if (ecfg.provider === 'off') { return { indexed: 0, remaining: 0, error: 'embeddings provider is off' }; }
-        if (semBusy) { return { indexed: 0, remaining: 0 }; }
+        if (semBusy) { return { indexed: 0, remaining: 0, busy: true }; }
         semBusy = true;
         try {
             const sessions = semanticSessions();
@@ -28331,6 +28331,46 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             webServer?.close();
         }
     });
+
+    // B-19 — FOUR SERVICES, EACH WITH TWO DOORS. The command palette and the
+    // bridge op reach every one of these through the same closure, so an agent
+    // gets the forecast, the web view, the gallery and the index the person
+    // gets — and the settings behind them are read in one place.
+    const forecastNow = (days?: number) => buildForecast(
+        taskManager.schedules,
+        taskManager.tasks.map(t => ({
+            title: t.title, agentName: t.agentName, status: t.status,
+            deferredReason: t.deferredReason, startedAt: t.startedAt
+        })),
+        allTaskRecords(),
+        Date.now(),
+        days ?? cfg().get<number>('forecastDays', 7));
+    /** Mint the token (if none), bind, switch on, start the server — the settings the command writes. */
+    const enableWebView = async (bind: 'local' | 'lan') => {
+        const token = webCfg().token || generateToken();
+        await cfg().update('web.token', token, vscode.ConfigurationTarget.Global);
+        await cfg().update('web.bind', bind, vscode.ConfigurationTarget.Global);
+        await cfg().update('web.enabled', true, vscode.ConfigurationTarget.Global);
+        applyWebServer();
+        return webCfg();
+    };
+    /** The link a phone opens — fresh snapshot first, so the first page is not empty. */
+    const webViewUrl = () => {
+        writeWebSnapshot();
+        const w = webCfg();
+        const host = w.bind === 'lan' ? lanAddress() : '127.0.0.1';
+        return { ...w, host, url: `http://${host}:${w.port}/?t=${w.token}` };
+    };
+    const galleryPacks = () => {
+        const sources = cfg().get<string[]>('packGalleryRepos', []);
+        return collectGalleryPacks(sources, path.join(context.globalStorageUri.fsPath, 'pack-gallery'))
+            .then(r => ({ sources, ...r }));
+    };
+    const buildSemanticNow = async (maxSessions?: number, report?: (msg: string) => void) => {
+        const res = await updateSemanticIndex(maxSessions, report);
+        return { provider: embeddingsCfg().provider, ...res, ...semIndex.stats() };
+    };
+
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
         if (e.affectsConfiguration('agentFarm.web')) { applyWebServer(); }
         // ‼️ A NEW WEIGHT TABLE MEANS EVERY FIGURE ON SCREEN IS STALE. The ⚖
@@ -35686,21 +35726,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     }
                 ], { placeHolder: 'Who should be able to open the read-only web view?', ignoreFocusOut: true });
                 if (!bindPick) { return; }
-                const token = w.token || generateToken();
                 try {
-                    await cfg().update('web.token', token, vscode.ConfigurationTarget.Global);
-                    await cfg().update('web.bind', bindPick.bind, vscode.ConfigurationTarget.Global);
-                    await cfg().update('web.enabled', true, vscode.ConfigurationTarget.Global);
+                    w = await enableWebView(bindPick.bind);
                 } catch (e) {
                     void vscode.window.showWarningMessage(`Agent Farm: could not save the web settings — ${String(e)}`);
                     return;
                 }
-                applyWebServer();
-                w = webCfg();
             }
-            writeWebSnapshot();
-            const host = w.bind === 'lan' ? lanAddress() : '127.0.0.1';
-            const url = `http://${host}:${w.port}/?t=${w.token}`;
+            const { url } = webViewUrl();
             const choice = await vscode.window.showInformationMessage(
                 `Agent Farm web view: ${url}` +
                 (w.bind === 'lan'
@@ -37275,18 +37308,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         }),
 
         vscode.commands.registerCommand('agentfarm.openForecast', async () => {
-            const forecast = buildForecast(
-                taskManager.schedules,
-                taskManager.tasks.map(t => ({
-                    title: t.title, agentName: t.agentName, status: t.status,
-                    deferredReason: t.deferredReason, startedAt: t.startedAt
-                })),
-                allTaskRecords(),
-                Date.now(),
-                cfg().get<number>('forecastDays', 7)
-            );
             const doc = await vscode.workspace.openTextDocument({
-                language: 'markdown', content: renderForecastMarkdown(forecast)
+                language: 'markdown', content: renderForecastMarkdown(forecastNow())
             });
             await vscode.window.showTextDocument(doc, { preview: false });
         }),
@@ -37893,14 +37916,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: building semantic index…' },
                 async progress => {
-                    const res = await updateSemanticIndex(undefined, m => progress.report({ message: m }));
-                    const stats = semIndex.stats();
+                    const res = await buildSemanticNow(undefined, m => progress.report({ message: m }));
                     if (res.error) {
                         void vscode.window.showErrorMessage(
-                            `Agent Farm: semantic indexing stopped — ${res.error} (indexed ${res.indexed}, index now ${stats.sessions} sessions / ${stats.chunks} chunks).`);
+                            `Agent Farm: semantic indexing stopped — ${res.error} (indexed ${res.indexed}, index now ${res.sessions} sessions / ${res.chunks} chunks).`);
                     } else {
                         void vscode.window.showInformationMessage(
-                            `Agent Farm: semantic index ready — ${stats.sessions} session(s), ${stats.chunks} chunk(s)` +
+                            `Agent Farm: semantic index ready — ${res.sessions} session(s), ${res.chunks} chunk(s)` +
                             (res.indexed ? ` (${res.indexed} newly indexed).` : ' (already up to date).'));
                     }
                 });
@@ -38374,16 +38396,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         // ---------- J4: agentpack gallery ----------
 
         vscode.commands.registerCommand('agentfarm.browsePackGallery', async () => {
-            const sources = cfg().get<string[]>('packGalleryRepos', []);
-            if (!sources.length) {
+            if (!cfg().get<string[]>('packGalleryRepos', []).length) {
                 void vscode.window.showInformationMessage(
                     'Agent Farm: add gallery sources first — agentFarm.packGalleryRepos (git URLs or local folders with .agentpack files).');
                 return;
             }
-            const cacheDir = path.join(context.globalStorageUri.fsPath, 'pack-gallery');
             const { packs, errors } = await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: syncing pack gallery…' },
-                () => collectGalleryPacks(sources, cacheDir));
+                () => galleryPacks());
             if (errors.length) {
                 void vscode.window.showWarningMessage(`Agent Farm gallery: ${errors.join(' · ')}`.slice(0, 300));
             }
@@ -38853,6 +38873,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         }));
     }
+
+    // B-19 — the four services behind the "Open Forecast", "Open Web View…",
+    // "Browse Pack Gallery…" and "Build Semantic Index" commands, each through
+    // the command's own closure.
+    bridge.register([
+        {
+            op: 'schedules.forecast',
+            describe: 'B-19 — WHAT THE SCHEDULES WILL FIRE, WHEN, AND HOW BUSY THAT KEEPS THE FARM — the same forecast the "Agent Farm: Open Forecast" command renders as a markdown page, as data. `upcoming` is every scheduled firing inside the window with its agent, moment and (when the schedule has a run history) the median duration and cost it tends to take; `queued` and `running` are the tasks already on the board; `totalScheduledRuns` and `estBusyMs` (the sum of the known median durations) say how much agent-time the window asks for. Nothing is started or written. args: days? (the window, default agentFarm.forecastDays = 7), markdown? (default false — true also returns the page\'s own text as `markdown`). Answer: { now, days, upcoming: [{ts, title, agentName, kind, medianMs?, successRate?}], queued: [{title, agentName, deferredReason?}], running: [{title, agentName, startedAt?}], totalScheduledRuns, estBusyMs, markdown? }.',
+            handler: (args) => {
+                const days = optNum(args, 'days', 0);
+                need(days >= 0 && days <= 365, 'days must be between 1 and 365.');
+                const forecast = forecastNow(days > 0 ? days : undefined);
+                return optBool(args, 'markdown', false)
+                    ? { ...forecast, markdown: renderForecastMarkdown(forecast) }
+                    : forecast;
+            }
+        },
+        {
+            op: 'web.enable',
+            describe: 'B-19 — TURN ON THE READ-ONLY WEB VIEW AND ANSWER THE LINK A PHONE OPENS — what the "Agent Farm: Open Web View…" command does after its one question. Mints the token if there is none (agentFarm.web.token), records the binding (agentFarm.web.bind), switches agentFarm.web.enabled on and starts the server on agentFarm.web.port; a fresh snapshot is written so the first page is not empty. ‼️ IT OPENS A PORT ON THIS MACHINE, and `lan` makes the dashboard readable by ANYONE on the network who has the link — so `confirm:true` is required, and `lan` only when the user asked for their phone. If the view is already on, nothing is changed (`bind` is ignored and `alreadyOn` says so) and the current link is answered. Switch it off with settings.set agentFarm.web.enabled=false. args: bind? (local | lan, default local — local is http://127.0.0.1, this computer only), confirm (true — required). Answer: { enabled, bind, port, host, url, alreadyOn }.',
+            handler: async (args) => {
+                need(args.confirm === true,
+                    'This opens a port on the machine (and with bind:lan a link anyone on the network can read) — pass confirm:true if that is meant.');
+                const bind = optStr(args, 'bind') || 'local';
+                need(bind === 'local' || bind === 'lan', 'bind must be local or lan.');
+                const before = webCfg();
+                const alreadyOn = before.enabled && !!before.token;
+                if (!alreadyOn) { await enableWebView(bind as 'local' | 'lan'); }
+                const w = webViewUrl();
+                return { enabled: w.enabled, bind: w.bind, port: w.port, host: w.host, url: w.url, alreadyOn };
+            }
+        },
+        {
+            op: 'packs.gallery',
+            describe: 'B-19 — THE AGENT PACKS ON OFFER IN THE CONFIGURED GALLERIES — what "Agent Farm: Browse Pack Gallery…" lists before you pick one. Every source in agentFarm.packGalleryRepos (a git URL, synced into the extension\'s cache, or a local folder) is read for .agentpack / .json packs up to three folders deep; a source that cannot be reached is named in `errors` and the rest are still listed. Nothing is installed here — install one with agents.pack.import { file, name, root? } using the `file` of the pack you want. args: none. Answer: { sources, packs: [{file, packName, exportedAt, fileCount, workflowCount, source}], errors }.',
+            handler: async () => {
+                const r = await galleryPacks();
+                need(r.sources.length, 'No gallery sources are configured — set agentFarm.packGalleryRepos first (git URLs or local folders with .agentpack files).');
+                return r;
+            }
+        },
+        {
+            op: 'search.index.build',
+            describe: 'B-19 — BUILD (OR CATCH UP) THE TRANSCRIPT MEANING INDEX BEHIND THE SEARCH PAGE\'S "Meaning" MODE — what "Agent Farm: Build Semantic Index" does with its progress bar. Sessions the index has not seen (or has seen at an older mtime) are chunked and embedded through agentFarm.embeddingsProvider (gemini needs the GEMINI_API_KEY secret; openai is any OpenAI-compatible endpoint, e.g. a local Ollama via agentFarm.embeddingsBaseUrl); memory.semantic.build is the OTHER index, the one over memory files. ‼️ Every new session is an embeddings call on the configured provider — warm the index before a search you are about to run, not on a loop. Refused when the provider is off; a build already running answers `busy:true` and touches nothing. args: maxSessions? (index at most this many of the pending sessions this call, 0/omit = all). Answer: { provider, indexed, remaining, error?, busy?, sessions, chunks }.',
+            handler: async (args) => {
+                need(embeddingsCfg().provider !== 'off',
+                    'Set agentFarm.embeddingsProvider first — "gemini" (needs the GEMINI_API_KEY secret) or "openai" (any OpenAI-compatible endpoint, e.g. local Ollama via agentFarm.embeddingsBaseUrl).');
+                const max = optNum(args, 'maxSessions', 0);
+                need(max >= 0, 'maxSessions must be 0 or more.');
+                return buildSemanticNow(max > 0 ? max : undefined);
+            }
+        }
+    ]);
 
     /**
      * The catalogue, readable. An agent asked to work a page has the same

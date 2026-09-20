@@ -2,6 +2,34 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.613.0 - four services on the bridge: forecast, web view, pack gallery, meaning index (B-19 closed) (2026-09-21)
+
+- **New op `schedules.forecast`** — what the schedules will fire, when, and
+  how busy that keeps the farm: the same forecast "Open Forecast" renders as a
+  markdown page, as data (`upcoming` with each firing's median duration and
+  success rate where there is a history, `queued`, `running`,
+  `totalScheduledRuns`, `estBusyMs`). `days?` narrows the window,
+  `markdown:true` also returns the page's own text.
+- **New op `web.enable`** — turn on the read-only web view and answer the link
+  a phone opens: mints the token if there is none, records the binding,
+  switches `agentFarm.web.enabled` on and starts the server. **It opens a
+  port**, so `confirm:true` is required and `bind:lan` (anyone on the network
+  with the link can read the dashboard) only when the user asked for their
+  phone. Already on → nothing is rewritten, `alreadyOn:true`, current link.
+- **New op `packs.gallery`** — the agent packs on offer in every configured
+  gallery (`agentFarm.packGalleryRepos`, git URLs or local folders, three
+  folders deep); a source that cannot be reached is named in `errors`.
+  Install one with the existing `agents.pack.import` and the pack's `file`.
+- **New op `search.index.build`** — build or catch up the transcript
+  meaning index behind the Search page's "Meaning" mode (`memory.semantic.build`
+  is the other index). Refused when `agentFarm.embeddingsProvider` is off;
+  `maxSessions?` caps one call; a build already running now answers
+  `busy:true` instead of a silent zero (the command had the same blind spot).
+- Each of the four commands and its op go through ONE closure (`forecastNow`,
+  `enableWebView` + `webViewUrl`, `galleryPacks`, `buildSemanticNow`), so an
+  agent gets what the person gets. Parity: 379 ops on the bridge, 25 open gaps
+  (was 29). B-19 is closed.
+
 ## 3.612.0 - parallel.run: the parallel worktree launch on the bridge (B-17 closed) (2026-09-21)
 
 - **New op `parallel.run`** — fan prompts out over git worktrees, one isolated
