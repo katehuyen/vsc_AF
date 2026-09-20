@@ -386,6 +386,74 @@ const btn = (p, attr, key) =>
         + ' not cost the reader everything they wrote',
         el(pbad, 'c-browserAllowHosts').value === '["broken", ');
     ok('…and the refusal is on screen', /that is not JSON/.test(pbad.html()));
+
+    // ‼️ RESET IS THE OTHER DOOR OUT OF THE RAW BOX, and it needs no waiting:
+    // it only removes a key and cannot be refused. Leaving `jsonMode` set there
+    // kept the setting a textarea with nothing left in it to show.
+    const pr = open();
+    btn(pr, 'ljson', 'agentFarm.browserAllowHosts').click();
+    ok('the raw box is up before the reset',
+        /id="c-browserAllowHosts"/.test(pr.html()));
+    btn(pr, 'reset', 'agentFarm.browserAllowHosts').click();
+    ok('…having asked the host to remove the key',
+        pr.last() && pr.last().type === 'reset'
+        && pr.last().key === 'agentFarm.browserAllowHosts');
+    // The host removes the key and the config change brings the redraw back.
+    pr.send({ type: 'data', data: { categories: fx.data().categories } });
+    ok('‼️ …and a reset leaves the raw box as well as the value',
+        !/id="c-browserAllowHosts"/.test(pr.html())
+        && /id="l-browserAllowHosts-0"/.test(pr.html()));
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ U-141 — AND THE CARET GOES INTO THE ROW THAT WAS JUST MADE, in the table
+// and the pair editor as well as the list. A page that redraws itself gives no
+// other sign that the press landed.
+// ---------------------------------------------------------------------------
+{
+    const p = open();
+    el(p, 'r-livingChecks-0-label').value = 'typed.not.saved';
+    btn(p, 'radd', 'agentFarm.livingChecks').click();
+    ok('‼️ + add on a TABLE puts the caret in the new row’s first declared field',
+        p.sandbox.document.activeElement
+        && p.sandbox.document.activeElement.id === 'r-livingChecks-2-label');
+    ok('…and the cells already typed into survive it',
+        el(p, 'r-livingChecks-0-label').value === 'typed.not.saved');
+    ok('…and it saved nothing', !p.posted.some(m => m.type === 'set'));
+
+    const pm = open();
+    el(pm, 'm-budgets-0-v').value = '41';
+    btn(pm, 'madd', 'agentFarm.budgets').click();
+    ok('‼️ + add on a PAIR editor puts the caret in the NAME box — the one that'
+        + ' cannot be left empty',
+        pm.sandbox.document.activeElement
+        && pm.sandbox.document.activeElement.id === 'm-budgets-2-k');
+    ok('…and the pairs already typed into survive it',
+        el(pm, 'm-budgets-0-v').value === '41');
+}
+
+// ---------------------------------------------------------------------------
+// ‼️ U-139 — ENTER LETS GO OF A ONE-LINE SCALAR BOX, which is how it saves:
+// these settings commit on `change`, and `change` fires on blur.
+// ---------------------------------------------------------------------------
+{
+    // The JSON-shaped fixture draws no scalar settings at all, so the scene
+    // that has them is the one this claim has to be made in.
+    const tg = require(path.join(__dirname, 'fixtures', 'tgsettings.js'));
+    const p = runPage(tg.script, typeof tg.data === 'function' ? tg.data() : tg.data);
+    const box = p.query('[data-set]').find(e =>
+        String(e.tagName || '').toUpperCase() === 'INPUT');
+    ok('there is a scalar box on the page to test', !!box);
+    if (box) {
+        let blurred = 0;
+        const realBlur = box.blur;
+        box.blur = function () { blurred++; if (realBlur) { realBlur.call(box); } };
+        box.fire('keydown', { key: 'Enter' });
+        ok('‼️ Enter releases the box, so its own change handler commits the value',
+            blurred === 1);
+        box.fire('keydown', { key: 'a' });
+        ok('…and no other key does', blurred === 1);
+    }
 }
 
 {

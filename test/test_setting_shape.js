@@ -356,7 +356,7 @@ const PROPS = manifest.contributes.configuration.properties;
         && /delete formDraft\[key\]/.test(page) && /delete rowsDraft\[key\]/.test(page));
     ok('‼️ …and every structural gesture READS THE BOXES FIRST: type a price,'
         + ' press + on the row above, and without this the price is gone',
-        /readRows\(key\)\.push\(\{\}\)/.test(page)
+        /const at = readRows\(key\)\.length/.test(page)
         && /const rows = readRows\(key\)/.test(page)
         && /buildEntry\(key, shapeFields\(key\), readForm\(key\), ''\)/.test(page));
     ok('‼️ …and both are sent STRUCTURED, not as text, so what the user assembled'
@@ -499,7 +499,7 @@ const PROPS = manifest.contributes.configuration.properties;
 
     ok('‼️ add and ✕ act on a draft, and every gesture reads the boxes first',
         /const mapDraft = \{\}/.test(page)
-        && /readMap\(key\)\.push\(\{ k: '', v: '' \}\)/.test(page)
+        && /const at = readMap\(key\)\.length/.test(page)
         && /delete mapDraft\[key\]/.test(page));
     ok('‼️ …and the draft is a LIST of pairs, not an object: a pair being renamed'
         + ' must not jump around under the hand, and an object cannot hold two'

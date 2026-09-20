@@ -212,7 +212,7 @@ const { charts } = require('./lib_charts_stub.js');
                     let m;
                     while ((m = re.exec(app._html))) {
                         const el = { dataset: { [dsKey]: m[1] }, type: '', value: '', checked: false };
-                        el.addEventListener = (_e, fn) => { el._fn = fn; };
+                        el.addEventListener = (_e, fn) => { if (_e !== 'keydown') { el._fn = fn; } };
                         list.push(el);
                     }
                 };
@@ -315,7 +315,7 @@ const { charts } = require('./lib_charts_stub.js');
                 let hit;
                 while ((hit = re.exec(app._html))) {
                     const el = { dataset: { [key]: hit[1] } };
-                    el.addEventListener = (_e, fn) => { el._fn = fn; };
+                    el.addEventListener = (_e, fn) => { if (_e !== 'keydown') { el._fn = fn; } };
                     list.push(el);
                 }
                 wired[key] = list;

@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.599.0 - Enter saves a scalar box too, and + add lands the caret everywhere (U-139, U-141, U-142) (2026-09-20)
+
+- **‼️ Enter lets go of a one-line SCALAR box, which is how it saves (U-139).**
+  A one-line setting commits on `change`, and `change` fires on blur — so a
+  reader who typed a value into an ordinary `agentFarm.*` box, a Claude Code
+  box or one of the two "Open with" boxes and pressed Enter watched nothing
+  happen, and had to click elsewhere to commit it. Blur is deliberately the
+  mechanism rather than a second message: the page HOLDS a background refresh
+  while a field has focus, so an Enter that kept focus would write the value and
+  leave the old one on screen. The alert rows, the quiet hours and the
+  announcement template already did this; these were the boxes that were missed.
+- **‼️ `+ add` lands the caret in the row it just made — in the table and the
+  pair editor too (U-141).** The list editor learnt this in 3.597.0; the other
+  two redrew and left the hand with nothing to aim at. A table row opens in its
+  FIRST DECLARED field, a pair in its NAME box — the one that cannot be left
+  empty, because a pair with no name is refused on save. Neither saves anything,
+  and the cells already typed into survive the redraw.
+- **‼️ `↺` cleared every draft of a value and not the VIEW they were made in
+  (U-142).**
+  Reset already threw away the JSON, list, form, rows and map drafts — a box
+  still showing the old edit would be a lie — but left `jsonMode` set, so the
+  setting stayed a textarea with nothing left in it to show. Unlike Apply there
+  is nothing to wait for here: a reset only removes a key and cannot be refused,
+  so the mode goes with the value.
+
 ## 3.598.0 - the escape hatch lets go, and a next step names the setting (U-142) (2026-09-20)
 
 - **‼️ "Edit as JSON" was a one-way door.** `jsonMode` was set when the reader

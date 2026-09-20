@@ -2962,6 +2962,16 @@
         `;
 
         // -- wiring --
+        /** U-139 — Enter releases a one-line box so its `change` handler runs.
+         *  A multi-line box keeps Enter for its newline. Bound on the element
+         *  the caller already has, never by a second query: two lookups of one
+         *  selector are two different handler sets to keep straight. */
+        const enterLetsGo = (el) => {
+            if (!el || String(el.tagName || '').toUpperCase() === 'TEXTAREA') { return; }
+            el.addEventListener('keydown', (e) => {
+                if (e && e.key === 'Enter' && el.blur) { el.blur(); }
+            });
+        };
         window.AFHeader.wire(vscode);
         const openJson = document.getElementById('opensettingsjson');
         if (openJson) {
@@ -2976,6 +2986,10 @@
         if (dcCmd) { dcCmd.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'customCommand', value: dcCmd.value })); }
         const dcArgs = document.getElementById('docopenargs');
         if (dcArgs) { dcArgs.addEventListener('change', () => vscode.postMessage({ type: 'docOpenSet', field: 'customArgs', value: dcArgs.value })); }
+        // U-139 — the two "Open with" boxes are one-line settings like any
+        // other; see enterLetsGo above for why blur is the mechanism.
+        enterLetsGo(dcCmd);
+        enterLetsGo(dcArgs);
         // Saved prompts — the same three gestures the Console picker offers, so
         // whichever door you came in by, the buttons mean the same thing.
         const onClick = (id, type) => {
@@ -3231,12 +3245,27 @@
         document.querySelectorAll('[data-guide]').forEach(el =>
             el.addEventListener('click', () => vscode.postMessage({ type: 'openGuide', anchor: el.dataset.guide })));
 
-        document.querySelectorAll('[data-set]').forEach(el =>
+        document.querySelectorAll('[data-set]').forEach(el => {
             el.addEventListener('change', () => {
                 delete errors[el.dataset.set];
                 const value = el.type === 'checkbox' ? el.checked : el.value;
                 vscode.postMessage({ type: 'set', key: el.dataset.set, value });
-            }));
+            });
+            enterLetsGo(el);
+        });
+        /**
+         * ‼️ U-139 — ENTER LETS GO OF A SCALAR BOX, WHICH IS HOW IT SAVES.
+         *
+         * A one-line setting saves on `change`, and `change` fires on blur — so
+         * a reader who typed a value and pressed Enter watched nothing happen
+         * and had to click elsewhere to commit it. Blur is deliberately the
+         * mechanism rather than a second postMessage: the page HOLDS a
+         * background refresh while a field has focus (the `focusin`/`focusout`
+         * guard below), so an Enter that kept focus would write the value and
+         * leave the old one on screen. The alert-sound rows, the quiet hours
+         * and the announcement template already do exactly this; these are the
+         * boxes that were missed.
+         */
         /**
          * ‼️ U-108 — THE LIST EDITOR. Every one of these reads the boxes
          * FIRST (`readList`), because a redraw throws away a row that has
@@ -3406,8 +3435,17 @@
         document.querySelectorAll('[data-radd]').forEach(btn =>
             btn.addEventListener('click', () => {
                 const key = btn.dataset.radd;
-                readRows(key).push({});
+                const at = readRows(key).length;
+                rowsDraft[key].push({});
                 render();
+                // U-141 — the caret goes into the row that was just made, in
+                // its FIRST declared field. Same reason as the list editor: it
+                // saves an aim with the mouse, and it is how the press proves
+                // it landed on a page that redraws itself.
+                const first = (shapeFields(key) || [])[0];
+                const box = first
+                    && document.getElementById(`r-${shortKey(key)}-${at}-${first.name}`);
+                if (box && box.focus) { try { box.focus(); } catch (e) { /* stub DOM */ } }
             }));
         document.querySelectorAll('[data-rdel]').forEach(btn =>
             btn.addEventListener('click', () => {
@@ -3472,8 +3510,13 @@
         document.querySelectorAll('[data-madd]').forEach(btn =>
             btn.addEventListener('click', () => {
                 const key = btn.dataset.madd;
-                readMap(key).push({ k: '', v: '' });
+                const at = readMap(key).length;
+                mapDraft[key].push({ k: '', v: '' });
                 render();
+                // U-141 — into the NAME box, which is the one that cannot be
+                // left empty; a pair with no name is refused on save.
+                const box = document.getElementById(`m-${shortKey(key)}-${at}-k`);
+                if (box && box.focus) { try { box.focus(); } catch (e) { /* stub DOM */ } }
             }));
         document.querySelectorAll('[data-mdel]').forEach(btn =>
             btn.addEventListener('click', () => {
@@ -3572,6 +3615,13 @@
                 delete formDraft[key];
                 delete rowsDraft[key];
                 delete mapDraft[key];
+                // ‼️ U-142 — AND THE VIEW THE DRAFTS WERE MADE IN. `jsonMode` is
+                // a request about a value; once that value is gone the request
+                // has no subject left, and leaving it set kept the setting a
+                // textarea with nothing in it. Unlike Apply there is nothing to
+                // wait for: a reset only removes a key and cannot be refused.
+                delete jsonMode[key];
+                delete jsonSent[key];
                 vscode.postMessage({ type: 'reset', key });
             }));
         // The host opens the native dialog and saves what comes back — the page
@@ -3636,12 +3686,14 @@
             }));
 
         // Claude Code section
-        document.querySelectorAll('[data-ccset]').forEach(el =>
+        document.querySelectorAll('[data-ccset]').forEach(el => {
             el.addEventListener('change', () => {
                 delete errors['cc:' + el.dataset.ccset];
                 const value = el.type === 'checkbox' ? el.checked : el.value;
                 vscode.postMessage({ type: 'ccSet', id: el.dataset.ccset, value });
-            }));
+            });
+            enterLetsGo(el);
+        });
         document.querySelectorAll('[data-ccclear]').forEach(btn =>
             btn.addEventListener('click', () => {
                 delete errors['cc:' + btn.dataset.ccclear];
