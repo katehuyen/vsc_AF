@@ -114,6 +114,22 @@ const push = afui => onMessage({ data: { type: 'afui', afui } });
     ok('a junk message is survivable', badgeText('notices') === ' (5)');
 }
 
+// ---------- N-6: the A2A pair rides the same push, in grey, on its own tabs ----------
+{
+    sandbox.window.__AFUI__ = { notices: { unread: 1 }, queue: { blocked: 0 }, a2a: { notes: 3, tasks: 0 } };
+    const html = renderPage('a2anotes');
+    ok('the strip has four tabs and a separator between the pairs',
+        (html.match(/class="af-tab /g) || []).length === 4 && /af-tab-sep/.test(html));
+    ok('the A2A badges are grey and exist at zero too',
+        /class="af-tab-n af-tab-grey" data-afcount="a2anotes"> \(3\)</.test(html)
+        && /class="af-tab-n af-tab-grey" data-afcount="a2atasks"><\/span>/.test(html));
+    ok('…and never reach the nav row (the bell\'s surface)', !/af-nav-n" data-afcount="a2a/.test(html));
+    push({ notices: { unread: 1 }, queue: { blocked: 0 }, a2a: { notes: 0, tasks: 7 } });
+    ok('a push repaints both grey badges in place', badgeText('a2anotes') === '' && badgeText('a2atasks') === ' (7)');
+    ok('a push without the pair keeps the last known figures rather than throwing',
+        (push({ notices: { unread: 1 }, queue: { blocked: 0 } }), badgeText('a2atasks') === ' (7)'));
+}
+
 // ---------- a claimed nav button still names a destination ----------
 {
     sandbox.window.__AFUI__ = { notices: { unread: 4 }, queue: { blocked: 0 } };

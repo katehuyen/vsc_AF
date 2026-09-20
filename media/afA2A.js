@@ -1,0 +1,187 @@
+// Agent Farm — what the two A2A pages share (N-6): the card grammar, the
+// coordinate chips, the supervisor directive block, the lease bar and a safe
+// markdown for bodies agents write. A note and a task are two stores on
+// purpose (core/a2aNotes.ts), but they are drawn in one voice — a reader who
+// has learned one card has learned the other.
+(function () {
+    'use strict';
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    // ---- minimal safe markdown (escape first, then structural transforms) ----
+    function mdInline(t) {
+        t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, x, u) => `<a href="#" class="a2a-link" data-href="${u}">${x}</a>`);
+        t = t.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (m, p, u) => `${p}<a href="#" class="a2a-link" data-href="${u}">${u}</a>`);
+        t = t.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+        t = t.replace(/`([^`]+)`/g, '<code>$1</code>');
+        return t;
+    }
+    function md(src) {
+        const lines = esc(src || '').split('\n');
+        let html = '', inList = false, inCode = false;
+        const closeList = () => { if (inList) { html += '</ul>'; inList = false; } };
+        for (const line of lines) {
+            if (/^```/.test(line.trim())) { if (inCode) { html += '</pre>'; inCode = false; } else { closeList(); html += '<pre class="a2a-code">'; inCode = true; } continue; }
+            if (inCode) { html += line + '\n'; continue; }
+            const h = line.match(/^(#{1,6})\s+(.*)$/);
+            if (h) { closeList(); html += `<div class="a2a-h">${mdInline(h[2])}</div>`; continue; }
+            const li = line.match(/^\s*[-*]\s+(.*)$/);
+            if (li) { if (!inList) { html += '<ul>'; inList = true; } html += `<li>${mdInline(li[1])}</li>`; continue; }
+            if (!line.trim()) { closeList(); html += '<div class="a2a-sp"></div>'; continue; }
+            closeList(); html += `<div>${mdInline(line)}</div>`;
+        }
+        if (inCode) { html += '</pre>'; } closeList();
+        return html;
+    }
+
+    // ---- the coordinates: what a row is ABOUT and who it is FOR ----
+    // '*' is "anything" on the store's side; on screen it is drawn as the word,
+    // never as a bare asterisk a reader would take for a footnote.
+    const ANY = 'any';
+    const STRICT = {
+        hard: 'hard — every stated coordinate must match, or it is not yours',
+        preferred: 'preferred — mismatches allowed, exact hits rank first; the target role\'s alone for a grace period',
+        any: 'any — the coordinates are a label; anyone may take it'
+    };
+    function chip(cls, text, head, body) {
+        const c = `<span class="a2a-chip ${cls}">${esc(text)}</span>`;
+        return window.AFTip ? window.AFTip.wrap(c, head, body) : c;
+    }
+    // An ABSOLUTE path is wide and its head says nothing: the chip carries the
+    // last segment and the hover the whole of it (SHORTHAND). A relative
+    // subsystem (`src/core`) is already the short form and stays whole.
+    function shortPath(p) {
+        const s = String(p);
+        if (!/^([a-zA-Z]:[\\/]|[\\/])/.test(s)) { return s; }
+        const parts = s.split(/[\\/]+/).filter(Boolean);
+        return parts.length > 1 ? parts[parts.length - 1] : s;
+    }
+    function coords(row, projects) {
+        const p = row.project === '*' ? null : window.AFProject.find(projects || [], row.project);
+        const pName = row.project === '*' ? ANY : (p ? p.name : row.project);
+        const where = row.subsystem !== undefined ? row.subsystem : row.workdir;
+        const whereName = row.subsystem !== undefined ? 'Subsystem' : 'Workdir';
+        return `<span class="a2a-coords">`
+            + chip('a2a-c-proj', '◧ ' + pName, 'Project', `Project: ${pName}\n${row.project === '*' ? 'Every project — a broadcast on this axis.' : (p ? (p.summary || '') : 'Filed by key; the project is not open in this window.')}`)
+            + chip('a2a-c-where', '📁 ' + (where === '*' ? ANY : shortPath(where)), whereName, `${whereName}: ${where === '*' ? 'anywhere' : where}`)
+            + chip('a2a-c-topic', '# ' + (row.topic === '*' ? ANY : row.topic), 'Topic', `Topic: ${row.topic === '*' ? 'anything' : row.topic}\nThe anchor a reader searches by.`)
+            + chip('a2a-c-role', '→ ' + (row.targetRole === '*' ? 'anyone' : row.targetRole), 'Target role', `Target role: ${row.targetRole === '*' ? 'anyone' : row.targetRole}\nSession: ${row.targetSession === '*' ? 'any' : row.targetSession}`)
+            + chip('a2a-c-strict a2a-s-' + esc(row.strictness), row.strictness, 'Strictness', `Strictness: ${STRICT[row.strictness] || row.strictness}`)
+            + `</span>`;
+    }
+
+    // ---- the user's word, drawn the way the bridge prints it (N-8) ----
+    function directive(d) {
+        if (!d) { return ''; }
+        const verb = { steer: 'do it THIS way', veto: 'NOT this — do something else', constraint: 'stay WITHIN these limits' }[d.kind] || d.kind;
+        return `<div class="a2a-directive a2a-d-${esc(d.kind)}">
+            <div class="a2a-dhead">⚠️ HUMAN SUPERVISOR DIRECTIVE — ${esc(d.kind)}: ${esc(verb)}</div>
+            <div class="a2a-dbody">${md(d.text)}</div>
+            <div class="a2a-dwhen muted">set ${esc(window.AFTime.full(d.ts))} · outranks every rule the agent applies</div>
+        </div>`;
+    }
+
+    // ---- a lease as a bar: how much of the 30 minutes is left, and the claimant's own word ----
+    function leaseBar(task, now, leaseMs) {
+        const c = task.claimedBy;
+        // A lease means something only while the task is open; on a closed one it is history.
+        if (!c || !leaseMs || ['done', 'failed', 'cancelled'].indexOf(task.state) >= 0) { return ''; }
+        const left = Math.max(0, c.leaseExpiresAt - now);
+        const pct = Math.max(0, Math.min(100, Math.round(left / leaseMs * 100)));
+        const mins = Math.ceil(left / 60000);
+        const tone = pct > 50 ? 'ok' : (pct > 20 ? 'warn' : 'dying');
+        const bar = `<span class="a2a-lease a2a-l-${tone}" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">`
+            + `<span class="a2a-lfill" style="width:${pct}%"></span></span>`
+            + `<span class="a2a-ltext">${left ? mins + 'm left' : 'lease expired'}${c.progress ? ' · ' + esc(c.progress) : ''}</span>`;
+        const body = `Claimed by: ${c.agent}${c.sessionId ? ' (' + c.sessionId.slice(0, 8) + ')' : ''}\nLease: ${left ? mins + ' min left' : 'expired — goes back to queued on the next sweep'}`
+            + `\nExpires: ${window.AFTime.full(c.leaseExpiresAt)}\nProgress: ${c.progress || '—'}\n\nEvery heartbeat pushes the lease forward; a claimant that stops beating loses the task.`;
+        return window.AFTip ? window.AFTip.wrap(`<span class="a2a-leasew">${bar}</span>`, 'Lease', body) : bar;
+    }
+
+    const CAT = { info: 'ℹ️', warning: '⚠️', convention: '📐', discovery: '🔎', result: '✅' };
+    const STATE = {
+        queued: ['⏳', 'queued — waiting for a claimant that fits'],
+        claimed: ['✋', 'claimed — an agent holds the lease and has not reported running yet'],
+        running: ['▶', 'running — the claimant is working and beating'],
+        done: ['✓', 'done'], failed: ['✗', 'failed'],
+        blocked: ['⛔', 'blocked — needs a person: past the handoff depth, or the claimant said so'],
+        cancelled: ['⊘', 'cancelled']
+    };
+    function stateBadge(state) {
+        const s = STATE[state] || ['·', state];
+        const b = `<span class="a2a-state a2a-st-${esc(state)}">${s[0]} ${esc(state)}</span>`;
+        return window.AFTip ? window.AFTip.wrap(b, 'State', s[1]) : b;
+    }
+
+    /** One filter row: a query box, the multi-pick pickers, a reset. */
+    function controls(prefix, o) {
+        return `<div class="a2a-controls">
+            <input id="${prefix}-search" type="search" placeholder="🔍 search" value="${esc(o.query)}"
+                title="${esc(o.searchTip)}">
+            ${o.pickers.map(p => window.AFFilter.multi({ id: p.id, label: p.label, options: p.options, selected: p.get(), title: p.title })).join('')}
+            ${o.extra || ''}
+            <button class="secondary" id="${prefix}-reset" title="Reset filters">↺</button>
+        </div>`;
+    }
+    function wireControls(prefix, o) {
+        const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
+        bind(prefix + '-search', 'input', e => o.onQuery(e.target.value));
+        o.pickers.forEach(p => window.AFFilter.wireMulti({ id: p.id, onChange: sel => { p.set(sel); o.onChange(); } }));
+        bind(prefix + '-reset', 'click', () => o.onReset());
+    }
+
+    const STYLE = `<style>
+        .a2a-controls { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+        .a2a-controls input[type=search] { min-width:160px; padding:3px 6px; }
+        .a2a-day { margin:14px 0 4px; font-size:11px; opacity:.6; text-transform:uppercase; letter-spacing:.04em; }
+        .a2a-card { border:1px solid var(--vscode-panel-border); border-radius:6px; margin:4px 0; background:var(--vscode-editorWidget-background); }
+        .a2a-card.a2a-focus { outline:2px solid var(--vscode-focusBorder); }
+        .a2a-card.a2a-closed { opacity:.6; }
+        .a2a-line { display:flex; gap:8px; align-items:center; padding:6px 10px; cursor:pointer; flex-wrap:wrap; }
+        .a2a-line:hover { background:var(--vscode-list-hoverBackground); }
+        .a2a-title { font-weight:600; flex:1 1 220px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .a2a-from { flex-shrink:0; font-size:11.5px; opacity:.85; white-space:nowrap; }
+        .a2a-age { flex-shrink:0; font-size:11px; opacity:.6; white-space:nowrap; }
+        .a2a-coords { display:inline-flex; gap:4px; flex-wrap:wrap; }
+        .a2a-chip { font-size:10.5px; padding:1px 6px; border-radius:9px; background:var(--vscode-badge-background); color:var(--vscode-badge-foreground); white-space:nowrap; opacity:.85; }
+        .a2a-chip.a2a-c-strict { text-transform:uppercase; font-size:9.5px; letter-spacing:.04em; }
+        .a2a-s-hard { background:var(--vscode-inputValidation-errorBackground); }
+        .a2a-s-any { opacity:.6; }
+        .a2a-state { font-size:11px; padding:1px 7px; border-radius:9px; white-space:nowrap; border:1px solid var(--vscode-panel-border); }
+        .a2a-st-queued { color:var(--vscode-foreground); }
+        .a2a-st-claimed, .a2a-st-running { color:var(--vscode-testing-iconQueued, #d4a72c); border-color:currentColor; }
+        .a2a-st-done { color:var(--vscode-testing-iconPassed, #3fb950); }
+        .a2a-st-failed { color:var(--vscode-errorForeground); }
+        .a2a-st-blocked { color:var(--vscode-editorWarning-foreground, #d4a72c); font-weight:600; }
+        .a2a-st-cancelled { opacity:.6; }
+        .a2a-cat { flex-shrink:0; }
+        .a2a-flag { font-size:11px; opacity:.8; flex-shrink:0; white-space:nowrap; }
+        .a2a-body { padding:4px 12px 10px 28px; font-size:12.5px; line-height:1.5; border-top:1px dashed var(--vscode-panel-border); }
+        .a2a-body .a2a-h { font-weight:600; margin-top:6px; }
+        .a2a-body .a2a-sp { height:6px; }
+        .a2a-code { background:var(--vscode-textCodeBlock-background); padding:6px 8px; border-radius:4px; overflow:auto; font-size:11.5px; }
+        .a2a-sec { margin-top:8px; }
+        .a2a-sech { font-size:11px; opacity:.6; text-transform:uppercase; letter-spacing:.04em; margin-bottom:2px; }
+        .a2a-facts { display:grid; grid-template-columns:max-content 1fr; gap:2px 12px; font-size:12px; }
+        .a2a-facts dt { opacity:.6; } .a2a-facts dd { margin:0; word-break:break-all; }
+        .a2a-files a, .a2a-xref { cursor:pointer; text-decoration:underline; color:var(--vscode-textLink-foreground); }
+        .a2a-actions { display:flex; gap:6px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+        .a2a-actions .muted { font-size:11.5px; }
+        .a2a-directive { margin:8px 0; padding:8px 10px; border-left:4px solid var(--vscode-editorWarning-foreground, #d4a72c); background:var(--vscode-inputValidation-warningBackground); border-radius:0 4px 4px 0; }
+        .a2a-d-veto { border-left-color:var(--vscode-errorForeground); background:var(--vscode-inputValidation-errorBackground); }
+        .a2a-dhead { font-weight:700; font-size:12px; }
+        .a2a-dwhen { font-size:11px; margin-top:4px; }
+        .a2a-leasew { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; }
+        .a2a-lease { display:inline-block; width:90px; height:7px; border-radius:4px; background:var(--vscode-progressBar-background, #444); opacity:.35; overflow:hidden; vertical-align:middle; }
+        .a2a-leasew .a2a-lease { opacity:1; background:var(--vscode-panel-border); }
+        .a2a-lfill { display:block; height:100%; background:var(--vscode-testing-iconPassed, #3fb950); }
+        .a2a-l-warn .a2a-lfill { background:var(--vscode-editorWarning-foreground, #d4a72c); }
+        .a2a-l-dying .a2a-lfill { background:var(--vscode-errorForeground); }
+        .a2a-ltext { font-size:11px; opacity:.75; white-space:nowrap; }
+        .a2a-hop { font-size:11px; opacity:.75; white-space:nowrap; }
+        .a2a-empty { margin-top:24px; }
+        .a2a-lane { margin:16px 0 4px; font-size:12px; font-weight:600; opacity:.8; }
+    </style>`;
+
+    window.AFA2A = { esc, md, coords, directive, leaseBar, stateBadge, controls, wireControls, CAT, STYLE };
+})();

@@ -95,7 +95,11 @@ const SHARED = ['pageHeader.js', 'afFilters.js', 'afCtx.js', 'afSessionCtx.js',
     // line EVERY page has - a host push answered with a whole-page repaint,
     // which detaches whatever the caret was in.
     'afRepaint.js',
-    'afTelegram.js'];
+    'afTelegram.js',
+    // afA2A.js — the A2A card grammar (N-6): coordinates, the supervisor
+    // directive block, the lease bar and a safe markdown, shared by the two
+    // A2A pages so a note and a task are drawn in one voice.
+    'afA2A.js'];
 
 /** Scripts the shell loads that a page-script test has to stand in for. */
 const NOT_SHARED = ['charts.js', 'sessionsTable.js', 'common.css'];

@@ -3,6 +3,142 @@
   "gapBudget": 34,
   "entries": [
     {
+      "capability": "a2aNotesPanel.ts#afnav",
+      "ui": [
+        "page:a2aNotesPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "a2aNotesPanel.ts#openExternal",
+      "ui": [
+        "page:a2aNotesPanel.ts#openExternal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openExternal — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "a2aNotesPanel.ts#openFile",
+      "ui": [
+        "page:a2aNotesPanel.ts#openFile"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open') on a path the note itself names — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "a2aNotesPanel.ts#openTask",
+      "ui": [
+        "page:a2aNotesPanel.ts#openTask"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "a2aNotesPanel.ts#refresh",
+      "ui": [
+        "page:a2aNotesPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
+      "capability": "a2aNotesPanel.ts#resolve",
+      "ui": [
+        "page:a2aNotesPanel.ts#resolve"
+      ],
+      "ops": [
+        "a2a.notes.resolve"
+      ]
+    },
+    {
+      "capability": "a2aNotesPanel.ts#toTask",
+      "ui": [
+        "page:a2aNotesPanel.ts#toTask"
+      ],
+      "ops": [
+        "a2a.tasks.fromNote"
+      ]
+    },
+    {
+      "capability": "a2aNotesPanel.ts#unresolve",
+      "ui": [
+        "page:a2aNotesPanel.ts#unresolve"
+      ],
+      "ops": [
+        "a2a.notes.resolve"
+      ]
+    },
+    {
+      "capability": "a2aTasksPanel.ts#afnav",
+      "ui": [
+        "page:a2aTasksPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only handleAfNav — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "a2aTasksPanel.ts#cancel",
+      "ui": [
+        "page:a2aTasksPanel.ts#cancel"
+      ],
+      "ops": [
+        "a2a.tasks.cancel"
+      ]
+    },
+    {
+      "capability": "a2aTasksPanel.ts#openExternal",
+      "ui": [
+        "page:a2aTasksPanel.ts#openExternal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openExternal — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "a2aTasksPanel.ts#openNote",
+      "ui": [
+        "page:a2aTasksPanel.ts#openNote"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "a2aTasksPanel.ts#openQueueItem",
+      "ui": [
+        "page:a2aTasksPanel.ts#openQueueItem"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "a2aTasksPanel.ts#refresh",
+      "ui": [
+        "page:a2aTasksPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
       "capability": "abTest",
       "ui": [
         "cmd:agentfarm.abTest"
@@ -10,6 +146,108 @@
       "exempt": {
         "kind": "navigation",
         "why": "Handler only opens a page card, showWarningMessage — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "accountsMessages.ts#accountActivate",
+      "ui": [
+        "page:accountsMessages.ts#accountActivate"
+      ],
+      "ops": [
+        "accounts.activate"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountCapture",
+      "ui": [
+        "page:accountsMessages.ts#accountCapture"
+      ],
+      "ops": [
+        "accounts.capture"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountComplete",
+      "ui": [
+        "page:accountsMessages.ts#accountComplete"
+      ],
+      "ops": [
+        "accounts.complete"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountFixSettings",
+      "ui": [
+        "page:accountsMessages.ts#accountFixSettings"
+      ],
+      "ops": [
+        "accounts.repairSettings"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountForget",
+      "ui": [
+        "page:accountsMessages.ts#accountForget"
+      ],
+      "ops": [
+        "accounts.forget"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountOpenSession",
+      "ui": [
+        "page:accountsMessages.ts#accountOpenSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens the transcript a card names in the Session Viewer; reading it is sessions.* on the bridge, and the fact itself (lastUse) is on accounts.list."
+      }
+    },
+    {
+      "capability": "accountsMessages.ts#accountReauth",
+      "ui": [
+        "page:accountsMessages.ts#accountReauth"
+      ],
+      "ops": [
+        "accounts.reauth"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountRefresh",
+      "ui": [
+        "page:accountsMessages.ts#accountRefresh"
+      ],
+      "ops": [
+        "accounts.refresh"
+      ]
+    },
+    {
+      "capability": "accountsMessages.ts#accountsAutoRefresh",
+      "ui": [
+        "page:accountsMessages.ts#accountsAutoRefresh"
+      ],
+      "ops": [
+        "accounts.autoRefresh"
+      ]
+    },
+    {
+      "capability": "accountsPanel.ts#afnav",
+      "ui": [
+        "page:accountsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
+      "capability": "accountsPanel.ts#refresh",
+      "ui": [
+        "page:accountsPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
       }
     },
     {
@@ -1459,6 +1697,16 @@
       }
     },
     {
+      "capability": "dashboard.ts#newAgent",
+      "ui": [
+        "page:dashboard.ts#newAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Runs agentfarm.newAgent, which only opens the Portfolio page's compose card — whatever is created there is a capability of its own."
+      }
+    },
+    {
       "capability": "dashboard.ts#openAgent",
       "ui": [
         "page:dashboard.ts#openAgent"
@@ -1574,16 +1822,6 @@
       "ops": [
         "usage.engines"
       ]
-    },
-    {
-      "capability": "dashboard.ts#newAgent",
-      "ui": [
-        "page:dashboard.ts#newAgent"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Runs agentfarm.newAgent, which only opens the Portfolio page's compose card — whatever is created there is a capability of its own."
-      }
     },
     {
       "capability": "dashboard.ts#startSession",
@@ -1813,108 +2051,6 @@
       ]
     },
     {
-      "capability": "accountsMessages.ts#accountActivate",
-      "ui": [
-        "page:accountsMessages.ts#accountActivate"
-      ],
-      "ops": [
-        "accounts.activate"
-      ]
-    },
-    {
-      "capability": "accountsMessages.ts#accountCapture",
-      "ui": [
-        "page:accountsMessages.ts#accountCapture"
-      ],
-      "ops": [
-        "accounts.capture"
-      ]
-    },
-    {
-      "capability": "accountsMessages.ts#accountComplete",
-      "ui": [
-        "page:accountsMessages.ts#accountComplete"
-      ],
-      "ops": [
-        "accounts.complete"
-      ]
-    },
-    {
-      "capability": "accountsMessages.ts#accountFixSettings",
-      "ui": [
-        "page:accountsMessages.ts#accountFixSettings"
-      ],
-      "ops": [
-        "accounts.repairSettings"
-      ]
-    },
-    {
-      "capability": "accountsMessages.ts#accountForget",
-      "ui": [
-        "page:accountsMessages.ts#accountForget"
-      ],
-      "ops": [
-        "accounts.forget"
-      ]
-    },
-    {
-      "capability": "accountsMessages.ts#accountReauth",
-      "ui": [
-        "page:accountsMessages.ts#accountReauth"
-      ],
-      "ops": [
-        "accounts.reauth"
-      ]
-    },
-    {
-      "capability": "accountsMessages.ts#accountRefresh",
-      "ui": [
-        "page:accountsMessages.ts#accountRefresh"
-      ],
-      "ops": [
-        "accounts.refresh"
-      ]
-    },
-    {
-      "capability": "accountsMessages.ts#accountsAutoRefresh",
-      "ui": [
-        "page:accountsMessages.ts#accountsAutoRefresh"
-      ],
-      "ops": [
-        "accounts.autoRefresh"
-      ]
-    },
-    {
-      "capability": "accountsMessages.ts#accountOpenSession",
-      "ui": [
-        "page:accountsMessages.ts#accountOpenSession"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens the transcript a card names in the Session Viewer; reading it is sessions.* on the bridge, and the fact itself (lastUse) is on accounts.list."
-      }
-    },
-    {
-      "capability": "accountsPanel.ts#afnav",
-      "ui": [
-        "page:accountsPanel.ts#afnav"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Moves the selection or the focus inside a page that is already open."
-      }
-    },
-    {
-      "capability": "accountsPanel.ts#refresh",
-      "ui": [
-        "page:accountsPanel.ts#refresh"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
-      }
-    },
-    {
       "capability": "enginesPanel.ts#afnav",
       "ui": [
         "page:enginesPanel.ts#afnav"
@@ -1961,24 +2097,6 @@
       ],
       "ops": [
         "engines.test"
-      ]
-    },
-    {
-      "capability": "policyMessages.ts#policyDelete",
-      "ui": [
-        "page:policyMessages.ts#policyDelete"
-      ],
-      "ops": [
-        "policies.delete"
-      ]
-    },
-    {
-      "capability": "policyMessages.ts#policySave",
-      "ui": [
-        "page:policyMessages.ts#policySave"
-      ],
-      "ops": [
-        "policies.save"
       ]
     },
     {
@@ -2615,16 +2733,6 @@
       ]
     },
     {
-      "capability": "missionStepOutput",
-      "ui": [
-        "cmd:agentfarm.missionStepOutput"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
-      }
-    },
-    {
       "capability": "missionsPanel.ts#afnav",
       "ui": [
         "page:missionsPanel.ts#afnav"
@@ -2833,6 +2941,16 @@
       "exempt": {
         "kind": "visual",
         "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
+      "capability": "missionStepOutput",
+      "ui": [
+        "cmd:agentfarm.missionStepOutput"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
       }
     },
     {
@@ -3146,6 +3264,36 @@
       ]
     },
     {
+      "capability": "openA2ANotes",
+      "ui": [
+        "cmd:agentfarm.openA2ANotes"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openA2ATasks",
+      "ui": [
+        "cmd:agentfarm.openA2ATasks"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "openAccounts",
+      "ui": [
+        "cmd:agentfarm.openAccounts"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing. Every press on the page is answered by accountsMessages.ts, whose arms carry their own ops."
+      }
+    },
+    {
       "capability": "openAgentDetail",
       "ui": [
         "cmd:agentfarm.openAgentDetail",
@@ -3206,6 +3354,34 @@
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
       }
+    },
+    {
+      "capability": "opencodeDeleteSession",
+      "ui": [
+        "cmd:agentfarm.opencodeDeleteSession"
+      ],
+      "exempt": {
+        "kind": "human-only",
+        "why": "The only destructive action in the OpenCode integration: it removes the conversation from the engine's own store, not from Agent Farm. An agent that could delete the user's conversations over the bridge is not a capability this extension offers, and the modal says what is about to be lost. sessions.opencodeExport is the read side."
+      }
+    },
+    {
+      "capability": "opencodeExportSession",
+      "ui": [
+        "cmd:agentfarm.opencodeExportSession"
+      ],
+      "ops": [
+        "sessions.opencodeExport"
+      ]
+    },
+    {
+      "capability": "opencodeRefreshHistory",
+      "ui": [
+        "cmd:agentfarm.opencodeRefreshHistory"
+      ],
+      "ops": [
+        "sessions.opencodeSync"
+      ]
     },
     {
       "capability": "openConsole",
@@ -3297,16 +3473,6 @@
       "exempt": {
         "kind": "navigation",
         "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "openAccounts",
-      "ui": [
-        "cmd:agentfarm.openAccounts"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only opens a page card, .show( — it moves the eye and changes nothing. Every press on the page is answered by accountsMessages.ts, whose arms carry their own ops."
       }
     },
     {
@@ -3631,34 +3797,6 @@
       }
     },
     {
-      "capability": "opencodeDeleteSession",
-      "ui": [
-        "cmd:agentfarm.opencodeDeleteSession"
-      ],
-      "exempt": {
-        "kind": "human-only",
-        "why": "The only destructive action in the OpenCode integration: it removes the conversation from the engine's own store, not from Agent Farm. An agent that could delete the user's conversations over the bridge is not a capability this extension offers, and the modal says what is about to be lost. sessions.opencodeExport is the read side."
-      }
-    },
-    {
-      "capability": "opencodeExportSession",
-      "ui": [
-        "cmd:agentfarm.opencodeExportSession"
-      ],
-      "ops": [
-        "sessions.opencodeExport"
-      ]
-    },
-    {
-      "capability": "opencodeRefreshHistory",
-      "ui": [
-        "cmd:agentfarm.opencodeRefreshHistory"
-      ],
-      "ops": [
-        "sessions.opencodeSync"
-      ]
-    },
-    {
       "capability": "pauseAutomations",
       "ui": [
         "cmd:agentfarm.pauseAutomations"
@@ -3687,6 +3825,24 @@
       ],
       "ops": [
         "usage.plan"
+      ]
+    },
+    {
+      "capability": "policyMessages.ts#policyDelete",
+      "ui": [
+        "page:policyMessages.ts#policyDelete"
+      ],
+      "ops": [
+        "policies.delete"
+      ]
+    },
+    {
+      "capability": "policyMessages.ts#policySave",
+      "ui": [
+        "page:policyMessages.ts#policySave"
+      ],
+      "ops": [
+        "policies.save"
       ]
     },
     {
@@ -5052,6 +5208,94 @@
       ]
     },
     {
+      "capability": "sessionsPanel.ts#afnav",
+      "ui": [
+        "page:sessionsPanel.ts#afnav"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Moves the selection or the focus inside a page that is already open."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#focusTerminal",
+      "ui": [
+        "page:sessionsPanel.ts#focusTerminal"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#interruptSession",
+      "ui": [
+        "page:sessionsPanel.ts#interruptSession"
+      ],
+      "ops": [
+        "sessions.interrupt"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#openGuide",
+      "ui": [
+        "page:sessionsPanel.ts#openGuide"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only openGuide — it moves the eye and changes nothing."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#openSession",
+      "ui": [
+        "page:sessionsPanel.ts#openSession"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#pinSession",
+      "ui": [
+        "page:sessionsPanel.ts#pinSession"
+      ],
+      "ops": [
+        "sessions.pin"
+      ]
+    },
+    {
+      "capability": "sessionsPanel.ts#refresh",
+      "ui": [
+        "page:sessionsPanel.ts#refresh"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#sessionTurns",
+      "ui": [
+        "page:sessionsPanel.ts#sessionTurns"
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
+      "capability": "sessionsPanel.ts#setTableN",
+      "ui": [
+        "page:sessionsPanel.ts#setTableN"
+      ],
+      "exempt": {
+        "kind": "visual",
+        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
+      }
+    },
+    {
       "capability": "sessionToQueue",
       "ui": [
         "cmd:agentfarm.sessionToQueue",
@@ -5254,94 +5498,6 @@
       ]
     },
     {
-      "capability": "sessionsPanel.ts#afnav",
-      "ui": [
-        "page:sessionsPanel.ts#afnav"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Moves the selection or the focus inside a page that is already open."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#focusTerminal",
-      "ui": [
-        "page:sessionsPanel.ts#focusTerminal"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Reveals a path, a terminal or a row in the shell or the UI. It moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#interruptSession",
-      "ui": [
-        "page:sessionsPanel.ts#interruptSession"
-      ],
-      "ops": [
-        "sessions.interrupt"
-      ]
-    },
-    {
-      "capability": "sessionsPanel.ts#openGuide",
-      "ui": [
-        "page:sessionsPanel.ts#openGuide"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only openGuide — it moves the eye and changes nothing."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#openSession",
-      "ui": [
-        "page:sessionsPanel.ts#openSession"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#pinSession",
-      "ui": [
-        "page:sessionsPanel.ts#pinSession"
-      ],
-      "ops": [
-        "sessions.pin"
-      ]
-    },
-    {
-      "capability": "sessionsPanel.ts#refresh",
-      "ui": [
-        "page:sessionsPanel.ts#refresh"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#sessionTurns",
-      "ui": [
-        "page:sessionsPanel.ts#sessionTurns"
-      ],
-      "exempt": {
-        "kind": "visual",
-        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
-    },
-    {
-      "capability": "sessionsPanel.ts#setTableN",
-      "ui": [
-        "page:sessionsPanel.ts#setTableN"
-      ],
-      "exempt": {
-        "kind": "visual",
-        "why": "A filter, a sort, a column or an expand/collapse choice — the same data, drawn differently."
-      }
-    },
-    {
       "capability": "setActiveProject",
       "ui": [
         "cmd:agentfarm.setActiveProject"
@@ -5380,15 +5536,6 @@
         "alerts.read",
         "alerts.speak",
         "alerts.voice.set"
-      ]
-    },
-    {
-      "capability": "setUsageEngine",
-      "ui": [
-        "cmd:agentfarm.setUsageEngine"
-      ],
-      "ops": [
-        "usage.engines"
       ]
     },
     {
@@ -5732,16 +5879,6 @@
       ]
     },
     {
-      "capability": "settingsPanel.ts#openAgent",
-      "ui": [
-        "page:settingsPanel.ts#openAgent"
-      ],
-      "exempt": {
-        "kind": "navigation",
-        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
-      }
-    },
-    {
       "capability": "settingsPanel.ts#openAccounts",
       "ui": [
         "page:settingsPanel.ts#openAccounts"
@@ -5749,6 +5886,16 @@
       "exempt": {
         "kind": "navigation",
         "why": "Opens a page, a document or a card; whatever is done on that surface is a capability of its own and carries its own op."
+      }
+    },
+    {
+      "capability": "settingsPanel.ts#openAgent",
+      "ui": [
+        "page:settingsPanel.ts#openAgent"
+      ],
+      "exempt": {
+        "kind": "navigation",
+        "why": "Handler only executeCommand('vscode.open — it moves the eye and changes nothing."
       }
     },
     {
@@ -5982,6 +6129,15 @@
       "gap": {
         "why": "The guided first-run example (an agent, a task and a schedule seeded together) is a page walk-through with no op behind it."
       }
+    },
+    {
+      "capability": "setUsageEngine",
+      "ui": [
+        "cmd:agentfarm.setUsageEngine"
+      ],
+      "ops": [
+        "usage.engines"
+      ]
     },
     {
       "capability": "shareSkill",
@@ -6307,15 +6463,6 @@
       "capability": "taskDown",
       "ui": [
         "cmd:agentfarm.taskDown"
-      ],
-      "ops": [
-        "tasks.move"
-      ]
-    },
-    {
-      "capability": "taskUp",
-      "ui": [
-        "cmd:agentfarm.taskUp"
       ],
       "ops": [
         "tasks.move"
@@ -6747,6 +6894,15 @@
       ],
       "ops": [
         "workflows.run"
+      ]
+    },
+    {
+      "capability": "taskUp",
+      "ui": [
+        "cmd:agentfarm.taskUp"
+      ],
+      "ops": [
+        "tasks.move"
       ]
     },
     {

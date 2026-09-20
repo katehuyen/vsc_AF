@@ -39,7 +39,7 @@ import { applyDistilled, distillFile, scanContradictions } from './core/distill'
 import { MemoryIndexReport, registerMemoryOps } from './core/memoryBridge';
 import { registerA2AOps } from './core/a2aBridge';
 import { A2ANotesStore } from './core/a2aNotes';
-import { A2ATasksStore } from './core/a2aTasks';
+import { A2ATasksStore, A2A_TERMINAL } from './core/a2aTasks';
 import { buildImpactReport, correlateVersions, InstructionHistory } from './core/instrhistory';
 import { chunkMemoryFile, memoryFileRefs } from './core/memquery';
 import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpolicy';
@@ -544,11 +544,13 @@ import { TasksPanel } from './panels/tasksPanel';
 import { NeedsPanel } from './panels/needsPanel';
 import { NoticesPanel } from './panels/noticesPanel';
 import { QueuePanel } from './panels/queuePanel';
+import { A2ANotesPanel } from './panels/a2aNotesPanel';
+import { A2ATasksPanel } from './panels/a2aTasksPanel';
 import { WikiPanel } from './panels/wikiPanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
 import {
-    postCtx, pushHeaderCounts, setNoticesUnreadProvider, setQueueBlockedProvider, setWikiMarkBridge
+    postCtx, pushHeaderCounts, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setWikiMarkBridge
 } from './panels/base';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, findSessions, scopeSessions, searchableSessions } from './panels/searchPanel';
@@ -938,6 +940,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // Feed the global nav's 🔔 Notices badge (read live at each page render).
     setNoticesUnreadProvider(() => noticesStore.unread());
     setQueueBlockedProvider(() => workQueueStore.blocked());
+    // N-6 — the A2A tabs' own grey counts: live notes, open tasks. Read off
+    // the stores' last load, never the disk — a page render must not cost a
+    // file read per count, and the bridge reloads on every op anyway.
+    setA2ACountsProvider(() => {
+        const now = Date.now();
+        return {
+            notes: a2aNotes.notes.filter(n => !n.resolved && (!n.expiresAt || n.expiresAt > now)).length,
+            tasks: a2aTasks.tasks.filter(t => !A2A_TERMINAL.includes(t.state)).length
+        };
+    });
     const noticesBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 89);
     noticesBar.command = 'agentfarm.openNotices';
     context.subscriptions.push(noticesBar);
@@ -16046,6 +16058,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     registerA2AOps(bridge, {
         notes: a2aNotes, tasks: a2aTasks,
+        // N-6 — a bridge write repaints the two pages and their grey counts.
+        onChange: () => { A2ANotesPanel.refreshIfOpen(); A2ATasksPanel.refreshIfOpen(); pushHeaderCounts(); },
         resolveProject: (key) => projectStore.get(key)?.id,
         inferProject: projectOfRunningAgent,
         graceMs: () => Math.max(0, cfg().get<number>('a2a.preferredGraceHours', 2)) * 3_600_000,
@@ -16408,6 +16422,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const cfg = afConfig().get<string[]>('queue.targets') || [];
         return [...new Set([...cfg, ...agents.map(a => a.name)])];
     };
+    // N-6 — the A2A pair. Each door hands the page the SAME stores the bridge
+    // ops write, and each cross-link opens the other board focused on a row.
+    const a2aChanged = (): void => { A2ANotesPanel.refreshIfOpen(); A2ATasksPanel.refreshIfOpen(); pushHeaderCounts(); };
+    const showA2ANotesPanel = (focusId?: string): void => A2ANotesPanel.show({
+        extensionUri: context.extensionUri,
+        notes: a2aNotes, tasks: a2aTasks,
+        projects: () => projectRefs({ all: true }),
+        openFile: (fp) => { void vscode.commands.executeCommand('vscode.open', vscode.Uri.file(fp)); },
+        openTask: (taskId) => showA2ATasksPanel(taskId),
+        promoter: () => 'user',
+        onChange: a2aChanged
+    }, focusId);
+    const showA2ATasksPanel = (focusId?: string): void => A2ATasksPanel.show({
+        extensionUri: context.extensionUri,
+        tasks: a2aTasks, notes: a2aNotes,
+        projects: () => projectRefs({ all: true }),
+        openNote: (noteId) => showA2ANotesPanel(noteId),
+        openQueueItem: (itemId) => showQueuePanel(itemId),
+        onChange: a2aChanged
+    }, focusId);
     const showQueuePanel = (focusItem?: string): void => QueuePanel.show({
         extensionUri: context.extensionUri,
         store: workQueueStore,
@@ -37787,6 +37821,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.openQueue', (arg?: unknown) => {
             showQueuePanel(typeof arg === 'string' ? arg : undefined);
+        }),
+        // N-6 — the agents' own inbox, beside the user's.
+        vscode.commands.registerCommand('agentfarm.openA2ANotes', (arg?: unknown) => {
+            showA2ANotesPanel(typeof arg === 'string' ? arg : undefined);
+        }),
+        vscode.commands.registerCommand('agentfarm.openA2ATasks', (arg?: unknown) => {
+            showA2ATasksPanel(typeof arg === 'string' ? arg : undefined);
         }),
 
         // U-70 — the wiki cockpit: the candidate pool and the vault, side by side.

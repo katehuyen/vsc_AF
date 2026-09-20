@@ -197,28 +197,37 @@
         return window.AFTip ? window.AFTip.wrap(btn, name, tip, 'af-tipw-nav', o.wrapAttrs || '') : btn;
     }
 
-    // Notices ↔ Queue read as two tabs of ONE inbox. Both pages render this strip
-    // at the very top; the inactive tab is an afnav button that opens the other
-    // panel. Counts ride along: 🔔 unread, 📥 items that need you (blocked).
+    // Notices ↔ Queue read as two tabs of ONE inbox, and the A2A pair beside
+    // them (N-6) is the agents' own inbox: what they leave for each other and
+    // the work they hand over. All four pages render this strip at the very
+    // top; an inactive tab is an afnav button that opens that panel. Counts
+    // ride along: 🔔 unread, 📥 items that need you (blocked) — and, in GREY
+    // because they are the fleet's business and never the status-bar bell's,
+    // 🤖 live notes and ⚡ open tasks.
     const TAB_STYLE = `<style>
-        .af-tabs { display:flex; gap:4px; margin:0 0 12px; border-bottom:1px solid var(--vscode-panel-border); }
+        .af-tabs { display:flex; gap:4px; margin:0 0 12px; border-bottom:1px solid var(--vscode-panel-border); align-items:flex-end; }
         .af-tab { padding:7px 16px; border:none; border-bottom:2px solid transparent; border-radius:6px 6px 0 0;
             background:transparent; color:var(--vscode-foreground); opacity:.65; font-size:13px; cursor:pointer; }
         .af-tab:hover { opacity:.9; background:var(--vscode-list-hoverBackground); }
         .af-tab.on { opacity:1; font-weight:600; border-bottom-color:var(--vscode-textLink-foreground); background:var(--vscode-editorWidget-background); }
         .af-tab .af-tab-n { opacity:.8; font-weight:400; }
+        .af-tab .af-tab-grey { opacity:.55; font-weight:400; font-size:12px; }
+        .af-tab-sep { width:1px; height:18px; margin:0 6px 8px; background:var(--vscode-panel-border); opacity:.8; }
     </style>`;
 
     /**
-     * The two live counts, read fresh from window.__AFUI__ — which the host
-     * keeps current by pushing { type:'afui' } (see afCounts below). 🔔 unread
-     * notices, 📥 queue items that need you.
+     * The live counts, read fresh from window.__AFUI__ — which the host keeps
+     * current by pushing { type:'afui' } (see afCounts below). 🔔 unread
+     * notices, 📥 queue items that need you; 🤖 live A2A notes, ⚡ open A2A
+     * tasks (the last two travel under `a2a`, and only the tab strip draws them).
      */
     function counts() {
         const ui = window.__AFUI__ || {};
         return {
             notices: (ui.notices && ui.notices.unread) || 0,
-            queue: (ui.queue && ui.queue.blocked) || 0
+            queue: (ui.queue && ui.queue.blocked) || 0,
+            a2anotes: (ui.a2a && ui.a2a.notes) || 0,
+            a2atasks: (ui.a2a && ui.a2a.tasks) || 0
         };
     }
 
@@ -232,11 +241,15 @@
 
     function tabs(active) {
         const T = [
-            { id: 'notices', label: '🔔 Notices' },
-            { id: 'queue', label: '📥 Queue' }
+            { id: 'notices', label: '🔔 Notices', cls: 'af-tab-n' },
+            { id: 'queue', label: '📥 Queue', cls: 'af-tab-n' },
+            { sep: true },
+            { id: 'a2anotes', label: '🤖 A2A Notes', cls: 'af-tab-n af-tab-grey' },
+            { id: 'a2atasks', label: '⚡ A2A Tasks', cls: 'af-tab-n af-tab-grey' }
         ];
-        return `${TAB_STYLE}<div class="af-tabs">` + T.map(t =>
-            `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${t.label}${badge(t.id, 'af-tab-n')}</button>`
+        return `${TAB_STYLE}<div class="af-tabs">` + T.map(t => t.sep
+            ? '<span class="af-tab-sep" aria-hidden="true"></span>'
+            : `<button class="af-tab ${t.id === active ? 'on' : ''}" data-afnav="${t.id}">${t.label}${badge(t.id, t.cls)}</button>`
         ).join('') + `</div>`;
     }
 

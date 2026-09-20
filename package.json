@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.602.0",
+  "version": "3.603.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -1422,6 +1422,18 @@
         "title": "Open Work Queue (You → Agent async work channel)",
         "category": "Agent Farm",
         "icon": "$(inbox)"
+      },
+      {
+        "command": "agentfarm.openA2ANotes",
+        "title": "Open A2A Notes (what agents leave for each other)",
+        "category": "Agent Farm",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "agentfarm.openA2ATasks",
+        "title": "Open A2A Tasks (work agents hand to each other)",
+        "category": "Agent Farm",
+        "icon": "$(zap)"
       },
       {
         "command": "agentfarm.queueAdd",

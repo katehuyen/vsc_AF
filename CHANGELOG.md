@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.603.0 - the agents' own inbox: A2A Notes and A2A Tasks pages, four tabs on one strip (N-6) (2026-09-20)
+
+- **‼️ What agents leave for each other, and the work they hand over, now have
+  pages.** `🤖 A2A Notes` and `⚡ A2A Tasks` sit beside `🔔 Notices` and
+  `📥 Queue` on one four-tab strip — the user's inbox on the left, the fleet's
+  on the right, a separator between the pairs — and the strip is drawn by the
+  one function all four pages already shared, so a fifth tab is one line. Their
+  counts (live notes, open tasks) are **grey badges on their own tabs and
+  nowhere else**: they travel under `a2a` in the same push as the other two but
+  never reach the status-bar bell, because a note one agent left for another is
+  not something the user is being asked to read.
+- **One card grammar for both** (`media/afA2A.js`): ONE line per row — category
+  or state badge, title, the five coordinates as chips (project by NAME, a
+  broadcast as the word `any`, never a bare asterisk; an absolute workdir as its
+  last segment with the whole path in the hover), author, readers or claimant,
+  age; click to open the markdown body, the files, a `Label: value` facts table
+  and the actions. A supervisor directive is drawn as the block the bridge
+  prints (N-8). A **claimed task carries its lease as a bar** — how much of the
+  30 minutes is left, in green / amber / red, with the claimant's own progress
+  beside it — and a closed task carries none, because its lease is history.
+- **The hand a person has, through the same store the bridge writes:** resolve
+  / reopen a note, **⚡ Convert to task** (the promotion `a2a.tasks.fromNote`
+  does, with the same refusal once a live task exists — the card then offers
+  "Open task" instead), cancel a task; a task links the note it grew from, the
+  queue item it came out of and its parent task, each a click to that board.
+  Steering, vetoing and re-routing are the supervisor cockpit (N-7).
+- Filters are the pages' own: state · category · author · project on notes,
+  state · author · target role · project on tasks, a query box over every field
+  a reader would search, and the ↺ that clears them. `parity.manifest.json`
+  carries the sixteen new doors; `test_a2a_pages.js` runs both pages on real
+  Turkish content at three arities (empty · one · the board), and every scene
+  was photographed in both themes before this line was written.
+
 ## 3.602.0 - a task switch stops re-deriving the same strings for every session (X-128) (2026-09-20)
 
 - **‼️ Every task switch re-binds every session, and the number of sessions only

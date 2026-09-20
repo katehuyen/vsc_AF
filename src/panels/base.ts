@@ -28,6 +28,21 @@ function currentBlocked(): number {
 }
 
 /**
+ * N-6 — the A2A pair's own counts: live notes and open tasks. INDEPENDENT of
+ * the two above on purpose: they are the fleet's business, drawn in grey on
+ * their own tabs, and they never reach the status-bar bell — a note one agent
+ * left for another is not something the user is being asked to read.
+ */
+let a2aCountsProvider: (() => { notes: number; tasks: number }) | undefined;
+export function setA2ACountsProvider(fn: () => { notes: number; tasks: number }): void { a2aCountsProvider = fn; }
+function currentA2A(): { notes: number; tasks: number } {
+    try {
+        const c = a2aCountsProvider ? a2aCountsProvider() : { notes: 0, tasks: 0 };
+        return { notes: Math.max(0, Math.floor(c.notes || 0)), tasks: Math.max(0, Math.floor(c.tasks || 0)) };
+    } catch { return { notes: 0, tasks: 0 }; }
+}
+
+/**
  * ‼️ THE COUNTS ARE PUSHED, NOT SNAPSHOTTED.
  *
  * Both numbers reach a page inside window.__AFUI__, which htmlShell writes into
@@ -46,9 +61,9 @@ function currentBlocked(): number {
  */
 const livePages = new Set<vscode.Webview>();
 
-/** The count pair exactly as the webview sees it (window.__AFUI__). */
-function headerCounts(): { notices: { unread: number }; queue: { blocked: number } } {
-    return { notices: { unread: currentUnread() }, queue: { blocked: currentBlocked() } };
+/** The counts exactly as the webview sees them (window.__AFUI__). */
+function headerCounts(): { notices: { unread: number }; queue: { blocked: number }; a2a: { notes: number; tasks: number } } {
+    return { notices: { unread: currentUnread() }, queue: { blocked: currentBlocked() }, a2a: currentA2A() };
 }
 
 /** Push the current counts to every open page. Call wherever either count can
@@ -257,6 +272,8 @@ export function handleAfNav(to: unknown): void {
         needs: 'agentfarm.openNeeds',
         notices: 'agentfarm.openNotices',
         queue: 'agentfarm.openQueue',
+        a2anotes: 'agentfarm.openA2ANotes',
+        a2atasks: 'agentfarm.openA2ATasks',
         board: 'agentfarm.openBoard',
         tasks: 'agentfarm.openTasks',
         airtable: 'agentfarm.openAirtable',
@@ -414,6 +431,9 @@ export function htmlShell(
     // reach the farm", and a card invented per page is a card that answers that
     // differently per page — in green, on the page that was not updated.
     const telegram = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afTelegram.js'));
+    // N-6 — the A2A card grammar (coordinates, directive block, lease bar,
+    // markdown), shared by the two A2A pages.
+    const a2a = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', 'afA2A.js'));
     const script = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'media', scriptFile));
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
@@ -471,6 +491,7 @@ ${bodyHtml}
 <script nonce="${nonce}" src="${accounts}"></script>
 <script nonce="${nonce}" src="${policies}"></script>
 <script nonce="${nonce}" src="${telegram}"></script>
+<script nonce="${nonce}" src="${a2a}"></script>
 <script nonce="${nonce}" src="${sessTable}"></script>
 <script nonce="${nonce}" src="${script}"></script>
 </body>
