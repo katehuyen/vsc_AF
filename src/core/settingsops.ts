@@ -288,6 +288,8 @@ const CATEGORY_OF: Record<string, string> = {
     // work queue (user→agent async channel) + its answer folder
     answerDir: 'queue', 'queue.groupSize': 'queue', 'queue.maxAgeHours': 'queue',
     'queue.targets': 'queue',
+    // A2A — the agent→agent channel, filed beside the user's queue (N-5)
+    'a2a.preferredGraceHours': 'queue',
     /**
      * ‼️ X-57 — THE WIKI GETS ITS OWN SECTION, AND THE REASON IS THE SAME ONE
      * "Saved prompts" got one for.

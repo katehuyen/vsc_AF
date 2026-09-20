@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.594.0",
+  "version": "3.595.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8209,6 +8209,12 @@
             "The message goes into the turn that is running, where the engine allows it — the same steering the Console composer does."
           ],
           "markdownDescription": "What a message typed from a chat meets when the agent is already working. `queue` (default) parks it and sends it in when the turn ends: from a phone you cannot see what the agent is in the middle of, so waiting is safer than steering blind. `steer` sends it into the running turn on engines that can take one (Claude); the others queue it regardless, because their turn has no channel to speak into. The queue is part of the saved chat state, so a message parked before a window reload is still there after it."
+        },
+        "agentFarm.a2a.preferredGraceHours": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "markdownDescription": "How long a `preferred` A2A note or task is its target role's alone, in hours. Until then only that role is offered it; after that anyone else in the same project who has the required capabilities may read or claim it, ranked below an exact fit. `0` opens it at once — `preferred` then differs from `any` only in ranking. `hard` never opens; `any` never waits."
         },
         "agentFarm.accounts": {
           "type": "array",

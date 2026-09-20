@@ -82,9 +82,15 @@ try {
         N.noteScore(pref, { project: 'AF', topic: 'ui' }) === 1);
     ok('preferred: no hit at all and a miss is not yours',
         N.noteScore(pref, { project: 'OTHER', topic: 'ui' }) === undefined);
-    const any = note({ project: 'AF', strictness: 'any' });
-    ok('any: the coordinates are a label, anyone may read it',
-        N.noteScore(any, { project: 'OTHER' }) === 0);
+    const any = note({ project: 'AF', topic: 'bridge', strictness: 'any' });
+    // ‼️ N-5 — THE PROJECT CONTAINS IN EVERY MODE. `any` opens a note to
+    // anyone IN THE PROJECT; a fleet-wide note says project '*'. Without this
+    // the wildcard would add nothing to `any`, and a note about one project
+    // would land on every other project's board.
+    ok('any: anyone in the project may read it, whatever the other coordinates say',
+        N.noteScore(any, { project: 'AF', topic: 'ui', role: 'psikolog' }) === 1);
+    ok('any: but another project is another project',
+        N.noteScore(any, { project: 'OTHER' }) === undefined);
     ok("a '*' on the note matches anything asked of it",
         N.noteScore(note({ project: '*', strictness: 'hard' }), { project: 'WHATEVER' }) === 0);
     ok("…and a '*' asked for matches anything on the note",

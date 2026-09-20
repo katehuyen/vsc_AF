@@ -1,5 +1,6 @@
+import { CAPABILITY_RE, normaliseCapabilities, PREFERRED_GRACE_MS } from './a2aMatch';
 import { A2ANotesStore, A2A_CATEGORIES, A2A_STRICTNESS, A2ACategory, A2ANote, A2AStrictness, HumanDirective, NoteQuery } from './a2aNotes';
-import { A2A_TASK_STATES, A2ATask, A2ATasksStore, A2ATaskState, ClaimantView, isOpen, LEASE_MS } from './a2aTasks';
+import { A2A_TASK_STATES, A2ATask, A2ATasksStore, A2ATaskState, ClaimantView, isOpen, LEASE_MS, taskFit } from './a2aTasks';
 import { argStr, BridgeCaller, BridgeRefusal, BridgeRegistry, need, optBool, optNum, optStr } from './bridge';
 
 /**
@@ -32,6 +33,8 @@ export interface A2ABridgeDeps {
     inferProject?: (agentName: string | undefined) => string | undefined;
     /** a project id or name → its id */
     resolveProject?: (key: string) => string | undefined;
+    /** how long `preferred` is the target role's alone — the user's setting, in ms */
+    graceMs?: () => number;
     onChange?: () => void;
 }
 
@@ -48,6 +51,13 @@ const oneOf = <T extends string>(v: string, allowed: readonly T[], what: string)
     need(allowed.includes(v as T), `${what} must be one of ${allowed.join(' | ')} — got "${v}".`);
     return v as T;
 };
+
+/** Capability names, normalised — a name that is not one is refused by name, not silently never matched. */
+export function capabilitiesArg(args: Record<string, unknown>, key: string): string[] {
+    const { ok, bad } = normaliseCapabilities(listArg(args, key));
+    need(bad === undefined, `${key}: "${bad}" is not a capability name (${CAPABILITY_RE.source} — e.g. write_tools, browser, shell).`);
+    return ok;
+}
 
 export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): void {
     const changed = (): void => { try { deps.onChange?.(); } catch { /* best-effort */ } };
@@ -85,11 +95,19 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
         return key === '*' ? '*' : (deps.resolveProject?.(key) ?? key);
     };
 
-    const noteQuery = (args: Record<string, unknown>, reader: string | undefined): NoteQuery => ({
+    const grace = (): number => {
+        const g = deps.graceMs?.();
+        return typeof g === 'number' && g >= 0 ? g : PREFERRED_GRACE_MS;
+    };
+
+    const noteQuery = (args: Record<string, unknown>, reader: string | undefined, from?: BridgeCaller): NoteQuery => ({
         project: queryProject(args),
         subsystem: optStr(args, 'subsystem') || undefined,
         topic: optStr(args, 'topic') || undefined,
         role: optStr(args, 'role') || undefined,
+        sessionId: sessionOf(args, from),
+        capabilities: capabilitiesArg(args, 'capabilities'),
+        graceMs: grace(),
         category: oneOf(optStr(args, 'category'), A2A_CATEGORIES, 'category'),
         reader,
         unreadOnly: optBool(args, 'unreadOnly', false),
@@ -103,7 +121,8 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
         role: optStr(args, 'role') || undefined,
         project: queryProject(args),
         workdir: optStr(args, 'workdir') || undefined,
-        capabilities: listArg(args, 'capabilities')
+        capabilities: capabilitiesArg(args, 'capabilities'),
+        graceMs: grace()
     });
 
     const noteById = (id: string): A2ANote => {
@@ -123,10 +142,14 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
         return v as T;
     };
 
-    /** FIFO among what this agent could take right now — the oldest first. */
-    const openFor = (args: Record<string, unknown>, by: ClaimantView): A2ATask[] =>
-        deps.tasks.list({ claimableBy: by, project: queryProject(args), topic: optStr(args, 'topic') || undefined })
-            .sort((a, b) => a.ts - b.ts);
+    /** What this agent could take right now — the closest fit first, the oldest within a fit. */
+    const openFor = (args: Record<string, unknown>, by: ClaimantView): A2ATask[] => {
+        const now = Date.now();
+        return deps.tasks.list({ claimableBy: by, project: queryProject(args), topic: optStr(args, 'topic') || undefined }, now)
+            .map(t => ({ t, score: taskFit(t, by, now).score }))
+            .sort((a, b) => b.score - a.score || a.t.ts - b.t.ts)
+            .map(x => x.t);
+    };
 
     bridge.register([
         // ---------------------------------------------------------------- notes
@@ -137,8 +160,11 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                 + '(markdown), agent? (who is writing — omitted, read off your session), project? (name or id; omitted = '
                 + 'the project you are running under; "*" = every project), subsystem? (workdir or module it is about, '
                 + 'default *), topic? (the anchor readers search by, default *), targetRole? (who should read it — a role, '
-                + 'capability or agent name; default *), strictness? (hard | preferred | any, default preferred — hard '
-                + 'hides it from anyone whose coordinates miss, any shows it to everyone), category? (info | warning | '
+                + 'capability or agent name; default *), targetSession? (the one session it is for — a resume keeps its id; '
+                + 'default *), strictness? (hard | preferred | any, default preferred — ‼️ THE PROJECT CONTAINS IN EVERY '
+                + 'MODE, the role is what strictness is about: hard shows it only to the role named, preferred keeps it '
+                + 'for that role for agentFarm.a2a.preferredGraceHours then opens it to the project ranked below an '
+                + 'exact fit, any opens it to the project at once), category? (info | warning | '
                 + 'convention | discovery | result, default info), contextFiles? (string[] | csv of paths worth opening), '
                 + 'ttlHours? (after which it is history; omitted = never). Answers the note and `projectFrom` when the '
                 + 'host filled the project in.',
@@ -150,7 +176,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                     fromAgent: agent, fromSessionId: sessionOf(args, from),
                     title: argStr(args, 'title'), body: optStr(args, 'body'),
                     project, subsystem: optStr(args, 'subsystem'), topic: optStr(args, 'topic'),
-                    targetRole: optStr(args, 'targetRole'),
+                    targetRole: optStr(args, 'targetRole'), targetSession: optStr(args, 'targetSession'),
                     strictness: oneOf(optStr(args, 'strictness'), A2A_STRICTNESS, 'strictness'),
                     category: oneOf(optStr(args, 'category'), A2A_CATEGORIES, 'category'),
                     contextFiles: listArg(args, 'contextFiles'),
@@ -165,14 +191,15 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
             describe: 'N-4 — THE NOTES THAT FIT YOUR COORDINATES, best fit first, newest within a fit. Every '
                 + 'coordinate you leave out is a wildcard. args: agent? (you — needed for unreadOnly; omitted, read off '
                 + 'your session), project? (name, id or *), subsystem?, topic?, role? (your role or name — matched against '
-                + 'each note\'s targetRole), category?, unreadOnly? (only what you have not read), fromMe? (only what '
+                + 'each note\'s targetRole; a note still reserved for another role is not shown), capabilities? (string[] | csv '
+                + '— a note that requires more is not yours), category?, unreadOnly? (only what you have not read), fromMe? (only what '
                 + 'you wrote), includeResolved?, includeExpired?, limit? (default 50). Listing does not mark anything '
                 + 'read — a2a.notes.get does.',
             handler: (args, from) => {
                 const reader = who(args, from);
                 need(!optBool(args, 'unreadOnly', false) || reader,
                     'unreadOnly needs to know who you are: agent=<name>.');
-                let rows = deps.notes.read(noteQuery(args, reader));
+                let rows = deps.notes.read(noteQuery(args, reader, from));
                 if (optBool(args, 'fromMe', false)) {
                     need(reader, 'fromMe needs to know who you are: agent=<name>.');
                     rows = rows.filter(n => n.fromAgent.toLowerCase() === (reader as string).toLowerCase());
@@ -229,8 +256,12 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                 + '(markdown — what to do), expectedOutput? (what "done" looks like), agent? (who is handing it over; '
                 + 'omitted, read off your session), project? (name or id; omitted = yours; * = any), workdir? (default *), '
                 + 'topic? (default *), targetRole? (who should take it — role, capability or agent name; default *), '
-                + 'strictness? (hard | preferred | any, default preferred), requires? (string[] | csv of capabilities the '
-                + 'taker must have, e.g. write_tools,browser), maxCostUSD?, maxTurns? (0 = no ceiling of its own), '
+                + 'targetSession? (the one session it is for; default *), strictness? (hard | preferred | any, default '
+                + 'preferred — the project contains in every mode; hard is the named role only, preferred is that role\'s '
+                + 'alone for agentFarm.a2a.preferredGraceHours then anyone in the project, any is anyone in the project '
+                + 'at once), requires? (string[] | csv of capability names the taker must have — lower-case a-z 0-9 _ -, '
+                + 'e.g. write_tools,browser; a malformed name is refused rather than silently never matched), maxCostUSD?, '
+                + 'maxTurns? (0 = no ceiling of its own), '
                 + 'sourceQueueItemId? (the user\'s Work Queue item behind it, for cross-lineage).',
             handler: (args, from) => {
                 const agent = mustBe(args, from);
@@ -240,9 +271,9 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                     title: argStr(args, 'title'), instructions: optStr(args, 'instructions'),
                     expectedOutput: optStr(args, 'expectedOutput'),
                     project, workdir: optStr(args, 'workdir'), topic: optStr(args, 'topic'),
-                    targetRole: optStr(args, 'targetRole'),
+                    targetRole: optStr(args, 'targetRole'), targetSession: optStr(args, 'targetSession'),
                     strictness: oneOf(optStr(args, 'strictness'), A2A_STRICTNESS, 'strictness'),
-                    requires: listArg(args, 'requires'),
+                    requires: capabilitiesArg(args, 'requires'),
                     maxCostUSD: optNum(args, 'maxCostUSD', 0), maxTurns: optNum(args, 'maxTurns', 0),
                     sourceQueueItemId: optStr(args, 'sourceQueueItemId') || undefined
                 }));
@@ -278,7 +309,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                     project: note.project, workdir: optStr(args, 'workdir') || note.subsystem, topic: note.topic,
                     targetRole: optStr(args, 'targetRole') || note.targetRole,
                     strictness: oneOf(optStr(args, 'strictness'), A2A_STRICTNESS, 'strictness') ?? note.strictness,
-                    requires: listArg(args, 'requires'),
+                    requires: capabilitiesArg(args, 'requires'),
                     maxCostUSD: optNum(args, 'maxCostUSD', 0), maxTurns: optNum(args, 'maxTurns', 0)
                 }));
                 if (optBool(args, 'resolveNote', false)) { written(deps.notes.resolve(id, true)); }
@@ -337,17 +368,22 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
             op: 'a2a.tasks.claim',
             describe: 'N-4 — TAKE A TASK. Decided inside the store\'s lock against what is on disk that instant, so two '
                 + 'agents asking together get one winner and one refusal that says why (already claimed · not open · '
-                + 'missing a required capability · the coordinates are not yours). The claim is a LEASE: heartbeat within '
+                + 'missing a required capability · another project · reserved for its target role, with `opensAt` · the '
+                + 'coordinates are not yours), and `axes` saying which coordinate hit, missed or was wild. The claim is a LEASE: heartbeat within '
                 + 'leaseMinutes or it goes back to queued. args: id, agent? (you; omitted, read off your session), role?, '
                 + 'project?, workdir?, capabilities? (string[] | csv), leaseMinutes? (default 30).',
             handler: (args, from) => {
                 const me = mustBe(args, from);
                 const id = argStr(args, 'id');
                 taskById(id);
-                const r = deps.tasks.claim(id, claimant(args, me, from), Date.now(),
-                    Math.max(1, optNum(args, 'leaseMinutes', LEASE_MS / 60_000)) * 60_000);
+                const by = claimant(args, me, from);
+                const now = Date.now();
+                const r = deps.tasks.claim(id, by, now, Math.max(1, optNum(args, 'leaseMinutes', LEASE_MS / 60_000)) * 60_000);
                 if ('refused' in r) {
-                    throw new BridgeRefusal(`Claim refused: ${r.refused}.`, { taskId: id, refused: r.refused });
+                    const f = taskFit(taskById(id), by, now);
+                    throw new BridgeRefusal(
+                        `Claim refused: ${r.refused}` + (f.opensAt ? ` — opens to you at ${new Date(f.opensAt).toISOString()}` : '') + '.',
+                        { taskId: id, refused: r.refused, axes: f.axes, ...(f.opensAt ? { opensAt: f.opensAt } : {}) });
                 }
                 changed();
                 return r.task;
@@ -428,7 +464,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                 const isPoster = t.fromAgent.toLowerCase() === me.toLowerCase();
                 need(isHolder || isPoster, `${id} is neither held nor posted by ${me} — only the holder or the poster hands a task on.`);
                 need(!['done', 'failed', 'cancelled'].includes(t.state), `${id} is ${t.state} — nothing left to hand on.`);
-                const requires = listArg(args, 'requires');
+                const requires = capabilitiesArg(args, 'requires');
                 const r = deps.tasks.handoff(id, { targetRole: argStr(args, 'targetRole'), ...(requires.length ? { requires } : {}) }, me);
                 changed();
                 if ('refused' in r) {
@@ -478,7 +514,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                 const id = argStr(args, 'id');
                 const t = taskById(id);
                 need(!['done', 'failed', 'cancelled'].includes(t.state), `${id} is ${t.state} — nothing left to reroute.`);
-                const requires = listArg(args, 'requires');
+                const requires = capabilitiesArg(args, 'requires');
                 const r = deps.tasks.handoff(id, {
                     targetRole: argStr(args, 'targetRole'), ...(requires.length ? { requires } : {}),
                     project: queryProject(args), workdir: optStr(args, 'workdir') || undefined
@@ -497,7 +533,7 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
             handler: (args, from) => {
                 const me = who(args, from);
                 const now = Date.now();
-                const notes = deps.notes.read({ ...noteQuery(args, me), unreadOnly: !!me });
+                const notes = deps.notes.read({ ...noteQuery(args, me, from), unreadOnly: !!me });
                 const tasks = deps.tasks.list();
                 const same = (a: string | undefined) => !!me && !!a && a.toLowerCase() === me.toLowerCase();
                 const held = tasks.filter(t => same(t.claimedBy?.agent) && !['done', 'failed', 'cancelled'].includes(t.state));

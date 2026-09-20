@@ -16048,6 +16048,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notes: a2aNotes, tasks: a2aTasks,
         resolveProject: (key) => projectStore.get(key)?.id,
         inferProject: projectOfRunningAgent,
+        graceMs: () => Math.max(0, cfg().get<number>('a2a.preferredGraceHours', 2)) * 3_600_000,
         // the session id the CLI published to its children (X-310), owned by
         // a card this window hosts, a session the live monitor sees, or one
         // the index has read — in that order, the surest first

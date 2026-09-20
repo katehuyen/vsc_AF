@@ -1,3 +1,4 @@
+import { byFit, fit } from './a2aMatch';
 import { a2aId, Envelope, readEnvelope, withLock, writeEnvelope } from './a2aStore';
 
 /**
@@ -44,6 +45,8 @@ export interface A2ANote {
     topic: string;
     /** the role or capability meant to read it; '*' = anyone */
     targetRole: string;
+    /** the one session (a resume keeps its id) it is for; '*' = any */
+    targetSession: string;
     strictness: A2AStrictness;
     category: A2ACategory;
     title: string;
@@ -67,6 +70,7 @@ export interface A2ANoteInput {
     subsystem?: string;
     topic?: string;
     targetRole?: string;
+    targetSession?: string;
     strictness?: A2AStrictness;
     category?: A2ACategory;
     contextFiles?: string[];
@@ -88,6 +92,7 @@ export function makeNote(input: A2ANoteInput, now = Date.now()): A2ANote {
         subsystem: str(input.subsystem, '*'),
         topic: str(input.topic, '*'),
         targetRole: str(input.targetRole, '*'),
+        targetSession: str(input.targetSession, '*'),
         strictness: A2A_STRICTNESS.includes(input.strictness as A2AStrictness)
             ? input.strictness as A2AStrictness : 'preferred',
         category: A2A_CATEGORIES.includes(input.category as A2ACategory)
@@ -113,6 +118,7 @@ export function normaliseNote(row: Partial<A2ANote> & { id: string }): A2ANote {
         subsystem: str(row.subsystem, '*'),
         topic: str(row.topic, '*'),
         targetRole: str(row.targetRole, '*'),
+        targetSession: str(row.targetSession, '*'),
         strictness: A2A_STRICTNESS.includes(row.strictness as A2AStrictness)
             ? row.strictness as A2AStrictness : 'preferred',
         category: A2A_CATEGORIES.includes(row.category as A2ACategory)
@@ -133,6 +139,12 @@ export interface NoteQuery {
     topic?: string;
     /** the reader's own role — matched against the note's targetRole */
     role?: string;
+    /** the reader's session — matched against the note's targetSession */
+    sessionId?: string;
+    /** what the reader can do — a note that `requires` more is not theirs */
+    capabilities?: string[];
+    /** how long `preferred` is the target role's alone (a2aMatch.PREFERRED_GRACE_MS) */
+    graceMs?: number;
     category?: A2ACategory;
     /** the reader's name, for unread-only reads */
     reader?: string;
@@ -141,39 +153,24 @@ export interface NoteQuery {
     includeExpired?: boolean;
 }
 
-/** One coordinate: '*' on either side is anything, and a blank query asks nothing. */
-function axis(noteValue: string, want: string | undefined): 'hit' | 'wild' | 'miss' {
-    if (!want) { return 'wild'; }
-    if (noteValue === '*' || want === '*') { return 'wild'; }
-    return noteValue.toLowerCase() === want.toLowerCase() ? 'hit' : 'miss';
-}
-
 /**
  * How well a note answers a reader's coordinates. `undefined` = not theirs.
- * A higher score is a closer fit, which is what `preferred` needs to mean
- * anything: without ranking it would be indistinguishable from `any`.
+ * The rule is the engine's (a2aMatch.fit): the project contains, the role is
+ * what strictness is about, and `preferred` is the target role's alone for a
+ * while. A higher score is a closer fit.
  */
-export function noteScore(note: A2ANote, q: NoteQuery): number | undefined {
-    const axes = [
-        axis(note.project, q.project), axis(note.subsystem, q.subsystem),
-        axis(note.topic, q.topic), axis(note.targetRole, q.role)
-    ];
-    if (note.strictness === 'hard' && axes.includes('miss')) { return undefined; }
-    if (note.strictness === 'preferred' && axes.filter(a => a === 'hit').length === 0
-        && axes.includes('miss')) { return undefined; }
-    return axes.filter(a => a === 'hit').length;
+export function noteScore(note: A2ANote, q: NoteQuery, now = Date.now()): number | undefined {
+    const f = fit(note, q, now);
+    return f.eligible ? f.score : undefined;
 }
 
 export function matchNotes(notes: A2ANote[], q: NoteQuery, now = Date.now()): A2ANote[] {
-    return notes
+    return byFit(notes
         .filter(n => q.includeResolved || !n.resolved)
         .filter(n => q.includeExpired || !n.expiresAt || n.expiresAt > now)
         .filter(n => !q.category || n.category === q.category)
         .filter(n => !(q.unreadOnly && q.reader) || !n.readBy.includes(q.reader as string))
-        .map(n => ({ n, score: noteScore(n, q) }))
-        .filter(x => x.score !== undefined)
-        .sort((a, b) => (b.score as number) - (a.score as number) || b.n.ts - a.n.ts)
-        .map(x => x.n);
+        .map(n => ({ row: n, fit: fit(n, q, now), ts: n.ts })));
 }
 
 export class A2ANotesStore {

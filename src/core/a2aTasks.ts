@@ -1,3 +1,4 @@
+import { fit } from './a2aMatch';
 import { a2aId, Envelope, readEnvelope, withLock, writeEnvelope } from './a2aStore';
 import { A2AStrictness, A2A_STRICTNESS, HumanDirective, NoteQuery } from './a2aNotes';
 
@@ -57,6 +58,8 @@ export interface A2ATask {
     workdir: string;
     topic: string;
     targetRole: string;
+    /** the one session (a resume keeps its id) it is for; '*' = any */
+    targetSession: string;
     strictness: A2AStrictness;
     /** capabilities the claimant must have; all of them, or the claim is refused */
     requires: string[];
@@ -86,6 +89,7 @@ export interface A2ATaskInput {
     workdir?: string;
     topic?: string;
     targetRole?: string;
+    targetSession?: string;
     strictness?: A2AStrictness;
     requires?: string[];
     maxCostUSD?: number;
@@ -113,6 +117,7 @@ export function makeTask(input: A2ATaskInput, now = Date.now()): A2ATask {
         workdir: str(input.workdir, '*'),
         topic: str(input.topic, '*'),
         targetRole: str(input.targetRole, '*'),
+        targetSession: str(input.targetSession, '*'),
         strictness: A2A_STRICTNESS.includes(input.strictness as A2AStrictness)
             ? input.strictness as A2AStrictness : 'preferred',
         requires: list(input.requires),
@@ -131,6 +136,7 @@ export function normaliseTask(row: Partial<A2ATask> & { id: string }): A2ATask {
         ...row,
         id: row.id,
         ts: num(row.ts),
+        targetSession: str(row.targetSession, '*'),
         handoffDepth: num(row.handoffDepth),
         requires: list(row.requires),
         maxCostUSD: num(row.maxCostUSD),
@@ -148,6 +154,8 @@ export interface ClaimantView {
     workdir?: string;
     /** what this agent can do — every `requires` must be in here */
     capabilities?: string[];
+    /** how long `preferred` is the target role's alone (a2aMatch.PREFERRED_GRACE_MS) */
+    graceMs?: number;
 }
 
 /** Why a claim was refused, in the words the refusal is reported in. */
@@ -156,27 +164,25 @@ export type ClaimRefusal =
     | 'already claimed'
     | 'not open for claiming'
     | 'missing a required capability'
+    | 'another project'
+    | 'reserved for its target role'
     | 'the coordinates are not yours'
     | 'the store is busy';
 
-function axis(taskValue: string, want: string | undefined): 'hit' | 'wild' | 'miss' {
-    if (!want) { return 'wild'; }
-    if (taskValue === '*' || want === '*') { return 'wild'; }
-    return taskValue.toLowerCase() === want.toLowerCase() ? 'hit' : 'miss';
+/**
+ * Whether this agent may take this task at all — the engine's rule
+ * (a2aMatch.fit): capabilities first, the project as a container, the role
+ * as what strictness is about, and `preferred` the target role's alone for a
+ * while. A task's workdir is its subsystem axis.
+ */
+export function claimable(task: A2ATask, by: ClaimantView, now = Date.now()): ClaimRefusal | undefined {
+    const f = fit({ ...task, subsystem: task.workdir }, { ...by, subsystem: by.workdir }, now);
+    return f.eligible ? undefined : f.why;
 }
 
-/** Whether this agent may take this task at all, by coordinates and capability. */
-export function claimable(task: A2ATask, by: ClaimantView): ClaimRefusal | undefined {
-    const have = new Set((by.capabilities ?? []).map(c => c.toLowerCase()));
-    if (task.requires.some(r => !have.has(r.toLowerCase()))) { return 'missing a required capability'; }
-    const axes = [
-        axis(task.project, by.project), axis(task.workdir, by.workdir), axis(task.targetRole, by.role)
-    ];
-    if (task.strictness === 'hard' && axes.includes('miss')) { return 'the coordinates are not yours'; }
-    if (task.strictness === 'preferred' && !axes.includes('hit') && axes.includes('miss')) {
-        return 'the coordinates are not yours';
-    }
-    return undefined;
+/** The whole fit, for a caller that wants the axes and `opensAt` beside the verdict. */
+export function taskFit(task: A2ATask, by: ClaimantView, now = Date.now()) {
+    return fit({ ...task, subsystem: task.workdir }, { ...by, subsystem: by.workdir }, now);
 }
 
 /** A lease that has run out makes a task available again, whatever it says. */
@@ -222,7 +228,7 @@ export function matchTasks(tasks: A2ATask[], q: TaskQuery, now = Date.now()): A2
         .filter(t => !q.state || t.state === q.state)
         .filter(t => !q.project || t.project === '*' || t.project.toLowerCase() === q.project.toLowerCase())
         .filter(t => !q.topic || t.topic === '*' || t.topic.toLowerCase() === q.topic.toLowerCase())
-        .filter(t => !q.claimableBy || (isOpen(t, now) && !claimable(t, q.claimableBy)))
+        .filter(t => !q.claimableBy || (isOpen(t, now) && !claimable(t, q.claimableBy, now)))
         .sort((a, b) => b.ts - a.ts);
 }
 
@@ -279,7 +285,7 @@ export class A2ATasksStore {
                 const live = task.state === 'claimed' || task.state === 'running';
                 return { tasks, out: { refused: (live ? 'already claimed' : 'not open for claiming') as ClaimRefusal } };
             }
-            const no = claimable(task, by);
+            const no = claimable(task, by, now);
             if (no) { return { tasks, out: { refused: no } }; }
             const claimed: A2ATask = {
                 ...task, state: 'claimed',

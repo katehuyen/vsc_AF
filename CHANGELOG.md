@@ -2,6 +2,42 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.595.0 - whose is this: the A2A matching engine (N-5) (2026-09-20)
+
+- **One engine under both stores** — `src/core/a2aMatch.ts`. A note and a task
+  are addressed the same way, so "is this mine, and how well" is answered by
+  one `fit()` that `noteScore` and `claimable` now stand on; the two copies of
+  the axis logic N-3 carried are one. Five coordinates, each with a job:
+  **project** contains, **targetRole** addresses (what strictness is about),
+  **subsystem/topic** describe (they rank; they exclude only under `hard`),
+  **targetSession** is lineage (the one session — a resume keeps its id —
+  this is for; `*` = any). `requires` is a filter in every mode.
+- **‼️ The project contains in EVERY mode.** Under `any`, a note or task is
+  open to anyone *in the project*; a fleet-wide one says `project: "*"`.
+  Without this the wildcard added nothing to `any`, and work about one project
+  landed on every other project's board.
+- **‼️ `preferred` is `hard` on the role for a while, then `any`.** The target
+  role has the work to itself for `agentFarm.a2a.preferredGraceHours` (default
+  2; `0` opens at once); a task nobody of that role took in that time opens to
+  whoever else fits the project, ranked below an exact fit. A claim inside the
+  window is refused as **`reserved for its target role`** and the refusal
+  carries `opensAt` and the `axes` (which coordinate hit, missed or was wild),
+  so an agent can come back at the right moment instead of polling. Without
+  the clock, `preferred` and `any` were one rule with two names.
+- **A capability name is validated, not trusted.** `requires` and
+  `capabilities` are lower-cased and de-duplicated, and a name that is not one
+  (`a-z 0-9 _ -`, e.g. `write tools`) is refused by name — the alternative was
+  a task that silently never matched anyone.
+- **`a2a.tasks.next` ranks the closest fit first**, the oldest within a fit —
+  an exact-role task outranks one that merely opened to you, even when newer.
+- **‼️ The claim race is proven with real processes**: `test_a2a_matching.js`
+  spins six node processes to the same instant against one file; exactly one
+  claim wins, every loser is told why, and the lock is gone afterwards. N-3
+  proved it with two store objects in one process — this is the cross-process
+  lock doing it for real.
+- Rows written before `targetSession` existed read as `*` — a legacy note or
+  task is still for any session.
+
 ## 3.594.0 - what one agent leaves for another, reachable from a shell (N-4) (2026-09-20)
 
 - **Eighteen `a2a.*` ops open the A2A stores N-3 built.** `src/core/a2aBridge.ts`
