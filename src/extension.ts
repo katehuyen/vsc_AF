@@ -2991,6 +2991,39 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const id = activeProjectId();
         return id ? projectStore.get(id) : undefined;
     };
+    /**
+     * ‼️ B-18 — THE ONE PLACE THAT MOVES THIS WINDOW ONTO A PROJECT.
+     *
+     * Six paths used to write `af.activeProject` themselves — the command, the
+     * quick pick, the bridge op, the Projects page's "Make active", its "start
+     * a session here", and the status bar's Clear — and each one decided for
+     * itself what to refresh afterwards. They did not agree: the page's Make
+     * active refreshed NOTHING, so the tree and the status bar went on naming
+     * the old project until something else happened to repaint them. Writing
+     * the state and telling the window are one act, so they are one function.
+     *
+     * An empty id means no project, which is a value and not a failure.
+     */
+    const setActiveProjectId = async (id: string): Promise<void> => {
+        await context.workspaceState.update('af.activeProject', id || '');
+        projectsChanged();
+    };
+    /**
+     * ‼️ B-18 — REBUILD ONE PROJECT'S BACKLOG LOG FROM THE SESSIONS THEMSELVES.
+     *
+     * The rows in `Backloglog.md` are derived: which session touched which code,
+     * when, and where it closed. They can therefore be re-derived, which is the
+     * repair for a log that was edited by hand, lost rows to a crash, or was
+     * written before a transcript the sessions can now see. Shared by the page's
+     * button and the bridge op so a repair is one piece of code rather than two
+     * that can disagree about what "rebuilt" means.
+     */
+    const rebuildProjectTrack = (id: string): { error?: string } => {
+        const res = refreshBacklogLog(id);
+        if (res.error) { return { error: res.error }; }
+        projectDocWritten(id);
+        return {};
+    };
 
     /**
      * The projects a PAGE needs — identity plus what its hover says, nothing
@@ -12356,6 +12389,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             }
         },
         {
+            op: 'console.forgetWindow',
+            describe: 'B-18 — FORGET WHICH TERMINAL WINDOW A SESSION WAS LAST OPENED IN. Agent Farm remembers the window a hosted session was running in so a reopen lands where it was; a window that was killed, moved or is no longer reachable leaves that memory pointing at nothing, and the next open follows it instead of making a new one. This drops the memory for one session — nothing about the session itself changes, and the next open simply chooses afresh. args: session (the engine session id, as console.sessions reports it)',
+            handler: (args) => {
+                const sessionId = argStr(args, 'session');
+                forgetLastWindow(sessionId);
+                ConsolePanel.refreshIfOpen();
+                return { session: sessionId, forgotten: true };
+            }
+        },
+        {
             op: 'console.close',
             // ‼️ B-12 — "STAYS ON DISK" IS NOT TRUE OF EVERY ENGINE, and the one
             // it is false for is the one a reader would go looking for a file
@@ -12571,16 +12614,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 if (args.project !== undefined) {
                     const raw = String(args.project ?? '').trim();
                     if (!raw) {
-                        await context.workspaceState.update('af.activeProject', '');
+                        await setActiveProjectId('');
                     } else {
                         const p = projectStore.get(raw);
                         need(p, `no project called "${raw}" — projects.list shows them`);
-                        await context.workspaceState.update('af.activeProject', (p as Project).id);
+                        await setActiveProjectId((p as Project).id);
                     }
-                    projectsChanged();
                 }
                 const current = activeProject();
                 return current ? projectView(current) : { id: null, name: null };
+            }
+        },
+        {
+            op: 'projects.track.rebuild',
+            describe: 'B-18 — REBUILD A PROJECT\'S BACKLOG LOG FROM ITS SESSIONS. The session rows in Backloglog.md are derived — which session touched which code, when, and where it closed — so they can be re-derived. This is the repair for a log that lost rows to a crash, was edited by hand, or was written before the transcripts it describes could be read; nothing you wrote around those rows is touched, because Agent Farm owns only the data line and the session rows. args: project (id or name)',
+            handler: (args) => {
+                const key = argStr(args, 'project');
+                const p = projectStore.get(key);
+                need(p, `no project called "${key}" — projects.list shows them`);
+                const project = p as Project;
+                const res = rebuildProjectTrack(project.id);
+                need(!res.error, res.error ?? '');
+                return { project: project.name, rebuilt: true };
             }
         },
         {
@@ -27569,8 +27624,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.commands.executeCommand('agentfarm.newProject');
             return;
         }
-        await context.workspaceState.update('af.activeProject', pick.act === 'none' ? '' : (pick.id ?? ''));
-        projectsChanged();
+        await setActiveProjectId(pick.act === 'none' ? '' : (pick.id ?? ''));
     };
 
     /**
@@ -32552,9 +32606,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 void vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(p.folder));
             }
         },
-        setActive: async id => {
-            await context.workspaceState.update('af.activeProject', id || '');
-        },
+        setActive: async id => { await setActiveProjectId(id); },
         rescan: async () => { await vscode.commands.executeCommand('agentfarm.rescanProjects'); },
         // Until the project page grows its own Sessions tab, this goes where the
         // sessions already are — the dashboard's table, ALREADY SCOPED to this
@@ -32868,12 +32920,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         trackBackfill: (id, apply, code) => runBackfill({
             projectId: id, apply, ...(code ? { code } : {})
         }),
-        trackRebuild: (id) => {
-            const res = refreshBacklogLog(id);
-            if (res.error) { return { error: res.error }; }
-            projectDocWritten(id);
-            return {};
-        },
+        trackRebuild: (id) => rebuildProjectTrack(id),
 
         openProjectDoc: (id, rel, mode) => {
             const p = projectStore.get(id);
@@ -32933,9 +32980,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             // session started here will be stamped with. A "start in this
             // project" that skipped it would open a session that had never
             // heard of the project whose page the button is on.
-            await context.workspaceState.update('af.activeProject', id);
-            paintProjectBar();
-            projectsTree.refresh();
+            await setActiveProjectId(id);
             // Which agent. A project that names its own agents answers this
             // itself; otherwise it is a pick over rows that already exist,
             // which is what a quickpick is for (docs/CONVENTIONS.md).
@@ -34883,8 +34928,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
         vscode.commands.registerCommand('agentfarm.setActiveProject', async (arg?: { id?: string }) => {
             if (arg?.id !== undefined) {
-                await context.workspaceState.update('af.activeProject', arg.id);
-                projectsChanged();
+                await setActiveProjectId(arg.id);
                 return;
             }
             await chooseActiveProject();

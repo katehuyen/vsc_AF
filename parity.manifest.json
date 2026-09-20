@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 34,
+  "gapBudget": 31,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -1318,9 +1318,9 @@
       "ui": [
         "page:consolePanel.ts#forgetLastWindow"
       ],
-      "gap": {
-        "why": "An op to drop a session's remembered terminal window binding. Small, but a stuck binding can only be cleared by hand today."
-      }
+      "ops": [
+        "console.forgetWindow"
+      ]
     },
     {
       "capability": "consolePanel.ts#getAccounts",
@@ -4547,9 +4547,9 @@
       "ui": [
         "page:projectsPanel.ts#trackRebuild"
       ],
-      "gap": {
-        "why": "Rebuilding a project's track history from its sessions is a page-only path; no op shares its core."
-      }
+      "ops": [
+        "projects.track.rebuild"
+      ]
     },
     {
       "capability": "projectsPanel.ts#trackRecord",
@@ -5556,9 +5556,9 @@
       "ui": [
         "cmd:agentfarm.setActiveProject"
       ],
-      "gap": {
-        "why": "Which project is ACTIVE is workspace state the page sets; projects.current reads it, nothing writes it."
-      }
+      "ops": [
+        "projects.current"
+      ]
     },
     {
       "capability": "setQuietHours",

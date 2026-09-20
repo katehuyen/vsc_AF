@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.607.0 - three doors an agent could not reach, and the one place a window changes project (B-18) (2026-09-20)
+
+- **‼️ Six pieces of code decided which project this window is on, and they did
+  not agree.** The command, the quick pick, the bridge op, the Projects page's
+  **Make active**, its **start a session here**, and the status bar's Clear each
+  wrote `af.activeProject` themselves and then chose their own refresh — and the
+  page's Make active refreshed **nothing**, so the tree and the status bar went
+  on naming the old project until something else happened to repaint them.
+  Writing the state and telling the window are one act, so they are now one
+  function. `projects.current` and the command share it, which is what finally
+  links that capability on the parity gate instead of carrying it as a gap.
+- **New `console.forgetWindow`** — drops the remembered terminal window of one
+  session. A window that was killed or moved leaves that memory pointing at
+  nothing and the next open follows it instead of making a new one; until now
+  only a person clicking the card could clear it.
+- **New `projects.track.rebuild`** — re-derives a project's `Backloglog.md`
+  session rows from the sessions themselves, the repair for a log that lost rows
+  to a crash or was written before the transcripts it describes could be read.
+  It shares its core with the page's button, so "rebuilt" cannot come to mean
+  two different things.
+- The gate moves with it: **370 → 373 ops on the bridge, 34 → 31 open gaps**,
+  and `gapBudget` shrinks by exactly three.
+
 ## 3.606.0 - the search corpus is measured, and its prune stops blocking the window (X-131, partial) (2026-09-20)
 
 - **The first search of every window no longer freezes it to decide there is
