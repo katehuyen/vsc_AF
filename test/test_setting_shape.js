@@ -232,9 +232,14 @@ const PROPS = manifest.contributes.configuration.properties;
     ok('‼️ ADDING AND REMOVING ACT ON A DRAFT, so a list half-edited and abandoned'
         + ' leaves the setting exactly as it was',
         /const listDraft = \{\}/.test(page) && /delete listDraft\[key\]/.test(page));
+    // ‼️ THE SPELLING IS NOT THE RULE — test_settings_form.js DRIVES this one
+    // (type into a row, press + on the row above, the typing is still there).
+    // This line stays because it is cheap and names the lesson at the place the
+    // markup is pinned; it must not be the only guard, and it is not.
     ok('‼️ …and every structural gesture READS THE BOXES FIRST: type a path, press +'
         + ' on the row above, and without this the path is gone',
-        /readList\(key\)\.push\(''\)/.test(page) && /const rows = readList\(key\)/.test(page));
+        /const at = readList\(key\)\.length/.test(page)
+        && /const rows = readList\(key\)/.test(page));
     ok('‼️ …and the list is sent as a REAL ARRAY, which is the whole point of not'
         + ' making the user write the brackets',
         /vscode\.postMessage\(\{ type: 'set', key, value: rows \}\)/.test(page));

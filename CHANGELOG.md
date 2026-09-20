@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.597.0 - Farm Settings answers the hand: Enter saves, and the page keeps its place (U-139) (2026-09-20)
+
+- **‼️ Enter saves the editor the box belongs to — all four shapes.** Reported
+  as *"you press enter and nothing happens"*, and it was exactly true: a box in
+  the list editor, the form, the table or the pair editor was bound to `change`
+  only, which fires on blur and merely fills the draft. Enter — the one key a
+  single-line box is expected to answer — did nothing at all, in every editor on
+  the page, so the whole surface read as disconnected. The save now lives in one
+  function per shape (`applyList`, `applyForm`, `applyRows`, `applyMap`) instead
+  of inside a click handler, and one rule binds Enter across `data-lrow`,
+  `data-frow`, `data-rrow` and `data-mrow`. Each reads the boxes itself, so the
+  value being typed right now is the value that is saved; a refusal the button
+  would have shown is still shown; a multi-line box keeps Enter for its newline.
+- **‼️ The page keeps the reader's place across a redraw.** `render()` replaces
+  the whole of `#app`, and Farm Settings is the longest page in the extension.
+  Pressing `+ add`, `Edit as JSON` or `✕` two thirds of the way down threw the
+  reader back to the top, and what they had pressed never came into view — so
+  the second half of the report, *"you press the json link and nothing
+  happens"*, was a control that had worked every single time and could not be
+  seen doing it. `window.scrollY` is now carried across the swap. `+ add` also
+  puts the caret in the row it just made, which is how a press proves it landed.
+- **The file this page is a view of, from the page itself.** A `settings.json`
+  action in the Farm Settings header opens VS Code's own user settings file —
+  the one every box here writes into and the `↺` buttons remove keys from.
+  Reaching it used to mean knowing the command palette.
+- Measured: `test_settings_form.js` 63 → 78 — Enter in a row, a form field, a
+  table cell and a pair box each save that editor and carry what is being typed;
+  no other key saves; a refusal is not walked past; the scroll is restored for a
+  reader who was down the page and not written for one already at the top; the
+  caret lands in the new row and the rows already typed into survive it (U-108's
+  rule, driven rather than spelled).
+
 ## 3.596.0 - the user's word first, and the A2A road proven end to end (N-8, N-9) (2026-09-20)
 
 - **‼️ The supervisor directive is the FIRST thing an agent reads (N-8).** A

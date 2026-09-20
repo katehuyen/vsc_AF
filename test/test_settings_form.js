@@ -245,6 +245,117 @@ const btn = (p, attr, key) =>
 }
 
 // ---------------------------------------------------------------------------
+// ‼️ U-139 — THE LIST EDITOR ANSWERS THE HAND, and the page keeps its place.
+//
+// Reported as "you press enter and nothing happens, you press the json link and
+// nothing happens". Both controls worked. Enter was bound to nothing at all,
+// and every redraw threw the reader back to the top of the longest page in the
+// extension — so the JSON box appeared two screens below where they were
+// looking and the press read as dead. A string test cannot see either of these.
+// ---------------------------------------------------------------------------
+{
+    const p = open();
+    const row = el(p, 'l-browserAllowHosts-0');
+    row.value = 'yeni.host.example';
+    row.fire('keydown', { key: 'Enter' });
+    const sent = p.posted.filter(m => m.type === 'set' && m.key === 'agentFarm.browserAllowHosts');
+    ok('‼️ Enter in a row SAVES the list — the key a single-line box is expected'
+        + ' to answer was bound to nothing', sent.length === 1);
+    ok('…and it carries what is being typed RIGHT NOW, not what was last saved —'
+        + ' `change` has not fired yet, so the boxes are read directly',
+        sent.length === 1 && Array.isArray(sent[0].value)
+        && sent[0].value[0] === 'yeni.host.example');
+
+    // Any other key is not a save: a list being typed into must not write the
+    // setting on every letter.
+    const p2 = open();
+    el(p2, 'l-browserAllowHosts-0').fire('keydown', { key: 'a' });
+    ok('…and no other key saves anything', !p2.posted.some(m => m.type === 'set'));
+}
+
+{
+    // ‼️ THE SAME KEY IN ALL FOUR EDITORS. The defect was never about lists:
+    // the form, the table and the pair editor each had one button and no other
+    // door, and a reader who pressed Enter in any of them got silence.
+    const pf = open();
+    el(pf, 'f-taskRetry-capMin').value = '120';
+    el(pf, 'f-taskRetry-capMin').fire('keydown', { key: 'Enter' });
+    const f = pf.posted.filter(m => m.type === 'set' && m.key === 'agentFarm.taskRetry');
+    ok('‼️ Enter in a FORM field saves the form', f.length === 1 && f[0].value.capMin === 120);
+
+    const pr = open();
+    el(pr, 'r-cliProfiles-0-headless').value = 'my-cli --headless';
+    el(pr, 'r-cliProfiles-0-headless').fire('keydown', { key: 'Enter' });
+    const r = pr.posted.filter(m => m.type === 'set' && m.key === 'agentFarm.cliProfiles');
+    ok('‼️ Enter in a TABLE cell saves the table',
+        r.length === 1 && Array.isArray(r[0].value)
+        && r[0].value[0].headless === 'my-cli --headless');
+
+    const pm = open();
+    el(pm, 'm-budgets-0-v').value = '35';
+    el(pm, 'm-budgets-0-v').fire('keydown', { key: 'Enter' });
+    const m = pm.posted.filter(x => x.type === 'set' && x.key === 'agentFarm.budgets');
+    ok('‼️ Enter in a PAIR box saves the pairs',
+        m.length === 1 && m[0].value.developer === 35);
+
+    // A refusal is still a refusal from this door — Enter is another way in,
+    // not a way past the checks.
+    const pbad = open();
+    el(pbad, 'm-budgets-0-k').value = '';
+    el(pbad, 'm-budgets-0-v').fire('keydown', { key: 'Enter' });
+    ok('…and Enter does not walk past a refusal the button would have shown',
+        !pbad.posted.some(x => x.type === 'set')
+        && /needs a name/.test(pbad.html()));
+}
+
+{
+    // ‼️ THE PLACE ON THE PAGE. `render()` replaces the whole of #app; the
+    // reader was two thirds of the way down when they pressed the control.
+    const p = open();
+    const moved = [];
+    p.sandbox.window.scrollY = 900;
+    p.sandbox.window.scrollTo = (x, y) => { moved.push(y); };
+    btn(p, 'ljson', 'agentFarm.browserAllowHosts').click();
+    ok('‼️ "Edit as JSON" leaves the reader where they were standing — a redraw'
+        + ' that jumps to the top is read as a link that did nothing',
+        moved.length === 1 && moved[0] === 900);
+    ok('…and the box it promised is really there',
+        !!el(p, 'c-browserAllowHosts'));
+
+    const p3 = open();
+    const moved3 = [];
+    p3.sandbox.window.scrollY = 0;
+    p3.sandbox.window.scrollTo = (x, y) => { moved3.push(y); };
+    // ‼️ U-108's rule, DRIVEN rather than spelled: a row typed into and not yet
+    // committed lives only in the DOM, so a structural gesture that did not read
+    // the boxes first would throw the typing away. test_setting_shape.js pins
+    // the line; this proves the lesson.
+    el(p3, 'l-browserAllowHosts-1').value = 'typed.not.saved';
+    btn(p3, 'ladd', 'agentFarm.browserAllowHosts').click();
+    ok('…and a reader already at the top is not scrolled at all', moved3.length === 0);
+    ok('‼️ + add puts the caret in the row it just made, which is also how the'
+        + ' press proves it landed',
+        p3.sandbox.document.activeElement
+        && p3.sandbox.document.activeElement.id === 'l-browserAllowHosts-2');
+    ok('‼️ …and adding a row keeps what was typed into the rows already there',
+        el(p3, 'l-browserAllowHosts-1').value === 'typed.not.saved'
+        && el(p3, 'l-browserAllowHosts-2').value === '');
+    ok('…and it saved nothing — adding acts on the draft',
+        !p3.posted.some(m => m.type === 'set'));
+}
+
+{
+    // ‼️ THE FILE THIS PAGE IS A VIEW OF, from the page itself.
+    const p = open();
+    const open1 = el(p, 'opensettingsjson');
+    ok('the header offers the settings.json the boxes write into',
+        p.html().indexOf('id="opensettingsjson"') >= 0);
+    open1.click();
+    ok('…and pressing it asks the host for that file',
+        p.last() && p.last().type === 'openSettingsJson');
+}
+
+// ---------------------------------------------------------------------------
 // ‼️ U-110 — THE THREE SETS OF NAME → VALUE PAIRS, DRIVEN.
 //
 // Nothing can list a map's keys, which is why all three were left as a JSON

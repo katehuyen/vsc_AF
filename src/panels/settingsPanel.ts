@@ -762,6 +762,13 @@ export class FarmSettingsPanel {
                     void vscode.commands.executeCommand('workbench.action.openSettings', msg.key);
                 }
                 break;
+            // U-139 — the FILE this whole page is a view of. Every box writes
+            // into it and the ↺ buttons remove keys from it, so a reader who
+            // wants to read it, paste a block in, or repair a value the schema
+            // refuses should not have to know the command palette.
+            case 'openSettingsJson':
+                void vscode.commands.executeCommand('workbench.action.openSettingsJson');
+                break;
             // ---- X-3: the engine rows ------------------------------------
             // ‼️ The page asks; the host acts. A credential is never decided
             // here and never travels through the webview: the sign-in is the

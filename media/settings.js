@@ -221,6 +221,42 @@
     }
 
     /**
+     * ‼️ U-139 — SAVING A LIST IS ONE FUNCTION, because it has two doors.
+     *
+     * "Save the list" is the button that says it saves; Enter inside a row is
+     * the gesture every other box on this page already answers (the quiet-hour
+     * times, the announcement template, the nudge minutes all bind it). A row
+     * that ignored Enter read as a row wired to nothing — the user typed a chat
+     * id, pressed Enter, and the page sat there.
+     *
+     * Returns false when the value was refused, so a caller can tell a save
+     * that happened from one that only drew an error.
+     */
+    function applyList(key) {
+        delete errors[key];
+        // ‼️ Sent as a REAL ARRAY and not as text. The host takes a structured
+        // value as-is (settingsops.sanitizeValue), so a list assembled here
+        // cannot fail to parse — which is the whole point of not making the
+        // user write the brackets.
+        const item = allItems().find(i => i.key === key);
+        const numeric = item && item.shape
+            && (item.shape.itemType === 'number' || item.shape.itemType === 'integer');
+        const rows = readList(key)
+            .map(v => String(v).trim()).filter(v => v !== '')
+            .map(v => (numeric ? Number(v) : v));
+        // A number box that was typed into with words is a refusal the user can
+        // see, not a NaN quietly written into their settings.
+        if (numeric && rows.some(v => !Number.isFinite(v))) {
+            errors[key] = 'every entry has to be a number';
+            render();
+            return false;
+        }
+        delete listDraft[key];
+        vscode.postMessage({ type: 'set', key, value: rows });
+        return true;
+    }
+
+    /**
      * ‼️ U-108 — A LIST IS A LIST, NOT A JSON DOCUMENT.
      *
      * The schema says `items.type: string` (or `number`) and nothing else: there
@@ -260,7 +296,9 @@
                 }</select>`
                 : `<input type="${numeric ? 'number' : 'text'}" id="l-${id}-${i}"
                         data-lrow="${C.esc(it.key)}" value="${C.esc(v)}"
-                        placeholder="${C.esc(numeric ? 'a number' : 'one entry')}">`;
+                        placeholder="${C.esc(numeric ? 'a number' : 'one entry')}"
+                        title="${C.esc(`${v || '(empty)'}\n\nOne entry of ${shortKey(it.key)}. `
+                    + 'Press Enter to save the whole list — the ORDER of the rows is part of this setting.')}">`;
             // ‼️ X-193 — ORDER IS THE VALUE in these lists: `handoverSources` is
             // read most-truthful-first and `sentryInstructionFiles` decides
             // whose block wins. Reordering used to mean deleting a row and
@@ -293,7 +331,7 @@
                 <button class="secondary small" data-ladd="${C.esc(it.key)}"
                     title="Add one more entry to this list.">+ add</button>
                 <button class="secondary small" data-lapply="${C.esc(it.key)}"
-                    title="Save this list. Until you press it, nothing here has changed the setting.">Save the list</button>
+                    title="Save this list — or press Enter in any row. Until then, nothing here has changed the setting.">Save the list</button>
                 <a href="#" class="setljson" data-ljson="${C.esc(it.key)}"
                     title="Show the raw JSON instead. Some value the schema cannot describe is always possible, so the box is still there.">Edit as JSON</a>
                 ${/* ‼️ NO Example HERE. It writes into the JSON textarea, and in this
@@ -621,6 +659,43 @@
     }
 
     /**
+     * ‼️ U-139 — SAVING THE FORM AND SAVING THE TABLE, each in one function,
+     * for the reason `applyList` is one: the button is no longer the only door.
+     * Enter in any box of an editor saves that editor, so the save cannot live
+     * inside a click handler.
+     */
+    function applyForm(key) {
+        delete errors[key];
+        // Sent as a REAL OBJECT and not as text — the host takes a structured
+        // value as-is (settingsops.sanitizeValue), so a form assembled here
+        // cannot fail to parse.
+        const obj = buildEntry(key, shapeFields(key), readForm(key), '');
+        if (!obj) { render(); return false; }
+        delete formDraft[key];
+        vscode.postMessage({ type: 'set', key, value: obj });
+        return true;
+    }
+
+    function applyRows(key) {
+        delete errors[key];
+        const fields = shapeFields(key);
+        const out = [];
+        const rows = readRows(key);
+        for (let i = 0; i < rows.length; i++) {
+            // An entry with nothing in it is what pressing + leaves behind;
+            // dropping it is kinder than refusing to save.
+            if (!rows[i][REST]
+                && fields.every(f => !String(rows[i][f.name] || '').trim())) { continue; }
+            const entry = buildEntry(key, fields, rows[i], `row ${i + 1}: `);
+            if (!entry) { render(); return false; }
+            out.push(entry);
+        }
+        delete rowsDraft[key];
+        vscode.postMessage({ type: 'set', key, value: out });
+        return true;
+    }
+
+    /**
      * ‼️ U-109 — AN OBJECT WHOSE FIELDS ARE DECLARED IS A FORM.
      *
      * `taskRetry` declares SIXTEEN fields, each with a sentence about it, and
@@ -793,6 +868,42 @@
         }
         mapDraft[key] = out;
         return out;
+    }
+
+    /** ‼️ U-139 — and saving the pairs, in one function for the reason the
+     *  other three are: Enter in a box saves the editor that box belongs to. */
+    function applyMap(key) {
+        delete errors[key];
+        const item = allItems().find(i => i.key === key);
+        const f = mapField(item.shape);
+        const out = {};
+        for (const pair of readMap(key)) {
+            const name = String(pair.k).trim();
+            const r = readField(f, pair.v);
+            // A row with neither a name nor a value is what pressing + leaves
+            // behind; dropping it is kinder than refusing.
+            if (!name && r.skip) { continue; }
+            if (!name) {
+                errors[key] = 'a value needs a name — fill the left box in, or remove the row';
+                render(); return false;
+            }
+            if (r.err) { errors[key] = `${name}: ${r.err.replace(/^value /, '')}`; render(); return false; }
+            if (r.skip) {
+                // ‼️ A NAME WITH NO VALUE IS NOT A PAIR, and writing it as ""
+                // would file a budget of nothing under a real agent — a setting
+                // that looks set and does nothing.
+                errors[key] = `${name} has no value — give it one, or remove the row`;
+                render(); return false;
+            }
+            if (Object.prototype.hasOwnProperty.call(out, name)) {
+                errors[key] = `${name} is in the list twice — an object cannot hold the same name twice`;
+                render(); return false;
+            }
+            out[name] = r.v;
+        }
+        delete mapDraft[key];
+        vscode.postMessage({ type: 'set', key, value: out });
+        return true;
     }
 
     /**
@@ -2503,6 +2614,20 @@
     }
 
     function render() {
+        // ‼️ U-139 — THE PLACE ON THE PAGE SURVIVES THE REDRAW.
+        //
+        // render() replaces the whole of #app, and this page is the longest in
+        // the extension. A reader two thirds of the way down who pressed
+        // "+ add", "Edit as JSON" or ✕ was thrown back to the top, and what
+        // they were looking at never came into view — so the control had
+        // worked every single time and there was no way to see it. The bug
+        // reported was "the link does nothing"; the link did everything.
+        //
+        // Read before the swap, written back after the wiring, because a
+        // handler bound in between may move the page on purpose (focusKey).
+        let keepY = 0;
+        try { keepY = window.scrollY || (document.documentElement || {}).scrollTop || 0; }
+        catch (e) { /* stub DOM */ }
         const cats = DATA.categories
             .map(c => ({ ...c, items: c.items.filter(matches) }))
             .filter(c => c.items.length);
@@ -2801,6 +2926,14 @@
                 page: 'settings',
                 title: 'Farm Settings',
                 sub: `Every <code>agentFarm.*</code> setting — schema-driven, so new settings appear here automatically. ${total} setting${total === 1 ? '' : 's'} · ${modified} changed from default. Changes save immediately to your user settings.`,
+                // ‼️ U-139 — THE FILE ITSELF, from the page that writes it.
+                // Every box here is a view of one document, and a reader who
+                // wants to see what was really written, paste a block in, or
+                // repair something this page refuses had no way to it except
+                // the command palette. It is the same file the ↺ buttons
+                // remove keys from.
+                actions: `<button class="secondary" id="opensettingsjson"
+                    title="Open your user settings.json — the file every box on this page writes into. Changed values appear there as agentFarm.* keys; a value the schema cannot describe can be written by hand.">settings.json</button>`,
                 guide: 'dashboard'
             })}
             ${profileBar()}
@@ -2827,6 +2960,10 @@
 
         // -- wiring --
         window.AFHeader.wire(vscode);
+        const openJson = document.getElementById('opensettingsjson');
+        if (openJson) {
+            openJson.addEventListener('click', () => vscode.postMessage({ type: 'openSettingsJson' }));
+        }
         // U-84 — the bridge card's own controls, wired by the component that
         // drew them. Safe on a draw that has no card: every lookup finds nothing.
         window.AFTelegram.wire(m => vscode.postMessage(m));
@@ -3109,11 +3246,44 @@
          */
         document.querySelectorAll('[data-lrow]').forEach(el =>
             el.addEventListener('change', () => readList(el.dataset.lrow)));
+        /**
+         * ‼️ U-139 — ENTER SAVES THE EDITOR THE BOX BELONGS TO, all four
+         * shapes, from one rule.
+         *
+         * `change` fires on blur and only fills the draft, so a reader who
+         * typed an entry and pressed Enter — the one key a single-line box is
+         * expected to answer — got nothing at all, and read the whole page as
+         * dead. It is the same defect in the list, the form, the table and the
+         * pair editor, so it is fixed once: a box carries the attribute that
+         * names its editor, and the attribute names the save.
+         *
+         * Each `apply*` reads the boxes itself, so the value being typed right
+         * now is the value that is saved — `change` has not fired yet.
+         */
+        [['lrow', applyList], ['frow', applyForm], ['rrow', applyRows], ['mrow', applyMap]]
+            .forEach(([attr, save]) => {
+                document.querySelectorAll(`[data-${attr}]`).forEach(el =>
+                    el.addEventListener('keydown', (e) => {
+                        if (!e || e.key !== 'Enter') { return; }
+                        // A multi-line box keeps Enter: there, it is a newline
+                        // and never a save.
+                        if (String(el.tagName || '').toUpperCase() === 'TEXTAREA') { return; }
+                        if (e.preventDefault) { e.preventDefault(); }
+                        save(el.dataset[attr]);
+                    }));
+            });
         document.querySelectorAll('[data-ladd]').forEach(btn =>
             btn.addEventListener('click', () => {
                 const key = btn.dataset.ladd;
-                readList(key).push('');
+                const at = readList(key).length;
+                listDraft[key].push('');
                 render();
+                // U-139 — the row that was just made is where the hand is
+                // going, and a caret already in it is one fewer aim with a
+                // mouse. It also proves the press landed, which is the
+                // complaint this item is made of.
+                const box = document.getElementById('l-' + shortKey(key) + '-' + at);
+                if (box && box.focus) { try { box.focus(); } catch (e) { /* stub DOM */ } }
             }));
         document.querySelectorAll('[data-ldel]').forEach(btn =>
             btn.addEventListener('click', () => {
@@ -3163,29 +3333,7 @@
             });
         });
         document.querySelectorAll('[data-lapply]').forEach(btn =>
-            btn.addEventListener('click', () => {
-                const key = btn.dataset.lapply;
-                delete errors[key];
-                // ‼️ Sent as a REAL ARRAY and not as text. The host takes a
-                // structured value as-is (settingsops.sanitizeValue), so a list
-                // assembled here cannot fail to parse — which is the whole
-                // point of not making the user write the brackets.
-                const item = allItems().find(i => i.key === key);
-                const numeric = item && item.shape
-                    && (item.shape.itemType === 'number' || item.shape.itemType === 'integer');
-                const rows = readList(key)
-                    .map(v => String(v).trim()).filter(v => v !== '')
-                    .map(v => (numeric ? Number(v) : v));
-                // A number box that was typed into with words is a refusal the
-                // user can see, not a NaN quietly written into their settings.
-                if (numeric && rows.some(v => !Number.isFinite(v))) {
-                    errors[key] = 'every entry has to be a number';
-                    render();
-                    return;
-                }
-                delete listDraft[key];
-                vscode.postMessage({ type: 'set', key, value: rows });
-            }));
+            btn.addEventListener('click', () => applyList(btn.dataset.lapply)));
         document.querySelectorAll('[data-ljson]').forEach(el =>
             el.addEventListener('click', (ev) => {
                 ev.preventDefault();
@@ -3251,17 +3399,7 @@
         document.querySelectorAll('[data-rrow]').forEach(el =>
             el.addEventListener('change', () => readRows(el.dataset.rrow)));
         document.querySelectorAll('[data-fapply]').forEach(btn =>
-            btn.addEventListener('click', () => {
-                const key = btn.dataset.fapply;
-                delete errors[key];
-                // Sent as a REAL OBJECT and not as text — the host takes a
-                // structured value as-is (settingsops.sanitizeValue), so a form
-                // assembled here cannot fail to parse.
-                const obj = buildEntry(key, shapeFields(key), readForm(key), '');
-                if (!obj) { render(); return; }
-                delete formDraft[key];
-                vscode.postMessage({ type: 'set', key, value: obj });
-            }));
+            btn.addEventListener('click', () => applyForm(btn.dataset.fapply)));
         document.querySelectorAll('[data-radd]').forEach(btn =>
             btn.addEventListener('click', () => {
                 const key = btn.dataset.radd;
@@ -3277,24 +3415,7 @@
                 render();
             }));
         document.querySelectorAll('[data-rapply]').forEach(btn =>
-            btn.addEventListener('click', () => {
-                const key = btn.dataset.rapply;
-                delete errors[key];
-                const fields = shapeFields(key);
-                const out = [];
-                const rows = readRows(key);
-                for (let i = 0; i < rows.length; i++) {
-                    // An entry with nothing in it is what pressing + leaves
-                    // behind; dropping it is kinder than refusing to save.
-                    if (!rows[i][REST]
-                        && fields.every(f => !String(rows[i][f.name] || '').trim())) { continue; }
-                    const entry = buildEntry(key, fields, rows[i], `row ${i + 1}: `);
-                    if (!entry) { render(); return; }
-                    out.push(entry);
-                }
-                delete rowsDraft[key];
-                vscode.postMessage({ type: 'set', key, value: out });
-            }));
+            btn.addEventListener('click', () => applyRows(btn.dataset.rapply)));
         // Into the JSON box and back, for both shapes. What is on screen goes
         // WITH it either way: switching view is not a reason to lose a typed
         // cell, and a JSON that does not parse is refused rather than turned
@@ -3360,39 +3481,7 @@
                 render();
             }));
         document.querySelectorAll('[data-mapply]').forEach(btn =>
-            btn.addEventListener('click', () => {
-                const key = btn.dataset.mapply;
-                delete errors[key];
-                const item = allItems().find(i => i.key === key);
-                const f = mapField(item.shape);
-                const out = {};
-                for (const p of readMap(key)) {
-                    const name = String(p.k).trim();
-                    const r = readField(f, p.v);
-                    // A row with neither a name nor a value is what pressing +
-                    // leaves behind; dropping it is kinder than refusing.
-                    if (!name && r.skip) { continue; }
-                    if (!name) {
-                        errors[key] = 'a value needs a name — fill the left box in, or remove the row';
-                        render(); return;
-                    }
-                    if (r.err) { errors[key] = `${name}: ${r.err.replace(/^value /, '')}`; render(); return; }
-                    if (r.skip) {
-                        // ‼️ A NAME WITH NO VALUE IS NOT A PAIR, and writing it
-                        // as "" would file a budget of nothing under a real
-                        // agent — a setting that looks set and does nothing.
-                        errors[key] = `${name} has no value — give it one, or remove the row`;
-                        render(); return;
-                    }
-                    if (Object.prototype.hasOwnProperty.call(out, name)) {
-                        errors[key] = `${name} is in the list twice — an object cannot hold the same name twice`;
-                        render(); return;
-                    }
-                    out[name] = r.v;
-                }
-                delete mapDraft[key];
-                vscode.postMessage({ type: 'set', key, value: out });
-            }));
+            btn.addEventListener('click', () => applyMap(btn.dataset.mapply)));
         document.querySelectorAll('[data-mjson]').forEach(el =>
             el.addEventListener('click', (ev) => {
                 ev.preventDefault();
@@ -3587,6 +3676,14 @@
                 editing = false;
                 if (pendingData) { DATA = pendingData; pendingData = null; render(); }
             });
+        }
+
+        // U-139 — see the top of render(): put the page back where the reader
+        // left it. Skipped at 0, which is both the first draw and a reader who
+        // was already at the top; writing it there would be a scroll nobody
+        // needs on every push.
+        if (keepY) {
+            try { window.scrollTo(0, keepY); } catch (e) { /* stub DOM */ }
         }
     }
 
