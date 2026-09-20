@@ -98,6 +98,21 @@
     }
 
     /**
+     * ‼️ U-143 — A WHOLE SECTION ANSWERS THE FILTER WITH THE PAGE'S OWN GRAMMAR.
+     *
+     * The sections that are not made of setting rows used to gate themselves on
+     * `TERMS.includes(what you typed)` — the question backwards, and a different
+     * question from the one every row above is asked. So `-wiki`, `a OR b`, a
+     * quoted phrase and whole-word mode each hid the section instead of
+     * filtering the page, and one of the two gates compared case-sensitively on
+     * top: typing `Obsidian` hid the very section that word names. One grammar,
+     * every box (media/afQuery.js) — a section is just another row to it.
+     */
+    function sectionMatches(text) {
+        return !filter || window.AFQuery.compile(filter).test(text);
+    }
+
+    /**
      * ‼️ U-89 — WHAT GOES IN THE BOX, BESIDE THE BOX.
      *
      * Twenty-seven settings are a raw JSON textarea, and the page used to draw
@@ -1454,8 +1469,20 @@
      * (`OPENAI_API_KEY`), because half the difficulty was never knowing which
      * name the engine reads. See src/core/engines.ts.
      */
-    const ENGINE_TERMS = 'engine engines model models cli claude codex openai gemini '
-        + 'antigravity agy google api key apikey login sign in subscription plan auth credentials secret vault';
+    const ENGINE_TERMS = 'engine engines model models cli api key apikey login sign in '
+        + 'subscription plan auth credentials secret vault';
+
+    /**
+     * ‼️ U-143 — THE ENGINE NAMES COME FROM THE DATA, NEVER FROM A HAND-TYPED
+     * LIST. `ENGINE_TERMS` used to spell out claude, codex, openai, gemini,
+     * antigravity and google, and had therefore never heard of `opencode`: the
+     * one engine added after somebody typed that string was the one engine you
+     * could not search for, and nothing said so. Each row already carries its
+     * own id, its label and the command you type — that is the search text.
+     */
+    function engineWords(list) {
+        return list.map(e => [e.id, e.label, e.cli && e.cli.command].filter(Boolean).join(' ')).join(' ');
+    }
 
     function engineRow(e) {
         const T = window.AFTip;
@@ -1522,7 +1549,7 @@
     function enginesSection() {
         const list = DATA.engines;
         if (!list || !list.length) { return ''; }
-        if (filter && !ENGINE_TERMS.includes(filter.toLowerCase())) { return ''; }
+        if (!sectionMatches(ENGINE_TERMS + ' ' + engineWords(list))) { return ''; }
         const ready = list.filter(e => e.ready).length;
         const onPlan = list.filter(e => e.ready && e.auth.mode === 'subscription').length;
         // ‼️ THIS IS THE SUMMARY; THE PANEL IS THE PAGE (X-14, settled
@@ -1586,15 +1613,29 @@
      * Projects page had no way to discover which app that was. The words below
      * name every surface it governs, for exactly that reason.
      */
-    const DOCOPEN_TERMS = 'open with editor app obsidian markdown preview external '
-        + 'document report answer notices queue project plan backlog docs vs code notepad';
+    const DOCOPEN_TERMS = 'open with editor external document report answer notices '
+        + 'queue project plan backlog docs';
+
+    const DOCOPEN_LBL = {
+        vscode: 'VS Code (raw markdown)', preview: 'Markdown preview (rendered)',
+        obsidian: 'Obsidian (rendered in your vault)', custom: 'Custom external app (e.g. Notepad)'
+    };
+    const DOCOPEN_MODES = ['vscode', 'preview', 'obsidian', 'custom'];
+
+    /** The modes this reader actually has, and what each one is called — the
+     *  same words the `<select>` shows them, plus the app they chose. */
+    function docOpenWords(d) {
+        const modes = d.modes && d.modes.length ? d.modes : DOCOPEN_MODES;
+        return modes.map(m => m + ' ' + (DOCOPEN_LBL[m] || '')).join(' ')
+            + ' ' + (d.customCommand || '');
+    }
 
     function docOpenSection() {
         const d = DATA.docOpen;
         if (!d) { return ''; }
-        if (filter && !DOCOPEN_TERMS.includes(filter)) { return ''; }
-        const LBL = { vscode: 'VS Code (raw markdown)', preview: 'Markdown preview (rendered)', obsidian: 'Obsidian (rendered in your vault)', custom: 'Custom external app (e.g. Notepad)' };
-        const modes = d.modes && d.modes.length ? d.modes : ['vscode', 'preview', 'obsidian', 'custom'];
+        if (!sectionMatches(DOCOPEN_TERMS + ' ' + docOpenWords(d))) { return ''; }
+        const LBL = DOCOPEN_LBL;
+        const modes = d.modes && d.modes.length ? d.modes : DOCOPEN_MODES;
         const DOCOPEN_WHY = {
             vscode: 'The file opens in this window as plain markdown, ready to edit.',
             preview: 'VS Code renders it read-only; the source is one click away.',
@@ -3232,10 +3273,22 @@
             // the box is a QUERY, not a substring — media/afQuery.js. Kept as
             // typed: the grammar decides its own case handling.
             filter = filterEl.value;
+            /*
+             * ‼️ U-143 — THE CARET GOES BACK WHERE IT WAS, NOT TO THE END.
+             * Every keystroke redraws #app, which destroys this box and builds
+             * a new one, so the caret has to be put back by hand. Putting it at
+             * the end made the box append-only: fixing a typo in the middle of a
+             * query threw the caret past the last character on the very next
+             * letter typed, and a query is exactly the kind of text you edit in
+             * the middle.
+             */
+            const at = filterEl.selectionStart, to = filterEl.selectionEnd;
             render();
             const el = document.getElementById('filter');
             el.focus();
-            el.setSelectionRange(el.value.length, el.value.length);
+            const end = el.value.length;
+            el.setSelectionRange(Math.min(at == null ? end : at, end),
+                Math.min(to == null ? end : to, end));
         });
         document.querySelectorAll('.catnav a').forEach(a =>
             a.addEventListener('click', () => {
@@ -3744,7 +3797,15 @@
         if (app.addEventListener) {
             app.addEventListener('focusin', ev => {
                 const t = ev.target;
-                if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) { editing = true; }
+                // ‼️ U-143 — A `<select>` HOLDS THE REFRESH TOO. An open
+                // dropdown is a control the reader is in the middle of using,
+                // and a background push redraws #app underneath it: the list
+                // shuts and the choice is lost, with nothing on screen saying
+                // why. The guard named the two boxes and forgot the third
+                // control that can be open when the data arrives.
+                if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
+                    editing = true;
+                }
             });
             app.addEventListener('focusout', () => {
                 editing = false;

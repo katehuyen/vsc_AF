@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.601.0 - the filter box you can edit in the middle, and two sections that answer it properly (U-143, U-140) (2026-09-20)
+
+- **‼️ The filter box was append-only.** Every keystroke redraws the page, which
+  destroys the box under the hand and builds a new one, so the caret has to be
+  put back by hand — and it was put back at the END. Correcting a typo in the
+  middle of a query threw the caret past the last character on the very next
+  letter, and a query is exactly the kind of text you edit in the middle. It
+  goes back where the reader left it now.
+- **‼️ Typing `Obsidian` HID the section that word names.** The two sections that
+  are not made of setting rows — Engines, and "Open documents with" — gated
+  themselves on `TERMS.includes(what you typed)`: the question backwards, asked
+  in a different language from the one every row above them answers. So `-foo`,
+  `a OR b`, a quoted phrase and whole-word mode each hid a whole section instead
+  of filtering the page, and the docOpen gate compared case-sensitively on top.
+  Both use the page's own grammar now (`media/afQuery.js`), like everything else
+  that searches.
+- **‼️ …and the engine names are read off the engines.** `ENGINE_TERMS` spelled
+  out claude, codex, openai, gemini and google by hand, so it had never heard of
+  `opencode`: the one engine added after somebody typed that string was the one
+  engine you could not search for, and nothing said so. The section's search
+  text is derived from `DATA.engines` — id, label and the command you type — so
+  an engine added tomorrow is searchable the day it appears.
+- **‼️ An open dropdown holds the background refresh.** The page pauses its
+  refresh while a field has focus, but the guard named `INPUT` and `TEXTAREA`
+  and forgot the one control that can be *open* when fresh data arrives: a
+  `<select>`. The list shut under the hand and the choice was lost, with nothing
+  on screen saying why.
+- With this, the **U-140** umbrella is closed: U-139, U-141, U-142 and U-143.
+
 ## 3.600.0 - switching the web view on used to take the whole extension down (X-344) (2026-09-20)
 
 - **‼️ `agentFarm.web.enabled` bricked every installed build until it was turned

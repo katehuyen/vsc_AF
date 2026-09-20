@@ -603,5 +603,124 @@ const btn = (p, attr, key) =>
         || h.includes('af-tipw setfdescw') || h.includes('setfdescw af-tipw'));
 }
 
+// ---------- U-143 — the filter box, and the two sections that answered it themselves ----------
+/*
+ * ‼️ THE SECTIONS THAT ARE NOT MADE OF SETTING ROWS HAD NEVER BEEN DRAWN IN A
+ * PAGE TEST. `jsonsettings` carries `engines: null, docOpen: null`, so the only
+ * two hand-rolled filter gates on the page were unmeasured — which is how one
+ * of them stayed case-sensitive and the other kept a list of engine names that
+ * had never heard of `opencode`. They answer the page's own grammar now, over
+ * text derived from the data, so neither can go stale again.
+ */
+const ENGINES = [
+    {
+        id: 'claude', label: 'Claude Code', ready: true, next: 'Nothing to do.',
+        cli: { command: 'claude', found: true, path: 'C:/bin/claude.cmd' },
+        auth: { mode: 'subscription', detail: 'Signed in on a plan', file: '.claude/.credentials.json' },
+        key: { env: 'ANTHROPIC_API_KEY', inVault: false }
+    },
+    {
+        id: 'opencode', label: 'OpenCode', ready: true, next: 'Nothing to do.',
+        cli: { command: 'opencode', found: true, path: 'C:/bin/opencode.cmd' },
+        auth: { mode: 'builtin', detail: 'Runs on its own provider' },
+        key: {}
+    }
+];
+const DOCOPEN = {
+    defaultMode: 'obsidian', modes: ['vscode', 'preview', 'obsidian', 'custom'],
+    customCommand: 'notepad.exe', customArgs: ''
+};
+/** The same page, with the two data-backed sections actually present. */
+const openFull = () => runPage(fx.script,
+    Object.assign(fx.data(), { engines: ENGINES, docOpen: DOCOPEN }));
+
+/** Type into the filter box the way a keystroke does, with the caret somewhere. */
+const typeFilter = (p, text, caret) => {
+    const box = el(p, 'filter');
+    box.value = text;
+    box.selectionStart = box.selectionEnd = caret == null ? text.length : caret;
+    box.fire('input');
+};
+
+{
+    const p = openFull();
+    ok('both data-backed sections draw when nothing is filtered',
+        p.html().includes('id="cat-engines"') && p.html().includes('id="cat-docopen"'));
+
+    // ‼️ The defect, in the user's own words: typing the name of the section
+    // hid the section. `DOCOPEN_TERMS.includes(filter)` compared case-sensitively.
+    typeFilter(p, 'Obsidian');
+    ok('‼️ U-143: `Obsidian` no longer HIDES the section that word names',
+        p.html().includes('id="cat-docopen"'));
+
+    typeFilter(p, 'obsidian');
+    ok('…and lower case still finds it, as it always did',
+        p.html().includes('id="cat-docopen"'));
+}
+
+{
+    const p = openFull();
+    // ‼️ The engine list was a hand-typed string. `opencode` was added to the
+    // product after somebody wrote it, so it was the one engine you could not
+    // search for — and the gate is derived from DATA.engines now.
+    typeFilter(p, 'opencode');
+    ok('‼️ U-143: an engine added after the terms string was written is searchable',
+        p.html().includes('id="cat-engines"'));
+
+    typeFilter(p, 'Claude Code');
+    ok('…and so is an engine by its label, whatever its case',
+        p.html().includes('id="cat-engines"'));
+
+    typeFilter(p, 'zzzznothing');
+    ok('…while a word that matches nothing still hides it',
+        !p.html().includes('id="cat-engines"'));
+}
+
+{
+    // The gate is the page's grammar, not a substring test in the wrong
+    // direction: an exclusion used to hide every section on the page.
+    const p = openFull();
+    typeFilter(p, '-zzzznothing');
+    ok('‼️ U-143: an exclusion no longer hides the sections wholesale',
+        p.html().includes('id="cat-engines"') && p.html().includes('id="cat-docopen"'));
+}
+
+{
+    /*
+     * ‼️ THE CARET. Every keystroke redraws #app, so the box under the hand is
+     * destroyed and rebuilt; the caret was put back at the END, which made the
+     * box append-only — correcting a typo in the middle of a query threw the
+     * caret past the last character on the very next letter.
+     */
+    const p = openFull();
+    typeFilter(p, 'obsidian markdown', 8);
+    const box = el(p, 'filter');
+    ok('‼️ U-143: the caret stays where the reader put it, mid-text',
+        box.selectionStart === 8 && box.selectionEnd === 8);
+
+    typeFilter(p, 'obsidian');
+    ok('…and a caret at the end is still at the end',
+        el(p, 'filter').selectionStart === 8);
+}
+
+{
+    /*
+     * ‼️ A `<select>` HOLDS THE BACKGROUND REFRESH. An open dropdown is a
+     * control the reader is in the middle of using; the guard named INPUT and
+     * TEXTAREA and forgot the one control that can be OPEN when fresh data
+     * arrives, so the list shut under the hand and the choice was lost.
+     */
+    const p = openFull();
+    const before = p.html();
+    p.sandbox.document.getElementById('app').fire('focusin', { target: { tagName: 'SELECT' } });
+    p.send({ type: 'data', data: Object.assign(fx.data(), { engines: [], docOpen: DOCOPEN }) });
+    ok('‼️ U-143: a push that arrives while a dropdown is open does NOT redraw',
+        p.html() === before);
+
+    p.sandbox.document.getElementById('app').fire('focusout', {});
+    ok('…and it lands the moment the control is let go',
+        !p.html().includes('id="cat-engines"'));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
