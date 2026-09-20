@@ -2,6 +2,29 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.612.0 - parallel.run: the parallel worktree launch on the bridge (B-17 closed) (2026-09-21)
+
+- **New op `parallel.run`** — fan prompts out over git worktrees, one isolated
+  headless run each: the same launch the "Agent Farm: Run Parallel…" command
+  makes from its input box. Each prompt gets its own `git worktree` on an
+  `af/` branch beside the agent's repo and its own task (`⑂ <name>`, workDir =
+  the worktree), started at once; `agentFarm.maxConcurrentPerAgent` decides
+  whether they really run side by side or in turn (`serial`). **`dryRun` is
+  the default** — the answer is the plan (repo, `gitRepo`, `worktreeBase`,
+  each run's worktree name, `serial`) and nothing is created; `dryRun:false`
+  launches, and only when the user asked for the runs (N headless sessions,
+  each spending quota). Prompts past 6 are never launched and come back in
+  `dropped`; a folder that is not a git repository is a plan with
+  `gitRepo:false` and a refused launch.
+- **The launch lives in `core/parallelRuns`** (`parallelPrompts` ·
+  `planParallel` · `launchParallel`), not in `extension.ts`: the command and
+  the op go through the same two closures (`parallelPlanFor`,
+  `runParallelFor`), so the op's dry run IS the plan the command warns about.
+  The command now reports how many runs actually launched, not how many
+  prompts were typed, and a task's `workDir` arrives with the task instead of
+  being patched on afterwards.
+- Parity: 375 ops on the bridge, 29 open gaps (was 30). B-17 is closed.
+
 ## 3.611.0 - dispatch.test: the dispatcher's answer on the bridge (B-17, first half) (2026-09-21)
 
 - **New op `dispatch.test`** — ask the dispatcher where a piece of work would

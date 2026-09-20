@@ -2655,6 +2655,109 @@ const { opencodeStatus, syncToOpencode } =
             ok('B-17: the parity manifest names the op and no longer a gap',
                 cap && Array.isArray(cap.ops) && cap.ops.includes('dispatch.test') && !cap.gap);
         }
+        // ---------- B-17: parallel.run — the parallel worktree launch, on the bridge ----------
+        // The same launch the "Run Parallel…" command makes from its input box;
+        // both doors go through core/parallelRuns (planParallel + launchParallel),
+        // so the op's dry run IS the plan the command decides on. The core is
+        // exercised for real here — a temp git repo, real `git worktree add` —
+        // with only the task launch stood in.
+        {
+            const P = require(path.join(__dirname, '..', 'out', 'core', 'parallelRuns.js'));
+            const W = require(path.join(__dirname, '..', 'out', 'core', 'worktree.js'));
+            const cp = require('child_process');
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), 'af-b17-'));
+            const repo = path.join(root, 'repo'); fs.mkdirSync(repo);
+            const plain = path.join(root, 'plain'); fs.mkdirSync(plain);
+            const g = (a) => cp.execSync('git ' + a, { cwd: repo, stdio: 'pipe', windowsHide: true });
+            g('init -q'); g('config user.email t@t'); g('config user.name t'); g('config commit.gpgsign false');
+            fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n'); g('add a.txt'); g('commit -q -m base');
+            const agentsHere = [{ id: 'gitty', name: 'gitty', dir: repo }, { id: 'plain', name: 'plain', dir: plain }];
+            const launches = [];
+            let maxConc = 1;
+            const parallelPlanFor = (agent, prompts) => P.planParallel({ maxConcurrent: () => maxConc }, agent, prompts);
+            const runParallelFor = (agent, prompts) => P.launchParallel({
+                launch: (who, title, prompt, workDir) => {
+                    launches.push({ who: who.name, title, prompt, workDir });
+                    return { id: 't' + launches.length, title };
+                }
+            }, agent, prompts);
+            reg.register({
+                op: 'parallel.run',
+                describe: 'B-17 — fan prompts out over git worktrees. args: agent, prompts, dryRun? (default true)',
+                handler: async (args) => {
+                    const agent = agentsHere.find(a => a.name === String(args.agent || ''));
+                    if (!agent) { throw new Error('Agent not found'); }
+                    const { prompts, dropped } = P.parallelPrompts(args.prompts);
+                    if (!prompts.length) { throw new Error('prompts is required'); }
+                    const dry = args.dryRun === undefined ? true : !!args.dryRun;
+                    const plan = await parallelPlanFor(agent, prompts);
+                    if (dry) { return { dryRun: true, ...plan, dropped, launched: [], failed: [] }; }
+                    if (!plan.gitRepo) { throw new Error(agent.name + ' is not a git repository'); }
+                    const done = await runParallelFor(agent, prompts);
+                    return { dryRun: false, ...plan, dropped, ...done };
+                }
+            });
+            ok('B-17: parallel.run appears in the catalog', reg.catalog().some(c => c.op === 'parallel.run'));
+            // the input-box grammar and the array form are one parser
+            const pp = P.parallelPrompts(' fix the login form ; ; add dark mode;');
+            ok('B-17: prompts split on `;`, trimmed, empties dropped',
+                pp.prompts.length === 2 && pp.prompts[0] === 'fix the login form' && pp.prompts[1] === 'add dark mode' && pp.dropped.length === 0);
+            const eight = P.parallelPrompts(['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8']);
+            ok('B-17: an array is accepted and the cap drops the rest BY NAME',
+                eight.prompts.length === P.PARALLEL_MAX && eight.dropped.join(',') === 'p7,p8');
+            // dryRun is the default: a plan, nothing created
+            const dry = await reg.dispatch('parallel.run', { agent: 'gitty', prompts: 'fix the login form; add dark mode' });
+            ok('B-17: dryRun by default answers the plan and launches nothing',
+                dry.ok && dry.result.dryRun === true && dry.result.gitRepo === true && dry.result.runs.length === 2
+                && dry.result.launched.length === 0 && launches.length === 0
+                && !fs.existsSync(W.worktreeBase(repo)));
+            ok('B-17: …each run is named by its prompt, on an af/ branch, beside the repo',
+                dry.result.runs[0].worktree === 'fix-the-login-form' && dry.result.runs[0].branch.startsWith('af/fix-the-login-form')
+                && dry.result.worktreeBase === W.worktreeBase(repo) && dry.result.repo === repo);
+            ok('B-17: …and says the runs would be serial when maxConcurrentPerAgent is below their count',
+                dry.result.serial === true && dry.result.maxConcurrentPerAgent === 1);
+            maxConc = 0;
+            const unl = await reg.dispatch('parallel.run', { agent: 'gitty', prompts: ['a', 'b', 'c'] });
+            ok('B-17: …unlimited concurrency (0) is not serial', unl.ok && unl.result.serial === false);
+            maxConc = 1;
+            // a folder that is not a git repo: the plan says so, the launch refuses
+            const noGit = await reg.dispatch('parallel.run', { agent: 'plain', prompts: 'x' });
+            ok('B-17: a non-git agent folder is a plan with gitRepo:false', noGit.ok && noGit.result.gitRepo === false);
+            const noGitLaunch = await reg.dispatch('parallel.run', { agent: 'plain', prompts: 'x', dryRun: false });
+            ok('B-17: …and its launch is refused, not attempted', noGitLaunch.ok === false && /not a git repository/.test(noGitLaunch.error) && launches.length === 0);
+            const empty = await reg.dispatch('parallel.run', { agent: 'gitty', prompts: ' ; ' });
+            ok('B-17: no prompts is refused', empty.ok === false);
+            const nobody = await reg.dispatch('parallel.run', { agent: 'ghost', prompts: 'x' });
+            ok('B-17: an unknown agent is refused', nobody.ok === false);
+            // dryRun:false: real worktrees, one task each, in the worktree
+            const live = await reg.dispatch('parallel.run', { agent: 'gitty', prompts: 'fix the login form; add dark mode', dryRun: false });
+            const wts = await W.listAfWorktrees(repo);
+            ok('B-17: dryRun:false creates one git worktree per prompt on an af/ branch',
+                live.ok && live.result.dryRun === false && live.result.launched.length === 2 && live.result.failed.length === 0
+                && wts.length === 2 && wts.every(w => w.branch.startsWith('af/') && fs.existsSync(path.join(w.path, 'a.txt'))));
+            ok('B-17: …and starts one headless task in each worktree, titled ⑂ <name>, the prompt asking for a commit',
+                launches.length === 2 && launches.every((l, i) => l.who === 'gitty' && l.title === '⑂ ' + live.result.launched[i].worktree
+                    && l.workDir === live.result.launched[i].path && l.prompt.endsWith(P.PARALLEL_COMMIT_NOTE)));
+            ok('B-17: …the answer names task id, worktree, branch and path per run',
+                live.result.launched.every(l => l.taskId && l.worktree && l.branch.startsWith('af/') && l.path.startsWith(W.worktreeBase(repo))));
+            // the two doors share the core
+            const pblock = src.slice(src.indexOf("op: 'parallel.run'"), src.indexOf("op: 'parallel.run'") + 3000);
+            ok('B-17: extension.ts registers parallel.run through the shared plan and launch closures, dryRun defaulting to true',
+                /await parallelPlanFor\(agent, prompts\)/.test(pblock) && /await runParallelFor\(agent, prompts\)/.test(pblock)
+                && /optBool\(args, 'dryRun', true\)/.test(pblock) && /args: agent \(name\|id\), prompts/.test(pblock));
+            const pcmd = src.slice(src.indexOf("registerCommand('agentfarm.runParallel'"), src.indexOf("registerCommand('agentfarm.runParallel'") + 1800);
+            ok('B-17: …and the command palette door uses the same closures — no second worktree loop, no direct addTask',
+                /parallelPlanFor\(agent/.test(pcmd) && /runParallelFor\(agent, prompts\)/.test(pcmd)
+                && !/createWorktree\(/.test(pcmd) && !/taskManager\.addTask\(/.test(pcmd));
+            ok('B-17: …the closures hand the core the config and the task manager, nothing else',
+                /planParallel\(\s*\{ maxConcurrent: \(\) => cfg\(\)\.get<number>\('maxConcurrentPerAgent', 1\) \}/.test(src)
+                && /taskManager\.addTask\(who, title, prompt, 'headless', \{ workDir \}\)/.test(src));
+            const man = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'parity.manifest.json'), 'utf8'));
+            const cap = man.entries.find(e => e.capability === 'runParallel');
+            ok('B-17: the parity manifest names the op and no longer a gap, and the budget came down',
+                cap && Array.isArray(cap.ops) && cap.ops.includes('parallel.run') && !cap.gap && man.gapBudget <= 29);
+            try { fs.rmSync(root, { recursive: true, force: true }); } catch { /* tmp */ }
+        }
         // ‼️ `force` from an AGENT is not a person clicking ⟳: it may skip the
         // cache, never a backoff, or a looping agent becomes a request storm
         ok('…and an agent\'s force takes the edge path, not the human one',

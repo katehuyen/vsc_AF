@@ -33,8 +33,9 @@ import {
 import { opencodeExport, opencodeSessionIsEmpty } from './core/opencodehistory';
 import { buildExternalSessions, liveEventsSource } from './core/sessionSource';
 import {
-    createWorktree, isGitRepo, listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
+    listAfWorktrees, mergeWorktree, removeWorktree, worktreeStatus
 } from './core/worktree';
+import { PARALLEL_MAX, launchParallel, parallelPrompts, planParallel } from './core/parallelRuns';
 import { applyDistilled, distillFile, scanContradictions } from './core/distill';
 import { MemoryIndexReport, registerMemoryOps } from './core/memoryBridge';
 import { registerA2AOps } from './core/a2aBridge';
@@ -7618,6 +7619,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     taskManager.onDidChange(() => QueuePanel.refreshIfOpen(), null, context.subscriptions);
     missionEmitter.event(() => QueuePanel.refreshIfOpen(), null, context.subscriptions);
 
+    // B-17 — the parallel worktree launch, shared by the "Run Parallel…"
+    // command and the `parallel.run` op (core/parallelRuns): the plan the
+    // command warns about is the plan the op's dry run answers with.
+    const parallelPlanFor = (agent: AgentInfo, prompts: string[]) => planParallel(
+        { maxConcurrent: () => cfg().get<number>('maxConcurrentPerAgent', 1) }, agent, prompts);
+    const runParallelFor = (agent: AgentInfo, prompts: string[]) => launchParallel({
+        launch: (who, title, prompt, workDir) => {
+            const task = taskManager.addTask(who, title, prompt, 'headless', { workDir });
+            taskManager.startTask(task);
+            return { id: task.id, title: task.title };
+        }
+    }, agent, prompts);
+
     // ---------- Farm Bridge: agents use the farm through request files ----------
     // The user directs an agent in chat; the agent drops <name>.request.json in
     // <globalStorage>/bridge/ and the RUNNER executes it through the same code
@@ -12419,6 +12433,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const text = argStr(args, 'text');
                 if (!text.trim()) { throw new Error('text is required'); }
                 return dispatchFor(text);
+            }
+        },
+        {
+            op: 'parallel.run',
+            describe: 'B-17 — FAN PROMPTS OUT OVER GIT WORKTREES, one isolated headless run each — the same launch the "Agent Farm: Run Parallel…" command makes from its input box, through the same core. Each prompt gets its own `git worktree` on an af/ branch beside the agent\'s repo and its own task (title ⑂ <name>, workDir = the worktree), started at once; agentFarm.maxConcurrentPerAgent decides whether they really run side by side or in turn (`serial`) — the worktrees stay isolated either way. Afterwards each worktree is a merge / discard decision in "Worktree Runs…". ‼️ dryRun IS THE DEFAULT: the answer is the plan — the repo, whether it is a git repo at all, where the worktrees would go, each run\'s worktree name and whether they would be serial — and nothing is created. Pass dryRun:false to launch, and only when the user asked for these runs: they are N headless sessions, each spending the agent\'s quota (the Cost rule). An agent whose folder is not a git repository is refused on launch and says `gitRepo: false` in the plan. args: agent (name|id), prompts (an array, or one string with `;` between runs; max ' + PARALLEL_MAX + ' — the rest are never launched and come back in `dropped`), dryRun? (default true). Answer: { dryRun, agent, repo, gitRepo, worktreeBase, maxConcurrentPerAgent, serial, runs: [{prompt, worktree, branch}], dropped, launched: [{worktree, branch, path, taskId, title}], failed: [{prompt, error}] }.',
+            handler: async (args) => {
+                const agent = findAgent(argStr(args, 'agent'));
+                const { prompts, dropped } = parallelPrompts(args.prompts);
+                need(prompts.length > 0, 'prompts is required — an array, or one string with `;` between runs.');
+                const dry = optBool(args, 'dryRun', true);
+                const plan = await parallelPlanFor(agent, prompts);
+                if (dry) { return { dryRun: true, ...plan, dropped, launched: [], failed: [] }; }
+                need(plan.gitRepo, `${agent.name} is not a git repository — parallel worktree runs need one.`);
+                const done = await runParallelFor(agent, prompts);
+                return { dryRun: false, ...plan, dropped, ...done };
             }
         },
         {
@@ -38266,7 +38295,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('agentfarm.runParallel', async (arg?: AgentArg) => {
             const agent = await resolveAgent(arg);
             if (!agent) { return; }
-            if (!(await isGitRepo(agent.dir))) {
+            if (!(await parallelPlanFor(agent, [])).gitRepo) {
                 void vscode.window.showWarningMessage(
                     `Agent Farm: ${agent.name} is not a git repository — parallel worktree runs need one.`);
                 return;
@@ -38276,28 +38305,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 placeHolder: 'e.g. fix the login form ; add dark mode ; speed up the tests',
                 ignoreFocusOut: true
             });
-            const prompts = (raw ?? '').split(';').map(s => s.trim()).filter(Boolean).slice(0, 6);
+            const { prompts } = parallelPrompts(raw);
             if (!prompts.length) { return; }
-            const maxConc = cfg().get<number>('maxConcurrentPerAgent', 1);
-            if (prompts.length > 1 && maxConc > 0 && maxConc < prompts.length) {
+            const plan = await parallelPlanFor(agent, prompts);
+            if (plan.serial) {
                 const c = await vscode.window.showInformationMessage(
-                    `maxConcurrentPerAgent = ${maxConc}: runs execute in turn (worktrees stay isolated). Continue?`,
+                    `maxConcurrentPerAgent = ${plan.maxConcurrentPerAgent}: runs execute in turn (worktrees stay isolated). Continue?`,
                     { modal: true }, 'Devam');
                 if (c !== 'Devam') { return; }
             }
-            for (const prompt of prompts) {
-                const { wt, error } = await createWorktree(agent.dir, prompt.slice(0, 24));
-                if (!wt) {
-                    void vscode.window.showErrorMessage(`Agent Farm: worktree failed — ${error}`);
-                    continue;
-                }
-                const task = taskManager.addTask(agent, `⑂ ${wt.name}`, prompt +
-                    ' — İş bittiğinde değişiklikleri anlamlı bir mesajla commit et.', 'headless');
-                task.workDir = wt.path;
-                taskManager.startTask(task);
+            const { launched, failed } = await runParallelFor(agent, prompts);
+            for (const f of failed) {
+                void vscode.window.showErrorMessage(`Agent Farm: worktree failed — ${f.error}`);
             }
             void vscode.window.showInformationMessage(
-                `Agent Farm: ${prompts.length} parallel worktree run(s) launched — track them on the Board; reconcile later via "Worktree Runs…".`);
+                `Agent Farm: ${launched.length} parallel worktree run(s) launched — track them on the Board; reconcile later via "Worktree Runs…".`);
         }),
 
         vscode.commands.registerCommand('agentfarm.worktreeRuns', async (arg?: AgentArg) => {

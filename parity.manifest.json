@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 30,
+  "gapBudget": 29,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -5009,9 +5009,9 @@
       "ui": [
         "cmd:agentfarm.runParallel"
       ],
-      "gap": {
-        "why": "Fanning one prompt out over N git worktrees has no op, so an agent cannot set up the parallel run it is often asked to compare."
-      }
+      "ops": [
+        "parallel.run"
+      ]
     },
     {
       "capability": "runPulseNow",
