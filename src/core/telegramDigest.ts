@@ -46,7 +46,9 @@ export type Tap =
     /** an option of an AskUserQuestion — `rid` is the request's 8-char prefix */
     | { kind: 'option'; id: string; rid: string; question: number; option: number }
     /** a tool permission — the user's decision, from the user's own phone */
-    | { kind: 'permission'; id: string; rid: string; allow: boolean };
+    | { kind: 'permission'; id: string; rid: string; allow: boolean }
+    /** U-115 — yes/no under a message a gate stopped (telegramExecution.ts) */
+    | { kind: 'confirm'; id: string; yes: boolean };
 
 const rid8 = (requestId: string): string => requestId.slice(0, 8);
 
@@ -198,6 +200,9 @@ export function parseTap(data: string): Tap | undefined {
     }
     if (p[0] === 'p' && p.length === 4 && p[1] && p[2] && (p[3] === 'allow' || p[3] === 'deny')) {
         return { kind: 'permission', id: p[1], rid: p[2], allow: p[3] === 'allow' };
+    }
+    if (p[0] === 'n' && p.length === 3 && p[1] && (p[2] === 'go' || p[2] === 'no')) {
+        return { kind: 'confirm', id: p[1], yes: p[2] === 'go' };
     }
     return undefined;
 }

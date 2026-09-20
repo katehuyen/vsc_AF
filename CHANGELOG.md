@@ -2,6 +2,43 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.592.0 - a message typed on a phone waits its turn, and asks before it costs or breaks something (U-115) (2026-09-20)
+
+- **Write to a conversation that is already working and your message now
+  WAITS** instead of cutting into the turn. From a phone you cannot see what
+  the agent is in the middle of, so the default is to queue: the chat is told
+  `⏸ developer is working (turn 3). Queued — it goes in when this turn ends.`,
+  and the moment that turn ends the message goes in as the next turn's first
+  words. `agentFarm.telegram.whenBusy` = `queue` (default) or `steer`, which
+  sends it into the running turn on the engines that can take one.
+- **‼️ And that queue survives a window reload**, which the Console's own does
+  not — measured: nothing in the revive path carries it. The phone's queue is
+  part of the saved chat state, beside the reply map that already had to
+  survive one, because "queued" said to somebody standing at a bus stop is a
+  promise. One message is released per turn, oldest first, and a chat cannot
+  pile more than ten into one conversation.
+- **The daily cap now counts the turns the phone starts**, not only the
+  headless runs it launches. A conversation the phone drives is marked, and
+  each of its turns bills the DIFFERENCE it cost into the same ledger
+  `/status` already reports. Over the cap the turn does not start: the chat
+  gets both figures and a `✅ Run it` / `✖ Cancel` pair.
+- **A destructive command typed with a thumb is asked about once first** —
+  `rm -rf`, `git reset --hard`, `git clean -f`, a force push, `git branch -D`,
+  `DROP TABLE`, `Remove-Item -Recurse`, `del /s`, `format <drive>`. Matched on
+  the SHAPE of the command, never on intent: "clean up the temp files" is
+  English and goes straight through, and guessing at intent would have stopped
+  half the ordinary sentences and still missed the one that mattered. A gate
+  you have already said yes to is not asked again — the waiver travels with
+  the message while it waits.
+- The four gates run in one order and the order is the design: the
+  conversation is still there · today's money · what the sentence would DO ·
+  whether a turn is running. A cap checked after the turn started is not a cap.
+- `/status` says how many messages are queued from this chat, `/help` says what
+  happens to one sent into a working conversation, and **`telegram.inbox` on
+  the bridge** reads the queue, the messages stopped at a gate and today's
+  budget (`action=drop` clears one conversation's queue without touching its
+  turn). `src/core/telegramExecution.ts`, pure, 70 tests.
+
 ## 3.591.0 - the turn as a card a phone can read, and the taps that answer it (U-114) (2026-09-20)
 
 - **When a Console turn ends, or an agent stops to ask you something, the

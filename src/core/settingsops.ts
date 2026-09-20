@@ -266,6 +266,7 @@ const CATEGORY_OF: Record<string, string> = {
     'web.enabled': 'access', 'web.port': 'access', 'web.bind': 'access', 'web.token': 'access',
     'telegram.enabled': 'access', 'telegram.allowedChats': 'access',
     'telegram.maxDailyUSD': 'access', 'telegram.defaultAgent': 'access', 'telegram.digest': 'access',
+    'telegram.whenBusy': 'access',
     // health & insights
     livingChecks: 'health', noticeStaleHours: 'health', idleSessionNoticeMinutes: 'health',
     staleMemoryDays: 'health', contextBudgetTokens: 'health', permissionLint: 'health',

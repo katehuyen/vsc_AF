@@ -375,6 +375,10 @@ import { answerCallbackQuery, createForumTopic, getMe, isForumChat, sendMessage,
 import {
     DigestKeyboard, DigestMemo, digestEvents, digestText, EMPTY_MEMO, forgetMemo, keyboardFor, parseTap, tapAnswer
 } from './core/telegramDigest';
+import {
+    chargeTurn, confirmKeyboard, forgetInbox, forgetSeen, Inbox, inboundVerdict, inboxCount,
+    PendingSends, queueInbound, turnEnded
+} from './core/telegramExecution';
 import { changesSummary, changesText } from './core/workdirChanges';
 import { bridgeStatus, budgetReading } from './core/telegramCockpit';
 import {
@@ -28098,6 +28102,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         taskByChat: Record<string, string>;
         /** U-113 — who this chat is talking to (telegramRouting.ts) */
         routing: RoutingTable;
+        /** U-115 — messages waiting for a busy conversation (telegramExecution.ts) */
+        inbox: Inbox;
+        /** U-115 — the one message per chat stopped at a gate, waiting on a yes */
+        pending: PendingSends;
+        /** U-115 — each conversation's total cost the ledger has already billed */
+        seen: Record<string, number>;
     }
     const chatState = (): ChatState => {
         const s = context.globalState.get<Partial<ChatState>>(CHAT_STATE_KEY, {});
@@ -28114,7 +28124,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 byMessage: s.routing?.byMessage ?? {},
                 byTopic: s.routing?.byTopic ?? {},
                 focus: s.routing?.focus ?? {}
-            }
+            },
+            // U-115 — the queue a reader was PROMISED. ConsoleHost's own queue
+            // is in memory and a reload throws it away, so the phone's lives
+            // here, where the reply map already survives one.
+            inbox: s.inbox ?? {},
+            pending: s.pending ?? {},
+            seen: s.seen ?? {}
         };
     };
     const saveChatState = (next: ChatState) => context.globalState.update(CHAT_STATE_KEY, next);
@@ -28125,7 +28141,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         maxDailyUSD: cfg().get<number>('telegram.maxDailyUSD', 1),
         defaultAgent: cfg().get<string>('telegram.defaultAgent', '').trim(),
         /** U-114 — which conversations' turn cards a chat hears (telegramDigest.ts) */
-        digest: cfg().get<'focused' | 'all' | 'off'>('telegram.digest', 'focused')
+        digest: cfg().get<'focused' | 'all' | 'off'>('telegram.digest', 'focused'),
+        /** U-115 — what a message meets when a turn is already running */
+        whenBusy: cfg().get<'queue' | 'steer'>('telegram.whenBusy', 'queue')
     });
     let poller: TelegramPoller | undefined;
     /**
@@ -28226,19 +28244,73 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * target is a bridge whose mistakes are invisible until an agent has
      * already acted on somebody else's "yes, do it".
      */
-    const chatSay = async (chatId: number, sessionId: string, text: string, why: RouteWhy) => {
+    const chatLabel = (sessionId: string): string => {
         const s = chatRoutable().find(x => x.id === sessionId);
+        return s ? sessionLabel(s) : sessionId;
+    };
+
+    /**
+     * ‼️ U-115 — THE WORDS REALLY GO IN, and the ledger's mark is set at the
+     * same moment. `chargeTurn` is called here for its SIDE effect: it records
+     * what this conversation had cost before the turn the phone just started,
+     * so the turn's own cost can be billed against the phone's cap when it
+     * ends. The figure it returns is the PREVIOUS turn's and is discarded —
+     * the turn-end listener is what bills.
+     */
+    const chatInject = async (chatId: number, sessionId: string, text: string, note: string) => {
         const r = consoleHost.send(sessionId, text);
         if (!r) {
             await chatSend(chatId, 'That conversation is no longer live. /sessions lists the ones that are.');
             return;
         }
         if (r.refused) { await chatSend(chatId, r.refused, sessionId); return; }
+        const live = consoleHost.get(sessionId);
+        const st = chatState();
+        await saveChatState({ ...st, seen: chargeTurn(st.seen, sessionId, live?.costUSD ?? 0).seen });
         ConsolePanel.refreshIfOpen();
-        const where = s ? sessionLabel(s) : sessionId;
-        await chatSend(chatId, r.queued
-            ? `⏸ ${where} (${why}) — held; it goes in when the turn ends.`
-            : `→ ${where} (${why})`, sessionId);
+        await chatSend(chatId, note, sessionId);
+    };
+
+    /**
+     * ‼️ U-115 — A SENTENCE FROM A PHONE MEETS FOUR GATES BEFORE IT REACHES A
+     * CONVERSATION (`telegramExecution.ts` holds the decision; this is the
+     * wiring). `waived` is the gate the reader has already answered yes to on
+     * a confirm card — one gate at a time, so a message that is both over
+     * budget and destructive is asked about twice, which is the honest number.
+     */
+    const chatSay = async (
+        chatId: number, sessionId: string, text: string, why: RouteWhy, waived?: 'budget' | 'risk'
+    ) => {
+        const s = consoleHost.get(sessionId);
+        const st = chatState();
+        const c = chatCfg();
+        const where = chatLabel(sessionId);
+        const v = inboundVerdict({
+            status: s?.status, turns: s?.turns ?? 0, label: where, text,
+            whenBusy: c.whenBusy, steerable: s ? engineOf(s.engine).liveControls : false,
+            ledger: st.ledger, capUSD: c.maxDailyUSD, day: dayKey(Date.now()), waived
+        });
+        if (v.do === 'gone') {
+            await chatSend(chatId, 'That conversation is no longer live. /sessions lists the ones that are.');
+            return;
+        }
+        if (v.do === 'confirm') {
+            await saveChatState({
+                ...st,
+                pending: { ...st.pending, [chatId]: { session: sessionId, text, why: v.why, at: Date.now() } }
+            });
+            await chatSend(chatId, v.note, sessionId, confirmKeyboard(sessionId));
+            return;
+        }
+        if (v.do === 'hold') {
+            const q = queueInbound(st.inbox, sessionId, { chat: chatId, text, at: Date.now(), ...(waived ? { waived } : {}) });
+            if (q.refused) { await chatSend(chatId, q.refused, sessionId); return; }
+            await saveChatState({ ...st, inbox: q.inbox });
+            const n = inboxCount(q.inbox, sessionId);
+            await chatSend(chatId, `${v.note}${n > 1 ? ` (${n} waiting)` : ''}`, sessionId);
+            return;
+        }
+        await chatInject(chatId, sessionId, text, `→ ${where} (${why})`);
     };
 
     /** Run one chat message as a headless task and answer in the same thread. */
@@ -28364,6 +28436,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 }
                 return;
             }
+            case 'confirm': {
+                const st = chatState();
+                const p = st.pending[String(msg.chatId)];
+                if (!p || p.session !== tap.id) { await ack('That message is no longer waiting.'); return; }
+                const pending = { ...st.pending };
+                delete pending[String(msg.chatId)];
+                await saveChatState({ ...st, pending });
+                if (!tap.yes) {
+                    await ack('Cancelled.');
+                    await chatSend(msg.chatId, `✖ ${label} — not sent.`, tap.id);
+                    return;
+                }
+                await ack('Running it.');
+                // the gate the reader just answered is waived; any OTHER gate still stops it
+                await chatSay(msg.chatId, tap.id, p.text, 'button', p.why);
+                return;
+            }
             case 'permission': {
                 const ask = s.pendingAsk;
                 if (!ask || ask.requestId.slice(0, 8) !== tap.rid) { await ack('That request is no longer open.'); return; }
@@ -28398,9 +28487,43 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         priced: engineOf(s.engine).reportsCost
     });
     let chatDigestMemo: DigestMemo = EMPTY_MEMO;
+    /**
+     * ‼️ U-115 — A TURN ENDING IS TWO THINGS TO THE PHONE, and neither of them
+     * is the card: what the turn COST (billed against today's cap, so the cap
+     * counts the turns the phone actually started) and what is WAITING (the
+     * next parked message goes in). Both run whatever the digest setting says
+     * — a reader who was told "queued" is owed the message going in even with
+     * the cards switched off.
+     */
+    const chatBusyBefore: Record<string, boolean> = {};
+    const chatTurnEnded = async (id: string, costUSD: number) => {
+        const st = chatState();
+        const r = turnEnded(st, id, costUSD, dayKey(Date.now()));
+        if (r.state !== st) { await saveChatState(r.state); }
+        if (r.release) { await chatSay(r.release.chat, id, r.release.text, 'button', r.release.waived); }
+    };
     context.subscriptions.push(consoleHost.onChange(id => {
         const s = consoleHost.get(id);
-        if (!s) { chatDigestMemo = forgetMemo(chatDigestMemo, consoleHost.list().map(x => x.id)); return; }
+        if (!s) {
+            chatDigestMemo = forgetMemo(chatDigestMemo, consoleHost.list().map(x => x.id));
+            delete chatBusyBefore[id];
+            void (async () => {
+                const st = chatState();
+                const live = consoleHost.list().map(x => x.id);
+                const inbox = forgetInbox(st.inbox, live), seen = forgetSeen(st.seen, live);
+                if (Object.keys(inbox).length !== Object.keys(st.inbox).length
+                    || Object.keys(seen).length !== Object.keys(st.seen).length) {
+                    await saveChatState({ ...st, inbox, seen });
+                }
+            })();
+            return;
+        }
+        const busy = s.status === 'working' || s.status === 'starting';
+        const wasBusy = chatBusyBefore[id];
+        chatBusyBefore[id] = busy;
+        // the edge, and the first sighting of an idle card too — a message
+        // parked before a reload must go in even if no turn runs after it
+        if (!busy && wasBusy !== false) { void chatTurnEnded(id, s.costUSD ?? 0); }
         const r = digestEvents(chatDigestMemo, s);
         chatDigestMemo = r.memo;
         // the memo is kept even while the bridge is off, so switching it on
@@ -28459,6 +28582,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                         ? sessionLabel(live.find(s => s.id === focused)!)
                         : 'none — I will ask')
                     : ''),
+                // U-115 — a message you were told was queued is a fact you can
+                // see, not one you have to remember you sent
+                ...(() => {
+                    const waiting = Object.values(st.inbox).reduce((n, q) => n + q.length, 0);
+                    return waiting ? [`Queued from here: ${waiting} message${waiting > 1 ? 's' : ''}`] : [];
+                })(),
                 bound ? `This chat: ${bound}` : 'This chat is not bound to an agent yet (/agent <name>)'
             ].join('\n'));
             return;
@@ -40431,6 +40560,47 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 return {
                     id, text: digestText(s!, chatDigestCtx(s!)), keyboard: keyboardFor(s!),
                     audience: chatAudience(id, chatRoutable().length), mode: chatCfg().digest
+                };
+            }
+        },
+        {
+            op: 'telegram.inbox',
+            describe: 'U-115 — WHAT A PHONE HAS WAITING FOR A CONVERSATION, and today\'s phone budget. A message '
+                + 'typed from a chat while the agent is working is PARKED here rather than steered into the '
+                + 'running turn (agentFarm.telegram.whenBusy = queue | steer), and released one at a time when a '
+                + 'turn ends. ‼️ THIS QUEUE IS NOT console.queue: that one is the CLI\'s, lives in memory and is '
+                + 'lost on a window reload, while this is part of the saved chat state and survives one — which is '
+                + 'the promise made to somebody who sent a message from a bus stop. Also reports `pending`: '
+                + 'messages stopped at a gate (over today\'s cap, or a destructive command like `git reset --hard`) '
+                + 'waiting for the reader to tap Run it. args: id? (a Console id — one conversation\'s queue; '
+                + 'omitted, every conversation with something waiting), action? (list | drop, default list; drop '
+                + 'needs id and clears that conversation\'s queue — it does NOT cancel a turn)',
+            handler: async (args) => {
+                const id = argStr(args, 'id');
+                const action = argStr(args, 'action') || 'list';
+                const st = chatState();
+                if (action === 'drop') {
+                    need(id, 'drop needs an id (console.sessions lists them)');
+                    const inbox = { ...st.inbox };
+                    const dropped = (inbox[id] ?? []).length;
+                    delete inbox[id];
+                    await saveChatState({ ...st, inbox });
+                    return { id, dropped };
+                }
+                need(action === 'list', `unknown action "${action}" (list | drop)`);
+                const day = dayKey(Date.now());
+                const c = chatCfg();
+                const ids = id ? [id] : Object.keys(st.inbox);
+                return {
+                    whenBusy: c.whenBusy,
+                    budget: { capUSD: c.maxDailyUSD, spentUSD: st.ledger.day === day ? st.ledger.usd : 0, day },
+                    waiting: ids.map(sid => ({
+                        id: sid, label: chatLabel(sid), status: consoleHost.get(sid)?.status ?? 'gone',
+                        messages: (st.inbox[sid] ?? []).map(m => ({ chat: m.chat, text: m.text, at: m.at, waived: m.waived }))
+                    })),
+                    pending: Object.entries(st.pending).map(([chat, p]) => ({
+                        chat: Number(chat), id: p.session, label: chatLabel(p.session), why: p.why, text: p.text, at: p.at
+                    }))
                 };
             }
         }

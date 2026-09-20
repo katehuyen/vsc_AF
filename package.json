@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.591.0",
+  "version": "3.592.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8199,6 +8199,16 @@
             "No turn cards; commands and replies keep working."
           ],
           "markdownDescription": "When a Console turn ends, or an agent stops to ask you something, the bridge sends the chat a **card**: what the agent said this turn, what it is waiting on, and what the turn cost — with buttons under it (a question's options, Allow / Deny, Continue · Cancel · Diff · Status). `focused` = the conversation the chat is focused on, or the only live one; `all` = every live conversation; `off` = none."
+        },
+        "agentFarm.telegram.whenBusy": {
+          "type": "string",
+          "enum": ["queue", "steer"],
+          "default": "queue",
+          "enumDescriptions": [
+            "The message waits and goes in as the next turn's first words, and the chat is told so. Survives a window reload.",
+            "The message goes into the turn that is running, where the engine allows it — the same steering the Console composer does."
+          ],
+          "markdownDescription": "What a message typed from a chat meets when the agent is already working. `queue` (default) parks it and sends it in when the turn ends: from a phone you cannot see what the agent is in the middle of, so waiting is safer than steering blind. `steer` sends it into the running turn on engines that can take one (Claude); the others queue it regardless, because their turn has no channel to speak into. The queue is part of the saved chat state, so a message parked before a window reload is still there after it."
         },
         "agentFarm.accounts": {
           "type": "array",

@@ -181,7 +181,10 @@ export const HELP_TEXT = [
     '/cancel — stop the run this chat started',
     '/help — this message',
     '',
-    'Runs started from chat are headless and carry their own daily budget.'
+    'Runs started from chat are headless and carry their own daily budget.',
+    'Write to a conversation that is working and your message WAITS for the turn',
+    'to end rather than cutting into it — it survives a restart. Over the daily',
+    'budget, or asking for something that cannot be undone, I ask you first.'
 ].join('\n');
 
 /** Telegram messages cap at 4096 chars — cut with an honest marker. */
