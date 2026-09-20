@@ -19033,12 +19033,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      * damage would be invisible. Sessions started from a plain terminal are not
      * visible here and cannot be — the honest limit of this guard, and the
      * reason the sidecar in `oauthRefresh` exists as the second line.
+     *
+     * ‼️ X-347 — A QUEUED TASK HOLDS NOTHING. It has no process: `launch` marks
+     * it running BEFORE the spawn, so `running` already covers the moment a
+     * CLI first reads the file, and a task parked in the queue — on quota, on
+     * concurrency, on a budget, for hours — was keeping its account's grant
+     * from ever being refreshed while nothing on that account could be hurt.
      */
     const accountIsBusy = (slotId: string): boolean => {
         if (!slotId) { return false; }
         if (consoleHost.list().some(s => s.account === slotId)) { return true; }
-        return taskManager.tasks.some(t => t.account === slotId
-            && (t.status === 'running' || t.status === 'queued'));
+        return taskManager.tasks.some(t => t.account === slotId && t.status === 'running');
     };
     /**
      * ‼️ X-240 — WHICH SIGN-IN IS MID-TURN RIGHT NOW. The user's rule: "five

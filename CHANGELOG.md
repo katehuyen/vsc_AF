@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.614.0 - a queued task no longer holds its account's token refresh (X-347) (2026-09-21)
+
+- **‼️ A task waiting in the queue was counted as work running on its
+  account**, and the account's OAuth refresh was deferred for as long as it
+  waited — the busy guard (X-204) exists so a refresh never revokes the token
+  a live CLI is holding, but a queued task has no process and holds nothing.
+  A run parked on quota, concurrency or a budget for hours kept its slot's
+  grant from ever being refreshed while nothing on that slot could be hurt.
+  `accountIsBusy` now counts a console session and a **running** task only.
+  Safe because `launch` marks the task running before anything is spawned, so
+  `running` already covers a CLI's first read of the credentials file
+  (`test_account_usage.js` pins both halves).
+
 ## 3.613.0 - four services on the bridge: forecast, web view, pack gallery, meaning index (B-19 closed) (2026-09-21)
 
 - **New op `schedules.forecast`** — what the schedules will fire, when, and

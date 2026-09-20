@@ -953,6 +953,20 @@ async function main() {
         ok('X-241: the switch is one setting, read by the service (autoBeat), written by ONE function the page and the op share',
             /autoBeat: accountsAutoRefresh,/.test(ext) && /const setAccountsAutoRefresh = async \(on: boolean\)/.test(ext)
             && /setAutoRefresh: setAccountsAutoRefresh,/.test(ext) && /return setAccountsAutoRefresh\(want === true\);/.test(ext));
+        // ‼️ X-347 — a task waiting in the queue has no process and holds no
+        // grant; counting it as busy kept a parked account from refreshing for
+        // as long as the task waited. `launch` sets running BEFORE the spawn,
+        // so `running` alone covers the first read of the file.
+        const busyBlock = ext.slice(ext.indexOf('const accountIsBusy'), ext.indexOf('const accountIsBusy') + 400);
+        ok('X-347: the busy predicate counts a console session and a RUNNING task — never a queued one',
+            /consoleHost\.list\(\)\.some\(s => s\.account === slotId\)/.test(busyBlock)
+            && /t\.account === slotId && t\.status === 'running'\)/.test(busyBlock)
+            && !/'queued'/.test(busyBlock));
+        const tasksSrc = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'core', 'tasks.ts'), 'utf8');
+        const launchBody = tasksSrc.slice(tasksSrc.indexOf('private launch(task: FarmTask)'));
+        ok('…and that is safe because launch() marks the task running before anything is spawned',
+            launchBody.indexOf("task.status = 'running'") > 0
+            && launchBody.indexOf('this.spawnHeadless(task, agent)') > launchBody.indexOf("task.status = 'running'"));
     }
 
     console.log(`${pass} passed, ${fail} failed`);
