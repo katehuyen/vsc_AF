@@ -279,6 +279,59 @@ async function parity(svc, label) {
 
         // a schema bump is a rebuild, and the folder name says which schema
         ok('the cache folder carries its schema version', /^search-corpus-v\d+$/.test(C.CORPUS_DIR));
+
+        // ---------- X-131: pruning does not block the host, and says what it costs ----------
+        // ‼️ The rule it enforces is one stat per session that EVER RAN, on the
+        // extension host's only thread, paid on the first query of every window
+        // — 146 ms at 977 entries here, ~1.5 s at ten thousand, to discover (as
+        // it did) that nothing is prunable at all. So it is asked through
+        // fs.promises with a yield, and the guard is that the synchronous call
+        // is not the one being made.
+        {
+            const askedSync = [];
+            const realExists = fs.existsSync;
+            fs.existsSync = function (p) { askedSync.push(String(p)); return realExists.call(fs, p); };
+            let pruned;
+            try {
+                pruned = newService('c-prune-async');
+                await pruned.search(all, 'parser', { maxHits: 50, parseForeign });
+            } finally { fs.existsSync = realExists; }
+            ok('X-131: no transcript is stat-ed synchronously to decide pruning',
+                askedSync.filter(p => p.endsWith('.jsonl')).length === 0);
+
+            // And a gone transcript is still pruned — asynchronously is not
+            // "less", it is the same rule off the blocking path.
+            const ghost = path.join(pool, 'ghost.jsonl');
+            fs.writeFileSync(ghost, JSON.stringify({
+                type: 'user', timestamp: T(3, 1), message: { content: 'hayalet oturum pelikan' }
+            }), 'utf8');
+            const withGhost = [...all, {
+                file: ghost, agentName: 'yazar', title: 'Hayalet',
+                mtime: Date.now(), sessionId: 'sess-ghost', engine: 'claude'
+            }];
+            const svcG = newService('c-prune-ghost');
+            await svcG.search(withGhost, 'pelikan', { maxHits: 50, parseForeign });
+            const ghostDir = path.join(tmp, 'c-prune-ghost', C.CORPUS_DIR, 'sh');
+            const hadGhost = fs.readdirSync(ghostDir).length;
+            fs.unlinkSync(ghost);
+            const svcG2 = newService('c-prune-ghost');
+            await svcG2.search(all, 'parser', { maxHits: 50, parseForeign });
+            ok('X-131: the async prune still drops a deleted session',
+                fs.readdirSync(ghostDir).length < hadGhost);
+
+            // What the corpus costs is readable from the manifest's own figures,
+            // so a ceiling can be CHOSEN against a measurement rather than a guess
+            // (tools/measure_search_corpus.js reads the same numbers from outside).
+            const chars = svcG2.corpusChars();
+            let fromManifest = 0;
+            const man = JSON.parse(fs.readFileSync(
+                path.join(tmp, 'c-prune-ghost', C.CORPUS_DIR, 'manifest.json'), 'utf8'));
+            for (const e of Object.values(man.entries || {})) {
+                for (const i of Object.values(e.r || {})) { fromManifest += i.c || 0; }
+            }
+            ok('X-131: corpusChars() is the manifest, not an estimate',
+                chars > 0 && chars === fromManifest);
+        }
     }
 
     // ---------- (d) a missing foreign parser does not poison anything ----------

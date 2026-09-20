@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.606.0 - the search corpus is measured, and its prune stops blocking the window (X-131, partial) (2026-09-20)
+
+- **The first search of every window no longer freezes it to decide there is
+  nothing to prune.** The corpus' one pruning rule drops an entry whose source
+  transcript is gone, and it asked that with a synchronous `existsSync` per
+  remembered session — one per session that EVER ran, on the extension host's
+  only thread. Measured here: **146 ms at 977 entries, and 0 of them prunable.**
+  At ten thousand sessions it is a second and a half of the window not drawing
+  for the same answer. It is now asked through `fs.promises` with a yield, so
+  the same rule runs off the blocking path.
+- **New `tools/measure_search_corpus.js`** — what the cache costs, from figures
+  the manifest already holds, so nothing is re-read or re-parsed. On this
+  machine: **253.7 MB in 3 457 shards for 977 sessions, 92.5% of it the tool
+  trail the default search never reads**, projected at 2.6 GB for 10 000
+  sessions. It also prints the age curve, which is what any ceiling has to be
+  chosen against.
+- **‼️ The ceiling itself is deliberately NOT shipped yet, and the measurement
+  is why.** Evicting the oldest shards to a size cap looks free — a dropped
+  shard is rebuilt from its transcript — but `orderSessions` caps nothing, so a
+  fleet query asks for EVERY session, and anything evicted below that working
+  set is rebuilt on the *next* query. That is the 7.5-second full re-parse this
+  cache exists to have ended, paid on every search instead of once. A real
+  bound has to make each session cost less (the tool trail is 92.5% of it), not
+  keep fewer sessions — which is a change to what an old tool-trail search
+  costs, so it is the user's call rather than a silent one.
+
 ## 3.605.0 - the resident session index stops growing with the conversation (X-129) (2026-09-20)
 
 - **‼️ The index of every session that ever ran costs 69% less memory, and no

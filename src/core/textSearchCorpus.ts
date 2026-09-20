@@ -30,6 +30,17 @@
  *  2. **It is a cache, so losing it is never data loss.** It lives under
  *     globalStorage, never beside the user's transcripts; a half-written shard,
  *     a corrupt manifest or a schema bump costs a rebuild and nothing else.
+ *     ‼️ BUT IT IS NOT YET BOUNDED, AND A SIZE CAP IS NOT THE FREE FIX IT
+ *     LOOKS LIKE (X-131). Nothing here caps the corpus: the prune rule below
+ *     drops an entry whose SOURCE TRANSCRIPT is gone, and transcripts are
+ *     never deleted, so it has never once fired — measured 253.7 MB over 977
+ *     sessions, 0 prunable, 2.6 GB projected at 10 000. Evicting the oldest
+ *     shards to a ceiling would thrash instead: `orderSessions` caps nothing,
+ *     so a fleet query asks for EVERY session, and anything evicted below that
+ *     working set is rebuilt on the next query — which is the 7.5 s full
+ *     re-parse this file exists to have ended. A bound therefore has to make
+ *     each session cost LESS (the tool trail is 92.5% of it and the default
+ *     search never reads it), not keep fewer sessions. Open decision.
  *  3. **It never blocks activation.** Nothing is built until the Search page
  *     asks a question, the build yields to the event loop between files, and a
  *     superseded query aborts the one before it rather than queueing behind it.
@@ -200,22 +211,59 @@ export class TextSearchService {
         } catch { /* a cache that cannot be written is still a working search */ }
     }
 
-    /** Sessions that are gone take their shards with them. Only ever this
-     *  cache's own files — a transcript is never touched from here. */
-    private prune(): void {
+    /**
+     * Sessions that are gone take their shards with them. Only ever this
+     * cache's own files — a transcript is never touched from here.
+     *
+     * ‼️ X-131 — ASKED ASYNCHRONOUSLY AND WITH A YIELD, because the question is
+     * one stat per remembered session and the number of remembered sessions is
+     * the number that ever ran. Measured at 977 entries it was 146 ms of
+     * synchronous work on the extension host's only thread, paid on the first
+     * query of every window; at ten thousand it would be a second and a half of
+     * the window not drawing, to discover — as it did here — that nothing is
+     * prunable at all.
+     */
+    private async prune(): Promise<void> {
         if (this.pruned) { return; }
         this.pruned = true;
+        let lastYield = Date.now();
         for (const [key, e] of Object.entries(this.manifest.entries)) {
-            if (!e?.p || fs.existsSync(e.p)) { continue; }
-            this.dropShards(e);
+            if (!e?.p) { continue; }
+            let there = true;
+            try { await fs.promises.access(e.p); } catch { there = false; }
+            if (there) {
+                if (Date.now() - lastYield > YIELD_MS) { lastYield = Date.now(); await sleep(); }
+                continue;
+            }
+            await this.dropShards(e);
             delete this.manifest.entries[key];
+            this.verified.delete(key);
             this.dirty = true;
+            if (Date.now() - lastYield > YIELD_MS) { lastYield = Date.now(); await sleep(); }
         }
     }
 
-    private dropShards(e: Entry): void {
+    /**
+     * ‼️ X-131 — WHAT THIS CACHE COSTS ON DISK, from figures it already has.
+     *
+     * The shard sizes are written into the manifest when the shard is, so the
+     * total costs no disk to read. Exposed because a ceiling nobody can measure
+     * is a ceiling nobody can choose: `tools/measure_search_corpus.js` reads the
+     * same manifest from outside, and the two must agree.
+     */
+    corpusChars(): number {
+        this.load();
+        let total = 0;
+        for (const e of Object.values(this.manifest.entries)) {
+            for (const i of Object.values(e?.r ?? {})) { total += i.c || 0; }
+        }
+        return total;
+    }
+
+    private async dropShards(e: Entry): Promise<void> {
         for (const info of Object.values(e.r ?? {})) {
-            try { fs.unlinkSync(path.join(this.shardDir, info.f)); } catch { /* already gone */ }
+            try { await fs.promises.unlink(path.join(this.shardDir, info.f)); }
+            catch { /* already gone */ }
         }
     }
 
@@ -375,7 +423,7 @@ export class TextSearchService {
         ordered: SearchableSession[], opts: CorpusSearchOptions
     ): Promise<Map<string, Entry>> {
         this.load();
-        this.prune();
+        await this.prune();
         const sigs = new Map<string, { s: SearchableSession; sig: string; key: string }>();
         const stale: { s: SearchableSession; sig: string; key: string }[] = [];
         for (const s of ordered) {

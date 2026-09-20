@@ -357,6 +357,21 @@ export function transcriptSignature(s: SearchableSession): string {
     } catch { return `${s.mtime}:0:${tail}`; }
 }
 
+/**
+ * The transcript's mtime, read back out of a signature.
+ *
+ * ‼️ HERE, BESIDE THE FUNCTION THAT WRITES IT. The corpus evicts oldest-first
+ * and the only age it has on a cached entry is the signature it already
+ * stores — so this pair must age together or eviction silently starts keeping
+ * the wrong sessions. Zero means "this signature does not say", and a caller
+ * that sorts by it drops those first, which is the right answer for an entry
+ * nothing can date.
+ */
+export function signatureMtime(sig: string | undefined): number {
+    const n = Number(String(sig ?? '').split(':')[0]);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export function readTranscript(s: SearchableSession, parse?: ParseForeign): SearchRecord[] | undefined {
     // Absence of a foreign parser is not a parse result and must not poison the
     // cache for a later caller that supplies the shared CLI viewer parser.
