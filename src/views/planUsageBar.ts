@@ -115,6 +115,8 @@ export class PlanUsageBar implements vscode.Disposable {
     private timer?: NodeJS.Timeout;
     /** last known side of the idle/active line, so only the EDGE acts */
     private lastActive: boolean;
+    /** X-240 — a turn-boundary read that was too early, waiting its turn */
+    private edgeTimer?: NodeJS.Timeout;
     /** X-243 — the sign-in this paint is describing, or undefined */
     private watching?: WatchedUsage;
 
@@ -186,7 +188,29 @@ export class PlanUsageBar implements vscode.Disposable {
         if (active === this.lastActive) { return; }
         this.lastActive = active;
         // going idle = a turn just finished; going active = nothing spent yet
-        if (!active) { void this.tick('edge'); }
+        if (active) { return; }
+        // ‼️ X-240 — TOO EARLY IS NOT THE SAME AS NOT WANTED.
+        //
+        // A refused edge read used to be dropped, and the number that had just
+        // settled then waited out the whole idle window — five minutes by
+        // default — even though a read was already owed. Nothing here waits:
+        // the timer is armed and the turn's caller returns immediately.
+        //
+        // Turn boundaries arrive in BURSTS, so one pending catch-up absorbs
+        // every fall until it fires; re-arming per event would be the fast
+        // poller this whole gate exists to stop, wearing a timer.
+        if (this.edgeTimer) { return; }
+        const v = this.opts.service.edgeVerdict();
+        if (v.ok) { void this.tick('edge'); return; }
+        // A HOLD is not deferred. It is minutes long and the beat is already
+        // watching it; a timer here would only mean the first request after a
+        // rate limit is one nobody asked for.
+        if (v.why === 'held') { return; }
+        const wait = Math.max(250, v.readyAt - Date.now());
+        this.edgeTimer = setTimeout(() => {
+            this.edgeTimer = undefined;
+            void this.tick('edge');
+        }, wait);
     }
 
     /** Settings changed — re-read them now rather than at the next wake. */
@@ -405,6 +429,7 @@ export class PlanUsageBar implements vscode.Disposable {
 
     dispose(): void {
         if (this.timer) { clearTimeout(this.timer); }
+        if (this.edgeTimer) { clearTimeout(this.edgeTimer); }
         this.item.dispose();
     }
 }

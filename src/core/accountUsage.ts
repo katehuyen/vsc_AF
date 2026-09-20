@@ -4,6 +4,7 @@ import {
     OauthCredentials, PlanBar, PlanUsageSnapshot, PlanUsageState, UsageReply,
     buildBars, fetchUsage, holdWords, rateLimitHold, readOauthCredentials, usageUserAgent
 } from './planusage';
+import { UsageGate, DEFAULT_CROSS_SERVICE_MS } from './usageGate';
 import { adapterFor, EngineAccountSlot } from './engineAccounts';
 import { MACHINE_ACCOUNT } from './accountStore';
 import { EngineId } from './engines';
@@ -750,6 +751,19 @@ export interface AccountUsageOptions {
      * every caller written before this did.
      */
     readSessionTail?(slot: EngineAccountSlot, dir: string): EngineUsage | undefined;
+    /**
+     * ‼️ X-240 — THE LEDGER THIS SERVICE SHARES WITH `PlanUsageService`.
+     *
+     * Both resolve their file through `slotCredentialsFile`, so a slot that is
+     * also the STANDING account is read by both — and each used to keep its own
+     * floor and its own 429 curve for that one token. One account of four
+     * getting stuck was not a coincidence: it was the only one with two
+     * readers. Absent = this service keeps its own ledger, the old behaviour.
+     */
+    gate?: UsageGate;
+    /** The floor between two requests for one TOKEN, across both services.
+     *  Defaults to `DEFAULT_CROSS_SERVICE_MS`; never below the hard floor. */
+    minIntervalMs?(): number;
     now?(): number;
 }
 
@@ -760,20 +774,63 @@ export interface AccountUsageOptions {
  * floors, same backoff — because two rate-limit policies in one codebase is how
  * one of them ends up wrong.
  */
+/**
+ * Why a read is happening, and therefore what it is allowed to skip.
+ *
+ * |         | skips the TTL | skips a hold | floor                |
+ * |---------|---------------|--------------|----------------------|
+ * | `beat`  | no            | no           | the shared minimum   |
+ * | `edge`  | yes           | no           | the active interval  |
+ * | `auto`  | yes           | no           | the shared minimum   |
+ * | `user`  | yes           | **yes**      | the shared minimum   |
+ *
+ * ‼️ X-240 ADDED `auto`, AND THE HOLE THAT MADE IT NECESSARY WAS MEASURED.
+ * `accounts.status` is the op an UNATTENDED RUNNER calls in a loop to decide
+ * whether it may start a session — its own description says exactly that — and
+ * it reached the endpoint through `refresh()`, i.e. as `user`. So the one
+ * caller most likely to ask again and again held the single privilege that
+ * walks through a 429, and every pass pushed the penalty further out. Only a
+ * PERSON may spend through a hold; an agent in a loop is not a person, and
+ * neither is a timer. `auto` is what everything automatic that still needs a
+ * figure NOW asks with: the TTL is skipped, and nothing else is.
+ */
+export type UsageReason = 'beat' | 'edge' | 'auto' | 'user';
+
 export class AccountUsageService {
     private byId = new Map<string, SlotUsage>();
+    /** The MACHINE-wide floor: one request per interval however many accounts
+     *  there are. Not the same thing as the per-token floor, which belongs to
+     *  the gate — this one is about being a polite client, that one about not
+     *  spending one account's allowance twice. */
     private lastFetchAt = 0;
-    /** ‼️ X-278 — one curve per account, because one token's limit is one
-     *  token's. Keyed by slot id; absent means nothing has been refused. */
-    private slotBackoff = new Map<string, { ms: number; until: number }>();
+    /**
+     * ‼️ X-278 kept one curve per ACCOUNT, and X-240 moves it one step further
+     * out: the curve belongs to the TOKEN, so the indicator that reads the
+     * standing sign-in is held by the same refusal this service took. Keyed by
+     * the credentials file in `gate`, not by slot id — two slots pointing at
+     * one directory are one allowance, and they used to be two.
+     */
+    private gate: UsageGate;
     /** …and the fleet-wide hold, engaged only once a second slot is refused
      *  while a first is still held (see the header). */
     private backoffUntil = 0;
     private inflight: Promise<SlotUsage[]> | undefined;
 
-    constructor(private opts: AccountUsageOptions) { }
+    constructor(private opts: AccountUsageOptions) {
+        this.gate = opts.gate ?? new UsageGate();
+    }
 
     private now(): number { return (this.opts.now ?? Date.now)(); }
+
+    /** The floor between two requests for one TOKEN, whoever sends them. */
+    private minIntervalMs(): number {
+        return this.opts.minIntervalMs?.() ?? DEFAULT_CROSS_SERVICE_MS;
+    }
+
+    /** This slot's token, as both services name it. '' = nothing to charge. */
+    private fileOf(slotId: string): string {
+        return slotCredentialsFile(this.opts.slots().find(s => s.id === slotId));
+    }
 
     /** Everything known right now — never touches the network. */
     current(): SlotUsage[] {
@@ -787,18 +844,15 @@ export class AccountUsageService {
     /** ‼️ X-278 — when THIS account's own backoff lets it be read again; 0 =
      *  none. The card's figure is stale for a reason a reader can now be told. */
     rateLimitedFor(slotId: string): number {
-        const b = this.slotBackoff.get(slotId);
-        return b && b.until > this.now() ? b.until : 0;
+        return this.gate.heldUntil(this.fileOf(slotId), this.now());
     }
 
     /** How many accounts are being held right now — two is what a limit about
-     *  the MACHINE looks like, and what escalates. */
+     *  the MACHINE looks like, and what escalates. Counted over TOKENS, so two
+     *  slots sharing a directory cannot make one refusal look like two. */
     private heldCount(now: number, except = ''): number {
-        let n = 0;
-        for (const [id, b] of this.slotBackoff) {
-            if (id !== except && b.until > now) { n++; }
-        }
-        return n;
+        const files = this.opts.slots().map(s => slotCredentialsFile(s)).filter(Boolean);
+        return this.gate.heldCount(files, now, except ? this.fileOf(except) : '');
     }
 
     /**
@@ -807,12 +861,20 @@ export class AccountUsageService {
      * <account>" is telling the truth about a queue the user cannot otherwise
      * see (Principle 1).
      */
-    dueNext(reason: 'beat' | 'edge' | 'user' = 'beat'): EngineAccountSlot | undefined {
+    dueNext(reason: UsageReason = 'beat'): EngineAccountSlot | undefined {
         return this.pick(this.opts.slots(), reason, this.now());
     }
 
-    /** A person asked. Skips the TTL and the backoff — one slot, still. */
-    refresh(): Promise<SlotUsage[]> { return this.read('user'); }
+    /**
+     * Somebody asked for a figure NOW rather than on the beat.
+     *
+     * `user` is a PERSON and is the only thing allowed through a 429 hold;
+     * `auto` is a runner or a timer that still wants the TTL skipped and is
+     * refused by a hold like everything else automatic (see `UsageReason`).
+     * One slot either way — the round robin is what makes "all of them" a line
+     * rather than a burst.
+     */
+    refresh(reason: 'user' | 'auto' = 'user'): Promise<SlotUsage[]> { return this.read(reason); }
 
     /**
      * ‼️ X-206 — A PERSON ASKED FOR **THIS** ONE.
@@ -826,7 +888,7 @@ export class AccountUsageService {
      * calls it in turn (`accountQueue`) is what makes "all of them" a line
      * rather than a burst.
      */
-    refreshSlot(slotId: string): Promise<SlotUsage[]> {
+    refreshSlot(slotId: string, reason: 'user' | 'auto' = 'user'): Promise<SlotUsage[]> {
         const now = this.now();
         const slot = this.opts.slots().find(s => s.id === slotId);
         if (!slot || adapterFor(slot.engine).quotaSource().kind === 'none') {
@@ -837,6 +899,21 @@ export class AccountUsageService {
         // disk must not be told to wait for a queue that exists to be polite to
         // somebody else's endpoint.
         if (slotSessionDir(slot)) { return Promise.resolve(this.readTail(slot, 0)); }
+        // ‼️ X-240 — AND THIS DOOR USED TO IGNORE THE HOLD ENTIRELY.
+        //
+        // `pick` skips a held account, so the beat was safe; this path chose the
+        // account by name and asked no questions, and its callers are not all
+        // people. The worst of them is the sentry's wall detection, which fires
+        // `refreshSlot` on EXACTLY the account that just hit a wall — the one
+        // certain to answer 429 — and every such answer pushed the hold further
+        // out. That is the loop where a three-minute penalty never ends.
+        //
+        // `reason` is what separates the two: a person pressing ⟳ still spends
+        // their request through a hold (a control that refuses for a quarter of
+        // an hour has taught them it is broken), and everything automatic waits.
+        const file = slotCredentialsFile(slot);
+        const verdict = this.gate.check(file, now, this.minIntervalMs(), reason === 'user');
+        if (!verdict.ok) { return Promise.resolve(this.current()); }
         if (now - this.lastFetchAt < MIN_FETCH_INTERVAL_MS) { return Promise.resolve(this.current()); }
         if (this.inflight) { return this.inflight; }
         this.inflight = this.load(slot, now).finally(() => { this.inflight = undefined; });
@@ -850,7 +927,7 @@ export class AccountUsageService {
     readOnEdge(): Promise<SlotUsage[]> { return this.read('edge'); }
 
     private pick(
-        slots: EngineAccountSlot[], reason: 'beat' | 'edge' | 'user', now: number
+        slots: EngineAccountSlot[], reason: UsageReason, now: number
     ): EngineAccountSlot | undefined {
         // Only slots the ENDPOINT can be asked about. A slot with no source at
         // all is reported from its adapter's own sentence; a `session-tail` slot
@@ -944,7 +1021,7 @@ export class AccountUsageService {
         return all;
     }
 
-    private read(reason: 'beat' | 'edge' | 'user'): Promise<SlotUsage[]> {
+    private read(reason: UsageReason): Promise<SlotUsage[]> {
         const now = this.now();
         // ‼️ X-241 — the switch is read before anything, file walks included:
         // "off" means the timer costs nothing, not "costs no request".
@@ -961,6 +1038,12 @@ export class AccountUsageService {
         if (now - this.lastFetchAt < floor) { return Promise.resolve(this.current()); }
         const target = this.pick(slots, reason, now);
         if (!target) { return Promise.resolve(this.current()); }
+        // ‼️ X-240 — and the chosen account's own TOKEN floor, which the round
+        // robin cannot see: the standing sign-in may have been read by the
+        // indicator a second ago, and that request came out of this allowance.
+        if (!this.gate.check(slotCredentialsFile(target), now, this.minIntervalMs(), reason === 'user').ok) {
+            return Promise.resolve(this.current());
+        }
         if (this.inflight) { return this.inflight; }
         this.inflight = this.load(target, now).finally(() => { this.inflight = undefined; });
         return this.inflight;
@@ -970,6 +1053,10 @@ export class AccountUsageService {
         this.lastFetchAt = now;
         const file = slotCredentialsFile(slot);
         if (!file) { return this.current(); }
+        // ‼️ X-240 — the token is charged BEFORE the reply, so the other reader
+        // of this same file sees the request the moment it leaves rather than
+        // when it lands. Two services each waiting on the other's answer both go.
+        this.gate.spent(file, now);
         const cred = (this.opts.readCreds ?? readOauthCredentials)(file);
         const put = (u: SlotUsage) => this.settle(u);
         const bad = (state: PlanUsageState, note: string, plan = ''): SlotUsage => ({
@@ -1056,10 +1143,9 @@ export class AccountUsageService {
                 // ‼️ S-63 — the endpoint's own figure when it gave one; the
                 // curve only when it did not. A hold the endpoint named does
                 // not feed the curve: the next unexplained 429 starts it afresh.
-                const had = this.slotBackoff.get(slot.id);
-                const hold = rateLimitHold(res, had?.ms ?? 0);
+                const hold = rateLimitHold(res, this.gate.backoffMs(file));
                 const ms = hold.ms;
-                this.slotBackoff.set(slot.id, { ms: hold.said ? 0 : ms, until: now + ms });
+                this.gate.held(file, ms, hold.said, now);
                 const said = hold.said ? `asked for ${holdWords(ms)}` : `did not say how long`;
                 // …and a SECOND account held at the same time is what a limit
                 // about this machine actually looks like. Only then does the
@@ -1067,7 +1153,7 @@ export class AccountUsageService {
                 const others = this.heldCount(now, slot.id);
                 if (others > 0) {
                     let until = now + ms;
-                    for (const b of this.slotBackoff.values()) { until = Math.max(until, b.until); }
+                    for (const h of this.gate.heldTokens(now)) { until = Math.max(until, h.until); }
                     this.backoffUntil = until;
                     return put(bad('error',
                         `The usage endpoint rate limited this account (it ${said}), and ${others === 1 ? 'another is' : others + ' others are'} `
@@ -1091,7 +1177,7 @@ export class AccountUsageService {
             // fleet's, because a request the endpoint answered is the plainest
             // possible evidence that this machine is not the thing being
             // limited (X-278).
-            this.slotBackoff.delete(slot.id);
+            this.gate.cleared(file);
             this.backoffUntil = 0;
             return put(usageFrom(slot, { state: 'ok', bars, plan: cred.plan, fetchedAt: now }));
         } catch (e) {

@@ -12,6 +12,11 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; } else { fail++; console.log('  FAIL ' + n); } };
 
 const PU = require(path.join(__dirname, '..', 'out', 'core', 'planusage.js'));
+// ‼️ X-240 — the floor under a read is no longer this module's own 5 s constant
+// but the SHARED one, because it is now a floor per TOKEN rather than per
+// reader. A service built with no `minIntervalMs` gets this default, so the
+// clock advances below have to be the same number the service is using.
+const { DEFAULT_CROSS_SERVICE_MS } = require(path.join(__dirname, '..', 'out', 'core', 'usageGate.js'));
 const { charts } = require('./lib_charts_stub.js');
 
 // A real response body, trimmed to the fields the card uses.
@@ -141,7 +146,7 @@ const LIVE_PAYLOAD = {
     clock += 1_000;
     await s.get(true);
     ok('a mashed ⟳ inside the floor is served from cache', calls === 2);
-    clock += PU.MIN_FETCH_INTERVAL_MS + 1;
+    clock += DEFAULT_CROSS_SERVICE_MS + 1;
     await s.get(true);
     ok('force past the floor refetches even though the TTL is fresh', calls === 3);
 
@@ -245,9 +250,15 @@ const LIVE_PAYLOAD = {
         // ‼️ the button is not the beat: a person clicking ⟳ has decided to
         // spend the request, and a control that refuses for 15 minutes is a
         // control that has taught you it is broken
-        clock += PU.MIN_FETCH_INTERVAL_MS + 1;
+        clock += DEFAULT_CROSS_SERVICE_MS + 1;
         await bo.get(true);
         ok('⟳ asks anyway, mid-backoff', calls === 3);
+        // …but not through the FLOOR. X-240: a hold is the one thing a person
+        // may spend through; the spacing between two requests for one token is
+        // not, or a mashed button is a storm with a human alibi.
+        clock += 1_000;
+        await bo.get(true);
+        ok('‼️ …and a second ⟳ one second later is still refused', calls === 3);
 
         reply = { status: 200, body: JSON.stringify(LIVE_PAYLOAD) };
         clock += 10_000_000;
@@ -383,8 +394,17 @@ const LIVE_PAYLOAD = {
         const barSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'planUsageBar.ts'), 'utf8');
         // a turn STARTING has spent nothing yet, so the answer is necessarily the
         // one the last read already gave — it was a request to learn nothing
+        // ‼️ X-240 — a turn ENDING still earns the read and a turn starting still
+        // earns nothing; what changed is that a read the gate says is too early
+        // is DEFERRED rather than dropped. It used to be lost, and the figure
+        // that had just settled then waited out the whole idle window.
         ok('a turn ending earns a read; a turn starting does not',
-            /if \(!active\) \{ void this\.tick\('edge'\); \}/.test(barSrc));
+            /if \(active\) \{ return; \}/.test(barSrc)
+            && /if \(v\.ok\) \{ void this\.tick\('edge'\); return; \}/.test(barSrc));
+        ok('…and one too early is deferred, exactly once, and never through a hold',
+            /if \(this\.edgeTimer\) \{ return; \}/.test(barSrc)
+            && /if \(v\.why === 'held'\) \{ return; \}/.test(barSrc)
+            && /this\.edgeTimer = setTimeout\(/.test(barSrc));
         ok('…but both directions are still RECORDED, or the next fall is a no-op',
             /this\.lastActive = active;/.test(barSrc));
         ok('…and nothing automatic calls get(true) any more',
@@ -857,7 +877,7 @@ const LIVE_PAYLOAD = {
         // button's privileges. The edge now reads on the edge PATH, and only
         // when a turn has actually ended (see the falling-edge block above).
         ok('only the edge reads at all — not every live event',
-            /if \(active === this\.lastActive\) \{ return; \}[\s\S]{0,600}this\.tick\('edge'\)/.test(barSrc));
+            /if \(active === this\.lastActive\) \{ return; \}[\s\S]{0,1600}this\.tick\('edge'\)/.test(barSrc));
         ok('the tooltip states which beat is running, so a still figure is explainable',
             /an agent is working — re-read every/.test(barSrc) && /Automatic refresh is off/.test(barSrc));
     }
@@ -877,11 +897,23 @@ const LIVE_PAYLOAD = {
         ok('the service is pointed at the STANDING account\'s file, live',
             /credentialsFile: usageCredentialsFile/.test(ext)
             && /slotCredentialsFile\(findSlot\(storedAccounts\(\), activeAccounts\(\)\['claude'\] \|\| ''\)\)/.test(ext));
-        ok('‼️ a cached percentage is dropped when the account under it moves',
-            /private snapFrom = '';/.test(pu)
-            && /if \(this\.snap && this\.credFile\(\) !== this\.snapFrom\) \{ this\.snap = undefined; \}/.test(pu));
-        ok('…and every answer, failure included, is stamped with the file it came from',
-            /this\.snapFrom = file;/.test(pu));
+        // ‼️ X-212's RULE, KEPT A DIFFERENT WAY SINCE X-240. The rule — no
+        // account is ever drawn under another account's name — is unchanged and
+        // still exact. It used to be enforced by DROPPING the one cached
+        // snapshot whenever the standing account moved, which also threw away a
+        // figure that was seconds old; that was free while this service was the
+        // endpoint's only reader, and stopped being free once the shared gate
+        // (correctly) refuses a second request for a token just read — the
+        // indicator would have had nothing to draw AND nothing it could fetch.
+        // Shelved by file, both hold at once.
+        ok('‼️ a cached percentage never survives the account under it moving',
+            /private snaps = new Map<string, PlanUsageSnapshot>\(\);/.test(pu)
+            && /const snap = this\.snaps\.get\(tokenKey\(file\)\);/.test(pu));
+        ok('…and every answer, failure included, is shelved under the file it came from',
+            /const put = \(s: PlanUsageSnapshot\): PlanUsageSnapshot => \{/.test(pu)
+            && /this\.snaps\.set\(tokenKey\(file\), s\);/.test(pu));
+        ok('…so `current()` can only ever answer for the sign-in in force now',
+            /current\(\): PlanUsageSnapshot \| undefined \{ return this\.snaps\.get\(tokenKey\(this\.credFile\(\)\)\); \}/.test(pu));
 
         ok('one function names the owner for the bar, the card and the bridge',
             /const usageAccountLabel = \(engine: string\): string =>/.test(ext)

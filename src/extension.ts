@@ -92,6 +92,7 @@ import { ContextGuard, contextLevelFor, ContextReadHint, contextSignalView, DEFA
 import { OwnerLease } from './core/owner';
 import { buildFarmStatus } from './core/farmstatus';
 import { MIN_FETCH_INTERVAL_MS, PlanUsageService, refreshMs } from './core/planusage';
+import { UsageGate, crossServiceMs } from './core/usageGate';
 import { EngineUsage, enginePeak, readCodexUsage, readEngineUsage, UsageProbe } from './core/engineUsage';
 import {
     AgentEngineDefaults, agentKey, agentSeedDefault, resolveDefault, storedAccount, storedDefault,
@@ -10161,7 +10162,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             handler: async (args) => {
                 const id = (optStr(args, 'id') ?? '').trim().toLowerCase();
                 if (optBool(args, 'refresh') === true) {
-                    if (!id || id === 'claude') { await planUsage.get(true); }
+                    // ‼️ X-240 — AN AGENT FORCING IS NOT A PERSON CLICKING ⟳, and
+                    // this op was the one that forgot. `usage.plan` next door
+                    // already downgrades a forced read to the edge for exactly
+                    // this reason; here `get(true)` claimed the person's
+                    // privilege and walked through a 429 hold — from the bridge,
+                    // which is where a loop lives.
+                    if (!id || id === 'claude') { await planUsage.readOnEdge(); }
                     if (!id || id === 'agy') { await refreshAgyUsage(true); }
                 }
                 const all = engineUsageMatrix();
@@ -18237,9 +18244,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
      */
     const usageCredentialsFile = (): string =>
         slotCredentialsFile(findSlot(storedAccounts(), activeAccounts()['claude'] || ''));
+    /**
+     * ‼️ X-240 — ONE LEDGER FOR BOTH READERS OF THE USAGE ENDPOINT.
+     *
+     * `planUsage` below reads whichever Claude sign-in is STANDING;
+     * `accountUsage` walks every captured sign-in. Both resolve their file with
+     * `slotCredentialsFile`, so whenever an account is standing the two are
+     * reading ONE token — and each used to keep its own floor and its own 429
+     * curve for it. That is why one account of four gets stuck: it is the only
+     * account with two readers. The gate is keyed by the file, so the two
+     * recognise each other without either having to know the other exists.
+     */
+    const usageGate = new UsageGate();
+    const usageMinIntervalMs = (): number =>
+        crossServiceMs(cfg().get<number>('planUsageMinIntervalSeconds', 10));
     const planUsage = new PlanUsageService({
         ttlMs: planBeatMs, edgeFloorMs: planEdgeFloorMs, cliVersion: installedCliVersion,
-        credentialsFile: usageCredentialsFile
+        credentialsFile: usageCredentialsFile,
+        gate: usageGate, minIntervalMs: usageMinIntervalMs
     });
     /**
      * ‼️ X-212 — WHOSE PLAN A SURFACE IS SHOWING, in words, for every surface.
@@ -18998,6 +19020,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         ttlMs: slot => slot ? slotBeatMs(slot) : planBeatMs(),
         autoBeat: accountsAutoRefresh,
         edgeFloorMs: planEdgeFloorMs,
+        // X-240 — the same ledger the standing account's indicator writes to.
+        gate: usageGate, minIntervalMs: usageMinIntervalMs,
         cliVersion: installedCliVersion,
         busy: accountIsBusy,
         /**
@@ -30937,7 +30961,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     if (leader.walled?.slotId) {
                         walledNow.push(leader.walled.slotId);
                         // The figure that let it start is the one to distrust.
-                        void accountUsage.refreshSlot(leader.walled.slotId).catch(() => { /* the next beat reads it */ });
+                        // ‼️ X-240 — 'auto', because nobody pressed anything. This
+                        // fires on EXACTLY the account that just hit a wall, so a
+                        // read that ignored the hold would spend its request on
+                        // the one token certain to refuse it — and every refusal
+                        // pushes the hold further out. It now waits like the beat.
+                        void accountUsage.refreshSlot(leader.walled.slotId, 'auto')
+                            .catch(() => { /* the next beat reads it */ });
                     }
                 }
                 if (leader && verdict.problems.length) {
@@ -39081,7 +39111,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             handler: async (args) => {
                 const engine = ((optStr(args, 'engine') ?? '') || 'claude').trim();
                 const ceiling = Math.max(1, Math.min(100, optNum(args, 'ceiling', 95)));
-                await accountUsage.refresh();
+                // ‼️ X-240 — 'auto': this op names an unattended runner as its
+                // caller, and a runner in a loop is not a person. It used to
+                // refresh as `user`, which is the one reason allowed through a
+                // 429 hold — so the caller most likely to ask over and over held
+                // the privilege that keeps a rate limit alive.
+                await accountUsage.refresh('auto');
                 const mine = slotsFor(storedAccounts(), engine).map(s => s.id);
                 const usage = accountUsage.current().filter(u => mine.includes(u.slotId));
                 const best = mostRoom(usage, ceiling);

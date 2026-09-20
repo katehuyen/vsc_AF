@@ -22,6 +22,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as https from 'https';
+import { UsageGate, UsageVerdict, tokenKey, DEFAULT_CROSS_SERVICE_MS } from './usageGate';
 
 /**
  * ‼️ THE INTERVAL WAS NEVER THE REASON FOR THE 429s — THE MISSING User-Agent WAS.
@@ -318,6 +319,29 @@ export function barText(snap: PlanUsageSnapshot | undefined, now = Date.now()): 
  * setting a lie. The floor is `MIN_ACTIVE_BEAT_MS`, so no setting can put the
  * beat back in the range that earns a permanent 429.
  */
+/**
+ * ‼️ X-240 — WHAT A READ THE GATE REFUSED SAYS, when there is no cached figure
+ * to serve instead.
+ *
+ * The refusal itself is not new; being able to SEE it is. Until the gate
+ * existed a reader with no snapshot simply went to the network, so this state
+ * was unreachable — and the price of closing that hole is a surface that would
+ * otherwise show a blank for the same reason it shows one when the machine is
+ * offline. Those are different facts and a reader has to be able to tell them
+ * apart (Principle 1), so the refusal says which of the two gates stopped it
+ * and when it lifts. It is NOT cached: nothing was learned about the account.
+ */
+export function refused(
+    v: { why: 'ok' | 'held' | 'floor'; readyAt: number }, now = Date.now()
+): PlanUsageSnapshot {
+    const wait = holdWords(Math.max(0, v.readyAt - now));
+    return unavailable('error', v.why === 'held'
+        ? `This account is held after a rate limit — no service reads it for another ${wait}. `
+        + 'Asking again is what keeps the penalty alive, so nothing does.'
+        : `Another reader asked for this account moments ago — next read in ${wait}.`,
+    '', now);
+}
+
 export function refreshMs(active: boolean, idleMinutes: number, activeSeconds: number): number {
     if (!(idleMinutes > 0)) { return 0; }
     if (!active) { return Math.round(idleMinutes * 60_000); }
@@ -401,6 +425,19 @@ export interface PlanUsageOptions {
     /** Overridable for tests — the same seam `AccountUsageService` has, so the
      *  two readers of one credentials file can be faked the same way. */
     readCreds?: (file: string) => OauthCredentials | undefined;
+    /**
+     * ‼️ X-240 — THE LEDGER THIS SERVICE SHARES WITH `AccountUsageService`.
+     *
+     * Both read the file `credentialsFile` names, so both spend ONE token's
+     * allowance; without this they kept two floors and two 429 curves for it,
+     * and the standing account — the only one with two readers — was the only
+     * account that got stuck. Absent = the service keeps its own ledger, which
+     * is what every test that does not care about the other reader wants.
+     */
+    gate?: UsageGate;
+    /** The floor between two requests for one TOKEN, across both services.
+     *  Defaults to `DEFAULT_CROSS_SERVICE_MS`; never below the hard floor. */
+    minIntervalMs?(): number;
     fetchImpl?: (token: string, userAgent: string) => Promise<UsageReply>;
     now?: () => number;
 }
@@ -411,30 +448,43 @@ export interface PlanUsageOptions {
  * per TTL rather than one per render, and a mashed ⟳ still can't spam.
  */
 export class PlanUsageService {
-    private snap: PlanUsageSnapshot | undefined;
-    private lastFetchAt = 0;
-    private inflight: Promise<PlanUsageSnapshot> | undefined;
-    /** How long the current backoff is; doubles per 429, cleared by a success. */
-    private backoffMs = 0;
-    /** No automatic read before this moment (see RATE_LIMIT_BACKOFF_START_MS). */
-    private backoffUntil = 0;
     /**
-     * ‼️ X-212 — WHOSE SIGN-IN THE CACHED SNAPSHOT BELONGS TO.
+     * ‼️ X-212 gave this cache an IDENTITY; X-240 gives it a shelf per identity.
      *
-     * `credentialsFile` stopped being a constant the moment an account could be
-     * made standing: the same service now reads a different file depending on
-     * which sign-in the user last pointed at. A cache that does not remember
-     * which one it read would go on serving the previous account's percentages
-     * for a whole TTL — and the indicator would say the new account's name over
-     * the old account's figures, which is worse than saying nothing at all.
+     * The rule X-212 wrote stands and is the important one: a snapshot belongs
+     * to the sign-in it was read from, and the indicator must never draw one
+     * account's percentages under another's name. It enforced that by dropping
+     * the single cached snapshot whenever the standing account moved — which
+     * also threw away a figure that was seconds old, so moving back to an
+     * account spent a fresh request on it.
      *
-     * So the SOURCE is part of the snapshot's identity. A read whose file has
-     * moved has no cache to serve from and falls through to the endpoint, which
-     * is the same thing a first read does.
+     * That was free while this service was the only reader. It is not free now:
+     * the gate correctly refuses a second request for a token just read, so the
+     * dropped figure would leave the indicator with nothing to draw AND nothing
+     * it is allowed to fetch. Keyed by the file, both rules hold at once —
+     * nobody is shown somebody else's figure, and coming back to an account
+     * shows its own until its TTL is up.
+     *
+     * Bounded by the number of sign-ins on the machine, not by history (X-127).
      */
-    private snapFrom = '';
+    private snaps = new Map<string, PlanUsageSnapshot>();
+    private inflight: Promise<PlanUsageSnapshot> | undefined;
+    /**
+     * ‼️ X-240 — WHEN THIS TOKEN WAS LAST SPENT AND WHETHER IT IS HELD, and not
+     * one of those facts is this service's to keep alone. Both used to be
+     * fields here (`lastFetchAt`, `backoffMs`, `backoffUntil`) and
+     * `AccountUsageService` kept its own copies of the same two facts about the
+     * same file — so the standing account, the only sign-in with two readers,
+     * had two floors and two penalties. There is one ledger now, keyed by the
+     * credentials file; a service given no gate makes its own, which is exactly
+     * the old behaviour for anybody who has only one reader.
+     */
+    private gate: UsageGate;
+    constructor(private opts: PlanUsageOptions) {
+        this.gate = opts.gate ?? new UsageGate();
+    }
 
-    constructor(private opts: PlanUsageOptions) { }
+    private now(): number { return (this.opts.now ?? Date.now)(); }
 
     /** The credentials file this service reads right now — live, because the
      *  standing account is a setting and may move between two reads. */
@@ -442,12 +492,22 @@ export class PlanUsageService {
         return (this.opts.credentialsFile?.() || '').trim() || credentialsPath();
     }
 
-    /** The cached snapshot — never touches the network. */
-    current(): PlanUsageSnapshot | undefined { return this.snap; }
+    /** The floor between two requests for this TOKEN, whoever sends them. */
+    private minIntervalMs(): number {
+        return this.opts.minIntervalMs?.() ?? DEFAULT_CROSS_SERVICE_MS;
+    }
+
+    /**
+     * ‼️ X-212's RULE — THE CACHED SNAPSHOT OF THE SIGN-IN THIS SERVICE IS
+     * POINTED AT RIGHT NOW, and never another's. Never touches the network.
+     */
+    current(): PlanUsageSnapshot | undefined { return this.snaps.get(tokenKey(this.credFile())); }
 
     /** When the backoff lets the next automatic read through; 0 = not backed
-     *  off. Surfaces are expected to SAY this rather than look idle (Principle 1). */
-    rateLimitedUntil(): number { return this.backoffUntil; }
+     *  off. Surfaces are expected to SAY this rather than look idle (Principle 1).
+     *  ‼️ X-240 — this is now the TOKEN's hold, so a 429 the accounts service
+     *  took is one this indicator reports too: they are one account. */
+    rateLimitedUntil(): number { return this.gate.heldUntil(this.credFile(), this.now()); }
 
     /**
      * Fresh-enough snapshot; `force` = a PERSON asked (see `read`).
@@ -476,6 +536,27 @@ export class PlanUsageService {
     readOnEdge(): Promise<PlanUsageSnapshot> { return this.read('edge'); }
 
     /**
+     * ‼️ X-240 — WOULD AN EDGE READ GO OUT RIGHT NOW, AND IF NOT, WHEN?
+     *
+     * A turn ending is the moment the figures settle, and it is also the moment
+     * the beat drops to the slow idle window — so an edge read that is refused
+     * used to be simply LOST, and the settled number then sat unread for the
+     * whole idle interval (five minutes by default). The caller cannot tell
+     * that from a read that happened, because both answer with a snapshot.
+     *
+     * So the verdict is asked for separately and the indicator defers instead
+     * of dropping: nothing here waits, nothing is blocked, and the read the
+     * turn earned still happens — just at the first moment it is allowed to.
+     * Exposed rather than done in here on purpose: a service that owned timers
+     * would be a service somebody has to dispose of.
+     */
+    edgeVerdict(): UsageVerdict {
+        const now = this.now();
+        const floor = Math.max(this.minIntervalMs(), this.opts.edgeFloorMs?.() ?? EDGE_READ_FLOOR_MS);
+        return this.gate.check(this.credFile(), now, floor);
+    }
+
+    /**
      * The three reasons a read happens, and what each is allowed to skip.
      *
      * |        | skips the TTL | skips a backoff | floor                    |
@@ -488,39 +569,63 @@ export class PlanUsageService {
      * spend a request on its own, and it does that on a leash.
      */
     private read(reason: 'beat' | 'edge' | 'user'): Promise<PlanUsageSnapshot> {
-        const now = (this.opts.now ?? Date.now)();
-        // ‼️ X-212 — the account moved under us: the cached answer is somebody
-        // else's and is dropped rather than aged out. See `snapFrom`.
-        if (this.snap && this.credFile() !== this.snapFrom) { this.snap = undefined; }
-        const age = now - this.lastFetchAt;
-        const floor = reason === 'edge'
-            ? Math.max(MIN_FETCH_INTERVAL_MS, this.opts.edgeFloorMs?.() ?? EDGE_READ_FLOOR_MS)
-            : MIN_FETCH_INTERVAL_MS;
-        if (this.snap) {
-            if (reason === 'beat' && age < Math.max(0, this.opts.ttlMs())) { return Promise.resolve(this.snap); }
-            if (reason !== 'user' && now < this.backoffUntil) { return Promise.resolve(this.snap); }
-            if (age < floor) { return Promise.resolve(this.snap); }
+        const now = this.now();
+        const file = this.credFile();
+        // ‼️ X-212 — the snapshot is looked up BY the file, so the account
+        // moving under us can never serve the previous account's percentages.
+        const snap = this.snaps.get(tokenKey(file));
+        // The TTL is the only gate that is about this CACHE rather than about
+        // the token, so it stays here and it stays conditional on having one.
+        if (snap && reason === 'beat'
+            && now - this.gate.lastAt(file) < Math.max(0, this.opts.ttlMs())) {
+            return Promise.resolve(snap);
         }
+        // ‼️ X-240 — AND THE REST IS ASKED OF THE TOKEN, CACHE OR NO CACHE.
+        //
+        // Every guard below used to sit inside `if (snap)`, which meant a
+        // service holding no snapshot obeyed neither its floor nor its backoff.
+        // That is not a rare state: X-212 DROPS the snapshot whenever the
+        // standing account moves, so switching accounts — the one moment
+        // something also force-reads (`usageFollowedAccount`) — reliably put
+        // this reader through a hold it was serving seconds earlier. A cache is
+        // an optimisation; a limit is not conditional on one.
+        const floor = reason === 'edge'
+            ? Math.max(this.minIntervalMs(), this.opts.edgeFloorMs?.() ?? EDGE_READ_FLOOR_MS)
+            : this.minIntervalMs();
+        // ‼️ A REQUEST ALREADY IN THE AIR IS NOT A SECOND REQUEST — so this is
+        // asked BEFORE the gate, not after. It has been charged to the token
+        // already; refusing the second caller here would hand them a "too early"
+        // for the very read they are waiting on.
         if (this.inflight) { return this.inflight; }
+        const verdict = this.gate.check(file, now, floor, reason === 'user');
+        if (!verdict.ok) {
+            return Promise.resolve(snap ?? refused(verdict, now));
+        }
         this.inflight = this.load(now).finally(() => { this.inflight = undefined; });
         return this.inflight;
     }
 
     private async load(now: number): Promise<PlanUsageSnapshot> {
-        this.lastFetchAt = now;
-        // whatever this read answers is stamped with the file it came out of,
-        // even a failure — an unreadable slot must not look like a fresh cache
-        // for the account the user moves to next
+        // ‼️ X-240 — the token is charged BEFORE the reply, never after. A
+        // request answered in four seconds must still have cost the floor, or
+        // two services each waiting on the other's answer both go.
         const file = this.credFile();
-        this.snapFrom = file;
+        this.gate.spent(file, now);
+        // ‼️ X-212 — whatever this read answers is shelved under the file it came
+        // out of, even a failure: an unreadable slot must not look like a fresh
+        // cache for the account the user moves to next.
+        const put = (s: PlanUsageSnapshot): PlanUsageSnapshot => {
+            this.snaps.set(tokenKey(file), s);
+            return s;
+        };
         const cred = (this.opts.readCreds ?? readOauthCredentials)(file);
         if (!cred) {
-            return (this.snap = unavailable('no-auth',
+            return put(unavailable('no-auth',
                 'No Claude subscription login found on this machine — this card reads the OAuth session Claude Code stores.',
                 '', now));
         }
         if (cred.expiresAt > 0 && cred.expiresAt <= now) {
-            return (this.snap = unavailable('expired',
+            return put(unavailable('expired',
                 'Your Claude Code login token has expired — start a Claude Code session to refresh it.',
                 cred.plan, now));
         }
@@ -528,7 +633,7 @@ export class PlanUsageService {
             const res = await (this.opts.fetchImpl ?? fetchUsage)(
                 cred.token, usageUserAgent(this.opts.cliVersion?.()));
             if (res.status === 401 || res.status === 403) {
-                return (this.snap = unavailable('expired',
+                return put(unavailable('expired',
                     'Anthropic rejected the stored login — start a Claude Code session to refresh it.',
                     cred.plan, now));
             }
@@ -536,31 +641,30 @@ export class PlanUsageService {
                 // ‼️ S-63 — the endpoint's own figure when it gave one; the
                 // curve only when it did not. A hold the endpoint named does
                 // not feed the curve: the next unexplained 429 starts it afresh.
-                const hold = rateLimitHold(res, this.backoffMs);
-                this.backoffMs = hold.said ? 0 : hold.ms;
-                this.backoffUntil = now + hold.ms;
-                return (this.snap = unavailable('error',
+                const hold = rateLimitHold(res, this.gate.backoffMs(file));
+                this.gate.held(file, hold.ms, hold.said, now);
+                return put(unavailable('error',
                     hold.said
                         ? `The usage endpoint rate limited this request and asked for ${holdWords(hold.ms)} — next automatic read then. ⟳ asks anyway.`
                         : `The usage endpoint rate limited this request without saying how long — backing off, next automatic read in ${holdWords(hold.ms)}. ⟳ asks anyway.`,
                     cred.plan, now));
             }
             if (res.status !== 200) {
-                return (this.snap = unavailable('error',
+                return put(unavailable('error',
                     `Usage endpoint returned HTTP ${res.status}.`, cred.plan, now));
             }
             const payload = JSON.parse(res.body) as unknown;
             const bars = buildBars(payload);
             if (!bars.length) {
-                return (this.snap = unavailable('error',
+                return put(unavailable('error',
                     'The usage endpoint reported no limits for this account.', cred.plan, now));
             }
-            // it answered: whatever backoff we were on is over
-            this.backoffMs = 0;
-            this.backoffUntil = 0;
-            return (this.snap = { state: 'ok', bars, plan: cred.plan, fetchedAt: now });
+            // it answered: whatever backoff this TOKEN was on is over, for both
+            // of its readers at once
+            this.gate.cleared(file);
+            return put({ state: 'ok', bars, plan: cred.plan, fetchedAt: now });
         } catch (e) {
-            return (this.snap = unavailable('error',
+            return put(unavailable('error',
                 `Could not reach the usage endpoint: ${String((e as Error)?.message ?? e).slice(0, 120)}`,
                 cred.plan, now));
         }

@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.607.0",
+  "version": "3.608.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -8571,6 +8571,12 @@
           "default": 60,
           "minimum": 30,
           "description": "How often the same figures are re-read while at least one agent is mid-turn, in seconds — that is when they are actually moving, and when you are watching them. A session that is open but waiting for your next prompt is idle and uses the minutes setting above. The switch is instant in both directions: a turn starting and a turn ending each trigger one immediate read. Minimum 30 seconds, and that floor is enforced in code: the endpoint is undocumented and answers a too-frequent poller with a persistent HTTP 429, so a fast setting is not a preference it will honour. A 429 is met with an automatic backoff (3 → 6 → 12 → 15 min) that one success clears; the ⟳ button asks anyway. Ignored when planUsageRefreshMinutes is 0 (automatic refresh off)."
+        },
+        "agentFarm.planUsageMinIntervalSeconds": {
+          "type": "number",
+          "default": 10,
+          "minimum": 5,
+          "description": "The shortest gap between two usage requests for ONE sign-in, in seconds, counted across everything that reads it — the background beat, the status-bar indicator, the turn-boundary read, an account card's ⟳ and the bridge. Anthropic limits this endpoint per account token, and until this existed each reader kept its own clock: whichever account was standing had two of them, so it alone could be asked twice within a second and it alone kept hitting the limit while the others stayed clean. Raise it if an account still gets rate limited; the floor is 5 seconds and is enforced in code. This is a SPACING rule, not a beat — it never causes an extra read. A read that arrives too early is answered with the figure taken moments ago instead of spending a second request, and the one triggered by a turn ending waits and then happens."
         },
         "agentFarm.planUsageStatusBar": {
           "type": "boolean",

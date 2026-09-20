@@ -2,6 +2,52 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.608.0 - one budget per token, not one per reader: why a single account of four kept hitting the rate limit (X-240) (2026-09-20)
+
+- **‼️ The account that got rate limited was the only one with TWO readers, and
+  that was the whole defect.** Anthropic limits the usage endpoint per account
+  token, and on this machine a token IS the credentials file it lives in.
+  `AccountUsageService` walks every captured sign-in; `PlanUsageService` watches
+  whichever one is STANDING. Both resolve that path through the same
+  `slotCredentialsFile`, so whenever an account is standing the two are reading
+  one token — and each kept its own floor and its own 429 curve for it. Two
+  requests could leave milliseconds apart, and a refusal one reader took never
+  held the other, so the hold meant to END a rate limit was walked through by
+  the other door and renewed itself. There is one ledger now
+  (`src/core/usageGate.ts`), keyed by the file; the two readers recognise each
+  other without either having to know the other exists.
+- **New setting `agentFarm.planUsageMinIntervalSeconds`** (default 10, floor 5)
+  — the shortest gap between two requests for ONE sign-in, counted across the
+  beat, the indicator, the turn-boundary read, a card's ⟳ and the bridge. It is
+  a spacing rule, not a beat: it never causes a read, it only makes one that
+  arrives too early wait its turn.
+- **Four ways a hold was being walked through, all shut.** `refreshSlot` never
+  checked the account's own backoff and its callers are not all people — the
+  worst fires on exactly the account that has just hit a wall, so every
+  automatic "re-read the figure that let it start" pushed the penalty further
+  out; it now takes a `reason` and only a person spends through a hold. The
+  bridge's `usage.engines refresh=true` claimed the person's privilege that
+  `usage.plan` beside it deliberately refuses an agent. `accounts.status` —
+  the op whose own description names an unattended runner as its caller —
+  refreshed as a person too, so the caller most likely to ask over and over
+  held the one reason allowed past a 429. And every guard in
+  `PlanUsageService.read` sat inside `if (this.snap)`, so a service holding no
+  cached snapshot obeyed neither its floor nor its backoff — which is not a rare
+  state, because the snapshot is dropped whenever the standing account moves,
+  the one moment something also force-reads.
+- **A turn-boundary read that arrives too early is now deferred, not dropped.**
+  The moment a turn ends is the moment the figures settle and also the moment
+  the beat drops to the slow idle window, so a refused edge read used to leave
+  the settled number unread for the whole idle interval. The indicator arms one
+  catch-up instead — nothing waits, and turn boundaries arriving in bursts are
+  absorbed by the one pending read rather than re-arming it.
+- The plan-usage cache is now kept **per sign-in** rather than as one snapshot
+  that was thrown away whenever the standing account changed. X-212's rule is
+  unchanged and still exact — no account is ever drawn under another's name —
+  but toggling between two sign-ins no longer spends a request each way, which
+  it could not have afforded once the shared gate started (correctly) refusing
+  a second request for a token read seconds ago.
+
 ## 3.607.0 - three doors an agent could not reach, and the one place a window changes project (B-18) (2026-09-20)
 
 - **‼️ Six pieces of code decided which project this window is on, and they did

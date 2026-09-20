@@ -504,10 +504,22 @@ async function main() {
         file = 'D:/slots/work/.credentials.json';
         clock += 1000;
         const back = await service.get();
-        ok('‼️ moving back off an unreadable account re-reads rather than serving its snapshot',
-            fetched.length === 3 && back.state === 'ok' && back.bars[0].percent === 30);
+        // ‼️ X-212's RULE, AND X-240 CHANGED HOW IT IS KEPT. The rule is that no
+        // account is ever drawn under another account's name, and it still holds
+        // exactly: coming back off the unreadable slot shows WORK's figure, never
+        // the dead slot's. What changed is that it is work's OWN cached figure
+        // rather than a fresh request. The single snapshot used to be thrown away
+        // on every move, which cost a request each time you toggled between two
+        // sign-ins — free while this was the endpoint's only reader, and not free
+        // once the shared gate (correctly) refuses a second request for a token
+        // read seconds ago: the indicator would have had nothing to draw AND
+        // nothing it was allowed to fetch. Keyed by file, both rules hold at once.
+        ok('‼️ moving back off an unreadable account shows THAT account, never the unreadable one',
+            back.state === 'ok' && back.bars[0].percent === 20);
+        ok('…and it costs no request, because that account was read seconds ago',
+            fetched.length === 2);
         ok('every read named the file it was pointed at, in order',
-            read.length === 4 && read[3] === 'D:/slots/work/.credentials.json');
+            read.length === 3 && read[2] === 'D:/slots/dead/.credentials.json');
     }
 
     // ---------- the queue is visible, because a hidden one cannot be trusted ----------

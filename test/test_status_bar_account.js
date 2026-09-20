@@ -64,7 +64,10 @@ const service = {
     current: () => ({ state: 'ok', bars: [bar(20, NOW + 90 * 60000)], plan: 'max20x', fetchedAt: NOW }),
     rateLimitedUntil: () => 0,
     get: async () => undefined,
-    readOnEdge: async () => undefined
+    readOnEdge: async () => undefined,
+    // X-240 — the bar asks this before a turn-boundary read, so a stand-in that
+    // lacks it throws the moment `fleetChanged` is called.
+    edgeVerdict: () => ({ ok: true, why: 'ok', readyAt: 0, heldUntil: 0 })
 };
 
 let watched;
