@@ -138,6 +138,16 @@ try {
     ok('a resolved note says so', notes.get(n1.id).resolved === true);
     notes.direct(n1.id, { kind: 'veto', text: 'not this way', ts: 1 });
     ok('the user\'s word is kept on the note', notes.get(n1.id).humanDirective.kind === 'veto');
+    notes.direct(n1.id, undefined);
+    ok('…and taken off again — the key is gone', !('humanDirective' in notes.get(n1.id)));
+    // ‼️ TTL archiving (N-9): only what is BOTH resolved and past its ttl goes
+    const soon = notes.add({ fromAgent: 'developer', title: 'short-lived', project: 'AF', ttlMs: 1000 }, 1000);
+    const openButOld = notes.add({ fromAgent: 'developer', title: 'old but open', project: 'AF', ttlMs: 1000 }, 1000);
+    notes.resolve(soon.id);
+    const before = notes.notes.length;
+    ok('sweep at a time before the ttl drops nothing', notes.sweep(1500) === 0 && notes.notes.length === before);
+    ok('‼️ sweep past the ttl drops the resolved one and keeps the open one',
+        notes.sweep(3000) === 1 && !notes.get(soon.id) && !!notes.get(openButOld.id));
 
     // ---------- tasks: the claim is the whole point ----------
     const task = (over = {}) => T.makeTask({ fromAgent: 'developer', title: 't', ...over }, 1000);
@@ -194,10 +204,12 @@ try {
         T.isOpen(hostA.get(t1.id), far + 10 * T.LEASE_MS) === false);
 
     // ‼️ the loop guard
-    const looped = tasks.add({ fromAgent: 'developer', title: 'round and round', handoffDepth: 0 });
+    const looped = tasks.add({ fromAgent: 'developer', title: 'round and round', handoffDepth: 0, sourceNoteId: 'n-origin', sourceQueueItemId: 'wq-9' });
     const h1 = tasks.handoff(looped.id, { targetRole: 'psikolog' }, 'developer');
     ok('a handoff makes a NEW task carrying the trail',
         !!h1.task && h1.task.parentTaskId === looped.id && h1.task.handoffDepth === 1);
+    ok('…and the lineage: the note and the queue item it grew out of travel with it (N-9)',
+        h1.task.sourceNoteId === 'n-origin' && h1.task.sourceQueueItemId === 'wq-9');
     ok('…and closes the one it came from, so the history survives',
         tasks.get(looped.id).state === 'done' && /Handed on to psikolog/.test(tasks.get(looped.id).resultSummary));
     const h2 = tasks.handoff(h1.task.id, { targetRole: 'wiki' }, 'psikolog');
