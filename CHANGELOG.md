@@ -2,6 +2,32 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.598.0 - the escape hatch lets go, and a next step names the setting (U-142) (2026-09-20)
+
+- **‼️ "Edit as JSON" was a one-way door.** `jsonMode` was set when the reader
+  asked for the raw box and nothing ever cleared it, so a setting the schema
+  describes completely — a list, a form, a table, a set of pairs — stayed a
+  textarea for the rest of the session once it had been applied once. The
+  structured editor comes back when the save lands, which is also the plainest
+  proof it landed; `Edit as JSON` is still one click away.
+- **‼️ …and a refusal does not throw the reader out of the box they were
+  writing in.** Clearing the mode on Apply is only half the answer: the host
+  parses the text and answers `error` when it cannot. The text that was sent is
+  now held until one of the two answers arrives and put straight back if it was
+  refused — so a mistyped brace costs nothing. Before this, applying broken JSON
+  dropped what was typed and showed the stored value instead.
+- **A next step names the setting and never says "here" (U-142).** The Telegram
+  bridge card is drawn on Farm Settings, on the Telegram page and in the
+  bridge's own answers, so "here" meant a different place on each. On Farm
+  Settings it pointed at a card that carries no control at all while the box it
+  meant was a separate row further down. The empty-allowlist step now names
+  `agentFarm.telegram.allowedChats`. ‼️ The guard that pins this is written
+  across EVERY state rather than the one that was reported, and it immediately
+  caught a second one nobody had noticed: `disabled` said "Switch it on here"
+  on a card with no switch on it.
+- The dead `settings.json` button U-142 also named was fixed in 3.597.0 (U-139):
+  the action exists in the Farm Settings header and the host answers it.
+
 ## 3.597.0 - Farm Settings answers the hand: Enter saves, and the page keeps its place (U-139) (2026-09-20)
 
 - **‼️ Enter saves the editor the box belongs to — all four shapes.** Reported

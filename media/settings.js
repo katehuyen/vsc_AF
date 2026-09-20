@@ -48,6 +48,9 @@
      *  cannot hold two rows that are briefly called the same thing. */
     const mapDraft = {};           // key -> [ { k, v } ] being edited
     const jsonMode = {};           // key -> the user asked for the raw box
+    /** U-142 — the raw text an Apply sent, held until the host says whether it
+     *  parsed. A refusal puts both the box and the text back. */
+    const jsonSent = {};           // key -> the text sent, while the host answers
     /**
      * ‼️ THE TEXT IN THE JSON BOX, whenever the page has a reason to keep it.
      *
@@ -3523,6 +3526,25 @@
                 // It has been sent; from here the store is the truth, and the
                 // box redraws from what was really written.
                 delete jsonDraft[key];
+                /**
+                 * ‼️ U-142 — AND THE ESCAPE HATCH LETS GO WHEN THE SAVE LANDS.
+                 *
+                 * `jsonMode` is the reader saying "show me the raw value
+                 * instead"; once they have applied it the request is answered,
+                 * and a setting the schema describes completely should go back
+                 * to its own editor rather than staying a textarea for the rest
+                 * of the session. The structured view is also the plainest
+                 * proof the save landed, and "Edit as JSON" is one click away.
+                 *
+                 * ‼️ BUT A REFUSAL MUST NOT THROW THE READER OUT OF THE BOX
+                 * THEY WERE WRITING IN. The host answers `error` when the text
+                 * does not parse, so what was sent is held here until one of
+                 * the two answers arrives — and put straight back if it was
+                 * refused. Without this half, a mistyped brace would drop the
+                 * reader into the row editor AND lose everything they typed.
+                 */
+                jsonSent[key] = ta ? ta.value : '';
+                delete jsonMode[key];
                 vscode.postMessage({ type: 'set', key, value: ta ? ta.value : '' });
             }));
         // ‼️ U-89 — the example is written into the BOX and nothing is saved.
@@ -3747,11 +3769,21 @@
         if (ev.data.type === 'data') {
             if (editing) { pendingData = { ...DATA, ...ev.data.data }; return; }
             DATA = { ...DATA, ...ev.data.data };
+            // U-142 — the store answered, so nothing is waiting to be put back:
+            // a refusal arrives as `error` and never as a redraw.
+            for (const k of Object.keys(jsonSent)) { delete jsonSent[k]; }
             repaint();
             return;
         }
         if (ev.data.type === 'error') {
             errors[ev.data.key] = ev.data.error;
+            // U-142 — a refused Apply goes back into the box it came from,
+            // with the text that was refused still in it.
+            if (jsonSent[ev.data.key] !== undefined) {
+                jsonMode[ev.data.key] = true;
+                jsonDraft[ev.data.key] = jsonSent[ev.data.key];
+                delete jsonSent[ev.data.key];
+            }
             render();
             focusKey(ev.data.key);
             return;

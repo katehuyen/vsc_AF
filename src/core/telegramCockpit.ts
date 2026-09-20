@@ -76,9 +76,15 @@ export const DETAIL_OF: Record<BridgeState, string> = {
 /** What to do next, where there is something to do. `connected` has none — an
  *  instruction under a working service is noise a person learns to skip. */
 const NEXT_OF: Partial<Record<BridgeState, string>> = {
-    disabled: 'Switch it on here, or set agentFarm.telegram.enabled.',
+    disabled: 'Set agentFarm.telegram.enabled, or use the switch on the Telegram page.',
     'no-token': 'Run "Connect Telegram…" and paste the token from @BotFather.',
-    'no-chats': 'Message the bot once; it replies with its chat id, and adding that id here switches it on for that chat.',
+    // ‼️ U-142 — NAME THE SETTING, NEVER SAY "HERE". This card is drawn on
+    // Farm Settings, on the Telegram page and in the bridge's own answers, and
+    // "here" meant a different place on each of them — on Farm Settings it
+    // pointed at a card that carries no control at all, while the box it meant
+    // is a separate row further down.
+    'no-chats': 'Message the bot once; it replies with its chat id. Put that id in'
+        + ' agentFarm.telegram.allowedChats and the bridge answers that chat.',
     'over-budget': 'Raise agentFarm.telegram.maxDailyUSD, or wait for the ledger to roll over at local midnight.',
     error: 'If it keeps failing, check the network and re-verify the token.'
 };

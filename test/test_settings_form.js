@@ -344,6 +344,50 @@ const btn = (p, attr, key) =>
         !p3.posted.some(m => m.type === 'set'));
 }
 
+// ---------------------------------------------------------------------------
+// ‼️ U-142 — THE ESCAPE HATCH LETS GO WHEN THE SAVE LANDS, AND ONLY THEN.
+//
+// `Edit as JSON` set `jsonMode` and nothing ever cleared it, so a setting the
+// schema describes completely stayed a raw textarea for the rest of the
+// session once it had been applied once. Clearing it on Apply is only half the
+// answer: the host parses the text and answers `error` when it cannot, and a
+// reader thrown out of the box AND robbed of what they typed is worse than the
+// lock was.
+// ---------------------------------------------------------------------------
+{
+    const p = open();
+    btn(p, 'ljson', 'agentFarm.browserAllowHosts').click();
+    el(p, 'c-browserAllowHosts').value = '["one.example", "two.example"]';
+    btn(p, 'apply', 'agentFarm.browserAllowHosts').click();
+    ok('applying the raw JSON sends the text to the host',
+        p.last() && p.last().type === 'set'
+        && p.last().key === 'agentFarm.browserAllowHosts');
+    // The host answers a successful save with a redraw carrying the new value.
+    p.send({
+        type: 'data',
+        data: { categories: fx.data().categories }
+    });
+    ok('‼️ …and once it lands the setting is back in its own editor, not stuck'
+        + ' as a textarea for the rest of the session',
+        /id="l-browserAllowHosts-0"/.test(p.html())
+        && !/id="c-browserAllowHosts"/.test(p.html()));
+
+    const pbad = open();
+    btn(pbad, 'ljson', 'agentFarm.browserAllowHosts').click();
+    el(pbad, 'c-browserAllowHosts').value = '["broken", ';
+    btn(pbad, 'apply', 'agentFarm.browserAllowHosts').click();
+    pbad.send({
+        type: 'error', key: 'agentFarm.browserAllowHosts',
+        error: 'that is not JSON'
+    });
+    ok('‼️ a REFUSED apply stays in the box it came from',
+        /id="c-browserAllowHosts"/.test(pbad.html()));
+    ok('‼️ …with the text that was refused still in it — a mistyped brace must'
+        + ' not cost the reader everything they wrote',
+        el(pbad, 'c-browserAllowHosts').value === '["broken", ');
+    ok('…and the refusal is on screen', /that is not JSON/.test(pbad.html()));
+}
+
 {
     // ‼️ THE FILE THIS PAGE IS A VIEW OF, from the page itself.
     const p = open();

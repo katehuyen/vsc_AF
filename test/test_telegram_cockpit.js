@@ -38,6 +38,28 @@ const T = require(path.join(ROOT, 'out', 'core', 'telegramCockpit.js'));
     ok('…and it says how to get one',
         /Connect Telegram/i.test(st({ hasToken: false }).next || ''));
 
+    /**
+     * ‼️ U-142 — A NEXT STEP NAMES THE SETTING AND NEVER SAYS "HERE".
+     *
+     * This card is drawn on Farm Settings, on the Telegram page and in the
+     * bridge's own answers, so "here" meant a different place on each of them.
+     * On Farm Settings it pointed at a card carrying no control at all, while
+     * the box it meant was a separate row further down — a reader who followed
+     * it found nothing to type into. The rule is measured across EVERY state,
+     * not patched on the one that was reported.
+     */
+    [['disabled', { enabled: false }], ['no-token', { hasToken: false }],
+        ['no-chats', { allowCount: 0 }], ['over-budget', { blocked: true }],
+        ['error', { lastError: 'socket hang up' }]].forEach(([s, input]) => {
+        const got = st(input);
+        const text = String(got.next || '');
+        eq(`the "${s}" input really is that state`, got.state, s);
+        ok(`…and its next step does not send the reader "here"`,
+            text !== '' && !/\bhere\b/.test(text));
+    });
+    ok('…and the empty-allowlist one names the setting the id goes into',
+        /agentFarm\.telegram\.allowedChats/.test(String(st({ allowCount: 0 }).next || '')));
+
     // ‼️ MEASURED, NOT ASSUMED — see the header. The poller starts with an empty
     // allowlist; it just refuses everything that arrives.
     eq('an empty allowlist is a warning, not a stop',
