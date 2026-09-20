@@ -30,17 +30,22 @@
  *  2. **It is a cache, so losing it is never data loss.** It lives under
  *     globalStorage, never beside the user's transcripts; a half-written shard,
  *     a corrupt manifest or a schema bump costs a rebuild and nothing else.
- *     ‼️ BUT IT IS NOT YET BOUNDED, AND A SIZE CAP IS NOT THE FREE FIX IT
- *     LOOKS LIKE (X-131). Nothing here caps the corpus: the prune rule below
- *     drops an entry whose SOURCE TRANSCRIPT is gone, and transcripts are
- *     never deleted, so it has never once fired — measured 253.7 MB over 977
- *     sessions, 0 prunable, 2.6 GB projected at 10 000. Evicting the oldest
- *     shards to a ceiling would thrash instead: `orderSessions` caps nothing,
- *     so a fleet query asks for EVERY session, and anything evicted below that
- *     working set is rebuilt on the next query — which is the 7.5 s full
- *     re-parse this file exists to have ended. A bound therefore has to make
- *     each session cost LESS (the tool trail is 92.5% of it and the default
- *     search never reads it), not keep fewer sessions. Open decision.
+ *     ‼️ AND IT IS BOUNDED BY AGEING THE TOOL TRAIL, NOT BY KEEPING FEWER
+ *     SESSIONS (X-131). A size cap is not the free fix it looks like: the
+ *     prune rule below drops an entry whose SOURCE TRANSCRIPT is gone, and
+ *     transcripts are never deleted, so it had never once fired — measured
+ *     253.7 MB over 977 sessions, 0 prunable, 2.6 GB projected at 10 000.
+ *     Evicting the oldest shards to a ceiling would thrash instead:
+ *     `orderSessions` caps nothing, so a fleet query asks for EVERY session,
+ *     and anything evicted below that working set is rebuilt on the next
+ *     query — the 7.5 s full re-parse this file exists to have ended. So the
+ *     bound makes each session cost LESS: the tool trail is 92.5% of the
+ *     corpus and the default search never reads it, so past a horizon
+ *     (`agentFarm.searchToolTrailDays` after the transcript's last write) a
+ *     session keeps its dialogue shards and loses its trail shards. The
+ *     default search never rebuilds anything for it; a trail search that
+ *     reaches an aged session re-parses that transcript — slow, rare, and
+ *     said on the page (`trailRebuilt`). ~300 MB at 10 000 instead of 2.6 GB.
  *  3. **It never blocks activation.** Nothing is built until the Search page
  *     asks a question, the build yields to the event loop between files, and a
  *     superseded query aborts the one before it rather than queueing behind it.
@@ -52,7 +57,8 @@ import { execFile } from 'child_process';
 import {
     ALL_ROLES, ParseForeign, SearchOptions, SearchRecord, SearchResult, SearchRole,
     SearchableSession, buildMatcher, buildRecords, emptyResult, finishResult,
-    orderSessions, readTranscript, scanLimits, scanSession, storedRoles, transcriptSignature
+    orderSessions, readTranscript, scanLimits, scanSession, signatureMtime, storedRoles,
+    transcriptSignature
 } from './search';
 import { CompiledQuery, queryPrefilter } from './query';
 
@@ -90,6 +96,16 @@ const HOT_MAX_CHARS = 24_000_000;
 const YIELD_MS = 12;
 const PROGRESS_MS = 150;
 const SAVE_EVERY = 25;
+/**
+ * The roles that age out (X-131): what a tool was asked and what it answered.
+ * 92.5% of the corpus by measurement, read only by an Everything search, and
+ * the only part a bound can drop without touching the default answer.
+ */
+const TRAIL_ROLES: SearchRole[] = ['tool', 'toolResult'];
+/** Days after a transcript's last write that its trail stays indexed; the
+ *  setting's own default, repeated here for a caller that passes none. */
+const DEFAULT_TRAIL_DAYS = 60;
+const DAY_MS = 86_400_000;
 
 interface ShardInfo { f: string; n: number; c: number }
 
@@ -102,6 +118,11 @@ interface Entry {
     /** the transcript could not be read as one — the same answer as a direct
      *  parse failure, remembered so it is not retried on every keystroke */
     failed?: boolean;
+    /** the trail this transcript HAS is not on disk — it aged out, or was
+     *  never written because the session was already past the horizon. Only
+     *  a search that asks for the trail rebuilds it; an entry whose trail was
+     *  empty to begin with is not marked, so it is never re-read for nothing. */
+    aged?: boolean;
 }
 
 interface ManifestFile { v: number; entries: Record<string, Entry> }
@@ -117,6 +138,8 @@ export interface CorpusDeps {
      */
     rgPath?: string;
     parseForeign?: ParseForeign;
+    /** `agentFarm.searchToolTrailDays`, read live; 0 keeps the trail for ever */
+    toolTrailDays?: () => number;
 }
 
 export interface CorpusSearchOptions extends SearchOptions {
@@ -212,8 +235,32 @@ export class TextSearchService {
     }
 
     /**
-     * Sessions that are gone take their shards with them. Only ever this
-     * cache's own files — a transcript is never touched from here.
+     * The moment before which a session's tool trail is not kept on disk —
+     * 0 when it is kept for ever. Read live, so a changed setting takes effect
+     * on the next window without a rebuild of anything.
+     */
+    private trailHorizon(): number {
+        const days = this.deps.toolTrailDays ? Number(this.deps.toolTrailDays()) : DEFAULT_TRAIL_DAYS;
+        return Number.isFinite(days) && days > 0 ? Date.now() - days * DAY_MS : 0;
+    }
+
+    /**
+     * Dated by the signature the entry already stores — the transcript's mtime
+     * at the time the shards were built — and never by a fresh stat, so
+     * `tools/measure_search_corpus.js` reading the manifest from outside sees
+     * exactly the sessions this will age. A transcript written since is a
+     * signature mismatch and is rebuilt whole on the next query anyway; an
+     * entry nothing can date is never aged.
+     */
+    private pastHorizon(sig: string, horizon: number): boolean {
+        const m = signatureMtime(sig);
+        return horizon > 0 && m > 0 && m < horizon;
+    }
+
+    /**
+     * Sessions that are gone take their shards with them, and sessions past the
+     * trail horizon give up their trail shards (X-131). Only ever this cache's
+     * own files — a transcript is never touched from here.
      *
      * ‼️ X-131 — ASKED ASYNCHRONOUSLY AND WITH A YIELD, because the question is
      * one stat per remembered session and the number of remembered sessions is
@@ -221,26 +268,39 @@ export class TextSearchService {
      * synchronous work on the extension host's only thread, paid on the first
      * query of every window; at ten thousand it would be a second and a half of
      * the window not drawing, to discover — as it did here — that nothing is
-     * prunable at all.
+     * prunable at all. Ageing rides the same pass: the date comes out of the
+     * manifest, so it adds no stat of its own.
      */
     private async prune(): Promise<void> {
         if (this.pruned) { return; }
         this.pruned = true;
+        const horizon = this.trailHorizon();
         let lastYield = Date.now();
         for (const [key, e] of Object.entries(this.manifest.entries)) {
             if (!e?.p) { continue; }
             let there = true;
             try { await fs.promises.access(e.p); } catch { there = false; }
-            if (there) {
-                if (Date.now() - lastYield > YIELD_MS) { lastYield = Date.now(); await sleep(); }
-                continue;
+            if (!there) {
+                await this.dropShards(e);
+                delete this.manifest.entries[key];
+                this.verified.delete(key);
+                this.dirty = true;
+            } else if (this.pastHorizon(e.sig, horizon) && TRAIL_ROLES.some(r => e.r?.[r])) {
+                await this.dropTrail(e);
             }
-            await this.dropShards(e);
-            delete this.manifest.entries[key];
-            this.verified.delete(key);
-            this.dirty = true;
             if (Date.now() - lastYield > YIELD_MS) { lastYield = Date.now(); await sleep(); }
         }
+    }
+
+    private async dropTrail(e: Entry): Promise<void> {
+        for (const role of TRAIL_ROLES) {
+            const info = e.r?.[role];
+            if (!info) { continue; }
+            try { await fs.promises.unlink(path.join(this.shardDir, info.f)); } catch { /* already gone */ }
+            delete e.r[role];
+        }
+        e.aged = true;
+        this.dirty = true;
     }
 
     /**
@@ -269,17 +329,28 @@ export class TextSearchService {
 
     // -------------------------------------------------------------- the shards
 
-    private writeShards(key: string, records: SearchRecord[]): Record<string, ShardInfo> {
+    /**
+     * `withTrail:false` is a session already past the horizon being built for
+     * a search that does not want its trail: the records are still parsed (one
+     * parser, one answer) but the trail shards — 92.5% of the bytes — are not
+     * written, and the entry says so, so nothing is written today to be
+     * unlinked on the next window's first query.
+     */
+    private writeShards(
+        key: string, records: SearchRecord[], withTrail: boolean
+    ): { r: Record<string, ShardInfo>; aged: boolean } {
         const byRole = new Map<SearchRole, string[]>();
         let i = 0;
+        let aged = false;
         for (const m of records) {
             const line = [
                 String(i), String(m.ts || 0), String(m.turn || 0),
                 enc(m.tool ?? ''), enc(m.turnLabel ?? ''), m.text
             ].join('\t');
+            i++;
+            if (!withTrail && TRAIL_ROLES.includes(m.role)) { aged = true; continue; }
             const list = byRole.get(m.role);
             if (list) { list.push(line); } else { byRole.set(m.role, [line]); }
-            i++;
         }
         const out: Record<string, ShardInfo> = {};
         fs.mkdirSync(this.shardDir, { recursive: true });
@@ -293,7 +364,7 @@ export class TextSearchService {
             fs.renameSync(tmp, path.join(this.shardDir, name));
             out[role] = { f: name, n: lines.length, c: body.length };
         }
-        return out;
+        return { r: out, aged };
     }
 
     /**
@@ -397,7 +468,7 @@ export class TextSearchService {
 
     // --------------------------------------------------------------- the build
 
-    private buildOne(s: SearchableSession, sig: string): Entry {
+    private buildOne(s: SearchableSession, sig: string, withTrail: boolean): Entry {
         const key = this.keyOf(s.file);
         const old = this.manifest.entries[key];
         if (old) { this.dropShards(old); }
@@ -405,27 +476,45 @@ export class TextSearchService {
         let records: SearchRecord[] | undefined;
         try { raw = fs.readFileSync(s.file, 'utf8'); records = buildRecords(raw, s, this.deps.parseForeign); }
         catch { records = undefined; }
-        const entry: Entry = records
-            ? { p: path.resolve(s.file), sig, r: this.writeShards(key, records) }
-            : { p: path.resolve(s.file), sig, r: {}, failed: true };
+        let entry: Entry;
+        if (records) {
+            const w = this.writeShards(key, records, withTrail);
+            entry = { p: path.resolve(s.file), sig, r: w.r, ...(w.aged ? { aged: true } : {}) };
+        } else {
+            entry = { p: path.resolve(s.file), sig, r: {}, failed: true };
+        }
         this.manifest.entries[key] = entry;
         this.verified.set(key, sig);
         this.dirty = true;
         return entry;
     }
 
+    /** Whether a build of this session writes its trail: always when the
+     *  search wants it, otherwise only while the session is young. */
+    private trailFor(sig: string, wantsTrail: boolean, horizon: number): boolean {
+        return wantsTrail || !this.pastHorizon(sig, horizon);
+    }
+
     /**
      * Bring the corpus up to date for exactly these sessions — newest first, so
      * the part of the answer a reader is most likely to want exists first, and
      * yielding between files so the window stays alive while it happens.
+     *
+     * ‼️ X-131 — FRESHNESS IS JUDGED FOR THE ROLES ASKED. An aged entry is
+     * complete for the dialogue and is left alone by the default search; only
+     * a search that reads the trail treats it as stale and re-parses the
+     * transcript. `trailRebuilt` counts those, so the page can say why an
+     * Everything search over old sessions was slow instead of just being slow.
      */
     private async prepare(
-        ordered: SearchableSession[], opts: CorpusSearchOptions
-    ): Promise<Map<string, Entry>> {
+        ordered: SearchableSession[], opts: CorpusSearchOptions, roles: SearchRole[]
+    ): Promise<{ entries: Map<string, Entry>; trailRebuilt: number }> {
         this.load();
         await this.prune();
+        const wantsTrail = storedRoles(roles).some(r => TRAIL_ROLES.includes(r));
+        const horizon = this.trailHorizon();
         const sigs = new Map<string, { s: SearchableSession; sig: string; key: string }>();
-        const stale: { s: SearchableSession; sig: string; key: string }[] = [];
+        const stale: { s: SearchableSession; sig: string; key: string; aged?: boolean }[] = [];
         for (const s of ordered) {
             // ‼️ NO PARSER IS NOT A PARSE RESULT (X-35). A foreign transcript
             // this service cannot read must not be INDEXED as unreadable, or the
@@ -436,20 +525,23 @@ export class TextSearchService {
             const key = this.keyOf(s.file);
             const sig = transcriptSignature(s);
             sigs.set(key, { s, sig, key });
-            if (this.verified.get(key) === sig) { continue; }
             const e = this.manifest.entries[key];
+            if (wantsTrail && e?.aged && e.sig === sig) { stale.push({ s, sig, key, aged: true }); continue; }
+            if (this.verified.get(key) === sig) { continue; }
             const fresh = e && e.sig === sig
                 && (e.failed === true || Object.values(e.r ?? {}).every(
                     i => fs.existsSync(path.join(this.shardDir, i.f))));
             if (fresh) { this.verified.set(key, sig); } else { stale.push({ s, sig, key }); }
         }
+        let trailRebuilt = 0;
         if (stale.length) {
             let done = 0;
             let lastYield = Date.now();
             let lastTick = 0;
             for (const item of stale) {
                 if (opts.signal?.aborted) { this.save(); throw aborted(); }
-                this.buildOne(item.s, item.sig);
+                this.buildOne(item.s, item.sig, this.trailFor(item.sig, wantsTrail, horizon));
+                if (item.aged) { trailRebuilt++; }
                 done++;
                 if (done % SAVE_EVERY === 0) { this.save(); }
                 const now = Date.now();
@@ -462,12 +554,12 @@ export class TextSearchService {
             this.save();
             opts.onProgress?.(stale.length, stale.length);
         }
-        const out = new Map<string, Entry>();
+        const entries = new Map<string, Entry>();
         for (const [key] of sigs) {
             const e = this.manifest.entries[key];
-            if (e) { out.set(key, e); }
+            if (e) { entries.set(key, e); }
         }
-        return out;
+        return { entries, trailRebuilt };
     }
 
     // ----------------------------------------------------------- the candidates
@@ -560,8 +652,11 @@ export class TextSearchService {
         const ordered = orderSessions(sessions, opts);
         const lim = scanLimits(opts);
         const roles = ALL_ROLES.filter(r => lim.roles.has(r));
-        const entries = await this.prepare(ordered, opts);
+        const { entries, trailRebuilt } = await this.prepare(ordered, opts, roles);
+        if (trailRebuilt) { result.trailRebuilt = trailRebuilt; }
         if (opts.signal?.aborted) { throw aborted(); }
+        const wantsTrail = storedRoles(roles).some(r => TRAIL_ROLES.includes(r));
+        const horizon = this.trailHorizon();
 
         // The plan is the grammar's own promise about what cannot match. Raw
         // regex never gets one — a pattern's invariants are not ours to guess.
@@ -609,7 +704,8 @@ export class TextSearchService {
                 // mid-write). Rebuild it; if the transcript itself is the
                 // problem, fall back to reading it the direct way rather than
                 // reporting a hole in the answer.
-                const rebuilt = this.buildOne(s, transcriptSignature(s));
+                const sig = transcriptSignature(s);
+                const rebuilt = this.buildOne(s, sig, this.trailFor(sig, wantsTrail, horizon));
                 entries.set(key, rebuilt);
                 records = rebuilt.failed
                     ? undefined : this.recordsOf(rebuilt, roles, matcher, plan.monotone === true);
@@ -624,19 +720,21 @@ export class TextSearchService {
     }
 
     /** What the corpus costs on disk and how much of it is dialogue — the
-     *  figures a report quotes rather than an estimate somebody made up. */
-    stats(): { sessions: number; failed: number; shards: number; chars: number; dialogChars: number } {
+     *  figures a report quotes rather than an estimate somebody made up.
+     *  `aged` is the sessions whose trail is not on disk (X-131). */
+    stats(): { sessions: number; failed: number; shards: number; chars: number; dialogChars: number; aged: number } {
         this.load();
-        let shards = 0, chars = 0, dialogChars = 0, failed = 0;
+        let shards = 0, chars = 0, dialogChars = 0, failed = 0, aged = 0;
         for (const e of Object.values(this.manifest.entries)) {
             if (e.failed) { failed++; continue; }
+            if (e.aged) { aged++; }
             for (const [role, info] of Object.entries(e.r ?? {})) {
                 shards++;
                 chars += info.c;
                 if (role === 'user' || role === 'assistant') { dialogChars += info.c; }
             }
         }
-        return { sessions: Object.keys(this.manifest.entries).length, failed, shards, chars, dialogChars };
+        return { sessions: Object.keys(this.manifest.entries).length, failed, shards, chars, dialogChars, aged };
     }
 }
 

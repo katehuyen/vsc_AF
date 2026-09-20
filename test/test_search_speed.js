@@ -334,6 +334,137 @@ async function parity(svc, label) {
         }
     }
 
+    // ---------- X-131: the corpus is bounded by AGEING THE TOOL TRAIL, not by keeping fewer sessions ----------
+    // ‼️ A size cap would thrash: a fleet query asks for EVERY session, so
+    // anything evicted below the working set is rebuilt on the next query — the
+    // 7.5 s re-parse the corpus exists to have ended. The trail is 92.5% of the
+    // bytes and only an Everything search reads it, so past the horizon a
+    // session keeps its dialogue shards and loses its trail. The four things
+    // this guards: the default search never pays for it (no rebuild, cold or
+    // warm); an Everything search re-parses exactly the aged sessions, SAYS SO,
+    // and answers what the direct scan answers; the next window drops the trail
+    // again; and a session written to again is young again.
+    {
+        const agePool = path.join(tmp, 'age-pool');
+        fs.mkdirSync(agePool, { recursive: true });
+        const AGE_N = 6, OLD = 4;
+        const daysAgo = n => new Date(Date.now() - n * 86400000);
+        const aged = [];
+        for (let i = 0; i < AGE_N; i++) {
+            const p = path.join(agePool, `a${i}.jsonl`);
+            fs.writeFileSync(p, [
+                { type: 'user', timestamp: T(i, 1), message: { content: `yaşlanma sorusu ${i} albatros` } },
+                {
+                    type: 'assistant', timestamp: T(i, 2), message: {
+                        content: [
+                            { type: 'text', text: `yaşlanma cevabı ${i} albatros` },
+                            { type: 'tool_use', name: 'Bash', input: { command: `echo kondor ${i}` } }
+                        ]
+                    }
+                },
+                { type: 'user', timestamp: T(i, 3), message: { content: [{ type: 'tool_result', content: `kondor ${i} çıktı` }] } }
+            ].map(l => JSON.stringify(l)).join('\n'), 'utf8');
+            const old = i < OLD;
+            // the age is the transcript's own mtime — what the signature stores
+            if (old) { const d = daysAgo(100); fs.utimesSync(p, d, d); }
+            aged.push({
+                file: p, agentName: 'yazar', title: `Yaş ${i}`, sessionId: `sess-age-${i}`, engine: 'claude',
+                mtime: old ? daysAgo(100).getTime() : Date.now()
+            });
+        }
+        const trailFiles = dir => fs.readdirSync(dir).filter(f => /\.(tool|toolResult)\.tsv$/.test(f));
+        const spy = async (fn) => {
+            const real = fs.readFileSync;
+            const seen = [];
+            fs.readFileSync = function (p, ...rest) { seen.push(String(p)); return real.call(fs, p, ...rest); };
+            try { await fn(); } finally { fs.readFileSync = real; }
+            return seen.filter(p => p.endsWith('.jsonl'));
+        };
+        const ageDir = 'c-age';
+        const ageShards = path.join(tmp, ageDir, C.CORPUS_DIR, 'sh');
+        const ageSvc = () => newService(ageDir, { toolTrailDays: () => 60 });
+        const EVERYTHING = { roles: S.ALL_ROLES, maxHits: 50, parseForeign };
+        const DIALOG = { maxHits: 50, parseForeign };
+
+        // 1. the first build of an old session writes no trail at all
+        let svc = ageSvc();
+        const dlg = await svc.search(aged, 'albatros', DIALOG);
+        ok('X-131: the dialogue of an aged session is indexed like any other', dlg.sessionsMatched === AGE_N);
+        ok('X-131: a session past the horizon is built WITHOUT its trail shards — nothing written today to be unlinked tomorrow',
+            trailFiles(ageShards).length === (AGE_N - OLD) * 2);
+        ok('X-131: stats() names the aged sessions', svc.stats().aged === OLD);
+        ok('X-131: …and the default search says nothing about it', dlg.trailRebuilt === undefined);
+
+        // 2. the default search never re-reads a transcript because of ageing
+        let reread = await spy(async () => { await ageSvc().search(aged, 'albatros', DIALOG); });
+        ok('‼️ X-131: a cold default search over aged sessions reads NO transcript', reread.length === 0);
+
+        // 3. an Everything search re-parses exactly the aged sessions, says so, and answers what the direct scan answers
+        svc = ageSvc();
+        let ev;
+        reread = await spy(async () => { ev = await svc.search(aged, 'kondor', EVERYTHING); });
+        ok('X-131: an Everything search re-reads the aged transcripts and no other',
+            reread.length === OLD && reread.every(p => aged.slice(0, OLD).some(s => s.file === p)));
+        ok('X-131: …says how many it re-read', ev.trailRebuilt === OLD);
+        ok('X-131: …and the answer is the direct scan\'s, hit for hit',
+            shape(ev) === shape(S.searchTranscripts(aged, 'kondor', EVERYTHING)));
+        ok('X-131: the re-parsed trail is on disk for the rest of this window', trailFiles(ageShards).length === AGE_N * 2);
+        reread = await spy(async () => { ev = await svc.search(aged, 'kondor', EVERYTHING); });
+        ok('X-131: a second Everything search in the same window re-reads nothing',
+            reread.length === 0 && ev.trailRebuilt === undefined);
+
+        // 4. the next window's first search ages the trail out again
+        svc = ageSvc();
+        await svc.search(aged, 'albatros', DIALOG);
+        ok('X-131: the next window drops the aged trail again',
+            trailFiles(ageShards).length === (AGE_N - OLD) * 2 && svc.stats().aged === OLD);
+        const man = JSON.parse(fs.readFileSync(path.join(tmp, ageDir, C.CORPUS_DIR, 'manifest.json'), 'utf8'));
+        const agedEntries = Object.values(man.entries).filter(e => e.aged);
+        ok('X-131: the manifest no longer lists the dropped shards',
+            agedEntries.length === OLD && agedEntries.every(e => !e.r.tool && !e.r.toolResult));
+
+        // 5. 0 keeps every trail; a caller that passes no horizon gets the setting's own default
+        const keepDir = 'c-age-keep';
+        const keep = newService(keepDir, { toolTrailDays: () => 0 });
+        await keep.search(aged, 'albatros', DIALOG);
+        ok('X-131: 0 keeps every trail for ever',
+            trailFiles(path.join(tmp, keepDir, C.CORPUS_DIR, 'sh')).length === AGE_N * 2 && keep.stats().aged === 0);
+        const dflt = newService('c-age-default');
+        await dflt.search(aged, 'albatros', DIALOG);
+        ok('X-131: the default horizon is the setting\'s default (60 days)', dflt.stats().aged === OLD);
+        const pkgDays = require(path.join(ROOT, 'package.json')).contributes.configuration.properties['agentFarm.searchToolTrailDays'];
+        ok('X-131: package.json carries the setting, default 60, floor 0',
+            pkgDays && pkgDays.default === 60 && pkgDays.minimum === 0);
+        ok('X-131: …and settingsops files it under search',
+            /searchToolTrailDays: 'search'/.test(fs.readFileSync(path.join(ROOT, 'src', 'core', 'settingsops.ts'), 'utf8')));
+        ok('X-131: …and the extension reads it live into the corpus',
+            /toolTrailDays: \(\) => cfg\(\)\.get<number>\('searchToolTrailDays', 60\)/.test(
+                fs.readFileSync(path.join(ROOT, 'src', 'extension.ts'), 'utf8')));
+
+        // 6. a session that is written to again is young again
+        fs.appendFileSync(aged[0].file, '\n' + JSON.stringify({
+            type: 'user', timestamp: T(0, 9), message: { content: 'dirilen oturum albatros' }
+        }), 'utf8');
+        svc = ageSvc();
+        await svc.search(aged, 'albatros', DIALOG);
+        ok('X-131: a transcript written to again is rebuilt whole and is young again',
+            svc.stats().aged === OLD - 1 && trailFiles(ageShards).length === (AGE_N - OLD + 1) * 2);
+
+        // 7. the page says it, and names the setting that decides it
+        const r = runPage('search.js', fixture.data(), {
+            setTimeout: fn => { fn(); return 1; }, clearTimeout: () => { }
+        });
+        const box = r.query('#q')[0];
+        box.value = 'kondor';
+        box.fire('input');
+        const seq = r.posted.filter(p => p.type === 'search').pop().seq;
+        r.send({ type: 'results', seq, result: Object.assign({}, fixture.RESULT, { trailRebuilt: 3 }) });
+        ok('X-131: the page says how many older sessions were re-read and why',
+            /3 older session\(s\) had their tool trail re-read/.test(r.html()) && r.html().includes('searchToolTrailDays'));
+        r.send({ type: 'results', seq, result: fixture.RESULT });
+        ok('X-131: …and says nothing when none were', !/tool trail re-read/.test(r.html()));
+    }
+
     // ---------- (d) a missing foreign parser does not poison anything ----------
     {
         const svc = new C.TextSearchService({ storageRoot: path.join(tmp, 'c-noforeign') });

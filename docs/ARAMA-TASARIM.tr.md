@@ -213,6 +213,24 @@ arama ~77 milyon karakterlik araç trafiğinin bedelini boşuna ödüyordu.
 - **Kurulum anı:** activation'da hiçbir şey kurulmaz. İlk sorgu newest-first kurar,
   dosya aralarında event-loop'a yield eder ve sayfaya `Preparing search corpus n/total…`
   ilerlemesini yollar. Kısmi cevap hiçbir zaman cevap gibi sunulmaz.
+- **Sınır — alet izi yaşlanır, oturum sayısı kısılmaz (X-131):** Korpus transkriptlerle
+  1:1 büyüyordu (ölçüm: 977 oturumda 253,7 MB, 10.000'de ~2,6 GB) ve budama kuralı yalnız
+  kaynak transkript silinince çalıştığı için hiç ateşlenmiyordu. Boyut tavanı çözüm
+  değildir: `orderSessions` tavan koymaz, düz filo sorgusu BÜTÜN oturumları ister, çalışma
+  kümesinin altına düşen her shard bir sonraki sorguda yeniden üretilir — X-42'nin
+  kaldırdığı 7,5 sn'lik tam ayrıştırma her aramada geri gelirdi. Ağırlığın %92,5'i alet
+  izidir (`tool` + `toolResult`) ve varsayılan Dialog araması onu hiç okumaz; bu yüzden
+  sınır oturum BAŞINA maliyeti düşürür: transkriptin son yazımından
+  `agentFarm.searchToolTrailDays` (varsayılan 60, 0 = sonsuz) gün sonra oturum diyalog
+  shard'larını tutar, alet izi shard'larını bırakır (`aged` bayrağı manifestte). Yaş,
+  manifestteki imzanın mtime'ından okunur (`signatureMtime`) — ek stat yok, ölçüm aracı
+  (`tools/measure_search_corpus.js --days N`) ile eklenti aynı oturumları adlandırır.
+  Ufkun ötesindeki oturum ilk kurulumda bile alet izini yazmaz. Varsayılan arama hiçbir
+  şeyi yeniden üretmez; alet izi isteyen (Everything) bir arama yaşlanmış oturuma
+  ulaşırsa yalnız onu yeniden ayrıştırır, sonuç `trailRebuilt` ile sayfada söylenir
+  ("N older session(s) had their tool trail re-read…") ve o pencerede kalır; sonraki
+  pencerenin ilk sorgusu tekrar düşürür. Yeniden yazılan transkript imzasıyla bütün
+  olarak yeniden kurulur ve gençleşir. Koruyucular `test_search_speed.js` X-131 bloğunda.
 
 ### Aday daraltma ve kapsama testi
 

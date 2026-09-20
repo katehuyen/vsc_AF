@@ -1036,7 +1036,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const textSearch = new TextSearchService({
         storageRoot: context.globalStorageUri.fsPath,
         rgPath: resolveRipgrep(vscode.env.appRoot),
-        parseForeign: (raw, file) => parseCliViewer(raw, file, pricing)
+        parseForeign: (raw, file) => parseCliViewer(raw, file, pricing),
+        // X-131: the bound on the corpus — read live, applied on the first search of a window.
+        toolTrailDays: () => cfg().get<number>('searchToolTrailDays', 60)
     });
 
     // G1: browser-step approvals waiting for a human, mirrored into the Needs You queue.

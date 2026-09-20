@@ -687,8 +687,8 @@
         let html = `${idHtml()}<div class="resultsbar">
             <span><b>${found}</b>matches</span><span><b>${shown}</b>previews</span>
             <span><b>${matched}</b>sessions</span><span><b>${r.filesScanned}</b>scanned</span></div>`;
-        if (r.omittedMatches || r.timedOut || r.parseFailures) {
-            html += `<div class="partial"><b>Coverage note.</b> ${r.omittedMatches ? `${r.omittedMatches} additional matches are counted but not previewed. ` : ''}${r.timedOut ? 'The time budget ended the scan early. ' : ''}${r.parseFailures ? `${r.parseFailures} transcript(s) could not be read.` : ''}</div>`;
+        if (r.omittedMatches || r.timedOut || r.parseFailures || r.trailRebuilt) {
+            html += `<div class="partial"><b>Coverage note.</b> ${r.omittedMatches ? `${r.omittedMatches} additional matches are counted but not previewed. ` : ''}${r.timedOut ? 'The time budget ended the scan early. ' : ''}${r.parseFailures ? `${r.parseFailures} transcript(s) could not be read. ` : ''}${r.trailRebuilt ? `${r.trailRebuilt} older session(s) had their tool trail re-read from the transcript, which is what made this slower: the trail stays indexed only for a while after a session's last activity (agentFarm.searchToolTrailDays).` : ''}</div>`;
         }
         if (!r.hits.length) { out.innerHTML = html + '<div class="empty">No match in this scope.</div>'; wireResults(); return; }
         const transcript = r.hits.map((h, i) => ({ h, i }))

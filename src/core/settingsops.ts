@@ -245,7 +245,7 @@ const CATEGORY_OF: Record<string, string> = {
     browserAllowHosts: 'media', browserApproval: 'media',
     // search & semantic
     embeddingsProvider: 'search', embeddingsModel: 'search', embeddingsBaseUrl: 'search',
-    embeddingsSecret: 'search', semanticMaxSessions: 'search',
+    embeddingsSecret: 'search', semanticMaxSessions: 'search', searchToolTrailDays: 'search',
     // multi-CLI
     cliProfiles: 'cli', codexHome: 'cli', geminiDir: 'cli', agyHome: 'cli',
     // ‼️ NOT a path like the three above: OpenCode publishes no transcript file,

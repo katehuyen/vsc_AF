@@ -2,6 +2,39 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.609.0 - the search corpus is bounded by ageing the tool trail, not by keeping fewer sessions (X-131) (2026-09-20)
+
+- **‼️ The corpus grew 1:1 with the transcripts and nothing ever pruned it.**
+  Measured 253.7 MB over 977 sessions (doubled in under a month), 2.6 GB
+  projected at 10 000, 0 entries prunable — the only rule dropped a session
+  whose transcript was deleted, and transcripts never are. A size cap was
+  measured NOT to be the fix: `orderSessions` caps nothing, a fleet query asks
+  for every session, and anything evicted below that working set is rebuilt on
+  the next query — the 7.5 s full re-parse the corpus exists to have ended,
+  paid on every search.
+- **So the bound makes each session cost less instead.** The tool trail
+  (`tool` + `toolResult`) is 92.5% of the bytes and only an Everything search
+  reads it; the default You+Agent search never does. Past a horizon after the
+  transcript's last write, a session keeps its dialogue shards and loses its
+  trail shards. The default search never rebuilds anything for it — cold or
+  warm, measured by a guard that counts transcript reads. An Everything search
+  that reaches an aged session re-parses that transcript on the spot, keeps
+  the trail for the rest of the window, and the results say how many it
+  re-read and why (`trailRebuilt`, in the Coverage note) rather than just being
+  slow. A session past the horizon is built without its trail in the first
+  place — nothing is written today to be unlinked tomorrow.
+- **New setting `agentFarm.searchToolTrailDays`** (default 60, 0 = keep every
+  trail for ever), category Search, read live and applied on the first search
+  of each window. The age is the transcript mtime the manifest already stores
+  (`signatureMtime`), so ageing rides the existing per-entry pass with no stat
+  of its own, and `tools/measure_search_corpus.js --days N` names exactly the
+  sessions the extension will age. Steady state: the trail of the last N days'
+  sessions plus the dialogue of all of them — a bound set by activity, not by
+  history.
+- Chosen over a hard size cap (exact bound, seconds on every search) and over
+  "measure and wait" (the corpus doubles monthly) — the user's own pick among
+  the three, recorded as a decision in the project.
+
 ## 3.608.0 - one budget per token, not one per reader: why a single account of four kept hitting the rate limit (X-240) (2026-09-20)
 
 - **‼️ The account that got rate limited was the only one with TWO readers, and

@@ -160,6 +160,10 @@ export interface SearchResult {
     parseFailures: number;
     timedOut?: boolean;
     error?: string;
+    /** X-131 — sessions whose tool trail had aged out of the corpus and were
+     *  re-parsed for this search; the reason an Everything search over old
+     *  sessions is slow, said on the page rather than suffered in silence. */
+    trailRebuilt?: number;
 }
 
 /**
@@ -360,11 +364,12 @@ export function transcriptSignature(s: SearchableSession): string {
 /**
  * The transcript's mtime, read back out of a signature.
  *
- * ‼️ HERE, BESIDE THE FUNCTION THAT WRITES IT. The corpus evicts oldest-first
- * and the only age it has on a cached entry is the signature it already
- * stores — so this pair must age together or eviction silently starts keeping
- * the wrong sessions. Zero means "this signature does not say", and a caller
- * that sorts by it drops those first, which is the right answer for an entry
+ * ‼️ HERE, BESIDE THE FUNCTION THAT WRITES IT. The corpus ages a session's
+ * tool trail out past a horizon (X-131) and the only age it has on a cached
+ * entry is the signature it already stores — so this pair must age together
+ * or ageing silently starts dropping the wrong sessions. Zero means "this
+ * signature does not say"; the corpus never ages such an entry, and a caller
+ * that sorts by it puts those first, which is the right answer for an entry
  * nothing can date.
  */
 export function signatureMtime(sig: string | undefined): number {

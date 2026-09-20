@@ -2,7 +2,7 @@
   "name": "agent-farm",
   "displayName": "Agent Farm",
   "description": "Mission control for your local coding agents — Claude Code, Codex, Gemini, Antigravity and OpenCode: live fleet status, cost analytics, session explorer, health & optimization insights.",
-  "version": "3.608.0",
+  "version": "3.609.0",
   "icon": "media/icon.png",
   "publisher": "muvusoft",
   "license": "MIT",
@@ -9304,6 +9304,12 @@
           "type": "number",
           "default": 300,
           "description": "How many most-recent sessions the semantic index covers."
+        },
+        "agentFarm.searchToolTrailDays": {
+          "type": "number",
+          "default": 60,
+          "minimum": 0,
+          "description": "How many days after a session's last activity its TOOL TRAIL (what each tool was asked and what it answered) stays in the text-search index, on disk. The trail is 92% of the index by measurement and only an 'Everything' search reads it; the default You+Agent search never does. Past this horizon a session keeps its dialogue in the index and drops its trail, which is what keeps the index from growing 1:1 with your transcripts (measured 254 MB after 977 sessions, 2.6 GB projected at 10 000; ~300 MB with this). Nothing is lost: an Everything search that reaches an older session re-reads that transcript on the spot — slower, and the results say how many it re-read. 0 keeps every trail for ever. Applied on the first search of each window."
         },
         "agentFarm.browserAllowHosts": {
           "type": "array",

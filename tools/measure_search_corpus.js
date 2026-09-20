@@ -13,9 +13,12 @@
  *   1. how big is it now, on disk and in the manifest's own figures;
  *   2. where the weight is (the tool trail, or the dialogue people search);
  *   3. what the age curve looks like, i.e. what a size budget would evict;
- *   4. what the first query pays to discover there is nothing to prune.
+ *   4. what the first query pays to discover there is nothing to prune;
+ *   5. what the trail horizon (`agentFarm.searchToolTrailDays`) has aged out
+ *      and what it still would — dated by the same signature the corpus
+ *      dates by, so this and the extension name the same sessions.
  *
- * Usage: node tools/measure_search_corpus.js [--root <globalStorage dir>]
+ * Usage: node tools/measure_search_corpus.js [--root <globalStorage dir>] [--days 60]
  */
 'use strict';
 
@@ -66,13 +69,14 @@ function main() {
     const rows = [];
     let chars = 0;
     for (const [key, e] of entries) {
-        let c = 0;
+        let c = 0, trail = 0;
         for (const [role, i] of Object.entries((e && e.r) || {})) {
             c += i.c || 0;
             byRole[role] = (byRole[role] || 0) + (i.c || 0);
+            if (role === 'tool' || role === 'toolResult') { trail += i.c || 0; }
         }
         chars += c;
-        rows.push({ key, chars: c, mtime: signatureMtime(e && e.sig) });
+        rows.push({ key, chars: c, trail, aged: !!(e && e.aged), mtime: signatureMtime(e && e.sig) });
     }
 
     console.log(`corpus ${root}`);
@@ -110,8 +114,8 @@ function main() {
         if (e && e.p && !fs.existsSync(e.p)) { missing++; }
     }
     const ms = Date.now() - t0;
-    console.log('the prune rule, as it stands');
-    console.log(`  ${entries.length} synchronous existsSync in ${ms} ms — paid on the first query of every window`);
+    console.log('the gone-transcript rule (asynchronous with a yield since X-131 — this is what a synchronous pass would cost)');
+    console.log(`  ${entries.length} existence checks in ${ms} ms synchronously — the cost the async pass keeps off the window`);
     console.log(`  ${missing} entr${missing === 1 ? 'y' : 'ies'} would be dropped by it\n`);
 
     console.log('projected at the same cost per session');
@@ -119,6 +123,25 @@ function main() {
     console.log('  sessions     corpus');
     for (const k of [1000, 3000, 10000]) {
         console.log(`  ${String(k).padStart(8)}  ${fmtMC(per * k).padStart(11)}`);
+    }
+
+    // ---- 5. the trail horizon (X-131): what it has aged out, what it still would ----
+    const days = Number(arg('days', 60));
+    const horizon = days > 0 ? Date.now() - days * 86400000 : 0;
+    const agedRows = rows.filter(r => r.aged);
+    const past = rows.filter(r => horizon && r.mtime > 0 && r.mtime < horizon);
+    const pending = past.filter(r => r.trail > 0);
+    const pendingChars = pending.reduce((a, r) => a + r.trail, 0);
+    console.log(`\nthe trail horizon, at ${days} day${days === 1 ? '' : 's'} (agentFarm.searchToolTrailDays; --days to try another)`);
+    if (!horizon) {
+        console.log('  0 — every trail is kept for ever');
+    } else {
+        console.log(`  ${past.length} of ${rows.length} sessions are past it (last written before ${new Date(horizon).toISOString().slice(0, 10)})`);
+        console.log(`  ${agedRows.length} already carry no trail (aged out, or built without one)`);
+        console.log(`  ${pending.length} still hold ${fmtMC(pendingChars)} of trail the next window's first search will drop`);
+        const young = rows.filter(r => !(r.mtime > 0 && r.mtime < horizon));
+        const youngTrail = young.reduce((a, r) => a + r.trail, 0);
+        console.log(`  what stays: ${fmtMC(chars - pendingChars)} — the dialogue of every session plus ${fmtMC(youngTrail)} of trail on the ${young.length} inside the horizon`);
     }
 }
 
