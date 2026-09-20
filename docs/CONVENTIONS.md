@@ -1248,6 +1248,29 @@ not a step in front of the choice, it IS the choice.
 "finishing the job" by converting them is a decision somebody has to make on
 purpose rather than by momentum.
 
+### A form that belongs to ONE ROW opens under it — `AFA2A.plus` / `.cockpit` (N-7)
+
+A form that acts on the page opens at the top of the page. A form that acts on
+**one row** opens under **that row**, reached by a `+` on the row itself: the
+A2A supervisor cockpit is the model, and the two halves of it are a rule.
+
+- **The control costs the row nothing until it is wanted.** `.a2a-plus` is
+  `opacity:0` and comes back on `.a2a-card:hover`, `:focus` and while its own
+  form is open. A gesture a person makes occasionally must not put a button on
+  every row of a list they are reading.
+- **The BADGE is the opposite.** What the form produced — here a supervisor
+  directive, which outranks every rule the agent applies — is drawn solid,
+  coloured by kind, readable from across the list, with the content in its
+  AFTip. Hide the control, never the consequence.
+- **One open at a time**, tracked by the row's id on the page, and the form is
+  `AFForm.card` like every other: Ctrl+Enter submits, ✕ closes, the refusal
+  lands in the card. The draft lives on the PAGE (`onEdit`), because these pages
+  repaint on a host push and a repaint under a half-typed form must not throw
+  the words away — and a push that no longer carries that row closes it.
+- **A scene of it is reached by pressing it** (`act:` in the fixture), and its
+  arities are different layouts: nothing set yet · set, with every control ·
+  a row whose state removes controls. Photograph the smallest first.
+
 ## Right-click
 
 Every surface that shows a session carries the full session menu —

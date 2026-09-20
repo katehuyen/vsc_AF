@@ -81,6 +81,72 @@
         </div>`;
     }
 
+    // ---- the supervisor's hand (N-7): a badge, a hidden +, an inline cockpit ----
+    // The badge is the OPPOSITE of the + on purpose. A directive outranks every
+    // rule the agent applies, so a card carrying one must be unmistakable from
+    // across the list; the control that SETS one is a person's occasional
+    // gesture and costs a card nothing until the pointer is on it.
+    const KIND_VERB = { steer: 'do it THIS way', veto: 'NOT this — do something else', constraint: 'stay WITHIN these limits' };
+    const KINDS = [
+        { id: 'steer', label: 'steer — do it this way', detail: 'The work stands; this is how it is to be done.' },
+        { id: 'veto', label: 'veto — not this, do something else', detail: 'The work as stated is refused. Say what instead.' },
+        { id: 'constraint', label: 'constraint — stay within these limits', detail: 'The work stands, inside a boundary the agent may not cross.' }
+    ];
+    function directiveFlag(d) {
+        if (!d) { return ''; }
+        const b = `<span class="a2a-dflag a2a-df-${esc(d.kind)}">👤 ${esc(d.kind)}</span>`;
+        return window.AFTip
+            ? window.AFTip.wrap(b, 'Supervisor directive', `${d.kind} — ${KIND_VERB[d.kind] || d.kind}\n\n${d.text}\n\nThe agent reads this before its own rules. Press + on this card to change or take it off.`)
+            : b;
+    }
+    function plus(id, open) {
+        return `<button class="a2a-plus${open ? ' on' : ''}" data-plus="${esc(id)}"`
+            + ` title="${open ? 'Close the supervisor cockpit' : 'Supervisor cockpit — steer, veto or constrain this card'}"`
+            + ` aria-label="Supervisor cockpit">${open ? '✕' : '+'}</button>`;
+    }
+    /**
+     * The cockpit itself, drawn by the page's own form component so a person
+     * gets the same keyboard bargain here as everywhere else (Ctrl+Enter
+     * submits, ✕ closes, the refusal lands IN the card).
+     *
+     * `reroute` and `runNow` are the task page's alone — a note is passive and
+     * there is nothing to re-assign or to start.
+     */
+    function cockpit(o) {
+        const F = window.AFForm;
+        const d = o.draft || {};
+        let body = F.grid([
+            F.sel('kind', 'Directive', KINDS, d.kind, { tip: 'What your word DOES to the agent that reads it.' }),
+            // A word already on the card says WHEN it was given: a constraint
+            // set three weeks ago and one set this morning are read differently.
+            o.setAt ? F.stat('Standing since', window.AFTime.full(o.setAt)) : '',
+            F.area('text', 'Your word', d.text || '', {
+                rows: 3, required: true,
+                ph: 'Read before the agent\'s own rules — say what it must DO, in one or two sentences.'
+            })
+        ]);
+        if (o.reroute) {
+            body += F.sec('Re-route', 'give it to somebody else — your authority, so the loop guard does not apply and the count starts again')
+                + F.grid([
+                    F.sel('targetRole', 'To', o.roles || [], d.targetRole, { tip: 'The role or agent the new task is for. "anyone" puts it back on the open board.' }),
+                    F.sel('project', 'Project', o.projects || [], d.project, { tip: 'Which project the new task is filed under.' }),
+                    F.text('workdir', 'Workdir', d.workdir || '', { tip: 'The folder or subsystem it is about; * is anywhere.' }),
+                    F.text('why', 'Why', d.why || '', { wide: true, ph: 'recorded on the task you are taking it off' })
+                ]);
+        }
+        const extra = [
+            o.has ? '<button class="secondary" data-afact="dremove" title="Take your directive off this card — the agent goes back to its own rules">✕ Remove directive</button>' : '',
+            o.reroute ? '<button class="secondary" data-afact="reroute" title="Close this task and open a new one for the role above, carrying the trail and your directive">↪ Re-route</button>' : '',
+            o.runNow ? '<button class="secondary" data-afact="runnow" title="Open a Console session on the agent this task names, with the claim as its first prompt">⚡ Run Now</button>' : ''
+        ].filter(Boolean).join('');
+        return `<div class="a2a-cockpit">${F.card({
+            id: 'a2a-cockpit', title: '👤 Supervisor', lede: o.lede || '',
+            body: body, msg: o.msg || '', warn: !!o.msg,
+            submit: o.has ? 'Update directive' : 'Set directive',
+            extra: extra
+        })}</div>`;
+    }
+
     // ---- a lease as a bar: how much of the 30 minutes is left, and the claimant's own word ----
     function leaseBar(task, now, leaseMs) {
         const c = task.claimedBy;
@@ -123,6 +189,28 @@
             <button class="secondary" id="${prefix}-reset" title="Reset filters">↺</button>
         </div>`;
     }
+    /**
+     * N-7 — the cockpit's own wiring, once for both pages. The draft lives on
+     * the PAGE (o.onEdit) rather than here: these pages render by replacing
+     * innerHTML, and a host push that repaints under a half-typed directive
+     * must not throw the words away.
+     */
+    function wireCockpit(o) {
+        const root = document.querySelector('.a2a-cockpit');
+        if (!root) { return; }
+        const F = window.AFForm;
+        F.wire(root, {
+            onEdit: v => { if (o.onEdit) { o.onEdit(v); } },
+            onCancel: () => o.onCancel(),
+            onSubmit: () => o.onSubmit(F.read(root)),
+            onAct: a => o.onAct(a, F.read(root))
+        });
+        if (o.focus) {
+            const t = root.querySelector('textarea');
+            if (t && t.focus) { t.focus(); }
+        }
+    }
+
     function wireControls(prefix, o) {
         const bind = (id, ev, fn) => { const el = document.getElementById(id); if (el) { el.addEventListener(ev, fn); } };
         bind(prefix + '-search', 'input', e => o.onQuery(e.target.value));
@@ -181,7 +269,17 @@
         .a2a-hop { font-size:11px; opacity:.75; white-space:nowrap; }
         .a2a-empty { margin-top:24px; }
         .a2a-lane { margin:16px 0 4px; font-size:12px; font-weight:600; opacity:.8; }
+        .a2a-dflag { font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; padding:1px 7px; border-radius:9px; white-space:nowrap; flex-shrink:0;
+            background:var(--vscode-editorWarning-foreground, #d4a72c); color:var(--vscode-editor-background, #1e1e1e); }
+        .a2a-df-veto { background:var(--vscode-errorForeground, #f14c4c); color:var(--vscode-editor-background, #1e1e1e); }
+        .a2a-df-constraint { background:var(--vscode-textLink-foreground, #3794ff); color:var(--vscode-editor-background, #1e1e1e); }
+        .a2a-plus { flex-shrink:0; width:20px; height:20px; padding:0; line-height:1; font-size:13px; border-radius:50%;
+            opacity:0; transition:opacity .12s; background:transparent; color:var(--vscode-foreground); border:1px solid var(--vscode-panel-border); }
+        .a2a-card:hover .a2a-plus, .a2a-plus:focus, .a2a-plus.on { opacity:1; }
+        .a2a-plus.on { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-color:transparent; }
+        .a2a-cockpit { padding:0 10px 10px 28px; }
+        .a2a-cockpit .affbox { margin:0; }
     </style>`;
 
-    window.AFA2A = { esc, md, coords, directive, leaseBar, stateBadge, controls, wireControls, CAT, STYLE };
+    window.AFA2A = { esc, md, coords, directive, directiveFlag, plus, cockpit, leaseBar, stateBadge, controls, wireControls, wireCockpit, CAT, KINDS, STYLE };
 })();

@@ -23,6 +23,46 @@
     const expanded = new Set();
     let focusId = DATA.focusId || null;
     let refocusSearch = false;
+    // N-7 — the supervisor cockpit. On a task it carries three more hands than
+    // on a note: re-route (the task is somebody else's now), and Run Now (stop
+    // waiting for the agent it is for to come and look).
+    let cockpitId = null;
+    let draft = null;
+    let cockpitMsg = '';
+    let focusCockpit = false;
+
+    /** The roles a re-route may pick: the fleet, plus whatever this task already names. */
+    function roleOptions(t) {
+        const names = (DATA.agents || []).slice();
+        if (t.targetRole && t.targetRole !== '*' && names.indexOf(t.targetRole) < 0) { names.push(t.targetRole); }
+        return [{ id: '*', label: '✱ anyone', detail: 'Back on the open board — whoever the coordinates fit may take it.' }]
+            .concat(names.sort().map(a => ({ id: a, label: '→ ' + a })));
+    }
+    function projectOptions(t) {
+        const out = [{ id: '*', label: '✱ any project', detail: 'A broadcast on the project axis — every project.' }]
+            .concat((DATA.projects || []).map(p => ({
+                id: p.id, label: (p.icon ? p.icon + ' ' : '') + p.name, detail: p.summary || ''
+            })));
+        // A task filed under a project this window does not have open still
+        // keeps its own coordinate: dropping it would move the work silently.
+        if (t.project && t.project !== '*' && !out.some(o => o.id === t.project)) {
+            out.push({ id: t.project, label: t.project, detail: 'Filed by key; the project is not open in this window.' });
+        }
+        return out;
+    }
+    function openCockpit(id) {
+        const t = (DATA.tasks || []).find(x => x.id === id);
+        if (!t) { return; }
+        const d = t.humanDirective;
+        cockpitId = id;
+        cockpitMsg = '';
+        draft = {
+            kind: d ? d.kind : 'steer', text: d ? d.text : '',
+            targetRole: t.targetRole, project: t.project, workdir: t.workdir, why: ''
+        };
+        focusCockpit = true;
+    }
+    function closeCockpit() { cockpitId = null; draft = null; cockpitMsg = ''; focusCockpit = false; }
 
     function saveState() { try { vscode.setState({ fState, fFrom, fRole, fProject, query }); } catch (e) { /* no state api */ } }
 
@@ -75,16 +115,25 @@
         const line = `<div class="a2a-line" data-open="${t.id}">
             ${A.stateBadge(t.state)}
             <span class="a2a-title">${esc(t.title)}</span>
-            ${t.humanDirective ? window.AFTip.wrap('<span class="a2a-flag">⚠️ directive</span>', 'Supervisor directive', `${t.humanDirective.kind}: ${t.humanDirective.text}`) : ''}
+            ${A.directiveFlag(t.humanDirective)}
             ${hop}
             ${A.coords(t, DATA.projects)}
             ${(t.requires || []).length ? window.AFTip.wrap(`<span class="a2a-flag">🔧 ${t.requires.length}</span>`, 'Requires', 'Requires: ' + t.requires.join(', ') + '\nAll of them, or the claim is refused.') : ''}
             <span class="a2a-from">🤖 ${esc(t.fromAgent)}${t.claimedBy ? ' → ' + esc(t.claimedBy.agent) : ''}</span>
             ${A.leaseBar(t, now, DATA.leaseMs)}
             ${window.AFTip.wrap(`<span class="a2a-age">${esc(window.AFTime.ago(t.ts))}</span>`, 'Handed over', window.AFTime.tip(t.ts, 'Handed over'))}
+            ${A.plus(t.id, cockpitId === t.id)}
         </div>`;
+        const cp = cockpitId === t.id ? A.cockpit({
+            draft: draft, has: !!t.humanDirective, setAt: t.humanDirective && t.humanDirective.ts, msg: cockpitMsg,
+            lede: closed
+                ? 'this task is closed — your word still marks it, but there is nothing left to move or to start'
+                : 'your word on this task — the agent that holds it obeys this before its own rules',
+            reroute: !closed, roles: roleOptions(t), projects: projectOptions(t),
+            runNow: !closed
+        }) : '';
         const cls = `a2a-card${focusId === t.id ? ' a2a-focus' : ''}${closed ? ' a2a-closed' : ''}`;
-        if (!open) { return `<div class="${cls}" data-id="${t.id}">${line}</div>`; }
+        if (!open) { return `<div class="${cls}" data-id="${t.id}">${line}${cp}</div>`; }
         const xref = [];
         if (t.sourceNoteId) {
             const n = (DATA.notesById || {})[t.sourceNoteId];
@@ -97,7 +146,7 @@
             ${closed ? '' : `<button class="secondary" data-act="cancel" data-id="${t.id}" title="Cancel this task — it is never re-queued and its claimant, if any, loses it">⊘ Cancel</button>`}
             <button class="secondary" data-act="copyId" data-id="${t.id}" title="Copy the task id — a2a.tasks.claim id=…">⧉ ${esc(t.id)}</button>
         </div>`;
-        return `<div class="${cls}" data-id="${t.id}">${line}
+        return `<div class="${cls}" data-id="${t.id}">${line}${cp}
             <div class="a2a-body">
                 ${A.directive(t.humanDirective)}
                 ${t.instructions ? A.md(t.instructions) : '<div class="muted">(no instructions)</div>'}
@@ -179,6 +228,48 @@
         document.querySelectorAll('.a2a-link').forEach(a => a.addEventListener('click', ev => {
             ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'openExternal', url: a.dataset.href });
         }));
+        document.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const id = b.dataset.plus;
+            if (cockpitId === id) { closeCockpit(); } else { openCockpit(id); }
+            render();
+        }));
+        A.wireCockpit({
+            focus: focusCockpit,
+            onEdit: v => { draft = Object.assign(draft || {}, v); },
+            onCancel: () => { closeCockpit(); render(); },
+            onSubmit: v => {
+                draft = Object.assign(draft || {}, v);
+                const text = (v.text || '').trim();
+                if (!text) {
+                    cockpitMsg = 'Say what the agent must do. A directive outranks every rule it has; an empty one outranks them with nothing.';
+                    render();
+                    return;
+                }
+                vscode.postMessage({ type: 'directiveSet', id: cockpitId, kind: v.kind, text: text });
+                closeCockpit(); render();
+            },
+            onAct: (a, v) => {
+                const id = cockpitId;
+                draft = Object.assign(draft || {}, v);
+                if (a === 'dremove') { vscode.postMessage({ type: 'directiveRemove', id }); closeCockpit(); render(); return; }
+                if (a === 'runnow') { vscode.postMessage({ type: 'runNow', id }); closeCockpit(); render(); return; }
+                if (a !== 'reroute') { return; }
+                const t = (DATA.tasks || []).find(x => x.id === id);
+                if (t && v.targetRole === t.targetRole && (v.project || '*') === t.project && (v.workdir || '*') === t.workdir) {
+                    cockpitMsg = 'Re-routing to the same place closes this task and opens an identical one. Change the role, the project or the workdir first.';
+                    render();
+                    return;
+                }
+                vscode.postMessage({
+                    type: 'reroute', id,
+                    targetRole: v.targetRole, project: v.project,
+                    workdir: (v.workdir || '').trim(), why: (v.why || '').trim()
+                });
+                closeCockpit(); render();
+            }
+        });
+        focusCockpit = false;
     }
 
     const repaint = window.AFRepaint.guard(render);
@@ -186,6 +277,9 @@
         if (ev.data.type === 'data') {
             DATA = ev.data.data;
             if (DATA.focusId) { focusId = DATA.focusId; expanded.add(focusId); }
+            // A cockpit open on a row this push no longer carries is a form
+            // editing nothing — a re-route closes the task it was opened on.
+            if (cockpitId && !(DATA.tasks || []).some(t => t.id === cockpitId)) { closeCockpit(); }
             repaint();
         }
     });

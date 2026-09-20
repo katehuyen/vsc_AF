@@ -59,7 +59,7 @@ const count = (s, re) => (s.match(re) || []).length;
     ok('strictness is a chip of its own, with the rule in its hover',
         /a2a-c-strict a2a-s-hard">hard</.test(h) && /every stated coordinate must match/.test(h));
     ok('a promoted note wears its task\'s state on the line', /⚡ claimed<\/span>/.test(h));
-    ok('a directed note is flagged on the line', /⚠️ directive<\/span>/.test(h));
+    ok('a directed note is flagged on the line', /class="a2a-dflag a2a-df-constraint">👤 constraint</.test(h));
     ok('the reader count is on the line and the readers in its hover', /👁 3</.test(h) && /Read by: developer, explorer, basit/.test(h));
     ok('the focused card is marked and open', /a2a-card a2a-focus" data-id="n-mu9p3"/.test(h) && /a2a-body/.test(h));
     ok('…its supervisor directive is drawn as the block the bridge prints',
@@ -181,6 +181,116 @@ const count = (s, re) => (s.match(re) || []).length;
     ok('one queued task: open lane only, no closed lane, no lease bar, Cancel offered',
         /Open · 1</.test(oh) && !/Closed ·/.test(oh) && !/role="progressbar"/.test(oh) && /data-act="cancel" data-id="t-mu9q0"/.test(oh));
     ok('…with its ceilings and expected output', /\$4 · 40 turns/.test(oh) && /<div class="a2a-sech">Expected output<\/div>/.test(oh));
+}
+
+// ---------- N-7: the supervisor cockpit, on a note ----------
+{
+    const r = notes();
+    const h = r.html();
+    ok('a directed card wears a 👤 badge coloured by the KIND of word it is, not a generic flag',
+        /class="a2a-dflag a2a-df-constraint">👤 constraint</.test(h) && !/⚠️ directive/.test(h));
+    ok('…and its hover carries the directive itself, so the list is readable without opening anything',
+        /docs\/CONVENTIONS\.md dışına taşınmayacak/.test(h));
+    // The + is the opposite of the badge: on every row, costing nothing until
+    // the pointer is on the card. A static DOM cannot be hovered, so the rule
+    // that keeps it out of the way is read off the stylesheet it ships in.
+    ok('every card carries a +', count(h, /class="a2a-plus" data-plus=/g) === 4);
+    ok('…and it takes no space until the card is under the pointer or it has focus',
+        /\.a2a-plus \{[^}]*opacity:0;/.test(h) && /\.a2a-card:hover \.a2a-plus, \.a2a-plus:focus, \.a2a-plus\.on \{ opacity:1; \}/.test(h));
+
+    r.query('[data-plus]').find(e => e.dataset.plus === 'n-mu9p1').click();
+    const c = r.html();
+    ok('pressing + opens ONE cockpit, and it is on that card', count(c, /class="a2a-cockpit"/g) === 1
+        && /data-id="n-mu9p1">[^]*?class="a2a-cockpit"/.test(c));
+    ok('…drawn by the page\'s own form component, not a second hand-rolled card',
+        /data-afcard="1"/.test(c) && /data-af="kind" data-aft="s"/.test(c) && /data-af="text" data-aft="s"/.test(c));
+    ok('…offering the three kinds of word, each saying what it DOES, steer chosen on an undirected card',
+        /<option value="steer" selected[^>]*>steer — do it this way</.test(c)
+        && /<option value="veto"[^>]*>veto — not this, do something else</.test(c)
+        && /<option value="constraint"[^>]*>constraint — stay within these limits</.test(c));
+    ok('…with no Remove on it, because there is nothing yet to take off', !/data-afact="dremove"/.test(c));
+    ok('…and a NOTE gets no re-route and no Run Now — nothing is assigned on a passive board',
+        !/data-afact="reroute"/.test(c) && !/data-afact="runnow"/.test(c));
+    ok('…and the + on that row is now the way back out', /class="a2a-plus on" data-plus="n-mu9p1"/.test(c));
+
+    // An empty directive is refused IN the card, and nothing is written.
+    // (‼️ the shim's selector is not scoped the way a browser's is, so the
+    // header's own [data-afact] wiring answers this press too — what is
+    // measured is that NO DIRECTIVE went out, not that nothing at all did.)
+    r.query('[data-afact="submit"]')[0].click();
+    ok('submitting with no words is refused in the card, and no directive is set',
+        /outranks every rule it has/.test(r.html()) && !r.posted.some(m => m.type === 'directiveSet')
+        && count(r.html(), /class="a2a-cockpit"/g) === 1);
+
+    const ta = r.query('textarea')[0];
+    ta.value = 'Bu notu okuyan ajan önce src/core/a2aStore.ts kilidini doğrulasın.';
+    r.query('[data-afact="submit"]')[0].click();
+    ok('a directive typed and submitted posts directiveSet with the kind and the words',
+        r.posted.some(m => m.type === 'directiveSet' && m.id === 'n-mu9p1' && m.kind === 'steer'
+            && /a2aStore\.ts kilidini/.test(m.text)));
+    ok('…and the cockpit closes behind it', !/class="a2a-cockpit"/.test(r.els.app.innerHTML));
+
+    // On a card that already carries one, the cockpit is an EDITOR.
+    const d = notes({ focusId: 'n-mu9p3' });
+    d.query('[data-plus]').find(e => e.dataset.plus === 'n-mu9p3').click();
+    const dh = d.html();
+    ok('a directed card opens its cockpit pre-filled with the word already on it',
+        /<option value="constraint" selected/.test(dh) && /docs\/CONVENTIONS\.md dışına taşınmayacak/.test(dh)
+        && /data-afact="submit">Update directive</.test(dh));
+    ok('…and offers Remove beside it', /data-afact="dremove"/.test(dh));
+    ok('…and says how long the word has been standing, which is half of how it is read',
+        /<span>Standing since<\/span><span class="affstat">20 Eyl 2026, 20:50 \(13:50 UTC\)<\/span>/.test(dh));
+    d.query('[data-afact="dremove"]')[0].click();
+    ok('✕ Remove directive posts directiveRemove for that card',
+        d.posted.some(m => m.type === 'directiveRemove' && m.id === 'n-mu9p3'));
+}
+
+// ---------- N-7: the cockpit on a task — re-route and Run Now ----------
+{
+    const r = tasks();
+    r.query('[data-plus]').find(e => e.dataset.plus === 't-mu9q3').click();
+    const h = r.html();
+    ok('a task\'s cockpit carries the re-route section and Run Now as well as the word',
+        /data-afact="reroute"/.test(h) && /data-afact="runnow"/.test(h) && /data-af="targetRole"/.test(h));
+    ok('…the To picker is the real fleet, plus "anyone" for putting it back on the open board',
+        /<option value="\*"[^>]*>✱ anyone</.test(h) && /<option value="developer" selected[^>]*>→ developer</.test(h)
+        && /<option value="manager"[^>]*>→ manager</.test(h) && /<option value="psikolog"[^>]*>→ psikolog</.test(h));
+    ok('…the Project picker is seeded with the project the task is ALREADY filed under',
+        /<option value="prj_talk" selected[^>]*>🎙 PRS\.MuratVural_DEV_TalkScribe\.ZEN</.test(h));
+    ok('…and the workdir it is already about', /data-af="workdir" data-aft="s" value="ZEP"/.test(h));
+
+    // Re-routing to the same place would close a task and open its twin.
+    r.query('[data-afact="reroute"]')[0].click();
+    ok('re-routing to where it already is is refused in the card, and moves nothing',
+        /Re-routing to the same place/.test(r.html()) && !r.posted.some(m => m.type === 'reroute'));
+
+    const sel = r.query('select').find(e => e.dataset.af === 'targetRole');
+    sel.value = 'basit';
+    r.query('[data-afact="reroute"]')[0].click();
+    ok('a real re-route posts it with the role and the coordinates it keeps',
+        r.posted.some(m => m.type === 'reroute' && m.id === 't-mu9q3' && m.targetRole === 'basit'
+            && m.project === 'prj_talk' && m.workdir === 'ZEP'));
+
+    const q = tasks();
+    q.query('[data-plus]').find(e => e.dataset.plus === 't-mu9q0').click();
+    q.query('[data-afact="runnow"]')[0].click();
+    ok('⚡ Run Now posts runNow for that task', q.posted.some(m => m.type === 'runNow' && m.id === 't-mu9q0'));
+
+    // A closed task can still be marked, but there is nothing left to move.
+    const c = tasks();
+    c.query('[data-plus]').find(e => e.dataset.plus === 't-mu9q4').click();
+    const ch = c.html();
+    ok('a CLOSED task gets the word and nothing else — no re-route, no Run Now',
+        /class="a2a-cockpit"/.test(ch) && /data-af="text"/.test(ch)
+        && !/data-afact="reroute"/.test(ch) && !/data-afact="runnow"/.test(ch));
+    ok('…and the cockpit says why', /nothing left to move or to start/.test(ch));
+
+    // A task filed under a project this window has not opened keeps its own
+    // coordinate in the picker; dropping it would move the work silently.
+    const u = tasks({ tasks: [tasksFx.data().tasks[0]], notesById: {}, projects: [] });
+    u.query('[data-plus]')[0].click();
+    ok('a project the window does not have open is still in the picker, and still chosen',
+        /<option value="prj_9ujsbtzr" selected[^>]*>prj_9ujsbtzr</.test(u.html()));
 }
 
 // ---------- the shell and the shared component ----------

@@ -39,7 +39,7 @@ import { applyDistilled, distillFile, scanContradictions } from './core/distill'
 import { MemoryIndexReport, registerMemoryOps } from './core/memoryBridge';
 import { registerA2AOps } from './core/a2aBridge';
 import { A2ANotesStore } from './core/a2aNotes';
-import { A2ATasksStore, A2A_TERMINAL } from './core/a2aTasks';
+import { A2ATask, A2ATasksStore, A2A_TERMINAL } from './core/a2aTasks';
 import { buildImpactReport, correlateVersions, InstructionHistory } from './core/instrhistory';
 import { chunkMemoryFile, memoryFileRefs } from './core/memquery';
 import { modelArgsFor as policyModelArgs, ModelPolicyRule } from './core/modelpolicy';
@@ -16060,6 +16060,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         notes: a2aNotes, tasks: a2aTasks,
         // N-6 — a bridge write repaints the two pages and their grey counts.
         onChange: () => { A2ANotesPanel.refreshIfOpen(); A2ATasksPanel.refreshIfOpen(); pushHeaderCounts(); },
+        // N-7 — the same hand the page's ⚡ Run Now uses, so a2a.tasks.runNow
+        // and the button cannot start two different sessions.
+        runTaskNow: (t) => runA2ATaskNow(t),
         resolveProject: (key) => projectStore.get(key)?.id,
         inferProject: projectOfRunningAgent,
         graceMs: () => Math.max(0, cfg().get<number>('a2a.preferredGraceHours', 2)) * 3_600_000,
@@ -16434,10 +16437,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         promoter: () => 'user',
         onChange: a2aChanged
     }, focusId);
+    /**
+     * N-7 — ⚡ RUN NOW, the supervisor's one way to stop waiting.
+     *
+     * A2A tasks are PULLED: a task sits on the board until the agent it is for
+     * comes and asks for work. That is the right default and the wrong one at
+     * exactly one moment — when a person is watching the board and wants this
+     * task done now. So this opens a Console session on the agent the task
+     * names and hands it the claim as its first prompt.
+     *
+     * ‼️ IT CHANGES NOTHING ABOUT THE TASK. The session claims it through the
+     * same `a2a.tasks.claim` every agent uses, so a task somebody else took
+     * while this window was opening is refused there — one claim, one holder,
+     * whichever door started the run.
+     *
+     * ‼️ S-34 — and it seeds and records like every other launch door, so a
+     * task run from here starts on what that agent was last run with rather
+     * than on a second set of defaults nobody can see.
+     */
+    const runA2ATaskNow = (t: A2ATask): { agent: string; surface: string } | { refused: string } => {
+        const want = (t.claimedBy?.agent || t.targetRole || '').trim();
+        if (!want || want === '*') {
+            return { refused: 'this task is a broadcast (targetRole "*") — re-route it to an agent first' };
+        }
+        const agent = agents.find(a => a.name.toLowerCase() === want.toLowerCase())
+            ?? agents.find(a => a.id.toLowerCase() === want.toLowerCase());
+        if (!agent) { return { refused: `"${want}" is not an agent on this machine — re-route it to one first` }; }
+        const o = seedLastLaunch(agent.id, {
+            prompt: `⚡ A2A task ${t.id} — ${t.title}\n\n`
+                + 'The supervisor started this session to run THAT task now rather than leave it on the board.\n'
+                + `Claim it first: a2a.tasks.claim id=${t.id}. The claim hands you the instructions, the coordinates `
+                + 'and any supervisor directive, and refuses if somebody took it while this window was opening. '
+                + 'Then do the work, heartbeat while you do, and close it with a2a.tasks.finish.'
+        });
+        startConsoleSession(agent, o, t.project && t.project !== '*' ? t.project : undefined);
+        void rememberLaunch(agent.id, o, 'console');
+        return { agent: agent.name, surface: 'console' };
+    };
     const showA2ATasksPanel = (focusId?: string): void => A2ATasksPanel.show({
         extensionUri: context.extensionUri,
         tasks: a2aTasks, notes: a2aNotes,
         projects: () => projectRefs({ all: true }),
+        agentNames: () => agents.map(a => a.name),
+        runTaskNow: runA2ATaskNow,
         openNote: (noteId) => showA2ANotesPanel(noteId),
         openQueueItem: (itemId) => showQueuePanel(itemId),
         onChange: a2aChanged

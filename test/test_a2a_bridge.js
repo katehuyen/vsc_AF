@@ -38,9 +38,19 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-a2a-bridge-'));
         const notes = new A2ANotesStore(path.join(dir, 'notes.json'));
         const tasks = new A2ATasksStore(path.join(dir, 'tasks.json'));
         let changes = 0;
+        // N-7 — the launcher the window owns. The store never knows a session
+        // started; what is recorded here is what was ASKED for.
+        const started = [];
         const reg = new BridgeRegistry();
         registerA2AOps(reg, {
             notes, tasks,
+            runTaskNow: (t) => {
+                const want = (t.claimedBy && t.claimedBy.agent) || t.targetRole || '';
+                if (!want || want === '*') { return { refused: 'this task is a broadcast (targetRole "*")' }; }
+                if (want === 'nobody') { return { refused: `"${want}" is not an agent on this machine` }; }
+                started.push({ task: t.id, agent: want });
+                return { agent: want, surface: 'console' };
+            },
             agentOfSession: (sid) => ({ 'sid-dev': 'developer', 'sid-mgr': 'manager' })[sid],
             inferProject: (agent) => agent === 'developer' ? 'prj_af' : undefined,
             resolveProject: (key) => ({ 'prj_af': 'prj_af', 'agent farm': 'prj_af', 'prj_ts': 'prj_ts' })[key.toLowerCase()],
@@ -58,7 +68,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-a2a-bridge-'));
         for (const op of ['a2a.notes.post', 'a2a.notes.list', 'a2a.notes.get', 'a2a.notes.resolve', 'a2a.notes.sweep',
             'a2a.tasks.add', 'a2a.tasks.fromNote', 'a2a.tasks.list', 'a2a.tasks.next', 'a2a.tasks.claim',
             'a2a.tasks.heartbeat', 'a2a.tasks.finish', 'a2a.tasks.cancel', 'a2a.tasks.handoff',
-            'a2a.directive.set', 'a2a.directive.remove', 'a2a.tasks.reroute', 'a2a.status']) {
+            'a2a.directive.set', 'a2a.directive.remove', 'a2a.tasks.reroute', 'a2a.tasks.runNow', 'a2a.status']) {
             ok(`${op} is in farm.ops`, cat.includes(op));
         }
 
@@ -226,6 +236,30 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-a2a-bridge-'));
         const offTask = await call('a2a.directive.remove', { id: rr.result.id });
         ok('the same for a task', offTask.ok && !('humanDirective' in offTask.result));
 
+        // ---------- N-7: ⚡ Run Now ----------
+        {
+            const rn = (await call('a2a.tasks.add', { title: 'Run me now', agent: 'manager', targetRole: 'developer' })).result;
+            const go = await call('a2a.tasks.runNow', { id: rn.id });
+            ok('Run Now asks the window to start a session on the agent the task names',
+                go.ok && go.result.agent === 'developer' && go.result.surface === 'console' && go.result.task === rn.id
+                && started.some(s => s.task === rn.id && s.agent === 'developer'));
+            const after = (await call('a2a.tasks.list', { limit: 200 })).result.rows.find(t => t.id === rn.id);
+            ok('‼️ …and it changes NOTHING about the task — the session claims it the way every agent does',
+                after.state === 'queued' && !after.claimedBy);
+            const bc = (await call('a2a.tasks.add', { title: 'Anyone', agent: 'manager', targetRole: '*', project: '*' })).result;
+            const noBc = await call('a2a.tasks.runNow', { id: bc.id });
+            ok('a broadcast has nobody to start, and says so', !noBc.ok && /broadcast/.test(noBc.error));
+            const gone = (await call('a2a.tasks.add', { title: 'Ghost', agent: 'manager', targetRole: 'nobody' })).result;
+            const noAgent = await call('a2a.tasks.runNow', { id: gone.id });
+            ok('a role that names no agent on this machine is refused by name',
+                !noAgent.ok && /is not an agent on this machine/.test(noAgent.error));
+            await call('a2a.tasks.cancel', { id: rn.id, why: 'done with it' });
+            const closed = await call('a2a.tasks.runNow', { id: rn.id });
+            ok('a closed task has nothing left to run', !closed.ok && /is cancelled/.test(closed.error));
+            const missing = await call('a2a.tasks.runNow', { id: 't-nope' });
+            ok('an id that names no task is refused before anything is started', !missing.ok && /No such task/.test(missing.error));
+        }
+
         // ---------- N-8: the user's word is the FIRST thing in the answer ----------
         {
             const sv = (await call('a2a.tasks.add', { title: 'Supervised', agent: 'manager', targetRole: 'developer' })).result;
@@ -282,6 +316,12 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'af-a2a-bridge-'));
                 /inferProject: projectOfRunningAgent/.test(ext));
             ok('…and the caller named from the session the CLI published, hosted card first',
                 /agentOfSession: \(sid\) => consoleHost\.list\(\)\.find\(s => s\.sessionId === sid\)\?\.agentName/.test(ext));
+            // N-7 — one launcher, two doors. The op and the page's ⚡ Run Now
+            // must not be able to start two different sessions.
+            ok('‼️ the bridge op and the page button share ONE launcher',
+                /runTaskNow: \(t\) => runA2ATaskNow\(t\)/.test(ext) && /runTaskNow: runA2ATaskNow/.test(ext));
+            ok('…which seeds and records like every other launch door (S-34)',
+                /const runA2ATaskNow[^]*?seedLastLaunch\(agent\.id, \{[^]*?rememberLaunch\(agent\.id, o, 'console'\)/.test(ext));
         }
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });

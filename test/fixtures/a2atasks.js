@@ -101,10 +101,17 @@ const data = over => Object.assign({
     tasks: many,
     notesById: { 'n-mu9p6': { title: 'Profildeki 97 milyon normCwd çağrısı 324×15\'ten değil SÜPÜRME SAYISINDAN geliyor' } },
     projects,
+    agents: ['developer', 'manager', 'basit', 'psikolog'],
     leaseMs: LEASE,
     maxHandoffDepth: 3,
     focusId: null
 }, over || {});
+
+/** Press the + on one row — the cockpit is reached by pressing it, here too. */
+const openCockpit = id => r => {
+    const b = r.query('[data-plus]').find(e => e.dataset.plus === id);
+    if (b) { b.click(); }
+};
 
 module.exports = {
     script: 'a2aTasks.js',
@@ -112,6 +119,21 @@ module.exports = {
     variants: () => [
         { id: 'empty', label: 'A2A Tasks — nothing on the board', data: data({ tasks: [], notesById: {} }) },
         { id: 'one', label: 'A2A Tasks — one queued task, opened, nobody has claimed it', data: data({ tasks: [one], notesById: {}, focusId: one.id }) },
-        { id: 'board', label: 'A2A Tasks — the board: two lanes, a fresh lease and a dying one, a veto', data: data({ focusId: 't-mu9q1' }) }
+        { id: 'board', label: 'A2A Tasks — the board: two lanes, a fresh lease and a dying one, a veto', data: data({ focusId: 't-mu9q1' }) },
+        // N-7 — the cockpit, at its two arities. The SMALLEST first: one queued
+        // task with no directive on it, so the form is empty and the button row
+        // is as short as it ever gets.
+        {
+            id: 'cockpit-empty', label: 'A2A Tasks — supervisor cockpit open on an undirected task (+ pressed)',
+            data: data({ tasks: [one], notesById: {} }), act: openCockpit(one.id)
+        },
+        {
+            id: 'cockpit-full', label: 'A2A Tasks — supervisor cockpit on the BLOCKED, vetoed task: directive filled, re-route and Run Now (+ pressed)',
+            data: data({}), act: openCockpit('t-mu9q3')
+        },
+        {
+            id: 'cockpit-closed', label: 'A2A Tasks — supervisor cockpit on a DONE task: the word still marks it, nothing left to move or start (+ pressed)',
+            data: data({}), act: openCockpit('t-mu9q4')
+        }
     ]
 };

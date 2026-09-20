@@ -98,6 +98,13 @@ module.exports = {
     variants: () => [
         { id: 'empty', label: 'A2A Notes — nothing on the board', data: data({ notes: [], tasksByNote: {} }) },
         { id: 'one', label: 'A2A Notes — one note, opened', data: data({ notes: [one], tasksByNote: {}, focusId: one.id }) },
-        { id: 'board', label: 'A2A Notes — the board: live, resolved, expired, promoted, directed', data: data({ focusId: 'n-mu9p3' }) }
+        { id: 'board', label: 'A2A Notes — the board: live, resolved, expired, promoted, directed', data: data({ focusId: 'n-mu9p3' }) },
+        // N-7 — the cockpit at its smallest: a note nobody has directed, so the
+        // form is empty and there is no Remove beside the button.
+        {
+            id: 'cockpit', label: 'A2A Notes — supervisor cockpit open on an undirected note (+ pressed)',
+            data: data({ notes: [one], tasksByNote: {} }),
+            act: r => { const b = r.query('[data-plus]')[0]; if (b) { b.click(); } }
+        }
     ]
 };

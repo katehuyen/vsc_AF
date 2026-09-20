@@ -1,5 +1,6 @@
 import { CAPABILITY_RE, normaliseCapabilities, PREFERRED_GRACE_MS } from './a2aMatch';
 import { A2ANotesStore, A2A_CATEGORIES, A2A_STRICTNESS, A2ACategory, A2ANote, A2AStrictness, directiveBlock, HumanDirective, NoteQuery } from './a2aNotes';
+import { registerA2ASupervisorOps, A2ASupervisorDeps } from './a2aSupervisor';
 import { A2A_TASK_STATES, A2ATask, A2ATasksStore, A2ATaskState, ClaimantView, isOpen, LEASE_MS, taskFit } from './a2aTasks';
 import { argStr, BridgeCaller, BridgeRefusal, BridgeRegistry, need, optBool, optNum, optStr } from './bridge';
 
@@ -24,7 +25,7 @@ import { argStr, BridgeCaller, BridgeRefusal, BridgeRegistry, need, optBool, opt
  * name and a query by id meet on the same coordinate.
  */
 
-export interface A2ABridgeDeps {
+export interface A2ABridgeDeps extends A2ASupervisorDeps {
     notes: A2ANotesStore;
     tasks: A2ATasksStore;
     /** the agent a published session id belongs to, when the host can see it */
@@ -158,6 +159,15 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
             .sort((a, b) => b.score - a.score || a.t.ts - b.t.ts)
             .map(x => x.t);
     };
+
+    // N-7 — the person's four ops, from the file that holds that one subject.
+    // They take the SAME lookups and the same refusal sentences as the ops
+    // below, so a card acted on from the page and a card acted on from a shell
+    // cannot answer differently.
+    registerA2ASupervisorOps(bridge, deps, {
+        noteById, taskById, written, changed, queryProject,
+        capabilities: capabilitiesArg
+    });
 
     bridge.register([
         // ---------------------------------------------------------------- notes
@@ -480,57 +490,6 @@ export function registerA2AOps(bridge: BridgeRegistry, deps: A2ABridgeDeps): voi
                 if ('refused' in r) {
                     throw new BridgeRefusal(`Handoff refused: ${r.refused}.`, { taskId: id, refused: r.refused, state: 'blocked' });
                 }
-                return r.task;
-            }
-        },
-        // ------------------------------------------------------------ supervisor
-        {
-            op: 'a2a.directive.set',
-            describe: 'N-4 — THE USER\'S WORD ON A NOTE OR A TASK (humanDirective), which every agent treats as the '
-                + 'highest rule there is: steer (do it this way), veto (not this — do something else), constraint '
-                + '(within these limits). One directive per card; setting again replaces it. args: id (a note n… or a '
-                + 'task t… id), kind (steer | veto | constraint), text.',
-            handler: (args) => {
-                const id = argStr(args, 'id');
-                const kind = oneOf(argStr(args, 'kind'), ['steer', 'veto', 'constraint'] as const, 'kind') as HumanDirective['kind'];
-                const directive: HumanDirective = { kind, text: argStr(args, 'text'), ts: Date.now() };
-                const out = id.startsWith('t')
-                    ? written(deps.tasks.direct(taskById(id).id, directive))
-                    : written(deps.notes.direct(noteById(id).id, directive));
-                changed();
-                return out;
-            }
-        },
-        {
-            op: 'a2a.directive.remove',
-            describe: 'N-4 — TAKE THE USER\'S DIRECTIVE OFF A NOTE OR A TASK. args: id (a note n… or a task t… id).',
-            handler: (args) => {
-                const id = argStr(args, 'id');
-                const out = id.startsWith('t')
-                    ? written(deps.tasks.direct(taskById(id).id, undefined))
-                    : written(deps.notes.direct(noteById(id).id, undefined));
-                changed();
-                return out;
-            }
-        },
-        {
-            op: 'a2a.tasks.reroute',
-            describe: 'N-4 — THE USER RE-ASSIGNS A TASK (human reroute). Like a2a.tasks.handoff — a new task carrying '
-                + 'the trail, the old one closed — but ‼️ UNDER HUMAN AUTHORITY: the loop guard is not applied and the '
-                + 'new task starts at handoffDepth 0, because a person deciding where blocked work goes IS what the guard '
-                + 'was waiting for. Whoever holds it loses it. args: id, targetRole, requires? (string[] | csv; default the '
-                + 'task\'s own), project? / workdir? (move it as well), why? (recorded on the old task).',
-            handler: (args) => {
-                const id = argStr(args, 'id');
-                const t = taskById(id);
-                need(!['done', 'failed', 'cancelled'].includes(t.state), `${id} is ${t.state} — nothing left to reroute.`);
-                const requires = capabilitiesArg(args, 'requires');
-                const r = deps.tasks.handoff(id, {
-                    targetRole: argStr(args, 'targetRole'), ...(requires.length ? { requires } : {}),
-                    project: queryProject(args), workdir: optStr(args, 'workdir') || undefined
-                }, 'user', Date.now(), { override: true, why: optStr(args, 'why') });
-                changed();
-                if ('refused' in r) { throw new BridgeRefusal(`Reroute refused: ${r.refused}.`, { taskId: id, refused: r.refused }); }
                 return r.task;
             }
         },

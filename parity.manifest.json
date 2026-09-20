@@ -13,6 +13,24 @@
       }
     },
     {
+      "capability": "a2aNotesPanel.ts#directiveRemove",
+      "ui": [
+        "page:a2aNotesPanel.ts#directiveRemove"
+      ],
+      "ops": [
+        "a2a.directive.remove"
+      ]
+    },
+    {
+      "capability": "a2aNotesPanel.ts#directiveSet",
+      "ui": [
+        "page:a2aNotesPanel.ts#directiveSet"
+      ],
+      "ops": [
+        "a2a.directive.set"
+      ]
+    },
+    {
       "capability": "a2aNotesPanel.ts#openExternal",
       "ui": [
         "page:a2aNotesPanel.ts#openExternal"
@@ -99,6 +117,24 @@
       ]
     },
     {
+      "capability": "a2aTasksPanel.ts#directiveRemove",
+      "ui": [
+        "page:a2aTasksPanel.ts#directiveRemove"
+      ],
+      "ops": [
+        "a2a.directive.remove"
+      ]
+    },
+    {
+      "capability": "a2aTasksPanel.ts#directiveSet",
+      "ui": [
+        "page:a2aTasksPanel.ts#directiveSet"
+      ],
+      "ops": [
+        "a2a.directive.set"
+      ]
+    },
+    {
       "capability": "a2aTasksPanel.ts#openExternal",
       "ui": [
         "page:a2aTasksPanel.ts#openExternal"
@@ -137,6 +173,24 @@
         "kind": "navigation",
         "why": "Re-reads what is already on disk and repaints. No state of its own, nothing produced that a read op does not already return."
       }
+    },
+    {
+      "capability": "a2aTasksPanel.ts#reroute",
+      "ui": [
+        "page:a2aTasksPanel.ts#reroute"
+      ],
+      "ops": [
+        "a2a.tasks.reroute"
+      ]
+    },
+    {
+      "capability": "a2aTasksPanel.ts#runNow",
+      "ui": [
+        "page:a2aTasksPanel.ts#runNow"
+      ],
+      "ops": [
+        "a2a.tasks.runNow"
+      ]
     },
     {
       "capability": "abTest",

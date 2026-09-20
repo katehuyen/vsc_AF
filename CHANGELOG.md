@@ -2,6 +2,44 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.604.0 - the supervisor cockpit: the user's word on any A2A card, a re-route, and ⚡ Run Now (N-7) (2026-09-20)
+
+- **‼️ A minimal `+` on every A2A card, and it costs the card nothing until the
+  pointer is on it.** Press it and a compact editor opens directly under that
+  row — the kind of word you are giving (**steer** do it this way · **veto** not
+  this, do something else · **constraint** stay within these limits), the words
+  themselves, and the buttons that act on it. It is drawn by the page's own form
+  component (`media/afForm.js`), so it keeps the same bargain as every other
+  form here: Ctrl+Enter submits, ✕ closes, and **the refusal lands in the card**
+  — a directive with no words outranks every rule the agent has with nothing,
+  and is refused there rather than written.
+- **A directed card is now unmistakable from across the list.** The plain flag
+  is gone; in its place a solid **👤 badge coloured by the kind of word** —
+  amber for steer, blue for constraint, red for veto — with the directive itself
+  in its hover, so the board is readable without opening anything. The `+` is
+  the deliberate opposite: invisible until the card is hovered or the control
+  has focus.
+- **On a task the cockpit has three more hands.** **Re-route** hands the work to
+  another role, optionally moving its project and workdir — the same call
+  `a2a.tasks.reroute` makes, **under human authority**, so the loop guard does
+  not apply, the count starts again and your directive travels with the work;
+  re-routing to where it already is is refused rather than silently closing a
+  task and opening its twin. **✕ Remove directive** takes your word off.
+  **⚡ Run Now** stops waiting for the agent the task is for to come and look: a
+  Console session opens on that agent with the claim as its first prompt. A
+  closed task can still be marked, and says why there is nothing left to move.
+- **‼️ Run Now changes nothing about the task.** The session it starts claims it
+  through the same `a2a.tasks.claim` every agent uses, so a task somebody took
+  while the window was opening is refused there rather than run twice — and it
+  seeds and records like every other launch door (S-34), so the run starts on
+  what that agent was last run with. New bridge op **`a2a.tasks.runNow`** shares
+  that one launcher with the button; the three supervisor ops moved to
+  `src/core/a2aSupervisor.ts`, the file that now holds that one subject.
+- `parity.manifest.json` carries the six new doors; `test_a2a_pages.js` and
+  `test_a2a_bridge.js` pin the cockpit at its three arities (undirected ·
+  directed with every control · closed) and the four refusals, and each arity
+  was photographed in both themes before this line was written.
+
 ## 3.603.0 - the agents' own inbox: A2A Notes and A2A Tasks pages, four tabs on one strip (N-6) (2026-09-20)
 
 - **‼️ What agents leave for each other, and the work they hand over, now have

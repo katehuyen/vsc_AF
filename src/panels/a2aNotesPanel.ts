@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
-import { A2ANotesStore } from '../core/a2aNotes';
+import { A2ANotesStore, HumanDirective } from '../core/a2aNotes';
+import { DIRECTIVE_KINDS } from '../core/a2aSupervisor';
 import { A2ATasksStore, A2ATaskState, A2A_TERMINAL } from '../core/a2aTasks';
 import { ProjectRef } from './noticesPanel';
 
@@ -8,9 +9,10 @@ import { ProjectRef } from './noticesPanel';
  * A2A Notes page (N-6) — what one agent left for another to read. A note is
  * PASSIVE (core/a2aNotes.ts): nothing is assigned, nothing waits, and the
  * board is for a person to READ, not to work. So the page offers exactly what
- * the bridge offers a person's hand for: resolve / reopen, and promote to a
- * task — every mutation goes through the store the bridge ops use, never a
- * second implementation.
+ * the bridge offers a person's hand for: resolve / reopen, promote to a task,
+ * and (N-7) the supervisor's own word — set it, replace it, take it off. Every
+ * mutation goes through the store the bridge ops use, never a second
+ * implementation.
  */
 export interface A2ANotesDeps {
     extensionUri: vscode.Uri;
@@ -134,6 +136,19 @@ export class A2ANotesPanel {
                 try { this.deps.openTask?.(task.id); } catch { /* best-effort */ }
                 break;
             }
+            // N-7 — the supervisor cockpit's two hands on a note. Same call as
+            // a2a.directive.set / .remove, so a directive typed on the page and
+            // one set from a shell are the same object.
+            case 'directiveSet': {
+                const kind = typeof msg.kind === 'string' ? msg.kind : '';
+                const text = typeof msg.text === 'string' ? msg.text.trim() : '';
+                if (!id || !text || !DIRECTIVE_KINDS.includes(kind as HumanDirective['kind'])) { break; }
+                if (this.deps.notes.direct(id, { kind: kind as HumanDirective['kind'], text, ts: Date.now() })) { this.mutated(); }
+                break;
+            }
+            case 'directiveRemove':
+                if (id && this.deps.notes.direct(id, undefined)) { this.mutated(); }
+                break;
             case 'openTask':
                 if (id) { try { this.deps.openTask?.(id); } catch { /* best-effort */ } }
                 break;

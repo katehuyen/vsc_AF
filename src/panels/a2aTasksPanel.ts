@@ -1,15 +1,16 @@
 import * as vscode from 'vscode';
 import { handleAfNav, htmlShell } from './base';
-import { A2ANotesStore } from '../core/a2aNotes';
-import { A2ATasksStore, LEASE_MS, MAX_HANDOFF_DEPTH } from '../core/a2aTasks';
+import { A2ANotesStore, HumanDirective } from '../core/a2aNotes';
+import { DIRECTIVE_KINDS } from '../core/a2aSupervisor';
+import { A2ATask, A2ATasksStore, A2A_TERMINAL, LEASE_MS, MAX_HANDOFF_DEPTH } from '../core/a2aTasks';
 import { ProjectRef } from './noticesPanel';
 
 /**
- * A2A Tasks page (N-6) — work one agent handed to another. The board is READ
- * here; the work is claimed and finished on the bridge by the agents. The one
- * hand a person has on a row from this page is to cancel it; steering,
- * vetoing and re-routing are the supervisor cockpit (N-7). Every mutation
- * goes through the store the bridge ops use.
+ * A2A Tasks page (N-6, N-7) — work one agent handed to another. The board is
+ * READ here and the work is claimed and finished on the bridge by the agents;
+ * what a PERSON has on a row is the supervisor cockpit — cancel, the user's
+ * word (steer · veto · constraint), a re-route under human authority, and Run
+ * Now. Every one of them goes through the store the bridge ops use.
  */
 export interface A2ATasksDeps {
     extensionUri: vscode.Uri;
@@ -17,6 +18,10 @@ export interface A2ATasksDeps {
     notes: A2ANotesStore;
     /** Open projects, for the coordinate chips and the filter. */
     projects: () => ProjectRef[];
+    /** The fleet, for the re-route picker — a role a person can actually reach. */
+    agentNames: () => string[];
+    /** N-7 — open a session that takes this task now. Same answer as a2a.tasks.runNow. */
+    runTaskNow?: (task: A2ATask) => { agent: string; surface: string } | { refused: string };
     /** Open the A2A Notes page focused on the note a task grew from. */
     openNote?: (noteId: string) => void;
     /** Open the Work Queue focused on the item a task came out of. */
@@ -40,6 +45,7 @@ function buildData(deps: A2ATasksDeps, focusId?: string): Record<string, unknown
         tasks,
         notesById,
         projects: deps.projects(),
+        agents: deps.agentNames(),
         leaseMs: LEASE_MS,
         maxHandoffDepth: MAX_HANDOFF_DEPTH,
         focusId: focusId ?? null
@@ -100,6 +106,59 @@ export class A2ATasksPanel {
             case 'cancel':
                 if (id && this.deps.tasks.cancel(id, 'cancelled by the user from the A2A Tasks page')) { this.mutated(); }
                 break;
+            // ---- N-7, the supervisor cockpit ----
+            case 'directiveSet': {
+                const kind = typeof msg.kind === 'string' ? msg.kind : '';
+                const text = typeof msg.text === 'string' ? msg.text.trim() : '';
+                if (!id || !text || !DIRECTIVE_KINDS.includes(kind as HumanDirective['kind'])) { break; }
+                if (this.deps.tasks.direct(id, { kind: kind as HumanDirective['kind'], text, ts: Date.now() })) { this.mutated(); }
+                break;
+            }
+            case 'directiveRemove':
+                if (id && this.deps.tasks.direct(id, undefined)) { this.mutated(); }
+                break;
+            case 'reroute': {
+                const task = id ? this.deps.tasks.get(id) : undefined;
+                const targetRole = typeof msg.targetRole === 'string' ? msg.targetRole.trim() : '';
+                if (!task || !targetRole) { break; }
+                if (A2A_TERMINAL.includes(task.state)) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${task.id} is ${task.state} — nothing left to reroute.`);
+                    break;
+                }
+                const project = typeof msg.project === 'string' ? msg.project.trim() : '';
+                const workdir = typeof msg.workdir === 'string' ? msg.workdir.trim() : '';
+                // ‼️ The same call a2a.tasks.reroute makes, `override` and all:
+                // a person deciding where work goes IS what the loop guard was
+                // waiting for, so it is not applied and the count starts again.
+                const r = this.deps.tasks.handoff(id, {
+                    targetRole, ...(project ? { project } : {}), ...(workdir ? { workdir } : {})
+                }, 'user', Date.now(), { override: true, why: typeof msg.why === 'string' ? msg.why.trim() : '' });
+                if ('refused' in r) {
+                    void vscode.window.showWarningMessage(`Agent Farm: reroute refused — ${r.refused}.`);
+                    break;
+                }
+                this.focusId = r.task.id;
+                this.mutated();
+                break;
+            }
+            case 'runNow': {
+                const task = id ? this.deps.tasks.get(id) : undefined;
+                if (!task) { break; }
+                if (A2A_TERMINAL.includes(task.state)) {
+                    void vscode.window.showWarningMessage(`Agent Farm: ${task.id} is ${task.state} — nothing left to run.`);
+                    break;
+                }
+                const r = this.deps.runTaskNow?.(task);
+                if (!r) {
+                    void vscode.window.showWarningMessage('Agent Farm: this window cannot start sessions.');
+                    break;
+                }
+                if ('refused' in r) {
+                    void vscode.window.showWarningMessage(`Agent Farm: Run Now refused — ${r.refused}.`);
+                    break;
+                }
+                break;
+            }
             case 'openNote':
                 if (id) { try { this.deps.openNote?.(id); } catch { /* best-effort */ } }
                 break;

@@ -22,6 +22,24 @@
     const expanded = new Set();
     let focusId = DATA.focusId || null;
     let refocusSearch = false;
+    // N-7 — the supervisor cockpit: which card has it open, the draft being
+    // typed into it, and the refusal it is showing. One at a time, because a
+    // second open form is a second answer to "what am I editing".
+    let cockpitId = null;
+    let draft = null;
+    let cockpitMsg = '';
+    let focusCockpit = false;
+
+    function openCockpit(id) {
+        const n = (DATA.notes || []).find(x => x.id === id);
+        if (!n) { return; }
+        const d = n.humanDirective;
+        cockpitId = id;
+        cockpitMsg = '';
+        draft = { kind: d ? d.kind : 'steer', text: d ? d.text : '' };
+        focusCockpit = true;
+    }
+    function closeCockpit() { cockpitId = null; draft = null; cockpitMsg = ''; focusCockpit = false; }
 
     function saveState() { try { vscode.setState({ fState, fCat, fFrom, fProject, query }); } catch (e) { /* no state api */ } }
 
@@ -86,15 +104,20 @@
         const line = `<div class="a2a-line" data-open="${n.id}">
             ${window.AFTip.wrap(`<span class="a2a-cat">${A.CAT[n.category] || 'ℹ️'}</span>`, 'Category', `Category: ${n.category}`)}
             <span class="a2a-title">${esc(n.title)}</span>
-            ${n.humanDirective ? window.AFTip.wrap('<span class="a2a-flag">⚠️ directive</span>', 'Supervisor directive', `${n.humanDirective.kind}: ${n.humanDirective.text}`) : ''}
+            ${A.directiveFlag(n.humanDirective)}
             ${task ? window.AFTip.wrap(`<span class="a2a-flag">⚡ ${esc(task.state)}</span>`, 'Task', `Task ${task.id} — ${task.state}\nThis note was promoted; click to open it on the A2A Tasks board.`) : ''}
             ${A.coords(n, DATA.projects)}
             <span class="a2a-from">🤖 ${esc(n.fromAgent)}</span>
             ${window.AFTip.wrap(`<span class="a2a-flag">👁 ${readers}</span>`, 'Readers', readTip)}
             ${flag}
             ${window.AFTip.wrap(`<span class="a2a-age">${esc(window.AFTime.ago(n.ts))}</span>`, 'Posted', window.AFTime.tip(n.ts, 'Posted') + (n.expiresAt ? '\nExpires: ' + window.AFTime.full(n.expiresAt) : '\nDoes not expire'))}
+            ${A.plus(n.id, cockpitId === n.id)}
         </div>`;
-        if (!open) { return `<div class="a2a-card${focusId === n.id ? ' a2a-focus' : ''}${state === 'live' ? '' : ' a2a-closed'}" data-id="${n.id}">${line}</div>`; }
+        const cp = cockpitId === n.id ? A.cockpit({
+            draft: draft, has: !!n.humanDirective, setAt: n.humanDirective && n.humanDirective.ts, msg: cockpitMsg,
+            lede: 'your word on this note — every agent that reads it obeys this before its own rules'
+        }) : '';
+        if (!open) { return `<div class="a2a-card${focusId === n.id ? ' a2a-focus' : ''}${state === 'live' ? '' : ' a2a-closed'}" data-id="${n.id}">${line}${cp}</div>`; }
         const files = (n.contextFiles || []).length
             ? `<div class="a2a-sec"><div class="a2a-sech">Files</div><div class="a2a-files">${n.contextFiles.map(f => `<div><a data-file="${esc(f)}" data-note="${n.id}">${esc(f)}</a></div>`).join('')}</div></div>` : '';
         const actions = `<div class="a2a-actions">
@@ -106,7 +129,7 @@
                 : `<button class="secondary" data-act="resolve" data-id="${n.id}">✓ Resolve</button>`}
             <button class="secondary" data-act="copyId" data-id="${n.id}" title="Copy the note id — a2a.notes.get id=…">⧉ ${esc(n.id)}</button>
         </div>`;
-        return `<div class="a2a-card${focusId === n.id ? ' a2a-focus' : ''}${state === 'live' ? '' : ' a2a-closed'}" data-id="${n.id}">${line}
+        return `<div class="a2a-card${focusId === n.id ? ' a2a-focus' : ''}${state === 'live' ? '' : ' a2a-closed'}" data-id="${n.id}">${line}${cp}
             <div class="a2a-body">
                 ${A.directive(n.humanDirective)}
                 ${n.body ? A.md(n.body) : '<div class="muted">(no body)</div>'}
@@ -180,6 +203,34 @@
         document.querySelectorAll('.a2a-link').forEach(a => a.addEventListener('click', ev => {
             ev.preventDefault(); ev.stopPropagation(); vscode.postMessage({ type: 'openExternal', url: a.dataset.href });
         }));
+        document.querySelectorAll('[data-plus]').forEach(b => b.addEventListener('click', ev => {
+            ev.stopPropagation();
+            const id = b.dataset.plus;
+            if (cockpitId === id) { closeCockpit(); } else { openCockpit(id); }
+            render();
+        }));
+        A.wireCockpit({
+            focus: focusCockpit,
+            onEdit: v => { draft = Object.assign(draft || {}, v); },
+            onCancel: () => { closeCockpit(); render(); },
+            onSubmit: v => {
+                draft = Object.assign(draft || {}, v);
+                const text = (v.text || '').trim();
+                if (!text) {
+                    cockpitMsg = 'Say what the agent must do. A directive outranks every rule it has; an empty one outranks them with nothing.';
+                    render();
+                    return;
+                }
+                vscode.postMessage({ type: 'directiveSet', id: cockpitId, kind: v.kind, text: text });
+                closeCockpit(); render();
+            },
+            onAct: a => {
+                if (a !== 'dremove') { return; }
+                vscode.postMessage({ type: 'directiveRemove', id: cockpitId });
+                closeCockpit(); render();
+            }
+        });
+        focusCockpit = false;
     }
 
     const repaint = window.AFRepaint.guard(render);
@@ -187,6 +238,9 @@
         if (ev.data.type === 'data') {
             DATA = ev.data.data;
             if (DATA.focusId) { focusId = DATA.focusId; expanded.add(focusId); }
+            // A cockpit open on a row this push no longer carries is a form
+            // editing nothing.
+            if (cockpitId && !(DATA.notes || []).some(n => n.id === cockpitId)) { closeCockpit(); }
             repaint();
         }
     });
