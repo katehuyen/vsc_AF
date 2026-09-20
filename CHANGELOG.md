@@ -2,6 +2,51 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.610.0 - "I search for a word I know is there and it says nothing": three measured causes, all closed (X-147) (2026-09-20)
+
+- **‼️ The Turkish i was never case-folded.** JavaScript's `/i` folds by
+  Unicode SIMPLE case folding, in which İ (U+0130) and ı (U+0131) fold to
+  nothing but themselves — so a query typed in lowercase never matched the
+  word at the start of a sentence or in a heading written in capitals.
+  Measured on the live corpus of 977 sessions: "istanbul" found 1 session and
+  "İstanbul" was in 3; "ilk" found 1.412 matches and the 556 written "İlk"
+  were not among them; "iki" missed 1.120, "için" 402, "işte" 207. Under
+  case-insensitive matching i/İ/ı/I are now one letter (`media/afQuery.js`,
+  so every filter box in the extension gets it, not only the Search page).
+  Folding only the case pairs is not expressible under `/i` — the class
+  `[ıI]` already admits `i` because I ≡ i — and joining the four openly is the
+  better answer for a search: "kirmizi" typed on an English keyboard finds
+  "kırmızı", and the case-sensitive mode is still letter-exact. ripgrep's `-i`
+  does not fold these, so the candidate prefilter cuts a literal at the
+  letter exactly as it does at `*` — a plan may never exclude a file the
+  matcher would hit.
+- **‼️ The session title was never searched.** `title` was metadata on a hit;
+  the matcher ran over the messages and nothing else, so a session NAMED
+  after the word and not containing it could not be found on the Search page
+  — while `sessions.find` matched titles on another surface. The title is
+  judged in the one reducer both engines share, first, as its own hit
+  (`kind: 'title'`, `role: 'title'`, dated by the session's activity, under
+  the same date window), whenever any conversation role is in scope; a
+  memory-only / events-only search (`roles: []`) leaves titles alone. In the
+  corpus a session the ripgrep candidate pass excludes is still put to the
+  reducer for its name. The page draws it with a `title` badge; the bridge
+  op's hits carry the same `kind`.
+- **‼️ A session whose every match fell past the preview cap was not on the
+  page.** The page built its session groups from the hits, and a fleet query
+  for a common word fills the 250 previews out of the newest sessions alone —
+  the bar said "1.412 matches · 472 sessions" and the list drew forty; the
+  other four hundred, every one a real match, were nowhere. `sessionMatches`
+  rows now carry the header (agent, title, id, engine, activity, author), and
+  such a session is drawn as its header — "7 matches · none previewed (the
+  250 previews went to newer sessions)" — sorts with the others and opens
+  like any other.
+- **The ripgrep battery had never spawned ripgrep.** The candidate pass
+  starts at twelve million characters and the test fixture is thirty
+  kilobytes, so every "ripgrep:" assertion passed without one process — the
+  fallbacks were never exercised and nothing was ever narrowed. The threshold
+  is overridable for tests (`CorpusDeps.rgMinChars`), the battery runs on the
+  real binary beside VS Code, and a guard reads the spawn.
+
 ## 3.609.0 - the search corpus is bounded by ageing the tool trail, not by keeping fewer sessions (X-131) (2026-09-20)
 
 - **‼️ The corpus grew 1:1 with the transcripts and nothing ever pruned it.**

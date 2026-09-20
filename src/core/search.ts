@@ -100,7 +100,7 @@ export interface SearchHit {
     agentName: string;
     title: string;
     ts: number;
-    role: SearchRole | 'memory' | 'event';
+    role: SearchRole | 'memory' | 'event' | 'title';
     sessionId?: string;
     engine?: string;
     /** Session activity time; group sorting must not depend on the first hit. */
@@ -122,7 +122,8 @@ export interface SearchHit {
     turn?: number;
     turnLabel?: string;
     tool?: string;
-    kind?: 'memory' | 'event';
+    /** X-147 — `title` is the session's own name matching, not a message. */
+    kind?: 'memory' | 'event' | 'title';
 }
 
 export interface SearchOptions {
@@ -141,10 +142,31 @@ export interface SearchOptions {
     parseForeign?: ParseForeign;
 }
 
+/**
+ * ‼️ X-147 — A SESSION THAT MATCHED IS LISTED EVEN WHEN NONE OF ITS MATCHES
+ * MADE THE PREVIEW CAP. The page built its session groups from the hits, and
+ * a fleet query for a common word fills the 250 previews out of the newest
+ * sessions alone — so the bar said "1.412 matches · 472 sessions" and the
+ * list showed forty of them; the other four hundred, every one a real match,
+ * were nowhere on the page. The count row now carries the header the page
+ * needs to draw such a session without a single preview.
+ */
 export interface SessionMatchCount {
     file: string;
     found: number;
     shown: number;
+    agentName?: string;
+    title?: string;
+    sessionId?: string;
+    engine?: string;
+    sessionTs?: number;
+    project?: string;
+    author?: 'human' | 'automation' | 'unknown';
+    authorLabel?: string;
+    launcher?: string;
+    provenance?: string;
+    producer?: string;
+    canonicalSessionId?: string;
 }
 
 export interface SearchResult {
@@ -486,6 +508,55 @@ export function scanSession(
     let found = 0;
     let shown = 0;
     /**
+     * ‼️ X-147 — THE TITLE IS SEARCHED, AND IT IS SEARCHED HERE. The name of a
+     * session was only ever METADATA on a hit: the matcher ran over the
+     * messages and nothing else, so a session whose title carried the word
+     * and whose conversation did not could not be found on the Search page at
+     * all — while `sessions.find` matched titles happily on another surface.
+     * One reducer for both engines, so the title is judged here, first (it is
+     * the session's header), as its own hit with `kind: 'title'`, dated by
+     * the session's activity and subject to the same window. Not when the
+     * caller asked for NO conversation roles: that is a memory-only or
+     * events-only search, and a session name is part of the conversation.
+     */
+    if (lim.roles.size && s.title) {
+        const ts = s.mtime;
+        if (!((lim.tsFrom && ts < lim.tsFrom) || (lim.tsTo && ts > lim.tsTo))) {
+            const part = snip(normalizeText(s.title), matcher);
+            if (part) {
+                found++;
+                result.matchesFound++;
+                if (result.hits.length < lim.maxHits) {
+                    result.hits.push({
+                        file: s.file,
+                        agentName: s.agentName ?? '?',
+                        title: s.title,
+                        ts,
+                        role: 'title',
+                        kind: 'title',
+                        sessionTs: s.mtime,
+                        ...(s.sessionId ? { sessionId: s.sessionId } : {}),
+                        ...(s.engine ? { engine: s.engine } : {}),
+                        ...(s.project ? { project: s.project } : {}),
+                        // the first hit of a group is what the page draws its
+                        // header from, and this one comes first
+                        author: s.author ?? 'human',
+                        ...(s.authorLabel ? { authorLabel: s.authorLabel } : {}),
+                        ...(s.launcher ? { launcher: s.launcher } : {}),
+                        ...(s.provenance && s.provenance !== 'native' ? { provenance: s.provenance } : {}),
+                        ...(s.producer ? { producer: s.producer } : {}),
+                        ...(s.canonicalSessionId ? { canonicalSessionId: s.canonicalSessionId } : {}),
+                        ...part,
+                        turn: 0,
+                        turnLabel: ''
+                    });
+                    shown++;
+                    result.matchesShown++;
+                }
+            }
+        }
+    }
+    /**
      * ‼️ U-63 — THE SAME RECORD REACHING THE REDUCER TWICE IS ONE HIT.
      *
      * A shard can be read alongside a direct parse, and an imported rollout can
@@ -538,7 +609,21 @@ export function scanSession(
     }
     if (found) {
         result.sessionsMatched++;
-        result.sessionMatches.push({ file: s.file, found, shown });
+        result.sessionMatches.push({
+            file: s.file, found, shown,
+            agentName: s.agentName ?? '?',
+            title: s.title,
+            sessionTs: s.mtime,
+            author: s.author ?? 'human',
+            ...(s.sessionId ? { sessionId: s.sessionId } : {}),
+            ...(s.engine ? { engine: s.engine } : {}),
+            ...(s.project ? { project: s.project } : {}),
+            ...(s.authorLabel ? { authorLabel: s.authorLabel } : {}),
+            ...(s.launcher ? { launcher: s.launcher } : {}),
+            ...(s.provenance && s.provenance !== 'native' ? { provenance: s.provenance } : {}),
+            ...(s.producer ? { producer: s.producer } : {}),
+            ...(s.canonicalSessionId ? { canonicalSessionId: s.canonicalSessionId } : {})
+        });
     }
 }
 

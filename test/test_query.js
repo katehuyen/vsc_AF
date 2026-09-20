@@ -64,7 +64,39 @@ ok('"kelime* bazıları ol*" finds "kelimelerin bazıları olsun"',
 ok('…and "kelimenin bazıları oldu"',
     m('"kelime* bazıları ol*"', 'kelimenin bazıları oldu'));
 ok('…and not a sentence that only looks similar',
-    !m('"kelime* bazıları ol*"', 'kelimenin bazilari oldu'));
+    !m('"kelime* bazıları ol*"', 'kelimenin bazı oldu'));
+
+// ------------------------------------------------ X-147: the Turkish i family
+//
+// ‼️ JavaScript's `/i` folds by Unicode SIMPLE case folding, in which İ and ı
+// fold to nothing but themselves — so a lowercase query never matched a word
+// at the start of a sentence or in a capitals heading. Measured on the live
+// corpus: "istanbul" found 1 session, "İstanbul" was in 3; "ilk" 1.412 hits
+// and the 556 "İlk" not among them. Under case-insensitive matching the four
+// (i İ ı I) are one letter — folding only the pairs is not expressible under
+// `/i`, where [ıI] already admits i — and case-sensitive mode stays exact.
+ok('X-147: a lowercase i finds the capital İ', m('ilk', 'İlk adım') && m('istanbul', 'İstanbul'));
+ok('X-147: …in a heading written in capitals', m('bilgi', 'BİLGİ TABANI') && m('ölçümleri', 'ÖLÇÜMLERİ'));
+ok('X-147: a capital İ in the query finds the lowercase i', m('İlk', 'ilk adım'));
+ok('X-147: a dotless ı finds its capital I', m('kırmızı', 'KIRMIZI') && m('KIRMIZI', 'kırmızı'));
+ok('X-147: an English keyboard finds the Turkish word', m('kirmizi', 'kırmızı') && m('istanbul', 'ıstanbul'));
+ok('X-147: …and i and I as before', m('ilk', 'ILK'));
+ok('X-147: case-sensitive mode is still exact',
+    !Q.compile('ilk', { caseSensitive: true }).test('İlk') && !Q.compile('kırmızı', { caseSensitive: true }).test('KIRMIZI'));
+ok('X-147: a phrase folds the same way', m('"ilk adım"', 'İlk Adım'));
+ok('X-147: whole-word mode folds the same way', Q.compile('ilk', { wholeWord: true }).test('İlk adım'));
+ok('X-147: a wildcard word folds the same way', m('İst*', 'istanbul'));
+{
+    // ripgrep's -i does not fold these, so a candidate literal must not carry them
+    const lits = (q, o) => Q.prefilter(q, o || {}).literals;
+    ok('X-147: the prefilter cuts a literal at the Turkish i, as it does at *',
+        JSON.stringify(lits('ölçümleri')) === '["ölçümler"]' && JSON.stringify(lits('istanbul')) === '["stanbul"]');
+    ok('X-147: …and reads everything when nothing long enough is left', Q.prefilter('bilgi').mode === 'all');
+    ok('X-147: …but not in case-sensitive mode, where the letter is invariant',
+        JSON.stringify(lits('ölçümleri', { caseSensitive: true })) === '["ölçümleri"]');
+    ok('X-147: the find() highlight lands on the folded letter too',
+        JSON.stringify(Q.compile('ilk').find('Bu İlk deneme')) === JSON.stringify({ index: 3, length: 3 }));
+}
 
 // ------------------------------------------------------ X-24: whole-word mode
 //

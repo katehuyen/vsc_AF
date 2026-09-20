@@ -140,6 +140,10 @@ export interface CorpusDeps {
     parseForeign?: ParseForeign;
     /** `agentFarm.searchToolTrailDays`, read live; 0 keeps the trail for ever */
     toolTrailDays?: () => number;
+    /** The candidate-pass threshold (RG_MIN_CHARS) — overridable so a test
+     *  fixture of thirty kilobytes can put ripgrep on the path at all. Until
+     *  it could, the "ripgrep battery" never spawned one (X-147). */
+    rgMinChars?: number;
 }
 
 export interface CorpusSearchOptions extends SearchOptions {
@@ -674,7 +678,7 @@ export class TextSearchService {
         let candidateKeys: Set<string> | null = null;
         if (plan.mode === 'any' && plan.literals.length) {
             const { byPath, chars } = this.shardsFor(entries, roles);
-            if (chars >= RG_MIN_CHARS) {
+            if (chars >= (this.deps.rgMinChars ?? RG_MIN_CHARS)) {
                 const matched = await this.rgCandidates(
                     [...byPath.keys()], plan.literals, opts.caseSensitive === true);
                 if (matched) {
@@ -697,7 +701,13 @@ export class TextSearchService {
             const e = this.unreadable(s) ? undefined : entries.get(key);
             if (!e || e.failed) { result.parseFailures++; continue; }
             result.filesScanned++;
-            if (candidateKeys && !candidateKeys.has(key)) { continue; }
+            if (candidateKeys && !candidateKeys.has(key)) {
+                // The candidate pass proved the RECORDS hold no match; the
+                // session's title is in no shard, so it is still put to the
+                // reducer — with nothing else (X-147).
+                scanSession([], s, matcher, lim, result);
+                continue;
+            }
             let records = this.recordsOf(e, roles, matcher, plan.monotone === true);
             if (!records) {
                 // A shard vanished under us (a cleaner, a sync tool, a crash

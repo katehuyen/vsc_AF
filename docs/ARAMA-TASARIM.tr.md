@@ -232,6 +232,36 @@ arama ~77 milyon karakterlik araç trafiğinin bedelini boşuna ödüyordu.
   pencerenin ilk sorgusu tekrar düşürür. Yeniden yazılan transkript imzasıyla bütün
   olarak yeniden kurulur ve gençleşir. Koruyucular `test_search_speed.js` X-131 bloğunda.
 
+### "Olan kelimeyi bulamıyor" — üç ölçülmüş sebep ve kapanışları (X-147)
+
+1. **Türkçe İ/ı büyük-küçük harf katlaması yoktu.** JavaScript regex `/i` Unicode *basit*
+   katlama tablosunu kullanır; o tabloda İ (U+0130) ve ı (U+0131) yalnız kendilerine
+   katlanır. Yani küçük harfle yazılan sorgu cümle başındaki ("İlk", "İstanbul") ve büyük
+   harfli başlıklardaki ("BİLGİ") kelimeyi bulmuyordu. **Canlı ölçüm (977 oturum):**
+   "istanbul" 1 oturum buldu, "İstanbul" 3 oturumda vardı; "ilk" 1.412 eşleşme buldu,
+   556 "İlk" arasında değildi; "iki" 1.120, "için" 402, "işte" 207 eşleşme görünmezdi.
+   Kapanış (`media/afQuery.js` → `TR_I`): harf duyarsız modda i/İ/ı/I **tek harf**
+   (`[iİıI]`). Yalnız çiftleri (i↔İ, ı↔I) katlamak `/i` altında ifade edilemez — `[ıI]`
+   sınıfı I≡i olduğu için zaten i'yi de kabul eder; açıkça birleştirmek arama için daha
+   iyi cevap ("kirmizi" "kırmızı"yı bulur), harf duyarlı mod harfi harfine kalır.
+   **Aday ön-süzgeci:** ripgrep'in `-i`'si bu harfleri katlamaz, o yüzden literal bu
+   harflerde `*`'daki gibi kesilir ("ölçümleri" → "ölçümler", "bilgi" → tam okuma).
+2. **Oturum başlığı aranmıyordu.** `title` hit üzerinde yalnız meta veriydi; eşleşme
+   döngüsü mesajlar üzerindeydi. `sessions.find` başlıkta eşleşiyordu ama Search sayfası
+   eşleşmiyordu. Kapanış: `scanSession` başlığı **önce** yargılar — `kind: 'title'`,
+   `role: 'title'`, ts = oturum etkinliği, aynı tarih penceresi; `roles: []` (yalnız
+   bellek/olay araması) başlığa bakmaz. Korpusta aday geçişinin dışladığı oturum da
+   başlığı için indirgeyiciye verilir (`scanSession([], …)`). İki motor tek indirgeyici.
+3. **Önizleme tavanının ötesindeki oturumlar sayfada yoktu.** Sayfa gruplarını yalnız
+   `hits`'ten kuruyordu; sık bir kelimede 250 önizleme en yeni oturumlara gidiyor, çubuk
+   "472 oturum" sayarken liste ~40 çiziyordu. Kapanış: `SessionMatchCount` artık başlık
+   alanlarını taşır; `shown: 0` oturum yalnız başlığıyla çizilir ("N matches · none
+   previewed"), açılır, sıralamaya girer.
+
+Ayrıca `test_search_speed.js`'in ripgrep bataryası fixture 12M karakter eşiğinin altında
+kaldığı için rg'yi HİÇ çağırmıyordu; `CorpusDeps.rgMinChars` (test için) eklendi, batarya
+artık gerçekten rg üzerinden koşar ve bunu ölçer ("ripgrep was really spawned").
+
 ### Aday daraltma ve kapsama testi
 
 Aday planı **sorgu dilinin kendisinden** çıkar (`media/afQuery.js → prefilter`), sorgu

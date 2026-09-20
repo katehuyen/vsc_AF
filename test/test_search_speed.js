@@ -70,7 +70,8 @@ for (let i = 0; i < COUNT; i++) {
     sessions.push({
         file: write(`s${i}.jsonl`, lines),
         agentName: i % 3 === 0 ? 'developer' : 'yazar',
-        title: `Oturum ${i}`,
+        // X-147: one session whose TITLE carries a word its conversation does not
+        title: i === 33 ? 'Oturum 33 — flamingo kurulumu' : `Oturum ${i}`,
         mtime: Date.parse(T(i, 3)) + i,
         sessionId: `sess-${i}`,
         engine: 'claude'
@@ -118,6 +119,10 @@ const CASES = [
     ['whole word with a wildcard end', 'ölçüm*', { wholeWord: true }],
     ['raw regex', 'par[sz]er', { regex: true }],
     ['raw regex, case sensitive', 'ÖLÇÜM[A-ZÇĞİÖŞÜ]+', { regex: true, caseSensitive: true }],
+    ['X-147: a word only a title carries', 'flamingo', {}],
+    ['X-147: a title word AND a conversation word', 'flamingo parser', {}],
+    ['X-147: a title word in Everything mode', 'flamingo', { roles: S.ALL_ROLES }],
+    ['X-147: the Turkish İ folded, in the conversation', 'ölçümleri', {}],
     ['the tool trail, on demand', 'radyoaktif', { roles: S.ALL_ROLES }],
     ['a term nothing carries', 'kesinliklebulunmayanbirkelime', {}],
     ['a short term, below the prefilter floor', 'ök', {}],
@@ -160,12 +165,17 @@ async function parity(svc, label) {
         const p = (q, o) => Q.prefilter(q, o || {});
         ok('a bare word gives one literal', p('parser').mode === 'any' && p('parser').literals.join() === 'parser');
         ok('AND keeps the more selective side', p('parser ölç').literals.join() === 'parser');
-        ok('OR unions both sides', p('zebrafish OR gemini').literals.sort().join() === 'gemini,zebrafish');
+        // X-147: an `i` is not invariant under case folding (the matcher treats
+        // i/İ/ı/I as one letter, ripgrep's -i does not), so it cuts a literal
+        // exactly as `*` does — "zebrafish" scans for "zebraf", "gemini" for "gem".
+        ok('OR unions both sides', p('zebrafish OR gemini').literals.sort().join() === 'gem,zebraf');
+        ok('X-147: …and the literals are whole again when case is exact',
+            p('zebrafish OR gemini', { caseSensitive: true }).literals.sort().join() === 'gemini,zebrafish');
         ok('OR with an unusable side reads everything', p('zebrafish OR ök').mode === 'all');
         ok('NOT never narrows', p('-parser').mode === 'all');
         ok('AND drops the negated side and keeps the other', p('parser -tokenizer').literals.join() === 'parser');
         ok('a wildcard keeps its literal run', p('refact*').literals.join() === 'refact');
-        ok('a wildcard in the middle keeps the longer run', p('re*factoring').literals.join() === 'factoring');
+        ok('a wildcard in the middle keeps the longer run', p('re*factoring').literals.join() === 'factor');
         ok('a phrase keeps its longest word', p('"arama motoru"').literals.join() === 'motoru');
         ok('a term below the floor reads everything', p('ök').mode === 'all');
         ok('raw regex is never planned', p('par[sz]er', { regex: true }).mode === 'all');
@@ -465,6 +475,87 @@ async function parity(svc, label) {
         ok('X-131: …and says nothing when none were', !/tool trail re-read/.test(r.html()));
     }
 
+    // ---------- X-147: the session's TITLE is searched, in both engines ----------
+    // ‼️ The title was only ever metadata on a hit; the matcher ran over the
+    // messages and nothing else, so a session named after the word and not
+    // containing it could not be found on the Search page — while sessions.find
+    // matched titles on another surface. One reducer, so both engines agree.
+    {
+        const t = sessions[33];
+        const direct = S.searchTranscripts(all, 'flamingo', { maxHits: 500, parseForeign });
+        ok('X-147: a word only the title carries finds the session',
+            direct.hits.length === 1 && direct.hits[0].file === t.file && direct.sessionsMatched === 1);
+        const h = direct.hits[0];
+        ok('X-147: …as a title hit, dated by the session, with the name as its snippet',
+            h.kind === 'title' && h.role === 'title' && h.ts === t.mtime && h.match === 'flamingo'
+            && (h.before + h.match + h.after) === 'Oturum 33 — flamingo kurulumu');
+        ok('X-147: …carrying the session identity the page draws its header from',
+            h.sessionId === 'sess-33' && h.author === 'human' && h.title === t.title);
+        const both = S.searchTranscripts(all, 'Oturum', { maxHits: 500, maxPerFile: 20, parseForeign });
+        const grp = both.hits.filter(x => x.file === t.file);
+        ok('X-147: the title hit comes first in its session, ahead of the messages',
+            grp.length >= 1 && grp[0].kind === 'title');
+        ok('X-147: a memory-only / events-only search (roles: []) does not match titles',
+            S.searchTranscripts(all, 'flamingo', { roles: [], maxHits: 500, parseForeign }).hits.length === 0);
+        ok('X-147: the date window applies to the title too',
+            S.searchTranscripts(all, 'flamingo', { tsTo: t.mtime - 1, maxHits: 500, parseForeign }).hits.length === 0
+            && S.searchTranscripts(all, 'flamingo', { tsFrom: t.mtime, maxHits: 500, parseForeign }).hits.length === 1);
+        ok('X-147: the title is matched case-folded like everything else',
+            S.searchTranscripts(all, 'FLAMİNGO', { maxHits: 500, parseForeign }).hits.length === 1);
+        const svc = newService('c-title');
+        const corp = await svc.search(all, 'flamingo', { maxHits: 500, parseForeign });
+        ok('X-147: the corpus answers the same', shape(corp) === shape(direct) && corp.hits[0].kind === 'title');
+
+        // the page draws it under its session with a `title` badge
+        const r = runPage('search.js', fixture.data(), {
+            setTimeout: fn => { fn(); return 1; }, clearTimeout: () => { }
+        });
+        const box = r.query('#q')[0];
+        box.value = 'flamingo';
+        box.fire('input');
+        const seq = r.posted.filter(p => p.type === 'search').pop().seq;
+        const titleHit = Object.assign({}, fixture.RESULT.hits[0], {
+            kind: 'title', role: 'title', before: 'Oturum 33 — ', match: 'flamingo', after: ' kurulumu', tool: undefined
+        });
+        r.send({ type: 'results', seq, result: Object.assign({}, fixture.RESULT, {
+            hits: [titleHit], matchesFound: 1, matchesShown: 1, sessionsMatched: 1
+        }) });
+        ok('X-147: the page draws a title hit with its own badge and the name highlighted',
+            /<span class="badge">title<\/span>/.test(r.html()) && /<mark>flamingo<\/mark> kurulumu/.test(r.html()));
+        ok('X-147: …and counts it as a session, not as a memory or event source',
+            /<b>1<\/b>sessions/.test(r.html()));
+
+        // ‼️ X-147 — A SESSION WHOSE EVERY MATCH FELL PAST THE PREVIEW CAP IS
+        // STILL ON THE PAGE. The bar counted it; the list did not draw it.
+        const capped = S.searchTranscripts(all, 'parser', { maxHits: 4, maxPerFile: 2, parseForeign });
+        const unpreviewed = capped.sessionMatches.filter(c => c.shown === 0);
+        const previewedFiles = new Set(capped.hits.map(h => h.file)).size;
+        ok('X-147: the engine names every matched session, previewed or not',
+            capped.sessionsMatched > previewedFiles && unpreviewed.length === capped.sessionsMatched - previewedFiles
+            && unpreviewed.every(c => c.found > 0 && c.title && c.agentName && c.sessionId && c.sessionTs > 0 && c.author === 'human'));
+        const r2 = runPage('search.js', fixture.data(), {
+            setTimeout: fn => { fn(); return 1; }, clearTimeout: () => { }
+        });
+        const box2 = r2.query('#q')[0];
+        box2.value = 'parser';
+        box2.fire('input');
+        const seq2 = r2.posted.filter(p => p.type === 'search').pop().seq;
+        r2.send({ type: 'results', seq: seq2, result: Object.assign({}, fixture.RESULT, {
+            sessionsMatched: 7, matchesFound: 20, omittedMatches: 10,
+            sessionMatches: fixture.RESULT.sessionMatches.concat([{
+                file: 'D:/s/zz-old.jsonl', found: 7, shown: 0, agentName: 'yazar', title: 'Eski oturum, önizlemesiz',
+                sessionId: 'aaaa1111-0000-4000-8000-000000000001', engine: 'claude', sessionTs: Date.now() - 86400000 * 30, author: 'human'
+            }])
+        }) });
+        const html2 = r2.html();
+        ok('X-147: the page draws a session with no preview as its header, saying why',
+            /class="sessgroup unpreviewed"/.test(html2) && html2.includes('Eski oturum, önizlemesiz')
+            && /7 matches · none previewed \(the 10 previews went to newer sessions\)/.test(html2));
+        ok('X-147: …with the identity the row carries, so it opens like any other',
+            /#aaaa1111/.test(html2) && /data-open="D:\/s\/zz-old\.jsonl"/.test(html2));
+        ok('X-147: …and a session that was previewed is not drawn twice', (html2.match(/class="sessgroup/g) || []).length === 7);
+    }
+
     // ---------- (d) a missing foreign parser does not poison anything ----------
     {
         const svc = new C.TextSearchService({ storageRoot: path.join(tmp, 'c-noforeign') });
@@ -486,28 +577,46 @@ async function parity(svc, label) {
         const q = 'zebrafish';
         const expected = shape(S.searchTranscripts(all, q, { maxHits: 500, parseForeign }));
 
-        const missing = newService('c-rg-missing', { rgPath: path.join(tmp, 'no-such-rg.exe') });
+        // ‼️ X-147 — rgMinChars: 0 PUTS RIPGREP ON THE PATH. The threshold is
+        // twelve million characters and this fixture is thirty kilobytes, so
+        // until the threshold could be lowered every test in this block passed
+        // without a single rg process being spawned — the fallbacks were never
+        // exercised and the candidate pass never narrowed anything.
+        const onPath = { rgMinChars: 0 };
+        const missing = newService('c-rg-missing', Object.assign({ rgPath: path.join(tmp, 'no-such-rg.exe') }, onPath));
         ok('a missing binary falls back to the full read (never an empty page)',
             shape(await missing.search(all, q, { maxHits: 500, parseForeign })) === expected);
 
         // node.exe given ripgrep's arguments exits non-zero without searching —
         // the same branch a timeout and an unreadable batch take.
-        const wrong = newService('c-rg-wrong', { rgPath: process.execPath });
+        const wrong = newService('c-rg-wrong', Object.assign({ rgPath: process.execPath }, onPath));
         ok('a wrong binary (exit > 1) falls back too, rather than reporting zero',
             shape(await wrong.search(all, q, { maxHits: 500, parseForeign })) === expected);
 
         const rg = C.resolveRipgrep(findAppRoot());
         if (rg) {
-            const real = newService('c-rg-real', { rgPath: rg });
-            for (const [name, query, extra] of CASES) {
-                const opts = Object.assign({ maxHits: 500, maxPerFile: 20, parseForeign }, extra);
-                ok(`ripgrep: ${name}`,
-                    shape(await real.search(all, query, opts))
-                    === shape(S.searchTranscripts(all, query, opts)));
-            }
+            const real = newService('c-rg-real', Object.assign({ rgPath: rg }, onPath));
+            const spawned = [];
+            const cp = require('child_process');
+            const realExec = cp.execFile;
+            cp.execFile = function (file, ...rest) { spawned.push(String(file)); return realExec.call(cp, file, ...rest); };
+            try {
+                for (const [name, query, extra] of CASES) {
+                    const opts = Object.assign({ maxHits: 500, maxPerFile: 20, parseForeign }, extra);
+                    ok(`ripgrep: ${name}`,
+                        shape(await real.search(all, query, opts))
+                        === shape(S.searchTranscripts(all, query, opts)));
+                }
+            } finally { cp.execFile = realExec; }
+            ok('‼️ X-147: ripgrep was really spawned for the battery', spawned.some(f => f === rg));
             const none = await real.search(all, 'kesinliklebulunmayanbirkelime', { maxHits: 500, parseForeign });
             ok('ripgrep exit 1 is an honest zero: no hits, every session still counted as scanned',
                 none.hits.length === 0 && none.filesScanned === COUNT + 1);
+            // The title lives in no shard: a session the candidate pass excludes
+            // is still put to the reducer for its name.
+            const byTitle = await real.search(all, 'flamingo', { maxHits: 500, parseForeign });
+            ok('X-147: a session ripgrep excludes is still found by its title',
+                byTitle.hits.length === 1 && byTitle.hits[0].kind === 'title' && byTitle.hits[0].file === sessions[33].file);
         } else {
             console.log('  note: no ripgrep found beside VS Code — the rg battery did not run here.');
         }

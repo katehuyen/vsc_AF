@@ -172,6 +172,41 @@ const variants = () => [
             r.query('[data-flag="errorsOnly"]')[0].fire('click');
             results(r);
         }
+    },
+    // ‼️ X-147 — THE TWO ROWS THAT DID NOT EXIST: a session found by its TITLE
+    // (its own badge, the name as the snippet) and a session whose every
+    // match fell past the preview cap (drawn as its header only, saying why).
+    {
+        id: 'title-and-unpreviewed', label: 'Search — a title hit and a session with no preview (X-147)', data: data(),
+        act: (r) => {
+            type(r, 'parser');
+            const titleHit = Object.assign({}, RESULT.hits[0], {
+                kind: 'title', role: 'title', turn: 0, turnLabel: '',
+                before: 'Search fonksiyonu gelişmedi — ', match: 'parser', after: ' katmanı baştan ele alınacak',
+                title: 'Search fonksiyonu gelişmedi — parser katmanı baştan ele alınacak', tool: undefined
+            });
+            r.send({
+                type: 'results', seq: 0,
+                result: Object.assign({}, RESULT, {
+                    hits: [titleHit].concat(RESULT.hits.slice(0, 3)),
+                    matchesFound: 21, matchesShown: 4, sessionsMatched: 3, omittedMatches: 17,
+                    sessionMatches: [
+                        { file: 'D:/s/a.jsonl', found: 7, shown: 4 },
+                        {
+                            file: 'D:/s/old-1.jsonl', found: 9, shown: 0, agentName: 'yazar', engine: 'claude',
+                            title: 'Blog taslağı — parser bölümü', sessionId: 'b7c2d9e1-4f30-4a8b-9c1d-2e3f4a5b6c7d',
+                            sessionTs: NOW - 86400000 * 12, author: 'human'
+                        },
+                        {
+                            file: 'D:/s/old-2.jsonl', found: 5, shown: 0, agentName: 'manager', engine: 'codex',
+                            title: 'Görev: parser hatalarını sınıflandır', sessionId: '019f79a0-1111-7e33-a6d2-a2ac7f4b850d',
+                            sessionTs: NOW - 86400000 * 40, author: 'automation', authorLabel: 'Mission prompt', launcher: 'Nightly triage'
+                        }
+                    ]
+                }),
+                semanticStatus: { provider: 'off', sessions: 0, chunks: 0 }, facets: FACETS, idMatch: null
+            });
+        }
     }
 ];
 

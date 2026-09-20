@@ -2350,16 +2350,25 @@ const { opencodeStatus, syncToOpencode } =
                 return {
                     scanned: r.filesScanned,
                     partial: r.truncated || r.timedOut === true,
-                    hits: r.hits.map(h => ({ role: h.role, ts: h.ts, match: h.match, after: h.after }))
+                    hits: r.hits.map(h => ({ role: h.role, ts: h.ts, match: h.match, after: h.after, kind: h.kind }))
                 };
             }
         });
+
+        // ‼️ X-147 — the session is titled "parser work", so every query for
+        // `parser` below also gets ONE title hit (kind: 'title'), whatever the
+        // roles: the title is the session's own name, not a message. The
+        // message assertions look past it; the hit itself is asserted once.
+        const said = r => r.result.hits.filter(h => h.kind !== 'title');
+        const named = r => r.result.hits.filter(h => h.kind === 'title');
 
         ok('search.transcripts appears in the catalog',
             reg.catalog().some(c => c.op === 'search.transcripts'));
         const all = await reg.dispatch('search.transcripts', { query: 'parser' });
         ok('a query finds what was said, both sides of the conversation',
-            all.ok && all.result.hits.length === 3);
+            all.ok && said(all).length === 3);
+        ok('X-147: …and the session named after the word, as a title hit',
+            all.ok && named(all).length === 1 && named(all)[0].role === 'title' && named(all)[0].match === 'parser');
         ok('…and says whether the answer is complete', all.ok && all.result.partial === false);
 
         // ‼️ The two questions the roles arg exists for, and the reason the
@@ -2367,10 +2376,12 @@ const { opencodeStatus, syncToOpencode } =
         // it answered" are different questions from "the conversation".
         const mine = await reg.dispatch('search.transcripts', { query: 'parser', roles: ['user'] });
         ok('‼️ roles=["user"] searches only what a person asked',
-            mine.ok && mine.result.hits.length === 2 && mine.result.hits.every(h => h.role === 'user'));
+            mine.ok && said(mine).length === 2 && said(mine).every(h => h.role === 'user'));
         const theirs = await reg.dispatch('search.transcripts', { query: 'parser', roles: ['assistant'] });
         ok('‼️ …and roles=["assistant"] only what an agent answered',
-            theirs.ok && theirs.result.hits.length === 1 && theirs.result.hits[0].role === 'assistant');
+            theirs.ok && said(theirs).length === 1 && said(theirs)[0].role === 'assistant');
+        ok('X-147: the title is matched under any conversation role',
+            named(mine).length === 1 && named(theirs).length === 1);
 
         // The window is the MESSAGE's own time, not the session's mtime — this
         // transcript was written today and still has nothing from the 1st in a
@@ -2378,19 +2389,21 @@ const { opencodeStatus, syncToOpencode } =
         const day = await reg.dispatch('search.transcripts', { query: 'parser', from: '2026-08-01', to: '2026-08-01' });
         ok('‼️ a date window filters what was SAID, not when the file was touched',
             day.ok && day.result.hits.length === 2);
+        ok('X-147: …and the title, dated by the session\'s activity, is outside that window',
+            day.ok && named(day).length === 0);
         ok('…and "to" covers the whole of its day, or a one-day window finds nothing',
             day.ok && day.result.hits.some(h => h.ts === Date.parse('2026-08-01T10:00:05Z')));
         const late = await reg.dispatch('search.transcripts', { query: 'parser', from: '2026-08-05' });
-        ok('…an open-ended window is honoured too', late.ok && late.result.hits.length === 1);
+        ok('…an open-ended window is honoured too', late.ok && said(late).length === 1 && named(late).length === 1);
 
         // ‼️ X-25 — the two kinds that used to hide inside `user`. A delegation
         // is an agent writing to an agent; asking for what a PERSON said and
         // being handed that text is the defect the roles were split over.
         const dele = await reg.dispatch('search.transcripts', { query: 'parser', roles: ['delegator'] });
         ok('‼️ roles=["delegator"] finds one agent\'s handover to another',
-            dele.ok && dele.result.hits.length === 1 && dele.result.hits[0].role === 'delegator');
+            dele.ok && said(dele).length === 1 && said(dele)[0].role === 'delegator');
         ok('…and it is NOT in what a person asked',
-            mine.result.hits.every(h => h.role === 'user'));
+            said(mine).every(h => h.role === 'user'));
 
         // the real registration must carry the same contract
         const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'extension.ts'), 'utf8');

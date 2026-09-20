@@ -59,10 +59,37 @@
         return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    /**
+     * ‼️ X-147 — THE TURKISH i IS FOUR LETTERS THAT `/i` TREATS AS TWO PAIRS.
+     *
+     * JavaScript folds case by Unicode SIMPLE case folding, and in that table
+     * İ (U+0130) and ı (U+0131) fold to nothing but themselves: `/ilk/iu` does
+     * not match "İlk", `/kırmızı/iu` does not match "KIRMIZI". Every Turkish
+     * sentence that begins with the word, and every heading written in
+     * capitals, was invisible to a query typed in lowercase — MEASURED on the
+     * live corpus: "istanbul" found 1 session, "İstanbul" was in 3; "ilk" found
+     * 1.412 matches and the 556 written "İlk" were not among them; "iki"
+     * missed 1.120, "için" 402. That is the user's "I search for a word I know
+     * is there and it says nothing".
+     *
+     * So under case-insensitive matching the four are ONE letter: any of them
+     * in the query stands for any of them in the text. Folding only the case
+     * PAIRS (i↔İ, ı↔I) is not expressible here: under `/i` the class `[ıI]`
+     * already admits `i`, because I ≡ i, so ı and i are joined the moment I
+     * is allowed for ı at all. Joining them openly is also the better answer
+     * for a search: the mode is the loose one by name, "kirmizi" typed on an
+     * English keyboard finds "kırmızı", and the case-sensitive mode is still
+     * letter-exact.
+     */
+    const TR_I = /[iİıI]/g;
+    const TR_I_CLASS = '[iİıI]';
+
     /** One word of a query → its pattern. `*` is the only character that keeps
-     *  a meaning; everything else is literal. */
-    function wordPattern(w) {
-        return escapeRe(w).replace(/\\\*/g, '[^\\s]*');
+     *  a meaning; everything else is literal — except, when case is folded,
+     *  the Turkish i-family, which becomes one letter (see TR_I). */
+    function wordPattern(w, fold) {
+        const body = escapeRe(w).replace(/\\\*/g, '[^\\s]*');
+        return fold ? body.replace(TR_I, TR_I_CLASS) : body;
     }
 
     /**
@@ -75,8 +102,8 @@
      * ends", so that end is left open even in the mode — anchoring it would
      * contradict what was typed, which no mode is allowed to do.
      */
-    function barePattern(w, whole) {
-        const body = wordPattern(w);
+    function barePattern(w, whole, fold) {
+        const body = wordPattern(w, fold);
         if (!whole) { return body; }
         const openStart = /^\*/.test(w);
         const openEnd = /\*$/.test(w);
@@ -95,10 +122,10 @@
      * anchoring it would make the list go empty for exactly as long as it takes
      * to reach for the " key.
      */
-    function phrasePattern(text, unclosed) {
+    function phrasePattern(text, unclosed, fold) {
         const words = String(text).trim().split(/\s+/).filter(Boolean);
         if (!words.length) { return null; }
-        const body = words.map(wordPattern).join('\\s+');
+        const body = words.map(w => wordPattern(w, fold)).join('\\s+');
         const openEnded = /^\*/.test(words[0]);
         const tailOpen = unclosed || /\*$/.test(words[words.length - 1]);
         return (openEnded ? '' : `(?<!${WORD})`) + body + (tailOpen ? '' : `(?!${WORD})`);
@@ -168,6 +195,7 @@
 
     function parse(tokens, flags, whole) {
         let at = 0;
+        const fold = flags.indexOf('i') >= 0;
         const peek = () => tokens[at];
         const bad = m => { const e = new Error(m); e.afQuery = true; throw e; };
 
@@ -185,7 +213,7 @@
             if (t.t === 'close') { bad('a ) with no ( in front of it'); }
             if (t.t === 'op') { bad(`"${t.op.toUpperCase()}" needs something after it`); }
             at++;
-            const pattern = t.phrase ? phrasePattern(t.value, t.unclosed) : barePattern(t.value, whole);
+            const pattern = t.phrase ? phrasePattern(t.value, t.unclosed, fold) : barePattern(t.value, whole, fold);
             if (pattern === null) { bad('an empty phrase matches nothing — put a word inside the quotes'); }
             // `term` is the token this leaf was built from, kept so the candidate
             // prefilter below can read the LITERAL out of it. Deriving it from
@@ -349,14 +377,23 @@
 
     /** The longest invariant literal a term must contain. `*` is the only
      *  character with a meaning left, so the runs between the stars are exactly
-     *  what any matching text has to carry, whole-word anchoring included. */
-    function literalOf(term) {
+     *  what any matching text has to carry, whole-word anchoring included.
+     *
+     *  ‼️ X-147 — AND UNDER CASE FOLDING THE TURKISH i IS NOT INVARIANT EITHER.
+     *  The matcher treats i/İ/ı/I as one letter (TR_I); ripgrep's `-i` does not
+     *  (the same simple-folding table), so a literal carrying one of the four
+     *  would let the candidate pass exclude a file the matcher would hit — the
+     *  one thing a plan may never do. The letter therefore cuts a literal
+     *  exactly as `*` does: "ölçümleri" scans for "ölçümler", "istanbul" for
+     *  "stanbul", and "bilgi" is read in full. */
+    function literalOf(term, fold) {
         const words = term.phrase
             ? String(term.value).trim().split(/\s+/).filter(Boolean)
             : [String(term.value)];
+        const cut = fold ? /[*iİıI]/ : /\*/;
         let best = '';
         for (const w of words) {
-            for (const part of w.split('*')) {
+            for (const part of w.split(cut)) {
                 if (part.length > best.length) { best = part; }
             }
         }
@@ -372,16 +409,16 @@
         return min - (list.length - 1) / 1000;
     }
 
-    function planOf(node) {
+    function planOf(node, fold) {
         switch (node.t) {
-            case 'leaf': { const lit = literalOf(node.term); return lit ? [lit] : null; }
+            case 'leaf': { const lit = literalOf(node.term, fold); return lit ? [lit] : null; }
             case 'not': return null;
             case 'or': {
-                const a = planOf(node.a), b = planOf(node.b);
+                const a = planOf(node.a, fold), b = planOf(node.b, fold);
                 return a && b ? a.concat(b) : null;
             }
             case 'and': {
-                const a = planOf(node.a), b = planOf(node.b);
+                const a = planOf(node.a, fold), b = planOf(node.b, fold);
                 if (!a) { return b; }
                 if (!b) { return a; }
                 return selectivity(a) >= selectivity(b) ? a : b;
@@ -432,7 +469,7 @@
         try { root = parse(tokenize(src), flags, o.wholeWord === true); }
         catch (e) { return everything; }
         const monotone = isMonotone(root);
-        const list = planOf(root);
+        const list = planOf(root, !o.caseSensitive);
         if (!list || !list.length) { return { mode: 'all', literals: [], monotone }; }
         return { mode: 'any', literals: Array.from(new Set(list)), monotone };
     }
