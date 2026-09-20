@@ -349,6 +349,48 @@ proves that somebody once wrote the code correctly, not that the rule holds.**
 When a fourth list appears, copy the shape of those tests: find the anchor text,
 cut the object literal by brace balance, look for each field name inside it.
 
+## The index holds a PROJECTION, the store holds the record (X-129)
+
+**`SessionIndex` keeps every session that ever ran, in the extension host's one
+heap, for as long as the window is open. So a field that grows with the
+CONVERSATION does not live there — it lives in the store on disk, and the index
+keeps only what a surface can actually reach.** The rule and the projection are
+`src/core/sessionResident.ts`; nothing else may decide it.
+
+Measured on 848 sessions with `tools/measure_session_heap.js` (real `heapUsed`
+across a forced GC, never characters ÷ 4): a whole `SessionInfo` retained
+23.9 KB, `events` 11.3 KB of it and `recentMsgs` 4.0 KB — 64% of the index, for
+data no reader could see. Extrapolated to 10 000 sessions that is 233 MB.
+
+Both were dropped against a horizon that already existed, never by guess:
+
+- **`recentMsgs` is windowed.** Every reader is shorter than 48 hours — the
+  rolling 5-hour plan window, the lap meter, the dashboard's hour-exact tier
+  (24h, falling back to `daily`). The parser already filtered to 48h once, at
+  parse time; the projection re-applies it at admission, which is what makes it
+  bounded by recent activity instead of by history.
+- **`events` had exactly ONE reader** — `feed(n)`, the newest n across the
+  farm. Per-session arrays were therefore answering a global question, so they
+  were replaced by ONE bounded feed on the index (`FEED_KEEP`). A session
+  re-parsed on every append REPLACES its contribution rather than adding to it.
+
+After: **7.3 KB a session, 69% off, 72 MB at 10 000 sessions.**
+
+**‼️ AND THE PROJECTION IS A COPY, NEVER A TRIM IN PLACE.** `scanAll` hands the
+same object to the index and to the store, so emptying the original writes an
+archive with no events in it — a loss nobody notices until somebody opens a
+session's history months later. Every field that stays is shared by reference,
+so the copy costs one object and doubles nothing.
+
+**‼️ AND THE RULE IS MEASURED BY READING `SessionInfo` OUT OF THE SOURCE.**
+`test_session_resident.js` cuts the interface out by brace balance and requires
+every array- or `Record`-typed field to be placed — resident, with a written
+reason it is affordable, or projected — and then checks the projection really
+does what the table claims. A thirteenth collection added tomorrow fails the
+build until somebody states which it is. Same shape, same argument as
+`RunDimensions` above: a hand-written list is not wrong when it is written, it
+is wrong on the day the next field is added, and nothing tells anybody.
+
 ## The parity gate
 
 **Every user-triggerable action is recorded in `parity.manifest.json`, and the

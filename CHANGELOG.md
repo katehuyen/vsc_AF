@@ -2,6 +2,35 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.605.0 - the resident session index stops growing with the conversation (X-129) (2026-09-20)
+
+- **‼️ The index of every session that ever ran costs 69% less memory, and no
+  surface loses a figure.** It lives in the extension host's one heap for as
+  long as the window is open, and two of its fields were growing with the
+  LENGTH OF THE CONVERSATION rather than with the number of sessions. Measured
+  on this machine's 848 sessions (`tools/measure_session_heap.js`, real
+  `heapUsed` across a forced GC): **23.9 KB a session → 7.3 KB**, 19.8 MB →
+  6.1 MB. Projected at 10 000 sessions: **233 MB → 72 MB.**
+- **Nothing was dropped by guess — both fields had a horizon that already
+  existed.** `recentMsgs` is read only by windows shorter than 48 hours (the
+  rolling 5-hour plan window, the lap meter, the dashboard's hour-exact tier),
+  and the parser already filtered to 48h once; the index now re-applies that at
+  admission, so it is bounded by recent activity instead of by history.
+  `events` had exactly one reader — the activity feed's newest n — so the
+  per-session arrays were answering a global question and are replaced by ONE
+  bounded feed. `feed(60)` returns the same 60 events it always did, and the
+  test proves it against the whole corpus rather than against a fixture.
+- **The archive is untouched.** The store on disk still holds every session's
+  whole record; the saving is in what stays resident. The projection is a copy
+  precisely so the object handed to the store keeps its events — a trim in
+  place would have written an archive with nothing in it and said nothing.
+- New `src/core/sessionResident.ts` holds the rule alone, with no vscode
+  import, so `tools/measure_session_heap.js` applies the SHIPPED projection
+  instead of a description of it that can drift. `test_session_resident.js`
+  reads `SessionInfo` out of the source and fails the build if a new
+  array- or `Record`-typed field is added without being placed resident (with a
+  written reason) or projected away.
+
 ## 3.604.0 - the supervisor cockpit: the user's word on any A2A card, a re-route, and ⚡ Run Now (N-7) (2026-09-20)
 
 - **‼️ A minimal `+` on every A2A card, and it costs the card nothing until the

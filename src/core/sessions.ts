@@ -10,6 +10,9 @@ import {
 } from './launchBinding';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { normalizeMarks, SessionMarks } from './sessionmarks';
+import {
+    dropFromFeed, mergeFeed, RECENT_MSG_WINDOW_MS, residentSession
+} from './sessionResident';
 import { SessionStore, StoredSession } from './sessionStore';
 import { dayKey, normPath, truncate } from './util';
 
@@ -633,7 +636,6 @@ interface JsonlLine {
     };
 }
 
-const RECENT_MSG_WINDOW_MS = 48 * 3600 * 1000;
 const MAX_EVENTS_PER_FILE = 40;
 /**
  * How much of the opening prompt the index keeps (`SessionInfo.firstPrompt`).
@@ -1265,6 +1267,10 @@ export interface ClaudeDirRef {
 
 export class SessionIndex implements vscode.Disposable {
     private sessions = new Map<string, SessionInfo>();
+    /** ‼️ X-129 — the farm's activity feed, bounded and newest-first. The one
+     *  reader of a session's events, so the sessions do not each keep theirs.
+     *  See `sessionResident.ts`. */
+    private feedEvents: FeedEvent[] = [];
     /** User-set session names (sessionId → title), persisted by the extension. */
     private titleOverrides = new Map<string, string>();
     /** User shelf marks (sessionId → pin/tags), persisted by the extension. */
@@ -1380,6 +1386,7 @@ export class SessionIndex implements vscode.Disposable {
     async scanAll(): Promise<void> {
         const gen = ++this.scanGen;
         const next = new Map<string, SessionInfo>();
+        const nextFeed: FeedEvent[] = [];
         const remembered: StoredSession[] = [];
         const missing: string[] = [];
         const signature = this.indexSignature();
@@ -1405,7 +1412,7 @@ export class SessionIndex implements vscode.Disposable {
                     : await this.readWhole(file, depth, st, now);
                 if (info) {
                     remembered.push({ file, size: st.size, mtimeMs: st.mtimeMs, info });
-                    this.admit(info, file, depth, ref.name, next);
+                    this.admit(info, file, depth, ref.name, next, nextFeed);
                 }
                 if (Date.now() - breath >= SCAN_BREATH_MS) {
                     await breathe();
@@ -1420,6 +1427,7 @@ export class SessionIndex implements vscode.Disposable {
         }
         if (this.scanGen !== gen) { return; }
         this.sessions = next;
+        this.feedEvents = nextFeed;
         this.missingDirs = missing;
         this.onDidUpdateEmitter.fire();
         // Fire-and-forget: the index is already live, and a failed write costs
@@ -1483,7 +1491,8 @@ export class SessionIndex implements vscode.Disposable {
         file: string,
         depth: number,
         machine: string | undefined,
-        target: Map<string, SessionInfo>
+        target: Map<string, SessionInfo>,
+        feed: FeedEvent[]
     ): void {
         info.machine = machine;
         if (depth > 0) {
@@ -1508,6 +1517,7 @@ export class SessionIndex implements vscode.Disposable {
             // without a full re-walk of every projects folder on the machine.
             this.rememberDropped(file, info, depth, machine);
             target.delete(file);
+            dropFromFeed(feed, file);
             return;
         }
         this.dropped.delete(file);
@@ -1515,7 +1525,11 @@ export class SessionIndex implements vscode.Disposable {
             ev.agentId = info.agentId;
             ev.agentName = info.agentName;
         }
-        target.set(file, info);
+        mergeFeed(feed, info.events, file);
+        // ‼️ X-129 — the index keeps a projection, the store keeps the record.
+        // `info` is the very object scanAll hands to the store, so this must be
+        // a copy: see residentSession.
+        target.set(file, residentSession(info, Date.now()));
     }
 
     /**
@@ -1585,6 +1599,7 @@ export class SessionIndex implements vscode.Disposable {
             st = await fs.promises.stat(file);
         } catch {
             this.sessions.delete(file);
+            dropFromFeed(this.feedEvents, file);
             this.parsers.delete(file);
             this.onDidUpdateEmitter.fire();
             return;
@@ -1597,7 +1612,7 @@ export class SessionIndex implements vscode.Disposable {
         // only honest answer is to read it again from zero.
         if (!p || st.size < p.offset) {
             const fresh = await this.readWhole(file, depth, st, now);
-            if (fresh) { this.admit(fresh, file, depth, machine, this.sessions); }
+            if (fresh) { this.admit(fresh, file, depth, machine, this.sessions, this.feedEvents); }
             this.onDidUpdateEmitter.fire();
             return;
         }
@@ -1607,7 +1622,7 @@ export class SessionIndex implements vscode.Disposable {
             feedSessionParser(p, chunk, this.pricing, now);
         }
         this.rememberParser(file, p);
-        this.admit(finishSessionParse(p, st.mtimeMs, now), file, depth, machine, this.sessions);
+        this.admit(finishSessionParse(p, st.mtimeMs, now), file, depth, machine, this.sessions, this.feedEvents);
         this.onDidUpdateEmitter.fire();
     }
 
@@ -1624,8 +1639,8 @@ export class SessionIndex implements vscode.Disposable {
      */
     private indexFileSync(file: string, depth: number, machine?: string): void {
         const info = parseSessionFile(file, this.pricing, depth);
-        if (!info) { this.sessions.delete(file); return; }
-        this.admit(info, file, depth, machine, this.sessions);
+        if (!info) { this.sessions.delete(file); dropFromFeed(this.feedEvents, file); return; }
+        this.admit(info, file, depth, machine, this.sessions, this.feedEvents);
     }
 
     /** Most-recently-fed wins: a Map keeps insertion order, so re-setting a key
@@ -1979,10 +1994,13 @@ export class SessionIndex implements vscode.Disposable {
             // first time an agent folder changes.
             this.applyLaunchBinding(info);
             this.applySpawnId(info);
-            for (const ev of info.events) {
-                ev.agentId = info.agentId;
-                ev.agentName = info.agentName;
-            }
+        }
+        // The feed holds the events themselves, so re-attribution reaches them
+        // through the session each one names rather than through its own copy.
+        for (const ev of this.feedEvents) {
+            const owner = this.sessions.get(ev.sessionFile);
+            ev.agentId = owner?.agentId;
+            ev.agentName = owner?.agentName;
         }
         this.onDidUpdateEmitter.fire();
     }
@@ -2334,10 +2352,7 @@ export class SessionIndex implements vscode.Disposable {
     }
 
     feed(limit = 60): FeedEvent[] {
-        const events: FeedEvent[] = [];
-        for (const s of this.sessions.values()) { events.push(...s.events); }
-        events.sort((a, b) => b.ts - a.ts);
-        return events.slice(0, limit);
+        return this.feedEvents.slice(0, limit);
     }
 
     /** Usage within the trailing 5-hour window (subscription pacing approximation). */

@@ -35,6 +35,8 @@ const path = require('path');
 const os = require('os');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
+// The shipped rule itself — compiled, so `npm run compile` must have run.
+const { mergeFeed, residentSession } = require('../out/core/sessionResident.js');
 
 /** The five fields that grow with the CONVERSATION rather than with the fleet. */
 const HEAVY = ['events', 'turns', 'recentMsgs', 'daily', 'heat'];
@@ -124,6 +126,35 @@ async function main() {
         return m;
     });
 
+    // ---- what the index REALLY holds now: the shipped projection itself ----
+    // ‼️ Imported, never re-described. A tool that keeps its own copy of the
+    // rule reports the saving the author meant rather than the one the code
+    // makes, and it drifts the first time the rule changes.
+    const now = Date.now();
+    const resident = retained(() => {
+        const m = new Map();
+        for (const line of rows) {
+            let e;
+            try { e = JSON.parse(line); } catch { continue; }
+            const info = e && e.info;
+            if (!info || !info.sessionId) { continue; }
+            m.set(info.sessionId, residentSession(info, now));
+        }
+        return m;
+    });
+    // The feed is the whole index's share of `events`, not a per-session cost.
+    const feedHeld = retained(() => {
+        const feed = [];
+        for (const line of rows) {
+            let e;
+            try { e = JSON.parse(line); } catch { continue; }
+            const info = e && e.info;
+            if (!info || !info.sessionId) { continue; }
+            mergeFeed(feed, info.events || [], e.file);
+        }
+        return feed;
+    });
+
     // ---- and the heavy five on their own, so the saving has a name ----
     const heavy = retained(() => {
         const m = new Map();
@@ -161,12 +192,15 @@ async function main() {
     const perWhole = whole.bytes / n;
     const perLean = summary.bytes / n;
     const perHeavy = heavy.bytes / n;
+    const perResident = resident.bytes / n;
 
     console.log(`retained heap over ${n} sessions`);
-    console.log(`  whole SessionInfo (today)   ${fmtMB(whole.bytes).padStart(9)}   ${fmtB(perWhole)} / session`);
-    console.log(`  summary only (X-129 target) ${fmtMB(summary.bytes).padStart(9)}   ${fmtB(perLean)} / session`);
-    console.log(`  the heavy five alone        ${fmtMB(heavy.bytes).padStart(9)}   ${fmtB(perHeavy)} / session`);
-    console.log(`  saving ${(100 - perLean / perWhole * 100).toFixed(1)}% of the resident index\n`);
+    console.log(`  whole SessionInfo (the store) ${fmtMB(whole.bytes).padStart(9)}   ${fmtB(perWhole)} / session`);
+    console.log(`  resident now (X-129)          ${fmtMB(resident.bytes).padStart(9)}   ${fmtB(perResident)} / session`);
+    console.log(`  summary only (the floor)      ${fmtMB(summary.bytes).padStart(9)}   ${fmtB(perLean)} / session`);
+    console.log(`  the heavy five alone          ${fmtMB(heavy.bytes).padStart(9)}   ${fmtB(perHeavy)} / session`);
+    console.log(`  shipped saving ${(100 - perResident / perWhole * 100).toFixed(1)}% · the floor would be ${(100 - perLean / perWhole * 100).toFixed(1)}%`);
+    console.log(`  + one bounded feed of ${feedHeld.held.length} events, ${fmtMB(feedHeld.bytes)} for the WHOLE index\n`);
 
     console.log('the heavy five, one at a time');
     for (const field of HEAVY) {
@@ -176,14 +210,15 @@ async function main() {
     console.log('');
 
     console.log('projected, at the same per-session cost');
-    console.log('  sessions      today      after   saved');
+    console.log('  sessions     before      after   saved');
     for (const k of at) {
-        console.log(`  ${String(k).padStart(8)}  ${fmtMB(perWhole * k).padStart(9)}  ${fmtMB(perLean * k).padStart(9)}  ${fmtMB((perWhole - perLean) * k).padStart(9)}`);
+        console.log(`  ${String(k).padStart(8)}  ${fmtMB(perWhole * k).padStart(9)}  ${fmtMB(perResident * k).padStart(9)}  ${fmtMB((perWhole - perResident) * k).padStart(9)}`);
     }
 
-    // Keep both alive to the end, or the numbers above describe a heap that
+    // Keep them alive to the end, or the numbers above describe a heap that
     // had already been collected while it was being printed.
-    if (!whole.held.size || !summary.held.size || !heavy.held.size
+    if (!whole.held.size || !summary.held.size || !heavy.held.size || !resident.held.size
+        || !feedHeld.held.length
         || Object.keys(each).some(k => !each[k].held.size)) { console.log(''); }
 }
 
