@@ -2618,6 +2618,43 @@ const { opencodeStatus, syncToOpencode } =
         const block = src.slice(src.indexOf("op: 'usage.plan'"), src.indexOf("op: 'usage.plan'") + 2600);
         ok('extension.ts registers usage.plan against the shared service',
             /force\?/.test(block) && /resetsAt/.test(block));
+
+        // ---------- B-17: dispatch.test — the dispatcher's answer, on the bridge ----------
+        // The same question the "Test Dispatch" command asks from an input box;
+        // both doors go through ONE closure (dispatchFor), so an agent gets the
+        // rules, the classifier and the candidate hints the person gets.
+        {
+            const D = require(path.join(__dirname, '..', 'out', 'core', 'dispatch.js'));
+            const rules = [{ match: 'uyku|kaygı', agent: 'psikolog' }];
+            const dispatchFor = text => D.dispatchText(os.tmpdir(), '', text, rules, [{ name: 'psikolog', hint: '' }], false);
+            reg.register({
+                op: 'dispatch.test',
+                describe: 'B-17 — ask the dispatcher where a piece of work would go. args: text',
+                handler: async (args) => {
+                    const text = String(args.text || '');
+                    if (!text.trim()) { throw new Error('text is required'); }
+                    return dispatchFor(text);
+                }
+            });
+            ok('B-17: dispatch.test appears in the catalog', reg.catalog().some(c => c.op === 'dispatch.test'));
+            const hit = await reg.dispatch('dispatch.test', { text: 'dün gece uyku tutmadı' });
+            ok('B-17: a rule match names the agent and the method',
+                hit.ok && hit.result.agent === 'psikolog' && hit.result.method === 'rule');
+            const miss = await reg.dispatch('dispatch.test', { text: 'parser refactor' });
+            ok('B-17: no rule and no classifier is an honest none', miss.ok && !miss.result.agent && miss.result.method === 'none');
+            const empty = await reg.dispatch('dispatch.test', {});
+            ok('B-17: an empty text is refused, not dispatched', empty.ok === false);
+            const dblock = src.slice(src.indexOf("op: 'dispatch.test'"), src.indexOf("op: 'dispatch.test'") + 1200);
+            ok('B-17: extension.ts registers dispatch.test through the command\'s own closure',
+                /return dispatchFor\(text\)/.test(dblock) && /args: text/.test(dblock));
+            const cmd = src.slice(src.indexOf("registerCommand('agentfarm.testDispatch'"), src.indexOf("registerCommand('agentfarm.testDispatch'") + 900);
+            ok('B-17: …and the command palette door uses the same closure, not a second reading of the settings',
+                /dispatchFor\(text\)/.test(cmd) && !/dispatchText\(/.test(cmd));
+            const man = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'parity.manifest.json'), 'utf8'));
+            const cap = man.entries.find(e => e.capability === 'testDispatch');
+            ok('B-17: the parity manifest names the op and no longer a gap',
+                cap && Array.isArray(cap.ops) && cap.ops.includes('dispatch.test') && !cap.gap);
+        }
         // ‼️ `force` from an AGENT is not a person clicking ⟳: it may skip the
         // cache, never a backoff, or a looping agent becomes a request storm
         ok('…and an agent\'s force takes the edge path, not the human one',

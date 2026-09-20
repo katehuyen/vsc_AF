@@ -908,6 +908,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const qualityStore = new QualityStore(path.join(context.globalStorageUri.fsPath, 'quality.json'));
     const suggestionStore = new SuggestionStore(path.join(context.globalStorageUri.fsPath, 'suggestions.json'));
     const judgeArgs = () => cfg().get<string>('judgeArgs', '--model claude-haiku-4-5-20251001');
+    /**
+     * B-17 — ONE DISPATCH, TWO DOORS. The command palette's "test dispatch" and
+     * the bridge op ask the dispatcher the same question through this one
+     * function, so an agent that wants to know where a piece of work would be
+     * routed gets the answer the person gets — same rules, same classifier,
+     * same candidate hints — and not a second reading of the same settings.
+     */
+    const dispatchCandidates = () => agents.map(a => ({
+        name: a.name,
+        hint: (fs.existsSync(a.claudeMdPath ?? '') ? fs.readFileSync(a.claudeMdPath!, 'utf8') : '')
+            .replace(/^#.*$/m, '').replace(/\s+/g, ' ').trim().slice(0, 160)
+    }));
+    const dispatchFor = (text: string) => dispatchText(os.homedir(), judgeArgs(), text,
+        cfg().get<DispatchRule[]>('dispatchRules', []), dispatchCandidates(),
+        cfg().get<boolean>('dispatchClassifier', true));
 
     // G3: eval cases + runs (trace→dataset loop).
     const evalStore = new EvalStore(path.join(context.globalStorageUri.fsPath, 'evals.json'));
@@ -12395,6 +12410,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 const added = consoleHost.prependHistory(id, got.head, got.rows);
                 ConsolePanel.refreshIfOpen();
                 return { id, added, older: got.head.more?.older ?? 0, snapshot: got.head.more?.stamp ?? null };
+            }
+        },
+        {
+            op: 'dispatch.test',
+            describe: 'B-17 — ASK THE DISPATCHER WHERE A PIECE OF WORK WOULD GO, without sending it anywhere. The same question the "Agent Farm: Test Dispatch" command asks from an input box: the text is run through the dispatch rules (agentFarm.dispatchRules, first match wins) and then, when agentFarm.dispatchClassifier is on and no rule matched, through the judge model against every agent\'s CLAUDE.md hint. Nothing is started, queued or written. args: text (the incoming work, any language). Answer: { agent (undefined when nothing matched), method (rule | model | none), reason }.',
+            handler: async (args) => {
+                const text = argStr(args, 'text');
+                if (!text.trim()) { throw new Error('text is required'); }
+                return dispatchFor(text);
             }
         },
         {
@@ -38444,16 +38468,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                 ignoreFocusOut: true
             });
             if (!text?.trim()) { return; }
-            const candidates = agents.map(a => ({
-                name: a.name,
-                hint: (fs.existsSync(a.claudeMdPath ?? '') ? fs.readFileSync(a.claudeMdPath!, 'utf8') : '')
-                    .replace(/^#.*$/m, '').replace(/\s+/g, ' ').trim().slice(0, 160)
-            }));
             const result = await vscode.window.withProgress(
                 { location: vscode.ProgressLocation.Notification, title: 'Agent Farm: dispatching…' },
-                () => dispatchText(os.homedir(), judgeArgs(), text,
-                    cfg().get<DispatchRule[]>('dispatchRules', []), candidates,
-                    cfg().get<boolean>('dispatchClassifier', true)));
+                () => dispatchFor(text));
             void vscode.window.showInformationMessage(
                 result.agent
                     ? `Agent Farm dispatch → ${result.agent} [${result.method}] — ${result.reason}`

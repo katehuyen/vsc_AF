@@ -2,6 +2,19 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.611.0 - dispatch.test: the dispatcher's answer on the bridge (B-17, first half) (2026-09-21)
+
+- **New op `dispatch.test`** — ask the dispatcher where a piece of work would
+  be routed without sending it anywhere: the text goes through
+  `agentFarm.dispatchRules` (first match wins) and then, when
+  `agentFarm.dispatchClassifier` is on and no rule matched, through the judge
+  model against every agent's CLAUDE.md hint. Answer `{ agent, method: rule |
+  model | none, reason }`. The command palette's "Test Dispatch" and the op now
+  go through ONE closure (`dispatchFor`), so an agent gets exactly the answer a
+  person gets. Parity: 374 ops on the bridge, 30 open gaps (was 31).
+- B-17's second half — `runParallel` (fan one prompt out over N git
+  worktrees) — is still an open gap; it is the next session's first item.
+
 ## 3.610.0 - "I search for a word I know is there and it says nothing": three measured causes, all closed (X-147) (2026-09-20)
 
 - **‼️ The Turkish i was never case-folded.** JavaScript's `/i` folds by

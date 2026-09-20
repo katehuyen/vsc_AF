@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 31,
+  "gapBudget": 30,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -6973,9 +6973,9 @@
       "ui": [
         "cmd:agentfarm.testDispatch"
       ],
-      "gap": {
-        "why": "Asking the dispatcher which agent a piece of work would route to produces an answer an agent would want; today it is an input box on the page."
-      }
+      "ops": [
+        "dispatch.test"
+      ]
     },
     {
       "capability": "timeline.ts#afnav",
