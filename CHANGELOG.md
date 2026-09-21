@@ -2,6 +2,31 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.615.0 - a binding change sweeps what it reaches, not every session (X-345) (2026-09-21)
+
+- **‼️ The launch-binding sweep is now the size of the change, not of the
+  history.** X-128 made each comparison cheap and left the sweep alone: every
+  task change still re-asked every session the farm had ever indexed, so its
+  cost grew with the history (X-127's shared criterion: proportional to what
+  CHANGED, never to what is stored). `setLaunchBindings` now works out which
+  bindings came and went (`bindingDelta`, by a signature that carries every
+  field a binding decides with or hands over — so a run that ends, declares
+  its session, reports its transcript or changes mode is a change, and the
+  same list in another order is not) and re-asks only the sessions one of
+  those could reach: by declared id, declared file or lifespan window, out of
+  a `firstTs`-ordered index kept in step with the session maps (`ReachIndex`,
+  new `core/bindingReach.ts`). A removed binding reaches too — the session it
+  was one of two candidates for may now have one. A change that alters no
+  binding asks nobody.
+- **Measured** (`test_launch_binding.js`, a year of sessions, 15 one-hour
+  runs): publishing all 15 touches 2 sessions at 1 000 and 8 at 10 000; one
+  run finishing touches 0–1 session in ~0.4 ms at either size — where the
+  X-128 sweep cost ~23 ms per task change at 10 000 and grew with every
+  session. **Reach is a superset of what the matcher decides with**, proven
+  by brute force over 3 600 random sessions and 12 random changes: every
+  session whose answer moved is reached, and the set is far narrower than the
+  crowd. `SessionIndex.lastBindingSweep` reports what each change cost.
+
 ## 3.614.0 - a queued task no longer holds its account's token refresh (X-347) (2026-09-21)
 
 - **‼️ A task waiting in the queue was counted as work running on its

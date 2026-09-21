@@ -109,7 +109,7 @@ export interface BindableSession {
 }
 
 /** The engine a run/session belongs to; absence means Claude on both sides. */
-const engineKey = (v: string | undefined): string => (v || 'claude').toLowerCase();
+export const engineKey = (v: string | undefined): string => (v || 'claude').toLowerCase();
 
 /** Forward slashes, no trailing one, case-folded — Windows compares paths that
  *  way and every path in this file arrives from a different writer. */
@@ -132,7 +132,7 @@ export function normCwd(p: string | undefined): string {
  * So the bindings are prepared once and kept: their engine, their folder, their
  * transcript and their session id in the form the tests actually compare.
  */
-interface PreparedBinding {
+export interface PreparedBinding {
     readonly binding: LaunchBinding;
     /** position in the caller's list — the tie-break that keeps first-wins */
     readonly at: number;
@@ -159,7 +159,7 @@ export interface BindingIndex {
 }
 
 /** Is a session's folder inside (or equal to) the run's — both already normalised. */
-function underNorm(s: string, b: string): boolean {
+export function underNorm(s: string, b: string): boolean {
     if (!s || !b) { return false; }
     return s === b || s.startsWith(b + '/');
 }

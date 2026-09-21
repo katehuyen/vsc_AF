@@ -6,8 +6,9 @@ import { isGeneratedPrompt, wrapperGoal } from './authorship';
 import { SessionProvenance } from './externalImports';
 import {
     applyBinding, BindableSession, BindingIndex, bindSessionIn, indexBindings, isBindingHit,
-    LaunchBinding, normCwd
+    LaunchBinding
 } from './launchBinding';
+import { bindingDelta, ReachIndex } from './bindingReach';
 import { addUsage, contextAfter, emptyUsage, PricingEngine, RawUsage, toUsage, totalTokens, Usage, weightedTokens } from './pricing';
 import { normalizeMarks, SessionMarks } from './sessionmarks';
 import {
@@ -1292,6 +1293,15 @@ export class SessionIndex implements vscode.Disposable {
      *  claim one later. Five fields, not the parsed session — this is a memo,
      *  not a second index. */
     private dropped = new Map<string, BindableSession & { depth: number; machine?: string }>();
+    /** ‼️ X-345 — the three session sets a binding sweep reads, findable by
+     *  what a binding reaches with (declared id, declared file, lifespan), so
+     *  a task change asks the sessions it could touch and no others. Kept in
+     *  step at every place the owning map changes. */
+    private reachLive = new ReachIndex<SessionInfo>();
+    private reachExternal = new ReachIndex<SessionInfo>();
+    private reachDropped = new ReachIndex<BindableSession & { depth: number; machine?: string }>();
+    /** What the last binding change cost — the measurement X-345 is closed on. */
+    lastBindingSweep: { added: number; removed: number; touched: number; rescued: number } | undefined;
     /** ‼️ S-31 — transcripts that more than one of our own runs could have
      *  produced. Keyed by file; a diagnostic, never a decision. */
     private bindingDoubts = new Map<string, string>();
@@ -1427,6 +1437,7 @@ export class SessionIndex implements vscode.Disposable {
         }
         if (this.scanGen !== gen) { return; }
         this.sessions = next;
+        this.reachLive.rebuild(next.values());
         this.feedEvents = nextFeed;
         this.missingDirs = missing;
         this.onDidUpdateEmitter.fire();
@@ -1517,10 +1528,12 @@ export class SessionIndex implements vscode.Disposable {
             // without a full re-walk of every projects folder on the machine.
             this.rememberDropped(file, info, depth, machine);
             target.delete(file);
+            if (target === this.sessions) { this.reachLive.remove(file); }
             dropFromFeed(feed, file);
             return;
         }
         this.dropped.delete(file);
+        this.reachDropped.remove(file);
         for (const ev of info.events) {
             ev.agentId = info.agentId;
             ev.agentName = info.agentName;
@@ -1529,7 +1542,9 @@ export class SessionIndex implements vscode.Disposable {
         // ‼️ X-129 — the index keeps a projection, the store keeps the record.
         // `info` is the very object scanAll hands to the store, so this must be
         // a copy: see residentSession.
-        target.set(file, residentSession(info, Date.now()));
+        const resident = residentSession(info, Date.now());
+        target.set(file, resident);
+        if (target === this.sessions) { this.reachLive.add(resident); }
     }
 
     /**
@@ -1599,6 +1614,7 @@ export class SessionIndex implements vscode.Disposable {
             st = await fs.promises.stat(file);
         } catch {
             this.sessions.delete(file);
+            this.reachLive.remove(file);
             dropFromFeed(this.feedEvents, file);
             this.parsers.delete(file);
             this.onDidUpdateEmitter.fire();
@@ -1639,7 +1655,7 @@ export class SessionIndex implements vscode.Disposable {
      */
     private indexFileSync(file: string, depth: number, machine?: string): void {
         const info = parseSessionFile(file, this.pricing, depth);
-        if (!info) { this.sessions.delete(file); dropFromFeed(this.feedEvents, file); return; }
+        if (!info) { this.sessions.delete(file); this.reachLive.remove(file); dropFromFeed(this.feedEvents, file); return; }
         this.admit(info, file, depth, machine, this.sessions, this.feedEvents);
     }
 
@@ -1771,11 +1787,13 @@ export class SessionIndex implements vscode.Disposable {
     private rememberDropped(
         file: string, info: SessionInfo, depth: number, machine?: string
     ): void {
-        this.dropped.set(file, {
+        const memo = {
             sessionId: info.sessionId, file, cwd: info.cwd, source: info.source,
             firstTs: info.firstTs, lastTs: info.lastTs, isSidechain: info.isSidechain,
             depth, machine
-        });
+        };
+        this.dropped.set(file, memo);
+        this.reachDropped.add(memo);
     }
 
     /**
@@ -1792,22 +1810,30 @@ export class SessionIndex implements vscode.Disposable {
      */
     setLaunchBindings(list: readonly LaunchBinding[]): void {
         const next = (list ?? []).filter(b => b && b.taskId && b.agentId && b.cwd && b.startedAt > 0);
-        const sig = (b: LaunchBinding): string =>
-            `${b.taskId}:${b.agentId}:${normCwd(b.cwd)}:${b.engine || 'claude'}:`
-            + `${b.startedAt}:${b.endedAt ?? 0}:${b.sessionId ?? ''}:${b.kind}:${b.label}`;
-        const before = this.bindings.map(sig).join('|');
-        const after = next.map(sig).join('|');
-        if (before === after) { return; }
+        // ‼️ X-345 — THE SWEEP IS THE SIZE OF THE CHANGE, NOT OF THE HISTORY.
+        // Which bindings came and went is worked out first; a change that
+        // altered none asks nobody, and one that altered a few asks only the
+        // sessions those few could reach — by declared id, declared file or
+        // lifespan window, out of an index kept in step with the session maps
+        // — instead of every session the farm has ever indexed. A removed
+        // binding reaches too: the session it was one of two candidates for
+        // may now have one.
+        const nextIndex = indexBindings(next);
+        const { added, removed } = bindingDelta(this.bindingIndex, nextIndex);
+        if (!added.length && !removed.length) { return; }
         this.bindings = [...next];
-        this.bindingIndex = indexBindings(this.bindings);
+        this.bindingIndex = nextIndex;
+        const now = Date.now();
+        const changed = [...added, ...removed];
 
         // The files that were thrown away: any that one of these claims comes
         // back, parsed properly this time.
         let rescued = 0;
-        for (const memo of [...this.dropped.values()]) {
-            const r = bindSessionIn(memo, this.bindingIndex, Date.now());
+        for (const memo of this.reachDropped.reachAll(changed, now)) {
+            const r = bindSessionIn(memo, this.bindingIndex, now);
             if (!isBindingHit(r)) { continue; }
             this.dropped.delete(memo.file);
+            this.reachDropped.remove(memo.file);
             if (fs.existsSync(memo.file)) {
                 this.indexFileSync(memo.file, memo.depth, memo.machine);
                 rescued++;
@@ -1815,9 +1841,9 @@ export class SessionIndex implements vscode.Disposable {
         }
         // …and the sessions already indexed learn who started them, which is
         // what puts the schedule's name on the Origin column.
-        for (const info of this.sessions.values()) { this.applyLaunchBinding(info); this.applySpawnId(info); }
-        for (const info of this.externalList) { this.applyLaunchBinding(info); this.applySpawnId(info); }
-        void rescued;
+        const touched = [...this.reachLive.reachAll(changed, now), ...this.reachExternal.reachAll(changed, now)];
+        for (const info of touched) { this.applyLaunchBinding(info); this.applySpawnId(info); }
+        this.lastBindingSweep = { added: added.length, removed: removed.length, touched: touched.length, rescued };
         this.onDidUpdateEmitter.fire();
     }
 
@@ -2090,6 +2116,7 @@ export class SessionIndex implements vscode.Disposable {
         this.externalSig = sig;
         const { canonical, aliases } = this.linkImports(kept);
         this.externalList = canonical;
+        this.reachExternal.rebuild(canonical);
         this.externalAliases = aliases;
         // ‼️ The title BEFORE the marks, and both on every rescan (X-35). A
         // source re-parses its transcript whenever the file changes and hands

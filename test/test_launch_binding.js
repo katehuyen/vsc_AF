@@ -295,6 +295,178 @@ const session = (over) => Object.assign({
 }
 
 // ===========================================================================
+// 3c) X-345 — THE SWEEP IS THE SIZE OF THE CHANGE, NOT OF THE HISTORY
+//
+// X-128 made each comparison cheap and left the SWEEP alone: every task change
+// still asked every session the farm had ever indexed, so the cost of one
+// binding change grew with the history (X-127's shared criterion: proportional
+// to what CHANGED, never to what is stored). Now the change is worked out first
+// — which bindings came, which went (`bindingDelta`) — and only the sessions
+// one of those could possibly reach are asked (`bindingReaches`, a SUPERSET of
+// what the matcher decides with, out of `ReachIndex`: declared id, declared
+// file, lifespan window over a `firstTs`-ordered list). A change that alters no
+// binding asks nobody.
+{
+    const R = require(path.join(ROOT, 'out', 'core', 'bindingReach.js'));
+    const { indexBindings, bindSessionIn } = require(path.join(ROOT, 'out', 'core', 'launchBinding.js'));
+    const HOUR = 3600_000, DAY = 24 * HOUR;
+    const ROOTS = [REPO.replace(/\\/g, '/'), AGENTDIR, 'D:/zone/know/note/obsidian'];
+    const ENG = ['claude', 'codex', 'agy'];
+    // a deterministic generator, so a failure is the same failure tomorrow
+    let seed = 20260921;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const pick = (a) => a[Math.floor(rnd() * a.length)];
+    const shape = r => (!r ? 'none' : isBindingHit(r) ? r.binding.taskId + '/' + r.proof
+        : 'amb:' + r.candidates.map(c => c.taskId).join(','));
+
+    // --- the signature: what a binding decides with, and what it hands over
+    const b0 = binding();
+    ok('X-345: two bindings with the same fields have one signature',
+        R.bindingSig(b0) === R.bindingSig(binding()));
+    ok('…and a run that ends, declares its session, reports its transcript or changes mode is a DIFFERENT binding',
+        [{ endedAt: T1 + 1 }, { sessionId: 'sid-x' }, { transcriptFile: 'C:/u/p/x.jsonl' }, { mode: 'interactive' }, { launchId: 'lch_1' }]
+            .every(over => R.bindingSig(binding(over)) !== R.bindingSig(b0)));
+
+    // --- the delta: what came and what went, not "the list looks different"
+    {
+        const a = binding({ taskId: 'A' }), b = binding({ taskId: 'B' }), c = binding({ taskId: 'C' });
+        const d = R.bindingDelta(indexBindings([a, b]), indexBindings([b, c]));
+        ok('X-345: bindingDelta names the binding that came and the one that went',
+            d.added.length === 1 && d.added[0].binding.taskId === 'C' && d.removed.length === 1 && d.removed[0].binding.taskId === 'A');
+        const upd = R.bindingDelta(indexBindings([a, b]), indexBindings([a, binding({ taskId: 'B', endedAt: T1 + 60_000 })]));
+        ok('…a run whose record changed is one removed and one added — its old shape reaches too',
+            upd.added.length === 1 && upd.removed.length === 1 && upd.removed[0].binding.endedAt === T1 && upd.added[0].binding.endedAt === T1 + 60_000);
+        const same = R.bindingDelta(indexBindings([a, b]), indexBindings([b, a]));
+        ok('…and the same bindings in another order are no change at all', same.added.length === 0 && same.removed.length === 0);
+    }
+
+    // --- reach is a SUPERSET of the matcher's decision — the property that
+    // makes a limited sweep safe. Random crowds, random changes, brute force:
+    // every session whose answer moves between the two indexes must be reached
+    // by a binding the delta named.
+    {
+        let moved = 0, checked = 0, unreached = 0, reachedTotal = 0;
+        for (let round = 0; round < 12; round++) {
+            const mkB = (i) => binding({
+                taskId: 't' + round + '-' + i, engine: pick(ENG), cwd: pick(ROOTS),
+                startedAt: T0 + Math.floor(rnd() * 6) * HOUR, endedAt: rnd() < 0.2 ? undefined : T0 + Math.floor(rnd() * 8) * HOUR + HOUR,
+                ...(rnd() < 0.3 ? { sessionId: 'sid-' + Math.floor(rnd() * 40) } : {}),
+                ...(rnd() < 0.2 ? { transcriptFile: 'C:/u/p/' + Math.floor(rnd() * 300) + '.jsonl' } : {}),
+                ...(rnd() < 0.2 ? { mode: 'interactive' } : {})
+            });
+            const before = []; for (let i = 0; i < 10; i++) { before.push(mkB(i)); }
+            const after = before.slice();
+            after.splice(Math.floor(rnd() * after.length), 1);                       // one archived
+            after.push(mkB(100));                                                      // one started
+            const k = Math.floor(rnd() * after.length);
+            after[k] = { ...after[k], endedAt: (after[k].endedAt ?? T0 + 8 * HOUR) + HOUR }; // one finished later
+            const oldIdx = indexBindings(before), newIdx = indexBindings(after);
+            const delta = R.bindingDelta(oldIdx, newIdx);
+            const changed = [...delta.added, ...delta.removed];
+            const crowd = [];
+            for (let i = 0; i < 300; i++) {
+                // one file per session, as the index's own map is keyed
+                crowd.push(session({
+                    sessionId: 'sid-' + Math.floor(rnd() * 40), file: 'C:/u/p/' + i + '.jsonl',
+                    cwd: rnd() < 0.15 ? undefined : pick(ROOTS) + (rnd() < 0.5 ? '/src/core' : ''),
+                    source: pick(ENG), isSidechain: rnd() < 0.05,
+                    firstTs: T0 - HOUR + Math.floor(rnd() * 12 * HOUR), lastTs: T0 + Math.floor(rnd() * 14 * HOUR)
+                }));
+            }
+            const now = T0 + 9 * HOUR;
+            const reach = new R.ReachIndex(); reach.rebuild(crowd);
+            const reached = new Set(reach.reachAll(changed, now));
+            reachedTotal += reached.size;
+            for (const s of crowd) {
+                checked++;
+                if (shape(bindSessionIn(s, oldIdx, now)) === shape(bindSessionIn(s, newIdx, now))) { continue; }
+                moved++;
+                if (!reached.has(s)) { unreached++; }
+            }
+        }
+        ok(`‼️ X-345: every session whose answer moved is reached — ${moved} moved of ${checked}, ${unreached} missed`,
+            moved > 0 && unreached === 0);
+        ok('…and reach is narrower than the crowd, or the limit would be no limit', reachedTotal < checked);
+    }
+
+    // --- the index itself: in step with adds and removes, one item each
+    {
+        const reach = new R.ReachIndex();
+        const s1 = session({ sessionId: 'a', file: 'C:/u/p/1.jsonl', firstTs: T0 + 1000 });
+        const s2 = session({ sessionId: 'b', file: 'C:/u/p/2.jsonl', firstTs: T0 + 500 });
+        const s3 = session({ sessionId: 'a', file: 'C:/U/P/3.JSONL', firstTs: T0 + 3000 });   // same id, another file
+        reach.add(s1); reach.add(s2); reach.add(s3);
+        const p = indexBindings([binding({ sessionId: 'a', startedAt: T0 + 100 * DAY, endedAt: T0 + 100 * DAY + HOUR })]).all[0];
+        const byId = reach.reach(p, T0 + 200 * DAY);
+        ok('X-345: a declared session id reaches every session carrying it, whatever the clock says',
+            byId.length === 2 && byId.includes(s1) && byId.includes(s3));
+        reach.remove('c:/u/p/3.jsonl');
+        ok('…remove is by normalised file and keeps the id\'s other session', reach.size === 2 && reach.reach(p, T0 + 200 * DAY).length === 1);
+        reach.add(session({ sessionId: 'a', file: 'C:/u/p/1.jsonl', firstTs: T0 + 60_000 }));
+        ok('…add under a file already held replaces it, never doubles it', reach.size === 2);
+        const w = indexBindings([binding({ startedAt: T0, endedAt: T0 + 2000 })]).all[0];
+        ok('…a lifespan window reaches by firstTs order, not by scanning everything',
+            reach.reach(w, T1).length === 1 && reach.reach(w, T1)[0] === s2);
+    }
+
+    // --- THE MEASUREMENT X-345 CLOSES ON: a SessionIndex with a year of
+    // sessions; one task change costs what the change reaches, at 1 000 and at
+    // 10 000 the same.
+    {
+        const pricing = { costFor: () => 0, priceFor: () => undefined, price: () => 0, costOf: () => 0 };
+        const dirX = fs.mkdtempSync(path.join(os.tmpdir(), 'af-x345-'));
+        const load = (n) => {
+            const idx = new SessionIndex(dirX, () => [], pricing,
+                () => [{ id: AGENTDIR, name: 'developer', dir: AGENTDIR, normDir: AGENTDIR }], () => true, () => 150000);
+            const map = new Map();
+            for (let i = 0; i < n; i++) {
+                const first = T0 - 365 * DAY + Math.floor((i / n) * 365 * DAY);
+                const file = 'C:/u/y/' + i + '.jsonl';
+                map.set(file, session({
+                    sessionId: 'y-' + i, file, cwd: ROOTS[i % ROOTS.length] + '/src', source: ENG[i % ENG.length],
+                    firstTs: first, lastTs: first + 20 * 60_000, events: [], turns: [], agentId: undefined, agentName: undefined
+                }));
+            }
+            idx.sessions = map;                       // private, reachable at runtime — the shape scanAll leaves
+            idx.reachLive.rebuild(map.values());
+            return idx;
+        };
+        const runs = [];
+        for (let i = 0; i < 15; i++) {
+            const at = T0 - 365 * DAY + Math.floor(((i + 0.5) / 15) * 365 * DAY);
+            runs.push(binding({ taskId: 'r' + i, engine: ENG[i % ENG.length], cwd: ROOTS[i % ROOTS.length], startedAt: at, endedAt: at + HOUR }));
+        }
+        const measure = (n) => {
+            const idx = load(n);
+            const t0 = process.hrtime.bigint();
+            idx.setLaunchBindings(runs);
+            const first = idx.lastBindingSweep;
+            const t1 = process.hrtime.bigint();
+            // a run finishes: one binding's record changes
+            const later = runs.map((b, i) => i === 3 ? { ...b, endedAt: b.endedAt + 30 * 60_000 } : b);
+            idx.setLaunchBindings(later);
+            const second = idx.lastBindingSweep;
+            const t2 = process.hrtime.bigint();
+            idx.setLaunchBindings(later);
+            const third = idx.lastBindingSweep;
+            idx.dispose();
+            return { first, second, third, allMs: Number(t1 - t0) / 1e6, oneMs: Number(t2 - t1) / 1e6 };
+        };
+        const small = measure(1000), big = measure(10000);
+        console.log(`  X-345: 15 bindings published — touched ${small.first.touched} @1k / ${big.first.touched} @10k (${small.allMs.toFixed(2)} / ${big.allMs.toFixed(2)} ms); `
+            + `one run finishing — touched ${small.second.touched} @1k / ${big.second.touched} @10k (${small.oneMs.toFixed(3)} / ${big.oneMs.toFixed(3)} ms)`);
+        ok(`‼️ X-345: publishing 15 bindings over a year asks the sessions inside their hours — ${small.first.touched} at 1 000, ${big.first.touched} at 10 000`,
+            small.first.added === 15 && big.first.added === 15 && big.first.touched <= 15 * 12 && big.first.touched < 10000 / 10);
+        ok(`‼️ X-345: one run finishing asks ONLY its own hour — ${big.second.touched} session(s) at 10 000, ${small.second.touched} at 1 000 (${big.oneMs.toFixed(2)} ms)`,
+            big.second.added === 1 && big.second.removed === 1 && big.second.touched <= 12 && small.second.touched <= 12);
+        ok('‼️ X-345: the same bindings published again ask nobody', big.third === big.second && small.third === small.second);
+        ok(`‼️ X-345: at ten thousand the change costs what it did at one thousand — ${big.oneMs.toFixed(2)} vs ${small.oneMs.toFixed(2)} ms`,
+            big.oneMs < Math.max(5, small.oneMs * 4));
+        try { fs.rmSync(dirX, { recursive: true, force: true }); } catch { /* tmp */ }
+    }
+}
+
+// ===========================================================================
 // 4) THE INDEX — THE ORDER OF THE TWO LINES, MEASURED ON REAL FILES
 //
 // `includeUnmatchedProjects` is FALSE here, which is the default and the state
