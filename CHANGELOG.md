@@ -2,6 +2,33 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.625.0 - The baton relay gets its surfaces and its brakes: ✕ Stop chain on the card, one ⑂ item on the status bar, a ⑂ column in every sessions table (S-77) — and a leg ceiling and a barren-chain brake decided at the pass (S-78) (2026-09-21)
+
+- **✕ Stop chain, beside Continue from handover — never instead of it.** A
+  relay leg whose chain still has a baton waiting or parked carries the
+  brake on its Console card. It runs the one body `baton.stop chain=` runs
+  (`stopBatons`), so the button and the op cannot drift: every live baton of
+  the chain is kept as `stopped`, nothing is deleted, and a run a baton
+  already opened keeps running. Its panel opens with the relay's state and
+  ends with the agent's spelling of the same brake.
+- **One status-bar item for the relay running now** — `⑂ 3/6`, `· 14:37`
+  when that leg is parked, `+N` when more chains run, hidden while none
+  does. The tooltip has a line per chain, the ceiling and the brake; a click
+  opens the Console on the running leg.
+- **A ⑂ column in every sessions table** (Dashboard, Sessions, agent and
+  project pages), right after the origin strip: `⑂ n` on a relay leg with
+  the chain in its panel — the Console card's own words — and a blank cell
+  on every other row.
+- **Two brakes, decided at the pass.** `agentFarm.batonMaxHops` (default 6
+  legs, the run that started the chain being leg 1; 0 = none) is the
+  ceiling. And every pass now records the folder's git HEAD: two legs in a
+  row that end on the HEAD they were opened on stop the chain — a third run
+  would only spend another window the same way. A braked pass is answered,
+  not refused: the baton is kept as stopped with the reason, the answer says
+  `braked`, the runner is told to write a handover note instead, and Notices
+  says it once. The setting has its own group under Settings ▸ Handover
+  Discipline. Notices speaks about a relay exactly twice: a park and a brake.
+
 ## 3.624.0 - The handover whisper becomes a setting — the two lines AND the words they deliver (S-80) — and it stops reading the week and calling it the five-hour window (X-353) (2026-09-21)
 
 - **‼️ The quota line was reading the wrong window (X-353).** Measured on this
