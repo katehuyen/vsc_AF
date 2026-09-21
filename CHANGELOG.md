@@ -2,6 +2,47 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.622.0 - The whisper gets a quota line — a run is told when its own account's 5-hour window reaches 90% — and a relay runner is told to pass the baton (S-75 · S-76) (2026-09-21)
+
+- **‼️ The discipline signal is two-dimensional now (S-75).** The handover
+  law has two triggers — the context window and the 5-hour quota — and until
+  now Agent Farm only whispered the first. The guard reads the session's
+  **own** account window (its Console card's slot, else the slot its sealed
+  launch manifest names) and, on the same PostToolUse / UserPromptSubmit
+  hook, tells the run `QUOTA HANDOVER 90%` (stop and hand over) — once,
+  re-armed when the window resets, recorded as undelivered on an engine with
+  no channel. **There is no quota converge line by default:** the handover
+  law has none — below 90% a run works at full capacity — so
+  `QUOTA CONVERGE` is said only if you set a figure for it.
+  **A session whose slot is not known is never told a figure** — a number
+  from the home folder's sign-in is worse than none (measured: home 95%,
+  the session's own window 23%). Both lines crossing in one hook are one
+  answer: the window's sentence first, the quota's under it.
+- **Settings:** `agentFarm.quotaConvergePct` (0 = off) and
+  `agentFarm.quotaHandoverPct` (90); 0 switches a line off.
+  `sessions.contextGuard.set` takes all four thresholds.
+- **Surfaces.** The Console card draws a `5h 91% HANDOVER` chip beside the
+  context figure with its **own** panel — the account, the reading, the reset
+  clock, what was delivered when, and the law — never mixed into the context
+  panel; `✕` when the sentence could not reach the run. The session's own
+  page draws the same line under the context gauge. A card told QUOTA
+  HANDOVER offers **Continue from handover** exactly as a context handover
+  does, and counts as handover evidence everywhere a run would otherwise be
+  resumed.
+- **Bridge:** `sessions.contextGuard id=` also answers `quotaReading`
+  {pct, account, resetsAt, level} read now from the session's own sign-in,
+  and `view.quota` — the words the card and the page are showing.
+- **‼️ In a baton relay the order is "pass the baton" (S-76).** A session a
+  baton opened — or one that has passed a baton still live — is told, at the
+  handover line of either dimension, to pass the baton instead of writing a
+  handover note: the chain and hop, and the recipe (`Write` the prompt to a
+  file, `node af.js baton.pass "@<file>"`, end the run). One that already
+  passed is only told to end. Outside a relay the sentences are exactly what
+  they were; a chain the user braked after the runner opened falls back to
+  the note; a baton store that cannot be read is no relay, never a broken
+  hook. `_REF/handover.md` gains the relay step; the vault has the human-side
+  definition beside the handover system.
+
 ## 3.621.0 - The baton is released when its session ends, and the successor opens through the task board; the user has a brake and a go (S-70 · S-71 · S-74) (2026-09-21)
 
 - **‼️ The relay now runs on its own (S-66).** A baton left with `baton.pass`
