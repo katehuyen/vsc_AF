@@ -140,5 +140,55 @@ const AT = Date.parse('2026-08-14T12:00:00Z');
         && built.split('\n').filter(l => l.startsWith('| ')).length === msg.rows.length + 2);
 }
 
+// ---------- the Tasks page's own door, put back (B-21, Notices mubcveecb1qao) ----------
+// ‼️ The handler had outlived its button since the page was rewritten (v6.31):
+// `case 'export-md'` filed a document nothing sent. The door is on the Runs
+// toolbar again, and it goes through the same builder as tasks.export.
+{
+    const fs = require('fs');
+    const ROOT = path.join(__dirname, '..');
+    const page = fs.readFileSync(path.join(ROOT, 'media', 'tasksPage.js'), 'utf8');
+    const panel = fs.readFileSync(path.join(ROOT, 'src', 'panels', 'tasksPanel.ts'), 'utf8');
+
+    ok('the Tasks page has a door that posts export-md', /id="runs-export"/.test(page)
+        && /byId\('runs-export', 'click', exportRuns\)/.test(page));
+    ok('…and it sends rows, never a finished document',
+        /type: 'export-md', name: 'runs'/.test(page) && !/export-md', name: 'runs', content/.test(page));
+    ok('the runs host builds with markdownTable, like the analytics host',
+        /case 'export-md': \{[\s\S]*?markdownTable\(\{ title: String\(msg\.title \|\| 'Agent Farm — runs'\)/.test(panel));
+    ok('…and no longer files a `content` string the page would have written',
+        !/saveMarkdown\(msg\.content/.test(panel));
+
+    const { runPage } = require(path.join(__dirname, 'lib_page_dom.js'));
+    const fixture = require(path.join(__dirname, 'fixtures', 'tasks.js'));
+    const runs = fixture.variants()[0];
+    const p = runPage('tasksPage.js', runs.data);
+    const btn = p.query('#runs-export')[0];
+    ok('the Runs toolbar carries ⬇ MD, enabled while rows are on the list',
+        !!btn && !btn.hasAttribute('disabled')
+        && /id="runs-export"[^>]*>⬇ MD<\/button>/.test(p.html()));
+    btn.click();
+    const msg = p.last();
+    ok('pressing it posts export-md with a title, columns and rows',
+        msg && msg.type === 'export-md' && msg.name === 'runs'
+        && typeof msg.title === 'string' && msg.title.startsWith('Agent Farm — runs')
+        && Array.isArray(msg.cols) && msg.cols.length > 0 && Array.isArray(msg.rows));
+    ok('…every visible run is a row, one cell per column',
+        msg && msg.rows.length === runs.data.runs.length
+        && msg.rows.every(r => Array.isArray(r) && r.length === msg.cols.length));
+    ok('…the columns are the ones the table shows, in the same words',
+        msg && ['Task', 'Agent', 'Status', 'Started by', 'Engine', 'Session', 'Took', 'Tokens', 'Cost', 'When']
+            .every(c => msg.cols.includes(c)));
+    const iTitle = msg ? msg.cols.indexOf('Task') : -1;
+    ok('…a cell is the row\'s text, not its markup',
+        msg && msg.rows.every(r => !/</.test(r[iTitle]))
+        && runs.data.runs.every(t => msg.rows.some(r => r[iTitle] === t.title)));
+    const built = markdownTable({ title: msg.title, cols: msg.cols, rows: msg.rows, at: AT });
+    ok('…and the host turns exactly that into the page\'s document',
+        built.startsWith('# ' + msg.title)
+        && built.includes('| ' + msg.cols.join(' | ') + ' |')
+        && built.split('\n').filter(l => l.startsWith('| ')).length === msg.rows.length + 2);
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

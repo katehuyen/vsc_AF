@@ -198,6 +198,20 @@ export function jsonForScript(data: unknown): string {
  * `foldedNoun` names the folded unit for the wording ("collapsed turns" /
  * "folded turns"). Returns undefined if the user dismisses either step.
  */
+/**
+ * The reader's speaker-label settings, as every page receives them in
+ * `window.__AFUI__.speaker` — and as a host-side builder that must print the
+ * same speaker names (core/sessionExport) reads them.
+ */
+export function speakerSettings(): { template: string; casing: string; fallback: string } {
+    const cfg = afConfig();
+    return {
+        template: cfg.get<string>('speakerLabelTemplate', '{ai}'),
+        casing: cfg.get<string>('speakerLabelCase', 'page'),
+        fallback: cfg.get<string>('speakerLabelFallback', 'agent')
+    };
+}
+
 export async function askExportOptions(
     foldedNoun: string,
     hasFolded: boolean
@@ -438,13 +452,8 @@ export function htmlShell(
     // Global UI config shared by every page (not page data): the user's AI
     // speaker-label template/case/fallback, read live so a settings change is
     // picked up on the next page render. See src/core/speaker.ts.
-    const cfg = afConfig();
     const afui = {
-        speaker: {
-            template: cfg.get<string>('speakerLabelTemplate', '{ai}'),
-            casing: cfg.get<string>('speakerLabelCase', 'page'),
-            fallback: cfg.get<string>('speakerLabelFallback', 'agent')
-        },
+        speaker: speakerSettings(),
         // 🔔 unread notices + 📥 queue items that need you. Only the STARTING
         // values — from here on they arrive by push (see pushHeaderCounts).
         ...headerCounts(),

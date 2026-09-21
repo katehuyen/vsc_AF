@@ -2,6 +2,38 @@
 
 All notable changes to Agent Farm. Detailed release notes live in the built-in guide (`Agent Farm: Open Guide` → Release Notes / Sürüm Notları).
 
+## 3.628.0 - B-21 closed: the Tasks page’s ⬇ MD is back, and a session exports from an op (2026-09-21)
+
+- **The Tasks page’s Runs toolbar carries ⬇ MD again.** The handler had
+  outlived its button since the page was rewritten (v6.31); asked on
+  Notices, the answer was to put the door back. It exports the rows you can
+  see — this search, these filters, this order, the archive month you are
+  reading — as a Markdown table whose cells are the text the screen shows
+  (a status with its hold reason, `you` for a run you pressed, the engine’s
+  own name, a full clock instead of “2h ago”). The page sends title,
+  columns and rows; the host builds with `core/mdTable`, the same function
+  `tasks.export` uses.
+- **`sessions.export` — one conversation as a document.** The session page’s
+  own Export MD, built where an op can build it: header (session, folder,
+  span, totals with the ⚖ figure and its mark), then every step under its
+  `## Turn n` heading — speaker named by your `speakerLabel` settings, the
+  shared step kind, clock, model, tokens, cost — with tool calls and results
+  fenced. Everything by default; name `roles`, `filter`, `excludeTurns` or
+  `foldedTurns` and only that view is written, with an `Export:` line
+  stating exactly what was applied. `file` writes atomically, `save` lands
+  it in the report folder.
+- **The builder left the webview (`core/sessionExport`).** The document used
+  to be assembled inside the page out of its view state — visible steps,
+  folded and unticked turns, the replay position — and the host only filed
+  it. The page now sends that view with the click; the host asks its two
+  questions and builds from the same parse the page was drawn from, so the
+  button and the op cannot describe one conversation two ways. The reader’s
+  speaker settings come from one place (`speakerSettings()`), read by the
+  page shell and by the builder alike.
+- **Parity: 21 → 18 open gaps.** `tasksPanel#export-md → tasks.export`,
+  `sessionViewer#exportChoose → sessions.export`; the `exportMd` message no
+  longer exists, so its gap is gone with it.
+
 ## 3.627.0 - Five pages’ Export MD stops being a button and becomes an op (B-21) (2026-09-21)
 
 - **The board, the turns table, the analytics page and the runs board can

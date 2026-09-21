@@ -12,6 +12,7 @@ import {
     ONE_EXECUTOR, PERMISSION_CHOICES, permissionChoicesByEngine,
     TARGET_CHOICES, twoExecutors
 } from '../core/launch';
+import { markdownTable } from '../core/mdTable';
 import { EngineModels } from '../core/models';
 import {
     DeletedPlanRow,
@@ -1972,6 +1973,7 @@ export class TasksPanel {
         type: string; taskId?: string; to?: string; text?: string; act?: string; id?: string;
         kind?: string; approvalId?: string; ok?: boolean; file?: string; transcriptPath?: string;
         sessionId?: string; content?: string; name?: string; rows?: { kind: string; id: string }[];
+        title?: string; cols?: unknown[];
         index?: number; task?: unknown; item?: unknown;
         quietFrom?: string; quietTo?: string; reason?: string; month?: string;
     }): Promise<void> {
@@ -2535,11 +2537,20 @@ export class TasksPanel {
                     this.refresh();
                 }
                 break;
-            case 'export-md':
-                if (typeof msg.content === 'string' && msg.content.trim()) {
-                    void this.saveMarkdown(msg.content, typeof msg.name === 'string' ? msg.name : 'tasks');
-                }
+            case 'export-md': {
+                // B-21 — the page sends the rows it is showing; the document is
+                // built here, by the function tasks.export uses.
+                const cols = Array.isArray(msg.cols) ? msg.cols.map(c => String(c ?? '')) : [];
+                const sent = (msg as { rows?: unknown }).rows;
+                const rows = Array.isArray(sent)
+                    ? sent.filter(Array.isArray).map(r => (r as unknown[]).map(v => String(v ?? '')))
+                    : [];
+                if (!cols.length) { break; }
+                void this.saveMarkdown(
+                    markdownTable({ title: String(msg.title || 'Agent Farm — runs'), cols, rows }),
+                    typeof msg.name === 'string' ? msg.name : 'runs');
                 break;
+            }
             case 'afnav':
                 handleAfNav(msg.to);
                 break;

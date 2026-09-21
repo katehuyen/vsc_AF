@@ -3594,16 +3594,60 @@
             <button class="secondary" data-archoff="1" title="Back to the live list only.">✕ archive</button>`;
     }
 
+    const RUN_SORT = {
+        when: r => r.when, title: r => r.title.toLowerCase(),
+        cost: r => r.costUSD || 0, dur: r => r.durMin || 0,
+        // ‼️ M-21 — and by what it BURNED, which is the question the Cost
+        // column cannot answer on three of the four engines.
+        tokens: r => r.tokens || 0
+    };
+
+    /**
+     * B-21 — THE RUNS TABLE AS A DOCUMENT. Each column is the text its cell
+     * already states (the cell's own title line, never its markup), so the file
+     * says what the screen says. The page decides WHICH rows — its search, its
+     * filters, its sort, the archive month it is reading — and the document is
+     * assembled host-side by core/mdTable, the builder tasks.export uses, so
+     * what a hand exports here is what an op exports there.
+     */
+    const RUN_EXPORT = [
+        ['Task', r => r.title],
+        ['Agent', r => r.agentName],
+        ['Mode', r => r.mode],
+        ['Status', r => (STATUS[r.status] || [r.status])[0]
+            + (r.archived ? ' · archived' : '') + (r.detail ? ' · ' + r.detail : '')],
+        ['Started by', r => r.sourceKind === 'manual' ? 'you' : r.sourceKind + ' · ' + r.source],
+        ['Engine', r => engineLabel(r)],
+        ['Session', r => r.sessionId ? shortSid(r.sessionId) : ''],
+        ['Took', r => r.durMin !== undefined ? r.durMin + 'm' : ''],
+        ['Tokens', r => r.tokens ? String(r.tokens) : ''],
+        // An engine that states no price leaves the cell empty rather than
+        // printing a zero — the same claim the column makes on screen.
+        ['Cost', r => r.reportsCost === false ? '' : fmtUSD(r.costUSD)],
+        ['When', r => r.when ? window.AFTime.full(r.when) : '']
+    ];
+
+    function exportRuns() {
+        const v = runView;
+        const shown = applySort(runRows(DATA), v, RUN_SORT);
+        const a = DATA.archive || {};
+        const narrowed = !!(v.q || v.agent || v.status || v.source || v.engine);
+        post({
+            type: 'export-md', name: 'runs',
+            title: 'Agent Farm — runs' + (a.on ? ' · archive' + (a.month ? ' ' + a.month : '') : '')
+                + (narrowed ? ' (filtered)' : ''),
+            cols: RUN_EXPORT.map(c => c[0]),
+            rows: shown.map(r => RUN_EXPORT.map(c => {
+                const val = c[1](r);
+                return val == null ? '' : String(val);
+            }))
+        });
+    }
+
     function runHtml(d) {
         const v = runView;
         const rows = runRows(d);
-        const sorted = applySort(rows, v, {
-            when: r => r.when, title: r => r.title.toLowerCase(),
-            cost: r => r.costUSD || 0, dur: r => r.durMin || 0,
-            // ‼️ M-21 — and by what it BURNED, which is the question the Cost
-            // column cannot answer on three of the four engines.
-            tokens: r => r.tokens || 0
-        });
+        const sorted = applySort(rows, v, RUN_SORT);
         // ‼️ A COLUMN IS DEFINED ONCE, ON ITS <th> (docs/CONVENTIONS.md). The
         // rows carry the figures; the heading carries what the figures mean.
         const head = `<tr><th class="expand"></th>${sortCell(v, 'title', 'Task',
@@ -3675,6 +3719,12 @@
                 <button class="secondary" data-open="cancel-queued">Cancel queued</button>
                 <button class="secondary" data-open="clear-finished">Clear finished</button>
                 ${archiveCtl(d)}
+                ${/* B-21 — the rows you can see, as a Markdown table. Built by
+                      the host, by the same builder tasks.export uses. */''}
+                <button class="secondary" id="runs-export"${sorted.length ? '' : ' disabled'}
+                    title="${sorted.length
+            ? 'Export the ' + sorted.length + ' row(s) you can see — this search, these filters, this order — as a Markdown table.'
+            : 'Nothing to export — no run is on the list you are looking at.'}">⬇ MD</button>
             </div>
             ${composer && (COMPOSE[composer.kind] || COMPOSE.task).tab === 'run' ? composerHtml() : ''}
             ${chooser && chooser.tab === 'run' ? chooserHtml() : ''}
@@ -4109,6 +4159,7 @@
         };
         byId('nt-open', 'click', () => openComposer());
         byId('task-undo', 'click', () => post({ type: 'task-undo' }));
+        byId('runs-export', 'click', exportRuns);
         byId('nt-close', 'click', () => closeComposer());
         byId('nt-cancel', 'click', () => closeComposer());
         byId('nt-add', 'click', () => submitComposer(false));

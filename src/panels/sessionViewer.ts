@@ -13,7 +13,8 @@ import { ContextSignalView } from '../core/contextGuard';
 import { RunIdentity } from '../core/turnRuntime';
 import { oneShotEnv } from '../core/oneShot';
 import { revealPath } from '../core/reveal';
-import { askExportOptions, handleAfNav, htmlShell, wikiMarksOf, wikiMarkMessage } from './base';
+import { buildSessionMarkdown, SessionExportView } from '../core/sessionExport';
+import { askExportOptions, handleAfNav, htmlShell, speakerSettings, wikiMarksOf, wikiMarkMessage } from './base';
 
 export interface ViewerDeps {
     extensionUri: vscode.Uri;
@@ -926,6 +927,29 @@ export class SessionViewerPanel {
         }, null, this.disposables);
     }
 
+    private async saveMarkdown(md: string, cwd: string): Promise<void> {
+        const remembered = this.deps.lastExportDir?.();
+        const dir = remembered && fs.existsSync(remembered) ? remembered
+            : cwd && fs.existsSync(cwd) ? cwd
+                : os.homedir();
+        const d = new Date();
+        const p2 = (n: number) => String(n).padStart(2, '0');
+        const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
+        const name = `session-${path.basename(this.file, '.jsonl').slice(0, 8)}-${stamp}.md`;
+        const uri = await vscode.window.showSaveDialog({
+            defaultUri: vscode.Uri.file(path.join(dir, name)),
+            filters: { Markdown: ['md'] }
+        });
+        if (!uri) { return; }
+        try {
+            fs.writeFileSync(uri.fsPath, md, 'utf8');
+            this.deps.setLastExportDir?.(path.dirname(uri.fsPath));
+            void vscode.window.showTextDocument(uri);
+        } catch (e) {
+            void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`);
+        }
+    }
+
     /** buildData + the owner agent (webview data only — buildData itself stays pure). */
     private viewData(): Record<string, unknown> {
         const data = buildData(this.file, this.deps);
@@ -1177,39 +1201,19 @@ export class SessionViewerPanel {
                 break;
             }
             case 'exportChoose': {
-                // Ask the two Export-MD questions, then tell the webview to build
-                // the markdown with the chosen options (it holds all the messages).
+                // B-21 — the page sends the view it is showing (roles, text
+                // filter, unticked and folded turns, replay position); the two
+                // Export-MD questions are asked here, and the document is built
+                // by the function sessions.export uses — from the same data the
+                // page was drawn from, so the file says what the screen says.
+                const sent = (msg.view && typeof msg.view === 'object' ? msg.view : {}) as SessionExportView;
+                const cwd = typeof msg.cwd === 'string' ? msg.cwd : '';
                 void askExportOptions('collapsed turns', !!msg.hasFolded).then(opts => {
                     if (!opts) { return; }
-                    void this.panel.webview.postMessage({
-                        type: 'exportBuild', view: opts.view, foldedTitles: opts.foldedTitles
+                    const md = buildSessionMarkdown(this.viewData(), {
+                        ...sent, view: opts.view, foldedTitles: opts.foldedTitles, speaker: speakerSettings()
                     });
-                });
-                break;
-            }
-            case 'exportMd': {
-                if (typeof msg.md !== 'string' || !msg.md) { break; }
-                const md = msg.md;
-                const remembered = this.deps.lastExportDir?.();
-                const dir = remembered && fs.existsSync(remembered) ? remembered
-                    : typeof msg.cwd === 'string' && msg.cwd && fs.existsSync(msg.cwd) ? msg.cwd
-                        : os.homedir();
-                const d = new Date();
-                const p2 = (n: number) => String(n).padStart(2, '0');
-                const stamp = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
-                const name = `session-${path.basename(this.file, '.jsonl').slice(0, 8)}-${stamp}.md`;
-                void vscode.window.showSaveDialog({
-                    defaultUri: vscode.Uri.file(path.join(dir, name)),
-                    filters: { Markdown: ['md'] }
-                }).then(uri => {
-                    if (!uri) { return; }
-                    try {
-                        fs.writeFileSync(uri.fsPath, md, 'utf8');
-                        this.deps.setLastExportDir?.(path.dirname(uri.fsPath));
-                        void vscode.window.showTextDocument(uri);
-                    } catch (e) {
-                        void vscode.window.showErrorMessage(`Agent Farm: export failed — ${String(e)}`);
-                    }
+                    void this.saveMarkdown(md, cwd);
                 });
                 break;
             }

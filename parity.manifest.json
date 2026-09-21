@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "gapBudget": 21,
+  "gapBudget": 18,
   "entries": [
     {
       "capability": "a2aNotesPanel.ts#afnav",
@@ -5422,18 +5422,9 @@
       "ui": [
         "page:sessionViewer.ts#exportChoose"
       ],
-      "gap": {
-        "why": "The session viewer's Export MD has no op; sessions.page returns turns but nothing produces the document the page writes."
-      }
-    },
-    {
-      "capability": "sessionViewer.ts#exportMd",
-      "ui": [
-        "page:sessionViewer.ts#exportMd"
-      ],
-      "gap": {
-        "why": "Same as the viewer's export chooser: the assembled Markdown of a transcript is only reachable from the page."
-      }
+      "ops": [
+        "sessions.export"
+      ]
     },
     {
       "capability": "sessionViewer.ts#focusTerminal",
@@ -6640,9 +6631,9 @@
       "ui": [
         "page:tasksPanel.ts#export-md"
       ],
-      "gap": {
-        "why": "‼️ THE DOOR IS UNREACHABLE, and that is the finding: the Tasks page has no Export MD control. The handler is a leftover from v5.7 (\"Tasks tablolarina filtre+siralama+export MD\") whose button was lost when the page was rewritten — nothing in media/ posts `export-md` to this panel and no right-click item relays to it. tasks.export now writes the board as a document over the bridge (B-21), but the two cannot share a core until the page sends its rows the way the analytics page does, and putting a control back on a page it was removed from is the user's call, not a repair. Asked on Notices 2026-09-21."
-      }
+      "ops": [
+        "tasks.export"
+      ]
     },
     {
       "capability": "tasksPanel.ts#gate",

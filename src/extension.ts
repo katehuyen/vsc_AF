@@ -563,8 +563,10 @@ import { WikiPanel } from './panels/wikiPanel';
 import { openReportDoc } from './panels/openDoc';
 import { DocOpenStore, DOC_OPEN_LABELS, DOC_OPEN_MODES, DocOpenMode, registerDocOpenOps } from './core/docopen';
 import {
-    postCtx, pushHeaderCounts, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setWikiMarkBridge
+    postCtx, pushHeaderCounts, setA2ACountsProvider, setNoticesUnreadProvider, setQueueBlockedProvider, setWikiMarkBridge,
+    speakerSettings
 } from './panels/base';
+import { buildSessionMarkdown, normalizeExportRoles } from './core/sessionExport';
 import { ctxForSection, ctxRelays, ctxSections } from './core/ctxmenu';
 import { SearchPanel, findSessions, scopeSessions, searchableSessions } from './panels/searchPanel';
 import { FarmSettingsPanel } from './panels/settingsPanel';
@@ -10604,6 +10606,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
                     title: String(data['title'] || s.title || ''),
                     agent: s.agentName ?? null,
                     ...page
+                };
+            }
+        },
+        {
+            op: 'sessions.export',
+            describe: 'B-21 — ONE CONVERSATION AS A MARKDOWN DOCUMENT: the session page\'s own Export MD, built by the same function the page\'s button uses. The header states the session, its folder, span and totals; then every step under its `## Turn n` heading — speaker (named by your speakerLabel settings), step kind, clock, model, tokens, cost — with tool calls and results fenced. Default is EVERYTHING; name any of roles / filter / excludeTurns / foldedTurns and only that view is written, with an `Export:` line saying exactly what was applied. '
+                + 'args: session (an id, its 8-character prefix, or the transcript path — sessions.find gives both), roles? (array or comma-separated: user, assistant, tool, toolResult, error; agent/result accepted; "all" = every role), filter? (the search-box grammar — words, "phrases", -not, a|b), excludeTurns? (turn numbers left out), foldedTurns? (turn numbers reduced to their heading when foldedTitles is true, left out otherwise), foldedTitles? (default false), file? (write there, atomically), save? (let it land in the report folder). Returns the content when neither file nor save is given, and `steps` = how many steps the document holds.',
+            handler: (args) => {
+                // `file` is where the document GOES here (deliverDocument), so
+                // the transcript is named by `session` or `id` only.
+                const ref = optStr(args, 'session') || optStr(args, 'id');
+                const pool = index.allWithExternal();
+                const hit = resolveSessionRef(pool, ref);
+                if (!hit.ok) {
+                    throw new Error(hit.error + (hit.candidates.length ? ` Candidates: ${hit.candidates.join(', ')}` : ''));
+                }
+                const s = hit.row;
+                if (!fs.existsSync(s.file)) {
+                    throw new Error(`The transcript of ${s.sessionId} is not on this machine any more (${s.file}).`);
+                }
+                const data = buildViewerData(s.file, { ...viewerDeps, maxMessages: () => Number.MAX_SAFE_INTEGER });
+                const nums = (v: unknown): number[] => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : [])
+                    .map(Number).filter(n => Number.isFinite(n) && n > 0);
+                const roles = normalizeExportRoles(args.roles ?? args.role);
+                const filter = optStr(args, 'filter');
+                const excludeTurns = nums(args.excludeTurns);
+                const foldedTurns = nums(args.foldedTurns);
+                const narrowed = roles.length > 0 || !!filter || excludeTurns.length > 0 || foldedTurns.length > 0;
+                const md = buildSessionMarkdown(data, {
+                    view: narrowed, roles, filter, excludeTurns, foldedTurns,
+                    foldedTitles: optBool(args, 'foldedTitles', false), speaker: speakerSettings()
+                });
+                return {
+                    id: s.sessionId, transcript: s.file,
+                    steps: (md.match(/^\*\*[^*]+\*\*/gm) || []).length,
+                    view: narrowed ? 'filtered' : 'everything',
+                    ...deliverDocument(args, md,
+                        `AgentFarm-Session-${s.sessionId.slice(0, 8)}-${exportStamp()}.md`, defaultReportDir)
                 };
             }
         },

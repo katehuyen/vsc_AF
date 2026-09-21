@@ -455,10 +455,16 @@ function makeSandbox(opts) {
 
     // An export handed to somebody else must not name its speakers differently
     // from the screen — that would be a second vocabulary for the same fact.
-    t.send({ type: 'exportBuild', view: false, foldedTitles: false });
-    const md = t.posted().filter(m => m.type === 'exportMd').pop();
+    // B-21 — the page no longer writes the document: it sends its view with the
+    // click and the host builds, by the function sessions.export uses.
+    t.click('exportmd');
+    const choose = t.posted().filter(m => m.type === 'exportChoose').pop();
+    ok('pressing Export MD sends the view, never a document',
+        !!choose && choose.view && Array.isArray(choose.view.roles) && choose.md === undefined);
+    const { buildSessionMarkdown } = require(require('path').join(__dirname, '..', 'out', 'core', 'sessionExport.js'));
+    const md = buildSessionMarkdown(d, { ...choose.view, view: false, foldedTitles: false });
     ok('the exported markdown uses the same words',
-        !!md && /\*\*DELEGATOR \(developer\)\*\*/.test(md.md) && /\*\*HANDLER\*\*/.test(md.md));
+        /\*\*DELEGATOR \(developer\)\*\*/.test(md) && /\*\*HANDLER\*\*/.test(md));
 }
 
 // ---------- the page's own heading is a session row too ----------
